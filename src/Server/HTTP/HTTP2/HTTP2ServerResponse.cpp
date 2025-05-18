@@ -136,11 +136,14 @@ private:
         if (stream.closed)
             throw Exception(ErrorCodes::NETWORK_ERROR, "HTTP/2 stream has been closed");
 
-        if (!is_http_method_head && available() > 0)
-            stream.output.emplace_back(std::move(memory), available());
+        if (!is_http_method_head && offset() > 0)
+            stream.output.emplace_back(std::move(memory), offset());
 
-        HTTP2StreamEvent event{.type=HTTP2StreamEventType::OUTPUT_READY, .stream_id=stream.id};
-        stream.stream_event_pipe->writeBytes(&event, sizeof(event));
+        if (!stream.response_submitted || stream.output.size() == 1 || stream.end_stream)
+        {
+            HTTP2StreamEvent event{.type=HTTP2StreamEventType::OUTPUT_READY, .stream_id=stream.id};
+            stream.stream_event_pipe->writeBytes(&event, sizeof(event));
+        }
 
         memory = Memory(BUF_SIZE);
         set(memory.data(), memory.size());

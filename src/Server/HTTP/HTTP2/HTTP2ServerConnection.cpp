@@ -20,8 +20,6 @@
     #include <Poco/Net/SecureStreamSocketImpl.h>
 #endif
 
-#include <poll.h>
-
 namespace DB
 {
 
@@ -93,6 +91,7 @@ HTTP2ServerConnection::HTTP2ServerConnection(
     , socket_in(std::make_unique<ReadBufferFromPocoSocket>(socket(), read_event_))
     , socket_out(std::make_unique<WriteBufferFromPocoSocket>(socket(), write_event_))
     , stream_event_pipe(std::make_shared<Poco::Pipe>())
+    , stream_event_pipe_in(std::make_unique<ReadBufferFromFileDescriptor>(stream_event_pipe->readHandle()))
 {
     poco_check_ptr(factory);
 }
@@ -142,6 +141,11 @@ void HTTP2ServerConnection::doRun()
 
     sendPendingFrames();   /// Send initial SETTINGS frame
 
+    pfds[0].fd = socket().sockfd();
+    pfds[0].events = POLLIN;
+    pfds[1].fd = stream_event_pipe->readHandle();
+    pfds[1].events = POLLIN;
+
     bool choose_pipe = false;
 
     while (tcp_server.isOpen()
@@ -153,30 +157,22 @@ void HTTP2ServerConnection::doRun()
         We must consider that data from socket might be buffered in the ReadBuffer
         */
 
-        bool want_read_from_pipe = false;
-        bool want_read_from_socket = false;
+        bool want_read_from_pipe = stream_event_pipe_in->hasPendingData();
+        bool want_read_from_socket = socket_in->hasPendingData();
 
+        if (want_read_from_pipe + want_read_from_socket == 1)
         {
-            struct pollfd pfds[1];
-            pfds[0].fd = stream_event_pipe->readHandle();
-            pfds[0].events = POLLIN;
-            int ret = poll(pfds, 1, 0);
+            int ret = poll(pfds, 2, 0);
             if (ret < 0)
             {
                 LOG_ERROR(log, "HTTP/2 connection with {}: poll() returned {}", peer_address, ret);
                 break;
             }
-            want_read_from_pipe = (pfds[0].revents & POLLIN);
+            want_read_from_socket |= (pfds[0].revents & POLLIN);
+            want_read_from_pipe |= (pfds[1].revents & POLLIN);
         }
-
-        want_read_from_socket = socket_in->hasPendingData();
-        if (!want_read_from_socket)
+        else if (want_read_from_pipe + want_read_from_socket == 0)
         {
-            struct pollfd pfds[2];
-            pfds[0].fd = socket().sockfd();
-            pfds[0].events = POLLIN;
-            pfds[1].fd = stream_event_pipe->readHandle();
-            pfds[1].events = POLLIN;
             int ret = poll(pfds, 2, -1);
             if (ret < 0)
             {
@@ -216,7 +212,9 @@ void HTTP2ServerConnection::doRun()
 
 void HTTP2ServerConnection::sendPendingFrames()
 {
-    while (nghttp2_session_want_write(session))
+    static constexpr size_t SEND_PENDING_FRAMES_LIMIT = 8;
+
+    for (size_t i = 0; nghttp2_session_want_write(session) && i < SEND_PENDING_FRAMES_LIMIT; ++i)
     {
         const uint8_t * data;
         ssize_t data_len = nghttp2_session_mem_send(session, &data);
@@ -270,7 +268,7 @@ bool HTTP2ServerConnection::processNextFrame()
 bool HTTP2ServerConnection::processNextStreamEvent()
 {
     HTTP2StreamEvent event;
-    stream_event_pipe->readBytes(&event, sizeof(event));
+    stream_event_pipe_in->readStrict(reinterpret_cast<char *>(&event), sizeof(event));
     if (event.type == HTTP2StreamEventType::SEND_100_CONTINUE)
         submit100Continue(event.stream_id);
     else if (event.type == HTTP2StreamEventType::OUTPUT_READY)
@@ -304,10 +302,9 @@ void HTTP2ServerConnection::onOutputReady(uint32_t stream_id)
     chassert(it != streams.end() && it->second);
     HTTP2Stream & stream = *it->second;
 
-    std::lock_guard lock(stream.output_mutex);
-
     if (!stream.response_submitted)
     {
+        std::lock_guard lock(stream.output_mutex);
         std::vector<nghttp2_nv> nva;
         std::string status = std::to_string(stream.response.getStatus());
         nva.push_back({
@@ -429,11 +426,9 @@ int HTTP2ServerConnection::sendDataCallback(nghttp2_session * /*session*/, nghtt
         unsigned char padding_value = frame->data.padlen - 1;
         self->socket_out->socketSendBytes(reinterpret_cast<const char *>(&padding_value), 1);
     }
-    {
-        std::lock_guard lock(stream.output_mutex);
-        self->socket_out->socketSendBytes(stream.cur_output.first.data() + stream.cur_output_consumed, length);
-        stream.cur_output_consumed += length;
-    }
+    /// No need to lock output_mutex here because cur_output and cur_output_consumed are only accessed by the connection thread
+    self->socket_out->socketSendBytes(stream.cur_output.first.data() + stream.cur_output_consumed, length);
+    stream.cur_output_consumed += length;
     if (frame->data.padlen > 1)
         self->socket_out->socketSendBytes(&ZEROS[0], frame->data.padlen - 1);
 

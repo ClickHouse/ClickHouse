@@ -6,6 +6,7 @@
 #include <Common/ProfileEvents.h>
 
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 
@@ -17,6 +18,8 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 #include <Poco/Pipe.h>
+
+#include <poll.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdocumentation"
@@ -119,6 +122,9 @@ private:
     std::unique_ptr<WriteBufferFromPocoSocket> socket_out;
 
     std::shared_ptr<Poco::Pipe> stream_event_pipe;
+    std::unique_ptr<ReadBufferFromFileDescriptor> stream_event_pipe_in;
+
+    struct pollfd pfds[2];
 };
 
 }
