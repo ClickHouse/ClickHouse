@@ -155,7 +155,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
     [
         {
             "name": "1",
-	    "type": "UInt8"
+            "type": "UInt8"
         },
         {
             "name": "2",
@@ -171,8 +171,8 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
     [
         {
             "1": 1,
-	    "2": 2,
-	    "3": 3
+            "2": 2,
+            "3": 3
         }
     ],
 
