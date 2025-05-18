@@ -1329,8 +1329,9 @@ private:
             {
                 const auto & mapped_block = *it;
 
-                for (size_t row = 0; row < mapped_block.rows(); ++row)
+                for (size_t i = 0; i < mapped_block.rows(); ++i)
                 {
+                    size_t row = mapped_block.getRowIdx(i);
                     if (!parent.isUsed(&mapped_block.getSourceBlock(), row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
@@ -1389,8 +1390,9 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            for (size_t row = 0; row < block->rows(); ++row)
+            for (size_t i = 0; i < block->rows(); ++i)
             {
+                size_t row = block->getRowIdx(i);
                 if (nullmap && (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
