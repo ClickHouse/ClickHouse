@@ -65,7 +65,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
     extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsString insert_deduplication_token;
@@ -450,7 +450,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, query_sample_block,
-        async_insert, /*skip_destination_table*/ no_destination, allow_materialized,
+        async_insert, /*skip_destination_table*/ no_destination,
         getContext());
 
     size_t sink_streams_size = table->supportsParallelInsert() ? max_insert_threads : 1;
@@ -632,7 +632,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // they are allowed to expose its virtuals columns to the dependent views
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, query_sample_block,
-        async_insert, /*skip_destination_table*/ no_destination, allow_materialized,
+        async_insert, /*skip_destination_table*/ no_destination,
         getContext());
 
     Chain chain = insert_dependencies->createChainWithDependencies();
