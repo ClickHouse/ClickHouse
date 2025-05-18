@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
     extern const int INCORRECT_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
