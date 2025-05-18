@@ -431,6 +431,11 @@ Maximum number of files that could be returned in batch by ListObject request
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
+    DECLARE(Bool, s3_slow_all_threads_after_network_error, true, R"(
+When set to `true` than all threads executing s3 requests to the same endpoint get slow down for a while
+after one s3 request fails with a retryable network error.
+When set to `false` than each thread executing s3 request uses an independent set of backoffs on network errors.
+)", 0) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
@@ -5036,10 +5041,10 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
-    DECLARE(Bool, enable_url_encoding, true, R"(
+    DECLARE(Bool, enable_url_encoding, false, R"(
 Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
 
-Enabled by default.
+Disabled by default.
 )", 0) \
     DECLARE(UInt64, database_replicated_initial_query_timeout_sec, 300, R"(
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -6588,19 +6593,19 @@ If it is set to true, allow to specify experimental compression codecs (but we d
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
 If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering). Possible values:
 - 'auto' - Postfiltering (the exact semantics may change in future).
 - 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
 - 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Float, vector_search_postfilter_multiplier, 1.0, R"(
 Multiply the fetched nearest neighbors from the vector similarity index by this number before performing post-filtering on other predicates.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \
