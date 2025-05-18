@@ -224,7 +224,7 @@ endif()
 
 if (CHECK_LARGE_OBJECT_SIZES)
     add_custom_command(TARGET clickhouse POST_BUILD
-        COMMAND "${CMAKE_SOURCE_DIR}/utils/check-style/check-large-objects.sh" "${CMAKE_BINARY_DIR}")
+        COMMAND "${CMAKE_SOURCE_DIR}/utils/check-large-objects.sh" "${CMAKE_BINARY_DIR}")
 endif ()
 
 if (SPLIT_DEBUG_SYMBOLS)
