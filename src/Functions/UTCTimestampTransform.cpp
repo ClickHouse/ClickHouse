@@ -74,6 +74,24 @@ namespace
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {}'s arguments number must be 2.", name);
             const ColumnWithTypeAndName & arg1 = arguments[0];
             const ColumnWithTypeAndName & arg2 = arguments[1];
+            
+            // Log the input column details
+            std::cerr << "toDateTime input details:" << std::endl;
+            std::cerr << "  - Column name: " << arg1.name << std::endl;
+            std::cerr << "  - Column type: " << arg1.type->getName() << std::endl;
+            
+            // Check if it's a constant column
+            if (const auto * const_col = checkAndGetColumnConst<ColumnDateTime>(arg1.column.get())) {
+                std::cerr << "  - Is constant column: true" << std::endl;
+                std::cerr << "  - Constant value: " << const_col->getValue<UInt32>() << std::endl;
+                std::cerr << "  - Constant value (hex): 0x" << std::hex << const_col->getValue<UInt32>() << std::dec << std::endl;
+            }
+            
+            // Try to get the raw string value
+            if (const auto * str_col = checkAndGetColumnConst<ColumnString>(arg1.column.get())) {
+                std::cerr << "  - Raw string value: " << str_col->getDataAt(0).toString() << std::endl;
+            }
+            
             const auto * time_zone_const_col = checkAndGetColumnConstData<ColumnString>(arg2.column.get());
             if (!time_zone_const_col)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of 2nd argument of function {}. Excepted const(String).", arg2.column->getName(), name);
@@ -89,10 +107,57 @@ namespace
                 {
                     UInt32 date_time_val = date_time_col.getElement(i);
                     auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
-                    if constexpr (toUTC)
-                        result_data[i] = date_time_val - static_cast<UInt32>(time_zone_offset);
-                    else
-                        result_data[i] = date_time_val + static_cast<UInt32>(time_zone_offset);
+                    std::cerr << "\nDebug values for row " << i << ":" << std::endl;
+                    std::cerr << "Input timestamp: " << date_time_val << std::endl;
+                    std::cerr << "Timezone offset: " << time_zone_offset << std::endl;
+                    std::cerr << "Timezone name: " << time_zone_val << std::endl;
+                    
+                    if constexpr (toUTC) {
+                        std::cerr << "Converting to UTC" << std::endl;
+                        // For toUTC, we need to add the absolute value of the negative offset
+                        if (time_zone_offset < 0) {
+                            // If offset is negative (like EST), we add its absolute value
+                            UInt32 abs_offset = static_cast<UInt32>(-time_zone_offset);
+                            if (date_time_val > std::numeric_limits<UInt32>::max() - abs_offset) {
+                                std::cerr << "Overflow detected! Result would exceed max value" << std::endl;
+                                result_data[i] = std::numeric_limits<UInt32>::max();
+                            } else {
+                                result_data[i] = date_time_val + abs_offset;
+                            }
+                        } else {
+                            // If offset is positive, we subtract it
+                            if (date_time_val < static_cast<UInt32>(time_zone_offset)) {
+                                std::cerr << "Underflow detected! Result would be negative" << std::endl;
+                                result_data[i] = 0;
+                            } else {
+                                result_data[i] = date_time_val - static_cast<UInt32>(time_zone_offset);
+                            }
+                        }
+                        std::cerr << "Result timestamp: " << result_data[i] << std::endl;
+                    }
+                    else {
+                        std::cerr << "Converting from UTC" << std::endl;
+                        // For fromUTC, we need to subtract the absolute value of the negative offset
+                        if (time_zone_offset < 0) {
+                            // If offset is negative (like EST), we subtract its absolute value
+                            UInt32 abs_offset = static_cast<UInt32>(-time_zone_offset);
+                            if (date_time_val < abs_offset) {
+                                std::cerr << "Underflow detected! Result would be negative" << std::endl;
+                                result_data[i] = 0;
+                            } else {
+                                result_data[i] = date_time_val - abs_offset;
+                            }
+                        } else {
+                            // If offset is positive, we add it
+                            if (date_time_val > std::numeric_limits<UInt32>::max() - static_cast<UInt32>(time_zone_offset)) {
+                                std::cerr << "Overflow detected! Result would exceed max value" << std::endl;
+                                result_data[i] = std::numeric_limits<UInt32>::max();
+                            } else {
+                                result_data[i] = date_time_val + static_cast<UInt32>(time_zone_offset);
+                            }
+                        }
+                        std::cerr << "Result timestamp: " << result_data[i] << std::endl;
+                    }
                 }
                 return result_column;
             }
