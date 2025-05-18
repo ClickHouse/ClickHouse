@@ -8,17 +8,22 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table (a UInt8, b UInt8, c UInt8, d UInt8, e UInt8, f UInt8, g UInt8) ENGINE = MergeTree ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table (a UInt8, b UInt8, c UInt8, d UInt8, e UInt8, f UInt8, g UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/default/test_03518/alter_table', 'r1') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1"
 
 function thread_alter()
 {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --query "
+        ERROR=$($CLICKHOUSE_CLIENT --query "
             ALTER TABLE alter_table ADD COLUMN $1 String DEFAULT '0';
             ALTER TABLE alter_table MODIFY COLUMN $1 UInt64;
-            ALTER TABLE alter_table DROP COLUMN $1;"
+            ALTER TABLE alter_table DROP COLUMN $1;" 2>&1 | tr '\n' ' ')
+
+        if [[ ! "${ERROR}" =~ "You can retry this error" ]]
+        then
+            echo "${ERROR}"
+        fi
     done
 }
 
