@@ -91,50 +91,36 @@ namespace
                     auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
                     
                     if constexpr (toUTC) {
-                        std::cerr << "Converting to UTC" << std::endl;
-                        // For toUTC, we need to add the absolute value of the negative offset
                         if (time_zone_offset < 0) {
-                            // If offset is negative (like EST), we add its absolute value
                             UInt32 abs_offset = static_cast<UInt32>(-time_zone_offset);
                             if (date_time_val > std::numeric_limits<UInt32>::max() - abs_offset) {
-                                std::cerr << "Overflow detected! Result would exceed max value" << std::endl;
                                 result_data[i] = std::numeric_limits<UInt32>::max();
                             } else {
                                 result_data[i] = date_time_val + abs_offset;
                             }
                         } else {
-                            // If offset is positive, we subtract it
                             if (date_time_val < static_cast<UInt32>(time_zone_offset)) {
-                                std::cerr << "Underflow detected! Result would be negative" << std::endl;
                                 result_data[i] = 0;
                             } else {
                                 result_data[i] = date_time_val - static_cast<UInt32>(time_zone_offset);
                             }
                         }
-                        std::cerr << "Result timestamp: " << result_data[i] << std::endl;
                     }
                     else {
-                        std::cerr << "Converting from UTC" << std::endl;
-                        // For fromUTC, we need to subtract the absolute value of the negative offset
                         if (time_zone_offset < 0) {
-                            // If offset is negative (like EST), we subtract its absolute value
                             UInt32 abs_offset = static_cast<UInt32>(-time_zone_offset);
                             if (date_time_val < abs_offset) {
-                                std::cerr << "Underflow detected! Result would be negative" << std::endl;
                                 result_data[i] = 0;
                             } else {
                                 result_data[i] = date_time_val - abs_offset;
                             }
                         } else {
-                            // If offset is positive, we add it
                             if (date_time_val > std::numeric_limits<UInt32>::max() - static_cast<UInt32>(time_zone_offset)) {
-                                std::cerr << "Overflow detected! Result would exceed max value" << std::endl;
                                 result_data[i] = std::numeric_limits<UInt32>::max();
                             } else {
                                 result_data[i] = date_time_val + static_cast<UInt32>(time_zone_offset);
                             }
                         }
-                        std::cerr << "Result timestamp: " << result_data[i] << std::endl;
                     }
                 }
                 return result_column;
