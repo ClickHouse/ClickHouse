@@ -30,7 +30,7 @@ namespace
 using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
 
 
-[[nodiscard]] inline Tuple parseGinIndexArgumentFromAST(const auto & arguments)
+Tuple parseGinIndexArgumentFromAST(const auto & arguments)
 {
     const auto & idenfitier = arguments->children[0]->template as<ASTIdentifier>();
     if (idenfitier == nullptr)
@@ -46,7 +46,7 @@ using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMat
     return key_value_pair;
 }
 
-[[nodiscard]] bool parseGinIndexArgumentsFromAST(const auto & arguments, FieldVector & parsed_arguments)
+bool parseGinIndexArgumentsFromAST(const auto & arguments, FieldVector & parsed_arguments)
 {
     parsed_arguments.reserve(arguments->children.size());
 
@@ -168,12 +168,10 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     if (index_type && index_type->arguments)
     {
-        bool is_gin_function = index_type->name == "gin" || index_type->name == "inverted" || index_type->name == "full_text";
-        if (is_gin_function && parseGinIndexArgumentsFromAST(index_type->arguments, result.arguments))
-        {
+        bool is_gin_index = index_type->name == "gin" || index_type->name == "inverted" || index_type->name == "full_text";
+        if (is_gin_index && parseGinIndexArgumentsFromAST(index_type->arguments, result.arguments))
             return result;
-        }
-        // we still support previous GIN index description syntax for the backward compatibility.
+
         for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
         {
             const auto & child = index_type->arguments->children[i];

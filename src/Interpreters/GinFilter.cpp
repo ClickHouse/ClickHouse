@@ -21,7 +21,7 @@ GinFilterParameters::GinFilterParameters(String tokenizer_, UInt64 max_rows_per_
     , max_rows_per_postings_list(max_rows_per_postings_list_)
 {
     if (max_rows_per_postings_list == UNLIMITED_ROWS_PER_POSTINGS_LIST)
-        max_rows_per_postings_list = std::numeric_limits<UInt32>::max();
+        max_rows_per_postings_list = std::numeric_limits<UInt64>::max();
 }
 
 GinFilter::GinFilter(const GinFilterParameters & params_)
