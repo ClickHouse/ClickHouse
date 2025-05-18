@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.6",
         {
+            {"parallel_distributed_insert_select", 0, 2, "Enable parallel distributed insert select by default"},
 
         });
         addSettingsChanges(settings_changes_history, "25.5",
