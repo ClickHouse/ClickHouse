@@ -199,6 +199,15 @@
     https://github.com/ClickHouse/ClickHouse/issues/74411
 02884_create_view_with_sql_security_option
 
+    https://github.com/ClickHouse/ClickHouse/issues/80426
+01051_all_join_engine
+
+    Correlated subqueries are not supported
+    Cannot clone ReadFromPreparedSource plan step. (NOT_IMPLEMENTED)
+03448_analyzer_correlated_subquery_in_projection
+03412_analyzer_correlated_subquery_bug
+03399_analyzer_correlated_subquery
+
     Transactions
 02421_truncate_isolation_no_merges
 02421_truncate_isolation_with_mutations
@@ -401,6 +410,7 @@
 03262_filter_push_down_view
 01283_max_threads_simple_query_optimization
 00183_prewhere_conditions_order
+03302_analyzer_join_filter_push_down_bug
 
     # NOT BUGS
     Not a bug

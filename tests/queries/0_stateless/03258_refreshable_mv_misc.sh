@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+# Tags: memory-engine
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -13,7 +13,6 @@ $CLICKHOUSE_CLIENT -q "
     insert into a values ('hi');
     grant create, insert, select on ${second_db}.* to $test_user; -- no drop yet
     grant table engine on Memory to $test_user;
-    grant table engine on MergeTree to $test_user;
     grant select on a to $test_user;
     grant system views on ${second_db}.* to $test_user;
 "
