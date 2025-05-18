@@ -471,10 +471,10 @@ FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    transform(number, [2, 4, 6], [\'google\', \'censor.net\', \'yahoo\'], \'other\') String
+    transform(number, [2, 4, 6], [\'google\', \'censor.net\', \'yahoo\'], \'other\') LowCardinality(String)
   PROJECTION
     LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: transform, function_type: ordinary, result_type: String
+      FUNCTION id: 2, function_name: transform, function_type: ordinary, result_type: LowCardinality(String)
         ARGUMENTS
           LIST id: 3, nodes: 4
             COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
@@ -500,10 +500,10 @@ FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    if(greater(number, 5), \'censor.net\', \'google\') String
+    if(greater(number, 5), \'censor.net\', \'google\') LowCardinality(String)
   PROJECTION
     LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: if, function_type: ordinary, result_type: String
+      FUNCTION id: 2, function_name: if, function_type: ordinary, result_type: LowCardinality(String)
         ARGUMENTS
           LIST id: 3, nodes: 3
             FUNCTION id: 4, function_name: greater, function_type: ordinary, result_type: UInt8
