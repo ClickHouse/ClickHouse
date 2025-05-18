@@ -50,7 +50,7 @@ SETTINGS
     output_format_png_output_pixel_format='RGBA', 
     output_format_png_pixel_coordinates_format='IMPLICIT'
     output_format_png_max_width=1512,
-    output_format_png_max_height=1502,
+    output_format_png_max_height=1512,
     output_format_png_bit_depth=8
 ```
 
@@ -67,7 +67,7 @@ SETTINGS
     output_format_png_image_pixel_format = 'Grayscale', 
     output_format_png_pixel_coordinates_format='EXPLICIT'
     output_format_png_max_width=1512,
-    output_png_max_height=1502
+    output_png_max_height=1512
 ```
 
 ## Format Settings {#format-settings}
