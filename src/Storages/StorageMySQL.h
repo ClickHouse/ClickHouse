@@ -77,7 +77,7 @@ public:
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
-        ContextPtr context_, bool require_table = true);
+        ContextPtr context_, bool require_table_or_query = true);
 
     static ColumnsDescription getTableStructureFromData(
         mysqlxx::PoolWithFailover & pool_,

@@ -16,8 +16,10 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
@@ -312,7 +314,7 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
 }
 
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
-    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table)
+    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table_or_query)
 {
     StorageMySQL::Configuration configuration;
 
@@ -322,8 +324,11 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
         optional_arguments.insert(name);
 
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
-    if (require_table)
+    if (require_table_or_query)
+    {
         required_arguments.insert("table");
+        required_arguments.insert("query");
+    }
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
@@ -343,8 +348,14 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     configuration.username = named_collection.getAny<String>({"username", "user"});
     configuration.password = named_collection.get<String>("password");
     configuration.database = named_collection.getAny<String>({"db", "database"});
-    if (require_table)
-        configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, named_collection.get<String>("table"));
+    if (require_table_or_query)
+    {
+        auto table_or_query = named_collection.getAny<String>({"table", "query"});
+        if (named_collection.has("table"))
+            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_or_query);
+        else
+            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, table_or_query);
+    }
     configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);
     configuration.on_duplicate_clause = named_collection.getOrDefault<String>("on_duplicate_clause", "");
     configuration.ssl_ca = named_collection.getOrDefault<String>("ssl_ca", "");
@@ -367,19 +378,45 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
     {
         if (engine_args.size() < 5 || engine_args.size() > 7)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage MySQL requires 5-7 parameters: "
-                            "MySQL('host:port' (or 'addresses_pattern'), database, table, "
+                            "MySQL('host:port' (or 'addresses_pattern'), database, table (or query), "
                             "'user', 'password'[, replace_query, 'on_duplicate_clause']).");
 
-        for (auto & engine_arg : engine_args)
+        std::optional<String> maybe_query;
+        if (auto * subquery_ast = engine_args[2]->as<ASTSubquery>())
+        {
+            maybe_query = subquery_ast->children[0]->formatWithSecretsOneLine();
+        }
+        else if (auto * function_ast = engine_args[1]->as<ASTFunction>(); function_ast && function_ast->name == "query")
+        {
+            if (function_ast->arguments->children.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MySQL expects exactly one argument in query() function");
+
+            auto evaluated_query_arg = evaluateConstantExpressionOrIdentifierAsLiteral(function_ast->arguments->children[0], context_);
+            auto * query_lit = evaluated_query_arg->as<ASTLiteral>();
+
+            if (!query_lit || query_lit->value.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MySQL expects string literal inside query()");
+            maybe_query = query_lit->value.safeGet<String>();
+        }
+        for (size_t i = 0; i < engine_args.size(); ++i)
+        {
+            auto & engine_arg = engine_args[i];
+            if (i == 2 && maybe_query)
+                continue;
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context_);
+        }
 
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 3306);
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-        configuration.table_or_query
-            = TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(engine_args[2], "table"));
+        if (maybe_query)
+            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query);
+        else
+            configuration.table_or_query
+                = TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(engine_args[2], "table"));
+
         configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
         configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
         if (engine_args.size() >= 6)
