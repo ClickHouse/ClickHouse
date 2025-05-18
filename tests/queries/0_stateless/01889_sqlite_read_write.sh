@@ -126,6 +126,7 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS sqlite_subquery_engine"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE sqlite_subquery_engine ENGINE = SQLite('${DB_PATH}', (SELECT col1, col2 FROM table1 WHERE col2 > 1))"
 ${CLICKHOUSE_CLIENT} --query="DESCRIBE TABLE sqlite_subquery_engine"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite_subquery_engine ORDER BY col2"
+${CLICKHOUSE_CLIENT} --query="SELECT col2 FROM sqlite_subquery_engine WHERE col2 < 4 ORDER BY col2"
 
 ${CLICKHOUSE_CLIENT} --query="select 'test query function with table function'"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', query('SELECT table1.col1, table1.col2, table2.col2 as text FROM table1 JOIN table2 ON table1.col2 = table2.col1')) ORDER BY col2"

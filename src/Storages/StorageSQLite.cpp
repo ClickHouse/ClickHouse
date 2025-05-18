@@ -143,7 +143,11 @@ Pipe StorageSQLite::read(
             break;
 
         case TableNameOrQuery::Type::QUERY:
-            query = table_or_query.getQuery();
+            query = "SELECT ";
+            for (const auto & column : column_names)
+                query += doubleQuoteString(column) + ", ";
+            query = query.substr(0, query.size() - 2);
+            query += " FROM (" + table_or_query.getQuery() + ") AS t";
             break;
     }
 
