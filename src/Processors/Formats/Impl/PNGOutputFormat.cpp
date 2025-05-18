@@ -1,14 +1,14 @@
-#include "Formats/PngSerializer.h"
-#include "base/types.h"
+#include "PNGOutputFormat.h"
 
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/PngWriter.h>
+#include <Formats/PNGWriter.h>
+#include <Formats/PNGSerializer.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/Exception.h>
-#include "PngOutputFormat.h"
+
 
 namespace DB
 {
