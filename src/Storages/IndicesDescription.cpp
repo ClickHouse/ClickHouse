@@ -30,7 +30,7 @@ namespace
 using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
 
 
-Tuple parseGinIndexArgumentFromAST(const auto & arguments)
+Tuple parseGinIndexArgumentFromAST(const ASTPtr & arguments)
 {
     const auto & identifier = arguments->children[0]->template as<ASTIdentifier>();
     if (identifier == nullptr)
@@ -46,7 +46,7 @@ Tuple parseGinIndexArgumentFromAST(const auto & arguments)
     return key_value_pair;
 }
 
-bool parseGinIndexArgumentsFromAST(const auto & arguments, FieldVector & parsed_arguments)
+bool parseGinIndexArgumentsFromAST(const ASTPtr & arguments, FieldVector & parsed_arguments)
 {
     parsed_arguments.reserve(arguments->children.size());
 
