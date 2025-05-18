@@ -426,3 +426,35 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
         "SELECT is_value FROM table WHERE is_value = 1",
         R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = 1)");
 }
+
+TEST(TransformQueryForExternalDatabase, Limit)
+{
+    const State & state = State::instance();
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table" LIMIT 10)");
+
+    // OFFSET is not supported yet
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10 OFFSET 5",
+        R"(SELECT "column" FROM "test"."table")");
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 5, 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10 BY column",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 2, {"column", "apply_id"},
+        "SELECT column FROM test.table "
+        "JOIN test.table2 AS table2 ON (test.table.apply_id = test.table2.num) "
+        "WHERE column > 2 AND apply_id = 1 AND table2.num = 1 AND table2.attr != '' LIMIT 10",
+        R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
+
+    check(state, 2, {"column", "apply_id"},
+        "SELECT column FROM test.table "
+        "JOIN test.table2 AS table2 ON (test.table.apply_id = test.table2.num) LIMIT 10",
+        R"(SELECT "column", "apply_id" FROM "test"."table")");
+}
