@@ -5,7 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/PNGWriter.h>
-#include <Formats/PNGSerializer.h>
+
 #include <Interpreters/ProcessList.h>
 #include <Common/Exception.h>
 
@@ -27,17 +27,17 @@ constexpr auto FORMAT_NAME = "PNG";
 
 PNGOutputFormat::PNGOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
-{    
+{
     writer = std::make_unique<PNGWriter>(out_, settings_);
-    png_serializer = std::make_unique<PngSerializer>(header_, settings_, *writer);  
+    serializer = std::make_unique<PNGSerializer>(header_, settings_, *writer);
 
     log = getLogger("PngOutputFormat");
-}   
+}
 
 void PNGOutputFormat::writePrefix()
 {
-    if (png_serializer)
-        png_serializer->reset();
+    if (serializer)
+        serializer->reset();
 }
 
 void PNGOutputFormat::consume(Chunk chunk)
@@ -55,7 +55,7 @@ void PNGOutputFormat::consume(Chunk chunk)
 
     try
     {
-        png_serializer->setColumns(column_ptrs.data(), column_ptrs.size());
+        serializer->setColumns(column_ptrs.data(), column_ptrs.size());
     }
     catch (const Poco::Exception & e)
     {
@@ -67,13 +67,13 @@ void PNGOutputFormat::consume(Chunk chunk)
     {
         try
         {
-            png_serializer->writeRow(i);
+            serializer->writeRow(i);
         }
-        catch(const Poco::Exception & e)
+        catch (const Poco::Exception & e)
         {
             LOG_ERROR(log, "Failed to write png image: {}", e.what());
             throw;
-        }    
+        }
     }
 }
 
@@ -81,7 +81,7 @@ void PNGOutputFormat::writeSuffix()
 {
     try
     {
-        png_serializer->finalizeWrite();
+        serializer->finalizeWrite();
     }
     catch (const Poco::Exception & e)
     {

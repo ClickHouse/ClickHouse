@@ -29,9 +29,9 @@ private:
     void consume(Chunk) override;
 
     LoggerPtr log = nullptr;
-  
+
     std::unique_ptr<PNGWriter> writer;
-    std::unique_ptr<PNGSerializer> png_serializer;
+    std::unique_ptr<PNGSerializer> serializer;
 };
 
 }

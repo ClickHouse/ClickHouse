@@ -1,16 +1,16 @@
 #include "base/types.h"
 
-#include <string_view>
 #include <array>
-#include <optional>
 #include <cstring>
+#include <optional>
+#include <string_view>
 #include <absl/container/flat_hash_map.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/IDataType.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/PNGSerializer.h>
 #include <Formats/PNGWriter.h>
 #include <Common/Exception.h>
@@ -168,7 +168,7 @@ protected:
     const FormatSettings & format_settings;
     const Block & header;
     PNGWriter & writer;
-    
+
     size_t max_width;
     size_t max_height;
     size_t processed_input_rows = 0;
@@ -204,27 +204,31 @@ public:
             coord_y_col_idx = header.getPositionByName("y", /* case_insensitive */ true);
         }
 
-        constexpr auto expected_channel_names = 
-                    getExpectedChannelNames<PixelsFormatPolicy::Format, PixelsFormatPolicy::Channels>();
-        
+        constexpr auto expected_channel_names = getExpectedChannelNames<PixelsFormatPolicy::Format, PixelsFormatPolicy::Channels>();
+
         for (size_t c = 0; c < PixelsFormatPolicy::Channels; ++c)
         {
             const auto & name = expected_channel_names[c];
             if (!header.has(String(name)))
             {
-                throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
+                throw Exception(
+                    ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
                     "Required channel column '{}' is missing in the header for pixel format '{}'",
-                    name, PixelsFormatPolicy::Format);
+                    name,
+                    PixelsFormatPolicy::Format);
             }
 
             channel_col_indices[c] = header.getPositionByName(String(name));
 
             const auto & channel_type = header.getByPosition(channel_col_indices[c]).type;
-            if (!isInteger(channel_type) && !isFloat(channel_type) && !(PixelsFormatPolicy::Format == PixelOutputFormat::BINARY && isBool(channel_type)))
+            if (!isInteger(channel_type) && !isFloat(channel_type)
+                && !(PixelsFormatPolicy::Format == PixelOutputFormat::BINARY && isBool(channel_type)))
             {
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                throw Exception(
+                    ErrorCodes::CANNOT_CONVERT_TYPE,
                     "Channel column '{}' must be a numeric type (or Bool for BINARY), but got '{}'",
-                    name, channel_type->getName());
+                    name,
+                    channel_type->getName());
             }
         }
     }
@@ -235,7 +239,10 @@ public:
     {
         if (num_columns != CoordinatesFormatPolicy::CoordinateColumns + channels)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Expected {} columns, got {}", CoordinatesFormatPolicy::CoordinateColumns + channels, num_columns);
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected {} columns, got {}",
+                CoordinatesFormatPolicy::CoordinateColumns + channels,
+                num_columns);
 
         src_columns.assign(columns, columns + num_columns);
     }
@@ -307,7 +314,10 @@ public:
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Coordinates ({}, {}) are out of bounds for image size {}x{}",
-                    x_val, y_val, max_width, max_height);
+                    x_val,
+                    y_val,
+                    max_width,
+                    max_height);
             }
 
             size_t x = static_cast<size_t>(x_val);
@@ -324,11 +334,11 @@ private:
     static constexpr std::array<std::string_view, TChannels> getExpectedChannelNames()
     {
         if constexpr (TFormat == PixelOutputFormat::BINARY || TFormat == PixelOutputFormat::GRAYSCALE)
-            return { "v" };
+            return {"v"};
         else if constexpr (TFormat == PixelOutputFormat::RGB)
-            return { "r", "g", "b" };
+            return {"r", "g", "b"};
         else if constexpr (TFormat == PixelOutputFormat::RGBA)
-            return { "r", "g", "b", "a" };
+            return {"r", "g", "b", "a"};
     }
 
     static constexpr std::string_view coord_x_name_sv = "x";
@@ -342,34 +352,30 @@ private:
 
 namespace
 {
-    using PixelFormatDispatchMap = absl::flat_hash_map<std::string_view, PixelOutputFormat>;
-    using CoordFormatDispatchMap = absl::flat_hash_map<std::string_view, CoordinatesFormat>;
+using PixelFormatDispatchMap = absl::flat_hash_map<std::string_view, PixelOutputFormat>;
+using CoordFormatDispatchMap = absl::flat_hash_map<std::string_view, CoordinatesFormat>;
 
-    const PixelFormatDispatchMap & getPixelFormatDispatchMap()
-    {
-        static const PixelFormatDispatchMap map = {
-            {"BINARY",    PixelOutputFormat::BINARY},
-            {"GRAYSCALE", PixelOutputFormat::GRAYSCALE},
-            {"RGB",       PixelOutputFormat::RGB},
-            {"RGBA",      PixelOutputFormat::RGBA}
-        };
-        return map;
-    }
+const PixelFormatDispatchMap & getPixelFormatDispatchMap()
+{
+    static const PixelFormatDispatchMap map
+        = {{"BINARY", PixelOutputFormat::BINARY},
+           {"GRAYSCALE", PixelOutputFormat::GRAYSCALE},
+           {"RGB", PixelOutputFormat::RGB},
+           {"RGBA", PixelOutputFormat::RGBA}};
+    return map;
+}
 
-    const CoordFormatDispatchMap & getCoordFormatDispatchMap()
-    {
-        static const CoordFormatDispatchMap map = {
-            {"EXPLICIT", CoordinatesFormat::EXPLICIT},
-            {"IMPLICIT", CoordinatesFormat::IMPLICIT}
-        };
-        return map;
-    }
+const CoordFormatDispatchMap & getCoordFormatDispatchMap()
+{
+    static const CoordFormatDispatchMap map = {{"EXPLICIT", CoordinatesFormat::EXPLICIT}, {"IMPLICIT", CoordinatesFormat::IMPLICIT}};
+    return map;
+}
 } /// anonymous namespace
 
 PNGSerializer::PNGSerializer(const Block & header, const FormatSettings & settings, PNGWriter & writer)
 {
     const auto & pixel_format_map = getPixelFormatDispatchMap();
-    
+
     auto pixel_format_it = pixel_format_map.find(settings.png_image.pixel_output_format);
     if (pixel_format_it == pixel_format_map.end())
     {
@@ -385,9 +391,10 @@ PNGSerializer::PNGSerializer(const Block & header, const FormatSettings & settin
 
     auto input_mode_enum = coord_mode_it->second;
     auto pixel_format_enum = pixel_format_it->second;
-    size_t coordinate_columns = (input_mode_enum == CoordinatesFormat::EXPLICIT) ? CoordinatesFormatExplicit::CoordinateColumns : CoordinatesFormatImplicit::CoordinateColumns;
+    size_t coordinate_columns = (input_mode_enum == CoordinatesFormat::EXPLICIT) ? CoordinatesFormatExplicit::CoordinateColumns
+                                                                                 : CoordinatesFormatImplicit::CoordinateColumns;
     size_t color_channels;
-    
+
     switch (pixel_format_enum)
     {
         case PixelOutputFormat::BINARY:
