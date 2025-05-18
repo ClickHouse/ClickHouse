@@ -270,8 +270,13 @@ void registerStorageSQLite(StorageFactory & factory)
             maybe_query = query_lit->value.safeGet<String>();
         }
 
-        for (auto & engine_arg : engine_args)
+        for (size_t i = 0; i < engine_args.size(); ++i)
+        {
+            auto & engine_arg = engine_args[i];
+            if (i == 1 && maybe_query)
+                continue;
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
+        }
 
         const auto database_path = checkAndGetLiteralArgument<String>(engine_args[0], "database_path");
         auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ args.mode <= LoadingStrictnessLevel::CREATE);
