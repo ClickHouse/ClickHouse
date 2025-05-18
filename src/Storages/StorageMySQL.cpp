@@ -331,7 +331,12 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
     if (require_table_or_query)
-        required_arguments.insert({"table", "query"});
+    {
+        if (named_collection.has("query"))
+            required_arguments.insert("query");
+        else
+            required_arguments.insert("table");
+    }
 
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
 
