@@ -66,7 +66,8 @@ def check_executable_udf_functions(functions):
         assert False
     execute_udf = "SELECT {}" if len(functions) == 1 else "SELECT concat({})"
     execute_udf = execute_udf.format(','.join(map(lambda function : "{}(1)".format(function), functions)))
-    node.query(execute_udf)
+    query_id = uuid.uuid4().hex
+    node.query(execute_udf, query_id=query_id)
     node.query("SYSTEM FLUSH LOGS")
 
     used_functions = set(map(repr, functions))
@@ -74,7 +75,7 @@ def check_executable_udf_functions(functions):
         used_functions.add("\'concat\'")
 
     query_result = node.query("SELECT used_functions FROM system.query_log "
-                              "WHERE type = \'QueryFinish\' AND query = \'{}\'".format(execute_udf))
+                              "WHERE type = \'QueryFinish\' AND query_id = \'{}\'".format(query_id))
     query_result = set(query_result[1:len(query_result) - 2].split(','))
     assert query_result == used_functions
 
