@@ -161,7 +161,7 @@ namespace
                     "transform(T, Array(T), Array(U), U) -> U; "
                     "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                     getName());
-            if (use_low_cardinality_optimisation)
+            if (use_low_cardinality_optimisation && arguments[3].column && isColumnConst(*arguments[3].column))
             {
                 // We don't check is_x_constant - as we've a default value
                 if (isString(ret))

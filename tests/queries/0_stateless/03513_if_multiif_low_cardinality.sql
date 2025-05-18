@@ -98,7 +98,7 @@ FROM (
     FROM numbers(10)
 );
 
-SELECT 'transform with default and NULLs- should become LowCardinality(Nullable(String))';
+SELECT 'transform with default and NULLs - should become LowCardinality(Nullable(String))';
 SELECT 
     user_id,
     country_code,
@@ -110,7 +110,14 @@ FROM (
     FROM numbers(10)
 );
 
-SELECT 'transform without default';
+SELECT 'transform with default * - leave String';
+SELECT transform(country_code, ['US', 'DE'], ['United States', 'Germany'], *) as res, toTypeName(res)
+FROM
+(
+    SELECT ['US', 'GB', 'DE', 'FR', 'IT'][number % 5 + 1] AS country_code FROM numbers(10)
+) SETTINGS enable_analyzer = 1;
+
+SELECT 'transform without default - leave String';
 SELECT 
     user_id,
     country_code,

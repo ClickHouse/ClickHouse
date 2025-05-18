@@ -147,7 +147,7 @@ transform with default - should become LowCardinality
 107	DE	Germany	LowCardinality(String)
 108	FR	Unknown	LowCardinality(String)
 109	IT	Unknown	LowCardinality(String)
-transform with default and NULLs- should become LowCardinality(Nullable(String))
+transform with default and NULLs - should become LowCardinality(Nullable(String))
 100	US	United States	LowCardinality(Nullable(String))
 101	GB	United Kingdom	LowCardinality(Nullable(String))
 102	DE	Germany	LowCardinality(Nullable(String))
@@ -158,7 +158,18 @@ transform with default and NULLs- should become LowCardinality(Nullable(String))
 107	DE	Germany	LowCardinality(Nullable(String))
 108	FR	Unknown	LowCardinality(Nullable(String))
 109	IT	Unknown	LowCardinality(Nullable(String))
-transform without default
+transform with default * - leave String
+United States	String
+GB	String
+Germany	String
+FR	String
+IT	String
+United States	String
+GB	String
+Germany	String
+FR	String
+IT	String
+transform without default - leave String
 100	US	United States	String
 101	GB	United Kingdom	String
 102	DE	Germany	String
