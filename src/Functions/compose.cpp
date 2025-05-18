@@ -119,7 +119,6 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    void getLambdaArgumentTypes(DataTypes & /*arguments*/) const override {}
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
