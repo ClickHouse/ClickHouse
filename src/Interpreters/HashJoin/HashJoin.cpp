@@ -689,17 +689,16 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                 const auto & join_mask = join_mask_col.getData();
                 /// Save rows that do not hold conditions
                 not_joined_map = ColumnUInt8::create(rows, 0);
-                for (size_t i = 0, sz = join_mask->size(); i < sz; ++i)
+
+                if (save_nullmap)
                 {
-                    /// Condition hold, do not save row
-                    if ((*join_mask)[i])
-                        continue;
-
-                    /// NULL key will be saved anyway because, do not save twice
-                    if (save_nullmap && (*null_map)[i])
-                        continue;
-
-                    not_joined_map->getData()[i] = 1;
+                    for (size_t i = 0, sz = join_mask->size(); i < sz; ++i)
+                        not_joined_map->getData()[i] = !(*join_mask)[i] & !(*null_map)[i];
+                }
+                else
+                {
+                    for (size_t i = 0, sz = join_mask->size(); i < sz; ++i)
+                        not_joined_map->getData()[i] = !(*join_mask)[i];
                 }
             }
 

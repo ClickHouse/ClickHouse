@@ -230,11 +230,7 @@ struct ScatteredBlock : private boost::noncopyable
     /// Accounts only selected rows
     size_t rows() const { return selector.size(); }
 
-    size_t getRowIdx(size_t idx) const
-    {
-        chassert(idx < rows());
-        return wasScattered() ? selector[idx] : idx;
-    }
+
 
     /// In case of scattered block we account proportional share of the source block bytes.
     /// For not scattered columns it will be trivial (bytes * N / N) calculation.
@@ -326,6 +322,14 @@ struct ScatteredBlock : private boost::noncopyable
         filterBySelector();
 
         return remaining;
+    }
+
+    size_t getRowIdx(size_t idx) const
+    {
+        chassert(idx < rows());
+        /// equivalent to `return wasScattered() ? selector[idx] : idx;`
+        const bool was_scattered = wasScattered();
+        return !!was_scattered * selector[idx] + !was_scattered * idx;
     }
 
 private:
