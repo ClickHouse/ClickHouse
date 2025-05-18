@@ -1312,30 +1312,30 @@ Set the quoting rule for identifiers in SHOW CREATE query
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
-    DECLARE(String, output_png_image_pixel_format, "RGB", R"(
+    DECLARE(String, output_format_png_pixel_output_format, "RGB", R"(
 Set pixel format for output png image
 )", 0) \
-    DECLARE(String, output_png_image_pixel_input_mode, "SCANLINE", R"(
-Defines the input format for pixel data when generating PNG images
+    DECLARE(String, output_format_png_coordinates_format, "SCANLINE", R"(
+Defines the input format for pixel coordinates when generating PNG images
 
 Possible values:
 
-- 'SCANLINE' — Row-per-pixel approach where only pixel data is provided in scanline order (left to right, top to bottom)
-- 'EXPLICIT_COORDINATES' — Each pixel is specified with explicit coordinates (x, y)
+- 'IMPLICIT' — Row-per-pixel approach where only pixel data is provided in scanline order (left to right, top to bottom)
+- 'EXPLICIT' — Each pixel is specified with explicit coordinates (x, y)
 
-Default value: `SCANLINE`
+Default value: `IMPLICIT`
 )", 0) \
-    DECLARE(UInt64, output_png_image_max_height, 4096, R"(
-Defines the maximum height (in pixels) for generated PNG images
-
-Default value: 4096
-)", 0) \
-    DECLARE(UInt64, output_png_image_max_width, 4096, R"(
-Defines the maximum width (in pixels) for generated PNG images
+    DECLARE(UInt64, output_format_png_max_height, 4096, R"(
+Defines maximum height (in pixels) for generated PNG images
 
 Default value: 4096
 )", 0) \
-    DECLARE(UInt64, output_png_image_bit_depth, 8, R"(
+    DECLARE(UInt64, output_format_png_max_width, 4096, R"(
+Defines maximum width (in pixels) for generated PNG images
+
+Default value: 4096
+)", 0) \
+    DECLARE(UInt64, output_format_png_bit_depth, 8, R"(
 Defines the color depth (in bits) for generated PNG images
 
 Possible values:
@@ -1344,7 +1344,7 @@ Possible values:
 
 Default value: 8
 )", 0) \
-    DECLARE(Int64, output_png_image_compression_level, -1, R"(
+    DECLARE(Int64, output_format_png_compression_level, -1, R"(
 Controls the compression level for generated PNG images
 
 Possible values:
