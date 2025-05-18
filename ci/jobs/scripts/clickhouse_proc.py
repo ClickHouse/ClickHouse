@@ -351,9 +351,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             res = Shell.check(
                 f"clickhouse-client --query \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"",
                 verbose=True,
+                strict=True,
             )
             time.sleep(1)
-            if not res:
+            if res:
                 return True
         else:
             return False

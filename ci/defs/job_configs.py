@@ -23,7 +23,7 @@ common_ft_job_config = Job.Config(
     runs_on=["..params.."],
     command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
     # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-    run_in_docker="clickhouse/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse",
+    run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/functional_tests.py",

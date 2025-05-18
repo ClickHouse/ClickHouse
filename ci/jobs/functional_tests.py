@@ -10,7 +10,7 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp/"
+temp_dir = f"{Utils.cwd()}/ci/tmp"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -200,7 +200,8 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
-            f"rm -rf {temp_dir}/var/log/clickhouse-server/clickhouse-server.*",
+            f"rm -rf {temp_dir}/etc",
+            f"rm -rf {temp_dir}/var/log",
             f"chmod +x {ch_path}/clickhouse",
             # google *.proto files
             f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
