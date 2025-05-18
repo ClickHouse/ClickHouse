@@ -151,39 +151,39 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 
 ```response title="Response"
 {
-	"meta":
-	[
-		{
-			"name": "1",
-			"type": "UInt8"
-		},
-		{
-			"name": "2",
-			"type": "UInt8"
-		},
-		{
-			"name": "3",
-			"type": "UInt8"
-		}
-	],
+    "meta":
+    [
+        {
+            "name": "1",
+	    "type": "UInt8"
+        },
+        {
+            "name": "2",
+            "type": "UInt8"
+        },
+        {
+            "name": "3",
+            "type": "UInt8"
+        }
+    ],
 
-	"data":
-	[
-		{
-			"1": 1,
-			"2": 2,
-			"3": 3
-		}
-	],
+    "data":
+    [
+        {
+            "1": 1,
+	    "2": 2,
+	    "3": 3
+        }
+    ],
 
-	"rows": 1,
+    "rows": 1,
 
-	"statistics":
-	{
-		"elapsed": 0.000515,
-		"rows_read": 1,
-		"bytes_read": 1
-	}
+    "statistics":
+    {
+        "elapsed": 0.000515,
+        "rows_read": 1,
+        "bytes_read": 1
+    }
 }
 ```
 
