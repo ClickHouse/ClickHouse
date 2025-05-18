@@ -410,7 +410,7 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
         else if (function_name == "equals" ||
                  function_name == "notEquals" ||
                  function_name == "has" ||
-                 function_name == "mapContains" ||
+                 function_name == "mapContainsKey" ||
                  function_name == "like" ||
                  function_name == "notLike" ||
                  function_name == "hasToken" ||
@@ -507,7 +507,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     if (!key_exists && !map_key_exists)
         return false;
 
-    if (map_key_exists && (function_name == "has" || function_name == "mapContains"))
+    if (map_key_exists && (function_name == "has" || function_name == "mapContainsKey"))
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_HAS;
