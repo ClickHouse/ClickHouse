@@ -156,7 +156,13 @@ Pipe StorageMySQL::read(
             break;
 
         case TableNameOrQuery::Type::QUERY:
-            query = remote_table_or_query.getQuery();
+            query = "SELECT ";
+            for (const auto & column : column_names_)
+            {
+                query += backQuoteMySQL(column) + ", ";
+            }
+            query = query.substr(0, query.size() - 2);
+            query += " FROM (" + remote_table_or_query.getQuery() + ") AS t";
             break;
     }
     LOG_TRACE(log, "Query: {}", query);
@@ -325,10 +331,8 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
     if (require_table_or_query)
-    {
-        required_arguments.insert("table");
-        required_arguments.insert("query");
-    }
+        required_arguments.insert({"table", "query"});
+
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
@@ -386,7 +390,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
         {
             maybe_query = subquery_ast->children[0]->formatWithSecretsOneLine();
         }
-        else if (auto * function_ast = engine_args[1]->as<ASTFunction>(); function_ast && function_ast->name == "query")
+        else if (auto * function_ast = engine_args[2]->as<ASTFunction>(); function_ast && function_ast->name == "query")
         {
             if (function_ast->arguments->children.size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MySQL expects exactly one argument in query() function");

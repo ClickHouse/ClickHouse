@@ -282,7 +282,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
                 StorageID(database_name, table_name),
                 std::move(mysql_pool),
                 database_name_in_mysql,
-                table_name,
+                TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
                 /* replace_query_ */ false,
                 /* on_duplicate_clause = */ "",
                 ColumnsDescription{columns_name_and_type},
