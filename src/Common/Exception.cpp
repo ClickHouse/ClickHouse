@@ -593,7 +593,7 @@ void tryLogException(std::exception_ptr e, const char * log_name, const std::str
     }
 }
 
-void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message)
+void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message, LogsLevel level)
 {
     try
     {
@@ -601,7 +601,7 @@ void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string &
     }
     catch (...)
     {
-        tryLogCurrentException(logger, start_of_message);
+        tryLogCurrentException(logger, start_of_message, level);
     }
 }
 
