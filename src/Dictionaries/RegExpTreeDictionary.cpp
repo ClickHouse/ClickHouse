@@ -976,7 +976,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
 
 void registerDictionaryRegExpTree(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string &,
+    auto create_layout = [=](const std::string & /*name*/,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,

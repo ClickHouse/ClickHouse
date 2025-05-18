@@ -992,24 +992,17 @@ Log properties can be omitted by commenting out the property. For example, if yo
 
 ## send_crash_reports {#send_crash_reports}
 
-Settings for opt-in sending of crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
+Settings for sending of crash reports to the ClickHouse core developers team.
 
 Enabling it, especially in pre-production environments, is highly appreciated.
 
-The server will need access to the public internet via IPv4 (at the time of writing IPv6 is not supported by Sentry) for this feature to function properly.
-
 Keys:
 
-| Key                   | Description                                                                                                                                                                                            |
-|-----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`             | Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports.                                                                                                  |
-| `send_logical_errors` | `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions to sentry (Default: `false`).                                                        |
-| `endpoint`            | You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax.                  |
-| `anonymize`           | Avoid attaching the server hostname to the crash report.                                                                                                                                               |
-| `http_proxy`          | Configure HTTP proxy for sending crash reports.                                                                                                                                                        |
-| `debug`               | Sets the Sentry client into debug mode.                                                                                                                                                                |
-| `tmp_path`            | Filesystem path for temporary crash report state.                                                                                                                                                      |
-| `environment`         | An arbitrary name of an environment in which the ClickHouse server is running. It will be mentioned in each crash report. The default value is `test` or `prod` depending on the version of ClickHouse.|
+| Key                   | Description                                                                                                                          |
+|-----------------------|--------------------------------------------------------------------------------------------------------------------------------------|
+| `enabled`             | Boolean flag to enable the feature, `true` by default. Set to `false` to avoid sending crash reports.                                |
+| `send_logical_errors` | `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions (Default: `true`). |
+| `endpoint`            | You can override the endpoint URL for sending crash reports.                                                                         |
 
 **Recommended usage**
 

@@ -59,6 +59,21 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
     return min_position;
 }
 
+static NameSet getTableColumns(const StorageMetadataPtr & metadata_snapshot, const Names & queried_columns)
+{
+    const auto & columns_description = metadata_snapshot->getColumns();
+    NameSet table_columns = collections::map<std::unordered_set>(columns_description.getAllPhysical(), [](const NameAndTypePair & col) { return col.name; });
+
+    /// Add also requested subcolumns to known table columns.
+    for (const auto & column : queried_columns)
+    {
+        if (columns_description.hasSubcolumn(column))
+            table_columns.insert(column);
+    }
+
+    return table_columns;
+}
+
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
@@ -67,8 +82,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const std::optional<NameSet> & supported_columns_,
     LoggerPtr log_)
     : estimator(estimator_)
-    , table_columns{collections::map<std::unordered_set>(
-        metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
+    , table_columns(getTableColumns(metadata_snapshot, queried_columns_))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(

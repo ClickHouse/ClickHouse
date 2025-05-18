@@ -500,12 +500,13 @@ struct DeltaLakeMetadataImpl
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
             format_settings.date_time_overflow_behavior,
+            format_settings.parquet.allow_geoparquet_parser,
             /* case_insensitive_column_matching */false);
 
         std::shared_ptr<arrow::Table> table;
         THROW_ARROW_NOT_OK(reader->ReadTable(&table));
 
-        Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows());
+        Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows(), reader->parquet_reader()->metadata()->key_value_metadata());
         auto res_block = header.cloneWithColumns(chunk.detachColumns());
         res_block = Nested::flatten(res_block);
 

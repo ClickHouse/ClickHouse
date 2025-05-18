@@ -173,7 +173,7 @@ void KeeperDispatcher::requestThread()
                         ReadableSize(total_memory_tracker.get()),
                         ReadableSize(total_memory_tracker.getRSS()),
                         request.request->getOpNum());
-                    addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
+                    addErrorResponses({request}, Coordination::Error::ZOUTOFMEMORY);
                     continue;
                 }
 

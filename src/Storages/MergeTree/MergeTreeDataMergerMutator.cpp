@@ -282,7 +282,7 @@ std::optional<MergeSelectorChoice> chooseMergeFrom(
     {
         const auto & range = choice->range;
         ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, choice->range.size());
-        LOG_INFO(log, "Selected {} parts from {} to {}. Merge selecting phase took: {}ms", range.size(), range.front().name, range.back().name, watch.elapsed() / 1000);
+        LOG_TRACE(log, "Selected {} parts from {} to {}. Merge selecting phase took: {}ms", range.size(), range.front().name, range.back().name, watch.elapsed() / 1000);
     }
 
     return choice;

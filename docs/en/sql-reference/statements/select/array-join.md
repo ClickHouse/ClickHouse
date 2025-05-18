@@ -28,6 +28,8 @@ Supported types of `ARRAY JOIN` are listed below:
 
 ## Basic ARRAY JOIN Examples {#basic-array-join-examples}
 
+### ARRAY JOIN and LEFT ARRAY JOIN {#array-join-left-array-join-examples}
+
 The examples below demonstrate the usage of the `ARRAY JOIN` and `LEFT ARRAY JOIN` clauses. Let's create a table with an [Array](../../../sql-reference/data-types/array.md) type column and insert values into it:
 
 ```sql
@@ -84,6 +86,80 @@ LEFT ARRAY JOIN arr;
 │ World       │   5 │
 │ Goodbye     │   0 │
 └─────────────┴─────┘
+```
+
+### ARRAY JOIN and arrayEnumerate function {#array-join-arrayEnumerate}
+
+This function is normally used with `ARRAY JOIN`. It allows counting something just once for each array after applying `ARRAY JOIN`. Example:
+
+```sql
+SELECT
+    count() AS Reaches,
+    countIf(num = 1) AS Hits
+FROM test.hits
+ARRAY JOIN
+    GoalsReached,
+    arrayEnumerate(GoalsReached) AS num
+WHERE CounterID = 160656
+LIMIT 10
+```
+
+```text
+┌─Reaches─┬──Hits─┐
+│   95606 │ 31406 │
+└─────────┴───────┘
+```
+
+In this example, Reaches is the number of conversions (the strings received after applying `ARRAY JOIN`), and Hits is the number of pageviews (strings before `ARRAY JOIN`). In this particular case, you can get the same result in an easier way:
+
+```sql
+SELECT
+    sum(length(GoalsReached)) AS Reaches,
+    count() AS Hits
+FROM test.hits
+WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
+```
+
+```text
+┌─Reaches─┬──Hits─┐
+│   95606 │ 31406 │
+└─────────┴───────┘
+```
+
+### ARRAY JOIN and arrayEnumerateUniq {#array_join_arrayEnumerateUniq}
+
+This function is useful when using `ARRAY JOIN` and aggregating array elements.
+
+In this example, each goal ID has a calculation of the number of conversions (each element in the Goals nested data structure is a goal that was reached, which we refer to as a conversion) and the number of sessions. Without `ARRAY JOIN`, we would have counted the number of sessions as sum(Sign). But in this particular case, the rows were multiplied by the nested Goals structure, so in order to count each session one time after this, we apply a condition to the value of the `arrayEnumerateUniq(Goals.ID)` function.
+
+```sql
+SELECT
+    Goals.ID AS GoalID,
+    sum(Sign) AS Reaches,
+    sumIf(Sign, num = 1) AS Visits
+FROM test.visits
+ARRAY JOIN
+    Goals,
+    arrayEnumerateUniq(Goals.ID) AS num
+WHERE CounterID = 160656
+GROUP BY GoalID
+ORDER BY Reaches DESC
+LIMIT 10
+```
+
+```text
+┌──GoalID─┬─Reaches─┬─Visits─┐
+│   53225 │    3214 │   1097 │
+│ 2825062 │    3188 │   1097 │
+│   56600 │    2803 │    488 │
+│ 1989037 │    2401 │    365 │
+│ 2830064 │    2396 │    910 │
+│ 1113562 │    2372 │    373 │
+│ 3270895 │    2262 │    812 │
+│ 1084657 │    2262 │    345 │
+│   56599 │    2260 │    799 │
+│ 3271094 │    2256 │    812 │
+└─────────┴─────────┴────────┘
 ```
 
 ## Using Aliases {#using-aliases}

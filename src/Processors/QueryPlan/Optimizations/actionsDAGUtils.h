@@ -63,4 +63,20 @@ void applyActionsToSortDescription(
     const ActionsDAG & dag,
     /// Ignore this one output of DAG. Used for FilterStep where filter column is removed.
     const ActionsDAG::Node * output_to_skip = nullptr);
+
+/// Traverses a set of root nodes (`nodes`) and attempts to replace them (and their subtrees)
+/// with matched input nodes from the `matches` map, under the condition that:
+/// - The match is non-monotonic (`!match.monotonicity`)
+/// - The matched node is allowed (present in `allowed_inputs`)
+///
+/// This function performs a depth-first traversal to ensure all nodes and their dependencies
+/// can be substituted by valid inputs. If any node ultimately resolves to an INPUT node that
+/// has no valid match in `matches`, the function returns `std::nullopt` to indicate that
+/// a consistent input substitution map cannot be constructed.
+///
+/// The primary use case is to construct the input substitution map required by `ActionsDAG::foldActionsByProjection`.
+std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
+    const MatchedTrees::Matches & matches,
+    const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
+    const ActionsDAG::NodeRawConstPtrs & nodes);
 }

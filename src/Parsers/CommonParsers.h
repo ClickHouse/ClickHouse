@@ -43,6 +43,7 @@ namespace DB
     MR_MACROS(ANY, "ANY") \
     MR_MACROS(APPEND, "APPEND") \
     MR_MACROS(APPLY_DELETED_MASK, "APPLY DELETED MASK") \
+    MR_MACROS(APPLY_PATCHES, "APPLY PATCHES") \
     MR_MACROS(APPLY, "APPLY") \
     MR_MACROS(ARRAY_JOIN, "ARRAY JOIN") \
     MR_MACROS(AS, "AS") \
@@ -708,5 +709,7 @@ public:
 
     bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/) override { return true; }
 };
+
+bool isAlwaysTruePredicate(const ASTPtr & predicate);
 
 }

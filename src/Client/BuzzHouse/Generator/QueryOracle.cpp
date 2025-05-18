@@ -46,7 +46,7 @@ static const std::unordered_map<OutFormat, InFormat> outIn{
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
 void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
-    TopSelect * ts = sq1.mutable_explain()->mutable_inner_query()->mutable_select();
+    TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
     /// TODO fix this 0 WHERE, 1 HAVING, 2 WHERE + HAVING
@@ -95,9 +95,9 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
 /// SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
 void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
-    TopSelect * ts = sq2.mutable_explain()->mutable_inner_query()->mutable_select();
+    TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
-    SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sq1.explain().inner_query().select().sel().select_core());
+    SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sq1.single_query().explain().inner_query().select().sel().select_core());
     SelectStatementCore * ssc2 = ts->mutable_sel()->mutable_select_core();
     SQLFuncCall * sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
@@ -121,7 +121,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
-    ts->set_format(sq1.explain().inner_query().select().format());
+    ts->set_format(sq1.single_query().explain().inner_query().select().format());
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
@@ -186,7 +186,7 @@ void QueryOracle::insertOnTableOrCluster(
 void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1)
 {
     bool first = true;
-    TopSelect * ts = sq1.mutable_explain()->mutable_inner_query()->mutable_select();
+    TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     SelectStatementCore * sel = ts->mutable_sel()->mutable_select_core();
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -227,7 +227,7 @@ void QueryOracle::generateExportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq2)
 {
     std::error_code ec;
-    Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
+    Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
     Expr * expr = ff->mutable_structure();
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
@@ -246,7 +246,7 @@ void QueryOracle::generateExportQuery(
     if (!can_test_query_success && rg.nextSmallNumber() < 3)
     {
         /// Sometimes generate a not matching structure
-        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), expr);
+        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), false, expr);
     }
     else
     {
@@ -260,7 +260,7 @@ void QueryOracle::generateExportQuery(
                 first ? "" : ", ",
                 entry.getBottomName(),
                 entry.path.size() > 1 ? "Array(" : "",
-                entry.getBottomType()->typeName(true),
+                entry.getBottomType()->typeName(false),
                 entry.path.size() > 1 ? ")" : "",
                 (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
             first = false;
@@ -298,15 +298,26 @@ void QueryOracle::generateExportQuery(
     jtf->set_final(t.supportsFinal());
 }
 
-void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
+void QueryOracle::dumpOracleIntermediateStep(
+    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const bool use_optimize, SQLQuery & sq3)
 {
-    const std::optional<String> & cluster = t.getCluster();
-    Truncate * trunc = sq3.mutable_explain()->mutable_inner_query()->mutable_trunc();
+    SQLQueryInner * sq = sq3.mutable_single_query()->mutable_explain()->mutable_inner_query();
 
-    t.setName(trunc->mutable_est(), false);
-    if (cluster.has_value())
+    if (use_optimize)
     {
-        trunc->mutable_cluster()->set_cluster(cluster.value());
+        gen.generateNextOptimizeTableInternal(rg, t, true, sq->mutable_opt());
+    }
+    else
+    {
+        /// Truncate table, then insert everything again
+        const std::optional<String> & cluster = t.getCluster();
+        Truncate * trunc = sq->mutable_trunc();
+
+        t.setName(trunc->mutable_est(), false);
+        if (cluster.has_value())
+        {
+            trunc->mutable_cluster()->set_cluster(cluster.value());
+        }
     }
 }
 
@@ -314,9 +325,9 @@ void QueryOracle::generateImportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const
 {
     SettingValues * svs = nullptr;
-    Insert * nins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
+    Insert * nins = sq4.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = nins->mutable_insert_file();
-    const Insert & oins = sq2.explain().inner_query().insert();
+    const Insert & oins = sq2.single_query().explain().inner_query().insert();
     const FileFunc & ff = oins.tof().tfunc().file();
     const InFormat & inf
         = (!can_test_query_success && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(outIn) : outIn.at(ff.outformat());
@@ -367,7 +378,7 @@ void QueryOracle::generateImportQuery(
 }
 
 /// Run query with different settings oracle
-void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
+bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
 {
     const bool use_settings = rg.nextMediumNumber() < 86;
 
@@ -375,7 +386,7 @@ void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
     if (use_settings)
     {
         const uint32_t nsets = rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1);
-        SettingValues * sv = sq1.mutable_explain()->mutable_inner_query()->mutable_setting_values();
+        SettingValues * sv = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_setting_values();
 
         nsettings.clear();
         for (uint32_t i = 0; i < nsets; i++)
@@ -407,15 +418,17 @@ void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
             can_test_query_success &= !chs.changes_behavior;
         }
     }
+    return use_settings;
 }
 
-void QueryOracle::generateSecondSetting(RandomGenerator & rg, StatementGenerator & gen, const SQLQuery & sq1, SQLQuery & sq3)
+void QueryOracle::generateSecondSetting(
+    RandomGenerator & rg, StatementGenerator & gen, const bool use_settings, const SQLQuery & sq1, SQLQuery & sq3)
 {
-    SQLQueryInner * sq = sq3.mutable_explain()->mutable_inner_query();
+    SQLQueryInner * sq = sq3.mutable_single_query()->mutable_explain()->mutable_inner_query();
 
-    if (sq1.has_explain())
+    if (use_settings)
     {
-        const SettingValues & osv = sq1.explain().inner_query().setting_values();
+        const SettingValues & osv = sq1.single_query().explain().inner_query().setting_values();
         SettingValues * sv = sq->mutable_setting_values();
 
         for (size_t i = 0; i < nsettings.size(); i++)
@@ -454,11 +467,11 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     if (measure_performance)
     {
         /// When measuring performance, don't insert into file
-        sel = sq2.mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
+        sel = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
     }
     else
     {
-        ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
+        ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
         OutFormat outf = rg.pickRandomly(outIn);
 
@@ -718,15 +731,15 @@ void QueryOracle::replaceQueryWithTablePeers(
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
-    Select & nsel = const_cast<Select &>(
-        measure_performance ? sq2.explain().inner_query().select().sel() : sq2.explain().inner_query().insert().select());
+    const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
+    Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select());
     /// Replace references
     findTablesWithPeersAndReplace(rg, nsel, gen, peer_query != PeerQuery::ClickHouseOnly);
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         /// Use a different file for the peer database
         std::error_code ec;
-        FileFunc & ff = const_cast<FileFunc &>(sq2.explain().inner_query().insert().tof().tfunc().file());
+        FileFunc & ff = const_cast<FileFunc &>(sq2.single_query().explain().inner_query().insert().tof().tfunc().file());
 
         if (!std::filesystem::remove(qfile_peer, ec) && ec)
         {
@@ -738,7 +751,7 @@ void QueryOracle::replaceQueryWithTablePeers(
     {
         SQLQuery next;
         const SQLTable & t = gen.tables.at(entry);
-        Insert * ins = next.mutable_explain()->mutable_inner_query()->mutable_insert();
+        Insert * ins = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
 
         /// Then insert the data

@@ -5,6 +5,16 @@ namespace BuzzHouse
 
 static DB::Strings mergeStoragePolicies;
 
+static const auto compressSetting = CHSetting(
+    [](RandomGenerator & rg)
+    {
+        const DB::Strings & choices
+            = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
+        return rg.pickRandomly(choices);
+    },
+    {},
+    false);
+
 static std::unordered_map<String, CHSetting> mergeTreeTableSettings
     = {{"adaptive_write_buffer_initial_size", CHSetting(bytesRange, {}, false)},
        {"add_implicit_sign_column_constraint_for_collapsing_engine", CHSetting(trueOrFalse, {}, false)},
@@ -82,6 +92,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
             false)},
        {"load_existing_rows_count_for_old_parts", CHSetting(trueOrFalse, {}, false)},
        {"marks_compress_block_size", CHSetting(highRange, {}, false)},
+       {"marks_compression_codec", compressSetting},
        {"materialize_skip_indexes_on_merge", CHSetting(trueOrFalse, {}, false)},
        {"materialize_ttl_recalculate_only", CHSetting(trueOrFalse, {}, false)},
        {"max_bytes_to_merge_at_max_space_in_pool", CHSetting(bytesRange, {}, false)},
@@ -132,6 +143,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"prewarm_mark_cache", CHSetting(trueOrFalse, {}, false)},
        {"prewarm_primary_key_cache", CHSetting(trueOrFalse, {}, false)},
        {"primary_key_compress_block_size", CHSetting(highRange, {}, false)},
+       {"primary_key_compression_codec", compressSetting},
        {"primary_key_lazy_load", CHSetting(trueOrFalse, {}, false)},
        {"primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns", CHSetting(probRange, {}, false)},
        {"ratio_of_defaults_for_sparse_serialization", CHSetting(probRange, {}, false)},

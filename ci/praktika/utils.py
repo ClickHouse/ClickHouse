@@ -627,7 +627,19 @@ class Utils:
         return path_out
 
     @classmethod
-    def compress_file(cls, path):
+    def compress_file_gz(cls, path):
+        path_out = ""
+        if Shell.check("which gzip"):
+            path_out = f"{path}.gz"
+            Shell.check(
+                f"rm -f {path_out} && gzip < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        return path_out
+
+    @classmethod
+    def compress_file(cls, path, no_strict=False):
         if Shell.check("which zstd"):
             return cls.compress_file_zst(path)
         elif Shell.check("which pigz"):
@@ -638,17 +650,13 @@ class Utils:
                 strict=True,
             )
         elif Shell.check("which gzip"):
-            path_out = f"{path}.gz"
-            Shell.check(
-                f"rm -f {path_out} && gzip < {path} > {path_out}",
-                verbose=True,
-                strict=True,
-            )
+            return cls.compress_file_gz(path)
         else:
             path_out = path
-            Utils.raise_with_error(
-                f"Failed to compress file [{path}] no zstd or gz installed"
-            )
+            if not no_strict:
+                raise RuntimeError(
+                    f"Failed to compress file [{path}] no zstd or gz installed"
+                )
         return path_out
 
     @classmethod

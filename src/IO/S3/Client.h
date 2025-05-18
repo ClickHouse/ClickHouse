@@ -276,8 +276,14 @@ private:
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
+    /// Returns true if a specified error means that the credentials used are expired or may have changed.
+    bool checkIfCredentialsChanged(const Aws::S3::S3Error & error) const;
+
     template <typename RequestResult>
     RequestResult processRequestResult(RequestResult && outcome) const;
+
+    void sleepAfterNetworkError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
+    void slowDownAfterNetworkError() const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
@@ -298,6 +304,9 @@ private:
     mutable std::shared_ptr<ClientCache> cache;
 
     const size_t max_redirects;
+
+    /// S3 requests must wait until this time because some s3 request fails with a retryable network error.
+    mutable std::atomic<UInt64> next_time_to_retry_after_network_error = 0;
 
     const ServerSideEncryptionKMSConfig sse_kms_config;
 
@@ -327,6 +336,7 @@ public:
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
         unsigned int s3_retry_attempts,
+        bool s3_slow_all_threads_after_network_error,
         bool enable_s3_requests_logging,
         bool for_disk_s3,
         const ThrottlerPtr & get_request_throttler,

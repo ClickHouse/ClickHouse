@@ -1,16 +1,11 @@
-#!/usr/bin/env python3
-import glob
-import json
 import logging
 import os
 import random
-import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pyarrow as pa
 import pytest
-import requests
 import urllib3
 from minio import Minio
 from pyiceberg.catalog import load_catalog
@@ -28,8 +23,6 @@ from pyiceberg.types import (
 )
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
-from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
-from helpers.test_tools import TSV, csv_compare
 
 import boto3
 
@@ -72,14 +65,16 @@ DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransfor
 
 
 def list_databases():
-    client = boto3.client("glue", region_name="us-east-1", endpoint_url=BASE_URL_LOCAL_HOST)
+    client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=BASE_URL_LOCAL_HOST
+    )
     databases = client.get_databases()
     return databases
 
 
 def load_catalog_impl(started_cluster):
     return load_catalog(
-        CATALOG_NAME, # name is not important
+        CATALOG_NAME,  # name is not important
         **{
             "type": "glue",
             "glue.endpoint": BASE_URL_LOCAL_HOST,
@@ -87,7 +82,9 @@ def load_catalog_impl(started_cluster):
             "s3.endpoint": "http://localhost:9002",
             "s3.access-key-id": "minio",
             "s3.secret-access-key": "minio123",
-        },)
+        },
+    )
+
 
 def create_table(
     catalog,
@@ -227,12 +224,11 @@ def test_list_tables(started_cluster):
 
     expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace_2, "tableC")
     print("Expected", expected)
-    print("Got", node.query(
-        f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"
-    ))
+    print("Got", node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"))
     assert expected == node.query(
         f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"
     )
+
 
 def test_select(started_cluster):
     node = started_cluster.instances["node1"]
@@ -285,13 +281,16 @@ def test_hide_sensitive_info(started_cluster):
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(namespace)
 
-    table = create_table(catalog, namespace, table_name)
+    create_table(catalog, namespace, table_name)
 
     create_clickhouse_glue_database(
         started_cluster,
         node,
         CATALOG_NAME,
-        additional_settings={"aws_access_key_id": "SECRET_1", "aws_secret_access_key": "SECRET_2"},
+        additional_settings={
+            "aws_access_key_id": "SECRET_1",
+            "aws_secret_access_key": "SECRET_2",
+        },
     )
     assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
