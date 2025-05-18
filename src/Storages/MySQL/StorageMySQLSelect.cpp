@@ -8,7 +8,6 @@
 #include <Common/quoteString.h>
 #include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
-#include <DataTypes/convertMySQLDataType.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -179,35 +178,6 @@ StorageMySQLSelect::getConfiguration(ASTs storage_args, ContextPtr context_, MyS
     return configuration;
 }
 
-ColumnsDescription
-StorageMySQLSelect::doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, const String & select_query, const ContextPtr & context_)
-{
-    auto limited_select = "(" + select_query + ") LIMIT 0";
-    auto conn = pool_.get();
-    auto query = conn->query(limited_select);
-
-    auto query_res = query.use();
-    auto field_cnt = query_res.getNumFields();
-    if (field_cnt == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MySQL SELECT query returned no fields");
-
-    ColumnsDescription columns;
-    const auto & settings = context_->getSettingsRef();
-    for (size_t i = 0; i < field_cnt; ++i)
-    {
-        auto & field = query_res.getField(i);
-        ColumnDescription column_description(
-            query_res.getFieldName(i), convertMySQLDataType(settings[Setting::mysql_datatypes_support_level], field));
-        columns.add(column_description);
-    }
-
-    // Preserve correctness of mysqlxx usage in case of force majeure related to "LIMIT 0"
-    while (query_res.fetch())
-    {
-        // do nothing
-    }
-    return columns;
-}
 }
 
 
