@@ -387,6 +387,85 @@ def test_table_function_query(started_cluster):
     conn.close()
 
 
+def test_query_passing(started_cluster):
+    table_name = "engine_query"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    # Create second table to test complex queries
+    second_table = "engine_query_second"
+    drop_mysql_table(conn, second_table)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE clickhouse.{second_table} (
+                id INT PRIMARY KEY,
+                category VARCHAR(50) NOT NULL,
+                factor INT NOT NULL
+            ) ENGINE=InnoDB;
+            """
+        )
+        for i in range(100):
+            cursor.execute(
+                f"INSERT INTO clickhouse.{table_name} VALUES ({i}, 'name_{i}', {i % 10}, {i * 10}, 'IP')"
+            )
+
+        cursor.execute(
+            f"""
+            INSERT INTO clickhouse.{second_table} VALUES
+                (1, 'category_1', 10),
+                (2, 'category_2', 20),
+                (5, 'category_5', 50),
+                (10, 'category_10', 100)
+            """
+        )
+        conn.commit()
+
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}(id UInt32, name String, category_name String, calculated Int32)
+        ENGINE = MySQL(
+            'mysql80:3306',
+            'clickhouse',
+            query('SELECT a.id, a.name, b.category as category_name, a.money * b.factor as calculated
+                  FROM {table_name} as a
+                  JOIN {second_table} as b ON a.id = b.id
+                  WHERE a.money > 10'),
+            'root',
+            '{mysql_pass}'
+        )
+        """
+    )
+    assert int(node1.query(f"SELECT count() FROM {table_name}").strip()) == 3
+    assert int(node1.query(f"SELECT sum(calculated) FROM {table_name}").strip()) == 20*20 + 50*50 + 100*100
+
+    result = node1.query(f"SELECT * FROM {table_name} WHERE calculated > 1000").strip()
+    assert "category_5" in result and "category_10" in result
+    assert "category_1\t" not in result and "category_2\t" not in result
+
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}
+        ENGINE = MySQL(
+            'mysql80:3306',
+            'clickhouse',
+            (SELECT name, age FROM {table_name} WHERE id > 5 AND id < 15 OR id = 20),
+            'root',
+            '{mysql_pass}'
+        )
+        """
+    )
+    assert int(node1.query(f"SELECT count() FROM {table_name}").strip()) == 10
+    assert node1.query(f"DESCRIBE TABLE {table_name}").strip() == "name\tString\t\t\t\t\t\nage\tInt32"
+
+    drop_mysql_table(conn, table_name)
+    drop_mysql_table(conn, second_table)
+    conn.close()
+
+
 def test_schema_inference(started_cluster):
     conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
     drop_mysql_table(conn, "inference_table")
