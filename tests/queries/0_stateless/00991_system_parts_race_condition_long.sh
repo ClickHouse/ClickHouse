@@ -25,7 +25,10 @@ function thread2()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --query "ALTER TABLE alter_table ADD COLUMN h String '0'; ALTER TABLE alter_table MODIFY COLUMN h UInt64; ALTER TABLE alter_table DROP COLUMN h;"
+        $CLICKHOUSE_CLIENT --send-logs-level fatal --query "
+            ALTER TABLE alter_table ADD COLUMN $1 String DEFAULT '0';
+            ALTER TABLE alter_table MODIFY COLUMN $1 UInt64;
+            ALTER TABLE alter_table DROP COLUMN $1;" 2>/dev/null
     done
 }
 
@@ -34,7 +37,7 @@ function thread3()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table SELECT rand(1), rand(2), 1 / rand(3), toString(rand(4)), [rand(5), rand(6)], rand(7) % 2 ? NULL : generateUUIDv4(), (rand(8), rand(9)) FROM numbers(100000)"
+        $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table (a, b, c, d, e, f, g) SELECT rand(1), rand(2), 1 / rand(3), toString(rand(4)), [rand(5), rand(6)], rand(7) % 2 ? NULL : generateUUIDv4(), (rand(8), rand(9)) FROM numbers(100000)"
     done
 }
 
@@ -58,29 +61,29 @@ function thread5()
 
 TIMEOUT=30
 
-thread1 2> /dev/null &
-thread2 2> /dev/null &
-thread3 2> /dev/null &
-thread4 2> /dev/null &
-thread5 2> /dev/null &
+thread1 &
+thread2 h &
+thread3 &
+thread4 &
+thread5 &
 
-thread1 2> /dev/null &
-thread2 2> /dev/null &
-thread3 2> /dev/null &
-thread4 2> /dev/null &
-thread5 2> /dev/null &
+thread1 &
+thread2 h &
+thread3 &
+thread4 &
+thread5 &
 
-thread1 2> /dev/null &
-thread2 2> /dev/null &
-thread3 2> /dev/null &
-thread4 2> /dev/null &
-thread5 2> /dev/null &
+thread1 &
+thread2 h &
+thread3 &
+thread4 &
+thread5 &
 
-thread1 2> /dev/null &
-thread2 2> /dev/null &
-thread3 2> /dev/null &
-thread4 2> /dev/null &
-thread5 2> /dev/null &
+thread1 &
+thread2 h &
+thread3 &
+thread4 &
+thread5 &
 
 
 wait
