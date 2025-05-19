@@ -137,9 +137,6 @@
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt
-[submodule "contrib/sentry-native"]
-	path = contrib/sentry-native
-	url = https://github.com/ClickHouse/sentry-native
 [submodule "contrib/krb5"]
 	path = contrib/krb5
 	url = https://github.com/ClickHouse/krb5

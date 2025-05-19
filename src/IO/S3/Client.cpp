@@ -4,6 +4,7 @@
 
 #if USE_AWS_S3
 
+#include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
@@ -963,9 +964,22 @@ void ClientCacheRegistry::clearCacheForAll()
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
+
+    aws_options.cryptoOptions = Aws::CryptoOptions{};
+    aws_options.cryptoOptions.initAndCleanupOpenSSL = false;
+
+    aws_options.httpOptions = Aws::HttpOptions{};
+    aws_options.httpOptions.initAndCleanupCurl = false;
+    aws_options.httpOptions.httpClientFactory_create_fn = []() { return std::make_shared<PocoHTTPClientFactory>(); };
+
+    aws_options.loggingOptions = Aws::LoggingOptions{};
+    aws_options.loggingOptions.logger_create_fn = []() { return std::make_shared<AWSLogger>(false); };
+
+    aws_options.ioOptions = Aws::IoOptions{};
+    /// We don't need to initialize TLS, because we use PocoHTTPClientFactory
+    aws_options.ioOptions.tlsConnectionOptions_create_fn = []() { return nullptr; };
+
     Aws::InitAPI(aws_options);
-    Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
-    Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
 }
 
 ClientFactory::~ClientFactory()
