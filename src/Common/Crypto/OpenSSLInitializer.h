@@ -29,8 +29,8 @@ private:
     ~OpenSSLInitializer();
 
 #if USE_SSL
-    static std::atomic<uint8_t> initialize_ref_count;
-    static std::atomic<uint8_t> cleanup_ref_count;
+    static std::atomic<bool> initialize_done;
+    static std::atomic<bool> cleanup_done;
 
     static OSSL_PROVIDER * legacy_provider;
     static OSSL_PROVIDER * default_provider;
