@@ -37,5 +37,5 @@ And the following queries return tables with the same content but different colu
 
 ```sql
 SELECT * FROM numbers(10, 11) WHERE number % 3 == (10 % 3);
-SELECT * FROM generate_series(10, 20, 3) ;
+SELECT * FROM generate_series(10, 20, 3);
 ```
