@@ -91,33 +91,59 @@ namespace
                     auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
                     
                     if constexpr (toUTC) {
+                        // Converting from local time to UTC
                         if (time_zone_offset < 0) {
+                            // For negative timezone offsets (e.g., America/New_York is UTC-5)
+                            // We need to add the absolute offset to get UTC time
                             UInt32 abs_offset = static_cast<UInt32>(-time_zone_offset);
                             if (date_time_val > std::numeric_limits<UInt32>::max() - abs_offset) {
+                                // If adding the offset would overflow, clamp to max value
+                                // This handles dates after 2106-02-07 06:28:15
                                 result_data[i] = std::numeric_limits<UInt32>::max();
                             } else {
+                                // Normal case: add the offset to convert to UTC
+                                // Example: 2024-01-01 00:00:00 EST (UTC-5) -> 2024-01-01 05:00:00 UTC
                                 result_data[i] = date_time_val + abs_offset;
                             }
                         } else {
+                            // For positive timezone offsets (e.g., Asia/Tokyo is UTC+9)
+                            // We need to subtract the offset to get UTC time
                             if (date_time_val < static_cast<UInt32>(time_zone_offset)) {
+                                // If subtracting the offset would underflow, clamp to 0
+                                // This handles dates before 1970-01-01 00:00:00
                                 result_data[i] = 0;
                             } else {
+                                // Normal case: subtract the offset to convert to UTC
+                                // Example: 2024-01-01 00:00:00 JST (UTC+9) -> 2023-12-31 15:00:00 UTC
                                 result_data[i] = date_time_val - static_cast<UInt32>(time_zone_offset);
                             }
                         }
                     }
                     else {
+                        // Converting from UTC to local time
                         if (time_zone_offset < 0) {
+                            // For negative timezone offsets (e.g., America/New_York is UTC-5)
+                            // We need to subtract the absolute offset to get local time
                             UInt32 abs_offset = static_cast<UInt32>(-time_zone_offset);
                             if (date_time_val < abs_offset) {
+                                // If subtracting the offset would underflow, clamp to 0
+                                // This handles dates before 1970-01-01 00:00:00
                                 result_data[i] = 0;
                             } else {
+                                // Normal case: subtract the offset to convert to local time
+                                // Example: 2024-01-01 05:00:00 UTC -> 2024-01-01 00:00:00 EST (UTC-5)
                                 result_data[i] = date_time_val - abs_offset;
                             }
                         } else {
+                            // For positive timezone offsets (e.g., Asia/Tokyo is UTC+9)
+                            // We need to add the offset to get local time
                             if (date_time_val > std::numeric_limits<UInt32>::max() - static_cast<UInt32>(time_zone_offset)) {
+                                // If adding the offset would overflow, clamp to max value
+                                // This handles dates after 2106-02-07 06:28:15
                                 result_data[i] = std::numeric_limits<UInt32>::max();
                             } else {
+                                // Normal case: add the offset to convert to local time
+                                // Example: 2023-12-31 15:00:00 UTC -> 2024-01-01 00:00:00 JST (UTC+9)
                                 result_data[i] = date_time_val + static_cast<UInt32>(time_zone_offset);
                             }
                         }
