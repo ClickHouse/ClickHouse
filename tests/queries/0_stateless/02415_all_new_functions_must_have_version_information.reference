@@ -116,6 +116,7 @@ arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayFill
 arrayFilter
+arrayLastIndex
 arrayLevenshteinDistance
 arrayLevenshteinDistanceWeighted
 arrayMap
