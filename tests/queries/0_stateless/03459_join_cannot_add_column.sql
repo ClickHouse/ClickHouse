@@ -1,4 +1,4 @@
-SET enable_analyzer = 1;
+SET enable_analyzer = 1, max_threads = 1;
 
 DROP TABLE IF EXISTS t1, t2, t3;
 
