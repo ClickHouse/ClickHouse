@@ -401,7 +401,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 For more information see:
 - [Settings](/operations/settings/settings)
-- [SET](#set)
+- [SET](/sql-reference/statements/set)
 
 ## Using ClickHouse sessions in the HTTP protocol {#using-clickhouse-sessions-in-the-http-protocol}
 
