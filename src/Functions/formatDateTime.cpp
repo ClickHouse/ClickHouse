@@ -21,6 +21,7 @@
 
 #include <Common/Concepts.h>
 #include <Common/DateLUTImpl.h>
+#include "DataTypes/DataTypeLowCardinality.h"
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
@@ -963,7 +964,7 @@ public:
                 "Illegal type {} of second argument of function {}. Must be String.",
                 arguments[1].type->getName(), getName());
 
-        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
+        if (arguments.size() == 3 && !WhichDataType(removeLowCardinality(arguments[2].type)).isString())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of third argument of function {}. Must be String.",
                 arguments[2].type->getName(), getName());
