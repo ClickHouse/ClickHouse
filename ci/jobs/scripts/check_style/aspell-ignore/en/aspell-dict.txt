@@ -152,6 +152,7 @@ CapContains
 CapUnion
 CapnProto
 CapnProtoEnumComparingMode
+CardSecondary
 CatBoost
 CellAreaM
 CellAreaRads
@@ -1960,6 +1961,7 @@ grpcio
 gtest
 gtid
 gzip
+gunzip
 gzipped
 hadoop
 halfMD
@@ -2208,9 +2210,13 @@ mapAll
 mapApply
 mapConcat
 mapContains
+mapContainsKey
 mapContainsKeyLike
+mapContainsValue
+mapContainsValueLike
 mapExists
 mapExtractKeyLike
+mapExtractValueLike
 mapFilter
 mapFromArrays
 mapKeys
@@ -2340,6 +2346,8 @@ namespace
 namespaces
 natively
 nats
+ncat
+netcat
 ness
 nestjs
 netloc
@@ -2484,6 +2492,7 @@ positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
 positiveModuloOrNull
+postfilter
 postfix
 postfixes
 postgres
@@ -2501,6 +2510,7 @@ prefetched
 prefetches
 prefetching
 prefetchsize
+prefilter
 preflight
 preimage
 preloaded
