@@ -9,28 +9,29 @@ namespace DB
 class TableManager
 {
 public:
-    explicit TableManager(const QueryInfo & workload_, ContextMutablePtr context_)
-        : workload(workload_), context(context_) {}
-
-    Strings getTables() const
+    explicit TableManager(ContextMutablePtr context_, const QueryInfo & workload_, const String & table_)
+        : workload(workload_)
+        , context(context_)
+        , table(table_)
+        , estimation_table(table + "_estimation")
     {
-        return workload.getTables();
     }
 
-    Strings getColumns(const String & table) const
-    {
-        return workload.getColumns(table);
-    }
+    Strings getTables() const { return workload.getTables(); }
 
-    UInt64 estimate(std::unordered_map<String, Strings> & pk_columns);
+    std::unordered_set<String> getColumns() const { return workload.getColumns(table); }
+
+    UInt64 estimate(const String & pk_columns);
 
 private:
-    void buildTable(const String& table, const Strings & pk_columns);
+    void buildTable(const String & pk_columns);
     UInt64 estimateQueries();
-
+    void dropTable(const String & target_table);
+    
     QueryInfo workload;
     ContextMutablePtr context;
-    std::unordered_map<String, String> replacement_tables;
+    String table;
+    String estimation_table;
 };
 
 }

@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <unordered_set>
@@ -16,46 +17,25 @@ struct CollectTablesMatcher
     struct Data
     {
         std::unordered_set<String> tables;
-        std::unordered_set<String> seen;
     };
 
     static void visit(ASTPtr & node, Data & data)
     {
-        if (auto * select = typeid_cast<ASTSelectQuery *>(node.get()))
-        {
-            if (select->tables())
-            {
-                for (auto & child : select->tables()->children)
-                {
-                    if (auto * table_expr = typeid_cast<ASTTableExpression *>(child.get()))
-                    {
-                        if (table_expr->database_and_table_name)
-                        {
-                            String tbl = table_expr->database_and_table_name->getColumnName();
-                            if (data.seen.insert(tbl).second)
-                                data.tables.insert(tbl);
-                        }
-                    }
-                    else if (auto * join = typeid_cast<ASTTableJoin *>(child.get()))
-                    {
-                        for (auto join_child :join->children)
-                            visit(join_child, data);
-                    }
-                }
-            }
-        }
-        else if (auto * table_expr = typeid_cast<ASTTableExpression *>(node.get()))
+        if (auto * table_expr = node->as<ASTTableExpression>())
         {
             if (table_expr->database_and_table_name)
             {
-                String tbl = table_expr->database_and_table_name->getColumnName();
-                if (data.seen.insert(tbl).second)
-                    data.tables.insert(tbl);
+                auto table_name = table_expr->database_and_table_name->getColumnName();
+                data.tables.insert(table_name);
             }
         }
     }
 
-    static bool needChildVisit(const ASTPtr & /*node*/, const ASTPtr & /*child*/) { return true; }
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & /*child*/) {
+        if (node->as<ASTTableExpression>())
+            return false;
+        return true;
+    }
 };
 
 inline void collectTables(ASTPtr & ast, CollectTablesMatcher::Data & data)

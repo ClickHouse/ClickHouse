@@ -3113,7 +3113,7 @@ from `String` and `Array` arguments:
 Memory consumption is also restricted by the parameters [`max_memory_usage_for_user`](/operations/settings/settings#max_memory_usage_for_user)
 and [`max_server_memory_usage`](/operations/server-configuration-parameters/settings#max_server_memory_usage).
 )", 0) \
-    DECLARE(UInt64, memory_overcommit_ratio_denominator, 1_GiB, R"(
+    DECLARE(UInt64, memory_overcommit_ratio_denominator, 100000_GiB, R"(
 It represents the soft memory limit when the hard limit is reached on the global level.
 This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
@@ -3138,7 +3138,7 @@ You can verify it worked by logging out of your client, logging back in, then us
 SELECT getSetting('max_memory_usage_for_user');
 ```
 )", 0) \
-    DECLARE(UInt64, memory_overcommit_ratio_denominator_for_user, 1_GiB, R"(
+    DECLARE(UInt64, memory_overcommit_ratio_denominator_for_user, 100000_GiB, R"(
 It represents the soft memory limit when the hard limit is reached on the user level.
 This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
@@ -3174,7 +3174,7 @@ Possible values:
 - 0 — Tracing of profile events disabled.
 )", 0) \
     \
-    DECLARE(UInt64, memory_usage_overcommit_max_wait_microseconds, 5'000'000, R"(
+    DECLARE(UInt64, memory_usage_overcommit_max_wait_microseconds, 5'000'000'000'000'000, R"(
 Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
 If the timeout is reached and memory is not freed, an exception is thrown.
 Read more about [memory overcommit](memory-overcommit.md).
@@ -6857,6 +6857,9 @@ Proportion of data to sample for analysis (0.0 to 1.0). This setting controls ho
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_pk_columns_count, 5, R"(
 The maximum number of columns that can be used in the primary key.
+)", EXPERIMENTAL) \
+    DECLARE(String, collection_file_path, "/tmp/workload_collection.txt", R"(
+The path to the file where the workload will be collected.
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \

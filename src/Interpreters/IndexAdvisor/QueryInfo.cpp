@@ -1,62 +1,37 @@
 #include "QueryInfo.h"
-#include "CollectTablesMatcher.h"
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Core/Defines.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/IndexAdvisor/CollectTablesMatcher.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
-#include <Parsers/parseQuery.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Storages/IStorage.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
 
-QueryInfo::QueryInfo(const String & path, ContextMutablePtr context_)
-    : context(context_)
+namespace
 {
-    readQueries(path);
-    for (const auto & query : queries)
-    {
-        // LOG_INFO(getLogger("QueryInfo"), "Processing query: {}", query);
-        parseColumnsFromQuery(query);
-    }
-    for (const auto & q : drop_view_queries)
-    {
-        try
-        {
-            executeQuery(q, context, QueryFlags{ .internal = true });
-            // LOG_INFO(getLogger("QueryInfo"), "Successfully executed DROP VIEW: {}", q);
-        }
-        catch (const Exception & e)
-        {
-            LOG_INFO(getLogger("QueryInfo"), "Failed to execute DROP VIEW: {}, error: {}", q, e.message());
-        }
-    }
-}
 
-void QueryInfo::readQueries(const String & path)
+void parseQueriesFromText(
+    const String & file_contents,
+    std::vector<String> & queries)
 {
-    queries.clear();
-    views.clear();
-    drop_view_queries.clear();
-    ReadBufferFromFile in{path};
-    String file_contents;
-    readStringUntilEOF(file_contents, in);
-
     size_t pos = 0;
-    std::vector<String> create_view_queries;
 
     while (pos < file_contents.size())
     {
@@ -72,63 +47,89 @@ void QueryInfo::readQueries(const String & path)
         query.resize(size);
         if (!query.empty())
         {
-            String upper_query = query;
-            std::transform(upper_query.begin(), upper_query.end(), upper_query.begin(), ::toupper);
-            
-            if (upper_query.find("CREATE VIEW") != String::npos)
-            {
-                // LOG_INFO(getLogger("QueryInfo"), "Found CREATE VIEW query: {}", query);
-                create_view_queries.push_back(query);
-                queries.push_back(query);  // Add to queries to parse its contents
-            }
-            else if (upper_query.find("DROP VIEW") != String::npos)
-            {
-                // LOG_INFO(getLogger("QueryInfo"), "Found DROP VIEW query: {}", query);
-                drop_view_queries.push_back(query);
-                queries.push_back(query);  // Add to queries to parse its contents
-            }
-            else
-            {
-                // LOG_INFO(getLogger("QueryInfo"), "Found regular query: {}", query);
-                queries.push_back(query);
-            }
+            queries.push_back(query);
         }
         pos = next + 1;
     }
+}
 
-    for (const auto & query : create_view_queries)
+bool isCreateViewQuery(const String & query)
+{
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, "", DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    if (!ast)
+        return false;
+
+    if (const auto * create_query = ast->as<ASTCreateQuery>())
     {
-        try
+        return create_query->isView();
+    }
+    return false;
+}
+
+bool isDropViewQuery(const String & query)
+{
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, "", DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    if (!ast)
+        return false;
+
+    if (const auto * drop_query = ast->as<ASTDropQuery>())
+    {
+        return drop_query->is_view;
+    }
+    return false;
+}
+
+}
+
+QueryInfo::QueryInfo(const String & path, ContextMutablePtr context_)
+    : context(context_)
+{
+    readQueries(path);
+
+    for (const auto & query : queries)
+    {
+        if (isCreateViewQuery(query))
         {
-            executeQuery(query, context, QueryFlags{ .internal = true });
-            // LOG_INFO(getLogger("QueryInfo"), "Successfully executed CREATE VIEW: {}", query);
+            create_view_queries.push_back(query);
+            executeQuery(query, context, QueryFlags{.internal = true});
+            parseColumnsFromQuery(query);
         }
-        catch (const Exception & e)
+        else if (isDropViewQuery(query))
         {
-            LOG_INFO(getLogger("QueryInfo"), "Failed to execute CREATE VIEW: {}, error: {}", query, e.message());
+            drop_view_queries.push_back(query);
+        }
+        else
+        {
+            parseColumnsFromQuery(query);
         }
     }
+
+    for (const auto & q : drop_view_queries)
+    {
+        executeQuery(q, context, QueryFlags{.internal = true});
+    }
+}
+
+void QueryInfo::readQueries(const String & path)
+{
+    queries.clear();
+    drop_view_queries.clear();
+    ReadBufferFromFile in{path};
+    String file_contents;
+    readStringUntilEOF(file_contents, in);
+
+    parseQueriesFromText(file_contents, queries);
 }
 
 void QueryInfo::parseColumnsFromQuery(const String & query)
 {
-    // LOG_INFO(getLogger("QueryInfo"), "Parsing query: {}", query);
-    
     ParserQuery parser(query.data() + query.size());
-    ASTPtr ast;
-    try
-    {
-        ast = parseQuery(parser, query, "", DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    }
-    catch (const Exception &)
-    {
-        LOG_INFO(getLogger("QueryInfo"), "Failed to parse query: {}", query);
-        return;
-    }
+    ASTPtr ast = parseQuery(parser, query, "", DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     if (!ast)
     {
-        LOG_INFO(getLogger("QueryInfo"), "Failed to parse query: {}", query);
         return;
     }
 
@@ -136,19 +137,11 @@ void QueryInfo::parseColumnsFromQuery(const String & query)
     {
         if (create_query->isView())
         {
-            String view_name = create_query->getTable();
-            if (!view_name.empty())
-            {
-                views.push_back(view_name);
-                LOG_INFO(getLogger("QueryInfo"), "Found view name: {}", view_name);
-            }
-
             if (create_query->select)
             {
                 CollectTablesMatcher::Data tables_data;
                 ASTPtr select_ast = create_query->select->ptr();
                 collectTables(select_ast, tables_data);
-                
                 processTablesAndColumns(tables_data, nullptr, select_ast);
             }
             return;
@@ -178,26 +171,24 @@ void QueryInfo::parseColumnsFromQuery(const String & query)
         CollectTablesMatcher::Data tables_data;
         ASTPtr query_ast = ast;
         collectTables(query_ast, tables_data);
-        
+
         processTablesAndColumns(tables_data, &cte_names, query_ast);
     }
 }
 
-void QueryInfo::processTablesAndColumns(const CollectTablesMatcher::Data & tables_data, const std::set<String> * cte_names, const ASTPtr & ast)
+void QueryInfo::processTablesAndColumns(
+    const CollectTablesMatcher::Data & tables_data, const std::set<String> * cte_names, const ASTPtr & ast)
 {
     std::unordered_map<String, std::set<String>> table_columns;
-    
     std::unordered_map<String, std::set<String>> table_metadata_cache;
-    
+
     for (const auto & table : tables_data.tables)
     {
         if (cte_names && cte_names->contains(table))
             continue;
 
-        // LOG_INFO(getLogger("QueryInfo"), "Processing table: {}", table);
-        
         StoragePtr storage = DatabaseCatalog::instance().getTable({context->getCurrentDatabase(), table}, context);
-        
+
         if (!storage)
         {
             auto databases = DatabaseCatalog::instance().getDatabases();
@@ -205,7 +196,7 @@ void QueryInfo::processTablesAndColumns(const CollectTablesMatcher::Data & table
             {
                 if (db_name == context->getCurrentDatabase())
                     continue;
-                    
+
                 storage = DatabaseCatalog::instance().getTable({db_name, table}, context);
                 if (storage)
                     break;
@@ -214,37 +205,33 @@ void QueryInfo::processTablesAndColumns(const CollectTablesMatcher::Data & table
 
         if (!storage)
         {
-            // LOG_INFO(getLogger("QueryInfo"), "Table {} not found in any database, skipping", table);
             continue;
         }
 
         if (storage->isView())
         {
-            // LOG_INFO(getLogger("QueryInfo"), "Skipping view: {}", table);
             continue;
         }
 
         auto metadata = storage->getInMemoryMetadataPtr();
         auto columns = metadata->getColumns().getNamesOfPhysical();
         table_metadata_cache[table] = std::set<String>(columns.begin(), columns.end());
-        
+
         table_columns[table] = {};
     }
 
     auto idents = IdentifiersCollector::collect(ast);
-    
+
     for (const auto * ident : idents)
     {
-        // LOG_INFO(getLogger("QueryInfo"), "Processing identifier: {}", ident->getColumnName());
-        if (auto column_name = IdentifierSemantic::getColumnName(*ident))
+        const auto& column_name = ident->shortName();
+        if (!column_name.empty())
         {
             for (const auto & [table, columns] : table_metadata_cache)
             {
-                if (columns.contains(*column_name))
+                if (columns.contains(column_name))
                 {
-                    table_columns[table].insert(*column_name);
-                    // LOG_INFO(getLogger("QueryInfo"), "Found column {}.{}", table, *column_name);
-                    break;
+                    table_columns[table].insert(column_name);
                 }
             }
         }
@@ -252,8 +239,10 @@ void QueryInfo::processTablesAndColumns(const CollectTablesMatcher::Data & table
 
     for (const auto & [table, columns] : table_columns)
     {
-        Strings cols_vec(columns.begin(), columns.end());
-        tables_to_columns[table].insert(tables_to_columns[table].end(), cols_vec.begin(), cols_vec.end());
+        for (const auto & column : columns)
+        {
+            tables_to_columns[table].insert(column);
+        }
     }
 }
 

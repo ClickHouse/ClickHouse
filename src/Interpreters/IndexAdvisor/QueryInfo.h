@@ -3,8 +3,7 @@
 #include <Core/Types_fwd.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
-#include "CollectTablesMatcher.h"
-
+#include <Interpreters/IndexAdvisor/CollectTablesMatcher.h>
 namespace DB
 {
 
@@ -14,7 +13,7 @@ public:
     explicit QueryInfo(const String& path, ContextMutablePtr context);
 
     const Strings& getWorkload() const { return queries; }
-    const Strings& getColumns(const String& table) const
+    const std::unordered_set<String>& getColumns(const String& table) const
     {
         auto it = tables_to_columns.find(table);
         if (it != tables_to_columns.end())
@@ -29,21 +28,20 @@ public:
         return tables;
     }
 
-    // Get all views that were created during query processing
-    const Strings& getViews() const { return views; }
+    const Strings& getCreateViews() const { return create_view_queries; }
+    const Strings& getDropViews() const { return drop_view_queries; }
 
 private:
     void readQueries(const String& path);
     void parseColumnsFromQuery(const String& query);
-    void processTablesAndColumns(const CollectTablesMatcher::Data & tables_data, const std::set<String> * cte_names = nullptr, const ASTPtr & ast = nullptr);
-
+    void processTablesAndColumns(const CollectTablesMatcher::Data& tables_data, const std::set<String>* cte_names, const ASTPtr& ast);
     Strings queries;
-    std::unordered_map<String, Strings> tables_to_columns;
-    Strings views;  // Store names of views that were created
+    std::unordered_map<String, std::unordered_set<String>> tables_to_columns;
     std::vector<String> drop_view_queries;
+    std::vector<String> create_view_queries;
 
     ContextMutablePtr context;
-    const Strings EMPTY = {};
+    const std::unordered_set<String> EMPTY = {};
 };
     
 } // namespace DB

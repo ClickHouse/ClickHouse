@@ -1,5 +1,8 @@
 #pragma once
-#include "TableManager.h"
+
+#include <Core/Settings.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/IndexAdvisor/QueryInfo.h>
 
 namespace DB
 {
@@ -7,14 +10,17 @@ namespace DB
 class IndexAdvisor
 {
 public:
-    explicit IndexAdvisor(TableManager & table_manager_, ContextMutablePtr context_)
-        : table_manager(table_manager_), context(context_) {}
+    IndexAdvisor(ContextMutablePtr context_, QueryInfo & workload_)
+        : workload(workload_)
+        , context(context_)
+    {
+    }
 
-    std::unordered_map<String, Strings> getBestPKColumns();
+    std::pair<Strings, UInt64> getBestPKColumnsForTable(const String & table);
+    std::unordered_map<String, std::pair<Strings, UInt64>> getBestPKColumns();
+
 private:
-    Strings getBestPKColumnsForTable(const String & table);
-
-    TableManager & table_manager;
+    QueryInfo & workload;
     ContextMutablePtr context;
 };
 
