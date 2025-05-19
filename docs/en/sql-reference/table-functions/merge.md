@@ -19,7 +19,7 @@ merge(['db_name',] 'tables_regexp')
 
 | Argument        | Description                                                                                                                                                                                                                                                                                     |
 |-----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `db_name`       | Possible values (optional, default is `currentDatabase()`):<br>    - database name,<br>    - constant expression that returns a string with a database name, for example, `currentDatabase()`,<br>    - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names. |
+| `db_name`       | Possible values (optional, default is `currentDatabase()`):<br/>    - database name,<br/>    - constant expression that returns a string with a database name, for example, `currentDatabase()`,<br/>    - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names. |
 | `tables_regexp` | A regular expression to match the table names in the specified DB or DBs.                                                                                                                                                                                                                       |
 
 ## Related {#related}
