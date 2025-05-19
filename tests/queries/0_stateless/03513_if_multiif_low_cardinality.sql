@@ -138,3 +138,7 @@ SELECT if((NULL IS NULL) AND
           element_type_3315726463)
    ),
    NULL) AS fill_value_3315726463;
+
+
+SELECT 'toBool(LowCardinality(Nullable(String))) from if';
+SELECT toBool(if(number % 2, 'true', NULL)) as x, toTypeName(x) from numbers(2);
