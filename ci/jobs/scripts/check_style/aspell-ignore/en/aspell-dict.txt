@@ -1961,6 +1961,7 @@ grpcio
 gtest
 gtid
 gzip
+gunzip
 gzipped
 hadoop
 halfMD
@@ -2345,6 +2346,8 @@ namespace
 namespaces
 natively
 nats
+ncat
+netcat
 ness
 nestjs
 netloc
