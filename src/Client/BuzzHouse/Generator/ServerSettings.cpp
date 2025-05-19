@@ -889,13 +889,15 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "min_insert_block_size_rows_for_materialized_views",
           "output_format_parquet_batch_size",
           "output_format_parquet_data_page_size",
-          "output_format_parquet_row_group_size",
           "partial_merge_join_rows_in_right_blocks",
           "query_plan_max_limit_for_lazy_materialization"})
     {
         performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "65536"}, false)}});
         serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
     }
+    performanceSettings.insert({{"output_format_parquet_row_group_size", CHSetting(rowsRange, {}, false)}});
+    serverSettings.insert({{"output_format_parquet_row_group_size", CHSetting(rowsRange, {}, false)}});
+
     /// Number of bytes values
     for (const auto & entry :
          {"aggregation_in_order_max_block_bytes",
