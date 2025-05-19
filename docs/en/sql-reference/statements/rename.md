@@ -2,7 +2,6 @@
 description: 'Documentation for RENAME Statement'
 sidebar_label: 'RENAME'
 sidebar_position: 48
-slug: /sql-reference/statements/rename
 title: 'RENAME Statement'
 ---
 
@@ -17,7 +16,7 @@ Note that the `RENAME` query with several entities is non-atomic operation. To s
 RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
 ```
 
-## RENAME DATABASE {#rename-database}
+## RENAME DATABASE 
 
 Renames databases.
 
@@ -27,7 +26,7 @@ Renames databases.
 RENAME DATABASE atomic_database1 TO atomic_database2 [,...] [ON CLUSTER cluster]
 ```
 
-## RENAME TABLE {#rename-table}
+## RENAME TABLE 
 
 Renames one or more tables.
 
@@ -51,7 +50,7 @@ And you can use a simpler sql:
 RENAME table_A TO table_A_bak, table_B TO table_B_bak;
 ```
 
-## RENAME DICTIONARY {#rename-dictionary}
+## RENAME DICTIONARY 
 
 Renames one or several dictionaries. This query can be used to move dictionaries between databases.
 

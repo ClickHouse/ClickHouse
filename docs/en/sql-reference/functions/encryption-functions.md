@@ -2,7 +2,6 @@
 description: 'Documentation for Encryption Functions'
 sidebar_label: 'Encryption'
 sidebar_position: 70
-slug: /sql-reference/functions/encryption-functions
 title: 'Encryption Functions'
 ---
 
@@ -16,7 +15,7 @@ Initialization vector length is always 16 bytes (bytes in excess of 16 are ignor
 
 Note that these functions work slowly until ClickHouse 21.1.
 
-## encrypt {#encrypt}
+## encrypt 
 
 This function encrypts data using these modes:
 
@@ -108,7 +107,7 @@ Result:
 └──────────────────────┴──────────────────────────────────────────────┘
 ```
 
-## aes_encrypt_mysql {#aes_encrypt_mysql}
+## aes_encrypt_mysql 
 
 Compatible with mysql encryption and resulting ciphertext can be decrypted with [AES_DECRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-decrypt) function.
 
@@ -217,7 +216,7 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 1 row in set (0.00 sec)
 ```
 
-## decrypt {#decrypt}
+## decrypt 
 
 This function decrypts ciphertext into a plaintext using these modes:
 
@@ -299,7 +298,7 @@ Result:
 
 Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.
 
-## tryDecrypt {#trydecrypt}
+## tryDecrypt 
 
 Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key.
 
@@ -346,7 +345,7 @@ Result:
 └─────────────────────┴─────────┴────────┘
 ```
 
-## aes_decrypt_mysql {#aes_decrypt_mysql}
+## aes_decrypt_mysql 
 
 Compatible with mysql encryption and decrypts data encrypted with [AES_ENCRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-encrypt) function.
 

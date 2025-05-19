@@ -4,7 +4,6 @@ description: 'This section contains descriptions of server settings i.e settings
 keywords: ['global server settings']
 sidebar_label: 'Server Settings'
 sidebar_position: 57
-slug: /operations/server-configuration-parameters/settings
 title: 'Server Settings'
 ---
 

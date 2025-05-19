@@ -2,7 +2,6 @@
 description: 'System table containing filters for one particular table, as well as
   a list of roles and/or users which should use this row policy.'
 keywords: ['system table', 'row_policies']
-slug: /operations/system-tables/row_policies
 title: 'system.row_policies'
 ---
 
@@ -35,6 +34,6 @@ Columns:
 
 - `apply_to_except` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — The row policies is applied to all roles and/or users excepting of the listed ones.
 
-## See Also {#see-also}
+## See Also 
 
 - [SHOW POLICIES](/sql-reference/statements/show#show-policies)

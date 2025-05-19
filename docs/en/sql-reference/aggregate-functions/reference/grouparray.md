@@ -2,7 +2,6 @@
 description: 'Creates an array of argument values. Values can be added to the array
   in any (indeterminate) order.'
 sidebar_position: 139
-slug: /sql-reference/aggregate-functions/reference/grouparray
 title: 'groupArray'
 ---
 

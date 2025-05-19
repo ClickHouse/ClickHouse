@@ -2,11 +2,9 @@
 description: 'Documentation for WATCH Statement'
 sidebar_label: 'WATCH'
 sidebar_position: 53
-slug: /sql-reference/statements/watch
 title: 'WATCH Statement'
 ---
 
-import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
 # WATCH Statement
 

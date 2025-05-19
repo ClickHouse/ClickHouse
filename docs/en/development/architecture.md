@@ -3,7 +3,6 @@ description: 'A comprehensive overview of ClickHouse architecture and its column
   design'
 sidebar_label: 'Architecture Overview'
 sidebar_position: 50
-slug: /development/architecture
 title: 'Architecture Overview'
 ---
 
@@ -19,25 +18,25 @@ Array programming is used in scientific data processing. Neither is this idea so
 
 There are two different approaches for speeding up query processing: vectorized query execution and runtime code generation. The latter removes all indirection and dynamic dispatch. Neither of these approaches is strictly better than the other. Runtime code generation can be better when it fuses many operations, thus fully utilizing CPU execution units and the pipeline. Vectorized query execution can be less practical because it involves temporary vectors that must be written to the cache and read back. If the temporary data does not fit in the L2 cache, this becomes an issue. But vectorized query execution more easily utilizes the SIMD capabilities of the CPU. A [research paper](http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf) written by our friends shows that it is better to combine both approaches. ClickHouse uses vectorized query execution and has limited initial support for runtime code generation.
 
-## Columns {#columns}
+## Columns 
 
 `IColumn` interface is used to represent columns in memory (actually, chunks of columns). This interface provides helper methods for the implementation of various relational operators. Almost all operations are immutable: they do not modify the original column, but create a new modified one. For example, the `IColumn :: filter` method accepts a filter byte mask. It is used for the `WHERE` and `HAVING` relational operators. Additional examples: the `IColumn :: permute` method to support `ORDER BY`, the `IColumn :: cut` method to support `LIMIT`.
 
 Various `IColumn` implementations (`ColumnUInt8`, `ColumnString`, and so on) are responsible for the memory layout of columns. The memory layout is usually a contiguous array. For the integer type of columns, it is just one contiguous array, like `std :: vector`. For `String` and `Array` columns, it is two vectors: one for all array elements, placed contiguously, and a second one for offsets to the beginning of each array. There is also `ColumnConst` that stores just one value in memory, but looks like a column.
 
-## Field {#field}
+## Field 
 
 Nevertheless, it is possible to work with individual values as well. To represent an individual value, the `Field` is used. `Field` is just a discriminated union of `UInt64`, `Int64`, `Float64`, `String` and `Array`. `IColumn` has the `operator []` method to get the n-th value as a `Field`, and the `insert` method to append a `Field` to the end of a column. These methods are not very efficient, because they require dealing with temporary `Field` objects representing an individual value. There are more efficient methods, such as `insertFrom`, `insertRangeFrom`, and so on.
 
 `Field` does not have enough information about a specific data type for a table. For example, `UInt8`, `UInt16`, `UInt32`, and `UInt64` are all represented as `UInt64` in a `Field`.
 
-## Leaky Abstractions {#leaky-abstractions}
+## Leaky Abstractions 
 
 `IColumn` has methods for common relational transformations of data, but they do not meet all needs. For example, `ColumnUInt64` does not have a method to calculate the sum of two columns, and `ColumnString` does not have a method to run a substring search. These countless routines are implemented outside of `IColumn`.
 
 Various functions on columns can be implemented in a generic, non-efficient way using `IColumn` methods to extract `Field` values, or in a specialized way using knowledge of inner memory layout of data in a specific `IColumn` implementation. It is implemented by casting functions to a specific `IColumn` type and deal with internal representation directly. For example, `ColumnUInt64` has the `getData` method that returns a reference to an internal array, then a separate routine reads or fills that array directly. We have "leaky abstractions" to allow efficient specializations of various routines.
 
-## Data Types {#data_types}
+## Data Types 
 
 `IDataType` is responsible for serialization and deserialization: for reading and writing chunks of columns or individual values in binary or text form. `IDataType` directly corresponds to data types in tables. For example, there are `DataTypeUInt32`, `DataTypeDateTime`, `DataTypeString` and so on.
 
@@ -47,7 +46,7 @@ Various functions on columns can be implemented in a generic, non-efficient way 
 
 `IDataType` has helper methods for various data formats. Examples are methods to serialize a value with possible quoting, to serialize a value for JSON, and to serialize a value as part of the XML format. There is no direct correspondence to data formats. For example, the different data formats `Pretty` and `TabSeparated` can use the same `serializeTextEscaped` helper method from the `IDataType` interface.
 
-## Block {#block}
+## Block 
 
 A `Block` is a container that represents a subset (chunk) of a table in memory. It is just a set of triples: `(IColumn, IDataType, column name)`. During query execution, data is processed by `Block`s. If we have a `Block`, we have data (in the `IColumn` object), we have information about its type (in `IDataType`) that tells us how to deal with that column, and we have the column name. It could be either the original column name from the table or some artificial name assigned for getting temporary results of calculations.
 
@@ -55,15 +54,15 @@ When we calculate some function over columns in a block, we add another column w
 
 Blocks are created for every processed chunk of data. Note that for the same type of calculation, the column names and types remain the same for different blocks, and only column data changes. It is better to split block data from the block header because small block sizes have a high overhead of temporary strings for copying shared_ptrs and column names.
 
-## Processors {#processors}
+## Processors 
 
 See the description at [https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h).
 
-## Formats {#formats}
+## Formats 
 
 Data formats are implemented with processors.
 
-## I/O {#io}
+## I/O 
 
 For byte-oriented input/output, there are `ReadBuffer` and `WriteBuffer` abstract classes. They are used instead of C++ `iostream`s. Don't worry: every mature C++ project is using something other than `iostream`s for good reasons.
 
@@ -80,7 +79,7 @@ Next, you connect the result from the query pipeline to `JSONRowOutputFormat`, w
 This can be done via the `complete` method, which turns a pulling `QueryPipeline` into a completed `QueryPipeline`.
 Internally, `JSONRowOutputFormat` will write various JSON delimiters and call the `IDataType::serializeTextJSON` method with a reference to `IColumn` and the row number as arguments. Consequently, `IDataType::serializeTextJSON` will call a method from `WriteHelpers.h`: for example, `writeText` for numeric types and `writeJSONString` for `DataTypeString`.
 
-## Tables {#tables}
+## Tables 
 
 The `IStorage` interface represents tables. Different implementations of that interface are different table engines. Examples are `StorageMergeTree`, `StorageMemory`, and so on. Instances of these classes are just tables.
 
@@ -104,13 +103,13 @@ To get a quick idea of how to implement your table engine, look at something sim
 
 > As the result of the `read` method, `IStorage` returns `QueryProcessingStage` – information about what parts of the query were already calculated inside storage.
 
-## Parsers {#parsers}
+## Parsers 
 
 A hand-written recursive descent parser parses a query. For example, `ParserSelectQuery` just recursively calls the underlying parsers for various parts of the query. Parsers create an `AST`. The `AST` is represented by nodes, which are instances of `IAST`.
 
 > Parser generators are not used for historical reasons.
 
-## Interpreters {#interpreters}
+## Interpreters 
 
 Interpreters are responsible for creating the query execution pipeline from an AST. There are simple interpreters, such as `InterpreterExistsQuery` and `InterpreterDropQuery`, as well as the more sophisticated `InterpreterSelectQuery`.
 
@@ -126,7 +125,7 @@ And the result of interpreting the `INSERT SELECT` query is a "completed" `Query
 
 To address problems that exist in interpreters, a new `InterpreterSelectQueryAnalyzer` has been developed. This is a new version of the `InterpreterSelectQuery`, which does not use the `ExpressionAnalyzer` and introduces an additional layer of abstraction between `AST` and `QueryPipeline`, called `QueryTree`. It is fully ready for use in production, but just in case it can be turned off by setting the value of the `enable_analyzer` setting to `false`.
 
-## Functions {#functions}
+## Functions 
 
 There are ordinary functions and aggregate functions. For aggregate functions, see the next section.
 
@@ -142,7 +141,7 @@ It is an excellent place to implement runtime code generation to avoid template 
 
 Due to vectorized query execution, functions are not short-circuited. For example, if you write `WHERE f(x) AND g(y)`, both sides are calculated, even for rows, when `f(x)` is zero (except when `f(x)` is a zero constant expression). But if the selectivity of the `f(x)` condition is high, and calculation of `f(x)` is much cheaper than `g(y)`, it's better to implement multi-pass calculation. It would first calculate `f(x)`, then filter columns by the result, and then calculate `g(y)` only for smaller, filtered chunks of data.
 
-## Aggregate Functions {#aggregate-functions}
+## Aggregate Functions 
 
 Aggregate functions are stateful functions. They accumulate passed values into some state and allow you to get results from that state. They are managed with the `IAggregateFunction` interface. States can be rather simple (the state for `AggregateFunctionCount` is just a single `UInt64` value) or quite complex (the state of `AggregateFunctionUniqCombined` is a combination of a linear array, a hash table, and a `HyperLogLog` probabilistic data structure).
 
@@ -152,7 +151,7 @@ Aggregation states can be serialized and deserialized to pass over the network d
 
 > The serialized data format for aggregate function states is not versioned right now. It is ok if aggregate states are only stored temporarily. But we have the `AggregatingMergeTree` table engine for incremental aggregation, and people are already using it in production. It is the reason why backward compatibility is required when changing the serialized format for any aggregate function in the future.
 
-## Server {#server}
+## Server 
 
 The server implements several different interfaces:
 
@@ -170,7 +169,7 @@ We maintain full backward and forward compatibility for the server TCP protocol:
 For most external applications, we recommend using the HTTP interface because it is simple and easy to use. The TCP protocol is more tightly linked to internal data structures: it uses an internal format for passing blocks of data, and it uses custom framing for compressed data. We haven't released a C library for that protocol because it requires linking most of the ClickHouse codebase, which is not practical.
 :::
 
-## Configuration {#configuration}
+## Configuration 
 
 ClickHouse Server is based on POCO C++ Libraries and uses `Poco::Util::AbstractConfiguration` to represent its configuration. Configuration is held by `Poco::Util::ServerApplication` class inherited by `DaemonBase` class, which in turn is inherited by `DB::Server` class, implementing clickhouse-server itself. So config can be accessed by `ServerApplication::config()` method.
 
@@ -178,7 +177,7 @@ Config is read from multiple files (in XML or YAML format) and merged into singl
 
 For queries and subsystems other than `Server` config is accessible using `Context::getConfigRef()` method. Every subsystem that is capable of reloading its config without server restart should register itself in reload callback in `Server::main()` method. Note that if newer config has an error, most subsystems will ignore new config, log warning messages and keep working with previously loaded config. Due to the nature of `AbstractConfiguration` it is not possible to pass reference to specific section, so `String config_prefix` is usually used instead.
 
-## Threads and jobs {#threads-and-jobs}
+## Threads and jobs 
 
 To execute queries and do side activities ClickHouse allocates threads from one of thread pools to avoid frequent thread creation and destruction. There are a few thread pools, which are selected depending on a purpose and structure of a job:
   * Server pool for incoming client sessions.
@@ -206,7 +205,7 @@ No matter what pool is used for a job, at start `ThreadStatus` instance is creat
 
 If thread is related to query execution, then the most important thing attached to `ThreadStatus` is query context `ContextPtr`. Every query has its master thread in the server pool. Master thread does the attachment by holding an `ThreadStatus::QueryScope query_scope(query_context)` object. Master thread also creates a thread group represented with `ThreadGroupStatus` object. Every additional thread that is allocated during this query execution is attached to its thread group by `CurrentThread::attachTo(thread_group)` call. Thread groups are used to aggregate profile event counters and track memory consumption by all threads dedicated to a single task (see `MemoryTracker` and `ProfileEvents::Counters` classes for more information).
 
-## Concurrency control {#concurrency-control}
+## Concurrency control 
 Query that can be parallelized uses `max_threads` setting to limit itself. Default value for this setting is selected in a way that allows single query to utilize all CPU cores in the best way. But what if there are multiple concurrent queries and each of them uses default `max_threads` setting value? Then queries will share CPU resources. OS will ensure fairness by constantly switching threads, which introduce some performance penalty. `ConcurrencyControl` helps to deal with this penalty and avoid allocating a lot of threads. Configuration setting `concurrent_threads_soft_limit_num` is used to limit how many concurrent thread can be allocated before applying some kind of CPU pressure.
 
 Notion of CPU `slot` is introduced. Slot is a unit of concurrency: to run a thread query has to acquire a slot in advance and release it when thread stops. The number of slots is globally limited in a server. Multiple concurrent queries are competing for CPU slots if the total demand exceeds the total number of slots. `ConcurrencyControl` is responsible to resolve this competition by doing CPU slot scheduling in a fair manner.
@@ -239,7 +238,7 @@ API of `ConcurrencyControl` consists of the following functions:
 
 This API allows queries to start with at least one thread (in presence of CPU pressure) and later scale up to `max_threads`.
 
-## Distributed Query Execution {#distributed-query-execution}
+## Distributed Query Execution 
 
 Servers in a cluster setup are mostly independent. You can create a `Distributed` table on one or all servers in a cluster. The `Distributed` table does not store data itself – it only provides a "view" to all local tables on multiple nodes of a cluster. When you SELECT from a `Distributed` table, it rewrites that query, chooses remote nodes according to load balancing settings, and sends the query to them. The `Distributed` table requests remote servers to process a query just up to a stage where intermediate results from different servers can be merged. Then it receives the intermediate results and merges them. The distributed table tries to distribute as much work as possible to remote servers and does not send much intermediate data over the network.
 
@@ -247,7 +246,7 @@ Things become more complicated when you have subqueries in IN or JOIN clauses, a
 
 There is no global query plan for distributed query execution. Each node has its local query plan for its part of the job. We only have simple one-pass distributed query execution: we send queries for remote nodes and then merge the results. But this is not feasible for complicated queries with high cardinality `GROUP BY`s or with a large amount of temporary data for JOIN. In such cases, we need to "reshuffle" data between servers, which requires additional coordination. ClickHouse does not support that kind of query execution, and we need to work on it.
 
-## Merge Tree {#merge-tree}
+## Merge Tree 
 
 `MergeTree` is a family of storage engines that supports indexing by primary key. The primary key can be an arbitrary tuple of columns or expressions. Data in a `MergeTree` table is stored in "parts". Each part stores data in the primary key order, so data is ordered lexicographically by the primary key tuple. All the table columns are stored in separate `column.bin` files in these parts. The files consist of compressed blocks. Each block is usually from 64 KB to 1 MB of uncompressed data, depending on the average value size. The blocks consist of column values placed contiguously one after the other. Column values are in the same order for each column (the primary key defines the order), so when you iterate by many columns, you get values for the corresponding rows.
 
@@ -261,7 +260,7 @@ When you `INSERT` a bunch of data into `MergeTree`, that bunch is sorted by prim
 
 There are MergeTree engines that are doing additional work during background merges. Examples are `CollapsingMergeTree` and `AggregatingMergeTree`. This could be treated as special support for updates. Keep in mind that these are not real updates because users usually have no control over the time when background merges are executed, and data in a `MergeTree` table is almost always stored in more than one part, not in completely merged form.
 
-## Replication {#replication}
+## Replication 
 
 Replication in ClickHouse can be configured on a per-table basis. You could have some replicated and some non-replicated tables on the same server. You could also have tables replicated in different ways, such as one table with two-factor replication and another with three-factor.
 

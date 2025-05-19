@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for the ClickHouse Keeper client utility'
 sidebar_label: 'clickhouse-keeper-client'
-slug: /operations/utilities/clickhouse-keeper-client
 title: 'clickhouse-keeper-client utility'
 ---
 
@@ -9,7 +8,7 @@ title: 'clickhouse-keeper-client utility'
 
 A client application to interact with clickhouse-keeper by its native protocol.
 
-## Keys {#clickhouse-keeper-client}
+## Keys 
 
 -   `-q QUERY`, `--query=QUERY` — Query to execute. If this parameter is not passed, `clickhouse-keeper-client` will start in interactive mode.
 -   `-h HOST`, `--host=HOST` — Server host. Default value: `localhost`.
@@ -23,7 +22,7 @@ A client application to interact with clickhouse-keeper by its native protocol.
 -   `--no-confirmation` — If set, will not require a confirmation on several commands. Default value `false` for interactive and `true` for query
 -   `--help` — Shows the help message.
 
-## Example {#clickhouse-keeper-client-example}
+## Example 
 
 ```bash
 ./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
@@ -45,7 +44,7 @@ keeper foo bar
 2
 ```
 
-## Commands {#clickhouse-keeper-client-commands}
+## Commands 
 
 -   `ls '[path]'` -- Lists the nodes for the given path (default: cwd)
 -   `cd '[path]'` -- Changes the working path (default `.`)

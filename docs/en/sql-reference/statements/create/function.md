@@ -2,7 +2,6 @@
 description: 'Documentation for Function'
 sidebar_label: 'FUNCTION'
 sidebar_position: 38
-slug: /sql-reference/statements/create/function
 title: 'CREATE FUNCTION -user defined function (UDF)'
 ---
 
@@ -59,8 +58,8 @@ Result:
 └────────┴──────────────────────────────────────┘
 ```
 
-## Related Content {#related-content}
+## Related Content 
 
-### [Executable UDFs](/sql-reference/functions/udf.md). {#executable-udfs}
+### [Executable UDFs](/sql-reference/functions/udf.md). 
 
-### [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs) {#user-defined-functions-in-clickhouse-cloud}
+### [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs) 

@@ -2,7 +2,6 @@
 description: 'System table containing information about existing data skipping indices
   in all the tables.'
 keywords: ['system table', 'data_skipping_indices']
-slug: /operations/system-tables/data_skipping_indices
 title: 'system.data_skipping_indices'
 ---
 

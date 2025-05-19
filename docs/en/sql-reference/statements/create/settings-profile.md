@@ -2,7 +2,6 @@
 description: 'Documentation for Settings Profile'
 sidebar_label: 'SETTINGS PROFILE'
 sidebar_position: 43
-slug: /sql-reference/statements/create/settings-profile
 title: 'CREATE SETTINGS PROFILE'
 ---
 
@@ -20,7 +19,7 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
 `ON CLUSTER` clause allows creating settings profiles on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-## Example {#example}
+## Example 
 
 Create a user:
 ```sql

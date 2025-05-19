@@ -3,7 +3,6 @@ description: 'Allows to connect to SQLite databases and perform `INSERT` and `SE
   queries to exchange data between ClickHouse and SQLite.'
 sidebar_label: 'SQLite'
 sidebar_position: 55
-slug: /engines/database-engines/sqlite
 title: 'SQLite'
 ---
 
@@ -11,7 +10,7 @@ title: 'SQLite'
 
 Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and SQLite.
 
-## Creating a Database {#creating-a-database}
+## Creating a Database 
 
 ```sql
     CREATE DATABASE sqlite_database
@@ -22,7 +21,7 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and pe
 
 - `db_path` — Path to a file with SQLite database.
 
-## Data Types Support {#data_types-support}
+## Data Types Support 
 
 |  SQLite   | ClickHouse                                              |
 |---------------|---------------------------------------------------------|
@@ -31,12 +30,12 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and pe
 | TEXT          | [String](../../sql-reference/data-types/string.md)      |
 | BLOB          | [String](../../sql-reference/data-types/string.md)      |
 
-## Specifics and Recommendations {#specifics-and-recommendations}
+## Specifics and Recommendations 
 
 SQLite stores the entire database (definitions, tables, indices, and the data itself) as a single cross-platform file on a host machine. During writing SQLite locks the entire database file, therefore write operations are performed sequentially. Read operations can be multi-tasked.
 SQLite does not require service management (such as startup scripts) or access control based on `GRANT` and passwords. Access control is handled by means of file-system permissions given to the database file itself.
 
-## Usage Example {#usage-example}
+## Usage Example 
 
 Database in ClickHouse, connected to the SQLite:
 

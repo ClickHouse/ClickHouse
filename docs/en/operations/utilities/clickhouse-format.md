@@ -1,6 +1,5 @@
 ---
 description: 'Guide to using the format utility for working with ClickHouse data formats'
-slug: /operations/utilities/clickhouse-format
 title: 'clickhouse-format'
 ---
 
@@ -22,7 +21,7 @@ Keys:
 - `--seed <string>` — Seed arbitrary string that determines the result of obfuscation.
 - `--backslash` — Add a backslash at the end of each line of the formatted query. Can be useful when you copy a query from web or somewhere else with multiple lines, and want to execute it in command line.
 
-## Examples {#examples}
+## Examples 
 
 1. Formatting a query:
 

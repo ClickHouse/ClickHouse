@@ -3,15 +3,14 @@ description: 'Provides a read-only table-like interface to Apache Iceberg tables
   Amazon S3, Azure, HDFS or locally stored.'
 sidebar_label: 'iceberg'
 sidebar_position: 90
-slug: /sql-reference/table-functions/iceberg
 title: 'iceberg'
 ---
 
-# iceberg Table Function {#iceberg-table-function}
+# iceberg Table Function 
 
 Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
 
-## Syntax {#syntax}
+## Syntax 
 
 ```sql
 icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
@@ -27,15 +26,15 @@ icebergLocal(path_to_table, [,format] [,compression_method])
 icebergLocal(named_collection[, option=value [,..]])
 ```
 
-## Arguments {#arguments}
+## Arguments 
 
 Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
 
-### Returned value {#returned-value}
+### Returned value 
 A table with the specified structure for reading data in the specified Iceberg table.
 
-### Example {#example}
+### Example 
 
 ```sql
 SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
@@ -45,7 +44,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ClickHouse currently supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `icebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines.
 :::
 
-## Defining a named collection {#defining-a-named-collection}
+## Defining a named collection 
 
 Here is an example of configuring a named collection for storing the URL and credentials:
 
@@ -68,7 +67,7 @@ SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
 DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 ```
 
-## Schema Evolution {#schema-evolution}
+## Schema Evolution 
 At the moment, with the help of CH, you can read iceberg tables, the schema of which has changed over time. We currently support reading tables where columns have been added and removed, and their order has changed. You can also change a column where a value is required to one where NULL is allowed. Additionally, we support permitted type casting for simple types, namely:  
 * int -> long
 * float -> double
@@ -76,16 +75,16 @@ At the moment, with the help of CH, you can read iceberg tables, the schema of w
 
 Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
 
-## Partition Pruning {#partition-pruning}
+## Partition Pruning 
 
 ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. To enable partition pruning, set `use_iceberg_partition_pruning = 1`. For more information about iceberg partition pruning address https://iceberg.apache.org/spec/#partitioning
 
 
-## Time Travel {#time-travel}
+## Time Travel 
 
 ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
 
-### Basic usage {#basic-usage}
+### Basic usage 
  ```sql
  SELECT * FROM example_table ORDER BY 1 
  SETTINGS iceberg_timestamp_ms = 1714636800000
@@ -98,7 +97,7 @@ ClickHouse supports time travel for Iceberg tables, allowing you to query histor
 
 Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` parameters in the same query.
 
-### Important considerations {#important-considerations}
+### Important considerations 
 
 - **Snapshots** are typically created when:
     - New data is written to the table
@@ -106,11 +105,11 @@ Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` p
 
 - **Schema changes typically don't create snapshots** - This leads to important behaviors when using time travel with tables that have undergone schema evolution.
 
-### Example scenarios {#example-scenarios}
+### Example scenarios 
 
 All scenarios are written in Spark because CH doesn't support writing to Iceberg tables yet.
 
-#### Scenario 1: Schema Changes Without New Snapshots {#scenario-1}
+#### Scenario 1: Schema Changes Without New Snapshots 
 
 Consider this sequence of operations:
 
@@ -172,7 +171,7 @@ Query results at different timestamps:
 - At ts1 & ts2: Only the original two columns appear
 - At ts3: All three columns appear, with NULL for the price of the first row
 
-#### Scenario 2:  Historical vs. Current Schema Differences {#scenario-2}
+#### Scenario 2:  Historical vs. Current Schema Differences 
 
 
 A time travel query at a current moment might show a different schema than the current table:
@@ -218,7 +217,7 @@ A time travel query at a current moment might show a different schema than the c
 
 This happens because `ALTER TABLE` doesn't create a new snapshot but for the current table Spark takes value of `schema_id` from the latest metadata file, not a snapshot.
 
-#### Scenario 3:  Historical vs. Current Schema Differences {#scenario-3}
+#### Scenario 3:  Historical vs. Current Schema Differences 
 
 The second one is that while doing time travel you can't get state of table before any data was written to it:
 
@@ -239,11 +238,11 @@ The second one is that while doing time travel you can't get state of table befo
 
 In Clickhouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with Clickhouse Select queries and it will work the same way.
 
-## Metadata File Resolution {#metadata-file-resolution}
+## Metadata File Resolution 
 
 When using the `iceberg` table function in ClickHouse, the system needs to locate the correct metadata.json file that describes the Iceberg table structure. Here's how this resolution process works:
 
-### Candidate Search (in Priority Order) {#candidate-search}
+### Candidate Search (in Priority Order) 
 
 1. **Direct Path Specification**:
    * If you set `iceberg_metadata_file_path`, the system will use this exact path by combining it with the Iceberg table directory path.
@@ -257,7 +256,7 @@ When using the `iceberg` table function in ClickHouse, the system needs to locat
 3. **Default Search**:
    * If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
 
-### Selecting the Most Recent File {#most-recent-file}
+### Selecting the Most Recent File 
 
 After identifying candidate files using the above rules, the system determines which one is the most recent:
 
@@ -277,15 +276,15 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 
 **Note**: While Iceberg Catalogs typically handle metadata resolution, the `iceberg` table function in ClickHouse directly interprets files stored in S3 as Iceberg tables, which is why understanding these resolution rules is important.
 
-## Metadata cache {#metadata-cache}
+## Metadata cache 
 
 `Iceberg` table engine and table function support metadata cache storing the information of manifest files, manifest list and metadata json. The cache is stored in memory. This feature is controlled by setting `use_iceberg_metadata_files_cache`, which is enabled by default.
 
-## Aliases {#aliases}
+## Aliases 
 
 Table function `iceberg` is an alias to `icebergS3` now.
 
-## See Also {#see-also}
+## See Also 
 
 - [Iceberg engine](/engines/table-engines/integrations/iceberg.md)
 - [Iceberg cluster table function](/sql-reference/table-functions/icebergCluster.md)

@@ -5,7 +5,6 @@ description: 'Replaces all rows with the same primary key (or more accurately, w
   of aggregate functions.'
 sidebar_label: 'AggregatingMergeTree'
 sidebar_position: 60
-slug: /engines/table-engines/mergetree-family/aggregatingmergetree
 title: 'AggregatingMergeTree'
 ---
 
@@ -22,12 +21,12 @@ You can see an example of how to use the AggregatingMergeTree and Aggregate func
 
 The engine processes all columns with the following types:
 
-## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) {#aggregatefunction}
-## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md) {#simpleaggregatefunction}
+## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) 
+## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md) 
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
-## Creating a Table {#creating-a-table}
+## Creating a Table 
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -69,14 +68,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 All of the parameters have the same meaning as in `MergeTree`.
 </details>
 
-## SELECT and INSERT {#select-and-insert}
+## SELECT and INSERT 
 
 To insert data, use [INSERT SELECT](../../../sql-reference/statements/insert-into.md) query with aggregate -State- functions.
 When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using the `-Merge` suffix.
 
 In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. For example, if you dump data into `TabSeparated` format with a `SELECT` query, then this dump can be loaded back using an `INSERT` query.
 
-## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
+## Example of an Aggregated Materialized View 
 
 The following example assumes that you have a database named `test`, so create it if it doesn't already exist:
 
@@ -166,6 +165,6 @@ Run the `SELECT` query again, which will return the following output:
 └─────────────────────────┴────────┴───────┘
 ```
 
-## Related Content {#related-content}
+## Related Content 
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

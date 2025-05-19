@@ -2,7 +2,6 @@
 description: 'Overview of Data Replication in ClickHouse'
 sidebar_label: 'Data Replication'
 sidebar_position: 20
-slug: /engines/table-engines/mergetree-family/replication
 title: 'Data Replication'
 ---
 
@@ -137,7 +136,7 @@ You can have any number of replicas of the same data. Based on our experiences, 
 
 The system monitors data synchronicity on replicas and is able to recover after a failure. Failover is automatic (for small differences in data) or semi-automatic (when data differs too much, which may indicate a configuration error).
 
-## Creating Replicated Tables {#creating-replicated-tables}
+## Creating Replicated Tables 
 
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
@@ -156,17 +155,17 @@ The `Replicated` prefix is added to the table engine name. For example:`Replicat
 Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.
 :::
 
-### Replicated\*MergeTree parameters {#replicatedmergetree-parameters}
+### Replicated\*MergeTree parameters 
 
-#### zoo_path {#zoo_path}
+#### zoo_path 
 
 `zoo_path` — The path to the table in ClickHouse Keeper.
 
-#### replica_name {#replica_name}
+#### replica_name 
 
 `replica_name` — The replica name in ClickHouse Keeper.
 
-#### other_parameters {#other_parameters}
+#### other_parameters 
 
 `other_parameters` — Parameters of an engine which is used for creating the replicated version, for example, version in `ReplacingMergeTree`.
 
@@ -261,7 +260,7 @@ If you add a new replica after the table already contains some data on other rep
 
 To delete a replica, run `DROP TABLE`. However, only one replica is deleted – the one that resides on the server where you run the query.
 
-## Recovery After Failures {#recovery-after-failures}
+## Recovery After Failures 
 
 If ClickHouse Keeper is unavailable when a server starts, replicated tables switch to read-only mode. The system periodically attempts to connect to ClickHouse Keeper.
 
@@ -285,7 +284,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Then restart the server. On start, the server deletes these flags and starts recovery.
 
-## Recovery After Complete Data Loss {#recovery-after-complete-data-loss}
+## Recovery After Complete Data Loss 
 
 If all data and metadata disappeared from one of the servers, follow these steps for recovery:
 
@@ -300,7 +299,7 @@ An alternative recovery option is to delete information about the lost replica f
 
 There is no restriction on network bandwidth during recovery. Keep this in mind if you are restoring many replicas at once.
 
-## Converting from MergeTree to ReplicatedMergeTree {#converting-from-mergetree-to-replicatedmergetree}
+## Converting from MergeTree to ReplicatedMergeTree 
 
 We use the term `MergeTree` to refer to all table engines in the `MergeTree family`, the same as for `ReplicatedMergeTree`.
 
@@ -332,7 +331,7 @@ Rename the existing MergeTree table, then create a `ReplicatedMergeTree` table w
 Move the data from the old table to the `detached` subdirectory inside the directory with the new table data (`/var/lib/clickhouse/data/db_name/table_name/`).
 Then run `ALTER TABLE ATTACH PARTITION` on one of the replicas to add these data parts to the working set.
 
-## Converting from ReplicatedMergeTree to MergeTree {#converting-from-replicatedmergetree-to-mergetree}
+## Converting from ReplicatedMergeTree to MergeTree 
 
 Use [ATTACH TABLE ... AS NOT REPLICATED](/sql-reference/statements/attach.md#attach-mergetree-table-as-replicatedmergetree) statement to attach detached `ReplicatedMergeTree` table as `MergeTree` on a single server.
 
@@ -345,7 +344,7 @@ If you want to get rid of a `ReplicatedMergeTree` table without launching the se
 
 After this, you can launch the server, create a `MergeTree` table, move the data to its directory, and then restart the server.
 
-## Recovery When Metadata in the ClickHouse Keeper Cluster Is Lost or Damaged {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
+## Recovery When Metadata in the ClickHouse Keeper Cluster Is Lost or Damaged 
 
 If the data in ClickHouse Keeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
 

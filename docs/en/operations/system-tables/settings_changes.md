@@ -2,7 +2,6 @@
 description: 'System table containing information about setting changes in previous
   ClickHouse versions.'
 keywords: ['system table', 'settings_changes']
-slug: /operations/system-tables/settings_changes
 title: 'system.settings_changes'
 ---
 

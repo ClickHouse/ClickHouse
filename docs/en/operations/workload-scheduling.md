@@ -2,7 +2,6 @@
 description: 'Documentation for Workload Scheduling'
 sidebar_label: 'Workload scheduling'
 sidebar_position: 69
-slug: /operations/workload-scheduling
 title: 'Workload scheduling'
 ---
 
@@ -12,7 +11,7 @@ When ClickHouse execute multiple queries simultaneously, they may be using share
 Currently [remote disk IO](#disk_config) and [CPU](#cpu_scheduling) can be scheduled using described method. For flexible memory limits see [Memory overcommit](settings/memory-overcommit.md)
 :::
 
-## Disk configuration {#disk_config}
+## Disk configuration 
 
 To enable IO workload scheduling for a specific disk, you have to create read and write resources for WRITE and READ access:
 
@@ -67,7 +66,7 @@ Example:
 
 Note that server configuration options have priority over SQL way to define resources.
 
-## Workload markup {#workload_markup}
+## Workload markup 
 
 Queries can be marked with setting `workload` to distinguish different workloads. If `workload` is not set, than value "default" is used. Note that you are able to specify the other value using settings profiles. Setting constraints can be used to make `workload` constant if you want all queries from the user to be marked with fixed value of `workload` setting.
 
@@ -80,7 +79,7 @@ SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
 SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
 ```
 
-## Resource scheduling hierarchy {#hierarchy}
+## Resource scheduling hierarchy 
 
 From the standpoint of scheduling subsystem a resource represents a hierarchy of scheduling nodes.
 
@@ -157,7 +156,7 @@ The following example shows how to define IO scheduling hierarchies shown in the
 </clickhouse>
 ```
 
-## Workload classifiers {#workload_classifiers}
+## Workload classifiers 
 
 :::warning
 Workload scheduling using clickhouse configuration is deprecated. SQL syntax should be used instead. Classifiers are created automatically when using SQL syntax.
@@ -185,7 +184,7 @@ Example:
 </clickhouse>
 ```
 
-## Workload hierarchy {#workloads}
+## Workload hierarchy 
 
 ClickHouse provides convenient SQL syntax to define scheduling hierarchy. All resources that were created with `CREATE RESOURCE` share the same structure of the hierarchy, but could differ in some aspects. Every workload created with `CREATE WORKLOAD` maintains a few automatically created scheduling nodes for every resource. A child workload can be created inside another parent workload. Here is the example that defines exactly the same hierarchy as XML configuration above:
 
@@ -222,7 +221,7 @@ Also note that workload or resource could not be dropped if it is referenced fro
 Workload settings are translated into a proper set of scheduling nodes. For lower-level details, see the description of the scheduling node [types and options](#hierarchy).
 :::
 
-## CPU scheduling {#cpu_scheduling}
+## CPU scheduling 
 
 To enable CPU scheduling for workloads create CPU resource and set a limit for the number of concurrent threads:
 
@@ -274,17 +273,17 @@ Slot scheduling provides a way to control [query concurrency](/operations/settin
 Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload. To achieve the previous behavior create only WORKER THREAD resource, set `max_concurrent_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting. This configuration corresponds to [`concurrent_threads_scheduler`](server-configuration-parameters/settings.md#concurrent_threads_scheduler) setting set "fair_round_robin" value.
 :::
 
-## Workloads and resources storage {#workload_entity_storage}
+## Workloads and resources storage 
 Definitions of all workloads and resources in the form of `CREATE WORKLOAD` and `CREATE RESOURCE` queries are stored persistently either on disk at `workload_path` or in ZooKeeper at `workload_zookeeper_path`. ZooKeeper storage is recommended to achieve consistency between nodes. Alternatively `ON CLUSTER` clause could be used along with disk storage.
 
-## Strict resource access {#strict_resource_access}
+## Strict resource access 
 To enforce all queries to follow resource scheduling policies there is a server setting `throw_on_unknown_workload`. If it is set to `true` then every query is required to use valid `workload` query setting, otherwise `RESOURCE_ACCESS_DENIED` exception is thrown. If it is set to `false` then such a query does not use resource scheduler, i.e. it will get unlimited access to any `RESOURCE`.
 
 :::note
 Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default` is executed. It could lead to server startup issues if a query without explicit setting `workload` is executed during startup.
 :::
 
-## See also {#see-also}
+## See also 
  - [system.scheduler](/operations/system-tables/scheduler.md)
  - [system.workloads](/operations/system-tables/workloads.md)
  - [system.resources](/operations/system-tables/resources.md)

@@ -4,7 +4,6 @@ description: 'Documentation for the BSONEachRow format'
 input_format: true
 keywords: ['BSONEachRow']
 output_format: true
-slug: /interfaces/formats/BSONEachRow
 title: 'BSONEachRow'
 ---
 
@@ -12,12 +11,12 @@ title: 'BSONEachRow'
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description 
 
 The `BSONEachRow` format parses data as a sequence of Binary JSON (BSON) documents without any separator between them.
 Each row is formatted as a single document and each column is formatted as a single BSON document field with the column name as a key.
 
-## Data Types Matching {#data-types-matching}
+## Data Types Matching 
 
 For output it uses the following correspondence between ClickHouse types and BSON types:
 
@@ -79,9 +78,9 @@ In this case, the format will validate that the size of the binary data equals t
 This format does not work properly on Big-Endian platforms.
 :::
 
-## Example Usage {#example-usage}
+## Example Usage 
 
-## Format Settings {#format-settings}
+## Format Settings 
 
 | Setting                                                                                                                                                                                               | Description                                                                                  | Default  |
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|----------|

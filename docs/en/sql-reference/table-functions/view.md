@@ -2,7 +2,6 @@
 description: 'Turns a subquery into a table. The function implements views.'
 sidebar_label: 'view'
 sidebar_position: 210
-slug: /sql-reference/table-functions/view
 title: 'view'
 ---
 

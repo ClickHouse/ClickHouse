@@ -4,7 +4,6 @@ description: 'The result of the `cramersV` function ranges from 0 (corresponding
   is completely determined by the other. It may be viewed as the association between
   two variables as a percentage of their maximum possible variation.'
 sidebar_position: 127
-slug: /sql-reference/aggregate-functions/reference/cramersv
 title: 'cramersV'
 ---
 

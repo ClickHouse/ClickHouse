@@ -2,7 +2,6 @@
 description: 'Learn how to add a custom partitioning key to MergeTree tables.'
 sidebar_label: 'Custom Partitioning Key'
 sidebar_position: 30
-slug: /engines/table-engines/mergetree-family/custom-partitioning-key
 title: 'Custom Partitioning Key'
 ---
 
@@ -136,7 +135,7 @@ Note that on the operating server, you cannot manually change the set of parts o
 
 ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](/sql-reference/statements/alter/partition).
 
-## Group By optimisation using partition key {#group-by-optimisation-using-partition-key}
+## Group By optimisation using partition key 
 
 For some combinations of table's partition key and query's group by key it might be possible to execute aggregation for each partition independently.
 Then we'll not have to merge partially aggregated data from all execution threads at the end,

@@ -4,17 +4,15 @@ description: 'Documentation for the RowBinaryWithNamesAndTypes format'
 input_format: true
 keywords: ['RowBinaryWithNamesAndTypes']
 output_format: true
-slug: /interfaces/formats/RowBinaryWithNamesAndTypes
 title: 'RowBinaryWithNamesAndTypes'
 ---
 
-import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description 
 
 Similar to the [RowBinary](./RowBinary.md) format, but with added header:
 
@@ -22,9 +20,9 @@ Similar to the [RowBinary](./RowBinary.md) format, but with added header:
 - N `String`s specifying column names.
 - N `String`s specifying column types.
 
-## Example Usage {#example-usage}
+## Example Usage 
 
-## Format Settings {#format-settings}
+## Format Settings 
 
 <RowBinaryFormatSettings/>
 

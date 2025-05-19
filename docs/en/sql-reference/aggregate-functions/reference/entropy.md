@@ -1,7 +1,6 @@
 ---
 description: 'Calculates Shannon entropy of for a column of values.'
 sidebar_position: 131
-slug: /sql-reference/aggregate-functions/reference/entropy
 title: 'entropy'
 ---
 

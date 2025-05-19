@@ -3,7 +3,6 @@ description: 'Represents the contents of some projection in MergeTree tables.
   It can be used for introspection.'
 sidebar_label: 'mergeTreeProjection'
 sidebar_position: 77
-slug: /sql-reference/table-functions/mergeTreeProjection
 title: 'mergeTreeProjection'
 ---
 
@@ -25,7 +24,7 @@ mergeTreeProjection(database, table, projection)
 
 A table object with columns provided by given projection.
 
-## Usage Example {#usage-example}
+## Usage Example 
 
 ```sql
 CREATE TABLE test

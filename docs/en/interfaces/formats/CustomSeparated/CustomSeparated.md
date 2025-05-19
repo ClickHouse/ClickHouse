@@ -4,7 +4,6 @@ description: 'Documentation for the CustomSeparated format'
 input_format: true
 keywords: ['CustomSeparated']
 output_format: true
-slug: /interfaces/formats/CustomSeparated
 title: 'CustomSeparated'
 ---
 
@@ -12,7 +11,7 @@ title: 'CustomSeparated'
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description 
 
 Similar to [Template](../Template/Template.md), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](../../../operations/settings/settings-formats.md/#format_custom_escaping_rule) setting and delimiters from the following settings:
 
@@ -29,9 +28,9 @@ It does not use escaping rules settings and delimiters from format strings.
 
 There is also the [`CustomSeparatedIgnoreSpaces`](../CustomSeparated/CustomSeparatedIgnoreSpaces.md) format, which is similar to [TemplateIgnoreSpaces](../Template//TemplateIgnoreSpaces.md).
 
-## Example Usage {#example-usage}
+## Example Usage 
 
-## Format Settings {#format-settings}
+## Format Settings 
 
 Additional settings:
 

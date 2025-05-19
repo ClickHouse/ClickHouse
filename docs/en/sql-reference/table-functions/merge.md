@@ -2,7 +2,6 @@
 description: 'Creates a temporary Merge table. The structure will be derived from underlying tables by using a union of their columns and by deriving common types.'
 sidebar_label: 'merge'
 sidebar_position: 130
-slug: /sql-reference/table-functions/merge
 title: 'merge'
 ---
 

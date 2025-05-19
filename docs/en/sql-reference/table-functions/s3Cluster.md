@@ -4,7 +4,6 @@ description: 'An extension to the s3 table function, which allows processing fil
   cluster.'
 sidebar_label: 's3Cluster'
 sidebar_position: 181
-slug: /sql-reference/table-functions/s3Cluster
 title: 's3Cluster'
 ---
 
@@ -77,11 +76,11 @@ SELECT count(*) FROM s3Cluster(
 )
 ```
 
-## Accessing private and public buckets {#accessing-private-and-public-buckets}
+## Accessing private and public buckets 
 
 Users can use the same approaches as document for the s3 function [here](/sql-reference/table-functions/s3#accessing-public-buckets).
 
-## Optimizing performance {#optimizing-performance}
+## Optimizing performance 
 
 For details on optimizing the performance of the s3 function see [our detailed guide](/integrations/s3/performance).
 

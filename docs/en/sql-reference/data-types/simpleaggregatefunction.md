@@ -2,13 +2,12 @@
 description: 'Documentation for the SimpleAggregateFunction data type'
 sidebar_label: 'SimpleAggregateFunction'
 sidebar_position: 48
-slug: /sql-reference/data-types/simpleaggregatefunction
 title: 'SimpleAggregateFunction Type'
 ---
 
 # SimpleAggregateFunction Type
 
-## Description {#description}
+## Description 
 
 The `SimpleAggregateFunction` data type stores the intermediate state of an 
 aggregate function, but not its full state as the [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md) 
@@ -31,7 +30,7 @@ average in a final `Merge` step which combines the intermediate states.
 Aggregate function values are commonly produced by calling an aggregate function
 with the [`-SimpleState`](/sql-reference/aggregate-functions/combinators#-simplestate) combinator appended to the function name.
 
-## Syntax {#syntax}
+## Syntax 
 
 ```sql
 SimpleAggregateFunction(aggregate_function_name, types_of_arguments...)
@@ -42,7 +41,7 @@ SimpleAggregateFunction(aggregate_function_name, types_of_arguments...)
 - `aggregate_function_name` - The name of an aggregate function.
 - `Type` - Types of the aggregate function arguments.
 
-## Supported functions {#supported-functions}
+## Supported functions 
 
 The following aggregate functions are supported:
 
@@ -73,12 +72,12 @@ The `SimpleAggregateFunction` type has better performance than the `AggregateFun
 for the same aggregate functions.
 :::
 
-## Example {#example}
+## Example 
 
 ```sql
 CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE=AggregatingMergeTree ORDER BY id;
 ```
-## Related Content {#related-content}
+## Related Content 
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)    - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 - [AggregateFunction](/sql-reference/data-types/aggregatefunction) type.

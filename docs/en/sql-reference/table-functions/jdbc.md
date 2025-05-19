@@ -2,7 +2,6 @@
 description: 'Returns a table that is connected via JDBC driver.'
 sidebar_label: 'jdbc'
 sidebar_position: 100
-slug: /sql-reference/table-functions/jdbc
 title: 'jdbc'
 ---
 

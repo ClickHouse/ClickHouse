@@ -2,7 +2,6 @@
 description: 'System table useful for C++ experts and ClickHouse engineers containing
   information for introspection of the `clickhouse` binary.'
 keywords: ['system table', 'symbols']
-slug: /operations/system-tables/symbols
 title: 'system.symbols'
 ---
 

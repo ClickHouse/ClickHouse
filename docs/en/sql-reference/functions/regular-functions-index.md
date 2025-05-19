@@ -1,6 +1,5 @@
 ---
 description: 'Landing page for Regular Functions'
-slug: /sql-reference/functions/regular-functions
 title: 'Regular Functions'
 ---
 

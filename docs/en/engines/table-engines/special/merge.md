@@ -3,7 +3,6 @@ description: 'The `Merge` engine (not to be confused with `MergeTree`) does not 
   data itself, but allows reading from any number of other tables simultaneously.'
 sidebar_label: 'Merge'
 sidebar_position: 30
-slug: /engines/table-engines/special/merge
 title: 'Merge Table Engine'
 ---
 
@@ -13,36 +12,36 @@ The `Merge` engine (not to be confused with `MergeTree`) does not store data its
 
 Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
 
-## Creating a Table {#creating-a-table}
+## Creating a Table 
 
 ```sql
 CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
-## Engine Parameters {#engine-parameters}
+## Engine Parameters 
 
-### db_name {#db_name}
+### db_name 
 
 `db_name` — Possible values:
     - database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
-### tables_regexp {#tables_regexp}
+### tables_regexp 
 
 `tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
 
 Regular expressions — [re2](https://github.com/google/re2) (supports a subset of PCRE), case-sensitive.
 See the notes about escaping symbols in regular expressions in the "match" section.
 
-## Usage {#usage}
+## Usage 
 
 When selecting tables to read, the `Merge` table itself is not selected, even if it matches the regex. This is to avoid loops.
 It is possible to create two `Merge` tables that will endlessly try to read each others' data, but this is not a good idea.
 
 The typical way to use the `Merge` engine is for working with a large number of `TinyLog` tables as if with a single table.
 
-## Examples {#examples}
+## Examples 
 
 **Example 1**
 
@@ -79,7 +78,7 @@ SELECT * FROM WatchLog;
 └────────────┴────────┴───────────┴─────┘
 ```
 
-## Virtual Columns {#virtual-columns}
+## Virtual Columns 
 
 - `_table` — Contains the name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
 

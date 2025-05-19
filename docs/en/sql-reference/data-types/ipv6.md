@@ -3,15 +3,14 @@ description: 'Documentation for the IPv6 data type in ClickHouse, which stores I
   addresses as 16-byte values'
 sidebar_label: 'IPv6'
 sidebar_position: 30
-slug: /sql-reference/data-types/ipv6
 title: 'IPv6'
 ---
 
-## IPv6 {#ipv6}
+## IPv6 
 
 IPv6 addresses. Stored in 16 bytes as UInt128 big-endian.
 
-### Basic Usage {#basic-usage}
+### Basic Usage 
 
 ```sql
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY url;

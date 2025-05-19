@@ -2,12 +2,9 @@
 description: 'Documentation for Natural Language Processing (NLP) Functions'
 sidebar_label: 'NLP'
 sidebar_position: 130
-slug: /sql-reference/functions/nlp-functions
 title: 'Natural Language Processing (NLP) Functions'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Natural Language Processing (NLP) Functions
 
@@ -18,7 +15,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in future releases. Set `allow_experimental_nlp_functions = 1` to enable it.
 :::
 
-## detectCharset {#detectcharset}
+## detectCharset 
 
 The `detectCharset` function detects the character set of the non-UTF8-encoded input string.
 
@@ -52,7 +49,7 @@ Result:
 └────────────────────────────────────────────────┘
 ```
 
-## detectLanguage {#detectlanguage}
+## detectLanguage 
 
 Detects the language of the UTF8-encoded input string. The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection, and it returns the 2-letter ISO language code.
 
@@ -91,7 +88,7 @@ Result:
 fr
 ```
 
-## detectLanguageMixed {#detectlanguagemixed}
+## detectLanguageMixed 
 
 Similar to the `detectLanguage` function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
 
@@ -127,7 +124,7 @@ Result:
 └───────────────────────┘
 ```
 
-## detectProgrammingLanguage {#detectprogramminglanguage}
+## detectProgrammingLanguage 
 
 Determines the programming language from the source code. Calculates all the unigrams and bigrams of commands in the source code. 
 Then using a marked-up dictionary with weights of unigrams and bigrams of commands for various programming languages finds the biggest weight of the programming language and returns it.
@@ -162,7 +159,7 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## detectLanguageUnknown {#detectlanguageunknown}
+## detectLanguageUnknown 
 
 Similar to the `detectLanguage` function, except the `detectLanguageUnknown` function works with non-UTF8-encoded strings. Prefer this version when your character set is UTF-16 or UTF-32.
 
@@ -202,7 +199,7 @@ Result:
 └────────────────────────────────────────────────────────┘
 ```
 
-## detectTonality {#detecttonality}
+## detectTonality 
 
 Determines the sentiment of text data. Uses a marked-up sentiment dictionary, in which each word has a tonality ranging from `-12` to `6`.
 For each text, it calculates the average sentiment value of its words and returns it in the range `[-1,1]`.
@@ -242,7 +239,7 @@ Result:
 │                               0.44445 │                             0 │                                 -0.3 │
 └───────────────────────────────────────┴───────────────────────────────┴──────────────────────────────────────┘
 ```
-## lemmatize {#lemmatize}
+## lemmatize 
 
 Performs lemmatization on a given word. Needs dictionaries to operate, which can be obtained [here](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
 
@@ -289,7 +286,7 @@ This configuration specifies that the dictionary `en.bin` should be used for lem
 </lemmatizers>
 ```
 
-## stem {#stem}
+## stem 
 
 Performs stemming on a given word.
 
@@ -355,7 +352,7 @@ The stem() function uses the [Snowball stemming](https://snowballstem.org/) libr
 - Turkish
 - Yiddish
 
-## synonyms {#synonyms}
+## synonyms 
 
 Finds synonyms to a given word. There are two types of synonym extensions: `plain` and `wordnet`.
 

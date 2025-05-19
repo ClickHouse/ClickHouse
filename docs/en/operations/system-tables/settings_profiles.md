@@ -1,7 +1,6 @@
 ---
 description: 'System table which contains properties of configured setting profiles.'
 keywords: ['system table', 'settings_profiles']
-slug: /operations/system-tables/settings_profiles
 title: 'system.settings_profiles'
 ---
 
@@ -24,6 +23,6 @@ Columns:
 
 - `apply_to_except` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — The setting profile is applied to all roles and/or users excepting of the listed ones.
 
-## See Also {#see-also}
+## See Also 
 
 - [SHOW PROFILES](/sql-reference/statements/show#show-profiles)

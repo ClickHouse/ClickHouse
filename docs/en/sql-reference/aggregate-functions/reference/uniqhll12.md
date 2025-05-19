@@ -2,7 +2,6 @@
 description: 'Calculates the approximate number of different argument values, using
   the HyperLogLog algorithm.'
 sidebar_position: 208
-slug: /sql-reference/aggregate-functions/reference/uniqhll12
 title: 'uniqHLL12'
 ---
 

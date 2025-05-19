@@ -1,7 +1,6 @@
 ---
 description: 'Creates an array of the last argument values.'
 sidebar_position: 142
-slug: /sql-reference/aggregate-functions/reference/grouparraylast
 title: 'groupArrayLast'
 ---
 

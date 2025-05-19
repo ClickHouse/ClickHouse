@@ -1,16 +1,14 @@
 ---
 description: 'Documentation for Http'
-slug: /operations/external-authenticators/http
 title: 'HTTP'
 ---
 
-import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 <SelfManaged />
 
 HTTP server can be used to authenticate ClickHouse users. HTTP authentication can only be used as an external authenticator for existing users, which are defined in `users.xml` or in local access control paths. Currently, [Basic](https://datatracker.ietf.org/doc/html/rfc7617) authentication scheme using GET method is supported.
 
-## HTTP authentication server definition {#http-auth-server-definition}
+## HTTP authentication server definition 
 
 To define HTTP authentication server you must add `http_authentication_servers` section to the `config.xml`.
 
@@ -57,7 +55,7 @@ Forward headers:
 
 The part defines which headers will be forwarded from client request headers to external HTTP authenticator
 
-### Enabling HTTP authentication in `users.xml` {#enabling-http-auth-in-users-xml}
+### Enabling HTTP authentication in `users.xml` 
 
 In order to enable HTTP authentication for the user, specify `http_authentication` section instead of `password` or similar sections in the user definition.
 
@@ -83,7 +81,7 @@ Example (goes into `users.xml`):
 Note that HTTP authentication cannot be used alongside with any other authentication mechanism. The presence of any other sections like `password` alongside `http_authentication` will force ClickHouse to shutdown.
 :::
 
-### Enabling HTTP authentication using SQL {#enabling-http-auth-using-sql}
+### Enabling HTTP authentication using SQL 
 
 When [SQL-driven Access Control and Account Management](/operations/access-rights#access-control-usage) is enabled in ClickHouse, users identified by HTTP authentication can also be created using SQL statements.
 
@@ -97,6 +95,6 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'Basic'
 CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ```
 
-### Passing session settings {#passing-session-settings}
+### Passing session settings 
 
 If a response body from HTTP authentication server has JSON format and contains `settings` sub-object, ClickHouse will try parse its key: value pairs as string values and set them as session settings for authenticated user's current session. If parsing is failed, a response body from server will be ignored.

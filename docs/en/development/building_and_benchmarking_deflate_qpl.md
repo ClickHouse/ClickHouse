@@ -2,7 +2,6 @@
 description: 'How to build Clickhouse and run benchmark with DEFLATE_QPL Codec'
 sidebar_label: 'Building and Benchmarking DEFLATE_QPL'
 sidebar_position: 73
-slug: /development/building_and_benchmarking_deflate_qpl
 title: 'Build Clickhouse with DEFLATE_QPL'
 ---
 
@@ -15,7 +14,7 @@ title: 'Build Clickhouse with DEFLATE_QPL'
 
 # Run Benchmark with DEFLATE_QPL
 
-## Files list {#files-list}
+## Files list 
 
 The folders `benchmark_sample` under [qpl-cmake](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake) give example to run benchmark with python scripts:
 
@@ -26,7 +25,7 @@ The folders `benchmark_sample` under [qpl-cmake](https://github.com/ClickHouse/C
 
 `database_files` means it will store database files according to lz4/deflate/zstd codec.
 
-## Run benchmark automatically for Star Schema: {#run-benchmark-automatically-for-star-schema}
+## Run benchmark automatically for Star Schema: 
 
 ```bash
 $ cd ./benchmark_sample/client_scripts
@@ -37,11 +36,11 @@ After complete, please check all the results in this folder:`./output/`
 
 In case you run into failure, please manually run benchmark as below sections.
 
-## Definition {#definition}
+## Definition 
 
 [CLICKHOUSE_EXE] means the path of clickhouse executable program.
 
-## Environment {#environment}
+## Environment 
 
 - CPU: Sapphire Rapid
 - OS Requirements refer to [System Requirements for QPL](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#system-requirements)
@@ -67,7 +66,7 @@ Expected output like this:
 
 If you see nothing output, it means IAA is not ready to work. Please check IAA setup again.
 
-## Generate raw data {#generate-raw-data}
+## Generate raw data 
 
 ```bash
 $ cd ./benchmark_sample
@@ -79,7 +78,7 @@ Use [`dbgen`](/getting-started/example-datasets/star-schema) to generate 100 mil
 
 The files like `*.tbl` are expected to output under `./benchmark_sample/rawdata_dir/ssb-dbgen`:
 
-## Database setup {#database-setup}
+## Database setup 
 
 Set up database with LZ4 codec
 
@@ -137,7 +136,7 @@ Initialization of hardware-assisted DeflateQpl codec failed
 ```
 That means IAA devices is not ready, you need check IAA setup again.
 
-## Benchmark with single instance {#benchmark-with-single-instance}
+## Benchmark with single instance 
 
 - Before start benchmark, Please disable C6 and set CPU frequency governor to be `performance`
 
@@ -189,7 +188,7 @@ How to check performance metrics:
 
 We focus on QPS, please search the keyword: `QPS_Final` and collect statistics
 
-## Benchmark with multi-instances {#benchmark-with-multi-instances}
+## Benchmark with multi-instances 
 
 - To reduce impact of memory bound on too much threads, We recommend run benchmark with multi-instances.
 - Multi-instance means multiple（2 or 4）servers connected with respective client.
@@ -317,7 +316,7 @@ We focus on QPS, please search the keyword: `QPS_Final` and collect statistics
 Benchmark setup for 4 instances is similar with 2 instances above.
 We recommend use 2 instances benchmark data as final report for review.
 
-## Tips {#tips}
+## Tips 
 
 Each time before launch new clickhouse server, please make sure no background clickhouse process running, please check and kill old one:
 

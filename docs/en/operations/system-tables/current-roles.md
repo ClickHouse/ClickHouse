@@ -1,7 +1,6 @@
 ---
 description: 'System table containing active roles for the current user.'
 keywords: ['system table', 'current_roles']
-slug: /operations/system-tables/current-roles
 title: 'system.current_roles'
 ---
 

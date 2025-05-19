@@ -2,7 +2,6 @@
 description: 'Contains queries used by `/dashboard` page accessible though the HTTP
   interface. useful for monitoring and troubleshooting.'
 keywords: ['system table', 'dashboards', 'monitoring', 'troubleshooting']
-slug: /operations/system-tables/dashboards
 title: 'system.dashboards'
 ---
 

@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for INTERSECT Clause'
 sidebar_label: 'INTERSECT'
-slug: /sql-reference/statements/select/intersect
 title: 'INTERSECT Clause'
 ---
 
@@ -26,7 +25,7 @@ FROM table2
 ```
 The condition could be any expression based on your requirements.
 
-## Examples {#examples}
+## Examples 
 
 Here is a simple example that intersects the numbers 1 to 10 with the numbers 3 to 8:
 
@@ -132,7 +131,7 @@ Result:
 
 This means at some point in time, Bitcoin and Ethereum traded above $100, and DOGEFI and Bitcoin Diamond have never traded above $100 (at least using the data we have here in this example).
 
-## INTERSECT DISTINCT {#intersect-distinct}
+## INTERSECT DISTINCT 
 
 Notice in the previous query we had multiple Bitcoin and Ethereum holdings that traded above $100. It might be nice to remove duplicate rows (since they only repeat what we already know). You can add `DISTINCT` to `INTERSECT` to eliminate duplicate rows from the result:
 

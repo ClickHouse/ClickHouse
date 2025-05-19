@@ -3,7 +3,6 @@ description: 'This engine provides an integration with the Azure Blob Storage ec
   allowing streaming data import.'
 sidebar_label: 'AzureQueue'
 sidebar_position: 181
-slug: /engines/table-engines/integrations/azure-queue
 title: 'AzureQueue Table Engine'
 ---
 
@@ -11,7 +10,7 @@ title: 'AzureQueue Table Engine'
 
 This engine provides an integration with the [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem, allowing streaming data import.
 
-## Create Table {#creating-a-table}
+## Create Table 
 
 ```sql
 CREATE TABLE test (name String, value UInt32)
@@ -41,12 +40,12 @@ ENGINE = AzureQueue('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;
 SETTINGS mode = 'unordered'
 ```
 
-## Settings {#settings}
+## Settings 
 
 The set of supported settings is the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings settings](../../../engines/table-engines/integrations/s3queue.md#settings).
 To get a list of settings, configured for the table, use `system.azure_queue_settings` table. Available from `24.10`.
 
-## Description {#description}
+## Description 
 
 `SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
@@ -73,14 +72,14 @@ CREATE MATERIALIZED VIEW consumer TO stats
 SELECT * FROM stats ORDER BY key;
 ```
 
-## Virtual columns {#virtual-columns}
+## Virtual columns 
 
 - `_path` — Path to the file.
 - `_file` — Name of the file.
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
-## Introspection {#introspection}
+## Introspection 
 
 Enable logging for the table via the table setting `enable_logging_to_queue_log=1`.
 

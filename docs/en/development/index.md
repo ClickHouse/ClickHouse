@@ -1,6 +1,5 @@
 ---
 description: 'Index page for Development and Contributing'
-slug: /development/
 title: 'Development and Contributing'
 ---
 

@@ -2,7 +2,6 @@
 description: 'Guide for building ClickHouse from source for the LoongArch64 architecture'
 sidebar_label: 'Build on Linux for LoongArch64'
 sidebar_position: 35
-slug: /development/build-cross-loongarch
 title: 'Build on Linux for LoongArch64'
 ---
 
@@ -10,7 +9,7 @@ title: 'Build on Linux for LoongArch64'
 
 ClickHouse has experimental support for LoongArch64
 
-## Build ClickHouse {#build-clickhouse}
+## Build ClickHouse 
 
 The llvm version required for building must be greater than or equal to 19.1.0.
 

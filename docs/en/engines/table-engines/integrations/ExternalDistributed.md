@@ -4,13 +4,12 @@ description: 'The `ExternalDistributed` engine allows to perform `SELECT` querie
   PostgreSQL engines as an argument so sharding is possible.'
 sidebar_label: 'ExternalDistributed'
 sidebar_position: 55
-slug: /engines/table-engines/integrations/ExternalDistributed
 title: 'ExternalDistributed'
 ---
 
 The `ExternalDistributed` engine allows to perform `SELECT` queries on data that is stored on a remote servers MySQL or PostgreSQL. Accepts [MySQL](../../../engines/table-engines/integrations/mysql.md) or [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md) engines as an argument so sharding is possible.
 
-## Creating a Table {#creating-a-table}
+## Creating a Table 
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -37,7 +36,7 @@ The table structure can differ from the original table structure:
 - `user` — User name.
 - `password` — User password.
 
-## Implementation Details {#implementation-details}
+## Implementation Details 
 
 Supports multiple replicas that must be listed by `|` and shards must be listed by `,`. For example:
 

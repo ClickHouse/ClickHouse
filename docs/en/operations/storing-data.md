@@ -2,7 +2,6 @@
 description: 'Documentation for highlight-next-line'
 sidebar_label: 'External Disks for Storing Data'
 sidebar_position: 68
-slug: /operations/storing-data
 title: 'External Disks for Storing Data'
 ---
 
@@ -17,7 +16,7 @@ Data, processed in ClickHouse, is usually stored in the local file system — on
 3. Unsupported: to work with data in the Hadoop Distributed File System — [HDFS](/engines/table-engines/integrations/hdfs.md) table engine.
 :::
 
-## Configuring external storage {#configuring-external-storage}
+## Configuring external storage 
 
 [MergeTree](/engines/table-engines/mergetree-family/mergetree.md) and [Log](/engines/table-engines/log-family/log.md) family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` (unsupported) using a disk with types `s3`, `azure_blob_storage`, `hdfs` (unsupported) accordingly.
 
@@ -147,7 +146,7 @@ ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
 ```
 
-## Dynamic Configuration {#dynamic-configuration}
+## Dynamic Configuration 
 
 There is also a possibility to specify storage configuration without a predefined disk in configuration in a configuration file, but can be configured in the `CREATE`/`ATTACH` query settings.
 
@@ -271,7 +270,7 @@ where `web` is a from a server configuration file:
 </storage_configuration>
 ```
 
-### Using S3 Storage {#s3-storage}
+### Using S3 Storage 
 
 Required parameters:
 
@@ -312,7 +311,7 @@ Optional parameters:
 Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/integrations/gcs).
 :::
 
-### Using Plain Storage {#plain-storage}
+### Using Plain Storage 
 
 In `22.10` a new disk type `s3_plain` was introduced, which provides a write-once storage. Configuration parameters are the same as for `s3` disk type.
 Unlike `s3` disk type, it stores data as is, e.g. instead of randomly-generated blob names, it uses normal file names (the same way as clickhouse stores files on local disk) and does not store any metadata locally, e.g. it is derived from data on `s3`.
@@ -342,7 +341,7 @@ Configuration:
 </s3_plain>
 ```
 
-### Using S3 Plain Rewritable Storage {#s3-plain-rewritable-storage}
+### Using S3 Plain Rewritable Storage 
 A new disk type `s3_plain_rewritable` was introduced in `24.4`.
 Similar to the `s3_plain` disk type, it does not require additional storage for metadata files; instead, metadata is stored in S3.
 Unlike `s3_plain` disk type, `s3_plain_rewritable` allows executing merges and supports INSERT operations.
@@ -374,7 +373,7 @@ is equal to
 
 Starting from `24.5` it is possible configure any object storage disk (`s3`, `azure`, `local`) using `plain_rewritable` metadata type.
 
-### Using Azure Blob Storage {#azure-blob-storage}
+### Using Azure Blob Storage 
 
 `MergeTree` family table engines can store data to [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) using a disk with type `azure_blob_storage`.
 
@@ -428,7 +427,7 @@ Examples of working configurations can be found in integration tests directory (
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
 :::
 
-## Using HDFS storage (Unsupported) {#using-hdfs-storage-unsupported}
+## Using HDFS storage (Unsupported) 
 
 In this sample configuration:
 - the disk is of type `hdfs` (unsupported)
@@ -468,7 +467,7 @@ By the way, HDFS is unsupported and therefore there might be issues when using i
 
 Keep in mind that HDFS may not work in corner cases.
 
-### Using Data Encryption {#encrypted-virtual-file-system}
+### Using Data Encryption 
 
 You can encrypt the data stored on [S3](/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3), or [HDFS](#using-hdfs-storage-unsupported) (unsupported) external disks, or on a local disk. To turn on the encryption mode, in the configuration file you must define a disk with the type `encrypted` and choose a disk on which the data will be saved. An `encrypted` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically. So you can work with an `encrypted` disk like with a normal one.
 
@@ -529,7 +528,7 @@ Example of disk configuration:
 </clickhouse>
 ```
 
-### Using local cache {#using-local-cache}
+### Using local cache 
 
 It is possible to configure local cache over disks in storage configuration starting from version 22.3.
 For versions 22.3 - 22.7 cache is supported only for `s3` disk type. For versions >= 22.8 cache is supported for any disk type: S3, Azure, Local, Encrypted, etc.
@@ -692,7 +691,7 @@ Cache profile events:
 
 - `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`
 
-### Using static Web storage (read-only) {#web-storage}
+### Using static Web storage (read-only) 
 
 This is a read-only disk. Its data is only read and never modified. A new table is loaded to this disk via `ATTACH TABLE` query (see example below). Local disk is not actually used, each `SELECT` query will result in a `http` request to fetch required data. All modification of the table data will result in an exception, i.e. the following types of queries are not allowed: [CREATE TABLE](/sql-reference/statements/create/table.md), [ALTER TABLE](/sql-reference/statements/alter/index.md), [RENAME TABLE](/sql-reference/statements/rename#rename-table), [DETACH TABLE](/sql-reference/statements/detach.md) and [TRUNCATE TABLE](/sql-reference/statements/truncate.md).
 Web storage can be used for read-only purposes. An example use is for hosting sample data, or for migrating data.
@@ -973,7 +972,7 @@ If URL is not reachable on disk load when the server is starting up tables, then
 Use [http_max_single_read_retries](/operations/storing-data#web-storage) setting to limit the maximum number of retries during a single HTTP read.
 
 
-### Zero-copy Replication (not ready for production) {#zero-copy}
+### Zero-copy Replication (not ready for production) 
 
 Zero-copy replication is possible, but not recommended, with  `S3` and `HDFS` (unsupported) disks. Zero-copy replication means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.
 

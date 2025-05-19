@@ -2,13 +2,12 @@
 description: 'Documentation for Array Functions'
 sidebar_label: 'Arrays'
 sidebar_position: 10
-slug: /sql-reference/functions/array-functions
 title: 'Array Functions'
 ---
 
 # Array Functions
 
-## empty {#empty}
+## empty 
 
 Checks whether the input array is empty.
 
@@ -50,7 +49,7 @@ Result:
 └────────────────┘
 ```
 
-## notEmpty {#notempty}
+## notEmpty 
 
 Checks whether the input array is non-empty.
 
@@ -92,7 +91,7 @@ Result:
 └──────────────────┘
 ```
 
-## length {#length}
+## length 
 
 Returns the number of items in the array.
 The result type is UInt64.
@@ -102,7 +101,7 @@ Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/
 
 Alias: `OCTET_LENGTH`
 
-## emptyArrayUInt8 {#emptyarrayuint8}
+## emptyArrayUInt8 
 
 Returns an empty UInt8 array.
 
@@ -134,7 +133,7 @@ Result:
 []
 ```
 
-## emptyArrayUInt16 {#emptyarrayuint16}
+## emptyArrayUInt16 
 
 Returns an empty UInt16 array.
 
@@ -167,7 +166,7 @@ Result:
 []
 ```
 
-## emptyArrayUInt32 {#emptyarrayuint32}
+## emptyArrayUInt32 
 
 Returns an empty UInt32 array.
 
@@ -199,7 +198,7 @@ Result:
 []
 ```
 
-## emptyArrayUInt64 {#emptyarrayuint64}
+## emptyArrayUInt64 
 
 Returns an empty UInt64 array.
 
@@ -231,7 +230,7 @@ Result:
 []
 ```
 
-## emptyArrayInt8 {#emptyarrayint8}
+## emptyArrayInt8 
 
 Returns an empty Int8 array.
 
@@ -263,7 +262,7 @@ Result:
 []
 ```
 
-## emptyArrayInt16 {#emptyarrayint16}
+## emptyArrayInt16 
 
 Returns an empty Int16 array.
 
@@ -295,7 +294,7 @@ Result:
 []
 ```
 
-## emptyArrayInt32 {#emptyarrayint32}
+## emptyArrayInt32 
 
 Returns an empty Int32 array.
 
@@ -327,7 +326,7 @@ Result:
 []
 ```
 
-## emptyArrayInt64 {#emptyarrayint64}
+## emptyArrayInt64 
 
 Returns an empty Int64 array.
 
@@ -359,7 +358,7 @@ Result:
 []
 ```
 
-## emptyArrayFloat32 {#emptyarrayfloat32}
+## emptyArrayFloat32 
 
 Returns an empty Float32 array.
 
@@ -391,7 +390,7 @@ Result:
 []
 ```
 
-## emptyArrayFloat64 {#emptyarrayfloat64}
+## emptyArrayFloat64 
 
 Returns an empty Float64 array.
 
@@ -423,7 +422,7 @@ Result:
 []
 ```
 
-## emptyArrayDate {#emptyarraydate}
+## emptyArrayDate 
 
 Returns an empty Date array.
 
@@ -449,7 +448,7 @@ Query:
 SELECT emptyArrayDate();
 ```
 
-## emptyArrayDateTime {#emptyarraydatetime}
+## emptyArrayDateTime 
 
 Returns an empty DateTime array.
 
@@ -481,7 +480,7 @@ Result:
 []
 ```
 
-## emptyArrayString {#emptyarraystring}
+## emptyArrayString 
 
 Returns an empty String array.
 
@@ -513,11 +512,11 @@ Result:
 []
 ```
 
-## emptyArrayToSingle {#emptyarraytosingle}
+## emptyArrayToSingle 
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
-## range(end), range(\[start, \] end \[, step\]) {#rangeend-rangestart--end--step}
+## range(end), range(\[start, \] end \[, step\]) 
 
 Returns an array of numbers from `start` to `end - 1` by `step`. The supported types are [UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](../data-types/int-uint.md).
 
@@ -559,17 +558,17 @@ Result:
 └─────────────┴─────────────┴────────────────┴─────────────────┘
 ```
 
-## array(x1, ...), operator \[x1, ...\] {#arrayx1--operator-x1-}
+## array(x1, ...), operator \[x1, ...\] 
 
 Creates an array from the function arguments.
 The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn't clear which type of array to create. That is, you can't use this function to create an empty array (to do that, use the 'emptyArray\*' function described above).
 Returns an 'Array(T)' type result, where 'T' is the smallest common type out of the passed arguments.
 
-## arrayWithConstant(length, elem) {#arraywithconstantlength-elem}
+## arrayWithConstant(length, elem) 
 
 Creates an array of length `length` filled with the constant `elem`.
 
-## arrayConcat {#arrayconcat}
+## arrayConcat 
 
 Combines arrays passed as arguments.
 
@@ -593,7 +592,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 └───────────────┘
 ```
 
-## arrayElement(arr, n), operator arr\[n\] {#arrayelementarr-n-operator-arrn}
+## arrayElement(arr, n), operator arr\[n\] 
 
 Get the element with the index `n` from the array `arr`. `n` must be any integer type.
 Indexes in an array begin from one.
@@ -602,7 +601,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 
 If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.), except for the case with a non-constant array and a constant index 0 (in this case there will be an error `Array indices are 1-based`).
 
-## has(arr, elem) {#hasarr-elem}
+## has(arr, elem) 
 
 Checks whether the 'arr' array has the 'elem' element.
 Returns 0 if the element is not in the array, or 1 if it is.
@@ -619,7 +618,7 @@ SELECT has([1, 2, NULL], NULL)
 └─────────────────────────┘
 ```
 
-## arrayElementOrNull(arr, n) {#arrayelementornullarr-n}
+## arrayElementOrNull(arr, n) 
 
 Get the element with the index `n`from the array `arr`. `n` must be any integer type.
 Indexes in an array begin from one.
@@ -628,7 +627,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 
 If the index falls outside of the bounds of an array, it returns `NULL` instead of a default value.
 
-### Examples {#examples}
+### Examples 
 
 ```sql
 SELECT arrayElementOrNull([1, 2, 3], 2), arrayElementOrNull([1, 2, 3], 4)
@@ -640,7 +639,7 @@ SELECT arrayElementOrNull([1, 2, 3], 2), arrayElementOrNull([1, 2, 3], 4)
  └──────────────────────────────────┴──────────────────────────────────┘
 ```
 
-## hasAll {#hasall}
+## hasAll 
 
 Checks whether one array is a subset of another.
 
@@ -680,7 +679,7 @@ Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
 
-## hasAny {#hasany}
+## hasAny 
 
 Checks whether two arrays have intersection by some elements.
 
@@ -717,7 +716,7 @@ Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not sh
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])` returns `1`.
 
-## hasSubstr {#hassubstr}
+## hasSubstr 
 
 Checks whether all the elements of array2 appear in array1 in the same exact order. Therefore, the function will return 1, if and only if `array1 = prefix + array2 + suffix`.
 
@@ -770,7 +769,7 @@ i
 `SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])` raises a `NO_COMMON_TYPE` exception.
 
 
-## indexOf(arr, x) {#indexofarr-x}
+## indexOf(arr, x) 
 
 Returns the index of the first element with value 'x' (starting from 1) if it is in the array.
 If the array does not contain the searched-for value, the function returns 0.
@@ -789,7 +788,7 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 
 Elements set to `NULL` are handled as normal values.
 
-## indexOfAssumeSorted(arr, x) {#indexofassumesortedarr-x}
+## indexOfAssumeSorted(arr, x) 
 
 Returns the index of the first element with value 'x' (starting from 1) if it is in the array.
 If the array does not contain the searched-for value, the function returns 0.
@@ -809,13 +808,13 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 └───────────────────────────────────────────────┘
 ```
 
-## arrayCount(\[func,\] arr1, ...) {#arraycountfunc-arr1-}
+## arrayCount(\[func,\] arr1, ...) 
 
 Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns something other than 0. If `func` is not specified, it returns the number of non-zero elements in the array.
 
 Note that the `arrayCount` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-## arrayDotProduct {#arraydotproduct}
+## arrayDotProduct 
 
 Returns the dot product of two arrays.
 
@@ -870,7 +869,7 @@ Result:
 32    Float64
 ```
 
-## countEqual(arr, x) {#countequalarr-x}
+## countEqual(arr, x) 
 
 Returns the number of elements in the array equal to x. Equivalent to arrayCount (elem -\> elem = x, arr).
 
@@ -888,7 +887,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## arrayEnumerate(arr) {#arrayenumeratearr}
+## arrayEnumerate(arr) 
 
 Returns the array \[1, 2, 3, ..., length (arr) \]
 
@@ -930,7 +929,7 @@ WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 
 This function can also be used in higher-order functions. For example, you can use it to get array indexes for elements that match a condition.
 
-## arrayEnumerateUniq {#arrayenumerateuniq}
+## arrayEnumerateUniq 
 
 Returns an array the same size as the source array, indicating for each element what its position is among elements with the same value.
 For example: arrayEnumerateUniq(\[10, 20, 10, 30\]) = \[1, 1, 2, 1\].
@@ -984,7 +983,7 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 
 This is necessary when using ARRAY JOIN with a nested data structure and further aggregation across multiple elements in this structure.
 
-## arrayEnumerateUniqRanked {#arrayenumerateuniqranked}
+## arrayEnumerateUniqRanked 
 
 Returns an array the same size as the source array, indicating for each element what its position is among elements with the same value. It allows for enumeration of a multidimensional array with the ability to specify how deep to look inside the array.
 
@@ -1044,7 +1043,7 @@ Result:
 [[1,1,1],[1,2,1],[1]]
 ```
 
-## arrayPopBack {#arraypopback}
+## arrayPopBack 
 
 Removes the last item from the array.
 
@@ -1068,7 +1067,7 @@ SELECT arrayPopBack([1, 2, 3]) AS res;
 └───────┘
 ```
 
-## arrayPopFront {#arraypopfront}
+## arrayPopFront 
 
 Removes the first item from the array.
 
@@ -1092,7 +1091,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res;
 └───────┘
 ```
 
-## arrayPushBack {#arraypushback}
+## arrayPushBack 
 
 Adds one item to the end of the array.
 
@@ -1117,7 +1116,7 @@ SELECT arrayPushBack(['a'], 'b') AS res;
 └───────────┘
 ```
 
-## arrayPushFront {#arraypushfront}
+## arrayPushFront 
 
 Adds one element to the beginning of the array.
 
@@ -1142,7 +1141,7 @@ SELECT arrayPushFront(['b'], 'a') AS res;
 └───────────┘
 ```
 
-## arrayResize {#arrayresize}
+## arrayResize 
 
 Changes the length of the array.
 
@@ -1184,7 +1183,7 @@ SELECT arrayResize([1], 3, NULL);
 └───────────────────────────┘
 ```
 
-## arraySlice {#arrayslice}
+## arraySlice 
 
 Returns a slice of the array.
 
@@ -1212,7 +1211,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 
 Array elements set to `NULL` are handled as normal values.
 
-## arrayShingles {#arrayshingles}
+## arrayShingles 
 
 Generates an array of "shingles", i.e. consecutive sub-arrays with specified length of the input array.
 
@@ -1247,7 +1246,7 @@ Result:
 └───────────────────┘
 ```
 
-## arraySort(\[func,\] arr, ...) {#sort}
+## arraySort(\[func,\] arr, ...) 
 
 Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.
 
@@ -1348,11 +1347,11 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
 :::
 
-## arrayPartialSort(\[func,\] limit, arr, ...) {#arraypartialsortfunc-limit-arr-}
+## arrayPartialSort(\[func,\] limit, arr, ...) 
 
 Same as `arraySort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in ascending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
 
-## arrayReverseSort {#arrayreversesort}
+## arrayReverseSort 
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
@@ -1458,11 +1457,11 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 └─────────┘
 ```
 
-## arrayPartialReverseSort(\[func,\] limit, arr, ...) {#arraypartialreversesortfunc-limit-arr-}
+## arrayPartialReverseSort(\[func,\] limit, arr, ...) 
 
 Same as `arrayReverseSort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in descending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
 
-## arrayShuffle {#arrayshuffle}
+## arrayShuffle 
 
 Returns an array of the same size as the original array containing the elements in shuffled order.
 Elements are reordered in such a way that each possible permutation of those elements has equal probability of appearance.
@@ -1520,7 +1519,7 @@ Result:
 [3,2,1,4]
 ```
 
-## arrayPartialShuffle {#arraypartialshuffle}
+## arrayPartialShuffle 
 
 Given an input array of cardinality `N`, returns an array of size N where elements in the range `[1...limit]` are shuffled and the remaining elements in the range `(limit...n]` are unshuffled.
 
@@ -1581,18 +1580,18 @@ Result:
 [3,9,1,4,5,6,7,8,2,10]
 ```
 
-## arrayUniq(arr, ...) {#arrayuniqarr-}
+## arrayUniq(arr, ...) 
 
 If one argument is passed, it counts the number of different elements in the array.
 If multiple arguments are passed, it counts the number of different tuples of elements at corresponding positions in multiple arrays.
 
 If you want to get a list of unique items in an array, you can use arrayReduce('groupUniqArray', arr).
 
-## arrayJoin(arr) {#arrayjoinarr}
+## arrayJoin(arr) 
 
 A special function. See the section ["ArrayJoin function"](/sql-reference/functions/array-join).
 
-## arrayDifference {#arraydifference}
+## arrayDifference 
 
 Calculates an array of differences between adjacent array elements. The first element of the result array will be 0, the second `a[1] - a[0]`, the third `a[2] - a[1]`, etc. The type of elements in the result array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
 
@@ -1642,7 +1641,7 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## arrayDistinct {#arraydistinct}
+## arrayDistinct 
 
 Takes an array, returns an array containing the distinct elements only.
 
@@ -1676,7 +1675,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-## arrayEnumerateDense {#arrayenumeratedense}
+## arrayEnumerateDense 
 
 Returns an array of the same size as the source array, indicating where each element first appears in the source array.
 
@@ -1701,7 +1700,7 @@ Result:
 │ [1,2,1,3]                             │
 └───────────────────────────────────────┘
 ```
-## arrayEnumerateDenseRanked {#arrayenumeratedenseranked}
+## arrayEnumerateDenseRanked 
 
 Returns an array the same size as the source array, indicating where each element first appears in the source array. It allows for enumeration of a multidimensional array with the ability to specify how deep to look inside the array.
 
@@ -1761,7 +1760,7 @@ Result:
 [[1,1,2,3],[1,2,3,4]]
 ```
 
-## arrayUnion {#arrayunion}
+## arrayUnion 
 
 Takes multiple arrays and returns an array which contains all elements that are present in one of the source arrays.
 The result contains only unique values.
@@ -1802,7 +1801,7 @@ Result:
 └─────────────┴────────────────┴──────────────┘
 ```
 
-## arrayIntersect {#arrayintersect}
+## arrayIntersect 
 
 Takes multiple arrays and returns an array with elements which are present in all source arrays.
 The result contains only unique values.
@@ -1841,7 +1840,7 @@ Result:
 └────────────────────────┴────────────────────┘
 ```
 
-## arraySymmetricDifference {#arraysymmetricdifference}
+## arraySymmetricDifference 
 
 Takes multiple arrays and returns an array with elements that are not present in all source arrays.
 The result contains only unique values.
@@ -1885,7 +1884,7 @@ Result:
 └────────────────────────────┴────────────────────────────────┘
 ```
 
-## arrayJaccardIndex {#arrayjaccardindex}
+## arrayJaccardIndex 
 
 Returns the [Jaccard index](https://en.wikipedia.org/wiki/Jaccard_index) of two arrays.
 
@@ -1903,7 +1902,7 @@ Result:
 └────────────────────┘
 ```
 
-## arrayReduce {#arrayreduce}
+## arrayReduce 
 
 Applies an aggregate function to array elements and returns its result. The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`. When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
 
@@ -1972,7 +1971,7 @@ Result:
 
 - [arrayFold](#arrayfold)
 
-## arrayReduceInRanges {#arrayreduceinranges}
+## arrayReduceInRanges 
 
 Applies an aggregate function to array elements in given ranges and returns an array containing the result corresponding to each range. The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
 
@@ -2012,7 +2011,7 @@ Result:
 └─────────────────────────────┘
 ```
 
-## arrayFold {#arrayfold}
+## arrayFold 
 
 Applies a lambda function to one or more equally-sized arrays and collects the result in an accumulator.
 
@@ -2062,7 +2061,7 @@ FROM numbers(1,10);
 
 - [arrayReduce](#arrayreduce)
 
-## arrayReverse {#arrayreverse}
+## arrayReverse 
 
 Returns an array of the same size as the original array containing the elements in reverse order.
 
@@ -2084,11 +2083,11 @@ SELECT arrayReverse([1, 2, 3])
 └─────────────────────────┘
 ```
 
-## reverse(arr) {#reversearr}
+## reverse(arr) 
 
 Synonym for ["arrayReverse"](#arrayreverse)
 
-## arrayFlatten {#arrayflatten}
+## arrayFlatten 
 
 Converts an array of arrays to a flat array.
 
@@ -2123,7 +2122,7 @@ SELECT flatten([[[1]], [[2], [3]]]);
 └─────────────────────────────────────────────┘
 ```
 
-## arrayCompact {#arraycompact}
+## arrayCompact 
 
 Removes consecutive duplicate elements from an array. The order of result values is determined by the order in the source array.
 
@@ -2157,7 +2156,7 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## arrayZip {#arrayzip}
+## arrayZip 
 
 Combines multiple arrays into a single array. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
 
@@ -2194,7 +2193,7 @@ Result:
 └──────────────────────────────────────┘
 ```
 
-## arrayZipUnaligned {#arrayzipunaligned}
+## arrayZipUnaligned 
 
 Combines multiple arrays into a single array, allowing for unaligned arrays. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
 
@@ -2231,7 +2230,7 @@ Result:
 ```
 
 
-## arrayROCAUC {#arrayrocauc}
+## arrayROCAUC 
 
 Calculates the area under the receiver operating characteristic (ROC) curve.
 A ROC curve is created by plotting True Positive Rate (TPR) on the y-axis and False Positive Rate (FPR) on the x-axis across all thresholds.
@@ -2286,7 +2285,7 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## arrayAUCPR {#arrayaucpr}
+## arrayAUCPR 
 
 Calculates the area under the precision-recall (PR) curve.
 A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds.
@@ -2339,7 +2338,7 @@ Result:
 └─────────────────────────────────────────────────┘
 ```
 
-## arrayMap(func, arr1, ...) {#arraymapfunc-arr1-}
+## arrayMap(func, arr1, ...) 
 
 Returns an array obtained from the original arrays by application of `func(arr1[i], ..., arrN[i])` for each element. Arrays `arr1` ... `arrN` must have the same number of elements.
 
@@ -2369,7 +2368,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 
 Note that the `arrayMap` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
-## arrayFilter(func, arr1, ...) {#arrayfilterfunc-arr1-}
+## arrayFilter(func, arr1, ...) 
 
 Returns an array containing only the elements in `arr1` for which `func(arr1[i], ..., arrN[i])` returns something other than 0.
 
@@ -2402,7 +2401,7 @@ SELECT
 
 Note that the `arrayFilter` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
-## arrayFill(func, arr1, ...) {#arrayfillfunc-arr1-}
+## arrayFill(func, arr1, ...) 
 
 Scan through `arr1` from the first element to the last element and replace `arr1[i]` by `arr1[i - 1]` if `func(arr1[i], ..., arrN[i])` returns 0. The first element of `arr1` will not be replaced.
 
@@ -2420,7 +2419,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, 
 
 Note that the `arrayFill` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
-## arrayReverseFill(func, arr1, ...) {#arrayreversefillfunc-arr1-}
+## arrayReverseFill(func, arr1, ...) 
 
 Scan through `arr1` from the last element to the first element and replace `arr1[i]` by `arr1[i + 1]` if `func(arr1[i], ..., arrN[i])` returns 0. The last element of `arr1` will not be replaced.
 
@@ -2438,7 +2437,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 
 
 Note that the `arrayReverseFill` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
-## arraySplit(func, arr1, ...) {#arraysplitfunc-arr1-}
+## arraySplit(func, arr1, ...) 
 
 Split `arr1` into multiple arrays. When `func(arr1[i], ..., arrN[i])` returns something other than 0, the array will be split on the left hand side of the element. The array will not be split before the first element.
 
@@ -2456,7 +2455,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 
 Note that the `arraySplit` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
-## arrayReverseSplit(func, arr1, ...) {#arrayreversesplitfunc-arr1-}
+## arrayReverseSplit(func, arr1, ...) 
 
 Split `arr1` into multiple arrays. When `func(arr1[i], ..., arrN[i])` returns something other than 0, the array will be split on the right hand side of the element. The array will not be split after the last element.
 
@@ -2474,23 +2473,23 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 
 Note that the `arrayReverseSplit` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
-## arrayExists(\[func,\] arr1, ...) {#arrayexistsfunc-arr1-}
+## arrayExists(\[func,\] arr1, ...) 
 
 Returns 1 if there is at least one element in `arr` for which `func(arr1[i], ..., arrN[i])` returns something other than 0. Otherwise, it returns 0.
 
 Note that the `arrayExists` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-## arrayAll(\[func,\] arr1, ...) {#arrayallfunc-arr1-}
+## arrayAll(\[func,\] arr1, ...) 
 
 Returns 1 if `func(arr1[i], ..., arrN[i])` returns something other than 0 for all the elements in arrays. Otherwise, it returns 0.
 
 Note that the `arrayAll` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-## arrayFirst(func, arr1, ...) {#arrayfirstfunc-arr1-}
+## arrayFirst(func, arr1, ...) 
 
 Returns the first element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0.
 
-## arrayFirstOrNull {#arrayfirstornull}
+## arrayFirstOrNull 
 
 Returns the first element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0, otherwise it returns `NULL`.
 
@@ -2552,13 +2551,13 @@ Result:
 \N
 ```
 
-## arrayLast(func, arr1, ...) {#arraylastfunc-arr1-}
+## arrayLast(func, arr1, ...) 
 
 Returns the last element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0.
 
 Note that the `arrayLast` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
-## arrayLastOrNull {#arraylastornull}
+## arrayLastOrNull 
 
 Returns the last element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0, otherwise returns `NULL`.
 
@@ -2608,19 +2607,19 @@ Result:
 \N
 ```
 
-## arrayFirstIndex(func, arr1, ...) {#arrayfirstindexfunc-arr1-}
+## arrayFirstIndex(func, arr1, ...) 
 
 Returns the index of the first element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0.
 
 Note that the `arrayFirstIndex` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
-## arrayLastIndex(func, arr1, ...) {#arraylastindexfunc-arr1-}
+## arrayLastIndex(func, arr1, ...) 
 
 Returns the index of the last element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0.
 
 Note that the `arrayLastIndex` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
-## arrayMin {#arraymin}
+## arrayMin 
 
 Returns the minimum of elements in the source array.
 
@@ -2677,7 +2676,7 @@ Result:
 └─────┘
 ```
 
-## arrayMax {#arraymax}
+## arrayMax 
 
 Returns the maximum of elements in the source array.
 
@@ -2734,7 +2733,7 @@ Result:
 └─────┘
 ```
 
-## arraySum {#arraysum}
+## arraySum 
 
 Returns the sum of elements in the source array.
 
@@ -2796,7 +2795,7 @@ Result:
 └─────┘
 ```
 
-## arrayAvg {#arrayavg}
+## arrayAvg 
 
 Returns the average of elements in the source array.
 
@@ -2849,7 +2848,7 @@ Result:
 └─────┘
 ```
 
-## arrayCumSum(\[func,\] arr1, ...) {#arraycumsumfunc-arr1-}
+## arrayCumSum(\[func,\] arr1, ...) 
 
 Returns an array of the partial (running) sums of the elements in the source array `arr1`. If `func` is specified, then the sum is computed from applying `func` to `arr1`, `arr2`, ..., `arrN`, i.e. `func(arr1[i], ..., arrN[i])`.
 
@@ -2881,7 +2880,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 
 Note that the `arrayCumSum` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-## arrayCumSumNonNegative(\[func,\] arr1, ...) {#arraycumsumnonnegativefunc-arr1-}
+## arrayCumSumNonNegative(\[func,\] arr1, ...) 
 
 Same as `arrayCumSum`, returns an array of the partial (running) sums of the elements in the source array. If `func` is specified, then the sum is computed from applying `func` to `arr1`, `arr2`, ..., `arrN`, i.e. `func(arr1[i], ..., arrN[i])`. Unlike `arrayCumSum`, if the current running sum is smaller than `0`, it is replaced by `0`.
 
@@ -2911,7 +2910,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 
 Note that the `arraySumNonNegative` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-## arrayProduct {#arrayproduct}
+## arrayProduct 
 
 Multiplies elements of an [array](/sql-reference/data-types/array).
 
@@ -2959,7 +2958,7 @@ Return value type is always [Float64](../data-types/float.md). Result:
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## arrayRotateLeft {#arrayrotateleft}
+## arrayRotateLeft 
 
 Rotates an [array](/sql-reference/data-types/array) to the left by the specified number of elements.
 If the number of elements is negative, the array is rotated to the right.
@@ -3023,7 +3022,7 @@ Result:
 └───────────────────────┘
 ```
 
-## arrayRotateRight {#arrayrotateright}
+## arrayRotateRight 
 
 Rotates an [array](/sql-reference/data-types/array) to the right by the specified number of elements.
 If the number of elements is negative, the array is rotated to the left.
@@ -3087,7 +3086,7 @@ Result:
 └───────────────────────┘
 ```
 
-## arrayShiftLeft {#arrayshiftleft}
+## arrayShiftLeft 
 
 Shifts an [array](/sql-reference/data-types/array) to the left by the specified number of elements.
 New elements are filled with the provided argument or the default value of the array element type.
@@ -3181,7 +3180,7 @@ Result:
 └─────────────────────┘
 ```
 
-## arrayShiftRight {#arrayshiftright}
+## arrayShiftRight 
 
 Shifts an [array](/sql-reference/data-types/array) to the right by the specified number of elements.
 New elements are filled with the provided argument or the default value of the array element type.
@@ -3276,7 +3275,7 @@ Result:
 ```
 
 
-## arrayRandomSample {#arrayrandomsample}
+## arrayRandomSample 
 
 Function `arrayRandomSample` returns a subset with `samples`-many random elements of an input array. If `samples` exceeds the size of the input array, the sample size is limited to the size of the array, i.e. all array elements are returned but their order is not guaranteed. The function can handle both flat arrays and nested arrays.
 
@@ -3339,7 +3338,7 @@ Result:
 └─────────┘
 ```
 
-## arrayNormalizedGini {#arraynormalizedgini}
+## arrayNormalizedGini 
 
 Calculates the normalized Gini coefficient.
 
@@ -3374,7 +3373,7 @@ Result:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayLevenshteinDistance {#arraylevenshteindistance}
+## arrayLevenshteinDistance 
 
 Calculates Levenshtein distance for two arrays.
 
@@ -3411,7 +3410,7 @@ Result:
 
 ```
 
-## arrayLevenshteinDistanceWeighted {#arraylevenshteindistanceweighted}
+## arrayLevenshteinDistanceWeighted 
 
 Calculates Levenshtein distance for two arrays with custom weights for each element. Number of elements for array and its weights should match
 
@@ -3450,7 +3449,7 @@ Result:
 
 ```
 
-## arraySimilarity {#arraysimilarity}
+## arraySimilarity 
 
 Calculates arrays' similarity from 0 to 1 based on weighed Levenshtein distance. Accepts the same arguments as `arrayLevenshteinDistanceWeighted` function.
 
@@ -3489,6 +3488,6 @@ Result:
 
 ```
 
-## Distance functions {#distance-functions}
+## Distance functions 
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).

@@ -3,11 +3,10 @@ description: 'This engine allows processing of application log files as a stream
   records.'
 sidebar_label: 'FileLog'
 sidebar_position: 160
-slug: /engines/table-engines/special/filelog
 title: 'FileLog Engine'
 ---
 
-# FileLog Engine {#filelog-engine}
+# FileLog Engine 
 
 This engine allows processing of application log files as a stream of records.
 
@@ -16,7 +15,7 @@ This engine allows processing of application log files as a stream of records.
 - Subscribe to log files.
 - Process new records as they are appended to subscribed log files.
 
-## Creating a Table {#creating-a-table}
+## Creating a Table 
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -51,7 +50,7 @@ Optional parameters:
 - `poll_directory_watch_events_backoff_factor` - The speed of backoff, exponential by default. Default: `2`.
 - `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 
-## Description {#description}
+## Description 
 
 The delivered records are tracked automatically, so each record in a log file is only counted once.
 
@@ -95,7 +94,7 @@ To stop receiving streams data or to change the conversion logic, detach the mat
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
-## Virtual Columns {#virtual-columns}
+## Virtual Columns 
 
 - `_filename` - Name of the log file. Data type: `LowCardinality(String)`.
 - `_offset` - Offset in the log file. Data type: `UInt64`.

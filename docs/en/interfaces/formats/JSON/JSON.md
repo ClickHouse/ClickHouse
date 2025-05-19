@@ -4,7 +4,6 @@ description: 'Documentation for the JSON format'
 input_format: true
 keywords: ['JSON']
 output_format: true
-slug: /interfaces/formats/JSON
 title: 'JSON'
 ---
 
@@ -12,7 +11,7 @@ title: 'JSON'
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description 
 
 The `JSON` format reads and outputs data in the JSON format. 
 
@@ -39,7 +38,7 @@ To remove the quotes, you can set the configuration parameter [`output_format_js
 
 ClickHouse supports [NULL](/sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](/operations/settings/settings-formats.md/#output_format_json_quote_denormals) to `1`.
 
-## Example Usage {#example-usage}
+## Example Usage 
 
 Example:
 
@@ -97,12 +96,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-## Format Settings {#format-settings}
+## Format Settings 
 
 For JSON input format, if setting [`input_format_json_validate_types_from_metadata`](/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to `1`,
 the types from metadata in input data will be compared with the types of the corresponding columns from the table.
 
-## See Also {#see-also}
+## See Also 
 
 - [JSONEachRow](/interfaces/formats/JSONEachRow) format
 - [output_format_json_array_of_rows](/operations/settings/settings-formats.md/#output_format_json_array_of_rows) setting

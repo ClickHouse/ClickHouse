@@ -4,7 +4,6 @@ description: 'Documentation for the LineAsStringWithNames format'
 input_format: true
 keywords: ['LineAsStringWithNames']
 output_format: true
-slug: /interfaces/formats/LineAsStringWithNames
 title: 'LineAsStringWithNames'
 ---
 
@@ -12,11 +11,11 @@ title: 'LineAsStringWithNames'
 |-------|--------|-------|
 | ✗     | ✔      |       |
 
-## Description {#description}
+## Description 
 
 The `LineAsStringWithNames` format is similar to the [`LineAsString`](./LineAsString.md) format but prints the header row with column names.
 
-## Example Usage {#example-usage}
+## Example Usage 
 
 ```sql title="Query"
 CREATE TABLE example (
@@ -37,4 +36,4 @@ Jane    25
 Peter    35
 ```
 
-## Format Settings {#format-settings}
+## Format Settings 

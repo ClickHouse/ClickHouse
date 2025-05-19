@@ -3,7 +3,6 @@ description: 'Allows for quick writing of object states that are continually cha
   and deleting old object states in the background.'
 sidebar_label: 'VersionedCollapsingMergeTree'
 sidebar_position: 80
-slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
 title: 'VersionedCollapsingMergeTree'
 ---
 
@@ -18,7 +17,7 @@ See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for de
 
 The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
 
-## Creating a Table {#creating-a-table}
+## Creating a Table 
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -35,7 +34,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of query parameters, see the [query description](../../../sql-reference/statements/create/table.md).
 
-### Engine Parameters {#engine-parameters}
+### Engine Parameters 
 
 ```sql
 VersionedCollapsingMergeTree(sign, version)
@@ -46,7 +45,7 @@ VersionedCollapsingMergeTree(sign, version)
 | `sign`    | Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row. | [`Int8`](/sql-reference/data-types/int-uint)                                                                                                                                                                                                                                    |
 | `version` | Name of the column with the version of the object state.                               | [`Int*`](/sql-reference/data-types/int-uint), [`UInt*`](/sql-reference/data-types/int-uint), [`Date`](/sql-reference/data-types/date), [`Date32`](/sql-reference/data-types/date32), [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) |
 
-### Query Clauses {#query-clauses}
+### Query Clauses 
 
 When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
 
@@ -79,9 +78,9 @@ All of the parameters except `sign` and `version` have the same meaning as in `M
 
 </details>
 
-## Collapsing {#table_engines_versionedcollapsingmergetree}
+## Collapsing 
 
-### Data {#data}
+### Data 
 
 Consider a situation where you need to save continually changing data for some object. It is reasonable to have one row for an object and update the row whenever there are changes. However, the update operation is expensive and slow for a DBMS because it requires rewriting the data in the storage. Update is not acceptable if you need to write data quickly, but you can write the changes to an object sequentially as follows.
 
@@ -127,13 +126,13 @@ To find out why we need two rows for each change, see [Algorithm](#table_engines
 2.  Long growing arrays in columns reduce the efficiency of the engine due to the load for writing. The more straightforward the data, the better the efficiency.
 3.  `SELECT` results depend strongly on the consistency of the history of object changes. Be accurate when preparing data for inserting. You can get unpredictable results with inconsistent data, such as negative values for non-negative metrics like session depth.
 
-### Algorithm {#table_engines-versionedcollapsingmergetree-algorithm}
+### Algorithm 
 
 When ClickHouse merges data parts, it deletes each pair of rows that have the same primary key and version and different `Sign`. The order of rows does not matter.
 
 When ClickHouse inserts data, it orders rows by the primary key. If the `Version` column is not in the primary key, ClickHouse adds it to the primary key implicitly as the last field and uses it for ordering.
 
-## Selecting Data {#selecting-data}
+## Selecting Data 
 
 ClickHouse does not guarantee that all of the rows with the same primary key will be in the same resulting data part or even on the same physical server. This is true both for writing the data and for subsequent merging of the data parts. In addition, ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result. This means that aggregation is required if there is a need to get completely "collapsed" data from a `VersionedCollapsingMergeTree` table.
 
@@ -143,7 +142,7 @@ The aggregates `count`, `sum` and `avg` can be calculated this way. The aggregat
 
 If you need to extract the data with "collapsing" but without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the `FINAL` modifier for the `FROM` clause. This approach is inefficient and should not be used with large tables.
 
-## Example of Use {#example-of-use}
+## Example of Use 
 
 Example data:
 

@@ -1,7 +1,6 @@
 ---
 description: 'System table containing information about each detached table.'
 keywords: ['system table', 'detached_tables']
-slug: /operations/system-tables/detached_tables
 title: 'system.detached_tables'
 ---
 

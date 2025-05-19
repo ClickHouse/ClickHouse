@@ -2,7 +2,6 @@
 description: 'Documentation for the Tuple data type in ClickHouse'
 sidebar_label: 'Tuple(T1, T2, ...)'
 sidebar_position: 34
-slug: /sql-reference/data-types/tuple
 title: 'Tuple(T1, T2, ...)'
 ---
 
@@ -14,7 +13,7 @@ Tuples are used for temporary column grouping. Columns can be grouped when an IN
 
 Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in brackets. In JSON formats, tuples are output as arrays (in square brackets).
 
-## Creating Tuples {#creating-tuples}
+## Creating Tuples 
 
 You can use a function to create a tuple:
 
@@ -62,7 +61,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 └─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
-## Data Type Detection {#data-type-detection}
+## Data Type Detection 
 
 When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](/operations/settings/formats#input_format_null_as_default), the interfered type is [Nullable](../../sql-reference/data-types/nullable.md).
 
@@ -78,7 +77,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └───────────┴─────────────────────────────────┘
 ```
 
-## Referring to Tuple Elements {#referring-to-tuple-elements}
+## Referring to Tuple Elements 
 
 Tuple elements can be referred to by name or by index:
 
@@ -104,7 +103,7 @@ Result:
 └────────────────────┘
 ```
 
-## Comparison operations with Tuple {#comparison-operations-with-tuple}
+## Comparison operations with Tuple 
 
 Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller) than the second, otherwise (both elements are equal), the next element is compared.
 

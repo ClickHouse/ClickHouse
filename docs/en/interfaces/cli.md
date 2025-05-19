@@ -2,20 +2,16 @@
 description: 'Documentation for the ClickHouse command-line client interface'
 sidebar_label: 'ClickHouse Client'
 sidebar_position: 17
-slug: /interfaces/cli
 title: 'ClickHouse Client'
 ---
 
-import Image from '@theme/IdealImage';
-import cloud_connect_button from '@site/static/images/_snippets/cloud-connect-button.png';
-import connection_details_native from '@site/static/images/_snippets/connection-details-native.png'
 
 ClickHouse provides a native command-line client for executing SQL queries directly against a ClickHouse server. It supports both interactive mode (for live query execution) and batch mode (for scripting and automation). Query results can be displayed in the terminal or exported to a file, with support for all ClickHouse output [formats](formats.md), such as Pretty, CSV, JSON, and more.
 
 The client provides real-time feedback on query execution with a progress bar and the number of rows read, bytes processed and query execution time. It supports both [command-line options](#command-line-options) and [configuration files](#configuration_files).
 
 
-## Install {#install}
+## Install 
 
 To download ClickHouse, run:
 
@@ -33,7 +29,7 @@ See [Install ClickHouse](../getting-started/install.md) for more installation op
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version for client and server.
 
 
-## Run {#run}
+## Run 
 
 :::note
 If you only downloaded but did not install ClickHouse, use `./clickhouse client` instead of `clickhouse-client`.
@@ -68,7 +64,7 @@ Specify additional connection details as necessary:
 For a complete list of command-line options, see [Command Line Options](#command-line-options).
 
 
-### Connecting to ClickHouse Cloud {#connecting-cloud}
+### Connecting to ClickHouse Cloud 
 
 The details for your ClickHouse Cloud service are available in the ClickHouse Cloud console. Select the service that you want to connect to and click **Connect**:
 
@@ -87,7 +83,7 @@ Choose **Native**, and the details are shown with an example `clickhouse-client`
 />
 
 
-### Storing connections in a configuration file {#connection-credentials}
+### Storing connections in a configuration file 
 
 You can store connection details for one or more ClickHouse servers in a [configuration file](#configuration_files).
 
@@ -111,7 +107,7 @@ See the [section on configuration files](#configuration_files) for more informat
 To concentrate on the query syntax, the rest of the examples leave off the connection details (`--host`, `--port`, etc.). Remember to add them when you use the commands.
 :::
 
-## Batch mode {#batch-mode}
+## Batch mode 
 
 Instead of using ClickHouse Client interactively, you can run it in batch mode.
 
@@ -176,7 +172,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 ```
 
 
-## Notes {#notes}
+## Notes 
 
 In interactive mode, the default output format is `PrettyCompact`. You can change the format in the `FORMAT` clause of the query or by specifying the `--format` command-line option. To use the Vertical format, you can use `--vertical` or specify `\G` at the end of the query. In this format, each value is printed on a separate line, which is convenient for wide tables.
 
@@ -202,7 +198,7 @@ You can cancel a long query by pressing `Ctrl+C`. However, you will still need t
 ClickHouse Client allows passing external data (external temporary tables) for querying. For more information, see the section [External data for query processing](../engines/table-engines/special/external-data.md).
 
 
-## Queries with parameters {#cli-queries-with-parameters}
+## Queries with parameters 
 
 You can specify parameters in a query and pass values to it with command-line options. This avoids formatting a query with specific dynamic values on the client side. For example:
 
@@ -215,7 +211,7 @@ It is also possible to set parameters from within an interactive session:
 $ clickhouse-client --query "SET param_parName='[1, 2]'; SELECT {parName:Array(UInt16)}"
 ```
 
-### Query Syntax {#cli-queries-with-parameters-syntax}
+### Query Syntax 
 
 In the query, place the values that you want to fill using command-line parameters in braces in the following format:
 
@@ -226,7 +222,7 @@ In the query, place the values that you want to fill using command-line paramete
 - `name` — Placeholder identifier. The corresponding command-line option is `--param_<name> = value`.
 - `data type` — [Data type](../sql-reference/data-types/index.md) of the parameter. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use other [integer](../sql-reference/data-types/int-uint.md) types). It is also possible to pass the table name, database name, and column names as parameters, in that case you would need to use `Identifier` as the data type.
 
-### Examples {#cli-queries-with-parameters-examples}
+### Examples 
 
 ```bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" \
@@ -237,7 +233,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 ```
 
 
-## Aliases {#cli_aliases}
+## Aliases 
 
 - `\l` - SHOW DATABASES
 - `\d` - SHOW TABLES
@@ -245,7 +241,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 - `.` - repeat the last query
 
 
-## Keyboard shortcuts {#keyboard_shortcuts}
+## Keyboard shortcuts 
 
 - `Alt (Option) + Shift + e` - open editor with the current query. It is possible to specify the editor to use with the environment variable `EDITOR`. By default, `vim` is used.
 - `Alt (Option) + #` - comment line.
@@ -260,7 +256,7 @@ iTerm2: Go to Preferences -> Profile -> Keys -> Left Option key and click Esc+
 :::
 
 
-## Connection string {#connection_string}
+## Connection string 
 
 ClickHouse Client alternatively supports connecting to a ClickHouse server using a connection string similar to [MongoDB](https://www.mongodb.com/docs/manual/reference/connection-string/), [PostgreSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING), [MySQL](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri). It has the following syntax:
 
@@ -296,7 +292,7 @@ The following keys are allowed for `query_parameters`:
 
 Non-US ASCII, spaces and special characters in the `user`, `password`, `hosts`, `database` and `query parameters` must be [percent-encoded](https://en.wikipedia.org/wiki/URL_encoding).
 
-### Examples {#connection_string_examples}
+### Examples 
 
 Connect to `localhost` on port 9000 and execute the query `SELECT 1`.
 
@@ -377,7 +373,7 @@ clickhouse-client clickhouse://192.168.1.15,192.168.1.25
 ```
 
 
-## Query ID format {#query-id-format}
+## Query ID format 
 
 In interactive mode ClickHouse Client shows the query ID for every query. By default, the ID is formatted like this:
 
@@ -405,7 +401,7 @@ speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-
 ```
 
 
-## Configuration Files {#configuration_files}
+## Configuration Files 
 
 ClickHouse Client uses the first existing file of the following:
 
@@ -443,11 +439,11 @@ openSSL:
 ```
 
 
-## Command-Line Options {#command-line-options}
+## Command-Line Options 
 
 All command-line options can be specified directly on the command line or as defaults in the [configuration file](#configuration_files).
 
-### General Options {#command-line-options-general}
+### General Options 
 
 **`-c [ -C, --config, --config-file ] <path-to-file>`**
 
@@ -481,7 +477,7 @@ Increase output verbosity.
 
 Print version and exit.
 
-### Connection Options {#command-line-options-connection}
+### Connection Options 
 
 **`--connection <name>`**
 
@@ -545,7 +541,7 @@ Default value: default
 
 Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings](#connection_string).
 
-### Query Options {#command-line-options-query}
+### Query Options 
 
 **`--param_<name>=<value>`**
 
@@ -573,7 +569,7 @@ Cannot be used together with `--query`.
 
 If specified, allow multiline queries (do not send the query on Enter). Queries will be sent only when they are ended with a semicolon.
 
-### Query Settings {#command-line-options-query-settings}
+### Query Settings 
 
 Query settings can be specified as command-line options in the client, for example:
 ```bash
@@ -582,7 +578,7 @@ $ clickhouse-client --max_threads 1
 
 See [Settings](../operations/settings/settings.md) for a list of settings.
 
-### Formatting Options {#command-line-options-formatting}
+### Formatting Options 
 
 **`-f [ --format ] <format>`**
 
@@ -600,7 +596,7 @@ Pipe all output into this command. Typically `less` (e.g., `less -S` to display 
 
 Use the [Vertical format](../interfaces/formats.md#vertical) to output the result. This is the same as `–-format Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
 
-### Execution Details {#command-line-options-execution-details}
+### Execution Details 
 
 **`--enable-progress-table-toggle`**
 

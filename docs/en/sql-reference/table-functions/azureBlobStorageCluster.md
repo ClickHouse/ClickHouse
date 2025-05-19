@@ -3,7 +3,6 @@ description: 'Allows processing files from Azure Blob storage in parallel with m
   nodes in a specified cluster.'
 sidebar_label: 'azureBlobStorageCluster'
 sidebar_position: 15
-slug: /sql-reference/table-functions/azureBlobStorageCluster
 title: 'azureBlobStorageCluster'
 ---
 
@@ -52,6 +51,6 @@ SELECT count(*) from azureBlobStorageCluster(
 - [AzureBlobStorage engine](../../engines/table-engines/integrations/azureBlobStorage.md)
 - [azureBlobStorage table function](../../sql-reference/table-functions/azureBlobStorage.md)
 
-## Using Shared Access Signatures (SAS) {#using-shared-access-signatures-sas-sas-tokens}
+## Using Shared Access Signatures (SAS) 
 
 See [azureBlobStorage](/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.

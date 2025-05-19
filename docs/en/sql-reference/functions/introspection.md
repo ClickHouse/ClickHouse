@@ -2,7 +2,6 @@
 description: 'Documentation for Introspection Functions'
 sidebar_label: 'Introspection'
 sidebar_position: 100
-slug: /sql-reference/functions/introspection
 title: 'Introspection Functions'
 ---
 
@@ -24,7 +23,7 @@ For proper operation of introspection functions:
 
 ClickHouse saves profiler reports to the [trace_log](/operations/system-tables/trace_log) system table. Make sure the table and profiler are configured properly.
 
-## addressToLine {#addresstoline}
+## addressToLine 
 
 Converts virtual memory address inside ClickHouse server process to the filename and the line number in ClickHouse source code.
 
@@ -114,7 +113,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /build/glibc-OTsEL5/glibc-2.27/misc/../sysdeps/unix/sysv/linux/x86_64/clone.S:97
 ```
 
-## addressToLineWithInlines {#addresstolinewithinlines}
+## addressToLineWithInlines 
 
 Similar to `addressToLine`, but returns an Array with all inline functions. As a result of this, it is slower than `addressToLine`.
 
@@ -215,7 +214,7 @@ The [arrayJoin](/sql-reference/functions/array-join) functions will split array 
 ```
 
 
-## addressToSymbol {#addresstosymbol}
+## addressToSymbol 
 
 Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.
 
@@ -310,7 +309,7 @@ start_thread
 clone
 ```
 
-## demangle {#demangle}
+## demangle 
 
 Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol) function to the C++ function name.
 
@@ -403,7 +402,7 @@ execute_native_thread_routine
 start_thread
 clone
 ```
-## tid {#tid}
+## tid 
 
 Returns id of the thread, in which current [Block](/development/architecture/#block) is processed.
 
@@ -433,7 +432,7 @@ Result:
 └───────┘
 ```
 
-## logTrace {#logtrace}
+## logTrace 
 
 Emits trace log message to server log for each [Block](/development/architecture/#block).
 

@@ -4,7 +4,6 @@ description: 'Totals a `value` array according to the keys specified in the `key
   the corresponding keys. Differs from the sumMap function in that it does summation
   with overflow.'
 sidebar_position: 199
-slug: /sql-reference/aggregate-functions/reference/summapwithoverflow
 title: 'sumMapWithOverflow'
 ---
 

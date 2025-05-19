@@ -2,13 +2,12 @@
 description: 'Documentation for TRUNCATE Statements'
 sidebar_label: 'TRUNCATE'
 sidebar_position: 52
-slug: /sql-reference/statements/truncate
 title: 'TRUNCATE Statements'
 ---
 
 # TRUNCATE Statements
 
-## TRUNCATE TABLE {#truncate-table}
+## TRUNCATE TABLE 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
@@ -25,14 +24,14 @@ You can specify how long (in seconds) to wait for inactive replicas to execute `
 If the `alter_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 :::
 
-## TRUNCATE ALL TABLES {#truncate-all-tables}
+## TRUNCATE ALL TABLES 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
 ```
 
 Removes all data from all tables in a database.
 
-## TRUNCATE DATABASE {#truncate-database}
+## TRUNCATE DATABASE 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```

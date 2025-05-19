@@ -2,7 +2,6 @@
 description: 'Documentation for Comparison Functions'
 sidebar_label: 'Comparison'
 sidebar_position: 35
-slug: /sql-reference/functions/comparison-functions
 title: 'Comparison Functions'
 ---
 
@@ -23,7 +22,7 @@ Strings are compared byte-by-byte. This may lead to unexpected results if one of
 A string S1 which has another string S2 as prefix is considered longer than S2.
 :::
 
-## equals, `=`, `==` operators {#equals}
+## equals, `=`, `==` operators 
 
 **Syntax**
 
@@ -35,7 +34,7 @@ Alias:
 - `a = b` (operator)
 - `a == b` (operator)
 
-## notEquals, `!=`, `<>` operators {#notequals}
+## notEquals, `!=`, `<>` operators 
 
 **Syntax**
 
@@ -47,7 +46,7 @@ Alias:
 - `a != b` (operator)
 - `a <> b` (operator)
 
-## less, `<` operator {#less}
+## less, `<` operator 
 
 **Syntax**
 
@@ -58,7 +57,7 @@ less(a, b)
 Alias:
 - `a < b` (operator)
 
-## greater, `>` operator {#greater}
+## greater, `>` operator 
 
 **Syntax**
 
@@ -69,7 +68,7 @@ greater(a, b)
 Alias:
 - `a > b` (operator)
 
-## lessOrEquals, `<=` operator {#lessorequals}
+## lessOrEquals, `<=` operator 
 
 **Syntax**
 
@@ -80,7 +79,7 @@ lessOrEquals(a, b)
 Alias:
 - `a <= b` (operator)
 
-## greaterOrEquals, `>=` operator {#greaterorequals}
+## greaterOrEquals, `>=` operator 
 
 **Syntax**
 

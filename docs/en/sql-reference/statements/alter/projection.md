@@ -2,7 +2,6 @@
 description: 'Documentation for Manipulating Projections'
 sidebar_label: 'PROJECTION'
 sidebar_position: 49
-slug: /sql-reference/statements/alter/projection
 title: 'Projections'
 ---
 
@@ -20,7 +19,7 @@ Example, If the projection has defined a different primary key, all the data fro
 
 You can see more technical details about how projections work internally on this [page](/guides/best-practices/sparse-primary-indexes.md/#option-3-projections).
 
-## Example filtering without using primary keys {#example-filtering-without-using-primary-keys}
+## Example filtering without using primary keys 
 
 Creating the table:
 ```sql
@@ -69,7 +68,7 @@ To verify that a query is using the projection, we could review the `system.quer
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-## Example pre-aggregation query {#example-pre-aggregation-query}
+## Example pre-aggregation query 
 
 Creating the table with the Projection:
 ```sql
@@ -137,7 +136,7 @@ As mentioned before, we could review the `system.query_log` table. On the `proje
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-## Normal projection with `_part_offset` field {#normal-projection-with-part-offset-field}
+## Normal projection with `_part_offset` field 
 
 Creating a table with a normal projection that utilizes the `_part_offset` field:
 
@@ -165,7 +164,7 @@ Inserting some sample data:
 INSERT INTO events SELECT * FROM generateRandom() LIMIT 100000;
 ```
 
-### Using `_part_offset` as a secondary index {#normal-projection-secondary-index}
+### Using `_part_offset` as a secondary index 
 
 The `_part_offset` field preserves its value through merges and mutations, making it valuable for secondary indexing. We can leverage this in queries:
 
@@ -184,19 +183,19 @@ WHERE (_part, _part_offset) IN (
 
 The following operations with [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) are available:
 
-## ADD PROJECTION {#add-projection}
+## ADD PROJECTION 
 
 `ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] )` - Adds projection description to tables metadata.
 
-## DROP PROJECTION {#drop-projection}
+## DROP PROJECTION 
 
 `ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name` - Removes projection description from tables metadata and deletes projection files from disk. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
-## MATERIALIZE PROJECTION {#materialize-projection}
+## MATERIALIZE PROJECTION 
 
 `ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - The query rebuilds the projection `name` in the partition `partition_name`. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
-## CLEAR PROJECTION {#clear-projection}
+## CLEAR PROJECTION 
 
 `ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - Deletes projection files from disk without removing description. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 

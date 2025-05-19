@@ -2,7 +2,6 @@
 description: 'Computes an approximate quantile of a sample consisting of bfloat16
   numbers.'
 sidebar_position: 171
-slug: /sql-reference/aggregate-functions/reference/quantilebfloat16
 title: 'quantileBFloat16'
 ---
 

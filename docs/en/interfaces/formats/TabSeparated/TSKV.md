@@ -4,7 +4,6 @@ description: 'Documentation for the TSKV format'
 input_format: true
 keywords: ['TSKV']
 output_format: true
-slug: /interfaces/formats/TSKV
 title: 'TSKV'
 ---
 
@@ -12,7 +11,7 @@ title: 'TSKV'
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description 
 
 Similar to the [`TabSeparated`](./TabSeparated.md) format, but outputs a value in `name=value` format. 
 Names are escaped the same way as in the [`TabSeparated`](./TabSeparated.md) format, and the `=` symbol is also escaped.
@@ -56,6 +55,6 @@ if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-fo
 
 [NULL](/sql-reference/syntax.md) is formatted as `\N`.
 
-## Example Usage {#example-usage}
+## Example Usage 
 
-## Format Settings {#format-settings}
+## Format Settings 

@@ -1,7 +1,6 @@
 ---
 description: 'Table of Contents page for Settings'
 sidebar_position: 1
-slug: /operations/settings/
 title: 'Settings'
 ---
 

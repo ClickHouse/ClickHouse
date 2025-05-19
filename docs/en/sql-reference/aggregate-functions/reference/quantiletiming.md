@@ -2,7 +2,6 @@
 description: 'With the determined precision computes the quantile of a numeric data
   sequence.'
 sidebar_position: 180
-slug: /sql-reference/aggregate-functions/reference/quantiletiming
 title: 'quantileTiming'
 ---
 

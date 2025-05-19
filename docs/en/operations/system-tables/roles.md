@@ -1,7 +1,6 @@
 ---
 description: 'System table containing information about configured roles.'
 keywords: ['system table', 'roles']
-slug: /operations/system-tables/roles
 title: 'system.roles'
 ---
 
@@ -15,6 +14,6 @@ Columns:
 - `id` ([UUID](../../sql-reference/data-types/uuid.md)) — Role ID.
 - `storage` ([String](../../sql-reference/data-types/string.md)) — Path to the storage of roles. Configured in the `access_control_path` parameter.
 
-## See Also {#see-also}
+## See Also 
 
 - [SHOW ROLES](/sql-reference/statements/show#show-roles)

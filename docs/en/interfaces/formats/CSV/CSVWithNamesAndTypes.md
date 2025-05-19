@@ -4,7 +4,6 @@ description: 'Documentation for the CSVWithNamesAndTypes format'
 input_format: true
 keywords: ['CSVWithNamesAndTypes']
 output_format: true
-slug: /interfaces/formats/CSVWithNamesAndTypes
 title: 'CSVWithNamesAndTypes'
 ---
 
@@ -12,13 +11,13 @@ title: 'CSVWithNamesAndTypes'
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description 
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](../formats/TabSeparatedWithNamesAndTypes).
 
-## Example Usage {#example-usage}
+## Example Usage 
 
-## Format Settings {#format-settings}
+## Format Settings 
 
 :::note
 If setting [input_format_with_names_use_header](/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,

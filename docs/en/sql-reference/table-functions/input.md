@@ -3,7 +3,6 @@ description: 'Table function that allows effectively converting and inserting da
   sent to the server with a given structure to a table with another structure.'
 sidebar_label: 'input'
 sidebar_position: 95
-slug: /sql-reference/table-functions/input
 title: 'input'
 ---
 

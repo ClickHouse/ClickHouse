@@ -4,7 +4,6 @@ description: 'The `contingency` function calculates the contingency coefficient,
   is similar to the `cramersV` function but with a different denominator in the square
   root.'
 sidebar_position: 116
-slug: /sql-reference/aggregate-functions/reference/contingency
 title: 'contingency'
 ---
 

@@ -4,19 +4,18 @@ description: 'Constraints on settings can be defined in the `profiles` section o
   with the `SET` query.'
 sidebar_label: 'Constraints on Settings'
 sidebar_position: 62
-slug: /operations/settings/constraints-on-settings
 title: 'Constraints on Settings'
 ---
 
 # Constraints on Settings
 
-## Overview {#overview}
+## Overview 
 
 In ClickHouse, "constraints" on settings refer to limitations and rules which
 you can assign to settings. These constraints can be applied to maintain 
 stability, security and predictable behavior of your database.
 
-## Defining constraints {#defining-constraints}
+## Defining constraints 
 
 Constraints on settings can be defined in the `profiles` section of the `user.xml`
 configuration file. They prohibit users from changing some settings using the 
@@ -54,7 +53,7 @@ Constraints are defined as follows:
 If the user tries to violate the constraints, an exception is thrown and the 
 setting remains unchanged.
 
-## Types of constraints {#types-of-constraints}
+## Types of constraints 
 
 There are a few types of constraints supported in ClickHouse:
 - `min`
@@ -83,7 +82,7 @@ is enabled:
 ```
 :::
 
-## Multiple constraint profiles {#multiple-constraint-profiles}
+## Multiple constraint profiles 
 
 If there are multiple profiles active for a user, then constraints are merged. 
 The Merge process depends on `settings_constraints_replace_previous`:
@@ -94,7 +93,7 @@ The Merge process depends on `settings_constraints_replace_previous`:
   every unset type of constraint is taken from the previous profile and every 
   set type of constraint is replaced by the value from the new profile.
 
-## Read-only mode {#read-only}
+## Read-only mode 
 
 Read-only mode is enabled by the `readonly` setting which is not to be confused
 with the `readonly` constraint type:
@@ -105,7 +104,7 @@ with the `readonly` constraint type:
   except for `readonly` setting itself.
 
 
-### Example {#example-read-only}
+### Example 
 
 Let `users.xml` include the following lines:
 
@@ -148,7 +147,7 @@ The `default` profile is handled uniquely: all the constraints defined for the
 until they're overridden explicitly for those users.
 :::
 
-## Constraints on MergeTree settings {#constraints-on-merge-tree-settings}
+## Constraints on MergeTree settings 
 
 It is possible to set constraints for [merge tree settings](merge-tree-settings.md). 
 These constraints are applied when a table with the MergeTree engine is created
@@ -157,7 +156,7 @@ or its storage settings are altered.
 The name of merge tree setting must be prepended by `merge_tree_` prefix when 
 referenced in the `<constraints>` section.
 
-### Example {#example-mergetree}
+### Example 
 
 You can forbid creating new tables with explicitly specified `storage_policy`
 

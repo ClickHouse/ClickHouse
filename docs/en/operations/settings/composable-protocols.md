@@ -3,19 +3,18 @@ description: 'Composable protocols allows more flexible configuration of TCP acc
   to the ClickHouse server.'
 sidebar_label: 'Composable Protocols'
 sidebar_position: 64
-slug: /operations/settings/composable-protocols
 title: 'Composable Protocols'
 ---
 
 # Composable Protocols
 
-## Overview {#overview}
+## Overview 
 
 Composable protocols allow more flexible configuration of TCP access to the 
 ClickHouse server. This configuration can co-exist alongside, or replace, 
 conventional configuration.
 
-## Configuring composable protocols {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
+## Configuring composable protocols 
 
 Composable protocols can be configured in an XML configuration file. The protocols
 section is denoted with `protocols` tags in the XML config file: 
@@ -26,7 +25,7 @@ section is denoted with `protocols` tags in the XML config file:
 </protocols>
 ```
 
-### Configuring protocol layers {#basic-modules-define-protocol-layers}
+### Configuring protocol layers 
 
 You can define protocol layers using basic modules. For example, to define an
 HTTP layer, you can add a new basic module to the `protocols` section:
@@ -59,7 +58,7 @@ Modules can be configured according to:
 `gRPC` protocol handler is not implemented for `Composable protocols`
 :::
  
-### Configuring endpoints {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
+### Configuring endpoints 
 
 Endpoints (listening ports) are denoted by `<port>` and optional `<host>` tags.
 For example, to configure an endpoint on the previously added HTTP layer we 
@@ -83,7 +82,7 @@ could modify our configuration as follows:
 If the `<host>` tag is omitted, then the `<listen_host>` from the root config is
 used.
 
-### Configuring layer sequences {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
+### Configuring layer sequences 
 
 Layers sequences are defined using the `<impl>` tag, and referencing another 
 module. For example, to configure a TLS layer on top of our plain_http module
@@ -108,7 +107,7 @@ we could further modify our configuration as follows:
 </protocols>
 ```
 
-### Attaching endpoints to layers {#endpoint-can-be-attached-to-any-layer}
+### Attaching endpoints to layers 
 
 Endpoints can be attached to any layer. For example, we can define endpoints for
 HTTP (port 8123) and HTTPS (port 8443):
@@ -132,7 +131,7 @@ HTTP (port 8123) and HTTPS (port 8443):
 </protocols>
 ```
 
-### Defining additional endpoints {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
+### Defining additional endpoints 
 
 Additional endpoints can be defined by referencing any module and omitting the 
 `<type>` tag. For example, we can define `another_http` endpoint for the 
@@ -163,7 +162,7 @@ Additional endpoints can be defined by referencing any module and omitting the
 </protocols>
 ```
 
-### Specifying additional layer parameters {#some-modules-can-contain-specific-for-its-layer-parameters}
+### Specifying additional layer parameters 
 
 Some modules can contain additional layer parameters. For example, the TLS layer
 allows a private key (`privateKeyFile`) and certificate files (`certificateFile`)

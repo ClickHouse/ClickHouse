@@ -2,7 +2,6 @@
 description: 'Documentation for the Nothing special data type'
 sidebar_label: 'Nothing'
 sidebar_position: 60
-slug: /sql-reference/data-types/special-data-types/nothing
 title: 'Nothing'
 ---
 

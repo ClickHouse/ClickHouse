@@ -2,7 +2,6 @@
 description: 'Documentation for Describe Table'
 sidebar_label: 'DESCRIBE TABLE'
 sidebar_position: 42
-slug: /sql-reference/statements/describe-table
 title: 'DESCRIBE TABLE'
 ---
 

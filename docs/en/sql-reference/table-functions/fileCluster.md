@@ -6,7 +6,6 @@ description: 'Enables simultaneous processing of files matching a specified path
   repeating until all tasks are completed (all files are read).'
 sidebar_label: 'fileCluster'
 sidebar_position: 61
-slug: /sql-reference/table-functions/fileCluster
 title: 'fileCluster'
 ---
 
@@ -80,7 +79,7 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 ```
 
 
-## Globs in Path {#globs-in-path}
+## Globs in Path 
 
 All patterns supported by [File](../../sql-reference/table-functions/file.md#globs-in-path) table function are supported by FileCluster.
 

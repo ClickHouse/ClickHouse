@@ -2,11 +2,10 @@
 description: 'Documentation for Files'
 sidebar_label: 'Files'
 sidebar_position: 75
-slug: /sql-reference/functions/files
 title: 'Files'
 ---
 
-## file {#file}
+## file 
 
 Reads a file as string and loads the data into the specified column. The file content is not interpreted.
 

@@ -2,7 +2,6 @@
 description: 'System table containing information about the parameters of the request
   to the ZooKeeper server and the response from it.'
 keywords: ['system table', 'zookeeper_log']
-slug: /operations/system-tables/zookeeper_log
 title: 'system.zookeeper_log'
 ---
 

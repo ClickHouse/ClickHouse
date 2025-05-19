@@ -1,7 +1,6 @@
 ---
 description: 'Computes the sample kurtosis of a sequence.'
 sidebar_position: 158
-slug: /sql-reference/aggregate-functions/reference/kurtsamp
 title: 'kurtSamp'
 ---
 

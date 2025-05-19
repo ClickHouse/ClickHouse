@@ -3,15 +3,9 @@ description: 'Documentation for the MySQL protocol interface in ClickHouse, allo
   MySQL clients to connect to ClickHouse'
 sidebar_label: 'MySQL Interface'
 sidebar_position: 25
-slug: /interfaces/mysql
 title: 'MySQL Interface'
 ---
 
-import Image from '@theme/IdealImage';
-import mysql0 from '@site/static/images/interfaces/mysql0.png';
-import mysql1 from '@site/static/images/interfaces/mysql1.png';
-import mysql2 from '@site/static/images/interfaces/mysql2.png';
-import mysql3 from '@site/static/images/interfaces/mysql3.png';
 
 # MySQL Interface
 
@@ -35,7 +29,7 @@ To support the SQL dialect of above BI tools better, ClickHouse's MySQL interfac
 This cannot be turned off and it can lead in rare edge cases to different behavior between queries sent to ClickHouse's normal and MySQL query interfaces.
 ::::
 
-## Enabling the MySQL Interface On ClickHouse Cloud {#enabling-the-mysql-interface-on-clickhouse-cloud}
+## Enabling the MySQL Interface On ClickHouse Cloud 
 
 1. After creating your ClickHouse Cloud Service, click the `Connect` button.
 
@@ -59,7 +53,7 @@ Copy the MySQL connection string shown.
 
 <Image img={mysql3} alt="Credentials screen - Connection String" size="md"/>
 
-## Creating multiple MySQL users in ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
+## Creating multiple MySQL users in ClickHouse Cloud 
 
 By default, there is a built-in `mysql4<subdomain>` user, which uses the same password as the `default` one. The `<subdomain>` part is the first segment of your ClickHouse Cloud hostname. This format is necessary to work with the tools that implement secure connection, but don't provide [SNI information in their TLS handshake](https://www.cloudflare.com/learning/ssl/what-is-sni), which makes it impossible to do the internal routing without an extra hint in the username (MySQL console client is one of such tools).
 
@@ -99,7 +93,7 @@ You can create extra users to use with the MySQL interface if, for example, you 
 
 4. Use the created user to connect to your ClickHouse Cloud service with the MySQL interface.
 
-### Troubleshooting multiple MySQL users in ClickHouse Cloud {#troubleshooting-multiple-mysql-users-in-clickhouse-cloud}
+### Troubleshooting multiple MySQL users in ClickHouse Cloud 
 
 If you created a new MySQL user, and you see the following error while connecting via MySQL CLI client:
 
@@ -109,7 +103,7 @@ ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization pa
 
 In this case, ensure that the username follows the `mysql4<subdomain>_<username>` format, as described ([above](#creating-multiple-mysql-users-in-clickhouse-cloud)).
 
-## Enabling the MySQL Interface On Self-managed ClickHouse {#enabling-the-mysql-interface-on-self-managed-clickhouse}
+## Enabling the MySQL Interface On Self-managed ClickHouse 
 
 Add the [mysql_port](../operations/server-configuration-parameters/settings.md#mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
 
@@ -125,7 +119,7 @@ Startup your ClickHouse server and look for a log message similar to the followi
 {} <Information> Application: Listening for MySQL compatibility protocol: 127.0.0.1:9004
 ```
 
-## Connect MySQL to ClickHouse {#connect-mysql-to-clickhouse}
+## Connect MySQL to ClickHouse 
 
 The following command demonstrates how to connect the MySQL client `mysql` to ClickHouse:
 

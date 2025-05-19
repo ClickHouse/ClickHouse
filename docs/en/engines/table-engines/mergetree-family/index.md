@@ -2,7 +2,6 @@
 description: 'Documentation for MergeTree Engine Family'
 sidebar_label: 'MergeTree Family'
 sidebar_position: 10
-slug: /engines/table-engines/mergetree-family/
 title: 'MergeTree Engine Family'
 ---
 

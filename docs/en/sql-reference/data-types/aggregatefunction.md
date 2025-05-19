@@ -4,13 +4,12 @@ stores intermediate states of aggregate functions'
 keywords: ['AggregateFunction', 'Type']
 sidebar_label: 'AggregateFunction'
 sidebar_position: 46
-slug: /sql-reference/data-types/aggregatefunction
 title: 'AggregateFunction Type'
 ---
 
 # AggregateFunction Type
 
-## Description {#description}
+## Description 
 
 All [Aggregate functions](/sql-reference/aggregate-functions) in ClickHouse have
 an implementation-specific intermediate state that can be serialized to an
@@ -26,7 +25,7 @@ commonly used with the `AggregateFunction` type:
   function combinator, which is used to get the final result of an aggregation 
   from the intermediate states.
 
-## Syntax {#syntax}
+## Syntax 
 
 ```sql
 AggregateFunction(aggregate_function_name, types_of_arguments...)
@@ -49,9 +48,9 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-## Usage {#usage}
+## Usage 
 
-### Data Insertion {#data-insertion}
+### Data Insertion 
 
 To insert data into a table with columns of type `AggregateFunction`, you can 
 use `INSERT SELECT` with aggregate functions and the
@@ -78,7 +77,7 @@ formats.
 If you dump data into, for example, the `TabSeparated` format with a `SELECT` 
 query, then this dump can be loaded back using the `INSERT` query.
 
-### Data Selection {#data-selection}
+### Data Selection 
 
 When selecting data from `AggregatingMergeTree` table, use the `GROUP BY` clause
 and the same aggregate functions as for when you inserted the data, but use the 
@@ -95,11 +94,11 @@ SELECT uniq(UserID) FROM table
 SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
 ```
 
-## Usage Example {#usage-example}
+## Usage Example 
 
 See [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) engine description.
 
-## Related Content {#related-content}
+## Related Content 
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 - [MergeState](/sql-reference/aggregate-functions/combinators#-mergestate)

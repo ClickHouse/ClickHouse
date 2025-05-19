@@ -2,7 +2,6 @@
 description: 'Documentation for ALTER'
 sidebar_label: 'ALTER'
 sidebar_position: 35
-slug: /sql-reference/statements/alter/
 title: 'ALTER'
 ---
 
@@ -49,7 +48,7 @@ These `ALTER` statements modify entities related to role-based access control:
 | [ALTER TABLE ... MODIFY COMMENT](/sql-reference/statements/alter/comment.md)  | Adds, modifies, or removes comments to the table, regardless if it was set before or not. |
 | [ALTER NAMED COLLECTION](/sql-reference/statements/alter/named-collection.md) | Modifies [Named Collections](/operations/named-collections.md).                   |
 
-## Mutations {#mutations}
+## Mutations 
 
 `ALTER` queries that are intended to manipulate table data are implemented with a mechanism called "mutations", most notably [ALTER TABLE ... DELETE](/sql-reference/statements/alter/delete.md) and [ALTER TABLE ... UPDATE](/sql-reference/statements/alter/update.md). They are asynchronous background processes similar to merges in [MergeTree](/engines/table-engines/mergetree-family/index.md) tables that to produce new "mutated" versions of parts.
 
@@ -62,7 +61,7 @@ A mutation query returns immediately after the mutation entry is added (in case 
 
 Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
 
-## Synchronicity of ALTER Queries {#synchronicity-of-alter-queries}
+## Synchronicity of ALTER Queries 
 
 For non-replicated tables, all `ALTER` queries are performed synchronously. For replicated tables, the query just adds instructions for the appropriate actions to `ZooKeeper`, and the actions themselves are performed as soon as possible. However, the query can wait for these actions to be completed on all the replicas.
 
@@ -76,6 +75,6 @@ You can specify how long (in seconds) to wait for inactive replicas to execute a
 For all `ALTER` queries, if `alter_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 :::
 
-## Related content {#related-content}
+## Related content 
 
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

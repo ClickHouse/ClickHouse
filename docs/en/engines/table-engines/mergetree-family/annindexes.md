@@ -2,11 +2,9 @@
 description: 'Documentation for Exact and Approximate Nearest Neighbor Search'
 keywords: ['vector similarity search', 'ann', 'knn', 'hnsw', 'indices', 'index', 'nearest neighbor']
 sidebar_label: 'Exact and Approximate Nearest Neighbor Search'
-slug: /engines/table-engines/mergetree-family/annindexes
 title: 'Exact and Approximate Nearest Neighbor Search'
 ---
 
-import BetaBadge from '@theme/badges/BetaBadge';
 
 # Exact and Approximate Nearest Neighbor Search
 
@@ -32,7 +30,7 @@ The reference vector is a constant array and given as a common table expression.
 Any of the available [distance function](/sql-reference/functions/distance-functions) can be used for that.
 `<N>` specifies how many neighbors should be returned.
 
-## Exact Nearest Neighbor Search {#exact-nearest-neighbor-search}
+## Exact Nearest Neighbor Search 
 
 An exact nearest neighbor search can be performed using above SELECT query as is.
 The runtime of such queries is generally proportional to the number of stored vectors and their dimension, i.e. the number of array elements.
@@ -43,7 +41,7 @@ For example, if the vectors are stored as `Array(BFloat16)` instead of `Array(Fl
 This method is know as quantization and it might reduce the result accuracy despite an exhaustive scan of all vectors.
 If the precision loss is acceptable depends on the use case and typically requires experimentation.
 
-### Example {#exact-nearest-neighbor-search-example}
+### Example 
 
 ```sql
 CREATE TABLE tab(id Int32, vec Array(Float32)) ENGINE = MergeTree ORDER BY id;
@@ -67,7 +65,7 @@ returns
    └────┴─────────┘
 ```
 
-## Approximate Nearest Neighbor Search {#approximate-nearest-neighbor-search}
+## Approximate Nearest Neighbor Search 
 
 <BetaBadge/>
 
@@ -79,7 +77,7 @@ To enable them, please first run `SET allow_experimental_vector_similarity_index
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
-### Creating a Vector Similarity Index {#creating-a-vector-similarity-index}
+### Creating a Vector Similarity Index 
 
 A vector similarity index can be created on a new table like this:
 
@@ -152,7 +150,7 @@ Further restrictions apply:
 - Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as early as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
 - Likewise, array values in the underlying column must not be empty (`[]`) or have a default value (also `[]`).
 
-### Using a Vector Similarity Index {#using-a-vector-similarity-index}
+### Using a Vector Similarity Index 
 
 :::note
 To use vector similarity indexes, setting [compatibility](../../../operations/settings/settings.md) has be `''` (the default value), or `'25.1'` or newer.
@@ -308,7 +306,7 @@ ClickHouse will fetch 3.0 x 10 = 30 nearest neighbors from the vector index in e
 Only the ten closest neighbors will be returned.
 We note that setting `vector_search_postfilter_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
 
-### Performance Tuning {#performance-tuning}
+### Performance Tuning 
 
 **Tuning Compression**
 
@@ -372,7 +370,7 @@ ORDER BY event_time_microseconds;
 
 For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
 
-### Administration and Monitoring {#administration}
+### Administration and Monitoring 
 
 The on-disk size of vector similarity indexes can be obtained from [system.data_skipping_indices](../../../operations/system-tables/data_skipping_indices):
 
@@ -390,7 +388,7 @@ Example output:
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
 
-### Differences to Regular Skipping Indexes {#differences-to-regular-skipping-indexes}
+### Differences to Regular Skipping Indexes 
 
 As all regular [skipping indexes](/optimize/skipping-indexes), vector similarity indexes are constructed over granules and each indexed block consists of `GRANULARITY = [N]`-many granules (`[N]` = 1 by default for normal skipping indexes).
 For example, if the primary index granularity of the table is 8192 (setting `index_granularity = 8192`) and `GRANULARITY = 2`, then each indexed block will contain 16384 rows.
@@ -415,7 +413,7 @@ Note that the search accuracy is with both cases equally good, only the processi
 It is generally recommended to use a large `GRANULARITY` for vector similarity indexes and fall back to a smaller `GRANULARITY` values only in case of problems like excessive memory consumption of the vector similarity structures.
 If no `GRANULARITY` was specified for vector similarity indexes, the default value is 100 million.
 
-### Example {#approximate-nearest-neighbor-search-example}
+### Example 
 
 ```sql
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
@@ -439,7 +437,7 @@ returns
    └────┴─────────┘
 ```
 
-## References {#references}
+## References 
 
 Blogs:
 - [Vector Search with ClickHouse - Part 1](https://clickhouse.com/blog/vector-search-clickhouse-p1)

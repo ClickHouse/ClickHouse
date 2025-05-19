@@ -3,7 +3,6 @@ description: 'Provides a read-only table-like interface to the Delta Lake tables
   Amazon S3.'
 sidebar_label: 'deltaLake'
 sidebar_position: 45
-slug: /sql-reference/table-functions/deltalake
 title: 'deltaLake'
 ---
 
@@ -11,7 +10,7 @@ title: 'deltaLake'
 
 Provides a read-only table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3 or Azure Blob Storage.
 
-## Syntax {#syntax}
+## Syntax 
 
 `deltaLake` is an alias of `deltaLakeS3`, its supported for compatibility.
 
@@ -24,7 +23,7 @@ deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structur
 deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 ```
 
-## Arguments {#arguments}
+## Arguments 
 
 Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
 `format` stands for the format of data files in the Delta lake table.

@@ -2,7 +2,6 @@
 description: 'Documentation for Distributed Ddl'
 sidebar_label: 'Distributed DDL'
 sidebar_position: 3
-slug: /sql-reference/distributed-ddl
 title: 'Distributed DDL Queries (ON CLUSTER Clause)'
 ---
 

@@ -2,7 +2,6 @@
 description: 'Documentation for Role'
 sidebar_label: 'ROLE'
 sidebar_position: 46
-slug: /sql-reference/statements/alter/role
 title: 'ALTER ROLE'
 ---
 

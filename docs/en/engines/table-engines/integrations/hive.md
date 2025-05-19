@@ -3,11 +3,9 @@ description: 'The Hive engine allows you to perform `SELECT` queries on HDFS Hiv
   table.'
 sidebar_label: 'Hive'
 sidebar_position: 84
-slug: /engines/table-engines/integrations/hive
 title: 'Hive'
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Hive
 
@@ -21,7 +19,7 @@ The Hive engine allows you to perform `SELECT` queries on HDFS Hive table. Curre
 
 - Parquet: support all simple scalar columns types; only support complex types like `array`
 
-## Creating a Table {#creating-a-table}
+## Creating a Table 
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -47,9 +45,9 @@ The table structure can differ from the original Hive table structure:
 
 - `table` — Remote table name.
 
-## Usage Example {#usage-example}
+## Usage Example 
 
-### How to Use Local Cache for HDFS Filesystem {#how-to-use-local-cache-for-hdfs-filesystem}
+### How to Use Local Cache for HDFS Filesystem 
 
 We strongly advice you to enable local cache for remote filesystems. Benchmark shows that its almost 2x faster with cache.
 
@@ -68,9 +66,9 @@ Before using cache, add it to `config.xml`
 - limit_size: Required. The maximum size(in bytes) of local cache files.
 - bytes_read_before_flush: Control bytes before flush to local filesystem when downloading file from remote filesystem. The default value is 1MB.
 
-### Query Hive Table with ORC Input Format  {#query-hive-table-with-orc-input-format}
+### Query Hive Table with ORC Input Format  
 
-#### Create Table in Hive {#create-table-in-hive}
+#### Create Table in Hive 
 
 ```text
 hive > CREATE TABLE `test`.`test_orc`(
@@ -118,7 +116,7 @@ OK
 Time taken: 0.295 seconds, Fetched: 1 row(s)
 ```
 
-#### Create Table in ClickHouse  {#create-table-in-clickhouse}
+#### Create Table in ClickHouse  
 
 Table in ClickHouse, retrieving data from the Hive table created above:
 ```sql
@@ -190,9 +188,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.078 sec.
 ```
 
-### Query Hive Table with Parquet Input Format {#query-hive-table-with-parquet-input-format}
+### Query Hive Table with Parquet Input Format 
 
-#### Create Table in Hive {#create-table-in-hive-1}
+#### Create Table in Hive 
 
 ```text
 hive >
@@ -241,7 +239,7 @@ OK
 Time taken: 0.766 seconds, Fetched: 1 row(s)
 ```
 
-#### Create Table in ClickHouse {#create-table-in-clickhouse-1}
+#### Create Table in ClickHouse 
 
 Table in ClickHouse, retrieving data from the Hive table created above:
 ```sql
@@ -313,9 +311,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.357 sec.
 ```
 
-### Query Hive Table with Text Input Format {#query-hive-table-with-text-input-format}
+### Query Hive Table with Text Input Format 
 
-#### Create Table in Hive {#create-table-in-hive-2}
+#### Create Table in Hive 
 
 ```text
 hive >
@@ -364,7 +362,7 @@ OK
 Time taken: 0.624 seconds, Fetched: 1 row(s)
 ```
 
-#### Create Table in ClickHouse {#create-table-in-clickhouse-2}
+#### Create Table in ClickHouse 
 
 Table in ClickHouse, retrieving data from the Hive table created above:
 ```sql

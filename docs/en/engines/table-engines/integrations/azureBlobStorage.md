@@ -2,7 +2,6 @@
 description: 'This engine provides an integration with Azure Blob Storage ecosystem.'
 sidebar_label: 'Azure Blob Storage'
 sidebar_position: 10
-slug: /engines/table-engines/integrations/azureBlobStorage
 title: 'AzureBlobStorage Table Engine'
 ---
 
@@ -10,7 +9,7 @@ title: 'AzureBlobStorage Table Engine'
 
 This engine provides an integration with [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem.
 
-## Create Table {#create-table}
+## Create Table 
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -19,7 +18,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-### Engine parameters {#engine-parameters}
+### Engine parameters 
 
 - `endpoint` — AzureBlobStorage endpoint URL with container & prefix. Optionally can contain account_name if the authentication method used needs it. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) or these parameters can be provided separately using storage_account_url, account_name & container. For specifying prefix, endpoint should be used.
 - `endpoint_contains_account_name` - This flag is used to specify if endpoint contains account_name as it is only needed for certain authentication methods. (Default : true)
@@ -53,21 +52,21 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
-## Virtual columns {#virtual-columns}
+## Virtual columns 
 
 - `_path` — Path to the file. Type: `LowCardinality(String)`.
 - `_file` — Name of the file. Type: `LowCardinality(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
-## Authentication {#authentication}
+## Authentication 
 
 Currently there are 3 ways to authenticate:
 - `Managed Identity` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`.
 - `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url. See [azureBlobStorage](/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
 - `Workload Identity` - Can be used by providing an `endpoint` or `storage_account_url`. If `use_workload_identity` parameter is set in config, ([workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)) is used for authentication.
 
-### Data cache {#data-cache}
+### Data cache 
 
 `Azure` table engine supports data caching on local disk.
 See filesystem cache configuration options and usage in this [section](/operations/storing-data.md/#using-local-cache).
@@ -96,6 +95,6 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/operations/storing-data.md/#using-local-cache)
 
-## See also {#see-also}
+## See also 
 
 [Azure Blob Storage Table Function](/sql-reference/table-functions/azureBlobStorage)

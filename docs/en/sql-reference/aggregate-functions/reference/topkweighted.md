@@ -4,7 +4,6 @@ description: 'Returns an array of the approximately most frequent values in the 
   of values (not by the values themselves). Additionally, the weight of the value
   is taken into account.'
 sidebar_position: 203
-slug: /sql-reference/aggregate-functions/reference/topkweighted
 title: 'topKWeighted'
 ---
 

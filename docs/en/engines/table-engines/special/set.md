@@ -3,7 +3,6 @@ description: 'A data set that is always in RAM. It is intended for use on the ri
   side of the `IN` operator.'
 sidebar_label: 'Set'
 sidebar_position: 60
-slug: /engines/table-engines/special/set
 title: 'Set Table Engine'
 ---
 
@@ -18,11 +17,11 @@ Data is always located in RAM. For `INSERT`, the blocks of inserted data are als
 
 For a rough server restart, the block of data on the disk might be lost or damaged. In the latter case, you may need to manually delete the file with damaged data.
 
-### Limitations and Settings {#join-limitations-and-settings}
+### Limitations and Settings 
 
 When creating a table, the following settings are applied:
 
-#### persistent {#persistent}
+#### persistent 
 
 Disables persistency for the Set and [Join](/engines/table-engines/special/join) table engines.
 

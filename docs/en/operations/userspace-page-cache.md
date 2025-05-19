@@ -3,13 +3,12 @@ description: 'caching mechanism that allows for caching of
 data in in-process memory rather than relying on the OS page cache.'
 sidebar_label: 'Userspace page cache'
 sidebar_position: 65
-slug: /operations/userspace-page-cache
 title: 'Userspace page cache'
 ---
 
 # Userspace page cache
 
-## Overview {#overview}
+## Overview 
 
 > The userspace page cache is a new caching mechanism that allows for caching of 
 data in in-process memory rather than relying on the OS page cache.
@@ -30,9 +29,9 @@ It differs from the filesystem cache in the following ways:
 | Does not show up in the server's memory usage           | Shows up in the server's memory usage |
 | Suitable for both on-disk and in-memory (OS page cache) | **Good for disk-less servers**        |
 
-## Configuration settings and usage {#configuration-settings-and-usage}
+## Configuration settings and usage 
 
-### Usage {#usage}
+### Usage 
 
 To enable the userspace page cache, first configure it on the server:
 
@@ -53,7 +52,7 @@ Next, enable its usage on the query-level:
 SET use_page_cache_for_disks_without_file_cache=1;
 ```
 
-### Settings {#settings}
+### Settings 
 
 | Setting                                                  | Description                                                                                                                                                                                                                                                                                                            | Default     |
 |----------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------|
@@ -71,6 +70,6 @@ SET use_page_cache_for_disks_without_file_cache=1;
 | `page_cache_lookahead_blocks`                            | On userspace page cache miss, read up to this many consecutive blocks at once from the underlying storage, if they\'re also not in the cache. Each block is page_cache_block_size bytes.                                                                                                                               | `16`        |
 | `page_cache_shards`                                      | Stripe userspace page cache over this many shards to reduce mutex contention. Experimental, not likely to improve performance.                                                                                                                                                                                         | `4`         |
 
-## Related content {#related-content}
+## Related content 
 - [Filesystem cache](/docs/operations/storing-data)
 - [ClickHouse v25.3 Release Webinar](https://www.youtube.com/live/iCKEzp0_Z2Q?feature=shared&t=1320)

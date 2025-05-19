@@ -4,7 +4,6 @@ description: 'Documentation for the Native format'
 input_format: true
 keywords: ['Native']
 output_format: true
-slug: /interfaces/formats/Native
 title: 'Native'
 ---
 
@@ -12,7 +11,7 @@ title: 'Native'
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description 
 
 The `Native` format is ClickHouse's most efficient format because it is truly "columnar" 
 in that it does not convert columns to rows.  
@@ -27,6 +26,6 @@ You can use this format to quickly generate dumps that can only be read by the C
 It might not be practical to work with this format yourself.
 :::
 
-## Example Usage {#example-usage}
+## Example Usage 
 
-## Format Settings {#format-settings}
+## Format Settings 

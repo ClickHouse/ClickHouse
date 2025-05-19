@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for the Time data type in ClickHouse, which stores
   the time range with second precision'
-slug: /sql-reference/data-types/time
 sidebar_position: 15
 sidebar_label: 'Time'
 title: 'Time'
@@ -21,19 +20,19 @@ Supported range of values: \[-999:59:59, 999:59:59\].
 
 Resolution: 1 second.
 
-## Speed {#speed}
+## Speed 
 
 The `Date` data type is faster than `Time` under _most_ conditions. But the `Time` data type is around the same as `DateTime` data type.
 
 Due to the implementation details, the `Time` and `DateTime` type requires 4 bytes of storage, while `Date` requires 2 bytes. However, when the database compresses the database, this difference is amplified.
 
-## Usage Remarks {#usage-remarks}
+## Usage Remarks 
 
 The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time.
 
 **Note:** The Time data type does not observe time zones. It represents a time‐of‐day value on its own, without any date or regional offset context. Attempting to apply or change a time zone on Time columns has no effect and is not supported.
 
-## Examples {#examples}
+## Examples 
 
 **1.** Creating a table with a `Time`-type column and inserting data into it:
 
@@ -99,7 +98,7 @@ SELECT toTime(now()) AS column, toTypeName(column) AS x
 ```
 
 
-## See Also {#see-also}
+## See Also 
 
 - [Type conversion functions](../functions/type-conversion-functions.md)
 - [Functions for working with dates and times](../functions/date-time-functions.md)

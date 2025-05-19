@@ -5,12 +5,9 @@ description: 'A table engine which provides a table-like interface to SELECT fro
   S3, GCS, or MinIO.'
 sidebar_label: 'file'
 sidebar_position: 60
-slug: /sql-reference/table-functions/file
 title: 'file'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # file Table Function
 
@@ -37,9 +34,9 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 
 A table for reading or writing data in a file.
 
-## Examples for Writing to a File {#examples-for-writing-to-a-file}
+## Examples for Writing to a File 
 
-### Write to a TSV file {#write-to-a-tsv-file}
+### Write to a TSV file 
 
 ```sql
 INSERT INTO TABLE FUNCTION
@@ -56,7 +53,7 @@ As a result, the data is written into the file `test.tsv`:
 1    3    2
 ```
 
-### Partitioned write to multiple TSV files {#partitioned-write-to-multiple-tsv-files}
+### Partitioned write to multiple TSV files 
 
 If you specify a `PARTITION BY` expression when inserting data into a table function of type `file()`, then a separate file is created for each partition. Splitting the data into separate files helps to improve performance of read operations.
 
@@ -80,9 +77,9 @@ As a result, the data is written into three files: `test_1.tsv`, `test_2.tsv`, a
 1    2    3
 ```
 
-## Examples for Reading from a File {#examples-for-reading-from-a-file}
+## Examples for Reading from a File 
 
-### SELECT from a CSV file {#select-from-a-csv-file}
+### SELECT from a CSV file 
 
 First, set `user_files_path` in the server configuration and prepare a file `test.csv`:
 
@@ -111,7 +108,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-### Inserting data from a file into a table {#inserting-data-from-a-file-into-a-table}
+### Inserting data from a file into a table 
 
 ```sql
 INSERT INTO FUNCTION
@@ -136,7 +133,7 @@ Reading data from `table.csv`, located in `archive1.zip` or/and `archive2.zip`:
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-## Globs in path {#globs-in-path}
+## Globs in path 
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix. There is one exception that if the path refers to an existing
 directory and does not use globs, a `*` will be implicitly added to the path so
@@ -207,14 +204,14 @@ Query the total number of rows from all files `file002` inside any folder in dir
 SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
-## Virtual Columns {#virtual-columns}
+## Virtual Columns 
 
 - `_path` — Path to the file. Type: `LowCardinality(String)`.
 - `_file` — Name of the file. Type: `LowCardinality(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
-## Hive-style partitioning {#hive-style-partitioning}
+## Hive-style partitioning 
 
 When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 
@@ -226,7 +223,7 @@ Use virtual column, created with Hive-style partitioning
 SELECT * from file('data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 
-## Settings {#settings}
+## Settings 
 
 - [engine_file_empty_if_not_exists](/operations/settings/settings#engine_file_empty_if_not_exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
 - [engine_file_truncate_on_insert](/operations/settings/settings#engine_file_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.

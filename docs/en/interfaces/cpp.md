@@ -3,7 +3,6 @@ description: 'Documentation for the ClickHouse C++ client library and integratio
   with u-server framework'
 sidebar_label: 'C++ Client Library'
 sidebar_position: 24
-slug: /interfaces/cpp
 title: 'C++ Client Library'
 ---
 

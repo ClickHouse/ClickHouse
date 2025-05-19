@@ -2,7 +2,6 @@
 description: 'Documentation for the PostgreSQL wire protocol interface in ClickHouse'
 sidebar_label: 'PostgreSQL Interface'
 sidebar_position: 20
-slug: /interfaces/postgresql
 title: 'PostgreSQL Interface'
 ---
 
@@ -24,7 +23,7 @@ Startup your ClickHouse server and look for a log message similar to the followi
 {} <Information> Application: Listening for PostgreSQL compatibility protocol: 127.0.0.1:9005
 ```
 
-## Connect psql to ClickHouse {#connect-psql-to-clickhouse}
+## Connect psql to ClickHouse 
 
 The following command demonstrates how to connect the PostgreSQL client `psql` to ClickHouse:
 
@@ -60,7 +59,7 @@ And that's it! You now have a PostgreSQL client connected to ClickHouse, and all
 The PostgreSQL protocol currently only supports plain-text passwords.
 :::
 
-## Using SSL {#using-ssl}
+## Using SSL 
 
 If you have SSL/TLS configured on your ClickHouse instance, then `postgresql_port` will use the same settings (the port is shared for both secure and insecure clients).
 
@@ -70,7 +69,7 @@ Each client has their own method of how to connect using SSL. The following comm
 psql "port=9005 host=127.0.0.1 user=alice dbname=default sslcert=/path/to/certificate.pem sslkey=/path/to/key.pem sslrootcert=/path/to/rootcert.pem sslmode=verify-ca"
 ```
 
-## Configuring ClickHouse User Authentication with SCRAM-SHA-256 {#using-scram-sha256}
+## Configuring ClickHouse User Authentication with SCRAM-SHA-256 
 
 To ensure secure user authentication in ClickHouse, it is recommended to use the SCRAM-SHA-256 protocol. Configure the user by specifying the `password_scram_sha256_hex` element in the users.xml file. The password hash must be generated with num_iterations=4096.
 

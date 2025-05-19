@@ -2,7 +2,6 @@
 description: 'This table function allows integrating ClickHouse with Redis.'
 sidebar_label: 'redis'
 sidebar_position: 170
-slug: /sql-reference/table-functions/redis
 title: 'redis'
 ---
 
@@ -42,7 +41,7 @@ redis(host:port, key, structure[, db_index[, password[, pool_size]]])
 
 A table object with key as Redis key, other columns packaged together as Redis value.
 
-## Usage Example {#usage-example}
+## Usage Example 
 
 Read from Redis:
 

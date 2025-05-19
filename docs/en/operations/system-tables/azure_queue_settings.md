@@ -2,7 +2,6 @@
 description: 'System table containing information about settings of AzureQueue tables.
   Available from server version `24.10`.'
 keywords: ['system table', 'azure_queue_settings']
-slug: /operations/system-tables/azure_queue_settings
 title: 'system.azure_queue_settings'
 ---
 

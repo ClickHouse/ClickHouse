@@ -3,11 +3,9 @@ description: 'The engine allows to import and export data to SQLite and supports
   to SQLite tables directly from ClickHouse.'
 sidebar_label: 'SQLite'
 sidebar_position: 185
-slug: /engines/table-engines/integrations/sqlite
 title: 'SQLite'
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # SQLite
 
@@ -15,7 +13,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 The engine allows to import and export data to SQLite and supports queries to SQLite tables directly from ClickHouse.
 
-## Creating a Table {#creating-a-table}
+## Creating a Table 
 
 ```sql
     CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -30,7 +28,7 @@ The engine allows to import and export data to SQLite and supports queries to SQ
 - `db_path` — Path to SQLite file with a database.
 - `table` — Name of a table in the SQLite database.
 
-## Usage Example {#usage-example}
+## Usage Example 
 
 Shows a query creating the SQLite table:
 

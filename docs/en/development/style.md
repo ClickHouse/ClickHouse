@@ -2,20 +2,19 @@
 description: 'Coding style guidelines for ClickHouse C++ development'
 sidebar_label: 'C++ Style Guide'
 sidebar_position: 70
-slug: /development/style
 title: 'C++ Style Guide'
 ---
 
 # C++ Style Guide
 
-## General Recommendations {#general-recommendations}
+## General Recommendations 
 
 The following are recommendations, not requirements.
 If you are editing code, it makes sense to follow the formatting of the existing code.
 Code style is needed for consistency. Consistency makes it easier to read the code, and it also makes it easier to search the code.
 Many of the rules do not have logical reasons; they are dictated by established practices.
 
-## Formatting {#formatting}
+## Formatting 
 
 **1.** Most of the formatting is done automatically by `clang-format`.
 
@@ -205,7 +204,7 @@ For template classes and structs, do not separate the method declarations from t
 for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 ```
 
-## Comments {#comments}
+## Comments 
 
 **1.** Be sure to add comments for all non-trivial parts of code.
 
@@ -302,7 +301,7 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 /// for
 ```
 
-## Names {#names}
+## Names 
 
 **1.** Use lowercase letters with underscores in the names of variables and class members.
 
@@ -420,7 +419,7 @@ You can also use an abbreviation if the full name is included next to it in the 
 
 **17.** File names with C++ source code must have the `.cpp` extension. Header files must have the `.h` extension.
 
-## How to Write Code {#how-to-write-code}
+## How to Write Code 
 
 **1.** Memory management.
 
@@ -687,7 +686,7 @@ auto s = std::string{"Hello"};
 
 **26.** For virtual functions, write `virtual` in the base class, but write `override` instead of `virtual` in descendent classes.
 
-## Unused Features of C++ {#unused-features-of-c}
+## Unused Features of C++ 
 
 **1.** Virtual inheritance is not used.
 
@@ -734,7 +733,7 @@ auto func(const E<G> & e) // auto return type (C++14)
 }
 ```
 
-## Platform {#platform}
+## Platform 
 
 **1.** We write code for a specific platform.
 
@@ -758,7 +757,7 @@ The CPU instruction set is the minimum supported set among our servers. Currentl
 
 **8.** Code is developed and debugged with release settings.
 
-## Tools {#tools}
+## Tools 
 
 **1.** KDevelop is a good IDE.
 
@@ -786,7 +785,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **10.** Unused code is removed from the repository.
 
-## Libraries {#libraries}
+## Libraries 
 
 **1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
@@ -794,7 +793,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **3.** Preference is always given to libraries that are already in use.
 
-## General Recommendations {#general-recommendations-1}
+## General Recommendations 
 
 **1.** Write as little code as possible.
 
@@ -808,7 +807,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **6.** Code simplification is encouraged. Reduce the size of your code where possible.
 
-## Additional Recommendations {#additional-recommendations}
+## Additional Recommendations 
 
 **1.** Explicitly specifying `std::` for types from `stddef.h`
 

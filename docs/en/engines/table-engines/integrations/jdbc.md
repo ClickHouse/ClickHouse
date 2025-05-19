@@ -2,11 +2,9 @@
 description: 'Allows ClickHouse to connect to external databases via JDBC.'
 sidebar_label: 'JDBC'
 sidebar_position: 100
-slug: /engines/table-engines/integrations/jdbc
 title: 'JDBC'
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # JDBC
 
@@ -23,7 +21,7 @@ To implement the JDBC connection, ClickHouse uses the separate program [clickhou
 
 This engine supports the [Nullable](../../../sql-reference/data-types/nullable.md) data type.
 
-## Creating a Table {#creating-a-table}
+## Creating a Table 
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -45,7 +43,7 @@ ENGINE = JDBC(datasource_uri, external_database, external_table)
 
 - `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
 
-## Usage Example {#usage-example}
+## Usage Example 
 
 Creating a table in MySQL server by connecting directly with it's console client:
 
@@ -100,6 +98,6 @@ SELECT toInt32(number), toFloat32(number * 1.0)
 FROM system.numbers
 ```
 
-## See Also {#see-also}
+## See Also 
 
 - [JDBC table function](../../../sql-reference/table-functions/jdbc.md).

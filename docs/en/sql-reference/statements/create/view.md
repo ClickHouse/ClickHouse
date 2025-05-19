@@ -2,19 +2,15 @@
 description: 'Documentation for CREATE VIEW'
 sidebar_label: 'VIEW'
 sidebar_position: 37
-slug: /sql-reference/statements/create/view
 title: 'CREATE VIEW'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # CREATE VIEW
 
 Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](/sql-reference/statements/create/view#window-view) (refreshable materialized view and window view are experimental features).
 
-## Normal View {#normal-view}
+## Normal View 
 
 Syntax:
 
@@ -45,7 +41,7 @@ This query is fully equivalent to using the subquery:
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-## Parameterized View {#parameterized-view}
+## Parameterized View 
 
 Parameterized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
 
@@ -58,7 +54,7 @@ The above creates a view for table which can be used as table function by substi
 SELECT * FROM view(column1=value1, column2=value2 ...)
 ```
 
-## Materialized View {#materialized-view}
+## Materialized View 
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
@@ -111,7 +107,7 @@ Views look the same as normal tables. For example, they are listed in the result
 
 To delete a view, use [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Although `DROP TABLE` works for VIEWs as well.
 
-## SQL security {#sql_security}
+## SQL security 
 
 `DEFINER` and `SQL SECURITY` allow you to specify which ClickHouse user to use when executing the view's underlying query.
 `SQL SECURITY` has three legal values: `DEFINER`, `INVOKER`, or `NONE`. You can specify any existing user or `CURRENT_USER` in the `DEFINER` clause.
@@ -141,7 +137,7 @@ To change SQL security for an existing view, use
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
-### Examples {#examples}
+### Examples 
 ```sql
 CREATE VIEW test_view
 DEFINER = alice SQL SECURITY DEFINER
@@ -154,7 +150,7 @@ SQL SECURITY INVOKER
 AS SELECT ...
 ```
 
-## Live View {#live-view}
+## Live View 
 
 <DeprecatedBadge/>
 
@@ -162,7 +158,7 @@ This feature is deprecated and will be removed in the future.
 
 For your convenience, the old documentation is located [here](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## Refreshable Materialized View {#refreshable-materialized-view}
+## Refreshable Materialized View 
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -194,7 +190,7 @@ Differences from regular non-refreshable materialized views:
 The settings in the `REFRESH ... SETTINGS` part of the query are refresh settings (e.g. `refresh_retries`), distinct from regular settings (e.g. `max_threads`). Regular settings can be specified using `SETTINGS` at the end of the query.
 :::
 
-### Refresh Schedule {#refresh-schedule}
+### Refresh Schedule 
 
 Example refresh schedules:
 ```sql
@@ -220,7 +216,7 @@ At most one refresh may be running at a time, for a given view. E.g. if a view w
 
 Additionally, a refresh is started immediately after the materialized view is created, unless `EMPTY` is specified in the `CREATE` query. If `EMPTY` is specified, the first refresh happens according to schedule.
 
-### In Replicated DB {#in-replicated-db}
+### In Replicated DB 
 
 If the refreshable materialized view is in a [Replicated database](../../../engines/database-engines/replicated.md), the replicas coordinate with each other such that only one replica performs the refresh at each scheduled time. [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md) table engine is required, so that all replicas see the data produced by the refresh.
 
@@ -230,7 +226,7 @@ In non-`APPEND` mode, only coordinated refreshing is supported. For uncoordinate
 
 The coordination is done through Keeper. The znode path is determined by [default_replica_path](../../../operations/server-configuration-parameters/settings.md#default_replica_path) server setting.
 
-### Dependencies {#refresh-dependencies}
+### Dependencies 
 
 `DEPENDS ON` synchronizes refreshes of different tables. By way of example, suppose there's a chain of two refreshable materialized views:
 ```sql
@@ -269,14 +265,14 @@ A few more examples:
 `DEPENDS ON` only works between refreshable materialized views. Listing a regular table in the `DEPENDS ON` list will prevent the view from ever refreshing (dependencies can be removed with `ALTER`, see below).
 :::
 
-### Settings {#settings}
+### Settings 
 
 Available refresh settings:
  * `refresh_retries` - How many times to retry if refresh query fails with an exception. If all retries fail, skip to the next scheduled refresh time. 0 means no retries, -1 means infinite retries. Default: 0.
  * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
  * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
 
-### Changing Refresh Parameters {#changing-refresh-parameters}
+### Changing Refresh Parameters 
 
 To change refresh parameters:
 ```sql
@@ -287,7 +283,7 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 This replaces *all* refresh parameters at once: schedule, dependencies, settings, and APPEND-ness. E.g. if the table had a `DEPENDS ON`, doing a `MODIFY REFRESH` without `DEPENDS ON` will remove the dependencies.
 :::
 
-### Other operations {#other-operations}
+### Other operations 
 
 The status of all refreshable materialized views is available in table [`system.view_refreshes`](../../../operations/system-tables/view_refreshes.md). In particular, it contains refresh progress (if running), last and next refresh time, exception message if a refresh failed.
 
@@ -299,7 +295,7 @@ To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#refresh
 Fun fact: the refresh query is allowed to read from the view that's being refreshed, seeing pre-refresh version of the data. This means you can implement Conway's game of life: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 :::
 
-## Window View {#window-view}
+## Window View 
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
@@ -321,11 +317,11 @@ Creating a window view is similar to creating `MATERIALIZED VIEW`. Window view n
 
 When creating a window view without `TO [db].[table]`, you must specify `ENGINE` – the table engine for storing data.
 
-### Time Window Functions {#time-window-functions}
+### Time Window Functions 
 
 [Time window functions](../../functions/time-window-functions.md) are used to get the lower and upper window bound of records. The window view needs to be used with a time window function.
 
-### TIME ATTRIBUTES {#time-attributes}
+### TIME ATTRIBUTES 
 
 Window view supports **processing time** and **event time** process.
 
@@ -361,7 +357,7 @@ Note that elements emitted by a late firing should be treated as updated results
 
 You can modify `SELECT` query that was specified in the window view by using `ALTER TABLE ... MODIFY QUERY` statement. The data structure resulting in a new `SELECT` query should be the same as the original `SELECT` query when with or without `TO [db.]name` clause. Note that the data in the current window will be lost because the intermediate state cannot be reused.
 
-### Monitoring New Windows {#monitoring-new-windows}
+### Monitoring New Windows 
 
 Window view supports the [WATCH](../../../sql-reference/statements/watch.md) query to monitoring changes, or use `TO` syntax to output the results to a table.
 
@@ -374,13 +370,13 @@ WATCH [db.]window_view
 
 `WATCH` query acts similar as in `LIVE VIEW`. A `LIMIT` can be specified to set the number of updates to receive before terminating the query. The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query watermark.
 
-### Settings {#settings-1}
+### Settings 
 
 - `window_view_clean_interval`: The clean interval of window view in seconds to free outdated data. The system will retain the windows that have not been fully triggered according to the system time or `WATERMARK` configuration, and the other data will be deleted.
 - `window_view_heartbeat_interval`: The heartbeat interval in seconds to indicate the watch query is alive.
 - `wait_for_window_view_fire_signal_timeout`: Timeout for waiting for window view fire signal in event time processing.
 
-### Example {#example}
+### Example 
 
 Suppose we need to count the number of click logs per 10 seconds in a log table called `data`, and its table structure is:
 
@@ -422,14 +418,14 @@ CREATE WINDOW VIEW wv TO dst AS SELECT count(id), tumbleStart(w_id) as window_st
 
 Additional examples can be found among stateful tests of ClickHouse (they are named `*window_view*` there).
 
-### Window View Usage {#window-view-usage}
+### Window View Usage 
 
 The window view is useful in the following scenarios:
 
 * **Monitoring**: Aggregate and calculate the metrics logs by time, and output the results to a target table. The dashboard can use the target table as a source table.
 * **Analyzing**: Automatically aggregate and preprocess data in the time window. This can be useful when analyzing a large number of logs. The preprocessing eliminates repeated calculations in multiple queries and reduces query latency.
 
-## Related Content {#related-content}
+## Related Content 
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 - Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

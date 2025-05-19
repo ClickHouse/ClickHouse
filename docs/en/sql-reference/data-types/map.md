@@ -2,7 +2,6 @@
 description: 'Documentation for the Map data type in ClickHouse'
 sidebar_label: 'Map(K, V)'
 sidebar_position: 36
-slug: /sql-reference/data-types/map
 title: 'Map(K, V)'
 ---
 
@@ -64,7 +63,7 @@ Result:
 └─────────────────────────┘
 ```
 
-## Converting Tuple to Map {#converting-tuple-to-map}
+## Converting Tuple to Map 
 
 Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/sql-reference/functions/type-conversion-functions#cast):
 
@@ -84,7 +83,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## Reading subcolumns of Map {#reading-subcolumns-of-map}
+## Reading subcolumns of Map 
 
 To avoid reading the entire map, you can use subcolumns `keys` and `values` in some cases.
 
@@ -119,6 +118,6 @@ Result:
 - [-Map combinator for Map datatype](../aggregate-functions/combinators.md#-map)
 
 
-## Related content {#related-content}
+## Related content 
 
 - Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

@@ -2,7 +2,6 @@
 description: 'System table containing information about resources residing on the
   local server with one row for every resource.'
 keywords: ['system table', 'resources']
-slug: /operations/system-tables/resources
 title: 'system.resources'
 ---
 

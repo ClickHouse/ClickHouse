@@ -2,15 +2,13 @@
 description: 'Documentation for http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html'
 sidebar_label: 'Usage Recommendations'
 sidebar_position: 58
-slug: /operations/tips
 title: 'Usage Recommendations'
 ---
 
-import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
 
 <SelfManaged />
 
-## CPU Scaling Governor {#cpu-scaling-governor}
+## CPU Scaling Governor 
 
 Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
 
@@ -18,12 +16,12 @@ Always use the `performance` scaling governor. The `on-demand` scaling governor 
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-## CPU Limitations {#cpu-limitations}
+## CPU Limitations 
 
 Processors can overheat. Use `dmesg` to see if the CPU's clock rate was limited due to overheating.
 The restriction can also be set externally at the datacenter level. You can use `turbostat` to monitor it under a load.
 
-## RAM {#ram}
+## RAM 
 
 For small amounts of data (up to ~200 GB compressed), it is best to use as much memory as the volume of data.
 For large amounts of data and when processing interactive (online) queries, you should use a reasonable amount of RAM (128 GB or more) so the hot data subset will fit in the cache of pages.
@@ -38,7 +36,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
-### Using less than 16GB of RAM {#using-less-than-16gb-of-ram}
+### Using less than 16GB of RAM 
 
 The recommended amount of RAM is 32 GB or more.
 
@@ -57,7 +55,7 @@ Additional notes:
 command.
 - We do not recommend using S3 or Kafka integrations on low-memory machines because they require significant memory for buffers.
 
-## Storage Subsystem {#storage-subsystem}
+## Storage Subsystem 
 
 If your budget allows you to use SSD, use SSD.
 If not, use HDD. SATA HDDs 7200 RPM will do.
@@ -65,7 +63,7 @@ If not, use HDD. SATA HDDs 7200 RPM will do.
 Give preference to a lot of servers with local hard drives over a smaller number of servers with attached disk shelves.
 But for storing archives with rare queries, shelves will work.
 
-## RAID {#raid}
+## RAID 
 
 When using HDD, you can combine their RAID-10, RAID-5, RAID-6 or RAID-50.
 For Linux, software RAID is better (with `mdadm`). 
@@ -96,7 +94,7 @@ For HDD, enable the write cache.
 
 Make sure that [`fstrim`](https://en.wikipedia.org/wiki/Trim_(computing)) is enabled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
 
-## File System {#file-system}
+## File System 
 
 Ext4 is the most reliable option. Set the mount options `noatime`. XFS works well too.
 Most other file systems should also work fine.
@@ -108,18 +106,18 @@ It's not recommended to use encrypted filesystems, because you can use builtin e
 
 While ClickHouse can work over NFS, it is not the best idea.
 
-## Linux Kernel {#linux-kernel}
+## Linux Kernel 
 
 Don't use an outdated Linux kernel.
 
-## Network {#network}
+## Network 
 
 If you are using IPv6, increase the size of the route cache.
 The Linux kernel prior to 3.2 had a multitude of problems with IPv6 implementation.
 
 Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be much worse for patching replicas with tens of terabytes of data, or for processing distributed queries with a large amount of intermediate data.
 
-## Huge Pages {#huge-pages}
+## Huge Pages 
 
 If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocator, which leads to significant performance degradation.
 On newer Linux kernels transparent huge pages are alright.
@@ -136,7 +134,7 @@ $ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
 
 After that, run the `sudo update-grub` command then reboot to take effect.
 
-## Hypervisor configuration {#hypervisor-configuration}
+## Hypervisor configuration 
 
 If you are using OpenStack, set
 ```ini
@@ -153,7 +151,7 @@ in XML configuration.
 This is important for ClickHouse to be able to get correct information with `cpuid` instruction.
 Otherwise you may get `Illegal instruction` crashes when hypervisor is run on old CPU models.
 
-## ClickHouse Keeper and ZooKeeper {#zookeeper}
+## ClickHouse Keeper and ZooKeeper 
 
 ClickHouse Keeper is recommended to replace ZooKeeper for ClickHouse clusters.  See the documentation for [ClickHouse Keeper](../guides/sre/keeper/index.md)
 
@@ -310,10 +308,10 @@ script
 end script
 ```
 
-## Antivirus software {#antivirus-software}
+## Antivirus software 
 
 If you use antivirus software configure it to skip folders with ClickHouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
 
-## Related Content {#related-content}
+## Related Content 
 
 - [Getting started with ClickHouse? Here are 13 "Deadly Sins" and how to avoid them](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

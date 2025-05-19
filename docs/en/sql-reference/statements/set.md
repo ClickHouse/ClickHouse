@@ -2,7 +2,6 @@
 description: 'Documentation for SET Statement'
 sidebar_label: 'SET'
 sidebar_position: 50
-slug: /sql-reference/statements/set
 title: 'SET Statement'
 ---
 

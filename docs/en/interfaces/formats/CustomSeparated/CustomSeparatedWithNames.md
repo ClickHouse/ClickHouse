@@ -4,7 +4,6 @@ description: 'Documentation for the CustomSeparatedWithNames format'
 input_format: true
 keywords: ['CustomSeparatedWithNames']
 output_format: true
-slug: /interfaces/formats/CustomSeparatedWithNames
 title: 'CustomSeparatedWithNames'
 ---
 
@@ -12,13 +11,13 @@ title: 'CustomSeparatedWithNames'
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description 
 
 Also prints the header row with column names, similar to [TabSeparatedWithNames](../TabSeparated/TabSeparatedWithNames.md).
 
-## Example Usage {#example-usage}
+## Example Usage 
 
-## Format Settings {#format-settings}
+## Format Settings 
 
 :::note
 If setting [`input_format_with_names_use_header`](../../../operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,

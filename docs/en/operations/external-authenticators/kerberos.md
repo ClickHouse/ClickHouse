@@ -1,11 +1,9 @@
 ---
 description: 'Existing and properly configured ClickHouse users can be authenticated
   via Kerberos authentication protocol.'
-slug: /operations/external-authenticators/kerberos
 title: 'Kerberos'
 ---
 
-import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 # Kerberos
 
@@ -18,11 +16,11 @@ Currently, Kerberos can only be used as an external authenticator for existing u
 For this approach, Kerberos must be configured in the system and must be enabled in ClickHouse config.
 
 
-## Enabling Kerberos in ClickHouse {#enabling-kerberos-in-clickhouse}
+## Enabling Kerberos in ClickHouse 
 
 To enable Kerberos, one should include `kerberos` section in `config.xml`. This section may contain additional parameters.
 
-#### Parameters: {#parameters}
+#### Parameters: 
 
 - `principal` - canonical service principal name that will be acquired and used when accepting security contexts.
     - This parameter is optional, if omitted, the default principal will be used.
@@ -72,7 +70,7 @@ You can define only one `kerberos` section. The presence of multiple `kerberos` 
 `principal` and `realm` sections cannot be specified at the same time. The presence of both `principal` and `realm` sections will force ClickHouse to disable Kerberos authentication.
 :::
 
-## Kerberos as an external authenticator for existing users {#kerberos-as-an-external-authenticator-for-existing-users}
+## Kerberos as an external authenticator for existing users 
 
 Kerberos can be used as a method for verifying the identity of locally defined users (users defined in `users.xml` or in local access control paths). Currently, **only** requests over the HTTP interface can be *kerberized* (via GSS-SPNEGO mechanism).
 
@@ -82,7 +80,7 @@ Kerberos principal name format usually follows this pattern:
 
 The */instance* part may occur zero or more times. **The *primary* part of the canonical principal name of the initiator is expected to match the kerberized user name for authentication to succeed**.
 
-### Enabling Kerberos in `users.xml` {#enabling-kerberos-in-users-xml}
+### Enabling Kerberos in `users.xml` 
 
 In order to enable Kerberos authentication for the user, specify `kerberos` section instead of `password` or similar sections in the user definition.
 
@@ -116,7 +114,7 @@ Note that Kerberos authentication cannot be used alongside with any other authen
 Note, that now, once user `my_user` uses `kerberos`, Kerberos must be enabled in the main `config.xml` file as described previously.
 :::
 
-### Enabling Kerberos using SQL {#enabling-kerberos-using-sql}
+### Enabling Kerberos using SQL 
 
 When [SQL-driven Access Control and Account Management](/operations/access-rights#access-control-usage) is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
 

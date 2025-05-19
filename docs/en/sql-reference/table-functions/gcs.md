@@ -4,7 +4,6 @@ description: 'Provides a table-like interface to `SELECT` and `INSERT` data from
 keywords: ['gcs', 'bucket']
 sidebar_label: 'gcs'
 sidebar_position: 70
-slug: /sql-reference/table-functions/gcs
 title: 'gcs'
 ---
 
@@ -90,7 +89,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-## Usage {#usage}
+## Usage 
 
 Suppose that we have several files with following URIs on GCS:
 
@@ -182,7 +181,7 @@ SELECT count(*)
 FROM gcs(creds, url='https://s3-object-url.csv')
 ```
 
-## Partitioned Write {#partitioned-write}
+## Partitioned Write 
 
 If you specify `PARTITION BY` expression when inserting data into `GCS` table, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
 

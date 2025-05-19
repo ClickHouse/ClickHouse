@@ -1,11 +1,9 @@
 ---
 description: 'This table contains warning messages about clickhouse server.'
 keywords: [ 'system table', 'warnings' ]
-slug: /operations/system-tables/system_warnings
 title: 'system.warnings'
 ---
 
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 # system.warnings
 

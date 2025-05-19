@@ -1,15 +1,14 @@
 ---
 description: 'Documentation for the JSONEachRow format'
 keywords: ['JSONEachRow']
-slug: /interfaces/formats/JSONEachRow
 title: 'JSONEachRow'
 ---
 
-## Description {#description}
+## Description 
 
 In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object. Alias: `JSONLines`, `NDJSON`.
 
-## Example Usage {#example-usage}
+## Example Usage 
 
 Example:
 
@@ -21,4 +20,4 @@ Example:
 
 While importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 
-## Format Settings {#format-settings}
+## Format Settings 

@@ -3,11 +3,9 @@ description: 'Overview of external authentication methods supported by ClickHous
 pagination_next: operations/external-authenticators/kerberos
 sidebar_label: 'External User Authenticators and Directories'
 sidebar_position: 48
-slug: /operations/external-authenticators/
 title: 'External User Authenticators and Directories'
 ---
 
-import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 <SelfManaged />
 

@@ -3,7 +3,6 @@ description: 'Represents the contents of index and marks files of MergeTree tabl
   It can be used for introspection.'
 sidebar_label: 'mergeTreeIndex'
 sidebar_position: 77
-slug: /sql-reference/table-functions/mergeTreeIndex
 title: 'mergeTreeIndex'
 ---
 
@@ -31,7 +30,7 @@ A table object with columns with values of primary index of source table, column
 
 Marks column may contain `(NULL, NULL)` value in case when column is absent in data part or marks for one of its substreams are not written (e.g. in compact parts).
 
-## Usage Example {#usage-example}
+## Usage Example 
 
 ```sql
 CREATE TABLE test_table

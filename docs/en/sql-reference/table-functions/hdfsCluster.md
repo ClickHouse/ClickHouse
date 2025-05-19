@@ -3,7 +3,6 @@ description: 'Allows processing files from HDFS in parallel from many nodes in a
   cluster.'
 sidebar_label: 'hdfsCluster'
 sidebar_position: 81
-slug: /sql-reference/table-functions/hdfsCluster
 title: 'hdfsCluster'
 ---
 

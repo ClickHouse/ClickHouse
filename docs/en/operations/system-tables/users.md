@@ -1,7 +1,6 @@
 ---
 description: 'System table containing a list of user accounts configured on the server.'
 keywords: ['system table', 'users']
-slug: /operations/system-tables/users
 title: 'system.users'
 ---
 
@@ -34,6 +33,6 @@ Columns:
 
 - `default_roles_except` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — All the granted roles set as default excepting of the listed ones.
 
-## See Also {#see-also}
+## See Also 
 
 - [SHOW USERS](/sql-reference/statements/show#show-users)

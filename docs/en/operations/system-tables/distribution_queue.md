@@ -2,7 +2,6 @@
 description: 'System table containing information about local files that are in the
   queue to be sent to the shards.'
 keywords: ['system table', 'distribution_queue']
-slug: /operations/system-tables/distribution_queue
 title: 'system.distribution_queue'
 ---
 

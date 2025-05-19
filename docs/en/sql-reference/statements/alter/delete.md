@@ -2,7 +2,6 @@
 description: 'Documentation for ALTER TABLE ... DELETE Statement'
 sidebar_label: 'DELETE'
 sidebar_position: 39
-slug: /sql-reference/statements/alter/delete
 title: 'ALTER TABLE ... DELETE Statement'
 ---
 
@@ -31,6 +30,6 @@ The synchronicity of the query processing is defined by the [mutations_sync](/op
 - [Synchronicity of ALTER Queries](/sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 - [mutations_sync](/operations/settings/settings.md/#mutations_sync) setting
 
-## Related content {#related-content}
+## Related content 
 
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

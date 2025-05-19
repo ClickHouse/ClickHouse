@@ -5,7 +5,6 @@ description: 'Used for implementing views (for more information, see the `CREATE
   the query).'
 sidebar_label: 'View'
 sidebar_position: 90
-slug: /engines/table-engines/special/view
 title: 'View Table Engine'
 ---
 

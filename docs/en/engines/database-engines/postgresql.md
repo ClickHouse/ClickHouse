@@ -2,7 +2,6 @@
 description: 'Allows to connect to databases on a remote PostgreSQL server.'
 sidebar_label: 'PostgreSQL'
 sidebar_position: 40
-slug: /engines/database-engines/postgresql
 title: 'PostgreSQL'
 ---
 
@@ -14,7 +13,7 @@ Gives the real-time access to table list and table structure from remote Postgre
 
 Supports table structure modifications (`ALTER TABLE ... ADD|DROP COLUMN`). If `use_table_cache` parameter (see the Engine Parameters below) is set to `1`, the table structure is cached and not checked for being modified, but can be updated with `DETACH` and `ATTACH` queries.
 
-## Creating a Database {#creating-a-database}
+## Creating a Database 
 
 ```sql
 CREATE DATABASE test_database
@@ -30,7 +29,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 - `schema` — PostgreSQL schema.
 - `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
-## Data Types Support {#data_types-support}
+## Data Types Support 
 
 | PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
@@ -49,7 +48,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
 
 
-## Examples of Use {#examples-of-use}
+## Examples of Use 
 
 Database in ClickHouse, exchanging data with the PostgreSQL server:
 
@@ -139,7 +138,7 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-## Related content {#related-content}
+## Related content 
 
 - Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 - Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

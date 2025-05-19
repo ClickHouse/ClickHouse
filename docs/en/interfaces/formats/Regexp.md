@@ -4,7 +4,6 @@ description: 'Documentation for the Regexp format'
 input_format: true
 keywords: ['Regexp']
 output_format: false
-slug: /interfaces/formats/Regexp
 title: 'Regexp'
 ---
 
@@ -12,7 +11,7 @@ title: 'Regexp'
 |-------|--------|-------|
 | ✔     | ✗      |       |
 
-## Description {#description}
+## Description 
 
 The `Regex` format parses every line of imported data according to the provided regular expression.
 
@@ -26,7 +25,7 @@ The content of every matched subpattern is parsed with the method of correspondi
 
 If the regular expression does not match the line and [format_regexp_skip_unmatched](/operations/settings/settings-formats.md/#format_regexp_escaping_rule) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
 
-## Example Usage {#example-usage}
+## Example Usage 
 
 Consider the file `data.tsv`:
 
@@ -61,7 +60,7 @@ SELECT * FROM imp_regex_table;
 └────┴─────────┴────────┴────────────┘
 ```
 
-## Format Settings {#format-settings}
+## Format Settings 
 
 When working with the `Regexp` format, you can use the following settings:
 

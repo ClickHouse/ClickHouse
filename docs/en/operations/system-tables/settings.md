@@ -2,7 +2,6 @@
 description: 'System table containing information about session settings for current
   user.'
 keywords: ['system table', 'settings']
-slug: /operations/system-tables/settings
 title: 'system.settings'
 ---
 

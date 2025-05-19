@@ -3,7 +3,6 @@ description: 'timeSeriesTags table function returns the tags table use by table 
   whose table engine is the TimeSeries engine.'
 sidebar_label: 'timeSeriesTags'
 sidebar_position: 145
-slug: /sql-reference/table-functions/timeSeriesTags
 title: 'timeSeriesTags'
 ---
 

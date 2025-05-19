@@ -2,7 +2,6 @@
 description: 'Guide to configuring and managing resource usage quotas in ClickHouse'
 sidebar_label: 'Quotas'
 sidebar_position: 51
-slug: /operations/quotas
 title: 'Quotas'
 ---
 
@@ -122,6 +121,6 @@ For distributed query processing, the accumulated amounts are stored on the requ
 
 When the server is restarted, quotas are reset.
 
-## Related Content {#related-content}
+## Related Content 
 
 - Blog: [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

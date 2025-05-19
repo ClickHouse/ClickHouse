@@ -2,13 +2,12 @@
 description: 'Settings which restrict query complexity.'
 sidebar_label: 'Restrictions on Query Complexity'
 sidebar_position: 59
-slug: /operations/settings/query-complexity
 title: 'Restrictions on Query Complexity'
 ---
 
 # Restrictions on Query Complexity
 
-## Overview {#overview}
+## Overview 
 
 As part of the [settings](/operations/settings/overview), ClickHouse offers
 the ability to place restrictions on query complexity. This helps protect against
@@ -23,7 +22,7 @@ fully processed, rather than checking the restrictions for each row. This can
 result in a situation where restrictions are violated while the part is being
 processed.
 
-## `overflow_mode` settings {#overflow_mode_setting}
+## `overflow_mode` settings 
 
 Most restrictions also have an `overflow_mode` setting, which defines what happens
 when the limit is exceeded, and can take one of two values:
@@ -31,14 +30,14 @@ when the limit is exceeded, and can take one of two values:
 - `break`: stop executing the query and return the partial result, as if the 
            source data ran out.
 
-## `group_by_overflow_mode` settings {#group_by_overflow_mode_settings}
+## `group_by_overflow_mode` settings 
 
 The `group_by_overflow_mode` setting also has
 the value `any`:
 - `any` : continue aggregation for the keys that got into the set, but do not 
           add new keys to the set.
 
-## List of settings {#relevant-settings}
+## List of settings 
 
 The following settings are used for applying restrictions on query complexity.
 
@@ -104,13 +103,13 @@ which means that it is "unrestricted".
 | [`max_sessions_for_user`](/operations/settings/settings#max_sessions_for_user)                                         | Maximum number of simultaneous sessions per authenticated user to the ClickHouse server.                                                                        |
 | [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read)                                       | Limits the maximum number of partitions that can be accessed in a single query.                                                                                 |
 
-## Obsolete settings {#obsolete-settings}
+## Obsolete settings 
 
 :::note
 The following settings are obsolete
 :::
 
-### max_pipeline_depth {#max-pipeline-depth}
+### max_pipeline_depth 
 
 Maximum pipeline depth. It Corresponds to the number of transformations that each 
 data block goes through during query processing. Counted within the limits of a 

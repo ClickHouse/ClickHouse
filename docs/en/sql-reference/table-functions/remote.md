@@ -4,7 +4,6 @@ description: 'Table function `remote` allows to access remote servers on-the-fly
   as `remote` but over a secure connection.'
 sidebar_label: 'remote'
 sidebar_position: 175
-slug: /sql-reference/table-functions/remote
 title: 'remote, remoteSecure'
 ---
 
@@ -14,7 +13,7 @@ Table function `remote` allows to access remote servers on-the-fly, i.e. without
 
 Both functions can be used in `SELECT` and `INSERT` queries.
 
-## Syntax {#syntax}
+## Syntax 
 
 ```sql
 remote(addresses_expr, [db, table, user [, password], sharding_key])
@@ -25,7 +24,7 @@ remoteSecure(addresses_expr, [db.table, user [, password], sharding_key])
 remoteSecure(named_collection[, option=value [,..]])
 ```
 
-## Parameters {#parameters}
+## Parameters 
 
 - `addresses_expr` — A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.
 
@@ -47,11 +46,11 @@ remoteSecure(named_collection[, option=value [,..]])
 
 Arguments also can be passed using [named collections](operations/named-collections.md).
 
-## Returned value {#returned-value}
+## Returned value 
 
 A table located on a remote server.
 
-## Usage {#usage}
+## Usage 
 
 As table functions `remote` and `remoteSecure` re-establish the connection for each request, it is recommended to use a `Distributed` table instead. Also, if hostnames are set, the names are resolved, and errors are not counted when working with various replicas. When processing a large number of queries, always create the `Distributed` table ahead of time, and do not use the `remote` table function.
 
@@ -63,7 +62,7 @@ The `remote` table function can be useful in the following cases:
 - Infrequent distributed requests that are made manually.
 - Distributed requests where the set of servers is re-defined each time.
 
-### Addresses {#addresses}
+### Addresses 
 
 ```text
 example01-01-1
@@ -82,9 +81,9 @@ Multiple addresses can be comma-separated. In this case, ClickHouse will use dis
 example01-01-1,example01-02-1
 ```
 
-## Examples {#examples}
+## Examples 
 
-### Selecting data from a remote server: {#selecting-data-from-a-remote-server}
+### Selecting data from a remote server: 
 
 ```sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
@@ -99,7 +98,7 @@ CREATE NAMED COLLECTION creds AS
 SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
 ```
 
-### Inserting data into a table on a remote server: {#inserting-data-into-a-table-on-a-remote-server}
+### Inserting data into a table on a remote server: 
 
 ```sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
@@ -107,11 +106,11 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-### Migration of tables from one system to another: {#migration-of-tables-from-one-system-to-another}
+### Migration of tables from one system to another: 
 
 This example uses one table from a sample dataset.  The database is `imdb`, and the table is `actors`.
 
-#### On the source ClickHouse system (the system that currently hosts the data) {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
+#### On the source ClickHouse system (the system that currently hosts the data) 
 
 - Verify the source database and table name (`imdb.actors`)
 
@@ -142,7 +141,7 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-#### On the destination ClickHouse system {#on-the-destination-clickhouse-system}
+#### On the destination ClickHouse system 
 
 - Create the destination database:
 
@@ -161,7 +160,7 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-#### Back on the source deployment {#back-on-the-source-deployment}
+#### Back on the source deployment 
 
 Insert into the new database and table created on the remote system.  You will need the host, port, username, password, destination database, and destination table.
 
@@ -171,7 +170,7 @@ remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
 SELECT * from imdb.actors
 ```
 
-## Globbing {#globs-in-addresses}
+## Globbing 
 
 Patterns in curly brackets `{ }` are used to generate a set of shards and to specify replicas. If there are multiple pairs of curly brackets, then the direct product of the corresponding sets is generated.
 

@@ -2,7 +2,6 @@
 description: 'System table containing information about parameters `graphite_rollup`
   which are used in tables with `GraphiteMergeTree` type engines.'
 keywords: ['system table', 'graphite_retentions']
-slug: /operations/system-tables/graphite_retentions
 title: 'system.graphite_retentions'
 ---
 

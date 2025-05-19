@@ -2,15 +2,14 @@
 description: 'List of third-party GUI tools and applications for working with ClickHouse'
 sidebar_label: 'Visual Interfaces'
 sidebar_position: 28
-slug: /interfaces/third-party/gui
 title: 'Visual Interfaces from Third-party Developers'
 ---
 
 # Visual Interfaces from Third-party Developers
 
-## Open-Source {#open-source}
+## Open-Source 
 
-### agx {#agx}
+### agx 
 
 [agx](https://github.com/agnosticeng/agx) is a desktop application built with Tauri and SvelteKit that provides a modern interface for exploring and querying data using ClickHouse's embedded database engine (chdb).
 
@@ -19,7 +18,7 @@ title: 'Visual Interfaces from Third-party Developers'
 - Monaco editor so you'll feel at home.
 - Multiple and evolving data visualizations.
 
-### ch-ui {#ch-ui}
+### ch-ui 
 
 [ch-ui](https://github.com/caioricciuti/ch-ui) is a simple React.js app interface for ClickHouse databases designed for executing queries and visualizing data. Built with React and the ClickHouse client for web, it offers a sleek and user-friendly UI for easy database interactions.
 
@@ -30,7 +29,7 @@ Features:
 - Performance Optimizations: Utilizes Indexed DB for efficient caching and state management.
 - Local Data Storage: All data is stored locally in the browser, ensuring no data is sent anywhere else.
 
-### ChartDB {#chartdb}
+### ChartDB 
 
 [ChartDB](https://chartdb.io) is a free and open-source tool for visualizing and designing database schemas, including ClickHouse, with a single query. Built with React, it provides a seamless and user-friendly experience, requiring no database credentials or signup to get started.
 
@@ -43,7 +42,7 @@ Features:
 
 [ChartDB Source Code](https://github.com/chartdb/chartdb).
 
-### ClickHouse Schema Flow Visualizer {#clickhouse-schemaflow-visualizer}
+### ClickHouse Schema Flow Visualizer 
 
 A powerful web application for visualizing ClickHouse table relationships using Mermaid.js diagrams.
 
@@ -58,7 +57,7 @@ Features:
 
 [ClickHouse Schema Flow Visualizer - source code](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer)
 
-### Tabix {#tabix}
+### Tabix 
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
 
@@ -72,7 +71,7 @@ Features:
 
 [Tabix documentation](https://tabix.io/doc/).
 
-### HouseOps {#houseops}
+### HouseOps 
 
 [HouseOps](https://github.com/HouseOps/HouseOps) is a UI/IDE for OSX, Linux and Windows.
 
@@ -94,7 +93,7 @@ The following features are planned for development:
 - Cluster management.
 - Monitoring replicated and Kafka tables.
 
-### LightHouse {#lighthouse}
+### LightHouse 
 
 [LightHouse](https://github.com/VKCOM/lighthouse) is a lightweight web interface for ClickHouse.
 
@@ -104,7 +103,7 @@ Features:
 - Table preview with filtering and sorting.
 - Read-only query execution.
 
-### Redash {#redash}
+### Redash 
 
 [Redash](https://github.com/getredash/redash) is a platform for data visualization.
 
@@ -116,7 +115,7 @@ Features:
 - Database explorer.
 - Visualization tool that allows you to represent data in different forms.
 
-### Grafana {#grafana}
+### Grafana 
 
 [Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) is a platform for monitoring and visualization.
 
@@ -124,7 +123,7 @@ Features:
 
 ClickHouse data source plugin provides support for ClickHouse as a backend database.
 
-### qryn {#qryn}
+### qryn 
 
 [qryn](https://metrico.in) is a polyglot, high-performance observability stack for ClickHouse _(formerly cLoki)_ with native Grafana integrations allowing users to ingest and analyze logs, metrics and telemetry traces from any agent supporting Loki/LogQL, Prometheus/PromQL, OTLP/Tempo, Elastic, InfluxDB and many more.
 
@@ -136,7 +135,7 @@ Features:
 - Ingestion and PUSH APIs transparently compatible with LogQL, PromQL, InfluxDB, Elastic and many more
 - Ready to use with Agents such as Promtail, Grafana-Agent, Vector, Logstash, Telegraf and many others
 
-### DBeaver {#dbeaver}
+### DBeaver 
 
 [DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.
 
@@ -149,7 +148,7 @@ Features:
 
 By default, DBeaver does not connect using a session (the CLI for example does). If you require session support (for example to set settings for your session), edit the driver connection properties and set `session_id` to a random string (it uses the http connection under the hood). Then you can use any setting from the query window.
 
-### clickhouse-cli {#clickhouse-cli}
+### clickhouse-cli 
 
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) is an alternative command-line client for ClickHouse, written in Python 3.
 
@@ -160,27 +159,27 @@ Features:
 - Pager support for the data output.
 - Custom PostgreSQL-like commands.
 
-### clickhouse-flamegraph {#clickhouse-flamegraph}
+### clickhouse-flamegraph 
 
 [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) is a specialized tool to visualize the `system.trace_log` as [flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
-### clickhouse-plantuml {#clickhouse-plantuml}
+### clickhouse-plantuml 
 
 [cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) is a script to generate [PlantUML](https://plantuml.com/) diagram of tables' schemes.
 
-### ClickHouse table graph {#clickhouse-table-graph}
+### ClickHouse table graph 
 
 [ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph) is a simple CLI tool for visualizing dependencies between ClickHouse tables. This tool retrieves connections between tables from `system.tables` table and builds dependencies flowchart in [mermaid](https://mermaid.js.org/syntax/flowchart.html) format.  With this tool you can easily visualize table dependencies and understand the data flow in your ClickHouse database. Thanks to mermaid, the resulting flowchart looks attractive and can be easily added to your markdown documentation.
 
-### xeus-clickhouse {#xeus-clickhouse}
+### xeus-clickhouse 
 
 [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) is a Jupyter kernal for ClickHouse, which supports query CH data using SQL in Jupyter.
 
-### MindsDB Studio {#mindsdb}
+### MindsDB Studio 
 
 [MindsDB](https://mindsdb.com/) is an open-source AI layer for databases including ClickHouse that allows you to effortlessly develop, train and deploy state-of-the-art machine learning models. MindsDB Studio(GUI) allows you to train new models from database, interpret predictions made by the model, identify potential data biases, and evaluate and visualize model accuracy using the Explainable AI function to adapt and tune your Machine Learning models faster.
 
-### DBM {#dbm}
+### DBM 
 
 [DBM](https://github.com/devlive-community/dbm) DBM is a visual management tool for ClickHouse!
 
@@ -196,7 +195,7 @@ Features:
 - Support monitor (processor, connection, query)
 - Support migrating data
 
-### Bytebase {#bytebase}
+### Bytebase 
 
 [Bytebase](https://bytebase.com) is a web-based, open source schema change and version control tool for teams. It supports various databases including ClickHouse.
 
@@ -210,11 +209,11 @@ Features:
 - Backup and restore.
 - RBAC.
 
-### Zeppelin-Interpreter-for-ClickHouse {#zeppelin-interpreter-for-clickhouse}
+### Zeppelin-Interpreter-for-ClickHouse 
 
 [Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) is a [Zeppelin](https://zeppelin.apache.org) interpreter for ClickHouse. Compared with the JDBC interpreter, it can provide better timeout control for long-running queries.
 
-### ClickCat {#clickcat}
+### ClickCat 
 
 [ClickCat](https://github.com/clickcat-project/ClickCat) is a friendly user interface that lets you search, explore and visualize your ClickHouse Data.
 
@@ -224,7 +223,7 @@ Features:
 - You can observe all processes and mutations. For those unfinished processes, you can kill them in ui.
 - The Metrics contain Cluster Analysis, Data Analysis, and Query Analysis.
 
-### ClickVisual {#clickvisual}
+### ClickVisual 
 
 [ClickVisual](https://clickvisual.net/) ClickVisual is a lightweight open source log query, analysis and alarm visualization platform.
 
@@ -236,7 +235,7 @@ Features:
 - Supports alarm configuration
 - Support permission granularity to library and table permission configuration
 
-### ClickHouse-Mate {#clickmate}
+### ClickHouse-Mate 
 
 [ClickHouse-Mate](https://github.com/metrico/clickhouse-mate) is an angular web client + user interface to search and explore data in ClickHouse.
 
@@ -251,7 +250,7 @@ Features:
 
 The client is available for instant usage through github pages: https://metrico.github.io/clickhouse-mate/
 
-### Uptrace {#uptrace}
+### Uptrace 
 
 [Uptrace](https://github.com/uptrace/uptrace) is an APM tool that provides distributed tracing and metrics powered by OpenTelemetry and ClickHouse.
 
@@ -264,7 +263,7 @@ Features:
 - Pre-built metrics dashboards.
 - Multiple users/projects via YAML config.
 
-### clickhouse-monitoring {#clickhouse-monitoring}
+### clickhouse-monitoring 
 
 [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring) is a simple Next.js dashboard that relies on `system.*` tables to help monitor and provide an overview of your ClickHouse cluster.
 
@@ -276,7 +275,7 @@ Features:
 - Useful tools: Zookeeper data exploration, query EXPLAIN, kill queries, etc.
 - Visualization metric charts: queries and resource usage, number of merges/mutation, merge performance, query performance, etc.
 
-### CKibana {#ckibana}
+### CKibana 
 
 [CKibana](https://github.com/TongchengOpenSource/ckibana) is a lightweight service that allows you to effortlessly search, explore, and visualize ClickHouse data using the native Kibana UI.
 
@@ -286,9 +285,9 @@ Features:
 - Supports advanced features such as sampling and caching to enhance query performance.
 - Minimizes the learning cost for users after migrating from ElasticSearch to ClickHouse.
 
-## Commercial {#commercial}
+## Commercial 
 
-### DataGrip {#datagrip}
+### DataGrip 
 
 [DataGrip](https://www.jetbrains.com/datagrip/) is a database IDE from JetBrains with dedicated support for ClickHouse. It is also embedded in other IntelliJ-based tools: PyCharm, IntelliJ IDEA, GoLand, PhpStorm and others.
 
@@ -301,7 +300,7 @@ Features:
 - Refactorings.
 - Search and Navigation.
 
-### Yandex DataLens {#yandex-datalens}
+### Yandex DataLens 
 
 [Yandex DataLens](https://cloud.yandex.ru/services/datalens) is a service of data visualization and analytics.
 
@@ -317,7 +316,7 @@ DataLens is [available for free](https://cloud.yandex.com/docs/datalens/pricing)
 - [DataLens documentation](https://cloud.yandex.com/docs/datalens/).
 - [Tutorial](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) on visualizing data from a ClickHouse database.
 
-### Holistics Software {#holistics-software}
+### Holistics Software 
 
 [Holistics](https://www.holistics.io/) is a full-stack data platform and business intelligence tool.
 
@@ -329,7 +328,7 @@ Features:
 - Data preparation and ETL capabilities.
 - SQL data modelling support for relational mapping of data.
 
-### Looker {#looker}
+### Looker 
 
 [Looker](https://looker.com) is a data platform and business intelligence tool with support for 50+ database dialects including ClickHouse. Looker is available as a SaaS platform and self-hosted. Users can use Looker via the browser to explore data, build visualizations and dashboards, schedule reports, and share their insights with colleagues. Looker provides a rich set of tools to embed these features in other applications, and an API
 to integrate data with other applications.
@@ -342,7 +341,7 @@ Features:
 
 [How to configure ClickHouse in Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
-### SeekTable {#seektable}
+### SeekTable 
 
 [SeekTable](https://www.seektable.com) is a self-service BI tool for data exploration and operational reporting. It is available both as a cloud service and a self-hosted version. Reports from SeekTable may be embedded into any web-app.
 
@@ -359,11 +358,11 @@ SeekTable is [free](https://www.seektable.com/help/cloud-pricing) for personal/i
 
 [How to configure ClickHouse connection in SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
 
-### Chadmin {#chadmin}
+### Chadmin 
 
 [Chadmin](https://github.com/bun4uk/chadmin) is a simple UI where you can visualize your currently running queries on your ClickHouse cluster and info about them and kill them if you want.
 
-### TABLUM.IO {#tablum_io}
+### TABLUM.IO 
 
 [TABLUM.IO](https://tablum.io/) — an online query and analytics tool for ETL and visualization. It allows connecting to ClickHouse, query data via a versatile SQL console as well as to load data from static files and 3rd party services. TABLUM.IO can visualize data results as charts and tables.
 
@@ -383,7 +382,7 @@ License: [commercial](https://tablum.io/pricing) product with 3-month free perio
 Try it out for free [in the cloud](https://tablum.io/try).
 Learn more about the product at [TABLUM.IO](https://tablum.io/)
 
-### CKMAN {#ckman}
+### CKMAN 
 
 [CKMAN](https://www.github.com/housepower/ckman) is a tool for managing and monitoring ClickHouse clusters!
 

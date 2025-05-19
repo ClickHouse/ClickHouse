@@ -4,7 +4,6 @@ description: 'Documentation for the Prometheus format'
 input_format: false
 keywords: ['Prometheus']
 output_format: true
-slug: /interfaces/formats/Prometheus
 title: 'Prometheus'
 ---
 
@@ -12,7 +11,7 @@ title: 'Prometheus'
 |-------|--------|-------|
 | ✗     | ✔      |       |
 
-## Description {#description}
+## Description 
 
 Exposes metrics in the [Prometheus text-based exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
 
@@ -27,7 +26,7 @@ For this format, it is a requirement for the output table to be structured corre
 There are special requirements for the `histogram` and `summary` labels - see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. 
 Special rules are applied to rows with labels `{'count':''}` and `{'sum':''}`, which are converted to `<metric_name>_count` and `<metric_name>_sum` respectively.
 
-## Example Usage {#example-usage}
+## Example Usage 
 
 ```yaml
 ┌─name────────────────────────────────┬─type──────┬─help──────────────────────────────────────┬─labels─────────────────────────┬────value─┬─────timestamp─┐
@@ -85,4 +84,4 @@ rpc_duration_seconds_count 2693
 something_weird{problem="division by zero"} +Inf -3982045
 ```
 
-## Format Settings {#format-settings}
+## Format Settings 

@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for the Time64 data type in ClickHouse, which stores
   the time range with sub-second precision'
-slug: /sql-reference/data-types/time64
 sidebar_position: 17
 sidebar_label: 'Time64'
 title: 'Time64'
@@ -26,7 +25,7 @@ Unlike DateTime64, Time64 does not store a date component, meaning that it only 
 
 Supported range of values: \[000:00:00, 999:59:59.99999999\]
 
-## Examples {#examples}
+## Examples 
 
 1. Creating a table with `Time64`-type column and inserting data into it:
 

@@ -3,7 +3,6 @@ description: 'MongoDB engine is read-only table engine which allows to read data
   a remote collection.'
 sidebar_label: 'MongoDB'
 sidebar_position: 135
-slug: /engines/table-engines/integrations/mongodb
 title: 'MongoDB'
 ---
 
@@ -14,7 +13,7 @@ MongoDB engine is read-only table engine which allows to read data from a remote
 Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
 
-## Creating a Table {#creating-a-table}
+## Creating a Table 
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -61,7 +60,7 @@ ENGINE = MongoDB(uri, collection[, oid_columns]);
 - `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
 
 
-## Types mappings {#types-mappings}
+## Types mappings 
 
 | MongoDB                 | ClickHouse                                                            |
 |-------------------------|-----------------------------------------------------------------------|
@@ -78,7 +77,7 @@ ENGINE = MongoDB(uri, collection[, oid_columns]);
 
 If key is not found in MongoDB document (for example, column name doesn't match), default value or `NULL` (if the column is nullable) will be inserted.
 
-### OID {#oid}
+### OID 
 
 If you want a `String` to be treated as `oid` in the WHERE clause, just put the column's name in the last argument of the table engine.
 This may be necessary when querying a record by the `_id` column, which by default has `oid` type in MongoDB.
@@ -131,7 +130,7 @@ CREATE TABLE sample_oid
 SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; -- will output 1 now
 ```
 
-## Supported clauses {#supported-clauses}
+## Supported clauses 
 
 Only queries with simple expressions are supported (for example, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
 Such expressions are translated to MongoDB query language and executed on the server side.
@@ -157,7 +156,7 @@ This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
 :::
 
 
-## Usage Example {#usage-example}
+## Usage Example 
 
 
 Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix) dataset loaded
@@ -238,7 +237,7 @@ LIMIT 3;
    └────────────────────────┴────────┘
 ```
 
-## Troubleshooting {#troubleshooting}
+## Troubleshooting 
 You can see the generated MongoDB query in DEBUG level logs.
 
 Implementation details can be found in [mongocxx](https://github.com/mongodb/mongo-cxx-driver) and [mongoc](https://github.com/mongodb/mongo-c-driver) documentations.

@@ -2,7 +2,6 @@
 description: 'Documentation for Aggregate Functions'
 sidebar_label: 'Aggregate Functions'
 sidebar_position: 33
-slug: /sql-reference/aggregate-functions/
 title: 'Aggregate Functions'
 ---
 
@@ -16,7 +15,7 @@ ClickHouse also supports:
 - [Combinators](/sql-reference/aggregate-functions/combinators), which change the behavior of aggregate functions.
 
 
-## NULL Processing {#null-processing}
+## NULL Processing 
 
 During aggregation, all `NULL` arguments are skipped. If the aggregation has several arguments it will ignore any row in which one or more of them are NULL.
 

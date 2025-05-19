@@ -2,7 +2,6 @@
 description: 'System table similar to `system.numbers` but reads are parallelized
   and numbers can be returned in any order.'
 keywords: ['system table', 'numbers_mt']
-slug: /operations/system-tables/numbers_mt
 title: 'system.numbers_mt'
 ---
 

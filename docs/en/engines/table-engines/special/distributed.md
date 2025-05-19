@@ -5,7 +5,6 @@ description: 'Tables with Distributed engine do not store any data of their own,
   are any.'
 sidebar_label: 'Distributed'
 sidebar_position: 10
-slug: /engines/table-engines/special/distributed
 title: 'Distributed Table Engine'
 ---
 
@@ -17,7 +16,7 @@ To create a distributed table engine in the cloud, you can use the [remote and r
 
 Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers. Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
 
-## Creating a Table {#distributed-creating-a-table}
+## Creating a Table 
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -29,7 +28,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-### From a Table {#distributed-from-a-table}
+### From a Table 
 
 When the `Distributed` table is pointing to a table on the current server you can adopt that table's schema:
 
@@ -37,21 +36,21 @@ When the `Distributed` table is pointing to a table on the current server you ca
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-### Distributed Parameters {#distributed-parameters}
+### Distributed Parameters 
 
-#### cluster {#cluster}
+#### cluster 
 
 `cluster` - the cluster name in the server's config file
 
-#### database {#database}
+#### database 
 
 `database` - the name of a remote database
 
-#### table {#table}
+#### table 
 
 `table` - the name of a remote table
 
-#### sharding_key {#sharding_key}
+#### sharding_key 
 
 `sharding_key` - (optionally) sharding key
 
@@ -60,7 +59,7 @@ Specifying the `sharding_key` is necessary for the following:
 - For `INSERTs` into a distributed table (as the table engine needs the `sharding_key` to determine how to split the data). However, if `insert_distributed_one_random_shard` setting is enabled, then `INSERTs` do not need the sharding key.
 - For use with `optimize_skip_unused_shards` as the `sharding_key` is necessary to determine what shards should be queried
 
-#### policy_name {#policy_name}
+#### policy_name 
 
 `policy_name` - (optionally) policy name, it will be used to store temporary files for background send
 
@@ -69,49 +68,49 @@ Specifying the `sharding_key` is necessary for the following:
  - [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
  - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
-### Distributed Settings {#distributed-settings}
+### Distributed Settings 
 
-#### fsync_after_insert {#fsync_after_insert}
+#### fsync_after_insert 
 
 `fsync_after_insert` - do the `fsync` for the file data after background insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
 
-#### fsync_directories {#fsync_directories}
+#### fsync_directories 
 
 `fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to background inserts on Distributed table (after insert, after sending the data to shard, etc.).
 
-#### skip_unavailable_shards {#skip_unavailable_shards}
+#### skip_unavailable_shards 
 
 `skip_unavailable_shards` - If true, ClickHouse silently skips unavailable shards. Shard is marked as unavailable when: 1) The shard cannot be reached due to a connection failure. 2) Shard is unresolvable through DNS. 3) Table does not exist on the shard. Default false.
 
-#### bytes_to_throw_insert {#bytes_to_throw_insert}
+#### bytes_to_throw_insert 
 
 `bytes_to_throw_insert` - if more than this number of compressed bytes will be pending for background INSERT, an exception will be thrown. 0 - do not throw. Default 0.
 
-#### bytes_to_delay_insert {#bytes_to_delay_insert}
+#### bytes_to_delay_insert 
 
 `bytes_to_delay_insert` - if more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay. Default 0.
 
-#### max_delay_to_insert {#max_delay_to_insert}
+#### max_delay_to_insert 
 
 `max_delay_to_insert` - max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for background send. Default 60.
 
-#### background_insert_batch {#background_insert_batch}
+#### background_insert_batch 
 
 `background_insert_batch` - same as [distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch)
 
-#### background_insert_split_batch_on_failure {#background_insert_split_batch_on_failure}
+#### background_insert_split_batch_on_failure 
 
 `background_insert_split_batch_on_failure` - same as [distributed_background_insert_split_batch_on_failure](../../../operations/settings/settings.md#distributed_background_insert_split_batch_on_failure)
 
-#### background_insert_sleep_time_ms {#background_insert_sleep_time_ms}
+#### background_insert_sleep_time_ms 
 
 `background_insert_sleep_time_ms` - same as [distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms)
 
-#### background_insert_max_sleep_time_ms {#background_insert_max_sleep_time_ms}
+#### background_insert_max_sleep_time_ms 
 
 `background_insert_max_sleep_time_ms` - same as [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)
 
-#### flush_on_detach {#flush_on_detach}
+#### flush_on_detach 
 
 `flush_on_detach` - Flush data to remote nodes on DETACH/DROP/server shutdown. Default true.
 
@@ -143,7 +142,7 @@ Data will be read from all servers in the `logs` cluster, from the `default.hits
 
 Instead of the database name, you can use a constant expression that returns a string. For example: `currentDatabase()`.
 
-## Clusters {#distributed-clusters}
+## Clusters 
 
 Clusters are configured in the [server configuration file](../../../operations/configuration-files.md):
 
@@ -227,7 +226,7 @@ The `Distributed` engine allows working with a cluster like a local server. Howe
 
 If you need to send a query to an unknown set of shards and replicas each time, you do not need to create a `Distributed` table – use the `remote` table function instead. See the section [Table functions](../../../sql-reference/table-functions/index.md).
 
-## Writing data {#distributed-writing-data}
+## Writing data 
 
 There are two methods for writing data to a cluster:
 
@@ -256,7 +255,7 @@ Data is written in background. When inserted in the table, the data block is jus
 
 If the server ceased to exist or had a rough restart (for example, due to a hardware failure) after an `INSERT` to a `Distributed` table, the inserted data might be lost. If a damaged data part is detected in the table directory, it is transferred to the `broken` subdirectory and no longer used.
 
-## Reading data {#distributed-reading-data}
+## Reading data 
 
 When querying a `Distributed` table, `SELECT` queries are sent to all shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you do not have to transfer old data into it. Instead, you can write new data to it by using a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
@@ -264,9 +263,9 @@ When the `max_parallel_replicas` option is enabled, query processing is parallel
 
 To learn more about how distributed `in` and `global in` queries are processed, refer to [this](/sql-reference/operators/in#distributed-subqueries) documentation.
 
-## Virtual Columns {#virtual-columns}
+## Virtual Columns 
 
-#### _shard_num {#_shard_num}
+#### _shard_num 
 
 `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
 

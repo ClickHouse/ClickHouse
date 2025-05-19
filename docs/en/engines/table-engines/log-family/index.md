@@ -2,7 +2,6 @@
 description: 'Documentation for Log Engine Family'
 sidebar_label: 'Log Family'
 sidebar_position: 20
-slug: /engines/table-engines/log-family/
 title: 'Log Engine Family'
 ---
 
@@ -24,7 +23,7 @@ Engines of the family:
 Despite the name, *Log table engines are not meant for the storage of log data.  They should only be used for small volumes which need to be written quickly.
 :::
 
-## Common Properties {#common-properties}
+## Common Properties 
 
 Engines:
 
@@ -46,7 +45,7 @@ Engines:
 
     You can get a table with corrupted data if something breaks the write operation, for example, abnormal server shutdown.
 
-## Differences {#differences}
+## Differences 
 
 The `TinyLog` engine is the simplest in the family and provides the poorest functionality and lowest efficiency. The `TinyLog` engine does not support parallel data reading by several threads in a single query. It reads data slower than other engines in the family that support parallel reading from a single query and it uses almost as many file descriptors as the `Log` engine because it stores each column in a separate file. Use it only in simple scenarios.
 

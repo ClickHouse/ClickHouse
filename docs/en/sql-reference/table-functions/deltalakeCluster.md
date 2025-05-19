@@ -2,7 +2,6 @@
 description: 'This is an extension to the deltaLake table function.'
 sidebar_label: 'deltaLakeCluster'
 sidebar_position: 46
-slug: /sql-reference/table-functions/deltalakeCluster
 title: 'deltaLakeCluster'
 ---
 

@@ -2,13 +2,12 @@
 description: 'Documentation for Conditional Functions'
 sidebar_label: 'Conditional'
 sidebar_position: 40
-slug: /sql-reference/functions/conditional-functions
 title: 'Conditional Functions'
 ---
 
 # Conditional Functions
 
-## if {#if}
+## if 
 
 Performs conditional branching.
 
@@ -49,7 +48,7 @@ Result:
 └────────────┘
 ```
 
-## multiIf {#multiif}
+## multiIf 
 
 Allows to write the [CASE](../../sql-reference/operators/index.md#conditional-expression) operator more compactly in the query.
 
@@ -102,7 +101,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴─────────────────┘
 ```
 
-## Using Conditional Results Directly {#using-conditional-results-directly}
+## Using Conditional Results Directly 
 
 Conditionals always result to `0`, `1` or `NULL`. So you can use conditional results directly like this:
 
@@ -119,7 +118,7 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-## NULL Values in Conditionals {#null-values-in-conditionals}
+## NULL Values in Conditionals 
 
 When `NULL` values are involved in conditionals, the result will also be `NULL`.
 
@@ -155,7 +154,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-## greatest {#greatest}
+## greatest 
 
 Returns the greatest across a list of values.  All of the list members must be of comparable types.
 
@@ -196,7 +195,7 @@ SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
 :::
 
-## least {#least}
+## least 
 
 Returns the least across a list of values.  All of the list members must be of comparable types.
 
@@ -237,7 +236,7 @@ SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
 :::
 
-## clamp {#clamp}
+## clamp 
 
 Constrain the return value between A and B.
 
@@ -268,7 +267,7 @@ SELECT clamp(1, 2, 3) result,  toTypeName(result) type;
 └────────┴─────────┘
 ```
 
-## CASE statement {#case-statement}
+## CASE statement 
 
 The CASE expression in ClickHouse provides conditional logic similar to the SQL CASE operator. It evaluates conditions and returns values based on the first matching condition.
 
@@ -372,7 +371,7 @@ WHERE number < 3
 3 rows in set. Elapsed: 0.001 sec.
 ```
 
-### Caveats  {#caveats}
+### Caveats  
 
 ClickHouse determines the result type of a CASE expression (or its internal equivalent, such as `multiIf`) before evaluating any conditions. This is important when the return expressions differ in type, such as different timezones or numeric types.
 

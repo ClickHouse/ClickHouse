@@ -4,7 +4,6 @@ description: 'Overview of network interfaces, drivers, and tools for connecting 
 keywords: ['clickhouse', 'network', 'interfaces', 'http', 'tcp', 'grpc', 'command-line',
   'client', 'jdbc', 'odbc', 'driver']
 sidebar_label: 'Overview'
-slug: /interfaces/overview
 title: 'Drivers and Interfaces'
 ---
 

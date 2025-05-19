@@ -2,11 +2,9 @@
 description: 'System table containing formation about quota usage by the current user
   such as how much of the quota is used and how much is left.'
 keywords: ['system table', 'quota_usage']
-slug: /operations/system-tables/quota_usage
 title: 'system.quota_usage'
 ---
 
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
@@ -37,6 +35,6 @@ Columns:
 - `execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — The total query execution time, in seconds (wall time).
 - `max_execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — Maximum of query execution time.
 
-## See Also {#see-also}
+## See Also 
 
 - [SHOW QUOTA](/sql-reference/statements/show#show-quota))

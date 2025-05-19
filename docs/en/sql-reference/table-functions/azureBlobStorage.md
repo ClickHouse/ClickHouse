@@ -4,12 +4,9 @@ description: 'Provides a table-like interface to select/insert files in Azure Bl
 keywords: ['azure blob storage']
 sidebar_label: 'azureBlobStorage'
 sidebar_position: 10
-slug: /sql-reference/table-functions/azureBlobStorage
 title: 'azureBlobStorage'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # azureBlobStorage Table Function
 
@@ -75,7 +72,7 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 └─────────┘
 ```
 
-## Virtual Columns {#virtual-columns}
+## Virtual Columns 
 
 - `_path` — Path to the file. Type: `LowCardinality(String)`.
 - `_file` — Name of the file. Type: `LowCardinality(String)`.
@@ -86,7 +83,7 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 
 - [AzureBlobStorage Table Engine](engines/table-engines/integrations/azureBlobStorage.md)
 
-## Hive-style partitioning {#hive-style-partitioning}
+## Hive-style partitioning 
 
 When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 
@@ -98,7 +95,7 @@ Use virtual column, created with Hive-style partitioning
 SELECT * from azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 
-## Using Shared Access Signatures (SAS) {#using-shared-access-signatures-sas-sas-tokens}
+## Using Shared Access Signatures (SAS) 
 
 A Shared Access Signature (SAS) is a URI that grants restricted access to an Azure Storage container or file. Use it to provide time-limited access to storage account resources without sharing your storage account key. More details [here](https://learn.microsoft.com/en-us/rest/api/storageservices/delegate-access-with-shared-access-signature).
 

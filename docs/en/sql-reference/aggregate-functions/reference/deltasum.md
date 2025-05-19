@@ -1,7 +1,6 @@
 ---
 description: 'Sums the arithmetic difference between consecutive rows.'
 sidebar_position: 129
-slug: /sql-reference/aggregate-functions/reference/deltasum
 title: 'deltaSum'
 ---
 
@@ -71,6 +70,6 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## See Also {#see-also}
+## See Also 
 
 - [runningDifference](/sql-reference/functions/other-functions#runningDifference)

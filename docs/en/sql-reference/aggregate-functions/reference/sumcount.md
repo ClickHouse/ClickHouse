@@ -4,7 +4,6 @@ description: 'Calculates the sum of the numbers and counts the number of rows at
   `sum`, `count` or `avg` functions in a query, they can be replaced to single `sumCount`
   function to reuse the calculations. The function is rarely needed to use explicitly.'
 sidebar_position: 196
-slug: /sql-reference/aggregate-functions/reference/sumcount
 title: 'sumCount'
 ---
 
