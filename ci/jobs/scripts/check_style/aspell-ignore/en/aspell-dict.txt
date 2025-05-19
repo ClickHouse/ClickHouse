@@ -182,6 +182,7 @@ CloudAvailableBadge
 CloudDetails
 CloudNotSupportedBadge
 CloudStorage
+CoalescingMergeTree
 CodeBlock
 CodeLLDB
 Codecs
