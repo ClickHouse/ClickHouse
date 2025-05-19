@@ -7,17 +7,14 @@ namespace DB
 REGISTER_FUNCTION(ArrayMap)
 {
     FunctionDocumentation::Description description = R"(
-Returns an array obtained from the original arrays by application of `func(arr1[i], ..., arrN[i])` for each element.
-Arrays `arr1` ... `arrN` must have the same number of elements.
-
-`arrayMap` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Returns an array obtained from the original arrays by applying a lambda function to each element.
 )";
-    FunctionDocumentation::Syntax syntax = "arrayMap(func, arr1 [, ..., arrN])";
+    FunctionDocumentation::Syntax syntax = "arrayMap(func, arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"func", "Function to apply to each element of the array(s). Optional. [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)"},
-        {"arr1 [, ..., arrN]", "N arrays to apply `f` to. [Array(T)](/sql-reference/data-types/array)."},
+        {"func", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"arr", "N arrays to process. [Array(T)](/sql-reference/data-types/array)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an array with elements the results of applying `f` to the original array. [`Array(T)`](/sql-reference/data-types/array)";
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array from the lambda results. [`Array(T)`](/sql-reference/data-types/array)";
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;", "[3,4,5]"},
         {"Creating a tuple of elements from different arrays", "SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res", "[(1,4),(2,5),(3,6)]"}

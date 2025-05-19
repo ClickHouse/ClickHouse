@@ -131,16 +131,14 @@ REGISTER_FUNCTION(ArrayFill)
     FunctionDocumentation::Description description = R"(
 The `arrayFill` function sequentially processes a source array from the first element
 to the last, evaluating a lambda condition at each position using elements from
-the source and condition arrays. When the condition evaluates to false at
+the source and condition arrays. When the lambda function evaluates to false at
 position i, the function replaces that element with the element at position i-1
 from the current state of the array. The first element is always preserved
 regardless of any condition.
-
-`arrayFill` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 )";
-    FunctionDocumentation::Syntax syntax = "arrayFill(λ(x [, y1, ..., yN]), source [, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax = "arrayFill(func(x [, y1, ..., yN]), source [, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments = {
-        {"λ(x [, y1, ..., yN])", "A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"func(x [, y1, ..., yN])", "A lambda function `func(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
         {"source", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
@@ -162,16 +160,14 @@ from the source and condition arrays. When the condition evaluates to false at
 position i, the function replaces that element with the element at position i+1
 from the current state of the array. The last element is always preserved
 regardless of any condition.
-
-`arrayReverseFill` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
     )";
-    FunctionDocumentation::Syntax syntax_reverse = "arrayReverseFill(λ(x [, y1, ..., yN]), source [, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax_reverse = "arrayReverseFill(func(x[, y1, ..., yN]), source[, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments_reverse = {
-        {"λ(x [, y1, ..., yN])", "A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
         {"source", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value_reverse = "Returns an array with replaced elements. [`Array(T)`](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value_reverse = "Returns an array with elements of the source array replaced by the results of the lambda. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples_reverse = {
         {"Example with a single array", "SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1,2,2,NULL]"},
         {"Example with two arrays", "SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res;", "[5,6,6,2]"}

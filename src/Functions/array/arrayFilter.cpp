@@ -49,13 +49,14 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
 
 REGISTER_FUNCTION(ArrayFilter)
 {
-    FunctionDocumentation::Description description = "Returns an array containing only the elements in `arrN` for which `func(arr1[i], ..., arrN[i])` return something other than `0`.";
-    FunctionDocumentation::Syntax syntax = "arrayFilter(func, arr1 [, arr2, ... , arrN)]";
+    FunctionDocumentation::Description description = "Returns an array containing only the elements in the source array for which a lambda function returns something other than `0`.";
+    FunctionDocumentation::Syntax syntax = "arrayFilter(func(x[, y1, ..., yN]), source[, cond1, ... , condN])]";
     FunctionDocumentation::Arguments arguments = {
-        {"func", "Function to apply to each element of the array(s). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)"},
-        {"arr1 [, arr2, ... , arrN)]", "N arrays over which to operate. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns a filtered array. [`Array(T)`](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = "Returns a subset of the source array. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {
         {"Example 1", "SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res", "['abc World']"},
         {"Example 2", R"(
