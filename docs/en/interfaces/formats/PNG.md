@@ -46,8 +46,8 @@ FROM table
 INTO OUTFILE 'output.png'
 FORMAT PNG
 SETTINGS 
-    output_format_png_pixel_output_format='RGBA', 
-    output_format_png_pixel_coordinates_format='IMPLICIT'
+    output_format_png_pixel_format='RGBA', 
+    output_format_png_coordinates_format='IMPLICIT'
     output_format_png_max_width=1512,
     output_format_png_max_height=1512,
     output_format_png_bit_depth=8
@@ -63,8 +63,8 @@ FROM table
 INTO OUTFILE 'output.png'
 FORMAT PNG
 SETTINGS 
-    output_format_png_pixel_output_format='Grayscale', 
-    output_format_png_pixel_coordinates_format='EXPLICIT'
+    output_format_png_pixel_format='Grayscale', 
+    output_format_png_coordinates_format='EXPLICIT'
     output_format_png_max_width=14014,
     output_format_png_max_height=6659
 ```
