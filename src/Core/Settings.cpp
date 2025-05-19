@@ -6727,7 +6727,7 @@ Default number of tasks for parallel reading in distributed query. Tasks are spr
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
