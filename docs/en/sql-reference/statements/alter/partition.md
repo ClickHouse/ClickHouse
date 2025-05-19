@@ -233,7 +233,7 @@ For more information about backups and restoring data, see the [Data Backup](/op
 ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
 ```
 
-Removes `freezed` partitions with the specified name from the disk. If the `PARTITION` clause is omitted, the query removes the backup of all partitions at once.
+Removes `frozen` partitions with the specified name from the disk. If the `PARTITION` clause is omitted, the query removes the backup of all partitions at once.
 
 ## CLEAR INDEX IN PARTITION {#clear-index-in-partition}
 
