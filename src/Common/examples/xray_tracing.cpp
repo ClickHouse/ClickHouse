@@ -3,23 +3,26 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/ConsoleChannel.h>
 
-#include <cstdint>
-#include <iostream>
-#include <string>
+#include <pcg_random.hpp>
 
 using namespace DB;
+
+template <typename T>
+ALWAYS_INLINE void doWork(T arg)
+{
+    pcg64_fast rndgen;
+    std::uniform_int_distribution<uint64_t> dist(0, 1000000);
+    T sum = arg;
+    for (int i = 0; i < 1000000; ++i)
+        sum += dist(rndgen);
+    LOG_DEBUG(&Poco::Logger::get("debug"), "sum={}", sum);
+}
 
 [[clang::xray_always_instrument]]
 void always_traced_function()
 {
     OMG(always_traced_function)
-    LOG_DEBUG(&Poco::Logger::get("debug"), "This function is always traced");
-    uint64_t start = time(nullptr);
-    for (int i = 0; i < 1000000; ++i)
-    {
-        start += i;
-    }
-    LOG_DEBUG(&Poco::Logger::get("debug"), "start={}", start);
+    doWork(42);
 }
 
 template <typename T>
@@ -27,13 +30,7 @@ template <typename T>
 void always_traced_template_function(T & arg)
 {
     OMG(always_traced_template_function<T>)
-    LOG_DEBUG(&Poco::Logger::get("debug"), "This template function is always traced with arg={}", arg);
-    uint64_t start = time(nullptr);
-    for (int i = 0; i < 1000000; ++i)
-    {
-        start += i;
-    }
-    LOG_DEBUG(&Poco::Logger::get("debug"), "start={}", start);
+    doWork(arg);
 }
 
 template <typename T, typename U>
@@ -41,14 +38,7 @@ template <typename T, typename U>
 void always_traced_template_function(T & arg1, U & arg2)
 {
     OMG((always_traced_template_function<T, U>))
-    LOG_DEBUG(&Poco::Logger::get("debug"), "={}", reinterpret_cast<const void *>(&always_traced_template_function<T, U>));
-    LOG_DEBUG(&Poco::Logger::get("debug"), "This template function is always traced with arg1={} and arg2={}", arg1, arg2);
-    uint64_t start = time(nullptr);
-    for (int i = 0; i < 1000000; ++i)
-    {
-        start += i;
-    }
-    LOG_DEBUG(&Poco::Logger::get("debug"), "start={}", start);
+    doWork(arg1 + arg2);
 }
 
 class MyClass
@@ -60,26 +50,14 @@ public:
     void f(int arg)
     {
         OMG_MEMBER(MyClass, f)
-        LOG_DEBUG(&Poco::Logger::get("debug"), "This template function is always traced with arg={}", arg);
-        uint64_t start = time(nullptr);
-        for (int i = 0; i < 1000000; ++i)
-        {
-            start += i;
-        }
-        LOG_DEBUG(&Poco::Logger::get("debug"), "start={}", start);
+        doWork(arg);
     }
 
     [[clang::xray_always_instrument]]
     virtual void g(int arg)
     {
         OMG_VIRT_MEMBER(MyClass, g)
-        LOG_DEBUG(&Poco::Logger::get("debug"), "This template function is always traced with arg={}", arg);
-        uint64_t start = time(nullptr);
-        for (int i = 0; i < 1000000; ++i)
-        {
-            start += i;
-        }
-        LOG_DEBUG(&Poco::Logger::get("debug"), "start={}", start);
+        doWork(arg);
     }
 };
 
