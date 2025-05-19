@@ -1660,7 +1660,6 @@ class ClickHouseCluster:
         ipv4_address=None,
         ipv6_address=None,
         with_installed_binary=False,
-        with_dolor=False,
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
@@ -1679,6 +1678,7 @@ class ClickHouseCluster:
         randomize_settings=True,
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
+        with_dolor=False
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1793,7 +1793,6 @@ class ClickHouseCluster:
             ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
             with_installed_binary=with_installed_binary,
-            with_dolor=with_dolor,
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             mem_limit=mem_limit,
@@ -1801,6 +1800,7 @@ class ClickHouseCluster:
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
+            with_dolor=with_dolor,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -3556,7 +3556,6 @@ class ClickHouseInstance:
         ipv4_address=None,
         ipv6_address=None,
         with_installed_binary=False,
-        with_dolor=False,
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
@@ -3564,6 +3563,7 @@ class ClickHouseInstance:
         extra_configs=[],
         randomize_settings=True,
         use_docker_init_flag=False,
+        with_dolor=False,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -3688,10 +3688,10 @@ class ClickHouseInstance:
         self.ipv4_address = ipv4_address
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
-        self.with_dolor = with_dolor
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.with_dolor = with_dolor
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
