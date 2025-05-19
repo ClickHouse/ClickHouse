@@ -6396,7 +6396,7 @@ The analyzer should be enabled to use parallel replicas. With disabled analyzer 
 Use local pipeline during distributed INSERT SELECT with parallel replicas
 )", BETA) \
     DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
-The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponing replicas is not used for query execution
+The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
