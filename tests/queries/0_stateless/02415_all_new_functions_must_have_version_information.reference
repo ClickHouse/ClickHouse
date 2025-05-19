@@ -116,7 +116,6 @@ arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayExists
-arrayFilter
 arrayFirst
 arrayFirstIndex
 arrayFirstOrNull
