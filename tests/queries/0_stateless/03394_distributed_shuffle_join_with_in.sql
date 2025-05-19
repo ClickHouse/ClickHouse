@@ -10,10 +10,10 @@ INSERT INTO test SELECT 'path_' || (number%3)::String, 'de', number%4 FROM numbe
 SET
     make_distributed_plan = 1,
     enable_parallel_replicas = 0,
-    default_shuffle_join_bucket_count=3,
-    default_reader_bucket_count=3,
-    force_exchange_kind='Streaming',
-    optimize_exchanges = 1;
+    distributed_plan_default_shuffle_join_bucket_count=3,
+    distributed_plan_default_reader_bucket_count=3,
+    distributed_plan_force_exchange_kind='Streaming',
+    distributed_plan_optimize_exchanges = 1;
 
 SELECT '----------';
 

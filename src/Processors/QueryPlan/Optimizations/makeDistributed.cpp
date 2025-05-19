@@ -210,7 +210,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
     if (aggregation_keys.empty())
         return;
 
-    const size_t bucket_count = optimization_settings.default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
+    const size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
 
     /// Add scatter exchange step above source
     auto & exchange_scatter_node = nodes.emplace_back();
@@ -519,7 +519,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     ExchangeDescription exchange_description;
                     exchange_description.name = "exchange_" + std::to_string(exchange_id);
                     ++exchange_id;
-                    exchange_description.kind = optimization_settings.force_exchange_kind == "Persisted" ?
+                    exchange_description.kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ?
                         ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming;
                     exchange_description.source_bucket_count = frame.list_of_shards.size();
                     exchange_description.destination_bucket_count = exchange_step->getResultBucketCount();

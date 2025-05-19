@@ -1,16 +1,30 @@
-SET optimize_exchanges = 1;
+SET distributed_plan_optimize_exchanges = 1;
 CREATE TABLE test(src_ip UInt32, dst_ip UInt32, bytes UInt64) ENGINE MergeTree() ORDER BY src_ip;
 
-INSERT INTO test SELECT number%1000, (number+10)%1000, number%100 FROM numbers(5000);
+INSERT INTO test SELECT number%30, (number+10)%30, number%50 FROM numbers(100);
+INSERT INTO test SELECT number%30, (number+10)%30, number%50 FROM numbers(100, 100);
 
 -- t1.src_ip!=0 condition is not moved to prewhere because src_ip is in primary key
+
+SELECT '-------------------------';
+
+EXPLAIN
+SELECT count() FROM test AS t1 JOIN test AS t2 ON t1.src_ip = t2.dst_ip WHERE t1.src_ip != 0 AND t1.bytes > 10
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_optimize_exchanges=0;
+
+SELECT '-------------------------';
 
 EXPLAIN
 SELECT count() FROM test AS t1 JOIN test AS t2 ON t1.src_ip = t2.dst_ip WHERE t1.src_ip != 0 AND t1.bytes > 10
 SETTINGS make_distributed_plan=1, enable_parallel_replicas=0;
 
+SELECT '-------------------------';
+
 SELECT count() FROM test AS t1 JOIN test AS t2 ON t1.src_ip = t2.dst_ip WHERE t1.src_ip != 0 AND t1.bytes > 10
-SETTINGS make_distributed_plan=1, enable_parallel_replicas=0;
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_optimize_exchanges=0, distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
+
+SELECT count() FROM test AS t1 JOIN test AS t2 ON t1.src_ip = t2.dst_ip WHERE t1.src_ip != 0 AND t1.bytes > 10
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 
 SELECT count() FROM test AS t1 JOIN test AS t2 ON t1.src_ip = t2.dst_ip WHERE t1.src_ip != 0 AND t1.bytes > 10
 SETTINGS make_distributed_plan=0;

@@ -44,7 +44,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool execute_distributed_plan_locally;
+    extern const SettingsBool distributed_plan_execute_locally;
 }
 
 namespace ErrorCodes
@@ -908,7 +908,7 @@ void DistributedQueryPlanExecutor::execute()
 
 void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled)
 {
-    bool run_locally = context->getSettingsRef()[Setting::execute_distributed_plan_locally];
+    bool run_locally = context->getSettingsRef()[Setting::distributed_plan_execute_locally];
     std::unique_ptr<DistributedQueryPlanExecutor> executor;
     if (run_locally)
         executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, is_cancelled);
