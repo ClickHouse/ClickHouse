@@ -449,12 +449,11 @@ REGISTER_FUNCTION(ArrayAggregation)
     FunctionDocumentation::Description description_min = R"(
 Returns the minimum element in the source array.
 
-`arrayMin` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
-If function `λ` is specified, returns the minimum element of the lambda results.
+If a lambda function `func` is specified, returns the minimum element of the lambda results.
     )";
-    FunctionDocumentation::Syntax syntax_min = "arrayMin([λ(x [, y1, ..., yN])], source [, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax_min = "arrayMin([func(x[, y1, ..., yN])], source[, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments_min = {
-        {"λ(x [, y1, ..., yN])", "Optional. A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
         {"source", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
@@ -472,13 +471,12 @@ If function `λ` is specified, returns the minimum element of the lambda results
     FunctionDocumentation::Description description_max = R"(
 Returns the maximum element in the source array.
 
-`arrayMax` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
-If function `λ` is specified, returns the maximum element of the lambda results.
+If a lambda function `func` is specified, returns the maximum element of the lambda results.
     )";
-    FunctionDocumentation::Syntax syntax_max = "arrayMax([λ(x [, y1, ..., yN])], source [, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax_max = "arrayMax([func(x[, y1, ..., yN])], source[, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments_max = {
-        {"λ(x [, y1, ..., yN])", "Optional. A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
-        {"source", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value_max = "Returns the maximum element in the source array, or the minimum element of the lambda results if provided.";
@@ -495,13 +493,12 @@ If function `λ` is specified, returns the maximum element of the lambda results
     FunctionDocumentation::Description description_sum = R"(
 Returns the sum of elements in the source array.
 
-`arraySum` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
-If function `λ` is specified, returns the sum of elements of the lambda results.
+If a lambda function `func` is specified, returns the sum of elements of the lambda results.
     )";
-    FunctionDocumentation::Syntax syntax_sum = "arrayMax([λ(x [, y1, ..., yN])], source [, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax_sum = "arrayMax([func(x[, y1, ..., yN])], source[, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments_sum = {
-        {"λ(x [, y1, ..., yN])", "Optional. A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
-        {"source", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value_sum = "Returns the sum of elements in the source array, or the sum of elements of the lambda results if provided.";
@@ -518,13 +515,12 @@ If function `λ` is specified, returns the sum of elements of the lambda results
     FunctionDocumentation::Description description_avg = R"(
 Returns the average of elements in the source array.
 
-`arrayAverage` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
-If function `λ` is specified, returns the average of elements of the lambda results.
+If a lambda function `func` is specified, returns the average of elements of the lambda results.
     )";
-    FunctionDocumentation::Syntax syntax_avg = "arrayAvg([λ(x [, y1, ..., yN])], source [, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax_avg = "arrayAvg([func(x[, y1, ..., yN])], source[, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments_avg = {
-        {"λ(x [, y1, ..., yN])", "Optional. A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
-        {"source", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value_avg = "Returns the average of elements in the source array, or the average of elements of the lambda results if provided. [`Float64`](/sql-reference/data-types/float).";
@@ -541,12 +537,11 @@ If function `λ` is specified, returns the average of elements of the lambda res
     FunctionDocumentation::Description description_prod = R"(
 Returns the product of elements in the source array.
 
-`arrayProduct` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
-If function `λ` is specified, returns the product of elements of the lambda results.
+If a lambda function `func` is specified, returns the product of elements of the lambda results.
     )";
-    FunctionDocumentation::Syntax syntax_prod = "arrayProduct([λ(x [, y1, ..., yN])], source [, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax_prod = "arrayProduct([func(x[, y1, ..., yN])], source[, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments_prod = {
-        {"λ(x [, y1, ..., yN])", "Optional. A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
         {"source", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };

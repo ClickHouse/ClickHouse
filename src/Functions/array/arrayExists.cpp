@@ -65,13 +65,11 @@ ColumnPtr ArrayExistsImpl::execute(const ColumnArray & array, ColumnPtr mapped)
 REGISTER_FUNCTION(ArrayExists)
 {
     FunctionDocumentation::Description description = R"(
-Returns `1` if there is at least one element in a source array for which `λ(x [, y1, y2, ... yN])` returns true. Otherwise, it returns `0`.
-
-`arrayExists` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
+Returns `1` if there is at least one element in a source array for which `func(x[, y1, y2, ... yN])` returns true. Otherwise, it returns `0`.
 )";
-    FunctionDocumentation::Syntax syntax = "arrayExists(λ(x [, y1, ..., yN]), source [, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax = "arrayExists(func(x[, y1, ..., yN]), source[, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments = {
-        {"λ(x [, y1, ..., yN])", "A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
         {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };

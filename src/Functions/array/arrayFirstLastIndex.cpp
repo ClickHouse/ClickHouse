@@ -126,12 +126,11 @@ using FunctionArrayLastIndex = FunctionArrayMapped<ArrayLastIndexImpl, NameArray
 REGISTER_FUNCTION(ArrayFirstIndex)
 {
     FunctionDocumentation::Description description_first = R"(
-Returns the index of the first element in the source array for which `λ(x [, y1, y2, ... yN])` returns something other than 0, otherwise it returns '0'.
-`arrayFirst` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
+Returns the index of the first element in the source array for which `func(x[, y1, y2, ... yN])` returns something other than `0`, otherwise it returns '0'.
 )";
-    FunctionDocumentation::Syntax syntax_first = "arrayFirstIndex(λ(x [, y1, ..., yN]), source, [, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax_first = "arrayFirstIndex(func(x[, y1, ..., yN]), source[, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments_first = {
-        {"λ(x [, y1, ..., yN])", "A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
         {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
@@ -147,12 +146,11 @@ Returns the index of the first element in the source array for which `λ(x [, y1
     factory.registerFunction<FunctionArrayFirstIndex>(documentation_first);
 
     FunctionDocumentation::Description description_last = R"(
-Returns the index of the last element in the source array for which `λ(x [, y1, y2, ... yN])` returns something other than 0, otherwise it returns '0'.
-`arrayFirst` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
+Returns the index of the last element in the source array for which `func(x[, y1, y2, ... yN])` returns something other than `0`, otherwise it returns '0'.
 )";
-    FunctionDocumentation::Syntax syntax_last = "arrayLastIndex(λ(x [, y1, ..., yN]), source, [, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax_last = "arrayLastIndex(func(x[, y1, ..., yN]), source[, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments_last = {
-        {"λ(x [, y1, ..., yN])", "A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
         {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
