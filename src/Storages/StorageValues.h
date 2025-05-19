@@ -19,7 +19,7 @@ public:
     StorageValues(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
-        const Block & res_block_,
+        Block res_block_,
         VirtualColumnsDescription virtuals_ = {});
 
     StorageValues(
