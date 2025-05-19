@@ -161,12 +161,14 @@ public:
         bool have_witver = arguments.size() == 3;
         const ColumnPtr & col0 = arguments[0].column;
         const ColumnPtr & col1 = arguments[1].column;
-        const ColumnPtr & col2 = have_witver ? arguments[2].column : IColumn::Ptr() /* dummy */;
+        ColumnPtr col2;
+        if (have_witver)
+            col2 = arguments[2].column;
 
         if (const ColumnString * col0_str_ptr = checkAndGetColumn<ColumnString>(col0.get()))
         {
             const ColumnString::Chars & col0_vec = col0_str_ptr->getChars();
-            const ColumnString::Offsets & col0_offsets = col0_str_ptr->getOffsets();
+            const ColumnString::Offsets * col0_offsets = &col0_str_ptr->getOffsets();
 
             return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witver);
         }
@@ -174,7 +176,7 @@ public:
         if (const ColumnFixedString * col0_fstr_ptr = checkAndGetColumn<ColumnFixedString>(col0.get()))
         {
             const ColumnString::Chars & col0_vec = col0_fstr_ptr->getChars();
-            const ColumnString::Offsets & col0_offsets = PaddedPODArray<IColumn::Offset>(); // dummy
+            const ColumnString::Offsets * col0_offsets = nullptr; // dummy
 
             return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witver, col0_fstr_ptr->getN());
         }
@@ -186,7 +188,7 @@ public:
 private:
     ColumnPtr chooseCol1AndExecute(
         const ColumnString::Chars & col0_vec,
-        const ColumnString::Offsets & col0_offsets,
+        const ColumnString::Offsets * col0_offsets,
         const ColumnPtr & col1,
         const ColumnPtr & col2,
         const size_t input_rows_count,
@@ -196,7 +198,7 @@ private:
         if (const ColumnString * col1_str_ptr = checkAndGetColumn<ColumnString>(col1.get()))
         {
             const ColumnString::Chars & col1_vec = col1_str_ptr->getChars();
-            const ColumnString::Offsets & col1_offsets = col1_str_ptr->getOffsets();
+            const ColumnString::Offsets * col1_offsets = &col1_str_ptr->getOffsets();
 
             return execute(col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witver, col0_width);
         }
@@ -204,7 +206,7 @@ private:
         if (const ColumnFixedString * col1_fstr_ptr = checkAndGetColumn<ColumnFixedString>(col1.get()))
         {
             const ColumnString::Chars & col1_vec = col1_fstr_ptr->getChars();
-            const ColumnString::Offsets & col1_offsets = PaddedPODArray<IColumn::Offset>(); // dummy
+            const ColumnString::Offsets * col1_offsets = nullptr; // dummy
 
             return execute(
                 col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witver, col0_width, col1_fstr_ptr->getN());
@@ -215,9 +217,9 @@ private:
 
     static ColumnPtr execute(
         const ColumnString::Chars & hrp_vec,
-        const ColumnString::Offsets & hrp_offsets,
+        const ColumnString::Offsets * hrp_offsets,
         const ColumnString::Chars & data_vec,
-        const ColumnString::Offsets & data_offsets,
+        const ColumnString::Offsets * data_offsets,
         const ColumnPtr & witver_col,
         const size_t input_rows_count,
         const bool have_witver = false,
@@ -244,8 +246,8 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t hrp_new_offset = hrp_width == 0 ? hrp_offsets[i] : hrp_prev_offset + hrp_width;
-            size_t data_new_offset = data_width == 0 ? data_offsets[i] : data_prev_offset + data_width;
+            size_t hrp_new_offset = hrp_width == 0 ? (*hrp_offsets)[i] : hrp_prev_offset + hrp_width;
+            size_t data_new_offset = data_width == 0 ? (*data_offsets)[i] : data_prev_offset + data_width;
 
             // NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
             while (hrp_width > 0 && hrp_vec[hrp_new_offset - 1] == 0 && hrp_new_offset > hrp_prev_offset)
@@ -356,7 +358,7 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             const ColumnString::Chars & in_vec = col->getChars();
-            const ColumnString::Offsets & in_offsets = col->getOffsets();
+            const ColumnString::Offsets * in_offsets = &col->getOffsets();
 
             return execute(in_vec, in_offsets, input_rows_count);
         }
@@ -364,7 +366,7 @@ public:
         if (const ColumnFixedString * col_fix_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             const ColumnString::Chars & in_vec = col_fix_string->getChars();
-            const ColumnString::Offsets & in_offsets = PaddedPODArray<IColumn::Offset>(); // dummy
+            const ColumnString::Offsets * in_offsets = nullptr; // dummy
 
             return execute(in_vec, in_offsets, input_rows_count, col_fix_string->getN());
         }
@@ -375,7 +377,7 @@ public:
 
 private:
     static ColumnPtr
-    execute(const ColumnString::Chars & in_vec, const ColumnString::Offsets & in_offsets, size_t input_rows_count, size_t col_width = 0)
+    execute(const ColumnString::Chars & in_vec, const ColumnString::Offsets * in_offsets, size_t input_rows_count, size_t col_width = 0)
     {
         auto col0_res = ColumnString::create();
         auto col1_res = ColumnString::create();
@@ -405,7 +407,7 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t new_offset = col_width == 0 ? in_offsets[i] : prev_offset + col_width;
+            size_t new_offset = col_width == 0 ? (*in_offsets)[i] : prev_offset + col_width;
 
             // NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
             while (col_width > 0 && in_vec[new_offset - 1] == 0 && new_offset > prev_offset)
