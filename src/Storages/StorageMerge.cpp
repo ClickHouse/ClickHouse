@@ -529,14 +529,6 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     {
         auto & child_plan = child_plans->at(i);
         const auto & table = *table_it;
-
-        const auto storage = std::get<1>(table);
-        const auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
-        const auto nested_storage_snapshot = storage->getStorageSnapshot(storage_metadata_snapshot, context);
-
-        Names column_names_as_aliases;
-        Aliases aliases;
-
         auto source_pipeline = buildPipeline(child_plan, common_processed_stage);
 
         if (source_pipeline && source_pipeline->initialized())
@@ -580,7 +572,7 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
     has_database_virtual_column = false;
     has_table_virtual_column = false;
     column_names.clear();
-    column_names.reserve(column_names.size());
+    column_names.reserve(all_column_names.size());
 
     for (const auto & column_name : all_column_names)
     {
@@ -665,7 +657,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             if (storage_metadata_snapshot->getColumns().empty())
             {
-                /// (Assuming that view has empty list of columns iff it's parameterized.)
+                /// (Assuming that view has empty list of columns if it's parameterized.)
                 if (storage->isView() && storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
                     throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
                 else
@@ -747,7 +739,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_to_read = column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases);
 
-            std::erase_if(column_names_to_read, [existing_columns = nested_storage_snapshot->getAllColumnsDescription()](const auto & column_name){ return !existing_columns.has(column_name); });
+            std::erase_if(column_names_to_read, [existing_columns = nested_storage_snapshot->getAllColumnsDescription()](const auto & column_name){ return !existing_columns.has(column_name) && !existing_columns.hasSubcolumn(column_name); });
 
             auto child = createPlanForTable(
                 nested_storage_snapshot,

@@ -15,7 +15,10 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
+#include <Common/likePatternToRegexp.h>
+#include <Common/re2.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -381,6 +384,28 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     return res;
 }
 
+bool matchesLikePattern(const String & haystack,
+                        const String & like_pattern,
+                        bool case_insensitive)
+{
+    /// Converts LIKE pattern (with % and _) to a RE2 pattern
+    String regex_str = likePatternToRegexp(like_pattern);
+
+    /// Sets up RE2 with case insensitivity if needed
+    RE2::Options options;
+    options.set_log_errors(false);
+    if (case_insensitive)
+        options.set_case_sensitive(false);
+
+    /// Builds the RE2 regex
+    RE2 re(regex_str, options);
+    if (!re.ok())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid regex: {}", regex_str);
+
+    /// Returns true if the entire string matches
+    return RE2::PartialMatch(haystack, re);
+}
+
 BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait)
 {
     if (query.kind != ASTDropQuery::Kind::Detach && query.kind != ASTDropQuery::Kind::Drop && query.kind != ASTDropQuery::Kind::Truncate)
@@ -421,99 +446,165 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         query_for_table.kind = query.kind;
         // For truncate operation on database, drop the tables
         if (truncate)
-            query_for_table.kind = query.has_all_tables ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
+            query_for_table.kind = query.has_tables ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
         query_for_table.if_exists = true;
         query_for_table.if_empty = false;
         query_for_table.setDatabase(database_name);
         query_for_table.sync = query.sync;
 
-        /// Flush should not be done if shouldBeEmptyOnDetach() == false,
-        /// since in this case getTablesIterator() may do some additional work,
-        /// see DatabaseMaterialized...SQL::getTablesIterator()
+        /// If we have a TRUNCATE TABLES .. LIKE, we should not truncate all tables,
+        /// the logic regarding finding suitable tables is a bit below
+        if (!truncate || !query.has_tables || query.like.empty())
+        {
+            /// Flush should not be done if shouldBeEmptyOnDetach() == false,
+            /// since in this case getTablesIterator() may do some additional work,
+            /// see DatabaseMaterialized...SQL::getTablesIterator()
+            auto table_context = Context::createCopy(getContext());
+            table_context->setInternalQuery(true);
+
+            /// List the tables, then call flushAndPrepareForShutdown() on them in parallel, then call
+            /// executeToTableImpl on them in sequence.
+            ///
+            /// Complication: if some tables (refreshable materialized views) have background tasks that
+            /// create/drop other tables, we have to stop those tasks first (using flushAndPrepareForShutdown()),
+            /// then list tables again.
+
+            std::unordered_set<UUID> prepared_tables;
+            std::vector<std::pair<StorageID, bool>> tables_to_drop;
+            std::vector<StoragePtr> tables_to_prepare;
+
+            auto collect_tables = [&] {
+                // NOTE: This means we wait for all tables to be loaded inside getTablesIterator() call in case of `async_load_databases = true`.
+                for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
+                {
+                    auto table_ptr = iterator->table();
+                    StorageID storage_id = table_ptr->getStorageID();
+                    tables_to_drop.push_back({storage_id, table_ptr->isDictionary()});
+                    /// If the database doesn't support table UUIDs, we might call
+                    /// IStorage::flushAndPrepareForShutdown() twice. That's ok.
+                    /// (And shouldn't normally happen because refreshable materialized views don't work
+                    ///  in such DBs.)
+                    if (!storage_id.hasUUID() || !prepared_tables.contains(storage_id.uuid))
+                        tables_to_prepare.push_back(table_ptr);
+                }
+            };
+
+            auto prepare_tables = [&](std::vector<StoragePtr> & tables)
+            {
+                /// Prepare tables for shutdown in parallel.
+                ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
+                for (StoragePtr & table_ptr : tables)
+                {
+                    StorageID storage_id = table_ptr->getStorageID();
+                    if (storage_id.hasUUID())
+                        prepared_tables.insert(storage_id.uuid);
+                    runner([my_table_ptr = std::move(table_ptr)]()
+                    {
+                        my_table_ptr->flushAndPrepareForShutdown();
+                    });
+                }
+                runner.waitForAllToFinishAndRethrowFirstError();
+                tables.clear(); // don't hold extra shared pointers
+            };
+
+            collect_tables();
+
+            /// If there are refreshable materialized views, we need to stop them before getting the
+            /// final list of tables to drop.
+            std::vector<StoragePtr> tables_to_prepare_early;
+            for (const StoragePtr & table_ptr : tables_to_prepare)
+            {
+                if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(table_ptr.get()))
+                {
+                    if (materialized_view->canCreateOrDropOtherTables())
+                        tables_to_prepare_early.push_back(table_ptr);
+                }
+            }
+            if (!tables_to_prepare_early.empty())
+            {
+                tables_to_prepare.clear();
+                tables_to_drop.clear();
+
+                prepare_tables(tables_to_prepare_early);
+
+                collect_tables();
+            }
+
+            prepare_tables(tables_to_prepare);
+
+            for (const auto & table : tables_to_drop)
+            {
+                query_for_table.setTable(table.first.getTableName());
+                query_for_table.is_dictionary = table.second;
+                DatabasePtr db;
+                UUID table_to_wait = UUIDHelpers::Nil;
+                /// Note: if this throws exception, the remaining tables won't be dropped and will stay in a
+                /// limbo state where flushAndPrepareForShutdown() was called but no shutdown() followed. Not ideal.
+                executeToTableImpl(table_context, query_for_table, db, table_to_wait);
+                uuids_to_wait.push_back(table_to_wait);
+            }
+        }
+    }
+
+    /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
+    if (truncate && query.has_tables && !query.like.empty())
+    {
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);
 
-        /// List the tables, then call flushAndPrepareForShutdown() on them in parallel, then call
-        /// executeToTableImpl on them in sequence.
-        ///
-        /// Complication: if some tables (refreshable materialized views) have background tasks that
-        /// create/drop other tables, we have to stop those tasks first (using flushAndPrepareForShutdown()),
-        /// then list tables again.
-
-        std::unordered_set<UUID> prepared_tables;
-        std::vector<std::pair<StorageID, bool>> tables_to_drop;
-        std::vector<StoragePtr> tables_to_prepare;
-
-        auto collect_tables = [&] {
-            // NOTE: This means we wait for all tables to be loaded inside getTablesIterator() call in case of `async_load_databases = true`.
-            for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
-            {
-                auto table_ptr = iterator->table();
-                StorageID storage_id = table_ptr->getStorageID();
-                tables_to_drop.push_back({storage_id, table_ptr->isDictionary()});
-                /// If the database doesn't support table UUIDs, we might call
-                /// IStorage::flushAndPrepareForShutdown() twice. That's ok.
-                /// (And shouldn't normally happen because refreshable materialized views don't work
-                ///  in such DBs.)
-                if (!storage_id.hasUUID() || !prepared_tables.contains(storage_id.uuid))
-                    tables_to_prepare.push_back(table_ptr);
-            }
-        };
-
-        auto prepare_tables = [&](std::vector<StoragePtr> & tables)
+        std::vector<StorageID> tables_to_truncate;
+        for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
-            /// Prepare tables for shutdown in parallel.
-            ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
-            for (StoragePtr & table_ptr : tables)
+            const auto & table_ptr = it->table();
+            const auto & storage_id = table_ptr->getStorageID();
+            const auto & tname = storage_id.table_name;
+
+            if (!query.like.empty())
             {
-                StorageID storage_id = table_ptr->getStorageID();
-                if (storage_id.hasUUID())
-                    prepared_tables.insert(storage_id.uuid);
-                runner([my_table_ptr = std::move(table_ptr)]()
+                bool match = matchesLikePattern(tname, query.like, query.case_insensitive_like);
+                if (query.not_like)
+                    match = !match;
+                if (!match)
+                    continue;
+            }
+            tables_to_truncate.push_back(storage_id);
+        }
+
+        std::mutex mutex_for_uuids;
+        ThreadPoolCallbackRunnerLocal<void> runner(
+            getDatabaseCatalogDropTablesThreadPool().get(),
+            "TruncTbls"
+        );
+
+        for (const auto & table_id : tables_to_truncate)
+        {
+            runner([&, table_id]()
+            {
+                // Create a proper AST for a single-table TRUNCATE query.
+                auto sub_query_ptr = std::make_shared<ASTDropQuery>();
+                auto & sub_query = sub_query_ptr->as<ASTDropQuery &>();
+                sub_query.kind = ASTDropQuery::Kind::Truncate;
+                sub_query.if_exists = true;
+                sub_query.sync = query.sync;
+                // Set the target database and table:
+                sub_query.setDatabase(table_id.database_name);
+                sub_query.setTable(table_id.table_name);
+                // Optionally, add these nodes to sub_query->children if needed:
+                sub_query.children.push_back(std::make_shared<ASTIdentifier>(table_id.database_name));
+                sub_query.children.push_back(std::make_shared<ASTIdentifier>(table_id.table_name));
+
+                DatabasePtr dummy_db;
+                UUID table_uuid = UUIDHelpers::Nil;
+                executeToTableImpl(table_context, sub_query, dummy_db, table_uuid);
+
+                if (query.sync)
                 {
-                    my_table_ptr->flushAndPrepareForShutdown();
-                });
-            }
-            runner.waitForAllToFinishAndRethrowFirstError();
-            tables.clear(); // don't hold extra shared pointers
-        };
-
-        collect_tables();
-
-        /// If there are refreshable materialized views, we need to stop them before getting the
-        /// final list of tables to drop.
-        std::vector<StoragePtr> tables_to_prepare_early;
-        for (const StoragePtr & table_ptr : tables_to_prepare)
-        {
-            if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(table_ptr.get()))
-            {
-                if (materialized_view->canCreateOrDropOtherTables())
-                    tables_to_prepare_early.push_back(table_ptr);
-            }
+                    std::lock_guard<std::mutex> lock(mutex_for_uuids);
+                    uuids_to_wait.push_back(table_uuid);
+                }
+            });
         }
-        if (!tables_to_prepare_early.empty())
-        {
-            tables_to_prepare.clear();
-            tables_to_drop.clear();
-
-            prepare_tables(tables_to_prepare_early);
-
-            collect_tables();
-        }
-
-        prepare_tables(tables_to_prepare);
-
-        for (const auto & table : tables_to_drop)
-        {
-            query_for_table.setTable(table.first.getTableName());
-            query_for_table.is_dictionary = table.second;
-            DatabasePtr db;
-            UUID table_to_wait = UUIDHelpers::Nil;
-            /// Note: if this throws exception, the remaining tables won't be dropped and will stay in a
-            /// limbo state where flushAndPrepareForShutdown() was called but no shutdown() followed. Not ideal.
-            executeToTableImpl(table_context, query_for_table, db, table_to_wait);
-            uuids_to_wait.push_back(table_to_wait);
-        }
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
 
     // only if operation is DETACH

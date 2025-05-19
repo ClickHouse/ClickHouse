@@ -56,7 +56,7 @@ class Validator:
             for job in workflow.jobs:
                 cls.evaluate_check(
                     isinstance(job, Job.Config),
-                    f"Invalid job type [{job}]",
+                    f"Invalid job type [{job}]: type [{type(job)}]",
                     workflow.name,
                 )
 
@@ -158,7 +158,7 @@ class Validator:
                         artifact.is_s3_artifact()
                     ), f"All artifacts must be of S3 type if enable_cache|enable_html=True, artifact [{artifact.name}], type [{artifact.type}], workflow [{workflow.name}]"
 
-            if workflow.dockers:
+            if workflow.dockers and not workflow.disable_dockers_build:
                 assert (
                     Settings.DOCKERHUB_USERNAME
                 ), f"Settings.DOCKERHUB_USERNAME must be provided if workflow has dockers, workflow [{workflow.name}]"

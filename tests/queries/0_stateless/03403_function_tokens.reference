@@ -1,0 +1,18 @@
+Negative tests
+Default tokenizer
+[]
+['abc','def','foo','bar','baz','code','hello','world']
+['abc','def','foo','bar','baz','code','hello','world']
+Ngram tokenizer
+['']
+['abc','bc ','c d',' de','def']
+['abc','bc ','c d',' de','def']
+['abc def']
+NoOp tokenizer
+['']
+['abc def']
+Special cases (not systematically tested)
+-- FixedString inputs
+['abc','def','foo','bar','baz','code','hello','world']
+-- non-const inputs
+['abc','def','foo','bar','baz','code','hello','world']

@@ -29,6 +29,7 @@ namespace Setting
 {
     extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
     extern const SettingsBool parsedatetime_parse_without_leading_zeros;
+    extern const SettingsBool parsedatetime_e_requires_space_padding;
 }
 
 namespace ErrorCodes
@@ -642,6 +643,7 @@ namespace
     public:
         const bool mysql_M_is_month_name;
         const bool mysql_parse_ckl_without_leading_zeros;
+        const bool mysql_e_requires_space_padding;
 
         static constexpr auto name = Name::name;
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
@@ -649,6 +651,7 @@ namespace
         explicit FunctionParseDateTimeImpl(ContextPtr context)
             : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
             , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef()[Setting::parsedatetime_parse_without_leading_zeros])
+            , mysql_e_requires_space_padding(context->getSettingsRef()[Setting::parsedatetime_e_requires_space_padding])
         {
         }
 
@@ -1160,15 +1163,30 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
+            static PosOrError mysqlDayOfMonthMandatorySpacePadding(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
-                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", fragment))
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlDayOfMonthMandatorySpacePadding requires size >= 2", fragment))
 
                 Int32 day_of_month = *cur == ' ' ? 0 : (*cur - '0');
                 ++cur;
 
                 day_of_month = 10 * day_of_month + (*cur - '0');
                 ++cur;
+
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
+                return cur;
+            }
+
+            [[nodiscard]]
+            static PosOrError mysqlDayOfMonthOptionalSpacePadding(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
+            {
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "mysqlDayOfMonthOptionalSpacePadding requires size >= 1", fragment))
+
+                while (cur < end && *cur == ' ')
+                    ++cur;
+
+                Int32 day_of_month = 0;
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, day_of_month))
 
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
                 return cur;
@@ -1951,9 +1969,12 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlAmericanDate));
                             break;
 
-                        // Day of month, space-padded ( 1-31)  23
+                        // Day of month
                         case 'e':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
+                            if (mysql_e_requires_space_padding)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthMandatorySpacePadding)); /// ' 1' - '31'
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthOptionalSpacePadding));  /// '1' (or ' 1') - '31'
                             break;
 
                         // Fractional seconds

@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -37,6 +38,11 @@ public:
     {
         if (args.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 arguments", getName());
+
+        /// We expect an even number of arguments, with the first argument being the expression,
+        /// and the last argument being the ELSE branch, with the rest being pairs of WHEN and THEN branches.
+        if (args.size() < 4 || args.size() % 2 != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects an even number of arguments: (expr, when1, then1, ..., else)", getName());
 
         /// See the comments in executeImpl() to understand why we actually have to
         /// get the return type of a transform function.

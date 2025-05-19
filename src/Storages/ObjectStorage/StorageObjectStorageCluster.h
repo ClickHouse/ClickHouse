@@ -29,6 +29,9 @@ public:
 
     String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
 
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
 private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,

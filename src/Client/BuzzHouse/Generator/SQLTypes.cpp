@@ -297,7 +297,7 @@ SQLType * DateTimeType::typeDeepCopy() const
 
 String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return "'" + (extended ? rg.nextDateTime64() : rg.nextDateTime()) + "'";
+    return "'" + (extended ? rg.nextDateTime64(rg.nextSmallNumber() < 8) : rg.nextDateTime(precision.has_value())) + "'";
 }
 
 String DecimalType::typeName(const bool) const
@@ -1372,12 +1372,12 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
 
         if (rg.nextBool())
         {
-            short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(
-                (rg.nextRandomUInt32()
-                 % static_cast<uint32_t>(
-                     (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
-                                                            : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128))
-                + 1));
+            std::uniform_int_distribution<uint32_t> dec_range(
+                1,
+                static_cast<uint32_t>(
+                    (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
+                                                           : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128));
+            short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(dec_range(rg.generator)));
             switch (short_notation.value())
             {
                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
@@ -1516,7 +1516,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         String desc;
         std::vector<JSubType> subcols;
         JSONDef * jdef = tp ? tp->mutable_jdef() : nullptr;
-        const uint32_t nclauses = rg.nextMediumNumber() % 7;
+        const uint32_t nclauses = rg.nextLargeNumber() % 7;
 
         if (nclauses)
         {
@@ -1534,7 +1534,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
             }
             if (noption < 4)
             {
-                const uint32_t max_dpaths = rg.nextBool() ? (rg.nextSmallNumber() % 5) : (rg.nextRandomUInt32() % 1025);
+                const uint32_t max_dpaths = rg.nextBool() ? (rg.nextMediumNumber() % 5) : (rg.nextRandomUInt32() % 1025);
 
                 if (tp)
                 {
@@ -1545,7 +1545,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
             }
             else if (this->depth >= this->fc.max_depth || noption < 8)
             {
-                const uint32_t max_dtypes = rg.nextBool() ? (rg.nextSmallNumber() % 5) : (rg.nextRandomUInt32() % 33);
+                const uint32_t max_dtypes = rg.nextBool() ? (rg.nextMediumNumber() % 5) : (rg.nextRandomUInt32() % 33);
 
                 if (tp)
                 {
@@ -1766,7 +1766,8 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type + 1))
     {
         /// Geo
-        const GeoTypes gt = static_cast<GeoTypes>((rg.nextRandomUInt32() % static_cast<uint32_t>(GeoTypes_MAX)) + 1);
+        std::uniform_int_distribution<uint32_t> geo_range(1, static_cast<uint32_t>(GeoTypes_MAX));
+        const GeoTypes gt = static_cast<GeoTypes>(geo_range(rg.generator));
 
         if (tp)
         {
@@ -2011,11 +2012,11 @@ String strBuildJSONElement(RandomGenerator & rg)
             break;
         case 16:
             /// Datetime
-            ret = '"' + rg.nextDateTime() + '"';
+            ret = '"' + rg.nextDateTime(rg.nextSmallNumber() < 8) + '"';
             break;
         case 17:
             /// Datetime64
-            ret = '"' + rg.nextDateTime64() + '"';
+            ret = '"' + rg.nextDateTime64(rg.nextSmallNumber() < 8) + '"';
             break;
         case 18:
             /// UUID

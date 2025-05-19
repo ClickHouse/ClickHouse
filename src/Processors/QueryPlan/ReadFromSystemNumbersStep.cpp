@@ -1,3 +1,4 @@
+#include <memory>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 
 #include <Core/ColumnWithTypeAndName.h>
@@ -461,6 +462,11 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
+}
+
+QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
+{
+    return std::make_unique<ReadFromSystemNumbersStep>(column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);
 }
 
 Pipe ReadFromSystemNumbersStep::makePipe()

@@ -628,6 +628,10 @@ protected:
             /// S3('url', 'access_key_id', 'secret_access_key')
             findS3DatabaseSecretArguments();
         }
+        else if (engine_name == "DataLakeCatalog")
+        {
+            findDataLakeCatalogSecretArguments();
+        }
     }
 
     void findMySQLDatabaseSecretArguments()
@@ -656,6 +660,14 @@ protected:
             /// S3('url', 'access_key_id', 'secret_access_key')
             markSecretArgument(2);
         }
+    }
+
+    void findDataLakeCatalogSecretArguments()
+    {
+        /// datalake catalog should support different storage types,
+        /// we need a function to check if the url is S3 or Azure.
+        /// right now we assume it's a S3 url
+        findS3DatabaseSecretArguments();
     }
 
     void findBackupNameSecretArguments()

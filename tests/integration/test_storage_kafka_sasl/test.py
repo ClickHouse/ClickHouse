@@ -1,15 +1,6 @@
-import logging
-import pytest
-import time
+from helpers.kafka.common_direct import *
 
-from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.config_cluster import kafka_sasl_user, kafka_sasl_pass
-from helpers.test_tools import assert_eq_with_retry
-
-from kafka import KafkaProducer
-
-if is_arm():
-    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -75,7 +66,7 @@ def test_kafka_sasl(kafka_cluster):
         AS SELECT key, value FROM test.kafka_sasl;
         """
     )
-    
+
     producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
     producer.send(topic="topic1", value='{"key":1, "value":"test123"}')
     producer.flush()

@@ -889,6 +889,23 @@ std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & c
         std::move(sort_settings));
 }
 
+QueryPlanStepPtr JoinStepLogical::clone() const
+{
+    auto new_expression_actions = expression_actions.clone();
+    auto new_join_info = join_info.clone(new_expression_actions);
+
+    auto result_step = std::make_unique<JoinStepLogical>(
+        getInputHeaders().front(), getInputHeaders().back(),
+        std::move(new_join_info),
+        std::move(new_expression_actions),
+        required_output_columns,
+        use_nulls,
+        join_settings,
+        sorting_settings);
+    result_step->setStepDescription(getStepDescription());
+    return result_step;
+}
+
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Join", JoinStepLogical::deserialize);

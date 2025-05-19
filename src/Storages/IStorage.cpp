@@ -372,7 +372,7 @@ std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* c
     return {};
 }
 
-void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
+void IStorage::applyMetadataChangesToCreateQueryForBackup(ASTPtr &) const
 {
 }
 

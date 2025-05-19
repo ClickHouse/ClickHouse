@@ -103,7 +103,7 @@ DOCKERS = [
     # ),
     Docker.Config(
         name="clickhouse/cctools",
-        path="./docker/packager/cctools",
+        path="./ci/docker/cctools",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/fasttest"],
     ),

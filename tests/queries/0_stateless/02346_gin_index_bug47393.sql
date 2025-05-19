@@ -7,7 +7,7 @@ CREATE TABLE tab
 (
     id UInt64,
     str String,
-    INDEX idx str TYPE gin(3) GRANULARITY 1
+    INDEX idx str TYPE gin(tokenizer = 'ngram', ngram_size = 3) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY tuple()

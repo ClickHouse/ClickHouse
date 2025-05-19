@@ -6,6 +6,8 @@ slug: /sql-reference/functions/splitting-merging-functions
 title: 'Functions for Splitting Strings'
 ---
 
+import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
+
 # Functions for Splitting Strings
 
 ## splitByChar {#splitbychar}
@@ -21,7 +23,7 @@ splitByChar(separator, s[, max_substrings]))
 
 **Arguments**
 
-- `separator` — The separator which should contain exactly one character. [String](../data-types/string.md).
+- `separator` — The separator must be a single-byte character. [String](../data-types/string.md).
 - `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. If `max_substrings` > 0, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible.
 
@@ -347,9 +349,14 @@ Result:
 
 ## ngrams {#ngrams}
 
-Splits a UTF-8 string into n-grams of `ngramsize` symbols.
+<DeprecatedBadge/>
 
-**Syntax** 
+
+Splits a UTF-8 string into n-grams of `ngramsize` symbols.
+This function is deprecated. Prefer to use [tokens](#tokens) with the `ngram` tokenizer.
+The function might be removed at some point in future.
+
+**Syntax**
 
 ```sql
 ngrams(string, ngramsize)
@@ -380,17 +387,22 @@ Result:
 
 ## tokens {#tokens}
 
-Splits a string into tokens using non-alphanumeric ASCII characters as separators.
+Splits a string into tokens using the given tokenizer.
+The default tokenizer uses non-alphanumeric ASCII characters as separators.
 
 **Arguments**
 
-- `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
+- `value` — The input string. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, and `noop`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
+- `ngrams` — Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
 - The resulting array of tokens from input string. [Array](../data-types/array.md).
 
 **Example**
+
+Using the default settings:
 
 ```sql
 SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
@@ -402,4 +414,18 @@ Result:
 ┌─tokens────────────────────────────┐
 │ ['test1','test2','test3','test4'] │
 └───────────────────────────────────┘
+```
+
+Using the ngram tokenizer with ngram length 3:
+
+```sql
+SELECT tokens('abc def', 'ngram', 3) AS tokens;
+```
+
+Result:
+
+```text
+┌─tokens──────────────────────────┐
+│ ['abc','bc ','c d',' de','def'] │
+└─────────────────────────────────┘
 ```

@@ -136,8 +136,16 @@
     M(LocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttler.", ValueType::Bytes) \
     M(LocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttling.", ValueType::Microseconds) \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.", ValueType::Microseconds) \
-    M(ReadTasksWithAppliedMutationsOnFly, "Total number of parts for which there was any mutation applied on fly", ValueType::Number) \
-    M(MutationsAppliedOnFlyInAllReadTasks, "The sum of number of applied mutations on-fly for part among all read parts", ValueType::Number) \
+    M(ReadTasksWithAppliedPatches, "Total number of read tasks for which there was any patch part applied", ValueType::Number) \
+    M(PatchesAppliedInAllReadTasks, "Total number of applied patch parts among all read tasks", ValueType::Number) \
+    M(PatchesMergeAppliedInAllReadTasks, "Total number of applied patch parts with Merge mode among all read tasks", ValueType::Number) \
+    M(PatchesJoinAppliedInAllReadTasks, "Total number of applied patch parts with Join mode among all read tasks", ValueType::Number) \
+    M(ApplyPatchesMicroseconds, "Total time spent applying patch parts", ValueType::Number) \
+    M(ApplyPatchesMergeMicroseconds, "Total time spent applying patch parts with Merge mode", ValueType::Number) \
+    M(ApplyPatchesJoinMicroseconds, "Total time spent applying patch parts with Join mode", ValueType::Number) \
+    M(AnalyzePatchRangesMicroseconds, "Total time spent analyzing index of patch parts", ValueType::Number) \
+    M(ReadTasksWithAppliedMutationsOnFly, "Total number of read tasks for which there was any mutation applied on fly", ValueType::Number) \
+    M(MutationsAppliedOnFlyInAllReadTasks, "Total number of applied mutations on-fly among all read tasks", ValueType::Number) \
     \
     M(SchedulerIOReadRequests, "Resource requests passed through scheduler for IO reads.", ValueType::Number) \
     M(SchedulerIOReadBytes, "Bytes passed through scheduler for IO reads.", ValueType::Bytes) \
@@ -984,6 +992,22 @@ The server successfully detected this situation and will download merged part fr
     M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
     M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots.", ValueType::Microseconds) \
     \
+    M(CoordinatedMergesMergeCoordinatorUpdateCount, "Total number of merge coordinator updates", ValueType::Number) \
+    M(CoordinatedMergesMergeCoordinatorUpdateMicroseconds, "Total time spend on updating merge coordinator state", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorFetchMetadataMicroseconds, "Total time spend on fetching fresh metadata inside merge coordinator", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorFilterMicroseconds, "Total time spend on filtering prepared merges inside merge coordinator", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorSelectMergesMicroseconds, "Total time spend on finding merge using merge selectors inside merge coordinator", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorLockStateForShareCount, "Total number of for share captures of coordinator state lock", ValueType::Number) \
+    M(CoordinatedMergesMergeCoordinatorLockStateExclusivelyCount, "Total number of exclusive captures of coordinator state lock", ValueType::Number) \
+    M(CoordinatedMergesMergeCoordinatorLockStateForShareMicroseconds, "Total time spend on locking coordinator state mutex for share", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorLockStateExclusivelyMicroseconds, "Total time spend on locking coordinator state mutex exclusively", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeWorkerUpdateCount, "Total number merge worker updates", ValueType::Number) \
+    M(CoordinatedMergesMergeWorkerUpdateMicroseconds, "Total time spend on updating local state of assigned merges on worker", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeAssignmentRequest, "Total number of merge assignment requests", ValueType::Number) \
+    M(CoordinatedMergesMergeAssignmentResponse, "Total number of merge assignment requests", ValueType::Number) \
+    M(CoordinatedMergesMergeAssignmentRequestMicroseconds, "Total time spend in merge assignment client", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeAssignmentResponseMicroseconds, "Total time spend in merge assignment handler", ValueType::Microseconds) \
+    \
     M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
     M(SharedDatabaseCatalogStateApplicationMicroseconds, "Total time spend on application of new state in SharedDatabaseCatalog", ValueType::Microseconds) \
     \
@@ -1135,6 +1159,8 @@ Event end() { return END; }
 
 bool checkCPUOverload(Int64 os_cpu_busy_time_threshold, double min_ratio, double max_ratio, bool should_throw)
 {
+    if ((max_ratio <= 0.0) || (max_ratio <= min_ratio))
+        return false;
     double cpu_load = global_counters.getCPUOverload(os_cpu_busy_time_threshold);
 
     if (cpu_load > DBL_EPSILON)

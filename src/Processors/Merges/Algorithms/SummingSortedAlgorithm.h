@@ -89,7 +89,7 @@ public:
 
         bool is_group_started = false;
 
-        Row current_row;
+        std::vector<ColumnPtr> current_row;
         bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
         void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);

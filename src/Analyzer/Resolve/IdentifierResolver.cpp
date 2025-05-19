@@ -30,6 +30,7 @@
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Core/Settings.h>
+#include <iostream>
 
 namespace DB
 {
@@ -327,6 +328,21 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
     return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
+}
+
+bool IdentifierResolver::tryBindIdentifierToJoinUsingColumn(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
+{
+    for (const auto * join_using : scope.join_using_columns)
+    {
+        for (const auto & [using_column_name, _] : *join_using)
+        {
+            // std::cerr << identifier_lookup.identifier.getFullName() << " <===========> " << using_column_name << std::endl;
+            if (identifier_lookup.identifier.getFullName() == using_column_name)
+                return true;
+        }
+    }
+
+    return false;
 }
 
 /** Resolve identifier from table columns.
@@ -634,11 +650,15 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             tryBindIdentifierToTableExpressions(column_identifier_lookup, table_expression_node, scope))
             break;
 
+        if (tryBindIdentifierToJoinUsingColumn(column_identifier_lookup, scope))
+            break;
+
         qualified_identifier = std::move(qualified_identifier_with_removed_part);
     }
 
     auto qualified_identifier_full_name = qualified_identifier.getFullName();
     node_to_projection_name.emplace(result_expression, std::move(qualified_identifier_full_name));
+    // std::cerr << "resolved from storage : " << qualified_identifier.getFullName() << " as " << result_expression->dumpTree() << std::endl;
 
     return { .resolved_identifier = result_expression, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 }
@@ -857,8 +877,36 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     IdentifierResolveScope & scope)
 {
     const auto & from_join_node = table_expression_node->as<const JoinNode &>();
-    auto left_resolved_identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_join_node.getLeftTableExpression(), scope).resolved_identifier;
-    auto right_resolved_identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_join_node.getRightTableExpression(), scope).resolved_identifier;
+    JoinKind join_kind = from_join_node.getKind();
+
+    bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression_node.get());
+    std::unordered_map<std::string, ColumnNodePtr> join_using_column_name_to_column_node;
+
+    if (!join_node_in_resolve_process && from_join_node.isUsingJoinExpression())
+    {
+        auto & join_using_list = from_join_node.getJoinExpression()->as<ListNode &>();
+        for (auto & join_using_node : join_using_list.getNodes())
+        {
+            auto & column_node = join_using_node->as<ColumnNode &>();
+            join_using_column_name_to_column_node.emplace(column_node.getColumnName(), std::static_pointer_cast<ColumnNode>(join_using_node));
+        }
+    }
+
+    auto try_resolve_identifier_from_join_tree_node = [&](const QueryTreeNodePtr & join_tree_node, bool may_be_override_by_using_column)
+    {
+        if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
+            scope.join_using_columns.push_back(&join_using_column_name_to_column_node);
+
+        auto res = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
+
+        if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
+            scope.join_using_columns.pop_back();
+
+        return std::move(res.resolved_identifier);
+    };
+
+    auto left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right);
+    auto right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpression(), join_kind != JoinKind::Right);
 
     if (!identifier_lookup.isExpressionLookup())
     {
@@ -873,20 +921,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 .resolved_identifier = left_resolved_identifier ? left_resolved_identifier : right_resolved_identifier,
                 .resolve_place = IdentifierResolvePlace::JOIN_TREE
             };
-    }
-
-    bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression_node.get());
-
-    std::unordered_map<std::string, ColumnNodePtr> join_using_column_name_to_column_node;
-
-    if (!join_node_in_resolve_process && from_join_node.isUsingJoinExpression())
-    {
-        auto & join_using_list = from_join_node.getJoinExpression()->as<ListNode &>();
-        for (auto & join_using_node : join_using_list.getNodes())
-        {
-            auto & column_node = join_using_node->as<ColumnNode &>();
-            join_using_column_name_to_column_node.emplace(column_node.getColumnName(), std::static_pointer_cast<ColumnNode>(join_using_node));
-        }
     }
 
     auto check_nested_column_not_in_using = [&join_using_column_name_to_column_node, &identifier_lookup](const QueryTreeNodePtr & node)
@@ -950,12 +984,44 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     std::optional<JoinTableSide> resolved_side;
     QueryTreeNodePtr resolved_identifier;
 
-    JoinKind join_kind = from_join_node.getKind();
+    auto convert_resolved_result_type_if_needed = [](
+        const QueryTreeNodePtr & resolved_identifier_candidate,
+        const std::unordered_map<std::string, ColumnNodePtr> & using_column_name_to_column_node,
+        QueryTreeNodePtr & resolve_result,
+        IdentifierResolveScope & current_scope,
+        std::unordered_map<QueryTreeNodePtr, ProjectionName> & projection_name_mapping)
+    {
+        auto & resolved_column = resolved_identifier_candidate->as<ColumnNode &>();
+        auto using_column_node_it = using_column_name_to_column_node.find(resolved_column.getColumnName());
+        if (using_column_node_it != using_column_name_to_column_node.end() &&
+            !using_column_node_it->second->getColumnType()->equals(*resolved_column.getColumnType()))
+        {
+            // std::cerr << "... fixing type for " << resolved_column.dumpTree() << std::endl;
+            auto resolved_column_clone = std::static_pointer_cast<ColumnNode>(resolved_column.clone());
+            resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
+
+            auto projection_name_it = projection_name_mapping.find(resolved_identifier_candidate);
+            if (projection_name_it != projection_name_mapping.end())
+            {
+                projection_name_mapping[resolved_column_clone] = projection_name_it->second;
+                // std::cerr << ".. upd name " << projection_name_it->second << " for col " << resolved_column_clone->dumpTree() << std::endl;
+            }
+
+            resolve_result = std::move(resolved_column_clone);
+
+            if (!resolve_result->isEqual(*using_column_node_it->second))
+                current_scope.join_columns_with_changed_types[resolve_result] = using_column_node_it->second;
+        }
+    };
 
     /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
     /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
     if (auto missed_subcolumn_identifier = checkIsMissedObjectJSONSubcolumn(left_resolved_identifier, right_resolved_identifier))
         return { .resolved_identifier = missed_subcolumn_identifier, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+
+
+    // for (const auto & [k, v] : join_using_column_name_to_column_node)
+    //     std::cerr << k << " -> " << v->dumpTree() << std::endl;
 
     if (left_resolved_identifier && right_resolved_identifier)
     {
@@ -1036,18 +1102,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
         else
         {
-            auto & left_resolved_column = left_resolved_identifier->as<ColumnNode &>();
-            auto using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
-            if (using_column_node_it != join_using_column_name_to_column_node.end() &&
-                !using_column_node_it->second->getColumnType()->equals(*left_resolved_column.getColumnType()))
-            {
-                auto left_resolved_column_clone = std::static_pointer_cast<ColumnNode>(left_resolved_column.clone());
-                left_resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
-                resolved_identifier = std::move(left_resolved_column_clone);
-
-                if (!resolved_identifier->isEqual(*using_column_node_it->second))
-                    scope.join_columns_with_changed_types[resolved_identifier] = using_column_node_it->second;
-            }
+            convert_resolved_result_type_if_needed(left_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
         }
     }
     else if (right_resolved_identifier)
@@ -1061,17 +1116,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
         else
         {
-            auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
-            auto using_column_node_it = join_using_column_name_to_column_node.find(right_resolved_column.getColumnName());
-            if (using_column_node_it != join_using_column_name_to_column_node.end() &&
-                !using_column_node_it->second->getColumnType()->equals(*right_resolved_column.getColumnType()))
-            {
-                auto right_resolved_column_clone = std::static_pointer_cast<ColumnNode>(right_resolved_column.clone());
-                right_resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
-                resolved_identifier = std::move(right_resolved_column_clone);
-                if (!resolved_identifier->isEqual(*using_column_node_it->second))
-                    scope.join_columns_with_changed_types[resolved_identifier] = using_column_node_it->second;
-            }
+            convert_resolved_result_type_if_needed(right_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
         }
     }
 
@@ -1087,10 +1132,12 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         auto nullable_resolved_identifier = convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side, scope);
         if (nullable_resolved_identifier)
         {
+            // std::cerr << ".. convert to null " << nullable_resolved_identifier->dumpTree() << std::endl;
             resolved_identifier = nullable_resolved_identifier;
             /// Set the same projection name for new nullable node
             if (projection_name_it != node_to_projection_name.end())
             {
+                // std::cerr << "... upd name for null " << projection_name_it->second << " -> " << resolved_identifier->dumpTree() << std::endl;
                 node_to_projection_name.emplace(resolved_identifier, projection_name_it->second);
             }
         }

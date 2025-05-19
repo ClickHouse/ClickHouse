@@ -117,7 +117,27 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
 
 REGISTER_FUNCTION(ArrayResize)
 {
-    factory.registerFunction<FunctionArrayResize>();
+    FunctionDocumentation::Description description = "Changes the length of the array.";
+    FunctionDocumentation::Syntax syntax = "arrayResize(arr, size[, extender])";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr", "Array to resize. [Array(T)](/sql-reference/data-types/array)"},
+        {"size", R"(
+-The new length of the array.
+If `size` is less than the original size of the array, the array is truncated from the right.
+If `size` is larger than the initial size of the array, the array is extended to the right with `extender` values or default values for the data type of the array items.
+)"},
+        {"extender", "Value to use for extending the array. Can be `NULL`."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "An array of length `size`. [Array(T)](/sql-reference/data-types/array).";
+    FunctionDocumentation::Examples examples = {
+        {"Example 1", "SELECT arrayResize([1], 3);", "[1,0,0]"},
+        {"Example 2", "SELECT arrayResize([1], 3, NULL);", "[1,NULL,NULL]"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayResize>(documentation);
 }
 
 }

@@ -869,6 +869,29 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
     cursor.execute(f'DROP TABLE "{table}\'"')
 
 
+def test_postgres_datetime(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute(f"DROP TABLE IF EXISTS test_datetime")
+    cursor.execute("CREATE TABLE test_datetime AS (SELECT '2025-01-02 03:04:05.678900'::timestamptz AS ts, '2025-01-02'::date as d)")
+
+    node1.query("DROP TABLE IF EXISTS test_datetime")
+    node1.query(
+        f"CREATE TABLE test_datetime (ts DateTime64(6, 'UTC'), d Date) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_datetime', 'postgres', '{pg_pass}')"
+    )
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::DateTime")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::DateTime64")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::Nullable(DateTime)")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::Nullable(DateTime64)")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

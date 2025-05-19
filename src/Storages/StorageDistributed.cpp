@@ -930,7 +930,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTree());
     }
 
-    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
+    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
 }
 
 }
