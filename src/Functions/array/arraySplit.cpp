@@ -118,7 +118,7 @@ REGISTER_FUNCTION(ArraySplit)
     FunctionDocumentation::Description description = "Split a source array into multiple arrays. When `func(x [, y1, ..., yN])` returns something other than zero, the array will be split on the left hand side of the element. The array will not be split before the first element.";
     FunctionDocumentation::Syntax syntax = "arraySplit(func(x[, y1, ..., yN]), source[, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments = {
-    	{"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).[Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
         {"source", "The source array to split [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
@@ -133,9 +133,9 @@ REGISTER_FUNCTION(ArraySplit)
     FunctionDocumentation::Description description_split = "Split a source array into multiple arrays. When `func(x[, y1, ..., yN])` returns something other than zero, the array will be split on the right hand side of the element. The array will not be split after the last element.";
     FunctionDocumentation::Syntax syntax_split = "arrayReverseSplit(func(x[, y1, ..., yN]), source[, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments_split = {
-            {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
-        	{"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
-        	{"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_split = "Returns an array of arrays. [`Array(Array(T))`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples_split = {{"Usage example", "SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res", "[[1], [2, 3, 4], [5]]"}};
