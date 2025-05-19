@@ -1961,6 +1961,7 @@ grpcio
 gtest
 gtid
 gzip
+gunzip
 gzipped
 hadoop
 halfMD
@@ -2209,9 +2210,13 @@ mapAll
 mapApply
 mapConcat
 mapContains
+mapContainsKey
 mapContainsKeyLike
+mapContainsValue
+mapContainsValueLike
 mapExists
 mapExtractKeyLike
+mapExtractValueLike
 mapFilter
 mapFromArrays
 mapKeys
@@ -2341,6 +2346,8 @@ namespace
 namespaces
 natively
 nats
+ncat
+netcat
 ness
 nestjs
 netloc
