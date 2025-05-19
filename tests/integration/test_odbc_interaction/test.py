@@ -356,8 +356,8 @@ def test_table_function_odbc_with_named_collection(started_cluster):
     node1.query(f"""
     DROP NAMED COLLECTION IF EXISTS odbc_collection;
     CREATE NAMED COLLECTION odbc_collection AS
-    connection_string = 'DSN={mysql_setup["DSN"]}',
-    table = '{table_name}';
+    connection_settings = 'DSN={mysql_setup["DSN"]}',
+    external_table = '{table_name}';
     """)
     assert node1.query("SELECT name FROM odbc(odbc_collection)") == "name1\nname2\n"
 
@@ -553,9 +553,9 @@ def test_table_engine_odbc_named_collection(started_cluster):
     node1.query(f"""
     DROP NAMED COLLECTION IF EXISTS engine_odbc_collection;
     CREATE NAMED COLLECTION engine_odbc_collection AS
-    connection_string = 'DSN={sqlite_setup["DSN"]}',
-    database_or_schema = '',
-    table = 't5';
+    connection_settings = 'DSN={sqlite_setup["DSN"]}',
+    external_database = '',
+    external_table = 't5';
     """)
     node1.query("CREATE TABLE SqliteODBCNamedCol (x Int32, y String, z String) ENGINE = ODBC(engine_odbc_collection)")
 
