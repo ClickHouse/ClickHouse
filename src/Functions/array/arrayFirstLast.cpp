@@ -234,7 +234,7 @@ Returns the first element in the source array for which `func(x[, y1, y2, ... yN
         {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_orNull = "Returns the first element of the source array for which `λ` is not `0`, otherwise returns `NULL`.";
+    FunctionDocumentation::ReturnedValue returned_value_orNull = "Returns the first element of the source array for which `func` is not `0`, otherwise returns `NULL`.";
     FunctionDocumentation::Examples examples_orNull = {
         {"Usage example", "SELECT arrayFirstOrNull(x, y -> x=y, ['a', 'b', 'c'], ['c', 'b', 'a'])", "b"},
         {"No match", "SELECT arrayFirstOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)", "NULL Nullable(UInt8)"}
@@ -256,13 +256,13 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
         {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_last = "Returns the last element of the source array for which `λ` is not `0`, otherwise returns the default value of `T`.";
+    FunctionDocumentation::ReturnedValue returned_value_last = "Returns the last element of the source array for which `func` is not `0`, otherwise returns the default value of `T`.";
     FunctionDocumentation::Examples examples_last = {
         {"Usage example", "SELECT arrayLast(x, y -> x=y, ['a', 'b', 'c'], ['a', 'b', 'c'])", "c"},
         {
             "No match",
             "SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)",
-            "0	UInt8"
+            "0 UInt8"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in_last = {1, 1};
