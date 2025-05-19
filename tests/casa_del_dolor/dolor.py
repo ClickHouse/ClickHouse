@@ -96,7 +96,6 @@ os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 
 cluster = ClickHouseCluster(__file__)
 servers = []
-logger.info(f"Starting cluster with {len(servers)} server(s) and server binary {current_server} ")
 for i in range(0, len(args.replica_values)):
     servers.append(cluster.add_instance(f"node{i}",
                                         with_dolor = True,
@@ -109,8 +108,10 @@ for i in range(0, len(args.replica_values)):
                                         main_configs = [server_settings] if server_settings is not None else [],
                                         user_configs = [args.user_config] if args.user_config is not None else [],
                                         macros={"replica": args.replica_values[i], "shard": args.shard_values[i]}))
-    logger.info(f"Server node{i} running on host {servers[0].ip_address}, port 9000")
 cluster.start()
+logger.info(f"Starting cluster with {len(servers)} server(s) and server binary {current_server} ")
+for i in range(0, len(args.replica_values)):
+    logger.info(f"Server node{i} running on host {servers[i].ip_address}, port 9000")
 servers[len(servers) - 1].wait_start(8)
 
 if args.with_postgresql:
