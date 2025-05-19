@@ -47,7 +47,7 @@ if (ENABLE_OPENSSL_ENCRYPTION)
     list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DENABLE_OPENSSL_ENCRYPTION")
 endif()
 
-set(USE_S2N ON)
+set(USE_S2N OFF)
 if (USE_S2N)
     list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DUSE_S2N")
 endif()
@@ -336,11 +336,11 @@ list(APPEND AWS_PUBLIC_INCLUDES "${AWS_CRT_DIR}/include/")
 
 
 # aws-c-mqtt
-file(GLOB AWS_MQTT_SRC
-    "${AWS_MQTT_DIR}/source/*.c"
-)
+# file(GLOB AWS_MQTT_SRC
+#     "${AWS_MQTT_DIR}/source/*.c"
+# )
 
-list(APPEND AWS_SOURCES ${AWS_MQTT_SRC})
+# list(APPEND AWS_SOURCES ${AWS_MQTT_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_MQTT_DIR}/include/")
 
 
