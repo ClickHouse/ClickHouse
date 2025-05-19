@@ -61,6 +61,92 @@ col1	Nullable(String)
 col2	Nullable(Int64)					
 col1	Nullable(String)					
 col2	Nullable(Int64)					
+test query syntax with table engine
+col1	Nullable(String)					
+col2	Nullable(Int64)					
+text	Nullable(String)					
+line1	1	text1
+line2	2	text2
+line3	3	text3
+test subquery syntax with table engine
+col1	Nullable(String)					
+col2	Nullable(Int64)					
+line2	2
+line3	3
+line4	4
+2
+3
+test query function with table function
+line1	1	text1
+line2	2	text2
+line3	3	text3
+test subquery with table function
+line2	2
+line3	3
+line4	4
+test write to sqlite table while reading from query
+name	Nullable(String)					
+price	Nullable(Float64)					
+adjusted_price	Nullable(Float64)					
+Item C	0.25	0.375
+Item A	0.5	0.75
+Item B	0.75	1.125
+Item C	0.25	0.375
+Item A	0.5	0.75
+Item D	0.625	0.9375
+Item B	0.75	1.125
+test complex queries with aggregation and schema inference
+client_id	Nullable(Int64)					
+total_amount	Nullable(Float64)					
+transaction_count	Nullable(Int64)					
+avg_amount	Nullable(Float64)					
+101	1.25	2	0.625
+102	0.625	2	0.3125
+103	0.125	1	0.125
+test complex query with table function
+101	1.25	2	0.625
+102	0.625	2	0.3125
+103	0.125	1	0.125
+test creating a table AS sqlite query
+id	Nullable(Int64)					
+name	Nullable(String)					
+price	Nullable(Float64)					
+adjusted_price	Nullable(Float64)					
+1	Item A	0.5	0.75
+2	Item B	0.75	1.125
+3	Item C	0.25	0.375
+4	Item D	0.625	0.9375
+test direct queries with conditions
+id	Nullable(Int64)					
+name	Nullable(String)					
+price	Nullable(Float64)					
+2	Item B	0.75
+4	Item D	0.625
+test filtering with string patterns
+2	Item B	0.75
+test query with all types and nulls
+id	Nullable(Int64)					
+int_val	Nullable(Int64)					
+real_val	Nullable(Float64)					
+text_val	Nullable(String)					
+null_val	Nullable(Int64)					
+1	123	0.5	text	\N
+2	\N	0.25	\N	0
+3	456	\N	more text	\N
+test union with different types
+id	Nullable(Int64)					
+int_val	Nullable(String)					
+1	0.5
+1	123
+2	0.25
+2	\N
+3	456
+3	\N
+test empty result inference
+id	Nullable(String)					
+name	Nullable(String)					
+price	Nullable(String)					
+clean up test tables
 SQLite truncated int64 value #73141
 clickhouse
 2147483648

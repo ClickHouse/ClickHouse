@@ -4,6 +4,7 @@
 
 #if USE_SQLITE
 #include <Storages/IStorage.h>
+#include <Storages/TableNameOrQuery.h>
 
 #include <sqlite3.h>
 
@@ -24,7 +25,7 @@ public:
         const StorageID & table_id_,
         SQLitePtr sqlite_db_,
         const String & database_path_,
-        const String & remote_table_name_,
+        const TableNameOrQuery & table_or_query_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
@@ -45,12 +46,12 @@ public:
 
     static ColumnsDescription getTableStructureFromData(
         const SQLitePtr & sqlite_db_,
-        const String & table);
+        const TableNameOrQuery & data_locator);
 
 private:
     friend class SQLiteSink; /// for write_context
 
-    String remote_table_name;
+    TableNameOrQuery table_or_query;
     String database_path;
     SQLitePtr sqlite_db;
     LoggerPtr log;
