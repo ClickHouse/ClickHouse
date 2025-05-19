@@ -26,8 +26,8 @@ constexpr size_t max_hrp_len = 83; // Note: if we only support segwit addresses,
 
 using bech32_data = std::vector<uint8_t>;
 
-/** Convert from one power-of-2 number base to another. 
- *  
+/** Convert from one power-of-2 number base to another.
+ *
  *  Function will convert a input vector of <frombits>-bit data to an output vector of <tobit>-bit data,
  *  padding the result if <pad> is true.
  *
@@ -37,7 +37,7 @@ using bech32_data = std::vector<uint8_t>;
  *
  *  The last 4 "extra" 0s in the output are padding, they will only be added if <pad> is true.
  *  If <pad> is false, no padding will be added and the function will return false if there are bits
- *  left over 
+ *  left over.
  */
 template <int frombits, int tobits, bool pad>
 bool convertbits(bech32_data & out, const bech32_data & in)
