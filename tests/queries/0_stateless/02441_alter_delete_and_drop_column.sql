@@ -22,7 +22,7 @@ select sleepEachRow(2) from url('http://localhost:8123/?param_tries={1..10}&quer
 
 system sync replica mut pull;
 
-select partition,name,uuid,part_type,active,marks,rows,refcount,partition_id,metadata_version from system.parts where database=currentDatabase() and table='mut';
+select partition,name,uuid,part_type,active,marks,rows,refcount,partition_id from system.parts where database=currentDatabase() and table='mut';
 select type, new_part_name, parts_to_merge from system.replication_queue where database=currentDatabase() and table='mut' and type != 'GET_PART';
 system start merges mut;
 set receive_timeout=30;
