@@ -161,8 +161,42 @@ public:
 
 REGISTER_FUNCTION(Empty)
 {
-    factory.registerFunction<FunctionEmptyOverloadResolver<true, NameNotEmpty>>();
-    factory.registerFunction<FunctionEmptyOverloadResolver<false, NameEmpty>>();
+    FunctionDocumentation::Description description_empty = R"(
+Checks whether the input array is empty.
+
+An array is considered empty if it does not contain any elements.
+
+:::note
+Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/operations/settings/settings#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+:::
+
+The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
+    )";
+    FunctionDocumentation::Description description_not_empty = R"(
+Checks whether the input array is non-empty.
+
+An array is considered non-empty if it contains at least one element.
+
+:::note
+Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+:::
+
+The function also works for [strings](string-functions.md#notempty) or [UUID](uuid-functions.md#notempty).
+    )";
+    FunctionDocumentation::Syntax syntax_empty = "empty(arr)";
+    FunctionDocumentation::Syntax syntax_not_empty = "notEmpty(arr)";
+    FunctionDocumentation::Arguments arguments = {{"arr", "Input array. [`Array(T)`](/sql-reference/data-types/array)."}};
+    FunctionDocumentation::ReturnedValue returned_value_empty = "Returns `1` for an empty array or `0` for a non-empty array. [`UInt8`](../data-types/int-uint.md).";
+    FunctionDocumentation::ReturnedValue returned_value_not_empty = "Returns `1` for a non-empty array or `0` for an empty array. [`UInt8`](../data-types/int-uint.md).";
+    FunctionDocumentation::Examples examples_empty = {{"Usage example", "SELECT empty([]);", "1"}};
+    FunctionDocumentation::Examples examples_not_empty = {{"Usage example", "SELECT notEmpty([1,2]);", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_empty = {description_empty, syntax_empty, arguments, returned_value_empty, examples_empty, introduced_in, category};
+    FunctionDocumentation documentation_not_empty = {description_not_empty, syntax_not_empty, arguments, returned_value_not_empty, examples_not_empty, introduced_in, category};
+
+    factory.registerFunction<FunctionEmptyOverloadResolver<true, NameNotEmpty>>(documentation_not_empty);
+    factory.registerFunction<FunctionEmptyOverloadResolver<false, NameEmpty>>(documentation_empty);
 
 }
 
