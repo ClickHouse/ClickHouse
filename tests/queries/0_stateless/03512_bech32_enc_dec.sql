@@ -50,6 +50,15 @@ INSERT INTO hex_data VALUES
 ('tb', 'b103a1937c6e2fb9de707a4be02d5d39e217b4bca7ce3c9c12', 0),
 ('bcrt', '95eb334ff82ef8ad76151c29094abdae6c9e8bb8244523e347', 2);
 
+-- test const hrp with column data
+SELECT bech32Encode('bc', unhex(data)) FROM hex_data limit 1;
+
+-- test const data with column hrp
+SELECT bech32Encode(hrp, unhex('6687112a6eadb4d88d29c7a45da56eff0c23b0e14e757d408e')) FROM hex_data limit 1;
+
+-- test column hrp and data with const witver
+SELECT bech32Encode(hrp, unhex(data), 1) FROM hex_data limit 1;
+
 -- for encoding, if using a FixedString column for the data it is crucial that there is no padding
 -- since the input is binary, there is no way to check for it
 CREATE TABLE bech32_test

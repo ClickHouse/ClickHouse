@@ -159,8 +159,8 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         bool have_witver = arguments.size() == 3;
-        const ColumnPtr & col0 = arguments[0].column;
-        const ColumnPtr & col1 = arguments[1].column;
+        ColumnPtr col0 = arguments[0].column->convertToFullColumnIfConst();
+        ColumnPtr col1 = arguments[1].column->convertToFullColumnIfConst();
         ColumnPtr col2;
         if (have_witver)
             col2 = arguments[2].column;
