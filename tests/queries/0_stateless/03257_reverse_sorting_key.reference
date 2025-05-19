@@ -1,17 +1,19 @@
 3
 8
 Sorting (Sorting for ORDER BY)
-Prefix sort description: __table1.i DESC
-Result sort description: __table1.i DESC
+Sort description: __table1.i DESC
 (Expression)
 ExpressionTransform
   (Limit)
   Limit
     (Sorting)
-      (Expression)
-      ExpressionTransform
-        (ReadFromMergeTree)
-        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+    MergeSortingTransform
+      LimitsCheckingTransform
+        PartialSortingTransform
+          (Expression)
+          ExpressionTransform
+            (ReadFromMergeTree)
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 99
 98
 97
@@ -38,17 +40,19 @@ ExpressionTransform
 3	1003
 6
 Sorting (Sorting for ORDER BY)
-Prefix sort description: __table1.i ASC, __table1.j DESC
+Prefix sort description: __table1.i ASC
 Result sort description: __table1.i ASC, __table1.j DESC
 (Expression)
 ExpressionTransform
   (Limit)
   Limit
     (Sorting)
-      (Expression)
-      ExpressionTransform
-        (ReadFromMergeTree)
-        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+    FinishSortingTransform
+      PartialSortingTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 0	1090
 0	1080
 0	1070
