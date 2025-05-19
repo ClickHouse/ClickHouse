@@ -1315,7 +1315,7 @@ Set the quoting style for identifiers in SHOW CREATE query
     DECLARE(String, output_format_png_pixel_output_format, "RGB", R"(
 Set pixel format for output png image
 )", 0) \
-    DECLARE(String, output_format_png_coordinates_format, "SCANLINE", R"(
+    DECLARE(String, output_format_png_coordinates_format, "IMPLICIT", R"(
 Defines the input format for pixel coordinates when generating PNG images
 
 Possible values:
