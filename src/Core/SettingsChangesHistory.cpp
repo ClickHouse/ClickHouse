@@ -67,8 +67,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.6",
+        {
+
+        });
         addSettingsChanges(settings_changes_history, "25.5",
         {
+            /// Release closed. Please use 25.6
             {"geotoh3_lon_lat_input_order", true, false, "A new setting for legacy behaviour to set lon and lat order"},
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
@@ -106,7 +111,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"input_format_parquet_allow_geoparquet_parser", false, true, "A new setting to use geo columns in parquet file"},
+            {"enable_url_encoding", true, false, "Changed existing setting's default value"},
             {"s3_slow_all_threads_after_network_error", false, true, "New setting"},
+            /// Release closed. Please use 25.6
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -753,8 +760,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.6",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
+            /// Release closed. Please use 25.6
             {"shared_merge_tree_enable_coordinated_merges", false, false, "New setting"},
             {"shared_merge_tree_merge_coordinator_merges_prepare_count", 100, 100, "New setting"},
             {"shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms", 10000, 10000, "New setting"},
@@ -767,7 +779,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_merge_worker_regular_timeout_ms", 10000, 10000, "New setting"},
             {"apply_patches_on_merge", true, true, "New setting"},
             {"remove_unused_patch_parts", true, true, "New setting"},
-            {"write_marks_for_substreams_in_compact_parts", false, true, "New setting"},
+            {"write_marks_for_substreams_in_compact_parts", false, false, "New setting"},
+            /// Release closed. Please use 25.6
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
