@@ -860,7 +860,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     /// Check that max_rows_per_postings_list is valid (if present)
     UInt64 max_rows_per_postings_list = getOption<UInt64>(options, ARGUMENT_MAX_ROWS).value_or(DEFAULT_MAX_ROWS_PER_POSTINGS_LIST);
-    if (max_rows_per_postings_list < MIN_ROWS_PER_POSTINGS_LIST)
+    if (max_rows_per_postings_list != UNLIMITED_ROWS_PER_POSTINGS_LIST && max_rows_per_postings_list < MIN_ROWS_PER_POSTINGS_LIST)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
             "GIN index '{}' should not be less than {}", ARGUMENT_MAX_ROWS, MIN_ROWS_PER_POSTINGS_LIST);

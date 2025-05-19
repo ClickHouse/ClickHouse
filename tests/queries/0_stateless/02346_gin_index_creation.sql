@@ -90,6 +90,17 @@ ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
+SELECT '-- max_rows_per_posting_list is set to unlimited rows.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE gin(tokenizer = 'default', max_rows_per_postings_list = 0)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
 SELECT '-- max_rows_per_posting_list should be at least 8192.';
 
 CREATE TABLE tab

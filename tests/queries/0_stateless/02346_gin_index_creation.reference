@@ -4,6 +4,7 @@ Test single tokenizer argument.
 Test ngram_size argument.
 -- ngram size must be between 2 and 8.
 Test max_rows_per_postings_list argument.
+-- max_rows_per_posting_list is set to unlimited rows.
 -- max_rows_per_posting_list should be at least 8192.
 Parameters are shuffled.
 Types are incorrect.
