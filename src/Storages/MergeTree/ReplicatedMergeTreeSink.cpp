@@ -1195,7 +1195,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::onStart()
 template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
 {
-    chassert(!isCancelled());
+    if (isCancelled())
+        return;
 
     const auto & settings = context->getSettingsRef();
     ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(

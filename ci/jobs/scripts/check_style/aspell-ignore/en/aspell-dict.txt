@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3275 
+personal_ws-1.1 en 3238
 AArch
 ACLs
 ALTERs
@@ -153,6 +153,7 @@ CapContains
 CapUnion
 CapnProto
 CapnProtoEnumComparingMode
+CardSecondary
 CatBoost
 CellAreaM
 CellAreaRads
@@ -1854,7 +1855,6 @@ formatter
 formatters
 fqdn
 frac
-freezed
 frictionless
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1965,6 +1965,7 @@ grpcio
 gtest
 gtid
 gzip
+gunzip
 gzipped
 hadoop
 halfMD
@@ -2213,9 +2214,13 @@ mapAll
 mapApply
 mapConcat
 mapContains
+mapContainsKey
 mapContainsKeyLike
+mapContainsValue
+mapContainsValueLike
 mapExists
 mapExtractKeyLike
+mapExtractValueLike
 mapFilter
 mapFromArrays
 mapKeys
@@ -2345,6 +2350,8 @@ namespace
 namespaces
 natively
 nats
+ncat
+netcat
 ness
 nestjs
 netloc

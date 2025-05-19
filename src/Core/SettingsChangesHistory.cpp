@@ -67,8 +67,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.6",
+        {
+
+        });
         addSettingsChanges(settings_changes_history, "25.5",
         {
+            /// Release closed. Please use 25.6
             {"geotoh3_lon_lat_input_order", true, false, "A new setting for legacy behaviour to set lon and lat order"},
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
@@ -104,7 +109,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"vector_search_postfilter_multiplier", 1, 1, "New setting"},
             {"compile_expressions", false, true, "We believe that the LLVM infrastructure behind the JIT compiler is stable enough to enable this setting by default."},
             {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
+            {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"input_format_parquet_allow_geoparquet_parser", false, true, "A new setting to use geo columns in parquet file"},
+            {"enable_url_encoding", true, false, "Changed existing setting's default value"},
+            {"s3_slow_all_threads_after_network_error", false, true, "New setting"},
+            /// Release closed. Please use 25.6
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -312,7 +321,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_parts_to_move", 0, 1000, "New setting"},
             {"hnsw_candidate_list_size_for_search", 64, 256, "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."},
             {"allow_reorder_prewhere_conditions", true, true, "New setting"},
-            {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
+            {"input_format_parquet_bloom_filter_push_down", false, false, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
             {"parallel_replicas_index_analysis_only_on_coordinator", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"},
             {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
@@ -749,11 +758,27 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.6",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
+            /// Release closed. Please use 25.6
+            {"shared_merge_tree_enable_coordinated_merges", false, false, "New setting"},
+            {"shared_merge_tree_merge_coordinator_merges_prepare_count", 100, 100, "New setting"},
+            {"shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms", 10000, 10000, "New setting"},
+            {"shared_merge_tree_merge_coordinator_max_merge_request_size", 20, 20, "New setting"},
+            {"shared_merge_tree_merge_coordinator_election_check_period_ms", 30000, 30000, "New setting"},
+            {"shared_merge_tree_merge_coordinator_min_period_ms", 1, 1, "New setting"},
+            {"shared_merge_tree_merge_coordinator_max_period_ms", 10000, 10000, "New setting"},
+            {"shared_merge_tree_merge_coordinator_factor", 2, 2, "New setting"},
+            {"shared_merge_tree_merge_worker_fast_timeout_ms", 100, 100, "New setting"},
+            {"shared_merge_tree_merge_worker_regular_timeout_ms", 10000, 10000, "New setting"},
             {"apply_patches_on_merge", true, true, "New setting"},
             {"remove_unused_patch_parts", true, true, "New setting"},
-            {"write_marks_for_substreams_in_compact_parts", false, true, "New setting"},
+            {"write_marks_for_substreams_in_compact_parts", false, false, "New setting"},
+            /// Release closed. Please use 25.6
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
