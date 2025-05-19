@@ -128,3 +128,13 @@ FROM (
         ['US', 'GB', 'DE', 'FR', 'IT'][number % 5 + 1] AS country_code
     FROM numbers(10)
 );
+
+SELECT 'From 02366_kql_func_dynamic.sql';
+SELECT if((NULL IS NULL) AND 
+   ((extract(toTypeName(['a', 'b', 'c']), 'Array\\((.*)\\)') AS element_type_3315726463) = 'String'),
+   defaultValueOfTypeName(
+       if(element_type_3315726463 = 'Nothing', 
+          'Nullable(Nothing)', 
+          element_type_3315726463)
+   ),
+   NULL) AS fill_value_3315726463;
