@@ -63,6 +63,7 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory);
 void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory);
 void registerDataLakeTableFunctions(TableFunctionFactory & factory);
 void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory);
+void registerTableFunctionPredict(TableFunctionFactory & factory);
 
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
 
