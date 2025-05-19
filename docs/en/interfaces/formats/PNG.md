@@ -4,7 +4,6 @@ description: 'Documentation for the PNG image output format'
 input_format: false
 keywords: ['PNG']
 output_format: true
-slug: /interfaces/formats/PNG
 title: 'PNG'
 ---
 
@@ -14,7 +13,7 @@ title: 'PNG'
 | ✗     | ✔      |   ✗   |
 
 	
-## Description {#description}
+## Description 
 
 Export query results directly as PNG images for visualization purposes. This format converts numeric data into pixel values, supporting `RGBA`, `RGB`, `Grayscale`, and `Binary` pixel formats with `8` or `16-bit` color depth and compression level control. You can control pixel coordinates explicitly or map each row to a pixel automatically (implicit).
 
@@ -35,7 +34,7 @@ Export query results directly as PNG images for visualization purposes. This for
 
 
 
-## Example Usage {#example-usage}
+## Example Usage 
 - `Implicit (row-per-pixel) coordinates` (default):
 ```sql
 SELECT 
@@ -70,7 +69,7 @@ SETTINGS
     output_format_png_max_height=6659
 ```
 
-## Format Settings {#format-settings}
+## Format Settings 
 When working with `PNG` format you can control settings:
 
 - `output_format_png_pixel_format`: Color channel: `RGBA`, `RGB` (default), `Grayscale` or `Binary`
@@ -83,7 +82,7 @@ When working with `PNG` format you can control settings:
 
 - `output_format_png_compression_level`: Image compression level. Possible range: `[-1, 9]`, where `0` is `no compression` and `9` is the `fastest`. Default: `-1` (approximately is at level `6`)
 
-- `output_format_png_coordinates_format`: Coordinates format. Possible values: `IMPLICIT` (default) - Row-per-pixel approach where only columns with pixel data is provided in scanline order (left to right, top to bottom) and `EXPLICIT` — Each pixel in your query is specified with explicit coordinates (x, y)
+- `output_format_png_coordinates_format`: Coordinates format. Possible values: `IMPLICIT` (default) - Row-per-pixel approach where only columns with pixel data as row-per-pixel order (left to right, top to bottom) and `EXPLICIT` — Each pixel in your query is specified with explicit coordinates (x, y)
 
 ### Requirements
 
