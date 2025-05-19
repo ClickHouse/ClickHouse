@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
             {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
+            {"min_outstreams_per_resize_after_split", UInt64(-1), 24, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -114,7 +115,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_url_encoding", true, false, "Changed existing setting's default value"},
             {"s3_slow_all_threads_after_network_error", false, true, "New setting"},
             /// Release closed. Please use 25.6
-            {"min_outstreams_per_resize_after_split", UInt64(-1), 24, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
