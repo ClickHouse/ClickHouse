@@ -346,7 +346,7 @@ If the number of elements is negative, the array is shifted to the right.
 Shifts an array to the right by the specified number of elements.
 New elements are filled with the provided argument or the default value of the array element type.
 If the number of elements is negative, the array is shifted to the left.
-)";
+    )";
     FunctionDocumentation::Syntax syntax_shiftright = "arrayShiftRight(arr, n[, default])";
     FunctionDocumentation::Arguments arguments_shiftright = {
         {"arr", "The array for which to shift the elements. [`Array(T)`](/sql-reference/data-types/array)."},
