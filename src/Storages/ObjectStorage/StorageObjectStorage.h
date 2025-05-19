@@ -281,7 +281,7 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
-    void updatePartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
+    void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
     const StorageObjectStorageSettings & getSettingsRef() const;
 

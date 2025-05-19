@@ -1410,7 +1410,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
 
     if (is_partitioned_implementation)
     {
-        auto partition_strategy = PartitionStrategyFactory::get(partition_by_ast, metadata_snapshot->getSampleBlock(), context, format_name, has_wildcards);
+        auto partition_strategy = PartitionStrategyFactory::get(partition_by_ast, metadata_snapshot->getSampleBlock(), context, format_name, urlWithGlobs(uri), "wildcard", true);
 
         return std::make_shared<PartitionedStorageURLSink>(
             partition_strategy,

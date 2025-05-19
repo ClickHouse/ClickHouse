@@ -47,18 +47,18 @@ struct PartitionStrategyFactory
         const Block & sample_block,
         ContextPtr context,
         const std::string & file_format,
-        bool has_partition_wildcard,
-        const std::string & partition_strategy = "wildcard",
-        bool partition_columns_in_data_file = false);
+        bool globbed_path,
+        const std::string & partition_strategy,
+        bool partition_columns_in_data_file);
 
     static std::shared_ptr<PartitionStrategy> get(
         ASTPtr partition_by,
         const NamesAndTypesList & partition_columns,
         ContextPtr context,
         const std::string & file_format,
-        bool has_partition_wildcard,
-        const std::string & partition_strategy = "wildcard",
-        bool partition_columns_in_data_file = false);
+        bool globbed_path,
+        const std::string & partition_strategy,
+        bool partition_columns_in_data_file);
 };
 
 struct StringifiedPartitionStrategy : PartitionStrategy

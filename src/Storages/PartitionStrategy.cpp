@@ -82,34 +82,6 @@ namespace
 
         return result;
     }
-
-    void sanityCheckPartitioningConfiguration(
-            const std::string & partition_strategy,
-            bool has_partition_wildcard)
-    {
-        if (!PartitionStrategy::partition_strategy_to_wildcard_acceptance.contains(partition_strategy))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Unknown partitioning style '{}'",
-                            partition_strategy);
-        }
-
-        bool partition_strategy_supports_wildcard = PartitionStrategy::partition_strategy_to_wildcard_acceptance.at(partition_strategy);
-
-        if (has_partition_wildcard && !partition_strategy_supports_wildcard)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The {} wildcard can't be used with {} partitioning style",
-                            PartitionedSink::PARTITION_ID_WILDCARD, partition_strategy);
-        }
-
-        if (!has_partition_wildcard && partition_strategy_supports_wildcard)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Partitioning style '{}' requires {} wildcard",
-                            partition_strategy,
-                            PartitionedSink::PARTITION_ID_WILDCARD);
-        }
-    }
 }
 
 std::unordered_map<std::string, bool> PartitionStrategy::partition_strategy_to_wildcard_acceptance =
@@ -130,18 +102,21 @@ const NamesAndTypesList & PartitionStrategy::getPartitionColumns() const
     return partition_columns;
 }
 
-std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partition_by,
-                                                                 const Block & sample_block,
-                                                                 ContextPtr context,
-                                                                 const std::string & file_format,
-                                                                 bool has_partition_wildcard,
-                                                                 const std::string & partition_strategy,
-                                                                 bool partition_columns_in_data_file)
+struct HivePartitionStrategyFactory
 {
-    sanityCheckPartitioningConfiguration(partition_strategy, has_partition_wildcard);
-
-    if (partition_strategy == "hive")
+    static std::shared_ptr<PartitionStrategy> get(
+        ASTPtr partition_by,
+        const Block & sample_block,
+        ContextPtr context,
+        const std::string & file_format,
+        bool globbed_path,
+        bool partition_columns_in_data_file)
     {
+        if (globbed_path)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with a globbed path", "hive");
+        }
+
         if (file_format.empty())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File format can't be empty for hive style partitioning");
@@ -154,15 +129,67 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partitio
             file_format,
             partition_columns_in_data_file);
     }
+};
 
-    return std::make_shared<StringifiedPartitionStrategy>(partition_by, sample_block, context);
+struct WildcardPartitionStrategyFactory
+{
+    static std::shared_ptr<PartitionStrategy> get(
+        ASTPtr partition_by,
+        const Block & sample_block,
+        ContextPtr context,
+        bool partition_columns_in_data_file)
+    {
+        if (!partition_columns_in_data_file)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with partition_columns_in_data_file=0", "wildcard");
+        }
+
+        // in theory, we should not accept wildcard partition strategy without a wildcard in the path
+        // but it has been made that way by default, it just won't include the partition id in the filepath
+
+        return std::make_shared<StringifiedPartitionStrategy>(partition_by, sample_block, context);
+    }
+};
+
+std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partition_by,
+                                                                 const Block & sample_block,
+                                                                 ContextPtr context,
+                                                                 const std::string & file_format,
+                                                                 bool globbed_path,
+                                                                 const std::string & partition_strategy,
+                                                                 bool partition_columns_in_data_file)
+{
+    if (!partition_by)
+    {
+        return nullptr;
+    }
+
+    if (partition_strategy == "hive")
+    {
+        return HivePartitionStrategyFactory::get(
+            partition_by,
+            sample_block,
+            context,
+            file_format,
+            globbed_path,
+            partition_columns_in_data_file);
+    }
+
+    if (partition_strategy == "wildcard")
+    {
+        return WildcardPartitionStrategyFactory::get(partition_by, sample_block, context, partition_columns_in_data_file);
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unknown partitioning style '{}'",
+                partition_strategy);
 }
 
 std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partition_by,
                                                                  const NamesAndTypesList & partition_columns,
                                                                  ContextPtr context,
                                                                  const std::string & file_format,
-                                                                 bool has_partition_wildcard,
+                                                                 bool globbed_path,
                                                                  const std::string & partition_strategy,
                                                                  bool partition_columns_in_data_file)
 {
@@ -172,7 +199,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partitio
         block.insert({partition_column.type, partition_column.name});
     }
 
-    return get(partition_by, block, context, file_format, has_partition_wildcard, partition_strategy, partition_columns_in_data_file);
+    return get(partition_by, block, context, file_format, globbed_path, partition_strategy, partition_columns_in_data_file);
 }
 
 StringifiedPartitionStrategy::StringifiedPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)

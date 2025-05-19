@@ -119,7 +119,7 @@ StorageObjectStorage::StorageObjectStorage(
                 configuration->updateAndGetCurrentSchema(object_storage, context);
             else
                 configuration->update(object_storage, context);
-            configuration->updatePartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+            configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
         }
         catch (...)
         {
@@ -266,7 +266,7 @@ void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
-void StorageObjectStorage::Configuration::updatePartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
+void StorageObjectStorage::Configuration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
     // todo arthur move this inside the factory
     if (partition_strategy_name == "hive")
@@ -299,7 +299,7 @@ void StorageObjectStorage::Configuration::updatePartitionStrategy(ASTPtr partiti
         columns.getOrdinary(),
         context,
         format,
-        withPartitionWildcard(),
+        withGlobs(),
         partition_strategy_name,
         partition_columns_in_data_file);
 }
