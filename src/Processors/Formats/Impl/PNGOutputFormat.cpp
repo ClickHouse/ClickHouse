@@ -13,13 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int UNKNOWN_FORMAT;
-extern const int LOGICAL_ERROR;
-extern const int TOO_MANY_ROWS;
-}
-
 namespace
 {
 constexpr auto FORMAT_NAME = "PNG";

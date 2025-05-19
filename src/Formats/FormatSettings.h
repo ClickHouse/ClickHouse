@@ -496,7 +496,7 @@ struct FormatSettings
 
     enum class PNGCoordinatesFormat : uint8_t
     {
-        IMPLICIT, ///< Row-per-pixel 
+        IMPLICIT,
         EXPLICIT
     };
 

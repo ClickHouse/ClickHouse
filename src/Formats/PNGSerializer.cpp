@@ -155,7 +155,6 @@ public:
     void clear()
     {
         pixels.clear();
-        /// std::fill(pixels.begin(), pixels.end(), std::byte(0));
         processed_input_rows = 0;
         src_columns.clear();
     }

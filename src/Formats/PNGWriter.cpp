@@ -57,7 +57,7 @@ std::map<String, int> PNGWriter::color_type_mapping = {
     {"RGB", PNG_COLOR_TYPE_RGB},
     {"RGBA", PNG_COLOR_TYPE_RGBA},
 };
-   
+
 PNGWriter::PNGWriter(WriteBuffer & out_, const FormatSettings & settings_)
     : out(out_)
     , settings(settings_)

@@ -1339,8 +1339,8 @@ Default value: 4096
 Defines the color depth (in bits) for generated PNG images
 
 Possible values:
-- 8: 8-bit 
-- 16: 16-bit
+- 8: 8 bit 
+- 16: 16 bit
 
 Default value: 8
 )", 0) \
