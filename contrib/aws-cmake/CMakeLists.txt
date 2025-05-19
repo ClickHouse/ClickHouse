@@ -26,6 +26,7 @@ include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsThreadAffinity.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsThreadName.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsSIMD.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-crt-cpp/cmake/AwsGetVersion.cmake")
+set (AWS_STUBS "${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/aws_stubs.cpp")
 
 
 # Gather sources and options.
@@ -387,6 +388,8 @@ file(GLOB AWS_SDK_GLUE_SRC
 
 list(APPEND AWS_SOURCES ${AWS_SDK_GLUE_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_GLUE_DIR}/include/")
+
+list(APPEND AWS_SOURCES ${AWS_STUBS})
 
 # Add library.
 add_library(_aws ${AWS_SOURCES})
