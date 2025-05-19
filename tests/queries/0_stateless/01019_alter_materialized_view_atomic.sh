@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-debug
+# Tags: no-fasttest, no-debug, no-flaky-check
+# no-flaky-check: some queries are too long with Thread Fuzzer
 
 set -e
 

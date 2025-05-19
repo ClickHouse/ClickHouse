@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: race
+# Tags: race, no-flaky-check
+# no-flaky-check: some queries are too long with Thread Fuzzer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
