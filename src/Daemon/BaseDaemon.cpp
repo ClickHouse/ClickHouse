@@ -4,7 +4,7 @@
 #include <base/errnoToString.h>
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
-#include <Daemon/SentryWriter.h>
+#include <Daemon/CrashWriter.h>
 #include <Common/GWPAsan.h>
 
 #include <sys/stat.h>
@@ -138,7 +138,6 @@ BaseDaemon::~BaseDaemon()
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
         HandledSignals::instance().reset();
-        SentryWriter::resetInstance();
     }
     catch (...)
     {
@@ -413,25 +412,22 @@ extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
-    SentryWriter::initializeInstance(config());
+    CrashWriter::initialize(config());
     if (config().getBool("send_crash_reports.enabled", false)
-        && config().getBool("send_crash_reports.send_logical_errors", false))
+        && config().getBool("send_crash_reports.send_logical_errors", false)
+        && CrashWriter::initialized())
     {
-        /// In release builds send it to sentry (if it is configured)
-        if (auto * sentry = SentryWriter::getInstance())
+        LOG_DEBUG(&logger(), "Sending logical errors is enabled");
+        Exception::callback = [](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
         {
-            LOG_DEBUG(&logger(), "Sending logical errors to sentry is enabled");
-            Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+            if (!remote && code == ErrorCodes::LOGICAL_ERROR)
             {
-                if (!remote && code == ErrorCodes::LOGICAL_ERROR)
-                {
-                    SentryWriter::FramePointers frame_pointers;
-                    for (size_t i = 0; i < trace.size(); ++i)
-                        frame_pointers[i] = trace[i];
-                    sentry->onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
-                }
-            };
-        }
+                CrashWriter::FramePointers frame_pointers;
+                for (size_t i = 0; i < trace.size(); ++i)
+                    frame_pointers[i] = trace[i];
+                CrashWriter::onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
+            }
+        };
     }
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
