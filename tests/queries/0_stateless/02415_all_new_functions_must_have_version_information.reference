@@ -104,7 +104,6 @@ age
 alphaTokens
 and
 appendTrailingCharIfAbsent
-arrayAUCPR
 arrayConcat
 arrayCount
 arrayCumSum
@@ -114,15 +113,10 @@ arrayDotProduct
 arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
-arrayFill
-arrayFilter
 arrayLastIndex
 arrayLevenshteinDistance
 arrayLevenshteinDistanceWeighted
-arrayMap
-arrayROCAUC
 arrayRandomSample
-arrayReverseFill
 arrayRotateLeft
 arrayRotateRight
 arrayShiftLeft

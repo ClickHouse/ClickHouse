@@ -88,7 +88,6 @@ age
 alphaTokens
 and
 appendTrailingCharIfAbsent
-arrayAUCPR
 arrayConcat
 arrayCount
 arrayCumSum
@@ -98,13 +97,8 @@ arrayDotProduct
 arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
-arrayFill
-arrayFilter
 arrayLastIndex
-arrayMap
-arrayROCAUC
 arrayRandomSample
-arrayReverseFill
 arrayStringConcat
 asinh
 assumeNotNull

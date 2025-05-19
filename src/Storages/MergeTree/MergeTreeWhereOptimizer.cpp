@@ -560,11 +560,6 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         if (function_name == "arrayJoin")
             return true;
 
-        /// disallow GLOBAL IN, GLOBAL NOT IN
-        /// TODO why?
-        if (function_name == "globalIn" || function_name == "globalNotIn")
-            return true;
-
         size_t arguments_size = function_node.getArgumentsSize();
         for (size_t i = 0; i < arguments_size; ++i)
         {
