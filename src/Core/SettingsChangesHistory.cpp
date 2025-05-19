@@ -69,7 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.6",
         {
-
+            {"parallel_replicas_connect_timeout_ms", 1000, 300, "A new setting for legacy behaviour to set lon and lat order"},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {

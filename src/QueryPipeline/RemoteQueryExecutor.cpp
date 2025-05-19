@@ -101,7 +101,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     create_connections = [this, pool, throttler, extension_, connection_pool_with_failover_](AsyncCallback)
     {
         const Settings & settings = context->getSettingsRef();
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings)
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings)
                             .withUnsecureConnectionTimeout(settings[Setting::parallel_replicas_connect_timeout_ms])
                             .withSecureConnectionTimeout(settings[Setting::parallel_replicas_connect_timeout_ms]);
 
