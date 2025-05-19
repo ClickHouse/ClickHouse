@@ -1,15 +1,3 @@
-#!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
-
-CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
-. "$CUR_DIR"/../shell_config.sh
-
-config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/03448_headers_conf.xml
-config_path_tmp=$config_path.tmp
-
-# Create temporary config
-cat > "$config_path" <<EOF
 <clickhouse>
     <http_handlers>
         <common_http_response_headers>
@@ -111,7 +99,7 @@ cat > "$config_path" <<EOF
             <handler>
                 <type>js</type>
                 <http_response_headers>
-                    <X-My-Answer>Iam js/lz-string</X-My-Answer>
+                    <X-My-Answer>Iam js/lz-string.js</X-My-Answer>
                 </http_response_headers>
             </handler>
         </rule>
@@ -156,17 +144,3 @@ cat > "$config_path" <<EOF
         </rule>
     </http_handlers>
 </clickhouse>
-EOF
-
-$CLICKHOUSE_CLIENT -m --query "
-set send_logs_level='fatal';
-SYSTEM RELOAD CONFIG"
-
-for endpoint in static ping replicas_status play dashboard binary merges metrics "js/lz-string.js" "js/uplot.js" "?query=SELECT%201"; do
-  ${CLICKHOUSE_CURL} -I "http://localhost:8123/$endpoint" 2>&1 | grep -i 'X-My-Answer';
-  ${CLICKHOUSE_CURL} -I "http://localhost:8123/$endpoint" 2>&1 | grep -i 'X-My-Common-Header';
-done
-
-${CLICKHOUSE_CURL} -I -H 'PARAMS_XXX:test_param' "http://localhost:8123/query_param_with_url" 2>&1 | grep -i 'X-My-Answer'
-${CLICKHOUSE_CURL} -I -H 'PARAMS_XXX:test_param' "http://localhost:8123/query_param_with_url" 2>&1 | grep -i 'X-My-Common-Header'
-
