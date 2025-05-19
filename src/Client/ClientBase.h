@@ -27,6 +27,11 @@
 
 #include <boost/program_options.hpp>
 
+#include <atomic>
+#include <optional>
+#include <string_view>
+#include <string>
+
 namespace po = boost::program_options;
 
 
