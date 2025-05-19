@@ -6,7 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
-#include "bech32.h"
+#include <bech32.h>
 
 namespace
 {

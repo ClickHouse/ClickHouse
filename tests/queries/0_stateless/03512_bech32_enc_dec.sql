@@ -21,13 +21,12 @@ select bech32Encode('bc', unhex('751E76E8199196D454941C45D1B3A323F1433BD6'));
 -- 51 chars should return nothing
 select bech32Encode('', unhex('751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d45494a'));
 
--- test with explicit witver = 0, should be same as default
-select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0) == 
+-- test with explicit witver = 1, should be same as default
+select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 1) == 
        bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
 
--- testing bech32m algo
-select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 1);
-select bech32Encode('tb', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 2);
+-- testing old bech32 algo
+select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0);
 
 -- witversions >=1 should all be the same
 select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 1) == 
