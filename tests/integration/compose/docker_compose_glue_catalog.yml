@@ -1,7 +1,6 @@
 services:
   glue:
     image: motoserver/moto
-    container_name: glue
     ports:
       - 3000:3000
     environment:
