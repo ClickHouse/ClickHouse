@@ -766,7 +766,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_merge_worker_regular_timeout_ms", 10000, 10000, "New setting"},
             {"apply_patches_on_merge", true, true, "New setting"},
             {"remove_unused_patch_parts", true, true, "New setting"},
-            {"write_marks_for_substreams_in_compact_parts", false, true, "New setting"},
+            {"write_marks_for_substreams_in_compact_parts", false, false, "New setting"},
+            /// Release closed. Please use 25.6
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
