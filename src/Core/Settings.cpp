@@ -3651,7 +3651,7 @@ If enabled, functions 'least' and 'greatest' return NULL if one of their argumen
     DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
 Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 )", 0) \
-    DECLARE(Bool, geotoh3_lon_lat_input_order, false, R"(
+    DECLARE(Bool, geotoh3_lon_lat_argument_order, false, R"(
 Function 'geoToH3' accepts (lon, lat) if true, otherwise (lat, lon).
 )", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
