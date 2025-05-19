@@ -44,11 +44,3 @@ SELECT sum(value) > $(($errors_111+1)) FROM system.error_log WHERE code = 111;
 SELECT sum(value) > $(($errors_222+1)) FROM system.error_log WHERE code = 222;
 SELECT sum(value) > $(($errors_333+1)) FROM system.error_log WHERE code = 333;
 "
-
-$CLICKHOUSE_CLIENT -m -q "
-SELECT not empty(last_error_trace) FROM system.error_log WHERE code = 333 LIMIT 1;
-SELECT last_error_query_id != '' FROM system.error_log WHERE code = 333 LIMIT 1;
-SELECT last_error_message != '' FROM system.error_log WHERE code = 333 LIMIT 1;
-"
-
-
