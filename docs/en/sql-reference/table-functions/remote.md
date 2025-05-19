@@ -27,23 +27,14 @@ remoteSecure(named_collection[, option=value [,..]])
 
 ## Parameters {#parameters}
 
-- `addresses_expr` — A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.
-
-    The `host` can be specified as a server name, or as a IPv4 or IPv6 address. An IPv6 address must be specified in square brackets.
-
-    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](../../operations/server-configuration-parameters/settings.md#tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#tcp_port_secure) for table function `remoteSecure` (by default, 9440).
-
-    For IPv6 addresses, a port is required.
-
-    If only parameter `addresses_expr` is specified, `db` and `table` will use `system.one` by default.
-
-    Type: [String](../../sql-reference/data-types/string.md).
-
-- `db` — Database name. Type: [String](../../sql-reference/data-types/string.md).
-- `table` — Table name. Type: [String](../../sql-reference/data-types/string.md).
-- `user` — User name. If not specified, `default` is used. Type: [String](../../sql-reference/data-types/string.md).
-- `password` — User password. If not specified, an empty password is used. Type: [String](../../sql-reference/data-types/string.md).
-- `sharding_key` — Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+| Argument       | Description                                                                                                                                                                                                                                                                                                                                                        |
+|----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `addresses_expr` | A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.<br><br>    The `host` can be specified as a server name, or as a IPv4 or IPv6 address. An IPv6 address must be specified in square brackets.<br><br>    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](../../operations/server-configuration-parameters/settings.md#tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#tcp_port_secure) for table function `remoteSecure` (by default, 9440).<br><br>    For IPv6 addresses, a port is required.<br><br>    If only parameter `addresses_expr` is specified, `db` and `table` will use `system.one` by default.<br><br>    Type: [String](../../sql-reference/data-types/string.md). |
+| `db`           | Database name. Type: [String](../../sql-reference/data-types/string.md).                                                                                                                                                                                                                                                                                             |
+| `table`        | Table name. Type: [String](../../sql-reference/data-types/string.md).                                                                                                                                                                                                                                                                                               |
+| `user`         | User name. If not specified, `default` is used. Type: [String](../../sql-reference/data-types/string.md).                                                                                                                                                                                                                                                         |
+| `password`     | User password. If not specified, an empty password is used. Type: [String](../../sql-reference/data-types/string.md).                                                                                                                                                                                                                                             |
+| `sharding_key` | Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](../../sql-reference/data-types/int-uint.md).                                                                                                                                                 |
 
 Arguments also can be passed using [named collections](operations/named-collections.md).
 

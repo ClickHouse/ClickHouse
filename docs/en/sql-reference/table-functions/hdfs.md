@@ -14,21 +14,25 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 Creates a table from files in HDFS. This table function is similar to the [url](../../sql-reference/table-functions/url.md) and [file](../../sql-reference/table-functions/file.md) table functions.
 
+## Syntax {#syntax}
+
 ```sql
 hdfs(URI, format, structure)
 ```
 
-**Input parameters**
+## Arguments {#arguments}
 
-- `URI` — The relative URI to the file in HDFS. Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, \``'abc', 'def'` — strings.
-- `format` — The [format](/sql-reference/formats) of the file.
-- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
+| Argument  | Description                                                                                                                                                              |
+|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `URI`     | The relative URI to the file in HDFS. Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc', 'def'` — strings. |
+| `format`  | The [format](/sql-reference/formats) of the file.                                                                                                                          |
+| `structure`| Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                           |
 
-**Returned value**
+## Returned value {#returned_value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
-**Example**
+**example**
 
 Table from `hdfs://hdfs1:9000/test` and selection of the first two rows from it:
 
@@ -124,6 +128,6 @@ SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
 - [hdfs_create_new_file_on_insert](operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [hdfs_skip_empty_files](operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
-**See Also**
+## Related {#related}
 
 - [Virtual columns](../../engines/table-engines/index.md#table_engines-virtual_columns)
