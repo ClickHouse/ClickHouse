@@ -182,3 +182,6 @@ transform without default - leave String
 109	IT	IT	String
 From 02366_kql_func_dynamic.sql
 
+toBool(LowCardinality(Nullable(String))) from if
+\N	LowCardinality(Nullable(Bool))
+true	LowCardinality(Nullable(Bool))
