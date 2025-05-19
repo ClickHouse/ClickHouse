@@ -10,7 +10,7 @@ CREATE TABLE tab
 (
     id UInt32,
     str String,
-    INDEX inv_idx(str) TYPE gin(0) GRANULARITY 1
+    INDEX inv_idx(str) TYPE gin(tokenizer = 'default') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id
