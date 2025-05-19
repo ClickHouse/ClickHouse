@@ -1,4 +1,5 @@
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/Utils.h>
 #include <IO/Operators.h>
@@ -37,6 +38,77 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     children[join_expression_child_index] = std::move(join_expression_);
 }
 
+/// There is a special workaround for the case when ARRAY JOIN alias is used in USING statement.
+/// Example: ... ARRAY JOIN arr AS dummy INNER JOIN system.one USING (dummy);
+///
+/// In case of ARRAY JOIN, the column is renamed, so the query tree will look like:
+/// JOIN EXPRESSION
+/// LIST
+///   COLUMN id: 16, column_name: dummy
+///     EXPRESSION
+///       LIST
+///         COLUMN id: 18, column_name: __array_join_exp_1
+///         COLUMN id: 19, column_name: dummy
+///
+/// Previously, when we convert QueryTree back to ast, the query would look like:
+/// ARRAY JOIN arr AS __array_join_exp_1 ALL INNER JOIN system.one USING (__array_join_exp_1)
+/// Which is incorrect query (which is broken in distributed case) because system.one do not have __array_join_exp_1.
+///
+/// In order to mitigate this, the syntax 'USING (__array_join_exp_1 AS dummy)' is introduced,
+/// which means that '__array_join_exp_1' is taken from left, 'dummy' is taken from right,
+/// and the USING column name is also 'dummy'
+///
+/// See 03448_analyzer_array_join_alias_in_join_using_bug
+static ASTPtr tryMakeUsingColumnASTWithAlias(const QueryTreeNodePtr & node)
+{
+    const auto * column_node = node->as<ColumnNode>();
+    if (!column_node)
+        return nullptr;
+
+    const auto & expr = column_node->getExpression();
+    if (!expr)
+        return nullptr;
+
+    const auto * expr_list_node = expr->as<ListNode>();
+    if (!expr_list_node)
+        return nullptr;
+
+    if (expr_list_node->getNodes().size() != 2)
+        return nullptr;
+
+    const auto * lhs_column_node = expr_list_node->getNodes()[0]->as<ColumnNode>();
+    const auto * rhs_column_node = expr_list_node->getNodes()[1]->as<ColumnNode>();
+    if (!lhs_column_node || !rhs_column_node)
+        return nullptr;
+
+    if (lhs_column_node->getColumnName() == rhs_column_node->getColumnName())
+        return nullptr;
+
+    auto node_ast = std::make_shared<ASTIdentifier>(lhs_column_node->getColumnName());
+    node_ast->setAlias(rhs_column_node->getColumnName());
+    return node_ast;
+}
+
+static ASTPtr makeUsingAST(const QueryTreeNodePtr & node)
+{
+    const auto & list_node = node->as<ListNode &>();
+
+    auto expr_list = std::make_shared<ASTExpressionList>();
+    expr_list->children.reserve(list_node.getNodes().size());
+
+    for (const auto & child : list_node.getNodes())
+    {
+        ASTPtr node_ast = tryMakeUsingColumnASTWithAlias(child);
+
+        if (!node_ast)
+            node_ast = child->toAST();
+
+        expr_list->children.push_back(std::move(node_ast));
+    }
+
+    return expr_list;
+}
+
 ASTPtr JoinNode::toASTTableJoin() const
 {
     auto join_ast = std::make_shared<ASTTableJoin>();
@@ -46,16 +118,14 @@ ASTPtr JoinNode::toASTTableJoin() const
 
     if (children[join_expression_child_index])
     {
-        auto join_expression_ast = children[join_expression_child_index]->toAST();
-
         if (is_using_join_expression)
         {
-            join_ast->using_expression_list = join_expression_ast;
+            join_ast->using_expression_list = makeUsingAST(children[join_expression_child_index]);
             join_ast->children.push_back(join_ast->using_expression_list);
         }
         else
         {
-            join_ast->on_expression = join_expression_ast;
+            join_ast->on_expression = children[join_expression_child_index]->toAST();
             join_ast->children.push_back(join_ast->on_expression);
         }
     }

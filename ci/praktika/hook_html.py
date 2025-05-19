@@ -4,17 +4,16 @@ import os
 from pathlib import Path
 from typing import List
 
-from praktika.utils import Shell
-
 from ._environment import _Environment
 from .gh import GH
 from .info import Info
 from .parser import WorkflowConfigParser
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
-from .s3 import S3, StorageUsage
+from .s3 import S3
 from .settings import Settings
-from .utils import Utils
+from .usage import ComputeUsage, StorageUsage
+from .utils import Shell, Utils
 
 
 @dataclasses.dataclass
@@ -99,7 +98,9 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path):
+        if not S3.copy_file_from_s3(
+            s3_path=s3_path, local_path=local_path, no_strict=True
+        ):
             print(f"WARNING: failed to cp file [{s3_path}] from s3")
             return []
         return cls.from_json(local_path)
@@ -111,7 +112,9 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_to_s3(s3_path=s3_path, local_path=local_path, text=True):
+        if not S3.copy_file_to_s3(
+            s3_path=s3_path, local_path=local_path, text=True, no_strict=True
+        ):
             print(f"WARNING: failed to cp file [{local_path}] to s3")
 
     @classmethod
@@ -139,9 +142,11 @@ class HtmlRunnerHooks:
                 # fetch running status with start_time for current job
                 result = Result.from_fs(job.name)
             else:
-                result = Result.generate_pending(job.name)
+                result = Result.create_new(job.name, Result.Status.PENDING)
             results.append(result)
-        summary_result = Result.generate_pending(_workflow.name, results=results)
+        summary_result = Result.create_new(
+            _workflow.name, Result.Status.RUNNING, results=results
+        )
         summary_result.start_time = Utils.timestamp()
         summary_result.links.append(env.CHANGE_URL)
         summary_result.links.append(env.RUN_URL)
@@ -197,18 +202,26 @@ class HtmlRunnerHooks:
                         sha=cache_record.sha,
                         job_name=skipped_job,
                     )
-                    result = Result.generate_skipped(
-                        skipped_job, [report_link], "reused from cache"
+                    result = Result.create_new(
+                        skipped_job,
+                        Result.Status.SKIPPED,
+                        [report_link],
+                        "reused from cache",
                     )
                 else:
-                    result = Result.generate_skipped(
-                        skipped_job, info=filtered_job_and_reason[skipped_job]
+                    result = Result.create_new(
+                        skipped_job,
+                        Result.Status.SKIPPED,
+                        info=filtered_job_and_reason[skipped_job],
                     )
                 results.append(result)
             if results:
-                assert _ResultS3.update_workflow_results(
-                    _workflow.name, new_sub_results=results
-                )
+                assert (
+                    _ResultS3.update_workflow_results(
+                        _workflow.name, new_sub_results=results
+                    )
+                    is None
+                ), "Workflow status supposed to remain 'running'"
 
     @classmethod
     def pre_run(cls, _workflow, _job):
@@ -291,6 +304,11 @@ class HtmlRunnerHooks:
             new_sub_results=new_sub_results,
             workflow_name=_workflow.name,
             storage_usage=storage_usage,
+            compute_usage=ComputeUsage().set_usage(
+                runner_str="_".join(_job.runs_on),
+                duration=result.duration,
+                job_name=_job.name,
+            ),
         )
 
         if updated_status:

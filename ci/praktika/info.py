@@ -114,6 +114,10 @@ class Info:
         return self.env.EVENT_TYPE == "push"
 
     @property
+    def is_dispatch_event(self):
+        return self.env.EVENT_TYPE == "dispatch"
+
+    @property
     def instance_lifecycle(self):
         return self.env.INSTANCE_LIFE_CYCLE
 
@@ -192,7 +196,11 @@ class Info:
             return custom_data.get(key, None)
         return custom_data
 
-    def store_exception_traceback(self):
+    def get_changed_files(self):
+        custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
+        return custom_data.get("changed_files", None)
+
+    def store_traceback(self):
         self.env.TRACEBACKS.append(traceback.format_exc())
         self.env.dump()
 

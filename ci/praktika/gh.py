@@ -121,7 +121,7 @@ class GH:
         except Exception:
             print("ERROR: Failed to get PR data")
             traceback.print_exc()
-            Info().store_exception_traceback()
+            Info().store_traceback()
             return "", "", []
         return title, body, labels
 
@@ -146,6 +146,7 @@ class GH:
         :param repo:
         :return: True or False in case of error
         """
+        description = description.replace("'", "'\"'\"'")  # escape single quote
         status = cls.convert_to_gh_status(status)
         repo = _Environment.get().REPOSITORY
         command = (

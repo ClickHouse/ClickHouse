@@ -44,7 +44,8 @@ public:
         const std::string & path,
         bool throw_on_bad_incl = false,
         bool log_to_console = false,
-        const Substitutions & substitutions = Substitutions());
+        const Substitutions & substitutions = Substitutions(),
+        bool throw_on_bad_include_from = true);
 
     /// Perform config includes and substitutions and return the resulting XML-document.
     ///
@@ -146,6 +147,7 @@ private:
     std::string preprocessed_path;
 
     bool throw_on_bad_incl;
+    bool throw_on_bad_include_from;
 
     LoggerPtr log;
     Poco::AutoPtr<Poco::Channel> channel_ptr;

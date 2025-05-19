@@ -64,7 +64,8 @@ namespace ErrorCodes
 
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=]([[maybe_unused]] const String & name,
+                                   [[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const String & config_prefix,
                                    Block & ,
