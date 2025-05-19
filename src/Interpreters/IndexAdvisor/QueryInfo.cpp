@@ -81,6 +81,13 @@ bool isDropViewQuery(const String & query)
     return false;
 }
 
+bool isSetQuery(const String & query)
+{
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, "", DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    return ast->as<ASTSetQuery>();
+}
+
 }
 
 QueryInfo::QueryInfo(const String & path, ContextMutablePtr context_)
@@ -99,6 +106,10 @@ QueryInfo::QueryInfo(const String & path, ContextMutablePtr context_)
         else if (isDropViewQuery(query))
         {
             drop_view_queries.push_back(query);
+        }
+        else if (isSetQuery(query))
+        {
+            executeQuery(query, context, QueryFlags{.internal = true});
         }
         else
         {
