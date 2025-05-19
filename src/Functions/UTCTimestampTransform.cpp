@@ -89,7 +89,7 @@ namespace
                 {
                     UInt32 date_time_val = date_time_col.getElement(i);
                     auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
-                    
+
                     if constexpr (toUTC)
                     {
                         if (time_zone_offset < 0)
