@@ -200,7 +200,22 @@
 02884_create_view_with_sql_security_option
 
     https://github.com/ClickHouse/ClickHouse/issues/80426
+    Duplicates with all right join and join engine
 01051_all_join_engine
+02497_storage_join_right_assert
+02495_analyzer_storage_join
+
+    https://github.com/ClickHouse/clickhouse-private/issues/27882
+    duplicates cross_to_inner_join_rewrite=1
+02564_analyzer_cross_to_inner
+
+    https://github.com/ClickHouse/ClickHouse/issues/80439
+    Predicate pushdown CTE incorrect result
+02901_predicate_pushdown_cte_stateful
+
+    https://github.com/ClickHouse/ClickHouse/issues/80440
+    MULTIPLE_EXPRESSIONS_FOR_ALIAS
+03121_analyzer_filed_redefenition_in_subquery
 
     Correlated subqueries are not supported
     Cannot clone ReadFromPreparedSource plan step. (NOT_IMPLEMENTED)
@@ -411,6 +426,7 @@
 01283_max_threads_simple_query_optimization
 00183_prewhere_conditions_order
 03302_analyzer_join_filter_push_down_bug
+02815_join_algorithm_setting
 
     # NOT BUGS
     Not a bug
