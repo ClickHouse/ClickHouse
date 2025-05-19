@@ -14,7 +14,6 @@ RUN apt-get update \
         apt-utils \
         ca-certificates \
         curl \
-        netcat-openbsd \
         gnupg \
         lsb-release \
         wget \

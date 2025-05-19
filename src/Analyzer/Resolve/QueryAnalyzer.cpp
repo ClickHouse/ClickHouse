@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -508,7 +509,7 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunctions(const st
     auto result_node = buildQueryTree(create_function_query->function_core, context);
     if (result_node->getNodeType() != QueryTreeNodeType::LAMBDA)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "SQL user defined function {} must represent lambda expression. Actual: {}",
+            "SQL user defined function {} must represent lambda expression. Actual {}",
             function_name,
             create_function_query->function_core->formatForErrorMessage());
 
@@ -542,7 +543,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     auto * union_node = node->as<UnionNode>();
     if (!query_node && !union_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Node must have query or union type. Actual: {} {}",
+            "Node must have query or union type. Actual {} {}",
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
@@ -885,7 +886,7 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
     const auto * limit_offset_constant_node = expression_node->as<ConstantNode>();
     if (!limit_offset_constant_node || !isNativeNumber(removeNullable(limit_offset_constant_node->getResultType())))
         throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-            "{} expression must be constant with numeric type. Actual: {}. In scope {}",
+            "{} expression must be constant with numeric type. Actual {}. In scope {}",
             expression_description,
             expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
@@ -1058,7 +1059,7 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
             auto projection_names = resolved_expression_it->second;
             if (projection_names.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Expression nodes list expected 1 projection names. Actual: {}",
+                                "Expression nodes list expected 1 projection names. Actual {}",
                                 projection_names.size());
             if (boost::iequals(projection_names[0], "all"))
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
@@ -2049,7 +2050,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             size_t num_tables = cross_join_node->getTableExpressions().size();
             if (stack_size < cross_join_node->getTableExpressions().size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected at least {} table expressions on stack before CROSS_JOIN processing. Actual: {}",
+                    "Expected at least {} table expressions on stack before CROSS_JOIN processing. Actual {}",
                     num_tables,
                     stack_size);
 
@@ -2072,7 +2073,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             size_t table_expressions_column_nodes_with_names_stack_size = table_expressions_column_nodes_with_names_stack.size();
             if (table_expressions_column_nodes_with_names_stack_size < 2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected at least 2 table expressions on stack before JOIN processing. Actual: {}",
+                    "Expected at least 2 table expressions on stack before JOIN processing. Actual {}",
                     table_expressions_column_nodes_with_names_stack_size);
 
             auto right_table_expression_columns = std::move(table_expressions_column_nodes_with_names_stack.back());
@@ -2332,7 +2333,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 else
                 {
                     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                        "Unsupported apply matcher expression type. Expected lambda or function apply transformer. Actual: {}. In scope {}",
+                        "Unsupported apply matcher expression type. Expected lambda or function apply transformer. Actual {}. In scope {}",
                         transformer->formatASTForErrorMessage(),
                         scope.scope_node->formatASTForErrorMessage());
                 }
@@ -2400,7 +2401,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 }
 
                 if (node_projection_names.size() != 1)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Matcher node expected 1 projection name. Actual: {}", node_projection_names.size());
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Matcher node expected 1 projection name. Actual {}", node_projection_names.size());
 
                 result_projection_names.back() = std::move(node_projection_names[0]);
                 node_to_projection_name.emplace(node, result_projection_names.back());
@@ -2444,7 +2445,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             default:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected strict EXCEPT or REPLACE column transformer. Actual: type {}. In scope {}",
+                    "Expected strict EXCEPT or REPLACE column transformer. Actual type {}. In scope {}",
                     toString(strict_transformer_type),
                     scope.scope_node->formatASTForErrorMessage());
             }
@@ -2558,14 +2559,14 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         const auto * window_frame_begin_constant_node = window_node.getFrameBeginOffsetNode()->as<ConstantNode>();
         if (!window_frame_begin_constant_node || !isNativeNumber(removeNullable(window_frame_begin_constant_node->getResultType())))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Window frame begin OFFSET expression must be constant with numeric type. Actual: {}. In scope {}",
+                "Window frame begin OFFSET expression must be constant with numeric type. Actual {}. In scope {}",
                 window_node.getFrameBeginOffsetNode()->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
 
         window_node.getWindowFrame().begin_offset = window_frame_begin_constant_node->getValue();
         if (frame_begin_offset_projection_names.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Window FRAME begin offset expected 1 projection name. Actual: {}",
+                "Window FRAME begin offset expected 1 projection name. Actual {}",
                 frame_begin_offset_projection_names.size());
     }
 
@@ -2579,14 +2580,14 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         const auto * window_frame_end_constant_node = window_node.getFrameEndOffsetNode()->as<ConstantNode>();
         if (!window_frame_end_constant_node || !isNativeNumber(removeNullable(window_frame_end_constant_node->getResultType())))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Window frame begin OFFSET expression must be constant with numeric type. Actual: {}. In scope {}",
+                "Window frame begin OFFSET expression must be constant with numeric type. Actual {}. In scope {}",
                 window_node.getFrameEndOffsetNode()->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
 
         window_node.getWindowFrame().end_offset = window_frame_end_constant_node->getValue();
         if (frame_end_offset_projection_names.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Window FRAME begin offset expected 1 projection name. Actual: {}",
+                "Window FRAME begin offset expected 1 projection name. Actual {}",
                 frame_end_offset_projection_names.size());
     }
 
@@ -2650,7 +2651,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Lambda {} expect {} arguments. Actual: {}. In scope {}",
+            "Lambda {} expect {} arguments. Actual {}. In scope {}",
             lambda_to_resolve.formatASTForErrorMessage(),
             lambda_arguments_nodes_size,
             arguments_size,
@@ -2766,7 +2767,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * constant_node = parameter_node->as<ConstantNode>();
         if (!constant_node)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Parameter for function '{}' expected to have constant value. Actual: {}. In scope {}",
+            "Parameter for function '{}' expected to have constant value. Actual {}. In scope {}",
             function_name,
             parameter_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
@@ -3223,7 +3224,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto * lambda_expression = lambda_expression_untyped->as<LambdaNode>();
             if (!lambda_expression)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function identifier '{}' must be resolved as lambda. Actual: {}. In scope {}",
+                    "Function identifier '{}' must be resolved as lambda. Actual {}. In scope {}",
                     function_node.getFunctionName(),
                     lambda_expression_untyped->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
@@ -3464,7 +3465,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto * function_data_type = typeid_cast<const DataTypeFunction *>(argument_types[function_lambda_argument_index].get());
             if (!function_data_type)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function '{}' expected function data type for lambda argument with index {}. Actual: {}. In scope {}",
+                    "Function '{}' expected function data type for lambda argument with index {}. Actual {}. In scope {}",
                     function_name,
                     function_lambda_argument_index,
                     argument_types[function_lambda_argument_index]->getName(),
@@ -3476,7 +3477,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Function '{}"
                                 "' function data type for lambda argument with index {} arguments size mismatch. "
-                                "Actual: {}. Expected {}. In scope {}",
+                                "Actual {}. Expected {}. In scope {}",
                                 function_name,
                                 function_data_type_arguments_size,
                                 lambda_arguments_size,
@@ -3514,7 +3515,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 size_t lambda_projection_names_size =lambda_projection_names.size();
                 if (lambda_projection_names_size != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Lambda argument inside function expected to have 1 projection name. Actual: {}",
+                        "Lambda argument inside function expected to have 1 projection name. Actual {}",
                         lambda_projection_names_size);
 
                 WriteBufferFromOwnString lambda_argument_projection_name_buffer;
@@ -4066,7 +4067,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
 
         if (expression_node_projection_names.size() != expected_projection_names_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Expression nodes list expected {} projection names. Actual: {}",
+                "Expression nodes list expected {} projection names. Actual {}",
                 expected_projection_names_size,
                 expression_node_projection_names.size());
 
@@ -4115,7 +4116,7 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
         size_t sort_expression_projection_names_size = sort_expression_projection_names.size();
         if (sort_expression_projection_names_size != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Sort expression expected 1 projection name. Actual: {}",
+                "Sort expression expected 1 projection name. Actual {}",
                 sort_expression_projection_names_size);
 
         if (sort_node.hasFillFrom())
@@ -4125,14 +4126,14 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
             const auto * constant_node = sort_node.getFillFrom()->as<ConstantNode>();
             if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "Sort FILL FROM expression must be constant with numeric type. Actual: {}. In scope {}",
+                    "Sort FILL FROM expression must be constant with numeric type. Actual {}. In scope {}",
                     sort_node.getFillFrom()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
             size_t fill_from_expression_projection_names_size = fill_from_expression_projection_names.size();
             if (fill_from_expression_projection_names_size != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Sort node FILL FROM expression expected 1 projection name. Actual: {}",
+                    "Sort node FILL FROM expression expected 1 projection name. Actual {}",
                     fill_from_expression_projection_names_size);
         }
 
@@ -4144,14 +4145,14 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
             if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
                 throw Exception(
                     ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "Sort FILL TO expression must be constant with numeric type. Actual: {}. In scope {}",
+                    "Sort FILL TO expression must be constant with numeric type. Actual {}. In scope {}",
                     sort_node.getFillTo()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
             size_t fill_to_expression_projection_names_size = fill_to_expression_projection_names.size();
             if (fill_to_expression_projection_names_size != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Sort node FILL TO expression expected 1 projection name. Actual: {}",
+                    "Sort node FILL TO expression expected 1 projection name. Actual {}",
                     fill_to_expression_projection_names_size);
         }
 
@@ -4162,7 +4163,7 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
             const auto * constant_node = sort_node.getFillStep()->as<ConstantNode>();
             if (!constant_node)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "Sort FILL STEP expression must be constant with numeric or interval type. Actual: {}. In scope {}",
+                    "Sort FILL STEP expression must be constant with numeric or interval type. Actual {}. In scope {}",
                     sort_node.getFillStep()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
@@ -4170,14 +4171,14 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
             bool is_interval = WhichDataType(constant_node->getResultType()).isInterval();
             if (!is_number && !is_interval)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "Sort FILL STEP expression must be constant with numeric or interval type. Actual: {}. In scope {}",
+                    "Sort FILL STEP expression must be constant with numeric or interval type. Actual {}. In scope {}",
                     sort_node.getFillStep()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
             size_t fill_step_expression_projection_names_size = fill_step_expression_projection_names.size();
             if (fill_step_expression_projection_names_size != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Sort FILL STEP expression expected 1 projection name. Actual: {}",
+                    "Sort FILL STEP expression expected 1 projection name. Actual {}",
                     fill_step_expression_projection_names_size);
         }
 
@@ -4188,7 +4189,7 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
             const auto * constant_node = sort_node.getFillStaleness()->as<ConstantNode>();
             if (!constant_node)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "Sort FILL STALENESS expression must be constant with numeric or interval type. Actual: {}. In scope {}",
+                    "Sort FILL STALENESS expression must be constant with numeric or interval type. Actual {}. In scope {}",
                     sort_node.getFillStaleness()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
@@ -4196,14 +4197,14 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
             bool is_interval = WhichDataType(constant_node->getResultType()).isInterval();
             if (!is_number && !is_interval)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "Sort FILL STALENESS expression must be constant with numeric or interval type. Actual: {}. In scope {}",
+                    "Sort FILL STALENESS expression must be constant with numeric or interval type. Actual {}. In scope {}",
                     sort_node.getFillStaleness()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
             size_t fill_staleness_expression_projection_names_size = fill_staleness_expression_projection_names.size();
             if (fill_staleness_expression_projection_names_size != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Sort FILL STALENESS expression expected 1 projection name. Actual: {}",
+                    "Sort FILL STALENESS expression expected 1 projection name. Actual {}",
                     fill_staleness_expression_projection_names_size);
         }
 
@@ -4544,7 +4545,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
             default:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Query FROM section expected table, table function, query, UNION, ARRAY JOIN or JOIN. Actual: {} {}. In scope {}",
+                    "Query FROM section expected table, table function, query, UNION, ARRAY JOIN or JOIN. Actual {} {}. In scope {}",
                     current_join_tree_node->getNodeTypeName(),
                     current_join_tree_node->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
@@ -4563,7 +4564,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
 
     if (!table_node && !table_function_node && !query_node && !union_node)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-        "Unexpected table expression. Expected table, table function, query or union node. Actual: {}. In scope {}",
+        "Unexpected table expression. Expected table, table function, query or union node. Actual {}. In scope {}",
         table_expression_node->formatASTForErrorMessage(),
         scope.scope_node->formatASTForErrorMessage());
 
@@ -5096,7 +5097,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
             if (!is_array_type && !is_map_type)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "ARRAY JOIN {} requires expression {} with Array or Map type. Actual: {}. In scope {}",
+                    "ARRAY JOIN {} requires expression {} with Array or Map type. Actual {}. In scope {}",
                     array_join_node_typed.formatASTForErrorMessage(),
                     expression->formatASTForErrorMessage(),
                     result_type->getName(),
@@ -5243,7 +5244,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             auto * identifier_node = join_using_node->as<IdentifierNode>();
             if (!identifier_node)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "JOIN {} USING clause expected identifier. Actual: {}",
+                    "JOIN {} USING clause expected identifier. Actual {}",
                     join_node_typed.formatASTForErrorMessage(),
                     join_using_node->formatASTForErrorMessage());
 
@@ -5444,7 +5445,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         default:
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Query FROM section expected table, table function, query, ARRAY JOIN or JOIN. Actual: {}. In scope {}",
+                "Query FROM section expected table, table function, query, ARRAY JOIN or JOIN. Actual {}. In scope {}",
                 join_tree_node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }

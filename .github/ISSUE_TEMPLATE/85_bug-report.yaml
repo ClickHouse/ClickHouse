@@ -38,9 +38,9 @@ body:
         > Change "enabled" to true in "send_crash_reports" section in `config.xml`:
         ```xml
         <send_crash_reports>
-            <!-- Changing <enabled> to true allows sending crash reports to -->
-            <!-- the ClickHouse core developers team. -->
-            <enabled>true</enabled>
+                <!-- Changing <enabled> to true allows sending crash reports to -->
+                <!-- the ClickHouse core developers team via Sentry https://sentry.io -->
+                <enabled>false</enabled>
         </send_crash_reports>
         ```
         -----

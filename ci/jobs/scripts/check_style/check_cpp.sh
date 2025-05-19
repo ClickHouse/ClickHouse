@@ -327,8 +327,8 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."
 
 PATTERN="allow_";
-DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/ci/jobs/scripts/check_style/experimental_settings_ignore.txt | sort -u));
-[ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to ci/jobs/scripts/check_style/experimental_settings_ignore.txt"
+DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/utils/check-style/experimental_settings_ignore.txt | sort -u));
+[ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to utils/check-style/experimental_settings_ignore.txt"
 
 # Don't allow the direct inclusion of magic_enum.hpp and instead point to base/EnumReflection.h
 find $ROOT_PATH/{src,base,programs,utils} -name '*.cpp' -or -name '*.h' | xargs grep -l "magic_enum.hpp" | grep -v EnumReflection.h | while read -r line;
