@@ -30,6 +30,9 @@ public:
         return String("text/csv; charset=UTF-8; header=") + (with_names ? "present" : "absent");
     }
 
+    template <typename Format, bool support_progress>
+    friend class SSEFormat;
+
 private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
