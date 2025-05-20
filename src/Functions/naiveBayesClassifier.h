@@ -184,7 +184,7 @@ private:
     /// Arena to own all the key strings
     Arena pool;
 
-    constexpr UInt32 MAX_NGRAM_LENGTH = 1024 * 1024;
+    static constexpr UInt32 MAX_NGRAM_LENGTH = 1024 * 1024;
 
 public:
     ~NaiveBayesClassifier() = default;
