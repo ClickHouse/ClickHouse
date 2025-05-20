@@ -1,3 +1,4 @@
+#include <ranges>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -7,6 +8,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/naiveBayesClassifier.h>
 #include <Interpreters/Context.h>
+#include <fmt/ranges.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -310,18 +312,11 @@ private:
 
         if (!models.contains(model_name))
         {
-            String available_models;
-            for (const auto & model : models)
-                available_models += model.first + ", ";
-
-            // Trim the last comma and space
-            if (!available_models.empty())
-            {
-                available_models.pop_back();
-                available_models.pop_back();
-            }
-
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Model {} not found. Available models: {}", model_name, available_models);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Model {} not found. Available models: {}",
+                model_name,
+                fmt::join(models | std::views::transform([](const auto & model) { return model.first; }), ", "));
         }
     }
 };

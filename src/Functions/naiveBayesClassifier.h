@@ -10,6 +10,7 @@
 #include <vector>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <fmt/ranges.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -268,18 +269,20 @@ public:
                 const UInt32 class_id = prior.getKey();
                 if (!class_totals.contains(class_id)) /// Class present in config's <priors> not found in model
                 {
-                    String available_classes;
+                    /// class_totals does not have begin() and end() methods; therefore cannot use std::ranges::transform
+                    /// Manually build a vector of available classes
+                    std::vector<UInt32> available_classes;
+                    available_classes.reserve(class_totals.size());
                     for (const auto & class_entry : class_totals)
-                    {
-                        available_classes += std::to_string(class_entry.getKey()) + ", ";
-                    }
-                    throw Exception(
+                        available_classes.push_back(class_entry.getKey());
+
+                        throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Class {} from <priors> not found in the model at {} of model {}. Available classes: {}",
                         class_id,
                         model_path,
                         model_name,
-                        available_classes);
+                        fmt::join(available_classes, ", "));
                 }
             }
 
