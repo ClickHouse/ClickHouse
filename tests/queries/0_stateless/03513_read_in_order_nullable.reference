@@ -1,64 +1,64 @@
---- desc, last
+--- table asc, query desc, last
 1
 0
 \N
---- desc, first
+--- table asc, query desc, first
 \N
 1
 0
---- asc, last
+--- table asc, query asc, last
 0
 1
 \N
---- asc, first
+--- table asc, query asc, first
 \N
 0
 1
---- desc, last
+--- table desc, query desc, last
 1
 0
 \N
---- desc, first
+--- table desc, query desc, first
 \N
 1
 0
---- asc, last
+--- table desc, query asc, last
 0
 1
 \N
---- asc, first
+--- table desc, query asc, first
 \N
 0
 1
---- desc, last
+--- table asc, query desc, last
 1
 0
 nan
---- desc, first
+--- table asc, query desc, first
 nan
 1
 0
---- asc, last
+--- table asc, query asc, last
 0
 1
 nan
---- asc, first
+--- table asc, query asc, first
 nan
 0
 1
---- desc, last
+--- table desc, query desc, last
 1
 0
 nan
---- desc, first
+--- table desc, query desc, first
 nan
 1
 0
---- asc, last
+--- table desc, query asc, last
 0
 1
 nan
---- asc, first
+--- table desc, query asc, first
 nan
 0
 1
