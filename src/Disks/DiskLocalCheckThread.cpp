@@ -22,7 +22,7 @@ DiskLocalCheckThread::DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context
     : WithContext(context_)
     , disk(std::move(disk_))
     , check_period_ms(local_disk_check_period_ms)
-    , log(getLogger(fmt::format("DiskLocalCheckThread({})", disk->getName())))
+    , log(getLogger("DiskLocalCheckThread"))
 {
     task = getContext()->getSchedulePool().createTask(log->name(), [this] { run(); });
 }
@@ -34,7 +34,8 @@ void DiskLocalCheckThread::startup()
     task->activateAndSchedule();
     LOG_INFO(
         log,
-        "Disk check started with period {}",
+        "Disk check for disk {} started with period {}",
+        disk->getName(),
         formatReadableTime(static_cast<double>(check_period_ms) * 1e6 /* ns */));
 }
 
@@ -54,14 +55,14 @@ void DiskLocalCheckThread::run()
     if (can_read)
     {
         if (disk->broken)
-            LOG_INFO(log, "Disk seems to be fine. It can be recovered using `SYSTEM RESTART DISK {0}`", disk->getName());
+            LOG_INFO(log, "Disk {0} seems to be fine. It can be recovered using `SYSTEM RESTART DISK {0}`", disk->getName());
         retry = 0;
         if (can_write)
             disk->readonly = false;
         else
         {
             disk->readonly = true;
-            LOG_INFO(log, "Disk is readonly");
+            LOG_INFO(log, "Disk {} is readonly", disk->getName());
         }
         task->scheduleAfter(check_period_ms);
     }
@@ -74,9 +75,9 @@ void DiskLocalCheckThread::run()
     {
         retry = 0;
         if (!disk->broken)
-            LOG_ERROR(log, "Disk marked as broken");
+            LOG_ERROR(log, "Disk {} marked as broken", disk->getName());
         else
-            LOG_INFO(log, "Disk is still broken");
+            LOG_INFO(log, "Disk {} is still broken", disk->getName());
         disk->broken = true;
         task->scheduleAfter(check_period_ms);
     }
@@ -88,7 +89,7 @@ void DiskLocalCheckThread::shutdown()
 {
     need_stop = true;
     task->deactivate();
-    LOG_TRACE(log, "DiskLocalCheck thread finished");
+    LOG_TRACE(log, "DiskLocalCheck thread for disk {} finished", disk->getName());
 }
 
 }
