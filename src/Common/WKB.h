@@ -4,23 +4,27 @@
 #include <vector>
 
 #include <IO/ReadBuffer.h>
+#include "Functions/geometryConverters.h"
 
 namespace DB
 {
 
-struct ArrowPoint
+enum class WKBGeometry : Int32
 {
-    double x;
-    double y;
+    Point = 1,
+    LineString = 2,
+    Polygon = 3,
+    MultiLineString = 5,
+    MultiPolygon = 6
 };
 
-using ArrowLineString = std::vector<ArrowPoint>;
-using ArrowPolygon = std::vector<std::vector<ArrowPoint>>;
-using ArrowMultiLineString = std::vector<ArrowLineString>;
-using ArrowMultiPolygon = std::vector<ArrowPolygon>;
+using GeometricObject = std::variant<
+    CartesianPoint,
+    LineString<CartesianPoint>,
+    MultiLineString<CartesianPoint>,
+    Polygon<CartesianPoint>,
+    MultiPolygon<CartesianPoint>>;
 
-using ArrowGeometricObject = std::variant<ArrowPoint, ArrowLineString, ArrowPolygon, ArrowMultiPolygon>;
-
-ArrowGeometricObject parseWKBFormat(ReadBuffer & in_buffer);
+GeometricObject parseWKBFormat(ReadBuffer & in_buffer);
 
 }

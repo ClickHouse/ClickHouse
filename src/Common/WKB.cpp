@@ -1,4 +1,5 @@
 #include <Common/WKB.h>
+#include "Functions/geometryConverters.h"
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -11,21 +12,21 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-inline ArrowPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+inline CartesianPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
     double x;
     double y;
     readBinaryEndian(x, in_buffer, endian_to_read);
     readBinaryEndian(y, in_buffer, endian_to_read);
-    return ArrowPoint{.x = x, .y = y};
+    return CartesianPoint(x, y);
 }
 
-inline ArrowLineString readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
-    int num_points;
+    Int32 num_points;
     readBinaryEndian(num_points, in_buffer, endian_to_read);
 
-    ArrowLineString line;
+    LineString<CartesianPoint> line;
     for (int i = 0; i < num_points; ++i)
     {
         line.push_back(readPointWKB(in_buffer, endian_to_read));
@@ -33,73 +34,83 @@ inline ArrowLineString readLineWKB(ReadBuffer & in_buffer, std::endian endian_to
     return line;
 }
 
-inline ArrowPolygon readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
-    int num_lines;
+    Int32 num_lines;
     readBinaryEndian(num_lines, in_buffer, endian_to_read);
 
-    ArrowPolygon polygon;
+    Polygon<CartesianPoint> polygon;
     for (int i = 0; i < num_lines; ++i)
     {
         auto parsed_points = readLineWKB(in_buffer, endian_to_read);
-        polygon.push_back(std::move(parsed_points));
+        if (i == 0)
+        {
+            polygon.outer().reserve(parsed_points.size());
+            for (auto && point : parsed_points)
+                polygon.outer().push_back(point);
+        }
+        else
+        {
+            polygon.inners().push_back({});
+            polygon.inners().back().reserve(parsed_points.size());
+            for (auto && point : parsed_points)
+                polygon.inners().back().push_back(point);
+        }
     }
     return polygon;
 }
 
-ArrowGeometricObject parseWKBFormat(ReadBuffer & in_buffer);
+GeometricObject parseWKBFormat(ReadBuffer & in_buffer);
 
-ArrowMultiLineString readMultiLineStringWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+MultiLineString<CartesianPoint> readMultiLineStringWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
-    ArrowMultiLineString multiline;
+    MultiLineString<CartesianPoint> multiline;
 
-    int num_lines;
+    Int32 num_lines;
     readBinaryEndian(num_lines, in_buffer, endian_to_read);
 
     for (int i = 0; i < num_lines; ++i)
-        multiline.push_back(std::get<ArrowLineString>(parseWKBFormat(in_buffer)));
+        multiline.push_back(std::get<LineString<CartesianPoint>>(parseWKBFormat(in_buffer)));
 
     return multiline;
 }
 
-ArrowMultiPolygon readMultiPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
-    ArrowMultiPolygon multipolygon;
+    MultiPolygon<CartesianPoint> multipolygon;
 
-    int num_polygons;
+    Int32 num_polygons;
     readBinaryEndian(num_polygons, in_buffer, endian_to_read);
 
     for (int i = 0; i < num_polygons; ++i)
-        multipolygon.push_back(std::get<ArrowPolygon>(parseWKBFormat(in_buffer)));
+        multipolygon.push_back(std::get<Polygon<CartesianPoint>>(parseWKBFormat(in_buffer)));
 
     return multipolygon;
 }
 
-ArrowGeometricObject parseWKBFormat(ReadBuffer & in_buffer)
+GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
 {
     char little_endian;
-    if (!in_buffer.read(little_endian))
+    if (!in_buffer.read(little_endian) || (little_endian != 0 && little_endian != 1))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect first flag");
 
     std::endian endian_to_read = little_endian ? std::endian::little : std::endian::big;
-    int geom_type;
+    Int32 geom_type;
 
     readBinaryEndian(geom_type, in_buffer, endian_to_read);
 
-    switch (geom_type)
+    switch (static_cast<WKBGeometry>(geom_type))
     {
-        case 1:
+        case WKBGeometry::Point:
             return readPointWKB(in_buffer, endian_to_read);
-        case 2:
+        case WKBGeometry::LineString:
             return readLineWKB(in_buffer, endian_to_read);
-        case 3:
+        case WKBGeometry::Polygon:
             return readPolygonWKB(in_buffer, endian_to_read);
-        case 5:
+        case WKBGeometry::MultiLineString:
             return readMultiLineStringWKB(in_buffer, endian_to_read);
-        case 6:
+        case WKBGeometry::MultiPolygon:
             return readMultiPolygonWKB(in_buffer, endian_to_read);
-        default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect geometry type");
     }
 }
 
