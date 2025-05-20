@@ -31,7 +31,7 @@ createBSIVectorWithTwoNumericTypesSecond(const IDataType & second_type, const Da
     if (which.idx == TypeIndex::TYPE) \
         return new AggregateFunctionNumericIndexedVector<VectorImpl<FirstType, TYPE>, std::decay_t<TArgs>...>( \
             types, params, std::forward<TArgs>(args)...);
-    FOR_NUMERIC_INDEXED_VECTOR_VALUE_TYPES(DISPATCH)
+    FOR_BASIC_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
     return nullptr;
 }

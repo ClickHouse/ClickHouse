@@ -103,7 +103,7 @@ public:
     static constexpr UInt32 MAX_INTEGER_BIT_NUM = 64;
     static constexpr UInt32 MAX_FRACTION_BIT_NUM = 24;
 
-    /// Another containt: integer_bit_num + fraction_bit_num <= MAX_TOTAL_BIT_NUM.
+    /// Another constraint: integer_bit_num + fraction_bit_num <= MAX_TOTAL_BIT_NUM.
     static constexpr UInt32 MAX_TOTAL_BIT_NUM = 64;
 
     static constexpr size_t max_size = 10_GiB;

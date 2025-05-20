@@ -656,7 +656,7 @@ public:
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) \
         return std::make_shared<DataTypeNumber<TYPE>>(); /// NOLINT
-        FOR_NUMERIC_INDEXED_VECTOR_VALUE_TYPES(DISPATCH)
+        FOR_BASIC_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

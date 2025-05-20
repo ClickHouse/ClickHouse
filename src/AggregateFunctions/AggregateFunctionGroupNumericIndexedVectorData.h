@@ -32,19 +32,6 @@ namespace DB
     M(Int32) \
     M(Int64)
 
-#define FOR_NUMERIC_INDEXED_VECTOR_VALUE_TYPES(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64) \
-    M(Float32) \
-    M(Float64)
-
-
 /** `NumericIndexedVector` encapsulates the vector (in mathematics) data structure and exposes the following operations.
  * Operations on a single vector:
  *  - addValue(index, value): v[index] += value;
@@ -71,7 +58,7 @@ private:
      */
     using IndexType = typename VectorImpl::IndexType;
 
-    /// The supported value types are defined in FOR_NUMERIC_INDEXED_VECTOR_VALUE_TYPES
+    /// The supported value types are defined in FOR_BASIC_NUMERIC_TYPES.
     using ValueType = typename VectorImpl::ValueType;
 
 public:

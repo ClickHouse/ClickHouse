@@ -16,7 +16,7 @@ In the BSI(Bit-Sliced Index) storage method, NumericIndexedVector compresses and
 
 A vector contains indices and their corresponding values. The following are some characteristics and constraints of this data structure in BSI storage mode:
 
-- The index type can be one of `UInt8`, `UInt16`, or `UInt32`. **Note:** Considering the performance of 64-bit implementation of roaringBitmap, BSI format does not support UInt64/Int64, but will support it in RawSum.
+- The index type can be one of `UInt8`, `UInt16`, or `UInt32`. **Note:** Considering the performance of 64-bit implementation of RoaringBitmap, BSI format does not support UInt64/Int64, but will support it in RawSum.
 - The value type can be one of `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, or `Float64`. **Note:** The value type does not automatically expand. For example, if you use `UInt8` as the value type, any sum that exceeds the capacity of `UInt8` will result in an overflow rather than being promoted to a higher type; similarly, operations on integers will yield integer results (e.g., division will not automatically convert to a floating-point result). Therefore, it is important to plan and design the value type ahead of time. In real-world scenarios, floating-point types (`Float32`/`Float64`) are commonly used.
 - Only two vectors with the same index type and value type can perform operations.
 - The underlying storage uses Bit-Sliced Index. with bitmap storing indexes. RoaringBitmap is used as the specific implementation of bitmap. A best practice is to concentrate the index in several Roaring Bitmap containers as much as possible to maximize compression and query performance.
