@@ -45,9 +45,15 @@ struct AggregateFunctionDistinctSingleNumericData
         }
     }
 
-    void serialize(WriteBuffer & buf) const { history.write(buf); }
+    void serialize(WriteBuffer & buf) const
+    {
+      history.write(buf);
+    }
 
-    void deserialize(ReadBuffer & buf, Arena *) { history.read(buf); }
+    void deserialize(ReadBuffer & buf, Arena *)
+    {
+      history.read(buf);
+    }
 };
 
 struct AggregateFunctionDistinctGenericData
