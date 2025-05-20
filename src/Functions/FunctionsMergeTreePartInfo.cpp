@@ -51,7 +51,7 @@ class FunctionMergeTreePartCoverage : public IFunction
     }
 
 public:
-    static constexpr auto name = "isPartCoveredBy";
+    static constexpr auto name = "isMergeTreePartCoveredBy";
     String getName() const override { return name; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMergeTreePartCoverage>(); }
