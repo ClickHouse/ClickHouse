@@ -416,12 +416,16 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
              * data_location depending on the implementation could be s3:// prefixed, or http:// / https:// prefixed (e.g. apache lakekeeper)
              * in these cases, getting rid of the prefix is important to resolve the metadata_location better
              */
-            if (metadata_location.starts_with(s3_prefix)) {
+            if (metadata_location.starts_with(s3_prefix))
+            {
                 metadata_location = metadata_location.substr(s3_prefix.size());
             }
-            if (data_location.starts_with(s3_prefix)) {
+            if (data_location.starts_with(s3_prefix))
+            {
                 data_location = data_location.substr(s3_prefix.size());
-            } else if (data_location.starts_with(endpoint)) {
+            }
+            else if (!endpoint.empty() && data_location.starts_with(endpoint))
+            {
                 data_location = data_location.substr(endpoint.size());
             }
 
