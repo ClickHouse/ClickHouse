@@ -185,8 +185,11 @@ Use native parquet reader v1. It's relatively fast but unfinished.
     DECLARE(Bool, input_format_parquet_use_native_reader_v3, false, R"(
 Use Parquet reader v3.
 )", 0) \
-    DECLARE(UInt64, input_format_parquet_memory_usage_target, 4ul << 30, R"(
-Approximate memory usage limit for Parquet reader v3. Determines how many row groups or columns can be read in parallel. Memory usage doesn't get smaller than one row group. When reading multiple files in one query, the limit is on total memory usage across those files.
+    DECLARE(UInt64, input_format_parquet_memory_low_watermark, 2ul << 20, R"(
+Schedule prefetches more aggressively if memory usage is below than threshold. Potentially useful e.g. if there are many small bloom filters to read over network.
+)", 0) \
+    DECLARE(UInt64, input_format_parquet_memory_high_watermark, 4ul << 30, R"(
+Approximate memory limit for Parquet reader v3. Limits how many row groups or columns can be read in parallel. When reading multiple files in one query, the limit is on total memory usage across those files.
 )", 0) \
     DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
 Skip pages using min/max values from column index.

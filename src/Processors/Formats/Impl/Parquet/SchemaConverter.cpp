@@ -661,13 +661,13 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (logical.__isset.UNKNOWN)
     {
-        //TODO: DataTypeNothing (for now fall through to dispatch by physical type)
+        /// TODO [parquet]: DataTypeNothing (for now fall through to dispatch by physical type)
     }
     else if (logical.__isset.UUID)
     {
         if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 16)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
-        //TODO: check if byte order is correct
+        /// TODO [parquet]: check if byte order is correct
         out_decoder.value_size = 16;
         out_inferred_type = std::make_shared<DataTypeUUID>();
     }

@@ -187,7 +187,7 @@ void Reader::prefilterAndInitRowGroups()
 
     if (key_condition)
     {
-        //TODO: assign PrimitiveColumnInfo:: use_bloom_filter and use_column_index; possibly:
+        /// TODO [parquet]: assign PrimitiveColumnInfo:: use_bloom_filter and use_column_index; possibly:
         /// Expect that either all or none of the column chunks have indexes written.
         /// (If that's not the case, nothing breaks, we may just pick suboptimal options here.)
     }
@@ -204,7 +204,7 @@ void Reader::prefilterAndInitRowGroups()
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
 
-        //TODO: filtering
+        /// TODO [parquet]: Filtering.
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
         row_group.row_group_idx = row_group_idx;
@@ -574,7 +574,7 @@ void Reader::decodeOffsetIndex(ColumnChunk & /*column*/)
 
 void Reader::determinePagesToRead(ColumnSubchunk & /*subchunk*/, RowSubgroup & /*row_subgroup*/, RowGroup & /*row_group*/)
 {
-    //TODO: use offset index and filter
+    // TODO [parquet]: Use offset index and filter.
 }
 
 double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const
@@ -600,7 +600,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
         else
         {
             /// We have no idea how long the strings are.
-            avg_string_length = 64;
+            avg_string_length = 20;
         }
         column_chunk_bytes = avg_string_length * column.meta->meta_data.num_values;
     }
@@ -755,7 +755,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column_chunk, const PrimitiveCo
     }
     else
     {
-        //TODO: Turn null_map into BlockMissingValues.
+        /// TODO [parquet]: Turn null_map into BlockMissingValues.
     }
     subchunk.null_map.reset();
 
@@ -791,7 +791,7 @@ void Reader::skipToRow(size_t row_idx, ColumnChunk & column_chunk, const Primiti
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet offset index covers too few rows");
         const auto & page_info = column_chunk.data_pages[column_chunk.data_pages_idx];
         size_t first_row_idx = size_t(page_info.meta->first_row_index);
-        //TODO: remember to check that row ranges don't overlap when loading offset index
+        /// TODO [parquet]: Remember to check that row ranges don't overlap when loading offset index.
         if (first_row_idx > row_idx)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Row passes filters but its page was not selected for reading. This is a bug.");
 

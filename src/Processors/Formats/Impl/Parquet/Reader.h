@@ -272,7 +272,7 @@ struct Reader
         bool use_column_index = false;
         bool need_null_map = false;
 
-        /// Prefetches. //TODO: check that all are reset, and other memory tokens
+        /// Prefetches. /// TODO: Check that all handles and tokens are reset after correct stages.
         PrefetchHandle bloom_filter_header_prefetch; // indicates if bloom filter should be used
         PrefetchHandle bloom_filter_data_prefetch;
         PrefetchHandle dictionary_page_prefetch;
@@ -294,7 +294,7 @@ struct Reader
         std::vector<DataPage> data_pages;
 
         parq::BloomFilterHeader bloom_filter_header;
-        parq::OffsetIndex offset_index;//TODO: throw if page_locations.empty() after deserialization
+        parq::OffsetIndex offset_index; // TODO [parquet]: throw if page_locations.empty() after deserialization
         /// Dictionary page contents.
         /// May be loaded early if we decide to use it for filtering (instead of bloom filter).
         /// Otherwise, loaded just before the first dictionary-encoded data page (so if we end up
@@ -303,7 +303,7 @@ struct Reader
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
-        PageState page;//TODO: deallocate when column chunk is done (and check other fields too)
+        PageState page; // TODO [parquet]: deallocate when column chunk is done (and check other fields too)
         /// Offset from the start of `data_pages_prefetch`, if not using offset index (`data_pages` is empty).
         size_t next_page_offset = 0;
         size_t data_pages_idx = 0;

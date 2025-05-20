@@ -75,13 +75,27 @@ namespace PODArrayDetails
 
 void protectMemoryRegion(void * addr, size_t len, int prot);
 
+[[noreturn]] void throw_alloc_error(); /// NOLINT
+
 /// The amount of memory occupied by the num_elements of the elements.
-size_t byte_size(size_t num_elements, size_t element_size); /// NOLINT
+inline size_t byte_size(size_t num_elements, size_t element_size) /// NOLINT
+{
+    size_t amount;
+    if (__builtin_mul_overflow(num_elements, element_size, &amount))
+        throw_alloc_error();
+    return amount;
+}
 
 /// Minimum amount of memory to allocate for num_elements, including padding.
-size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right); /// NOLINT
+inline size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right) /// NOLINT
+{
+    size_t amount;
+    if (__builtin_add_overflow(byte_size(num_elements, element_size), pad_left + pad_right, &amount))
+        throw_alloc_error();
+    return amount;
+}
 
-};
+}
 
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
@@ -231,7 +245,7 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void resize(size_t n, TAllocatorParams &&... allocator_params)
+    inline void resize(size_t n, TAllocatorParams &&... allocator_params)
     {
         reserve(n, std::forward<TAllocatorParams>(allocator_params)...);
         resize_assume_reserved(n);
@@ -250,7 +264,7 @@ public:
         realloc(PODArrayDetails::minimum_memory_for_elements(size(), ELEMENT_SIZE, pad_left, pad_right), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
-    void resize_assume_reserved(const size_t n) /// NOLINT
+    inline void resize_assume_reserved(const size_t n) /// NOLINT
     {
         c_end = c_start + PODArrayDetails::byte_size(n, ELEMENT_SIZE);
     }
