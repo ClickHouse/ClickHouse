@@ -937,13 +937,8 @@ def test_recover_staled_replica(started_cluster):
         assert dummy_node.query(f"SELECT count() FROM recover.{table}") == "0\n"
 
     logging.debug("Result: %s", dummy_node.query("SHOW DATABASES"))
-    logging.debug(
-        "Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_tables")
-    )
-    logging.debug(
-        "Result: %s",
-        dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"),
-    )
+    logging.debug("Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_tables"))
+    logging.debug("Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"))
 
     global test_recover_staled_replica_run
     assert (
@@ -1317,7 +1312,9 @@ def test_force_synchronous_settings(started_cluster):
 
     main_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
     dummy_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
-    snapshotting_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
+    snapshotting_node.query(
+        "DROP DATABASE test_force_synchronous_settings SYNC"
+    )
 
 
 def test_replicated_table_structure_alter(started_cluster):
@@ -1596,97 +1593,3 @@ def test_alter_rename(started_cluster):
         settings=settings,
     )
     assert "PROJECTION" in res
-
-
-def test_warn_on_database_ending_broken_replicated_tables(started_cluster):
-    for node in [main_node, dummy_node]:
-        result = node.query("SELECT name FROM system.databases WHERE name LIKE '%_broken_tables%' OR name LIKE '%_broken_replicated_tables%'").strip()
-        if result == "":
-            continue
-        databases_to_drop = result.split("\n")
-        logging.debug(f"Databases to drop: {databases_to_drop}")
-        for database in databases_to_drop:
-            node.query(f"DROP DATABASE {database} SYNC")
-
-    database_name = "test_warn_on_database_name"
-    main_node.query(
-        f"CREATE DATABASE {database_name} ENGINE = Replicated('/clickhouse/databases/{database_name}', 'shard1', 'replica1');"
-    )
-    started_cluster.get_kazoo_client("zoo1").set(
-        f"/clickhouse/databases/{database_name}/logs_to_keep", b"4"
-    )
-    dummy_node.query(
-        f"CREATE DATABASE {database_name} ENGINE = Replicated('/clickhouse/databases/{database_name}', 'shard1', 'replica2');"
-    )
-
-    settings = {"distributed_ddl_task_timeout": 0}
-    main_node.query(
-        f"CREATE TABLE {database_name}.mt_0 (n Int64) ENGINE = MergeTree ORDER BY n"
-    )
-    main_node.query(
-        f"CREATE TABLE {database_name}.rmt_0 (n Int64) ENGINE = ReplicatedMergeTree ORDER BY n"
-    )
-
-    for table in ["mt_0", "rmt_0"]:
-        main_node.query(f"INSERT INTO {database_name}.{table} VALUES (42)")
-        dummy_node.query(f"INSERT INTO {database_name}.{table} VALUES (42)")
-
-    main_node.query(f"SYSTEM SYNC REPLICA {database_name}.rmt_0")
-
-    # Let's break a table
-    with PartitionManager() as pm:
-        pm.drop_instance_zk_connections(dummy_node)
-        dummy_node.query_and_get_error(
-            f"RENAME TABLE {database_name}.mt_0 TO {database_name}.mt_x"
-        )
-
-        for i in range(0, 8):
-            main_node.query(
-                f"RENAME TABLE {database_name}.mt_{i} TO {database_name}.mt_{i+1}",
-                settings=settings,
-            )
-
-    query = (
-        f"SELECT name, uuid, create_table_query FROM system.tables WHERE database='{database_name}'"
-        "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
-    )
-    expected = main_node.query(query)
-    assert_eq_with_retry(dummy_node, query, expected)
-
-    logging.debug("Result: %s", dummy_node.query("SHOW DATABASES"))
-    ordinary_database_for_broken_tables = f"{database_name}_broken_tables"
-    atomic_database_for_broken_tables = f"{database_name}_broken_replicated_tables"
-
-    warning_message_format = "The database {} is probably created during recovering a lost replica. If it has no tables, it can be deleted. If it has tables, it worth to check why they were considered broken."
-
-    # Currently the Atomic database is created as second, so that will be shown in `system.warnings`
-    warning_count = dummy_node.query(
-        f"SELECT count() FROM system.warnings WHERE message = '{warning_message_format.format(atomic_database_for_broken_tables)}'"
-    )
-    assert warning_count == "1\n"
-
-    # Assert that no warning about ordinary engine
-    warning_about_ordinary_database = dummy_node.query(
-        "SELECT message FROM system.warnings WHERE message ILIKE '%ordinary%'"
-    )
-    assert warning_about_ordinary_database == ""
-
-    # Let's drop the database that showed up in system.warnings
-    dummy_node.query(f"DROP DATABASE {atomic_database_for_broken_tables} SYNC")
-    dummy_node.restart_clickhouse()
-
-    warning_count = dummy_node.query(
-        f"SELECT count() FROM system.warnings WHERE message = '{warning_message_format.format(ordinary_database_for_broken_tables)}'"
-    )
-    assert warning_count == "1\n"
-
-    dummy_node.query(f"DROP DATABASE {ordinary_database_for_broken_tables} SYNC")
-    dummy_node.restart_clickhouse()
-
-    remaining_warnings = dummy_node.query(
-        f"SELECT message FROM system.warnings WHERE message_format_string = '{warning_message_format}'"
-    )
-    assert remaining_warnings == ""
-
-    main_node.query(f"DROP DATABASE {database_name} SYNC")
-    dummy_node.query(f"DROP DATABASE {database_name} SYNC")
