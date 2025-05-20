@@ -3,10 +3,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/geometryConverters.h>
 
 #include "Common/Exception.h"
 #include <Common/WKB.h>
+#include "Columns/ColumnFixedString.h"
+#include "Columns/IColumn.h"
+#include "DataTypes/DataTypeFixedString.h"
 
 #include <memory>
 #include <string>
@@ -26,84 +28,6 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 namespace
 {
 
-template <typename T>
-T convertGeometricObjectToBoostObject(const ArrowGeometricObject & object)
-requires std::is_same_v<T, CartesianPoint>
-{
-    if (!std::holds_alternative<ArrowPoint>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not convert to boost object - expected point");
-    const auto & point = std::get<ArrowPoint>(object);
-    return CartesianPoint(point.x, point.y);
-}
-
-template <typename T>
-T convertGeometricObjectToBoostObject(const ArrowGeometricObject & object)
-requires std::is_same_v<T, CartesianLineString>
-{
-    if (!std::holds_alternative<ArrowLineString>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not convert to boost object - expected linestring");
-    const auto & linestring = std::get<ArrowLineString>(object);
-
-    CartesianLineString result;
-    result.reserve(linestring.size());
-    for (const auto & point : linestring)
-        result.push_back(convertGeometricObjectToBoostObject<CartesianPoint>(point));
-    return result;
-}
-
-template <typename T>
-T convertGeometricObjectToBoostObject(const ArrowGeometricObject & object)
-requires std::is_same_v<T, CartesianPolygon>
-{
-    if (!std::holds_alternative<ArrowPolygon>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not convert to boost object - expected polygon");
-
-    const auto & polygon = std::get<ArrowPolygon>(object);
-    CartesianPolygon result;
-    result.outer().reserve(polygon[0].size());
-    for (const auto & point : polygon[0])
-        result.outer().push_back(convertGeometricObjectToBoostObject<CartesianPoint>(point));
-
-    result.inners().reserve(polygon.size() - 1);
-    for (size_t i = 1; i < polygon.size(); ++i)
-    {
-        result.inners().push_back({});
-        for (const auto & point : polygon[i])
-            result.inners().back().push_back(convertGeometricObjectToBoostObject<CartesianPoint>(point));
-    }
-    return result;
-}
-
-template <typename T>
-T convertGeometricObjectToBoostObject(const ArrowGeometricObject & object)
-requires std::is_same_v<T, CartesianMultiLineString>
-{
-    if (!std::holds_alternative<ArrowMultiLineString>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not convert to boost object - expected point");
-    const auto & multilinestring = std::get<ArrowMultiLineString>(object);
-
-    CartesianMultiLineString result;
-    result.reserve(multilinestring.size());
-    for (const auto & linestring : multilinestring)
-        result.push_back(convertGeometricObjectToBoostObject<CartesianLineString>(linestring));
-    return result;
-}
-
-template <typename T>
-T convertGeometricObjectToBoostObject(const ArrowGeometricObject & object)
-requires std::is_same_v<T, CartesianMultiPolygon>
-{
-    if (!std::holds_alternative<ArrowMultiPolygon>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not convert to boost object - expected point");
-    const auto & multipolygon = std::get<ArrowMultiPolygon>(object);
-
-    CartesianMultiPolygon result;
-    result.reserve(multipolygon.size());
-    for (const auto & polygon : multipolygon)
-        result.push_back(convertGeometricObjectToBoostObject<CartesianPolygon>(polygon));
-    return result;
-}
-
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
 class FunctionReadWKB : public IFunction
 {
@@ -120,7 +44,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
+        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr
+            && checkAndGetDataType<DataTypeFixedString>(arguments[0].get()) == nullptr)
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
         }
@@ -131,25 +56,39 @@ public:
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
-
-        Serializer serializer;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if (checkColumn<ColumnString>(*arguments[0].column))
         {
-            auto str = column_string.getDataAt(i).toString();
-            ReadBuffer in_buffer(str.data(), str.size(), 0);
-
-            auto object = parseWKBFormat(in_buffer);
-            auto boost_object = convertGeometricObjectToBoostObject<Geometry>(object);
-            serializer.add(boost_object);
+            const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
+            return executeColumnImpl(column_string, input_rows_count);
         }
-
-        return serializer.finalize();
+        else
+        {
+            const auto & column_string = checkAndGetColumn<ColumnFixedString>(*arguments[0].column);
+            return executeColumnImpl(column_string, input_rows_count);
+        }
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReadWKB<DataTypeName, Geometry, Serializer, NameHolder>>(); }
+
+private:
+    template <typename T>
+    ColumnPtr executeColumnImpl(const T & column, size_t input_rows_count) const
+    {
+        Serializer serializer;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            auto str = column.getDataAt(i).toString();
+            ReadBuffer in_buffer(str.data(), str.size(), 0);
+
+            auto object = parseWKBFormat(in_buffer);
+            auto boost_object = std::get<Geometry>(object);
+            serializer.add(boost_object);
+        }
+
+        return serializer.finalize();
+    }
 };
 
 struct ReadWKBPointNameHolder
