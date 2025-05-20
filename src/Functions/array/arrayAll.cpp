@@ -64,11 +64,11 @@ ColumnPtr ArrayAllImpl::execute(const ColumnArray & array, ColumnPtr mapped)
 REGISTER_FUNCTION(ArrayAll)
 {
     FunctionDocumentation::Description description = R"(
-Returns `1` if a lambda function returns true for all elements. Otherwise, it returns `0`.
+Returns `1` if lambda `func(x [, y1, y2, ... yN])` returns true for all elements. Otherwise, it returns `0`.
 )";
     FunctionDocumentation::Syntax syntax = "arrayAll(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments = {
-        {"func(x [, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
         {"source_arr", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
