@@ -412,7 +412,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             const std::string endpoint = table_metadata.getEndpoint();
 
             /* Stripping off the prefixes
-             * metadata_location generally if of the form s3://<prefix>/table/metada/<file-name>
+             * metadata_location generally is of the form s3://<prefix>/table/metada/<file-name>
              * data_location depending on the implementation could be s3:// prefixed, or http:// / https:// prefixed (e.g. apache lakekeeper)
              * in these cases, getting rid of the prefix is important to resolve the metadata_location better
              */
