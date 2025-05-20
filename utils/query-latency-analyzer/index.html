@@ -413,7 +413,7 @@ function renderTable(data) {
 function handleData(raw_data) {
     // Process raw data
     const data = processData(raw_data);
-    const globalAvg = computeGlobalAverages(data);
+    let globalAvg = computeGlobalAverages(data);
 
     // Filter out labels that have zero means across all groups
     const nonZeroMeanPredicate = (label, i, groups) => {
@@ -421,6 +421,7 @@ function handleData(raw_data) {
         return !Object.values(groups).every(group => Math.abs(group.avg[i]) < 1e-10);
     };
     const filteredData = filterData(data, nonZeroMeanPredicate);
+    globalAvg = computeGlobalAverages(filteredData); // Recompute global averages after filtering
 
     // Split labels into underscore-prefixed and regular labels while preserving original order
     const underscoreLabels = filteredData.labels.filter(label => label.startsWith('_'));
