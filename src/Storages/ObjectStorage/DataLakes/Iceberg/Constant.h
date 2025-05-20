@@ -8,15 +8,40 @@ namespace Iceberg
 #define DEFINE_ICEBERG_FIELD(name) constexpr const char * f_##name = #name;
 
 /// These variables begin with 'f_', following the field name in Iceberg files.
+DEFINE_ICEBERG_FIELD(boolean);
+DEFINE_ICEBERG_FIELD(bigint);
+DEFINE_ICEBERG_FIELD(binary);
+DEFINE_ICEBERG_FIELD(double);
+DEFINE_ICEBERG_FIELD(date);
 DEFINE_ICEBERG_FIELD(data_file);
+DEFINE_ICEBERG_FIELD(element);
+DEFINE_ICEBERG_FIELD(fields);
+DEFINE_ICEBERG_FIELD(float);
+DEFINE_ICEBERG_FIELD(key);
+DEFINE_ICEBERG_FIELD(list)
 DEFINE_ICEBERG_FIELD(location);
+DEFINE_ICEBERG_FIELD(long);
+DEFINE_ICEBERG_FIELD(id)
+DEFINE_ICEBERG_FIELD(int)
 DEFINE_ICEBERG_FIELD(manifest_path);
+DEFINE_ICEBERG_FIELD(map);
+DEFINE_ICEBERG_FIELD(name);
+DEFINE_ICEBERG_FIELD(required);
+DEFINE_ICEBERG_FIELD(schema);
 DEFINE_ICEBERG_FIELD(schemas);
 DEFINE_ICEBERG_FIELD(sequence_number);
 DEFINE_ICEBERG_FIELD(snapshots);
 DEFINE_ICEBERG_FIELD(status);
+DEFINE_ICEBERG_FIELD(struct);
+DEFINE_ICEBERG_FIELD(string);
 DEFINE_ICEBERG_FIELD(summary);
+DEFINE_ICEBERG_FIELD(time);
+DEFINE_ICEBERG_FIELD(timestamp);
+DEFINE_ICEBERG_FIELD(timestamptz);
+DEFINE_ICEBERG_FIELD(type)
 DEFINE_ICEBERG_FIELD(transform);
+DEFINE_ICEBERG_FIELD(uuid);
+DEFINE_ICEBERG_FIELD(value);
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
 DEFINE_ICEBERG_FIELD_ALIAS(current_snapshot_id, current-snapshot-id);
