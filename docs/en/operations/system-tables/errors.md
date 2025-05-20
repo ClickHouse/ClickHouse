@@ -21,9 +21,6 @@ Columns:
 - `last_error_message` ([String](../../sql-reference/data-types/string.md)) — message for the last error.
 - `last_error_trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — A [stack trace](https://en.wikipedia.org/wiki/Stack_trace) that represents a list of physical addresses where the called methods are stored.
 - `remote` ([UInt8](../../sql-reference/data-types/int-uint.md)) — remote exception (i.e. received during one of the distributed queries).
-- `last_error_query_id` ([String](../../sql-reference/data-types/string.md)) — Id of a query that caused the last error (if available).
-- `last_error_symbols` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)) — Contains demangled symbol names, corresponding to the `last_error_trace`.
-- `last_error_lines` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)) — Contains strings with file names with line numbers, corresponding to the `last_error_trace`.
 
 :::note
 Counters for some errors may increase during successful query execution. It's not recommended to use this table for server monitoring purposes unless you are sure that corresponding error can not be a false positive.

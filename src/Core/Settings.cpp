@@ -5041,10 +5041,10 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
-    DECLARE(Bool, enable_url_encoding, true, R"(
+    DECLARE(Bool, enable_url_encoding, false, R"(
 Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
 
-Enabled by default.
+Disabled by default.
 )", 0) \
     DECLARE(UInt64, database_replicated_initial_query_timeout_sec, 300, R"(
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -6716,19 +6716,19 @@ Allow experimental delta-kernel-rs implementation.
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, execute_distributed_plan_locally, false, R"(
+    DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, default_shuffle_join_bucket_count, 8, R"(
+    DECLARE(UInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, default_reader_bucket_count, 8, R"(
+    DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 8, R"(
 Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, optimize_exchanges, false, R"(
+    DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
-)", EXPERIMENTAL) \
-    DECLARE(String, force_exchange_kind, "", R"(
+)", 0) \
+    DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
 Possible values:
@@ -7168,8 +7168,9 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
         Field min;
         Field max;
+        std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        params.constraints.get(*this, setting_name, min, max, writability);
+        params.constraints.get(*this, setting_name, min, max, disallowed_values, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -7177,13 +7178,18 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         if (!max.isNull())
             max = Settings::valueToStringUtil(setting_name, max);
 
+        Array disallowed_array;
+        for (const auto & value : disallowed_values)
+            disallowed_array.emplace_back(Settings::valueToStringUtil(setting_name, value));
+
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
-        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[7]->insert(setting.getTypeName());
-        res_columns[8]->insert(setting.getDefaultValueString());
-        res_columns[10]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[11]->insert(setting.getTier());
+        res_columns[6]->insert(disallowed_array);
+        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[8]->insert(setting.getTypeName());
+        res_columns[9]->insert(setting.getDefaultValueString());
+        res_columns[11]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[12]->insert(setting.getTier());
     };
 
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
@@ -7193,7 +7199,7 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         res_columns[0]->insert(setting_name);
 
         fill_data_for_setting(setting_name, setting);
-        res_columns[9]->insert("");
+        res_columns[10]->insert("");
 
         if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
         {
@@ -7201,7 +7207,7 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
             {
                 res_columns[0]->insert(alias);
                 fill_data_for_setting(alias, setting);
-                res_columns[9]->insert(setting_name);
+                res_columns[10]->insert(setting_name);
             }
         }
     }
