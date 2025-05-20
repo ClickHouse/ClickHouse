@@ -60,7 +60,7 @@ namespace ErrorCodes
 }
 
 RefreshTask::RefreshTask(
-    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool /* attach */, bool coordinated, bool empty, bool is_restore_from_backup)
+    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
     : log(getLogger("RefreshTask"))
     , view(view_)
     , refresh_schedule(strategy)
@@ -91,6 +91,10 @@ RefreshTask::RefreshTask(
         /// currently both DatabaseReplicated and DatabaseShared seem to require this behavior.
         if (!replica_path_existed)
         {
+            if (!attach && !is_restore_from_backup &&
+                !zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads.");
+
             zookeeper->createAncestors(coordination.path);
             Coordination::Requests ops;
             ops.emplace_back(zkutil::makeCreateRequest(coordination.path, coordination.root_znode.toString(), zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
@@ -208,6 +212,9 @@ void RefreshTask::drop(ContextPtr context)
         /// If no replicas left, remove the coordination znode.
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/replicas", -1));
+        String paused_path = coordination.path + "/paused";
+        if (zookeeper->exists(paused_path))
+            ops.emplace_back(zkutil::makeRemoveRequest(paused_path, -1));
         ops.emplace_back(zkutil::makeRemoveRequest(coordination.path, -1));
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(ops, responses);
@@ -606,6 +613,10 @@ void RefreshTask::refreshTask()
         tryLogCurrentException(log,
             "Unexpected exception in refresh scheduling, please investigate. The view will be stopped.");
 #ifdef DEBUG_OR_SANITIZER_BUILD
+        /// There's at least one legitimate case where this may happen: if the user (DEFINER) was dropped.
+        /// But it's unexpected in tests.
+        /// Note that Coordination::Exception is caught separately above, so transient keeper errors
+        /// don't go here and are just retried.
         abortOnFailedAssertion("Unexpected exception in refresh scheduling");
 #else
         if (coordination.coordinated)
