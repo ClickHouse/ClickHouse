@@ -575,7 +575,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             --arg_cnt;
         }
     }
-    else if (merging_params.mode == MergeTreeData::MergingParams::Summing  || merging_params.mode == MergeTreeData::MergingParams::Coalescing)
+    else if (merging_params.mode == MergeTreeData::MergingParams::Summing || merging_params.mode == MergeTreeData::MergingParams::Coalescing)
     {
         /// If the last element is not index_granularity or replica_name (a literal), then this is a list of summable columns.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
