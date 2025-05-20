@@ -134,13 +134,13 @@ uint64_t get_virtual_address(const Class * instance, Ptr func)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-macros"
 
-#define OMG(foo) \
+#define XRAY_TRACE(foo) \
     using FuncType = decltype(&(foo)); \
     const auto func_ptr = reinterpret_cast<FuncType>(&(foo)); \
     const auto func_addr = reinterpret_cast<uint64_t>(func_ptr); \
     XRayTracing::XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
 
-#define OMG_MEMBER(class_name, member_func) \
+#define XRAY_TRACE_MEMBER(class_name, member_func) \
     using FuncType = decltype(&class_name::member_func); \
     union \
     { \

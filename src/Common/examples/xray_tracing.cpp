@@ -21,21 +21,21 @@ ALWAYS_INLINE void doWork(T arg)
 
 ATTRIBUTES void always_traced_function()
 {
-    OMG(always_traced_function)
+    XRAY_TRACE(always_traced_function)
     doWork(42);
 }
 
 template <typename T>
 ATTRIBUTES void always_traced_template_function(T & arg)
 {
-    OMG(always_traced_template_function<T>)
+    XRAY_TRACE(always_traced_template_function<T>)
     doWork(arg);
 }
 
 template <typename T, typename U>
 ATTRIBUTES void always_traced_template_function(T & arg1, U & arg2)
 {
-    OMG((always_traced_template_function<T, U>))
+    XRAY_TRACE((always_traced_template_function<T, U>))
     doWork(arg1 + arg2);
 }
 
@@ -47,14 +47,14 @@ public:
     ATTRIBUTES
     void f(int arg)
     {
-        OMG_MEMBER(MyClass, f)
+        XRAY_TRACE_MEMBER(MyClass, f)
         doWork(arg);
     }
 
     ATTRIBUTES
     virtual void g(int arg)
     {
-        OMG_MEMBER(MyClass, g)
+        XRAY_TRACE_MEMBER(MyClass, g)
         doWork(arg);
     }
 };
