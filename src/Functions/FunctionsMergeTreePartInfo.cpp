@@ -16,6 +16,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -24,7 +25,8 @@ namespace ErrorCodes
 namespace
 {
 
-MergeTreePartInfo constructPartInfo(std::string_view data) {
+MergeTreePartInfo constructPartInfo(std::string_view data)
+{
     if (auto info = MergeTreePartInfo::tryParsePartName(data, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING))
         return std::move(info.value());
 
