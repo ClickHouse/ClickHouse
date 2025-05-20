@@ -1597,10 +1597,10 @@ def test_alter_rename(started_cluster):
 
 @pytest.mark.parametrize("engine", ["ReplicatedMergeTree"])
 def test_create_alter_sleeping(started_cluster, engine):
-    main_node.query("DROP DATABASE IF EXISTS create_alter_sleeping")
+    competing_node.query("DROP DATABASE IF EXISTS create_alter_sleeping")
     dummy_node.query("DROP DATABASE IF EXISTS create_alter_sleeping")
 
-    main_node.query(
+    competing_node.query(
         "CREATE DATABASE create_alter_sleeping ENGINE = Replicated('/clickhouse/databases/create_alter_sleeping', 'shard1', 'replica1');"
     )
     dummy_node.query(
@@ -1608,7 +1608,7 @@ def test_create_alter_sleeping(started_cluster, engine):
     )
 
     dummy_node.stop_clickhouse()
-    main_node.query(
+    competing_node.query(
         f"""
         CREATE TABLE create_alter_sleeping.t (n int) ENGINE={engine} ORDER BY n;
         ALTER TABLE create_alter_sleeping.t ADD INDEX n_idx n TYPE minmax GRANULARITY 10;
