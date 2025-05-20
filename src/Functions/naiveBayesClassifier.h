@@ -142,7 +142,7 @@ struct TokenPolicy
     }
 };
 
-using ClassCountMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>;
+using ClassCountMap = HashMap<UInt32, UInt64, HashCRC32<UInt32>>;
 using ClassCountMaps = std::vector<ClassCountMap>;
 
 using NGramIndexMap = HashMap<StringRef, UInt32, StringRefHash>;
@@ -276,7 +276,7 @@ public:
                     for (const auto & class_entry : class_totals)
                         available_classes.push_back(class_entry.getKey());
 
-                        throw Exception(
+                    throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Class {} from <priors> not found in the model at {} of model {}. Available classes: {}",
                         class_id,
