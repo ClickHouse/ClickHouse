@@ -26,7 +26,6 @@ endif()
 clickhouse_import_crate(
     MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
     FEATURES "default-engine, delta_kernel/cloud"
-    LOCKED
 )
 clickhouse_config_crate_flags(delta_kernel_ffi)
 
