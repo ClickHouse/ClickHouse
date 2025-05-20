@@ -98,13 +98,12 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
         for (const auto & elem : rhs.history)
         {
             const auto & value = elem.getValue();
-            if (!history.contains(value))
-            {
-                Set::LookupResult it;
-                bool inserted;
-                history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
+            Set::LookupResult it;
+            bool inserted;
+            history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
+
+            if (inserted)
                 deserializeAndInsert<is_plain_column>(it->getValue(), *argument_columns[0]);
-            }
         }
     }
 };
