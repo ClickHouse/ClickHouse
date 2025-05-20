@@ -41,7 +41,7 @@ class ClickHouseProc:
         self.config_file = f"{self.ch_config_dir}/config.xml"
         self.user_files_path = f"{self.ch_config_dir}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
-        self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.ch_config_dir} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --keeper_server.storage_path {self.ch_config_dir}/coordination"
+        self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.ch_config_dir} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --keeper_server.storage_path {self.ch_config_dir}/coordination --logger.stderr {temp_dir}/var/log/clickhouse-server/stderr.log"
         self.proc = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
@@ -61,6 +61,10 @@ class ClickHouseProc:
         #         file.write(self.BACKUPS_XML)
 
         self.minio_proc = None
+        if Path("./ci/tmp/clickhouse").exists():
+            self.client_cmd = "./ci/tmp/clickhouse client"
+        else:
+            assert False
 
     def start_minio(self, test_type, log_file_path):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
@@ -130,13 +134,13 @@ class ClickHouseProc:
         delay = 2
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                'clickhouse-client --query "select 1"', verbose=True
+                f'{self.client_cmd} --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print("Server ready")
                 break
             else:
-                print(f"Server not ready, wait")
+                print(f"Server not ready, err: {err}, wait")
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
