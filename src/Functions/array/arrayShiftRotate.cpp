@@ -320,7 +320,7 @@ If the number of elements is negative, the array is shifted to the right.
     FunctionDocumentation::Arguments arguments_shiftleft = {
         {"arr", "The array for which to shift the elements. [`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Number of elements to shift. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
-        {"default", "Optional. Default value for new elements."},
+        {"default", "Optional. Default value for new elements."}
     };
     FunctionDocumentation::ReturnedValue returned_value_shiftleft = "An array shifted to the left by the specified number of elements. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples_shiftleft = {
