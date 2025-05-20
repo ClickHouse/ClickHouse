@@ -189,7 +189,7 @@ ReturnType deserializeImpl(
     }
 
     buf.rollbackToCheckpoint();
-    if (settings.allow_special_bool_values && tryDeserializeAllVariants(col, buf) && check_end_of_value(buf))
+    if (tryDeserializeAllVariants(col, buf) && check_end_of_value(buf))
     {
         buf.dropCheckpoint();
         if (buf.hasUnreadData())
@@ -263,11 +263,6 @@ bool SerializationBool::tryDeserializeTextEscaped(IColumn & column, ReadBuffer &
 }
 
 void SerializationBool::serializeTextJSON(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings) const
-{
-    serializeSimple(column, row_num, ostr, settings);
-}
-
-void SerializationBool::serializeTextJSONPretty(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings, size_t) const
 {
     serializeSimple(column, row_num, ostr, settings);
 }

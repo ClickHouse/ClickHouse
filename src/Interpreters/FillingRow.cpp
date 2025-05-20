@@ -3,7 +3,7 @@
 #include <Columns/IColumn.h>
 #include <IO/Operators.h>
 #include <Interpreters/FillingRow.h>
-#include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
@@ -23,9 +23,9 @@ inline static void logDebug(const char * fmt_str, Args&&... args)
 bool less(const Field & lhs, const Field & rhs, int direction)
 {
     if (direction == -1)
-        return accurateLess(rhs, lhs);
+        return applyVisitor(FieldVisitorAccurateLess(), rhs, lhs);
 
-    return accurateLess(lhs, rhs);
+    return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
 }
 
 bool equals(const Field & lhs, const Field & rhs)
@@ -34,7 +34,7 @@ bool equals(const Field & lhs, const Field & rhs)
     if (lhs.getType() == rhs.getType())
         return lhs == rhs;
 
-    return accurateEquals(lhs, rhs);
+    return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
 }
 
 

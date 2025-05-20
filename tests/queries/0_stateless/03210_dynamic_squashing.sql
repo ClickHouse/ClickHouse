@@ -1,5 +1,4 @@
 -- Tags: long
--- Random settings limits: index_granularity=(100, None)
 
 set allow_experimental_dynamic_type = 1;
 set max_block_size = 1000;

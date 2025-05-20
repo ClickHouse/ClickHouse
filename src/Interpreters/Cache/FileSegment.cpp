@@ -546,7 +546,7 @@ bool FileSegment::reserve(
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
-                size_to_reserve, range().toString(), downloaded_size.load());
+                size_to_reserve, range().toString(), downloaded_size);
         }
 
         chassert(reserved_size >= expected_downloaded_size);
@@ -926,7 +926,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
         const auto & entry = it->getEntry();
         if (download_state != State::DOWNLOADING && entry->size != reserved_size)
-            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size.load(), reserved_size.load()));
+            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size, reserved_size));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -1121,12 +1121,9 @@ void FileSegment::increasePriority()
     if (it)
     {
         if (auto cache_lock = cache->tryLockCache())
-            it->increasePriority(cache_lock);
+            hits_count = it->increasePriority(cache_lock);
         else
             ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
-
-        /// Used only for system.filesystem_cache.
-        ++hits_count;
     }
 }
 

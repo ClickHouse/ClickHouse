@@ -16,7 +16,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/FieldAccurateComparison.h>
+#include "Common/FieldVisitors.h"
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -117,7 +118,7 @@ private:
 
     static bool compare(const Array & arr, const Field& rhs, size_t pos, size_t)
     {
-        return accurateEquals(arr[pos], rhs);
+        return applyVisitor(FieldVisitorAccurateEquals(), arr[pos], rhs);
     }
 
     static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
@@ -128,7 +129,7 @@ private:
     static constexpr bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) noexcept { return left[i] >= right; }
 
     static constexpr bool lessOrEqual(const Array& arr, const Field& rhs, size_t pos, size_t) noexcept {
-        return accurateLessOrEqual(rhs, arr[pos]);
+        return applyVisitor(FieldVisitorAccurateLessOrEqual(), rhs, arr[pos]);
     }
 
 #pragma clang diagnostic pop
@@ -204,7 +205,7 @@ public:
         ResultType current = 0;
         for (size_t i = 0, size = arr.size(); i < size; ++i)
         {
-            if (!accurateEquals(arr[i], value))
+            if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
                 continue;
 
             ConcreteAction::apply(current, i);
@@ -995,7 +996,7 @@ private:
                 {
                     if (null_map && (*null_map)[row])
                         continue;
-                    if (!accurateEquals(arr[i], value))
+                    if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
                         continue;
                 }
 

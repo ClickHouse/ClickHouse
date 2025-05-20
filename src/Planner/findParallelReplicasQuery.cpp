@@ -9,6 +9,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/queryToString.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
 #include <Planner/findQueryForParallelReplicas.h>
@@ -494,7 +495,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     rewriteJoinToGlobalJoin(modified_query_tree, context);
-    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
+    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
     ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
     Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(

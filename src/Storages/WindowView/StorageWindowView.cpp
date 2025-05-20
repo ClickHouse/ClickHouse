@@ -6,7 +6,6 @@
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -30,6 +29,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTWatchQuery.h>
+#include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -48,7 +48,6 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -61,7 +60,6 @@
 #include <Storages/WindowView/WindowViewSource.h>
 #include <Storages/ReadInOrderOptimizer.h>
 
-#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Poco/String.h>
@@ -80,7 +78,6 @@ namespace Setting
     extern const SettingsSeconds wait_for_window_view_fire_signal_timeout;
     extern const SettingsSeconds window_view_clean_interval;
     extern const SettingsSeconds window_view_heartbeat_interval;
-    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
 }
 
 namespace ErrorCodes
@@ -133,14 +130,14 @@ namespace
                     if (!data.window_function)
                     {
                         if (data.check_duplicate_window)
-                            data.serialized_window_function = temp_node->formatWithSecretsOneLine();
+                            data.serialized_window_function = serializeAST(*temp_node);
                         t->name = "windowID";
                         data.window_function = t->clone();
                         data.window_function->setAlias("");
                     }
                     else
                     {
-                        if (data.check_duplicate_window && temp_node->formatWithSecretsOneLine() != data.serialized_window_function)
+                        if (data.check_duplicate_window && serializeAST(*temp_node) != data.serialized_window_function)
                             throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "WINDOW VIEW only support ONE TIME WINDOW FUNCTION");
                         t->name = "windowID";
                     }
@@ -499,6 +496,8 @@ void StorageWindowView::alter(
     InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
     create_interpreter.setInternal(true);
     create_interpreter.execute();
+
+    DatabaseCatalog::instance().addViewDependency(select_table_id, table_id);
 
     shutdown_called = false;
 
@@ -1596,19 +1595,15 @@ void StorageWindowView::writeIntoWindowView(
         return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), stream_header);
     });
 
-    bool disable_deduplication_for_children = !local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
-    if (!disable_deduplication_for_children)
+    String window_view_id = window_view.getStorageID().hasUUID() ? toString(window_view.getStorageID().uuid) : window_view.getStorageID().getFullNameNotQuoted();
+    builder.addSimpleTransform([&](const Block & stream_header)
     {
-        String window_view_id = window_view.getStorageID().hasUUID() ? toString(window_view.getStorageID().uuid) : window_view.getStorageID().getFullNameNotQuoted();
-        builder.addSimpleTransform([&](const Block & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewIDTransform>(window_view_id, stream_header);
-        });
-        builder.addSimpleTransform([&](const Block & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
-        });
-    }
+        return std::make_shared<DeduplicationToken::SetViewIDTransform>(window_view_id, stream_header);
+    });
+    builder.addSimpleTransform([&](const Block & stream_header)
+    {
+        return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
+    });
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     builder.addSimpleTransform([&](const Block & stream_header)
@@ -1705,6 +1700,8 @@ void StorageWindowView::startup()
 {
     if (disabled_due_to_analyzer)
         return;
+
+    DatabaseCatalog::instance().addViewDependency(select_table_id, getStorageID());
 
     fire_task->activate();
     clean_cache_task->activate();

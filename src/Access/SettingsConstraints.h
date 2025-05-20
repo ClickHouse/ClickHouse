@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Core/Field.h>
+#include <Access/SettingsProfileElement.h>
 #include <Common/LoggingFormatStringHelpers.h>
-#include <Common/SettingConstraintWritability.h>
+#include <Common/SettingsChanges.h>
 #include <Common/SettingSource.h>
-
 #include <unordered_map>
 
 namespace Poco::Util
@@ -19,8 +18,6 @@ struct MergeTreeSettings;
 struct SettingChange;
 class SettingsChanges;
 class AccessControl;
-struct AlterSettingsProfileElements;
-class SettingsProfileElements;
 
 
 /** Checks if specified changes of settings are allowed or not.
@@ -71,9 +68,9 @@ public:
     void clear();
     bool empty() const { return constraints.empty(); }
 
-    void set(const String & full_name, const Field & min_value, const Field & max_value, const std::vector<Field> & allowed_values, SettingConstraintWritability writability);
-    void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & allowed_values, SettingConstraintWritability & writability) const;
-    void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & allowed_values, SettingConstraintWritability & writability) const;
+    void set(const String & full_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability);
+    void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const;
+    void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const;
 
     void merge(const SettingsConstraints & other);
 
@@ -107,7 +104,6 @@ private:
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         Field min_value{};
         Field max_value{};
-        std::vector<Field> disallowed_values{};
 
         bool operator ==(const Constraint & other) const;
         bool operator !=(const Constraint & other) const { return !(*this == other); }

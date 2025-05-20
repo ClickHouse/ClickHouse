@@ -4,7 +4,6 @@ import logging
 import os
 import random
 import string
-import uuid
 
 import minio
 import pytest
@@ -12,7 +11,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_s3_mock
 from helpers.test_tools import assert_eq_with_retry
-from helpers.config_cluster import minio_secret_key
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
@@ -170,7 +168,7 @@ def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_upload_s3_fail_create_multi_part_upload',
-                'minio', '{minio_secret_key}',
+                'minio', 'minio123',
                 'CSV', auto, '{compression}'
             )
         SELECT
@@ -214,7 +212,7 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_upload_s3_fail_upload_part_when_multi_part_upload',
-                'minio', '{minio_secret_key}',
+                'minio', 'minio123',
                 'CSV', auto, '{compression}'
             )
         SELECT
@@ -269,7 +267,7 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_{action}_retried',
-                'minio', '{minio_secret_key}',
+                'minio', 'minio123',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -298,7 +296,7 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
             INSERT INTO
                 TABLE FUNCTION s3(
                     'http://resolver:8083/root/data/test_when_{action}_retried',
-                    'minio', '{minio_secret_key}',
+                    'minio', 'minio123',
                     'CSV', auto, 'none'
                 )
             SELECT
@@ -333,7 +331,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_s3_broken_pipe_at_upload_is_retried',
-                'minio', '{minio_secret_key}',
+                'minio', 'minio123',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -367,7 +365,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
                INSERT INTO
                    TABLE FUNCTION s3(
                        'http://resolver:8083/root/data/test_when_s3_broken_pipe_at_upload_is_retried',
-                       'minio', '{minio_secret_key}',
+                       'minio', 'minio123',
                        'CSV', auto, 'none'
                    )
                SELECT
@@ -411,7 +409,7 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_upload_is_retried',
-                'minio', '{minio_secret_key}',
+                'minio', 'minio123',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -448,7 +446,7 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
                INSERT INTO
                    TABLE FUNCTION s3(
                        'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_upload_is_retried',
-                       'minio', '{minio_secret_key}',
+                       'minio', 'minio123',
                        'CSV', auto, 'none'
                    )
                SELECT
@@ -493,7 +491,7 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_create_mpu_retried',
-                'minio', '{minio_secret_key}',
+                'minio', 'minio123',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -531,7 +529,7 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_create_mpu_retried',
-                'minio', '{minio_secret_key}',
+                'minio', 'minio123',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -569,7 +567,7 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_query_is_canceled_with_inf_retries',
-                'minio', '{minio_secret_key}',
+                'minio', 'minio123',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -627,7 +625,7 @@ def test_adaptive_timeouts(cluster, broken_s3, node_name):
             INSERT INTO
                 TABLE FUNCTION s3(
                     'http://resolver:8083/root/data/adaptive_timeouts',
-                    'minio', '{minio_secret_key}',
+                    'minio', 'minio123',
                     'CSV', auto, 'none'
                 )
             SELECT
@@ -891,110 +889,3 @@ def test_exception_in_onFinish(cluster, broken_s3):
     )
 
     assert count_from_query_log == "1\n"
-
-
-def test_exception_in_MV(cluster, broken_s3):
-    node = cluster.instances["node_with_query_log_on_s3"]
-
-    node.query(
-        """
-        DROP VIEW IF EXISTS source_sink_mv
-        """
-    )
-
-    node.query(
-        """
-        DROP TABLE IF EXISTS source_sink
-        """
-    )
-
-    node.query(
-        """
-        DROP TABLE IF EXISTS source
-        """
-    )
-
-    node.query(
-        """
-        CREATE TABLE source (i Int64)
-            ENGINE = MergeTree()
-            ORDER BY ()
-        """
-    )
-
-    node.query(
-        """
-        CREATE TABLE source_sink
-            ENGINE = MergeTree()
-            ORDER BY ()
-            SETTINGS storage_policy='broken_s3'
-            EMPTY AS
-            SELECT *
-            FROM source
-        """
-    )
-
-    node.query(
-        """
-        CREATE MATERIALIZED VIEW source_sink_mv TO source_sink AS
-            SELECT *
-            FROM source
-        """
-    )
-
-    node.query(
-        """
-        -- INSERT
-        INSERT INTO source SETTINGS materialized_views_ignore_errors=1 VALUES (1)
-        """
-    )
-
-    broken_s3.setup_at_object_upload(count=100, after=0)
-
-    query_id = uuid.uuid4().hex
-    node.query(
-        """
-        INSERT INTO source SETTINGS materialized_views_ignore_errors=1 VALUES (2)
-        """,
-        query_id=query_id
-    )
-
-    count_from_source = node.query(
-        """
-        SELECT count() from source
-        """
-    )
-
-    assert count_from_source == "2\n"
-
-    count_from_sink= node.query(
-        """
-        SELECT count() from source_sink
-        """
-    )
-
-    assert count_from_sink == "1\n"
-
-    count_from_sink= node.query(
-        """
-        SYSTEM FLUSH LOGS query_log, query_views_log
-        """
-    )
-
-    query_view_log = node.query(
-        f"""
-        SELECT
-            view_name,
-            status,
-            exception_code,
-            exception,
-            view_target,
-            view_query
-        FROM system.query_views_log
-        WHERE initial_query_id = '{query_id}'
-        ORDER BY view_name ASC
-        """
-    )
-
-    assert 'ExceptionName: ExpectedError Message: mock s3 injected unretryable error' in query_view_log
-    assert 'ExceptionWhileProcessing' in query_view_log

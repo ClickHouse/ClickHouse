@@ -56,6 +56,8 @@ public:
         return std::move(query_plan);
     }
 
+    SelectQueryInfo buildSelectQueryInfo() const;
+
     void addStorageLimits(const StorageLimitsList & limits);
 
     PlannerContextPtr getPlannerContext() const
@@ -69,13 +71,10 @@ public:
     const QueryNodeToPlanStepMapping & getQueryNodeToPlanStepMapping() const { return query_node_to_plan_step_mapping; }
 
 private:
-    SelectQueryInfo buildSelectQueryInfo() const;
-
     void buildPlanForUnionNode();
 
     void buildPlanForQueryNode();
 
-    LoggerPtr log = getLogger("Planner");
     QueryTreeNodePtr query_tree;
     SelectQueryOptions & select_query_options;
     PlannerContextPtr planner_context;

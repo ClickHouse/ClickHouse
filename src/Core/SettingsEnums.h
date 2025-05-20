@@ -163,25 +163,25 @@ enum class DistributedProductMode : uint8_t
 
 DECLARE_SETTING_ENUM(DistributedProductMode)
 
-/// How the query result cache handles queries with non-deterministic functions, e.g. now()
-enum class QueryResultCacheNondeterministicFunctionHandling : uint8_t
+/// How the query cache handles queries with non-deterministic functions, e.g. now()
+enum class QueryCacheNondeterministicFunctionHandling : uint8_t
 {
     Throw,
     Save,
     Ignore
 };
 
-DECLARE_SETTING_ENUM(QueryResultCacheNondeterministicFunctionHandling)
+DECLARE_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling)
 
-/// How the query result cache handles queries against system tables, tables in databases 'system.*' and 'information_schema.*'
-enum class QueryResultCacheSystemTableHandling : uint8_t
+/// How the query cache handles queries against system tables, tables in databases 'system.*' and 'information_schema.*'
+enum class QueryCacheSystemTableHandling : uint8_t
 {
     Throw,
     Save,
     Ignore
 };
 
-DECLARE_SETTING_ENUM(QueryResultCacheSystemTableHandling)
+DECLARE_SETTING_ENUM(QueryCacheSystemTableHandling)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 
@@ -300,33 +300,6 @@ DECLARE_SETTING_ENUM(Dialect)
 
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
-enum class AlterUpdateMode : uint8_t
-{
-    HEAVY,
-    LIGHTWEIGHT,
-    LIGHTWEIGHT_FORCE,
-};
-
-DECLARE_SETTING_ENUM(AlterUpdateMode)
-
-enum class UpdateParallelMode : uint8_t
-{
-    SYNC,
-    ASYNC,
-    AUTO,
-};
-
-DECLARE_SETTING_ENUM(UpdateParallelMode)
-
-enum class LightweightDeleteMode : uint8_t
-{
-    ALTER_UPDATE,
-    LIGHTWEIGHT_UPDATE,
-    LIGHTWEIGHT_UPDATE_FORCE,
-};
-
-DECLARE_SETTING_ENUM(LightweightDeleteMode)
-
 enum class LightweightMutationProjectionMode : uint8_t
 {
     THROW,
@@ -386,23 +359,11 @@ DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
-enum class DatabaseDataLakeCatalogType : uint8_t
+enum class DatabaseIcebergCatalogType : uint8_t
 {
-    ICEBERG_REST,
-    UNITY,
-    GLUE,
-    ICEBERG_HIVE,
+    REST,
 };
 
-DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
-
-enum class VectorSearchFilterStrategy : uint8_t
-{
-    AUTO,
-    PREFILTER,
-    POSTFILTER,
-};
-
-DECLARE_SETTING_ENUM(VectorSearchFilterStrategy)
+DECLARE_SETTING_ENUM(DatabaseIcebergCatalogType)
 
 }

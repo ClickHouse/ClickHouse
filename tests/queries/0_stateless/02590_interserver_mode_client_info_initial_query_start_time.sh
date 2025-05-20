@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-async-insert
+# Tags: no-fasttest
 # Tag no-fasttest: interserver mode requires SSL
-# Tag no-async-insert: last check which counts queries from query log doesnt count query with query_kind: AsyncInsertFlush
 #
 # Test that checks that some of ClientInfo correctly passed in inter-server mode.
 # NOTE: we need .sh test (.sql is not enough) because queries on remote nodes does not have current_database = currentDatabase()
@@ -33,7 +32,7 @@ query_id="$(get_query_id)"
 # not be any significant difference.
 $CLICKHOUSE_CLIENT --prefer_localhost_replica=0 --query_id "$query_id" -q "select * from dist"
 $CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
-    system flush logs query_log;
+    system flush logs;
     select count(), count(distinct initial_query_start_time_microseconds) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
 "
 
@@ -44,7 +43,7 @@ query_id="$(get_query_id)"
 $CLICKHOUSE_CLIENT --prefer_localhost_replica=0 --query_id "$query_id" -q "select * from dist"
 
 $CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
-    system flush logs query_log;
+    system flush logs;
     select count(), count(distinct initial_query_start_time_microseconds) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
 "
 
@@ -63,6 +62,6 @@ $CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "system flush distributed 
 echo "CHECK"
 $CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
     select * from data order by key;
-    system flush logs query_log;
+    system flush logs;
     select count(), count(distinct initial_query_start_time_microseconds) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
 "

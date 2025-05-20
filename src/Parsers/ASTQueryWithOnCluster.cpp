@@ -1,4 +1,5 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -12,7 +13,7 @@ namespace DB
 
 std::string ASTQueryWithOnCluster::getRewrittenQueryWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
 {
-    return getRewrittenASTWithoutOnCluster(params)->formatWithSecretsOneLine();
+    return queryToString(getRewrittenASTWithoutOnCluster(params));
 }
 
 

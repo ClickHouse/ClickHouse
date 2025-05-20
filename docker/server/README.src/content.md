@@ -48,7 +48,7 @@ docker run -it --rm --network=container:some-clickhouse-server --entrypoint clic
 docker exec -it some-clickhouse-server clickhouse-client
 ```
 
-More information about the [ClickHouse client](https://clickhouse.com/docs/interfaces/cli/).
+More information about the [ClickHouse client](https://clickhouse.com/docs/en/interfaces/cli/).
 
 ### connect to it using curl
 
@@ -56,7 +56,7 @@ More information about the [ClickHouse client](https://clickhouse.com/docs/inter
 echo "SELECT 'Hello, ClickHouse!'" | docker run -i --rm --network=container:some-clickhouse-server buildpack-deps:curl curl 'http://localhost:8123/?query=' -s --data-binary @-
 ```
 
-More information about the [ClickHouse HTTP Interface](https://clickhouse.com/docs/interfaces/http/).
+More information about the [ClickHouse HTTP Interface](https://clickhouse.com/docs/en/interfaces/http/).
 
 ### stopping / removing the container
 
@@ -125,9 +125,9 @@ Read more in [knowledge base](https://clickhouse.com/docs/knowledgebase/configur
 
 ## Configuration
 
-The container exposes port 8123 for the [HTTP interface](https://clickhouse.com/docs/interfaces/http_interface/) and port 9000 for the [native client](https://clickhouse.com/docs/interfaces/tcp/).
+The container exposes port 8123 for the [HTTP interface](https://clickhouse.com/docs/en/interfaces/http_interface/) and port 9000 for the [native client](https://clickhouse.com/docs/en/interfaces/tcp/).
 
-ClickHouse configuration is represented with a file "config.xml" ([documentation](https://clickhouse.com/docs/operations/configuration_files/))
+ClickHouse configuration is represented with a file "config.xml" ([documentation](https://clickhouse.com/docs/en/operations/configuration_files/))
 
 ### Start server instance with custom configuration
 

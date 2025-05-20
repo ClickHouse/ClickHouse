@@ -7,11 +7,12 @@ TRUSTED_CONTRIBUTORS = {
     e.lower()
     for e in [
         "amosbird",
-        "azat",
+        "azat",  # SEMRush
+        "bharatnc",  # Many contributions.
         "den-crane",  # Documentation contributor
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
-        "canhld94",
+        "tonickkozlov",  # Cloudflare
     ]
 }
 

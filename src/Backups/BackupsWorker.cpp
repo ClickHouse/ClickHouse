@@ -36,8 +36,6 @@
 #include <boost/range/adaptor/map.hpp>
 
 
-#include <Parsers/ASTAlterQuery.h>
-
 namespace CurrentMetrics
 {
     extern const Metric BackupsThreads;
@@ -1001,6 +999,7 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
     return std::make_shared<BackupCoordinationOnCluster>(
         *backup_settings.backup_uuid,
         !backup_settings.deduplicate_files,
+        backup_settings.experimental_lightweight_snapshot,
         root_zk_path,
         get_zookeeper,
         keeper_settings,

@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
-#include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>

@@ -15,7 +15,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/strong_typedef.h>
 #include <filesystem>
-#include <variant>
 
 namespace fs = std::filesystem;
 
@@ -50,7 +49,6 @@ struct RequestSettings
     size_t sdk_retry_max_backoff_ms = 1000;
     bool use_native_copy = false;
     bool check_objects_after_upload = false;
-    bool read_only = false;
 
     using CurlOptions = Azure::Core::Http::CurlTransportOptions;
     CurlOptions::CurlOptIPResolve curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_WHATEVER;

@@ -26,23 +26,20 @@
 #include <Analyzer/JoinNode.h>
 
 #include <Dictionaries/IDictionary.h>
-#include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/ConcurrentHashJoin.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DirectJoin.h>
-#include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/GraceHashJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IKeyValueEntity.h>
-#include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/DirectJoin.h>
+#include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/PasteJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
-#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/Utils.h>
-
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
 #include <Core/Settings.h>
@@ -59,7 +56,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int INVALID_JOIN_ON_EXPRESSION;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace Setting
@@ -74,11 +70,8 @@ const ActionsDAG::Node * appendExpression(
     const QueryTreeNodePtr & expression,
     const PlannerContextPtr & planner_context)
 {
-    ColumnNodePtrWithHashSet empty_correlated_columns_set;
-    PlannerActionsVisitor join_expression_visitor(planner_context, empty_correlated_columns_set);
-    auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(dag, expression);
-    correlated_subtrees.assertEmpty("in join expression");
-
+    PlannerActionsVisitor join_expression_visitor(planner_context);
+    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(dag, expression);
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Expression {} expected be a single node, got {}",
@@ -105,25 +98,11 @@ struct JoinInfoBuildContext
             {
                 auto & column_node = join_using_node->as<ColumnNode &>();
                 auto & column_node_sources = column_node.getExpressionOrThrow()->as<ListNode &>();
-
-                const auto column_left = column_node_sources.getNodes().at(0);
-                if (!column_left->as<ColumnNode>())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "JOIN USING clause expected column identifier. Actual {}",
-                        column_left->formatASTForErrorMessage());
-
                 changed_types.emplace(
-                    planner_context_->getColumnNodeIdentifierOrThrow(column_left),
+                    planner_context_->getColumnNodeIdentifierOrThrow(column_node_sources.getNodes().at(0)),
                     column_node.getColumnType());
-
-                const auto column_right = column_node_sources.getNodes().at(1);
-                if (!column_right->as<ColumnNode>())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "JOIN USING clause expected column identifier. Actual {}",
-                        column_right->formatASTForErrorMessage());
-
                 changed_types.emplace(
-                    planner_context_->getColumnNodeIdentifierOrThrow(column_right),
+                    planner_context_->getColumnNodeIdentifierOrThrow(column_node_sources.getNodes().at(1)),
                     column_node.getColumnType());
             }
         }
@@ -572,16 +551,13 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         build_context.result_join_info.expression.condition.predicates.push_back(std::move(predicate));
     }
 
-    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
     return std::make_unique<JoinStepLogical>(
         left_header,
         right_header,
         std::move(build_context.result_join_info),
         std::move(build_context.result_join_expression_actions),
         Names(outer_scope_columns.begin(), outer_scope_columns.end()),
-        settings[Setting::join_use_nulls],
-        JoinSettings(settings),
-        SortingStep::Settings(settings));
+        planner_context->getQueryContext());
 }
 
 PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expression, const PlannerContextPtr & planner_context)

@@ -19,6 +19,7 @@ Squashing::Squashing(Block header_, size_t min_block_size_rows_, size_t min_bloc
     , min_block_size_bytes(min_block_size_bytes_)
     , header(header_)
 {
+    LOG_TEST(getLogger("Squashing"), "header columns {}", header.columns());
 }
 
 Chunk Squashing::flush()
@@ -171,7 +172,7 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
         }
 
         /// We know all the data we will insert in advance and can make all necessary pre-allocations.
-        mutable_columns[i]->prepareForSquashing(source_columns_list[i], /* factor */ 1);
+        mutable_columns[i]->prepareForSquashing(source_columns_list[i]);
         for (auto & source_column : source_columns_list[i])
         {
             auto column = std::move(source_column);

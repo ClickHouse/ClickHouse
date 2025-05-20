@@ -1,4 +1,4 @@
--- Tags: long, no-object-storage
+-- Tags: long, no-s3-storage
 
 drop table if exists tp_1;
 drop table if exists tp_2;

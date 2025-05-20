@@ -10,7 +10,6 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.port_forward import PortForward
-from helpers.config_cluster import mysql_pass
 
 DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
 CONFIG_FILES = [
@@ -57,7 +56,7 @@ def started_cluster():
 
         # Create database in ClickChouse using MySQL protocol (will be used for data insertion)
         instance.query(
-            f"CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql80:3306', 'test', 'root', '{mysql_pass}')"
+            "CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql80:3306', 'test', 'root', 'clickhouse')"
         )
 
         yield cluster
@@ -99,7 +98,7 @@ def test_mysql_dictionaries_custom_query_full_load(started_cluster):
         HOST 'mysql80'
         PORT 3306
         USER 'root'
-        PASSWORD '{mysql_pass}'
+        PASSWORD 'clickhouse'
         QUERY $doc$SELECT id, value_1, value_2 FROM test.test_table_1 INNER JOIN test.test_table_2 USING (id);$doc$))
     LIFETIME(0)
     """
@@ -129,7 +128,7 @@ def test_mysql_dictionaries_custom_query_full_load(started_cluster):
         HOST 'mysql80'
         PORT 3306
         USER 'root'
-        PASSWORD '{mysql_pass}'
+        PASSWORD 'clickhouse'
         QUERY 'SELECT id AS id1, id + 1 AS id2, CONCAT_WS(" ", "The", value_1) AS value_concat FROM test.test_table_1'))
     LIFETIME(0)
     """
@@ -169,7 +168,7 @@ def test_mysql_dictionaries_custom_query_partial_load_simple_key(started_cluster
 
     query = instance.query
     query(
-        f"""
+        """
     CREATE DICTIONARY test_dictionary_custom_query
     (
         id UInt64,
@@ -182,8 +181,8 @@ def test_mysql_dictionaries_custom_query_partial_load_simple_key(started_cluster
         HOST 'mysql80'
         PORT 3306
         USER 'root'
-        PASSWORD '{mysql_pass}'
-        QUERY $doc$SELECT id, value_1, value_2 FROM test.test_table_1 INNER JOIN test.test_table_2 USING (id) WHERE {{condition}};$doc$))
+        PASSWORD 'clickhouse'
+        QUERY $doc$SELECT id, value_1, value_2 FROM test.test_table_1 INNER JOIN test.test_table_2 USING (id) WHERE {condition};$doc$))
     """
     )
 
@@ -219,7 +218,7 @@ def test_mysql_dictionaries_custom_query_partial_load_complex_key(started_cluste
 
     query = instance.query
     query(
-        f"""
+        """
     CREATE DICTIONARY test_dictionary_custom_query
     (
         id UInt64,
@@ -233,8 +232,8 @@ def test_mysql_dictionaries_custom_query_partial_load_complex_key(started_cluste
         HOST 'mysql80'
         PORT 3306
         USER 'root'
-        PASSWORD '{mysql_pass}'
-        QUERY $doc$SELECT id, id_key, value_1, value_2 FROM test.test_table_1 INNER JOIN test.test_table_2 USING (id, id_key) WHERE {{condition}};$doc$))
+        PASSWORD 'clickhouse'
+        QUERY $doc$SELECT id, id_key, value_1, value_2 FROM test.test_table_1 INNER JOIN test.test_table_2 USING (id, id_key) WHERE {condition};$doc$))
     """
     )
 
@@ -415,7 +414,7 @@ def get_mysql_conn(started_cluster):
             if conn is None:
                 conn = pymysql.connect(
                     user="root",
-                    password=mysql_pass,
+                    password="clickhouse",
                     host=started_cluster.mysql8_ip,
                     port=started_cluster.mysql8_port,
                 )
@@ -483,7 +482,7 @@ def test_background_dictionary_reconnect(started_cluster):
         LAYOUT(DIRECT())
         SOURCE(MYSQL(
             USER 'root'
-            PASSWORD '{mysql_pass}'
+            PASSWORD 'clickhouse'
             DB 'test'
             QUERY $doc$SELECT * FROM test.dict;$doc$
             BACKGROUND_RECONNECT 'true'

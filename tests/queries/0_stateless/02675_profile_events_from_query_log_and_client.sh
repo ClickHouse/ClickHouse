@@ -31,7 +31,7 @@ SELECT * FROM (
 
 echo "CHECK WITH query_log"
 $CLICKHOUSE_CLIENT -q "
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT type,
        'S3CreateMultipartUpload', ProfileEvents['S3CreateMultipartUpload'],
        'S3UploadPart', ProfileEvents['S3UploadPart'],
@@ -52,8 +52,7 @@ CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t
     storage_policy='default',
     min_rows_for_wide_part = 1000000,
     min_bytes_for_wide_part = 1000000,
-    ratio_of_defaults_for_sparse_serialization=1.0,
-    write_marks_for_substreams_in_compact_parts=1;
+    ratio_of_defaults_for_sparse_serialization=1.0;
 "
 
 echo "INSERT"
@@ -80,7 +79,7 @@ DROP TABLE times;
 
 echo "CHECK with query_log"
 $CLICKHOUSE_CLIENT -q "
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT type,
        query,
        'FileOpen', ProfileEvents['FileOpen']

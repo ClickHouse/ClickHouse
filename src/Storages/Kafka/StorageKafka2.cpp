@@ -1,6 +1,5 @@
 #include <Storages/Kafka/StorageKafka2.h>
 
-#include <Columns/IColumn.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -76,7 +75,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
     extern const SettingsMilliseconds stream_flush_interval_ms;
@@ -1245,7 +1244,6 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     {
         LOG_TRACE(log, "Didn't get any messages");
         needs_offset_reset = false;
-        block_io.onCancelOrConnectionLoss();
         return std::nullopt;
     }
 

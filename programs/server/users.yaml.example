@@ -91,7 +91,7 @@ users:
         # User can create other users and grant rights to them.
         # access_management: 1
 
-        # SQL expressions for grants available for that user - https://clickhouse.com/docs/sql-reference/statements/grant
+        # SQL expressions for grants available for that user - https://clickhouse.com/docs/en/sql-reference/statements/grant
         # grants:
         #   - query: GRANT ALL ON *.*
 

@@ -36,18 +36,9 @@ private:
         size_t detached_by_user;
     };
 
-    struct MutationStats
-    {
-        /// For keeping track of the number of pending mutations that are over the maximum execution time
-        /// which is controlled by the max_pending_mutations_execution_time_to_warn setting.
-        size_t pending_mutations_over_execution_time;
-        size_t pending_mutations;
-    };
-
     DetachedPartsStats detached_parts_stats{};
-    MutationStats mutation_stats{};
 
-    void updateMutationAndDetachedPartsStats();
+    void updateDetachedPartsStats();
     void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);
 };
 

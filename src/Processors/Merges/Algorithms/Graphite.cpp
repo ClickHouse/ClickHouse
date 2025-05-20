@@ -13,7 +13,6 @@
 #include <unordered_map>
 
 #include <fmt/format.h>
-#include <fmt/ranges.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
