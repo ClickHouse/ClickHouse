@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -53,11 +52,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments.empty())
@@ -66,15 +60,16 @@ public:
             res_data->insertDefault();
             return ColumnConst::create(std::move(res_data), input_rows_count);
         }
-        if (arguments.size() == 1)
+        else if (arguments.size() == 1)
             return arguments[0].column;
         /// Format function is not proven to be faster for two arguments.
         /// Actually there is overhead of 2 to 5 extra instructions for each string for checking empty strings in FormatImpl.
         /// Though, benchmarks are really close, for most examples we saw executeBinary is slightly faster (0-3%).
         /// For 3 and more arguments FormatStringImpl is much faster (up to 50-60%).
-        if (arguments.size() == 2)
+        else if (arguments.size() == 2)
             return executeBinary(arguments, input_rows_count);
-        return executeFormatImpl(arguments, input_rows_count);
+        else
+            return executeFormatImpl(arguments, input_rows_count);
     }
 
 private:
@@ -234,11 +229,6 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         /// We always return Strings from concat, even if arguments were fixed strings.
-        return std::make_shared<DataTypeString>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeString>();
     }
 

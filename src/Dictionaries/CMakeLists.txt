@@ -18,10 +18,10 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 extract_into_parent_list(clickhouse_dictionaries_sources dbms_sources
-    DictionaryFactory.cpp # DictionaryFactory::instance() Used by ExternalDictionariesLoader.cpp, getDictionaryConfigurationFromAST.cpp...
-    DictionarySourceFactory.cpp # DictionarySourceFactory::instance() Used by DictionaryFactory.cpp
-    DictionaryStructure.cpp # DictionaryStructure::DictionaryStructure (ExternalDictionariesLoader.cpp)
-    getDictionaryConfigurationFromAST.cpp # getDictionaryConfigurationFromAST (StorageDictionary.cpp, AST Visitors)
+    DictionaryFactory.cpp
+    DictionarySourceFactory.cpp
+    DictionaryStructure.cpp
+    getDictionaryConfigurationFromAST.cpp
 )
 extract_into_parent_list(clickhouse_dictionaries_headers dbms_headers
     DictionaryFactory.h
@@ -36,6 +36,8 @@ target_link_libraries(clickhouse_dictionaries
     PRIVATE
         clickhouse_common_io
         dbms
+        Poco::Data
+        Poco::MongoDB
         Poco::Redis
 )
 

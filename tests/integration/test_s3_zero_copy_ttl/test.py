@@ -2,7 +2,6 @@
 import time
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -36,7 +35,7 @@ def test_ttl_move_and_s3(started_cluster):
             ORDER BY id
             PARTITION BY id
             TTL date TO DISK 's3_disk'
-            SETTINGS storage_policy='s3_and_default', temporary_directories_lifetime=1, write_marks_for_substreams_in_compact_parts=1
+            SETTINGS storage_policy='s3_and_default', temporary_directories_lifetime=1
             """.format(
                 i
             )
@@ -87,12 +86,9 @@ def test_ttl_move_and_s3(started_cluster):
 
         print(f"Total objects: {counter}")
 
-        if counter == 360:
+        if counter == 330:
             break
 
         print(f"Attempts remaining: {attempt}")
 
-    assert counter == 360
-
-    for i, node in enumerate([node1, node2, node3]):
-        node.query("DROP TABLE s3_test_with_ttl")
+    assert counter == 330

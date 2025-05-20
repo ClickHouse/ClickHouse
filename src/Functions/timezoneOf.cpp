@@ -39,12 +39,8 @@ public:
 
         if (isDateTime(type_no_nullable) || isDateTime64(type_no_nullable))
             return std::make_shared<DataTypeString>();
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad argument for function {}, should be DateTime or DateTime64", name);
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad argument for function {}, should be DateTime or DateTime64", name);
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }

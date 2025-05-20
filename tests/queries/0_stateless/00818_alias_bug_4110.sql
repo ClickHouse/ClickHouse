@@ -12,7 +12,7 @@ select s.a + 2 as b, b - 1 as a from (select 10 as a) s;
 select s.a as a, s.a + 2 as b from (select 10 as a) s;
 select s.a + 1 as a, s.a + 2 as b from (select 10 as a) s;
 select a + 1 as a, a + 1 as b from (select 10 as a);
-select a + 1 as b, b + 1 as a from (select 10 as a); -- { serverError CYCLIC_ALIASES, UNKNOWN_IDENTIFIER }
+select a + 1 as b, b + 1 as a from (select 10 as a); -- { serverError CYCLIC_ALIASES }
 select 10 as a, a + 1 as a; -- { serverError UNKNOWN_IDENTIFIER }
 with 10 as a select a as a; -- { serverError UNKNOWN_IDENTIFIER }
 with 10 as a select a + 1 as a; -- { serverError UNKNOWN_IDENTIFIER }

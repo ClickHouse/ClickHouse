@@ -17,11 +17,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace FileCacheSetting
-{
-    extern const FileCacheSettingsString path;
-}
-
 void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check */)
 {
     auto creator = [](const String & name,
@@ -55,7 +50,6 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         else
             file_cache_settings.loadFromConfig(config, config_prefix);
 
-        auto & base_path = file_cache_settings[FileCacheSetting::path].value;
         auto config_fs_caches_dir = context->getFilesystemCachesPath();
         if (custom_disk)
         {
@@ -71,18 +65,18 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
                         "`filesystem_caches_path` (common for all filesystem caches) or"
                         "`custom_cached_disks_base_directory` (common only for custom cached disks) in server configuration file");
                 }
-                if (fs::path(base_path).is_relative())
+                if (fs::path(file_cache_settings.base_path).is_relative())
                 {
                     /// Compatibility prefix.
-                    base_path = fs::path(context->getPath()) / "caches" / base_path;
+                    file_cache_settings.base_path = fs::path(context->getPath()) / "caches" / file_cache_settings.base_path;
                 }
             }
             else
             {
-                if (fs::path(base_path).is_relative())
-                    base_path = fs::path(custom_cached_disk_path_prefix) / base_path;
+                if (fs::path(file_cache_settings.base_path).is_relative())
+                    file_cache_settings.base_path = fs::path(custom_cached_disk_path_prefix) / file_cache_settings.base_path;
 
-                if (!attach && !pathStartsWith(base_path, custom_cached_disk_path_prefix))
+                if (!attach && !pathStartsWith(file_cache_settings.base_path, custom_cached_disk_path_prefix))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "Filesystem cache path must lie inside `{}` (for disk: {})",
@@ -92,19 +86,19 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         }
         else if (config_fs_caches_dir.empty())
         {
-            if (fs::path(base_path).is_relative())
-                base_path = fs::path(context->getPath()) / "caches" / base_path;
+            if (fs::path(file_cache_settings.base_path).is_relative())
+                file_cache_settings.base_path = fs::path(context->getPath()) / "caches" / file_cache_settings.base_path;
         }
         else
         {
-            if (fs::path(base_path).is_relative())
-                base_path = fs::path(config_fs_caches_dir) / base_path;
+            if (fs::path(file_cache_settings.base_path).is_relative())
+                file_cache_settings.base_path = fs::path(config_fs_caches_dir) / file_cache_settings.base_path;
 
-            if (!attach && !pathStartsWith(base_path, config_fs_caches_dir))
+            if (!attach && !pathStartsWith(file_cache_settings.base_path, config_fs_caches_dir))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Filesystem cache path {} must lie inside default filesystem cache path `{}`",
-                                base_path, config_fs_caches_dir);
+                                file_cache_settings.base_path, config_fs_caches_dir);
             }
         }
 

@@ -2,26 +2,22 @@
 
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/PreparedSets.h>
 
 namespace DB
 {
-
-class PreparedSetsCache;
-using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
-
-struct QueryPlanOptimizationSettings;
 
 /// Creates sets for subqueries and JOIN. See CreatingSetsTransform.
 class CreatingSetStep : public ITransformingStep
 {
 public:
     CreatingSetStep(
-        const Header & input_header_,
+        const DataStream & input_stream_,
         SetAndKeyPtr set_and_key_,
         StoragePtr external_table_,
         SizeLimits network_transfer_limits_,
-        PreparedSetsCachePtr prepared_sets_cache_);
+        ContextPtr context_);
 
     String getName() const override { return "CreatingSet"; }
 
@@ -31,27 +27,24 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputHeader() override;
+    void updateOutputStream() override;
 
     SetAndKeyPtr set_and_key;
     StoragePtr external_table;
     SizeLimits network_transfer_limits;
-    PreparedSetsCachePtr prepared_sets_cache;
+    ContextPtr context;
 };
 
 class CreatingSetsStep : public IQueryPlanStep
 {
 public:
-    explicit CreatingSetsStep(Headers input_headers_);
+    explicit CreatingSetsStep(DataStreams input_streams_);
 
     String getName() const override { return "CreatingSets"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
-
-private:
-    void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 };
 
 /// This is a temporary step which is converted to CreatingSetStep after plan optimization.
@@ -59,35 +52,20 @@ private:
 class DelayedCreatingSetsStep final : public IQueryPlanStep
 {
 public:
-    DelayedCreatingSetsStep(
-        Header input_header,
-        PreparedSets::Subqueries subqueries_,
-        SizeLimits network_transfer_limits_,
-        PreparedSetsCachePtr prepared_sets_cache_);
+    DelayedCreatingSetsStep(DataStream input_stream, PreparedSets::Subqueries subqueries_, ContextPtr context_);
 
     String getName() const override { return "DelayedCreatingSets"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
 
-    static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(
-        DelayedCreatingSetsStep && step,
-        const QueryPlanOptimizationSettings & optimization_settings);
+    static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(DelayedCreatingSetsStep && step);
 
-    SizeLimits getNetworkTransferLimits() const { return network_transfer_limits; }
-    PreparedSetsCachePtr getPreparedSetsCache() const { return prepared_sets_cache; }
-
-    const PreparedSets::Subqueries & getSets() const { return subqueries; }
+    ContextPtr getContext() const { return context; }
     PreparedSets::Subqueries detachSets() { return std::move(subqueries); }
 
-    void serialize(Serialization &) const override {}
-    bool isSerializable() const override { return true; }
-
 private:
-    void updateOutputHeader() override { output_header = getInputHeaders().front(); }
-
     PreparedSets::Subqueries subqueries;
-    SizeLimits network_transfer_limits;
-    PreparedSetsCachePtr prepared_sets_cache;
+    ContextPtr context;
 };
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context);

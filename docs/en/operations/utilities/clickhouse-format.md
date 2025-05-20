@@ -1,10 +1,7 @@
 ---
-description: 'Guide to using the format utility for working with ClickHouse data formats'
-slug: /operations/utilities/clickhouse-format
-title: 'clickhouse-format'
+slug: /en/operations/utilities/clickhouse-format
+title: clickhouse-format
 ---
-
-# clickhouse-format utility
 
 Allows formatting input queries.
 
@@ -59,7 +56,7 @@ $ clickhouse-format -n <<< "SELECT min(number) FROM numbers(5); SELECT max(numbe
 
 Result:
 
-```sql
+```
 SELECT min(number)
 FROM numbers(5)
 ;
@@ -78,7 +75,7 @@ $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWE
 
 Result:
 
-```sql
+```
 SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
 ```
 
@@ -90,7 +87,7 @@ $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWE
 
 Result:
 
-```sql
+```
 SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
 ```
 
@@ -102,7 +99,7 @@ $ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELE
 
 Result:
 
-```sql
+```
 SELECT * \
 FROM  \
 ( \

@@ -36,10 +36,10 @@ QUERY id: 0
             ARGUMENTS
               LIST id: 18, nodes: 2
                 COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
-                FUNCTION id: 20, function_name: toYear, function_type: ordinary, result_type: UInt16
+                FUNCTION id: 10, function_name: toYear, function_type: ordinary, result_type: UInt16
                   ARGUMENTS
-                    LIST id: 21, nodes: 1
-                      COLUMN id: 22, column_name: date1, result_type: Date, source_id: 3
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
 EXPLAIN QUERY TREE run_passes = 1
 SELECT *
 FROM date_t__fuzz_0
@@ -72,10 +72,10 @@ QUERY id: 0
             ARGUMENTS
               LIST id: 15, nodes: 2
                 COLUMN id: 16, column_name: id, result_type: UInt32, source_id: 3
-                FUNCTION id: 17, function_name: toYear, function_type: ordinary, result_type: UInt16
+                FUNCTION id: 10, function_name: toYear, function_type: ordinary, result_type: UInt16
                   ARGUMENTS
-                    LIST id: 18, nodes: 1
-                      COLUMN id: 19, column_name: date1, result_type: Date, source_id: 3
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
   SETTINGS optimize_time_filter_with_preimage=0
 EXPLAIN QUERY TREE run_passes = 1
 SELECT *
@@ -117,5 +117,5 @@ QUERY id: 0
                 FUNCTION id: 20, function_name: toYear, function_type: ordinary, result_type: UInt16
                   ARGUMENTS
                     LIST id: 21, nodes: 1
-                      COLUMN id: 22, column_name: date1, result_type: Date, source_id: 3
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
   SETTINGS optimize_time_filter_with_preimage=1

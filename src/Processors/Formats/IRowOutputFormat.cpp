@@ -1,6 +1,6 @@
-#include <IO/WriteHelpers.h>
+#include <string>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Processors/Port.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

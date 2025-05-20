@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/FormatSettings.h>
 
@@ -7,7 +8,6 @@
 namespace DB
 {
 
-class Block;
 class WriteBuffer;
 
 

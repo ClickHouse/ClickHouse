@@ -1,9 +1,0 @@
-<test>
-  <settings>
-    <join_algorithm>parallel_hash</join_algorithm>
-    <query_plan_join_swap_table>0</query_plan_join_swap_table>
-    <max_threads>8</max_threads>
-  </settings>
-
-  <query>select * from numbers_mt(100) t1 inner join numbers_mt(1e8) t2 using (number) format Null</query>
-</test>

@@ -1,15 +1,13 @@
 ---
-description: 'Applies bit-wise `XOR` for series of numbers.'
+slug: /en/sql-reference/aggregate-functions/reference/groupbitxor
 sidebar_position: 153
-slug: /sql-reference/aggregate-functions/reference/groupbitxor
-title: 'groupBitXor'
 ---
 
 # groupBitXor
 
 Applies bit-wise `XOR` for series of numbers.
 
-```sql
+``` sql
 groupBitXor(expr)
 ```
 
@@ -25,7 +23,7 @@ Value of the `UInt*` or `Int*` type.
 
 Test data:
 
-```text
+``` text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -35,7 +33,7 @@ binary     decimal
 
 Query:
 
-```sql
+``` sql
 SELECT groupBitXor(num) FROM t
 ```
 
@@ -43,7 +41,7 @@ Where `num` is the column with the test data.
 
 Result:
 
-```text
+``` text
 binary     decimal
 01101000 = 104
 ```

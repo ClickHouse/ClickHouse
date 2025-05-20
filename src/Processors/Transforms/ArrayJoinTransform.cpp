@@ -10,26 +10,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename Container>
-Block transformHeaderImpl(Block header, const Container & array_join_columns)
+Block ArrayJoinTransform::transformHeader(Block header, const ArrayJoinActionPtr & array_join)
 {
     auto columns = header.getColumnsWithTypeAndName();
-    ArrayJoinAction::prepare(array_join_columns, columns);
+    array_join->prepare(columns);
     Block res{std::move(columns)};
     res.setColumns(res.mutateColumns());
     return res;
-}
-
-Block ArrayJoinTransform::transformHeader(Block header, const Names & array_join_columns)
-{
-    return transformHeaderImpl(std::move(header), array_join_columns);
 }
 
 ArrayJoinTransform::ArrayJoinTransform(
     const Block & header_,
     ArrayJoinActionPtr array_join_,
     bool /*on_totals_*/)
-    : IInflatingTransform(header_, transformHeaderImpl(header_, array_join_->columns))
+    : IInflatingTransform(header_, transformHeader(header_, array_join_))
     , array_join(std::move(array_join_))
 {
     /// TODO

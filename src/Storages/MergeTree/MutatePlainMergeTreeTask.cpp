@@ -1,18 +1,12 @@
-#include <cstddef>
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
-#include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 #include <Core/Settings.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool enable_sharing_sets_for_mutations;
-}
 
 namespace ErrorCodes
 {
@@ -41,15 +35,12 @@ void MutatePlainMergeTreeTask::prepare()
         future_part,
         task_context);
 
-    storage.writePartLog(
-        PartLogElement::MUTATE_PART_START, {}, 0,
-        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {});
-
     stopwatch = std::make_unique<Stopwatch>();
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        mutate_task.reset();
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
             execution_status,
@@ -61,7 +52,7 @@ void MutatePlainMergeTreeTask::prepare()
             std::move(profile_counters_snapshot));
     };
 
-    if (task_context->getSettingsRef()[Setting::enable_sharing_sets_for_mutations])
+    if (task_context->getSettingsRef().enable_sharing_sets_for_mutations)
     {
         /// If we have a prepared sets cache for this mutations, we will use it.
         auto mutation_id = future_part->part_info.mutation;
@@ -83,7 +74,7 @@ bool MutatePlainMergeTreeTask::executeStep()
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
-        switcher.emplace((*merge_list_entry)->thread_group, "", /*allow_existing_group*/ true);
+        switcher.emplace((*merge_list_entry)->thread_group);
 
     switch (state)
     {
@@ -107,13 +98,11 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, transaction, /*rename_in_transaction=*/ true);
-                transaction.renameParts();
+                storage.renameTempPartAndReplace(new_part, transaction);
                 transaction.commit();
 
-                storage.updateMutationEntriesErrors(future_part, true, "", "");
+                storage.updateMutationEntriesErrors(future_part, true, "");
                 mutate_task->updateProfileEvents();
-
                 write_part_log({});
 
                 state = State::NEED_FINISH;
@@ -125,12 +114,11 @@ bool MutatePlainMergeTreeTask::executeStep()
                     merge_mutate_entry->txn->onException();
                 PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
                 LOG_ERROR(getLogger("MutatePlainMergeTreeTask"), exception_message);
-                String error_code_name(ErrorCodes::getName(getCurrentExceptionCode()));
-                storage.updateMutationEntriesErrors(future_part, false, exception_message.text, error_code_name);
+                storage.updateMutationEntriesErrors(future_part, false, exception_message.text);
                 mutate_task->updateProfileEvents();
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
                 tryLogCurrentException(__PRETTY_FUNCTION__);
-                throw;
+                return false;
             }
         }
         case State::NEED_FINISH:
@@ -147,13 +135,6 @@ bool MutatePlainMergeTreeTask::executeStep()
 
     return false;
 }
-
-void MutatePlainMergeTreeTask::cancel() noexcept
-{
-    if (mutate_task)
-        mutate_task->cancel();
-}
-
 
 ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {

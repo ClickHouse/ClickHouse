@@ -1,6 +1,4 @@
-#include <config.h>
-
-#if USE_FUZZING_MODE
+#ifdef FUZZING_MODE
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>

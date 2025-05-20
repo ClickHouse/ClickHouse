@@ -62,17 +62,16 @@ public:
         for (size_t i = 0; i < num_rows; ++i)
         {
             auto array_size = col_num->getInt(i);
-            auto element_size = col_value->byteSizeAt(i);
 
             if (unlikely(array_size < 0))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} cannot be negative: while executing function {}", array_size, getName());
 
             Int64 estimated_size = 0;
-            if (unlikely(common::mulOverflow(array_size, element_size, estimated_size)))
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, element_size, getName());
+            if (unlikely(common::mulOverflow(array_size, col_value->byteSize(), estimated_size)))
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, col_value->byteSize(), getName());
 
             if (unlikely(estimated_size > max_array_size_in_columns_bytes))
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, element_size, getName());
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, col_value->byteSize(), getName());
 
             offset += array_size;
 
@@ -88,21 +87,7 @@ public:
 
 REGISTER_FUNCTION(ArrayWithConstant)
 {
-    FunctionDocumentation::Description description = R"(
-Creates an array of length `length` filled with the constant `x`.
-    )";
-    FunctionDocumentation::Syntax syntax = "arrayWithConstant(N, x)";
-    FunctionDocumentation::Arguments arguments = {
-        {"length", "Number of elements in the array. [`(U)Int*`](/sql-reference/data-types/int-uint)."},
-        {"x", "The value of the `N` elements in the array, of any type."},
-    };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an Array with `N` elements of value `x`.";
-    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayWithConstant(3, 1)", "[1,1,1]"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-
-    factory.registerFunction<FunctionArrayWithConstant>(documentation);
+    factory.registerFunction<FunctionArrayWithConstant>();
 }
 
 }

@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_json_6;"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t_json_6 (data JSON) ENGINE = MergeTree ORDER BY tuple()" --enable_json_type 1
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_json_6 (data JSON) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_json_type 1
 
 cat <<EOF | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_6 FORMAT JSONAsObject"
 {
@@ -54,6 +54,6 @@ EOF
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(data)) as path FROM t_json_6 order by path;"
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(data.out[]))) as path FROM t_json_6 order by path;"
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(arrayJoin(data.out[].outputs[])))) as path FROM t_json_6 order by path;"
-$CLICKHOUSE_CLIENT -q "SELECT data.key, data.out[].type, data.out[].value, data.out[].outputs[].index, data.out[].outputs[].n FROM t_json_6 ORDER BY data.key" --allow_suspicious_types_in_order_by 1
+$CLICKHOUSE_CLIENT -q "SELECT data.key, data.out[].type, data.out[].value, data.out[].outputs[].index, data.out[].outputs[].n FROM t_json_6 ORDER BY data.key"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_json_6;"

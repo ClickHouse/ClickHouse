@@ -47,7 +47,7 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
 {
     for (const auto & limits : storage_limits)
     {
-        if (!limits.local_limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.local_limits.timeout_overflow_mode))
+        if (!limits.local_limits.speed_limits.checkTimeLimit(total_stopwatch, limits.local_limits.timeout_overflow_mode))
             return false;
     }
 

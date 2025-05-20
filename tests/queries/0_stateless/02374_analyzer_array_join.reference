@@ -82,12 +82,12 @@ SELECT id, value, value_array, value_array_element FROM test_table ARRAY JOIN va
 SELECT '--';
 --
 SELECT id, value, value_array AS value_array_array_alias FROM test_table ARRAY JOIN value_array_array_alias;
-0	Value	1
-0	Value	2
-0	Value	3
-0	Value	4
-0	Value	5
-0	Value	6
+0	Value	[1,2,3]
+0	Value	[1,2,3]
+0	Value	[1,2,3]
+0	Value	[4,5,6]
+0	Value	[4,5,6]
+0	Value	[4,5,6]
 SELECT '--';
 --
 SELECT id AS value FROM test_table ARRAY JOIN value_array AS value;

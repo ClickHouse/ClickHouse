@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <thread>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
@@ -18,7 +19,7 @@ public:
 
     ~ReplicatedMergeTreeAttachThread();
 
-    void start();
+    void start() { task->activateAndSchedule(); }
 
     void shutdown();
 
@@ -30,7 +31,7 @@ public:
 
 private:
     StorageReplicatedMergeTree & storage;
-    BackgroundSchedulePoolTaskHolder task;
+    BackgroundSchedulePool::TaskHolder task;
 
     std::string log_name;
     LoggerPtr log;

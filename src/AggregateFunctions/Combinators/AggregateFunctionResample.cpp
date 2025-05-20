@@ -47,10 +47,6 @@ public:
     {
         WhichDataType which{arguments.back()};
 
-        if (params.size() < 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Incorrect number of parameters for aggregate function with {} suffix", getName());
-
         if (which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
         {
             UInt64 begin = params[params.size() - 3].safeGet<UInt64>();
@@ -69,8 +65,7 @@ public:
 
         if (which.isNativeInt() || which.isEnum() || which.isInterval())
         {
-            Int64 begin;
-            Int64 end;
+            Int64 begin, end;
 
             // notice: UInt64 -> Int64 may lead to overflow
             if (!params[params.size() - 3].tryGet<Int64>(begin))

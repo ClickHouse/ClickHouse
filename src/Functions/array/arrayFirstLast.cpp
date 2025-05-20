@@ -59,7 +59,7 @@ struct ArrayFirstLastImpl
             const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column: {}; The result of the lambda is expected to be a UInt8", mapped->getDataType());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
 
             if (column_filter_const->getValue<UInt8>())
             {
@@ -105,17 +105,19 @@ struct ArrayFirstLastImpl
 
                 return out;
             }
-
-            auto out = array.getData().cloneEmpty();
-            out->insertManyDefaults(array.size());
-
-            if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
+            else
             {
-                auto col_null_map_to = ColumnUInt8::create(out->size(), true);
-                return createNullableColumn(std::move(out), std::move(col_null_map_to));
-            }
+                auto out = array.getData().cloneEmpty();
+                out->insertManyDefaults(array.size());
 
-            return out;
+                if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
+                {
+                    auto col_null_map_to = ColumnUInt8::create(out->size(), true);
+                    return createNullableColumn(std::move(out), std::move(col_null_map_to));
+                }
+
+                return out;
+            }
         }
 
         const auto & filter = column_filter->getData();

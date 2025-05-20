@@ -26,9 +26,7 @@ public:
     void shutdown() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
-
     bool isReplicated() const override { return true; }
-    String getReplicationID() const override { return zookeeper_path; }
 
     void startPeriodicReloading() override { startWatchingThread(); }
     void stopPeriodicReloading() override { stopWatchingThread(); }
@@ -37,6 +35,7 @@ public:
     bool exists(const UUID & id) const override;
 
     bool isBackupAllowed() const override { return backup_allowed; }
+    void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const override;
 
 private:
     String zookeeper_path;
@@ -81,6 +80,7 @@ private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
+    bool acquireReplicatedRestore(RestorerFromBackup & restorer) const override;
 
     mutable std::mutex mutex;
     MemoryAccessStorage memory_storage TSA_GUARDED_BY(mutex);

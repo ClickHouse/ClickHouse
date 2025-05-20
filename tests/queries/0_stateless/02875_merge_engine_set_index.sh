@@ -58,7 +58,7 @@ ORDER BY
 FORMAT Null;"
 
 $CLICKHOUSE_CLIENT -q "
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT ProfileEvents['SelectedMarks']
 FROM system.query_log

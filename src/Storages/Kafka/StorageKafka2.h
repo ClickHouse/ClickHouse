@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Core/Block_fwd.h>
-#include <Core/StreamingHandleErrorMode.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/Block.h>
 #include <Core/Types.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
-#include <Storages/Kafka/Kafka_fwd.h>
+#include <Storages/Kafka/KafkaSettings.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadStatus.h>
@@ -30,7 +29,6 @@ class Configuration;
 namespace DB
 {
 
-struct KafkaSettings;
 template <typename TStorageKafka>
 struct KafkaInterceptors;
 
@@ -65,11 +63,9 @@ public:
         std::unique_ptr<KafkaSettings> kafka_settings_,
         const String & collection_name_);
 
-    ~StorageKafka2() override;
+    std::string getName() const override { return "Kafka"; }
 
-    std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
-
-    bool noPushingToViewsOnInserts() const override { return true; }
+    bool noPushingToViews() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -93,12 +89,7 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    StreamingHandleErrorMode getHandleKafkaErrorMode() const;
-
-    bool supportsDynamicSubcolumns() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
-
-    const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
+    StreamingHandleErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
 private:
     using TopicPartition = KafkaConsumer2::TopicPartition;
@@ -136,9 +127,9 @@ private:
     // Stream thread
     struct TaskContext
     {
-        BackgroundSchedulePoolTaskHolder holder;
+        BackgroundSchedulePool::TaskHolder holder;
         std::atomic<bool> stream_cancelled{false};
-        explicit TaskContext(BackgroundSchedulePoolTaskHolder && task_) : holder(std::move(task_)) { }
+        explicit TaskContext(BackgroundSchedulePool::TaskHolder && task_) : holder(std::move(task_)) { }
     };
 
     enum class AssignmentChange
@@ -151,8 +142,7 @@ private:
     // Configuration and state
     mutable std::mutex keeper_mutex;
     zkutil::ZooKeeperPtr keeper;
-    const String keeper_path;
-    const std::filesystem::path fs_keeper_path;
+    String keeper_path;
     String replica_path;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
@@ -183,7 +173,7 @@ private:
     // Handling replica activation.
     std::atomic<bool> is_active = false;
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
-    BackgroundSchedulePoolTaskHolder activating_task;
+    BackgroundSchedulePool::TaskHolder activating_task;
     String active_node_identifier;
     UInt64 consecutive_activate_failures = 0;
     bool activate();

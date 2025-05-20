@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, distributed, long, no-async-insert
-# no-async-insert: sync and async inserts are tested
+# Tags: no-fasttest, distributed, long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,8 +27,8 @@ function insert()
 
 function check_span()
 {
-${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS opentelemetry_span_log;
+${CLICKHOUSE_CLIENT} -nq "
+    SYSTEM FLUSH LOGS;
 
     SELECT operation_name,
            attribute['clickhouse.cluster'] AS cluster,
@@ -51,8 +50,8 @@ ${CLICKHOUSE_CLIENT} -q "
 # $2 - value of distributed_foreground_insert
 function check_span_kind()
 {
-${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS opentelemetry_span_log;
+${CLICKHOUSE_CLIENT} -nq "
+    SYSTEM FLUSH LOGS;
 
     SELECT count()
     FROM system.opentelemetry_span_log
@@ -66,7 +65,7 @@ ${CLICKHOUSE_CLIENT} -q "
 #
 # Prepare tables for tests
 #
-${CLICKHOUSE_CLIENT} -q "
+${CLICKHOUSE_CLIENT} -nq "
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.dist_opentelemetry;
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.local_opentelemetry;
 
@@ -123,7 +122,7 @@ check_span_kind $trace_id 'CLIENT'
 #
 # Cleanup
 #
-${CLICKHOUSE_CLIENT} -q "
+${CLICKHOUSE_CLIENT} -nq "
 DROP TABLE ${CLICKHOUSE_DATABASE}.dist_opentelemetry;
 DROP TABLE ${CLICKHOUSE_DATABASE}.local_opentelemetry;
 "

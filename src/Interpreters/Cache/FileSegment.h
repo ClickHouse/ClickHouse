@@ -36,8 +36,8 @@ struct CreateFileSegmentSettings
 
     CreateFileSegmentSettings() = default;
 
-    explicit CreateFileSegmentSettings(FileSegmentKind kind_)
-        : kind(kind_), unbounded(kind == FileSegmentKind::Ephemeral) {}
+    explicit CreateFileSegmentSettings(FileSegmentKind kind_, bool unbounded_ = false)
+        : kind(kind_), unbounded(unbounded_) {}
 };
 
 class FileSegment : private boost::noncopyable
@@ -177,7 +177,7 @@ public:
 
     void setQueueIterator(Priority::IteratorPtr iterator);
 
-    void markDelayedRemovalAndResetQueueIterator();
+    void resetQueueIterator();
 
     KeyMetadataPtr tryGetKeyMetadata() const;
 
@@ -185,13 +185,11 @@ public:
 
     bool assertCorrectness() const;
 
-    size_t getSizeForBackgroundDownload() const;
-
     /**
      * ========== Methods that must do cv.notify() ==================
      */
 
-    void complete(bool allow_background_download);
+    void complete();
 
     void completePartAndResetDownloader();
 
@@ -203,11 +201,7 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    bool reserve(
-        size_t size_to_reserve,
-        size_t lock_wait_timeout_milliseconds,
-        std::string & failure_reason,
-        FileCacheReserveStat * reserve_stat = nullptr);
+    bool reserve(size_t size_to_reserve, size_t lock_wait_timeout_milliseconds, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);
@@ -232,7 +226,6 @@ private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
-    size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
 
     void setDownloadState(State state, const FileSegmentGuard::Lock &);
     void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock &);
@@ -242,7 +235,6 @@ private:
 
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
-    void shrinkFileSegmentToDownloadedSize(const LockedKey &, const FileSegmentGuard::Lock &);
 
     void assertNotDetached() const;
     void assertNotDetachedUnlocked(const FileSegmentGuard::Lock &) const;
@@ -253,13 +245,12 @@ private:
 
     String tryGetPath() const;
 
-    const Key file_key;
+    Key file_key;
     Range segment_range;
     const FileSegmentKind segment_kind;
     /// Size of the segment is not known until it is downloaded and
     /// can be bigger than max_file_segment_size.
-    /// is_unbound == true for temporary data in cache.
-    const bool is_unbound;
+    const bool is_unbound = false;
     const bool background_download_enabled;
 
     std::atomic<State> download_state;
@@ -284,13 +275,11 @@ private:
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
-    bool on_delayed_removal = false;
-
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 
 
-struct FileSegmentsHolder final : private boost::noncopyable
+struct FileSegmentsHolder : private boost::noncopyable
 {
     FileSegmentsHolder() = default;
 
@@ -302,9 +291,9 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     size_t size() const { return file_segments.size(); }
 
-    String toString(bool with_state = false) const;
+    String toString(bool with_state = false);
 
-    void completeAndPopFront(bool allow_background_download) { completeAndPopFrontImpl(allow_background_download); }
+    void popFront() { completeAndPopFrontImpl(); }
 
     FileSegment & front() { return *file_segments.front(); }
     const FileSegment & front() const { return *file_segments.front(); }
@@ -319,14 +308,11 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     FileSegments::const_iterator begin() const { return file_segments.begin(); }
     FileSegments::const_iterator end() const { return file_segments.end(); }
-    FileSegmentPtr getSingleFileSegment() const;
-
-    void reset();
 
 private:
     FileSegments file_segments{};
 
-    FileSegments::iterator completeAndPopFrontImpl(bool allow_background_download);
+    FileSegments::iterator completeAndPopFrontImpl();
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;

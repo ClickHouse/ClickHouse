@@ -65,11 +65,14 @@ TRAP(gethostbyaddr)
 TRAP(gethostbyname)
 TRAP(gethostbyname2)
 TRAP(gethostent)
+TRAP(getlogin)
+TRAP(getmntent)
 TRAP(getnetbyaddr)
 TRAP(getnetbyname)
 TRAP(getnetent)
 TRAP(getnetgrent)
 TRAP(getnetgrent_r)
+TRAP(getopt)
 TRAP(getopt_long)
 TRAP(getopt_long_only)
 TRAP(getpass)
@@ -130,6 +133,7 @@ TRAP(nrand48)
 TRAP(__ppc_get_timebase_freq)
 TRAP(ptsname)
 TRAP(putchar_unlocked)
+TRAP(putenv)
 TRAP(pututline)
 TRAP(pututxline)
 TRAP(putwchar_unlocked)
@@ -144,6 +148,7 @@ TRAP(sethostent)
 TRAP(sethostid)
 TRAP(setkey)
 //TRAP(setlocale) // Used by replxx at startup
+TRAP(setlogmask)
 TRAP(setnetent)
 TRAP(setnetgrent)
 TRAP(setprotoent)
@@ -198,6 +203,7 @@ TRAP(lgammal)
 TRAP(nftw)
 TRAP(nl_langinfo)
 TRAP(putc_unlocked)
+TRAP(rand)
 /** In  the current POSIX.1 specification (POSIX.1-2008), readdir() is not required to be thread-safe.  However, in modern
   * implementations (including the glibc implementation), concurrent calls to readdir() that specify different directory streams
   * are thread-safe.  In cases where multiple threads must read from the same directory stream, using readdir() with external
@@ -281,16 +287,5 @@ TRAP(tss_create)
 TRAP(tss_get)
 TRAP(tss_set)
 TRAP(tss_delete)
-
-#ifndef USE_MUSL
-/// These produce duplicate symbol errors when statically linking with musl.
-/// Maybe we can remove them from the musl fork.
-TRAP(getopt)
-TRAP(putenv)
-TRAP(setlogmask)
-TRAP(rand)
-TRAP(getmntent)
-TRAP(getlogin)
-#endif
 
 #endif

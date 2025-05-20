@@ -1,15 +1,11 @@
 ---
-description: 'Allows accessing all shards (configured in the `remote_servers` section)
-  of a cluster without creating a Distributed table.'
-sidebar_label: 'cluster'
+slug: /en/sql-reference/table-functions/cluster
 sidebar_position: 30
-slug: /sql-reference/table-functions/cluster
-title: 'clusterAllReplicas'
+sidebar_label: cluster
+title: "cluster, clusterAllReplicas"
 ---
 
-# clusterAllReplicas Table Function
-
-Allows accessing all shards (configured in the `remote_servers` section) of a cluster without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. Only one replica of each shard is queried.
+Allows to access all shards (configured in the `remote_servers` section) of a cluster without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. Only one replica of each shard is queried.
 
 `clusterAllReplicas` function — same as `cluster`, but all replicas are queried. Each replica in a cluster is used as a separate shard/connection.
 
@@ -19,7 +15,7 @@ All available clusters are listed in the [system.clusters](../../operations/syst
 
 **Syntax**
 
-```sql
+``` sql
 cluster(['cluster_name', db.table, sharding_key])
 cluster(['cluster_name', db, table, sharding_key])
 clusterAllReplicas(['cluster_name', db.table, sharding_key])

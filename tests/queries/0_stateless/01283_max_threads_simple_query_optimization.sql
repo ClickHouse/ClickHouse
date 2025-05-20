@@ -13,7 +13,7 @@ AS SELECT number key FROM numbers(10);
 SET log_queries=1;
 SELECT * FROM data_01283 LIMIT 1 FORMAT Null;
 SET log_queries=0;
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 -- 1 for PullingAsyncPipelineExecutor::pull
 SELECT

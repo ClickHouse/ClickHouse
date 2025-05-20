@@ -1,10 +1,11 @@
 #pragma once
 
+#include <string>
+#include <Columns/IColumn.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 
-#include <string>
 
 namespace DB
 {

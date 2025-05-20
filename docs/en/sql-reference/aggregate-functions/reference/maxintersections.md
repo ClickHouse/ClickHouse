@@ -1,10 +1,7 @@
 ---
-description: 'Aggregate function that calculates the maximum number of times that
-  a group of intervals intersects each other (if all the intervals intersect at least
-  once).'
+slug: /en/sql-reference/aggregate-functions/reference/maxintersections
 sidebar_position: 163
-slug: /sql-reference/aggregate-functions/reference/maxintersections
-title: 'maxIntersections'
+title: maxIntersections
 ---
 
 # maxIntersections

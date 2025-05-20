@@ -74,7 +74,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
 
 echo "A session cannot be used by concurrent connections:"
 
-${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_9&query_id=${CLICKHOUSE_DATABASE}_9&max_rows_to_read=0" --data-binary "SELECT count() FROM system.numbers" >/dev/null &
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_9&query_id=${CLICKHOUSE_DATABASE}_9" --data-binary "SELECT count() FROM system.numbers" >/dev/null &
 
 # An infinite loop is required to make the test reliable. We will ensure that at least once the query on the line above has started before this check
 while true

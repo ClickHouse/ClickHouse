@@ -1,11 +1,9 @@
-#include <base/defines.h>
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 
-#include <base/MemorySanitizer.h>
+#include <Common/SymbolIndex.h>
+#include <Common/MemorySanitizer.h>
 #include <base/hex.h>
 #include <base/sort.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
-#include <Common/SymbolIndex.h>
 
 #include <algorithm>
 #include <optional>
@@ -462,11 +460,13 @@ const T * find(const void * address, const std::vector<T> & vec)
 
     if (it == vec.begin())
         return nullptr;
-    --it; /// Last range that has left boundary less or equals than address.
+    else
+        --it; /// Last range that has left boundary less or equals than address.
 
     if (address >= it->address_begin && address < it->address_end)
         return &*it;
-    return nullptr;
+    else
+        return nullptr;
 }
 
 }
@@ -498,11 +498,12 @@ const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
 
 String SymbolIndex::getBuildIDHex() const
 {
+    String build_id_binary = getBuildID();
     String build_id_hex;
-    build_id_hex.resize(data.build_id.size() * 2);
+    build_id_hex.resize(build_id_binary.size() * 2);
 
     char * pos = build_id_hex.data();
-    for (auto c : data.build_id)
+    for (auto c : build_id_binary)
     {
         writeHexByteUppercase(c, pos);
         pos += 2;
@@ -513,21 +514,6 @@ String SymbolIndex::getBuildIDHex() const
 
 const SymbolIndex & SymbolIndex::instance()
 {
-    /// To avoid recursive initialization of SymbolIndex we need to block debug
-    /// checks in MemoryTracker.
-    ///
-    /// Those debug checks capture the stacktrace for the log if big enough
-    /// allocation is done (big enough > 16MiB), while SymbolIndex will do
-    /// ~25MiB, and so if exception will be thrown before SymbolIndex
-    /// initialized (this is the case for client/local, and no, we do not want
-    /// to initialize it explicitly, since this will increase startup time for
-    /// the client) and later during SymbolIndex initialization it will try to
-    /// initialize it one more time, and in debug build you will get pretty
-    /// nice error:
-    ///
-    ///   __cxa_guard_acquire detected recursive initialization: do you have a function-local static variable whose initialization depends on that function
-    ///
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     static SymbolIndex instance;
     return instance;
 }

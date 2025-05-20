@@ -18,8 +18,6 @@ namespace DB
   */
 struct TraceLogElement
 {
-    bool symbolize = false;
-
     using TraceDataType = DataTypeEnum8;
     static const TraceDataType::Values trace_values;
 
@@ -29,7 +27,7 @@ struct TraceLogElement
     TraceType trace_type{};
     UInt64 thread_id{};
     String query_id{};
-    std::vector<UInt64> trace{};
+    Array trace{};
     /// Allocation size in bytes for TraceType::Memory and TraceType::MemorySample.
     Int64 size{};
     /// Allocation ptr for TraceType::MemorySample.
@@ -48,16 +46,6 @@ struct TraceLogElement
 class TraceLog : public SystemLog<TraceLogElement>
 {
     using SystemLog<TraceLogElement>::SystemLog;
-public:
-    TraceLog(ContextPtr context_,
-        const SystemLogSettings & settings_,
-        std::shared_ptr<SystemLogQueue<TraceLogElement>> queue_ = nullptr)
-        : SystemLog<TraceLogElement>(context_, settings_, queue_),
-        symbolize(settings_.symbolize_traces)
-    {
-    }
-
-    bool symbolize;
 };
 
 }

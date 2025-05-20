@@ -1,6 +1,5 @@
 #include "ExternalDictionaryLibraryBridgeHelper.h"
 
-#include <Core/Block.h>
 #include <Formats/formatBlock.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <QueryPipeline/Pipe.h>

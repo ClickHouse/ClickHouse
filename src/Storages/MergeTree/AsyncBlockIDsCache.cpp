@@ -3,7 +3,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <Core/BackgroundSchedulePool.h>
 
 #include <unordered_set>
 
@@ -19,12 +18,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsMilliseconds async_block_ids_cache_update_wait_ms;
-    extern const MergeTreeSettingsBool use_async_block_ids_cache;
-}
 
 static constexpr int FAILURE_RETRY_MS = 3000;
 
@@ -65,7 +58,7 @@ catch (...)
 template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_)
     : storage(storage_)
-    , update_wait((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms])
+    , update_wait(storage.getSettings()->async_block_ids_cache_update_wait_ms)
     , path(storage.getZooKeeperPath() + "/async_blocks")
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
@@ -76,14 +69,8 @@ AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_)
 template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::start()
 {
-    if ((*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
+    if (storage.getSettings()->use_async_block_ids_cache)
         task->activateAndSchedule();
-}
-
-template <typename TStorage>
-void AsyncBlockIDsCache<TStorage>::stop()
-{
-    task->deactivate();
 }
 
 template <typename TStorage>
@@ -100,7 +87,7 @@ void AsyncBlockIDsCache<TStorage>::triggerCacheUpdate()
 template <typename TStorage>
 Strings AsyncBlockIDsCache<TStorage>::detectConflicts(const Strings & paths, UInt64 & last_version)
 {
-    if (!(*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
+    if (!storage.getSettings()->use_async_block_ids_cache)
         return {};
 
     CachePtr cur_cache;

@@ -4,10 +4,13 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsNumber.h>
 
-#include <Core/callOnTypeIndex.h>
-
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -84,7 +87,7 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
         std::conditional_t<std::is_same_v<ArrayElement, Decimal128>, Decimal128,
         std::conditional_t<std::is_same_v<ArrayElement, Decimal256>, Decimal256,
         std::conditional_t<std::is_same_v<ArrayElement, DateTime64>, Decimal128,
-        std::conditional_t<is_floating_point<ArrayElement>, Float64,
+        std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
         std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
             UInt64>>>>>>>>>>>;
 };
@@ -113,7 +116,7 @@ struct ArrayAggregateImpl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr (!IsDataTypeDateOrDateTimeOrTime<DataType>)
+            if constexpr (!IsDataTypeDateOrDateTime<DataType>)
             {
                 if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
                 {

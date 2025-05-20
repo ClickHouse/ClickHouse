@@ -1,9 +1,8 @@
+#include <Parsers/CommonParsers.h>
+#include <Common/ErrorCodes.h>
+#include <base/find_symbols.h>
 #include <algorithm>
 #include <cctype>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/CommonParsers.h>
-#include <base/find_symbols.h>
-#include <Common/ErrorCodes.h>
 
 namespace DB
 {
@@ -36,8 +35,6 @@ public:
         return mapping;
     }
 
-    const std::unordered_set<std::string> & getSet() const { return set; }
-
 private:
     KeyWordToStringConverter()
     {
@@ -66,7 +63,6 @@ private:
         size_t index = static_cast<size_t>(identifier);
         mapping.resize(std::max(index + 1, mapping.size()));
         mapping[index] = value;
-        set.emplace(value);
     }
 
     void checkUnderscore(std::string_view value)
@@ -98,7 +94,6 @@ private:
     }
 
     Strings mapping;
-    std::unordered_set<std::string> set;
 };
 }
 
@@ -113,11 +108,6 @@ const std::vector<String> & getAllKeyWords()
     return KeyWordToStringConverter::instance().getMapping();
 }
 
-const std::unordered_set<std::string> & getKeyWordSet()
-{
-    return KeyWordToStringConverter::instance().getSet();
-}
-
 ParserKeyword::ParserKeyword(Keyword keyword)
     : s(toStringView(keyword))
 {}
@@ -127,7 +117,7 @@ bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expecte
     if (pos->type != TokenType::BareWord)
         return false;
 
-    const char * current_word = s.data();
+    const char * current_word = s.begin();
 
     while (true)
     {
@@ -136,7 +126,7 @@ bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expecte
         if (pos->type != TokenType::BareWord)
             return false;
 
-        const char * const next_whitespace = find_first_symbols<' ', '\0'>(current_word, s.data() + s.size());
+        const char * const next_whitespace = find_first_symbols<' ', '\0'>(current_word, s.end());
         const size_t word_length = next_whitespace - current_word;
 
         if (word_length != pos->size())
@@ -154,21 +144,6 @@ bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expecte
     }
 
     return true;
-}
-
-bool isAlwaysTruePredicate(const ASTPtr & predicate)
-{
-    if (!predicate)
-        return true;
-
-    const auto * ast_literal = predicate->as<ASTLiteral>();
-    if (!ast_literal)
-        return false;
-
-    UInt64 result;
-    if (ast_literal->value.tryGet<UInt64>(result) && result == 1)
-        return true;
-    return false;
 }
 
 

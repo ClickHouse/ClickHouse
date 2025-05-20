@@ -48,6 +48,7 @@ class HDFSBuilderWrapper
 {
 
 friend HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
+friend class HDFSErrorWrapper;
 
 static const String CONFIG_PREFIX;
 
@@ -68,12 +69,10 @@ public:
     {
         std::swap(hdfs_builder, other.hdfs_builder);
         config_stor = std::move(other.config_stor);
-    #if USE_KRB5
         hadoop_kerberos_keytab = std::move(other.hadoop_kerberos_keytab);
         hadoop_kerberos_principal = std::move(other.hadoop_kerberos_principal);
         hadoop_security_kerberos_ticket_cache_path = std::move(other.hadoop_security_kerberos_ticket_cache_path);
         need_kinit = std::move(other.need_kinit);
-    #endif
         return *this;
     }
 
@@ -81,6 +80,14 @@ public:
 
     #if USE_KRB5
     void runKinit() const;
+    #endif // USE_KRB5
+
+protected:
+    #if USE_KRB5
+    String hadoop_kerberos_keytab;
+    String hadoop_kerberos_principal;
+    String hadoop_security_kerberos_ticket_cache_path;
+    bool need_kinit{false};
     #endif // USE_KRB5
 
 private:
@@ -94,13 +101,6 @@ private:
 
     hdfsBuilder * hdfs_builder = nullptr;
     std::vector<std::pair<String, String>> config_stor;
-
-    #if USE_KRB5
-    String hadoop_kerberos_keytab;
-    String hadoop_kerberos_principal;
-    String hadoop_security_kerberos_ticket_cache_path;
-    bool need_kinit{false};
-    #endif // USE_KRB5
 };
 
 using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;

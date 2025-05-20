@@ -1,7 +1,6 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 
 #if USE_AWS_S3
-#include <Common/HTTPHeaderFilter.h>
 #include <Core/Settings.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -19,34 +18,9 @@
 
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_archive_path_syntax;
-    extern const SettingsBool s3_create_new_file_on_insert;
-    extern const SettingsBool s3_ignore_file_doesnt_exist;
-    extern const SettingsUInt64 s3_list_object_keys_size;
-    extern const SettingsBool s3_skip_empty_files;
-    extern const SettingsBool s3_truncate_on_insert;
-    extern const SettingsBool s3_throw_on_zero_files_match;
-    extern const SettingsBool s3_validate_request_settings;
-    extern const SettingsSchemaInferenceMode schema_inference_mode;
-    extern const SettingsBool schema_inference_use_cache_for_s3;
-}
-
-namespace S3AuthSetting
-{
-    extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsUInt64 expiration_window_seconds;
-    extern const S3AuthSettingsBool no_sign_request;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString session_token;
-    extern const S3AuthSettingsBool use_environment_credentials;
-}
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -116,14 +90,14 @@ StorageObjectStorage::QuerySettings StorageS3Configuration::getQuerySettings(con
 {
     const auto & settings = context->getSettingsRef();
     return StorageObjectStorage::QuerySettings{
-        .truncate_on_insert = settings[Setting::s3_truncate_on_insert],
-        .create_new_file_on_insert = settings[Setting::s3_create_new_file_on_insert],
-        .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_s3],
-        .schema_inference_mode = settings[Setting::schema_inference_mode],
-        .skip_empty_files = settings[Setting::s3_skip_empty_files],
-        .list_object_keys_size = settings[Setting::s3_list_object_keys_size],
-        .throw_on_zero_files_match = settings[Setting::s3_throw_on_zero_files_match],
-        .ignore_non_existent_file = settings[Setting::s3_ignore_file_doesnt_exist],
+        .truncate_on_insert = settings.s3_truncate_on_insert,
+        .create_new_file_on_insert = settings.s3_create_new_file_on_insert,
+        .schema_inference_use_cache = settings.schema_inference_use_cache_for_s3,
+        .schema_inference_mode = settings.schema_inference_mode,
+        .skip_empty_files = settings.s3_skip_empty_files,
+        .list_object_keys_size = settings.s3_list_object_keys_size,
+        .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
+        .ignore_non_existent_file = settings.s3_ignore_file_doesnt_exist,
     };
 }
 
@@ -134,7 +108,8 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     const auto & config = context->getConfigRef();
     const auto & settings = context->getSettingsRef();
 
-    auto s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, settings[Setting::s3_validate_request_settings]);
+    auto s3_settings = getSettings(
+        config, "s3"/* config_prefix */, context, url.uri_str, settings.s3_validate_request_settings);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -154,7 +129,11 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
     auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
-    auto s3_capabilities = getCapabilitiesFromConfig(config, "s3");
+    auto s3_capabilities = S3Capabilities
+    {
+        .support_batch_delete = config.getBool("s3.support_batch_delete", true),
+        .support_proxy = config.getBool("s3.support_proxy", config.has("s3.proxy")),
+    };
 
     return std::make_shared<S3ObjectStorage>(
         std::move(client), std::move(s3_settings), url, s3_capabilities,
@@ -168,24 +147,23 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
-        url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename, settings[Setting::allow_archive_path_syntax]);
+        url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename, settings.allow_archive_path_syntax);
     else
-        url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
+        url = S3::URI(collection.get<String>("url"), settings.allow_archive_path_syntax);
 
-    auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
-    auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
-    auth_settings[S3AuthSetting::use_environment_credentials] = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
-    auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
-    auth_settings[S3AuthSetting::expiration_window_seconds] = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
-    auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<String>("session_token", "");
+    auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
+    auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
+    auth_settings.use_environment_credentials = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
+    auth_settings.no_sign_request = collection.getOrDefault<bool>("no_sign_request", false);
+    auth_settings.expiration_window_seconds = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
 
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     structure = collection.getOrDefault<String>("structure", "auto");
 
-    request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */true);
+    request_settings = S3::RequestSettings(collection, settings, /* validate_settings */true);
 
-    static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
+    static_configuration = !auth_settings.access_key_id.value.empty() || auth_settings.no_sign_request.changed;
 
     keys = {url.key};
 }
@@ -360,7 +338,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     }
 
     /// This argument is always the first
-    url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef()[Setting::allow_archive_path_syntax]);
+    url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef().allow_archive_path_syntax);
 
     if (engine_args_to_idx.contains("format"))
     {
@@ -378,19 +356,19 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         compression_method = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["compression_method"]], "compression_method");
 
     if (engine_args_to_idx.contains("access_key_id"))
-        auth_settings[S3AuthSetting::access_key_id] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");
+        auth_settings.access_key_id = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");
 
     if (engine_args_to_idx.contains("secret_access_key"))
-        auth_settings[S3AuthSetting::secret_access_key] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["secret_access_key"]], "secret_access_key");
+        auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["secret_access_key"]], "secret_access_key");
 
     if (engine_args_to_idx.contains("session_token"))
-        auth_settings[S3AuthSetting::session_token] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["session_token"]], "session_token");
+        auth_settings.session_token = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["session_token"]], "session_token");
 
     if (no_sign_request)
-        auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
+        auth_settings.no_sign_request = no_sign_request;
 
-    static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
-    auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
+    static_configuration = !auth_settings.access_key_id.value.empty() || auth_settings.no_sign_request.changed;
+    auth_settings.no_sign_request = no_sign_request;
 
     keys = {url.key};
 }

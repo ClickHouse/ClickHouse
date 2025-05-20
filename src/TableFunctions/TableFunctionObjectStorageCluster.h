@@ -33,36 +33,6 @@ struct HDFSClusterDefinition
     static constexpr auto storage_type_name = "HDFSCluster";
 };
 
-struct IcebergS3ClusterDefinition
-{
-    static constexpr auto name = "icebergS3Cluster";
-    static constexpr auto storage_type_name = "IcebergS3Cluster";
-};
-
-struct IcebergAzureClusterDefinition
-{
-    static constexpr auto name = "icebergAzureCluster";
-    static constexpr auto storage_type_name = "IcebergAzureCluster";
-};
-
-struct IcebergHDFSClusterDefinition
-{
-    static constexpr auto name = "icebergHDFSCluster";
-    static constexpr auto storage_type_name = "IcebergHDFSCluster";
-};
-
-struct DeltaLakeClusterDefinition
-{
-    static constexpr auto name = "deltaLakeCluster";
-    static constexpr auto storage_type_name = "DeltaLakeS3Cluster";
-};
-
-struct HudiClusterDefinition
-{
-    static constexpr auto name = "hudiCluster";
-    static constexpr auto storage_type_name = "HudiS3Cluster";
-};
-
 /**
 * Class implementing s3/hdfs/azureBlobStorageCluster(...) table functions,
 * which allow to process many files from S3/HDFS/Azure blob storage on a specific cluster.
@@ -109,25 +79,4 @@ using TableFunctionAzureBlobCluster = TableFunctionObjectStorageCluster<AzureClu
 #if USE_HDFS
 using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
-
-#if USE_AVRO && USE_AWS_S3
-using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration>;
-#endif
-
-#if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration>;
-#endif
-
-#if USE_AVRO && USE_HDFS
-using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
-#endif
-
-#if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
-using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
-#endif
-
-#if USE_AWS_S3
-using TableFunctionHudiCluster = TableFunctionObjectStorageCluster<HudiClusterDefinition, StorageS3HudiConfiguration>;
-#endif
-
 }

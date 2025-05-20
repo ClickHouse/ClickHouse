@@ -15,7 +15,6 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/typeid_cast.h>
-#include <Columns/IColumn_fwd.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
@@ -25,7 +24,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
-#include <Processors/ISource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -34,21 +32,11 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
-#include <vector>
+#include <deque>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_unrestricted_reads_from_keeper;
-    extern const SettingsFloat insert_keeper_fault_injection_probability;
-    extern const SettingsUInt64 insert_keeper_fault_injection_seed;
-    extern const SettingsUInt64 insert_keeper_max_retries;
-    extern const SettingsUInt64 insert_keeper_retry_initial_backoff_ms;
-    extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
-    extern const SettingsMaxThreads max_download_threads;
-}
 
 namespace ErrorCodes
 {
@@ -129,29 +117,21 @@ class ZooKeeperSink : public SinkToStorage
     ZkNodeCache cache;
 
 public:
-    ZooKeeperSink(const Block & header, ContextPtr context)
-        : SinkToStorage(header), zookeeper(context->getZooKeeper())
-    {}
-
+    ZooKeeperSink(const Block & header, ContextPtr context) : SinkToStorage(header), zookeeper(context->getZooKeeper()) { }
     String getName() const override { return "ZooKeeperSink"; }
 
     void consume(Chunk & chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
-
-        ColumnPtr name_column = block.getByName("name").column;
-        ColumnPtr value_column = block.getByName("value").column;
-        ColumnPtr path_column = block.getByName("path").column;
-
         size_t rows = block.rows();
         for (size_t i = 0; i < rows; i++)
         {
-            String name = name_column->getDataAt(i).toString();
-            String value = value_column->getDataAt(i).toString();
-            String path = path_column->getDataAt(i).toString();
+            String name = block.getByPosition(0).column->getDataAt(i).toString();
+            String value = block.getByPosition(1).column->getDataAt(i).toString();
+            String path = block.getByPosition(2).column->getDataAt(i).toString();
 
             /// We don't expect a "name" contains a path.
-            if (name.contains('/'))
+            if (name.find('/') != std::string::npos)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `name` should not contain '/'");
             }
@@ -280,12 +260,15 @@ void StorageSystemZooKeeper::read(
     query_plan.addStep(std::move(read_step));
 }
 
-SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr & metadata, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, bool /*async_insert*/)
 {
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
-
-    return std::make_shared<ZooKeeperSink>(metadata->getSampleBlock(), context);
+    Block write_header;
+    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "name"));
+    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "value"));
+    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "path"));
+    return std::make_shared<ZooKeeperSink>(write_header, context);
 }
 
 ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
@@ -494,7 +477,7 @@ void ReadFromSystemZooKeeper::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(added_filter_nodes);
 
-    paths = extractPath(added_filter_nodes.nodes, context, context->getSettingsRef()[Setting::allow_unrestricted_reads_from_keeper]);
+    paths = extractPath(added_filter_nodes.nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
 }
 
 
@@ -523,10 +506,9 @@ Chunk SystemZooKeeperSource::generate()
     /// Use insert settings for now in order not to introduce new settings.
     /// Hopefully insert settings will also be unified and replaced with some generic retry settings.
     ZooKeeperRetriesInfo retries_seetings(
-        settings[Setting::insert_keeper_max_retries],
-        settings[Setting::insert_keeper_retry_initial_backoff_ms],
-        settings[Setting::insert_keeper_retry_max_backoff_ms],
-        query_status);
+        settings.insert_keeper_max_retries,
+        settings.insert_keeper_retry_initial_backoff_ms,
+        settings.insert_keeper_retry_max_backoff_ms);
 
     /// Handles reconnects when needed
     auto get_zookeeper = [&] ()
@@ -534,16 +516,15 @@ Chunk SystemZooKeeperSource::generate()
         if (!zookeeper || zookeeper->expired())
         {
             zookeeper = ZooKeeperWithFaultInjection::createInstance(
-                settings[Setting::insert_keeper_fault_injection_probability],
-                settings[Setting::insert_keeper_fault_injection_seed],
+                settings.insert_keeper_fault_injection_probability,
+                settings.insert_keeper_fault_injection_seed,
                 context->getZooKeeper(),
-                "",
-                nullptr);
+                "", nullptr);
         }
         return zookeeper;
     };
 
-    const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef()[Setting::max_download_threads].value);
+    const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef().max_download_threads.value);
 
     struct ListTask
     {
@@ -594,7 +575,7 @@ Chunk SystemZooKeeperSource::generate()
         }
 
         zkutil::ZooKeeper::MultiTryGetChildrenResponse list_responses;
-        ZooKeeperRetriesControl("", nullptr, retries_seetings).retryLoop(
+        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
             [&]() { list_responses = get_zookeeper()->tryGetChildren(paths_to_list); });
 
         struct GetTask
@@ -627,7 +608,7 @@ Chunk SystemZooKeeperSource::generate()
                 // Remove nodes that do not match specified prefix
                 std::erase_if(nodes, [&task] (const String & node)
                 {
-                    return !(task.path_part + '/' + node).starts_with(task.prefix);
+                    return (task.path_part + '/' + node).substr(0, task.prefix.size()) != task.prefix;
                 });
             }
 
@@ -640,7 +621,7 @@ Chunk SystemZooKeeperSource::generate()
         }
 
         zkutil::ZooKeeper::MultiTryGetResponse get_responses;
-        ZooKeeperRetriesControl("", nullptr, retries_seetings).retryLoop(
+        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
             [&]() { get_responses = get_zookeeper()->tryGet(paths_to_get); });
 
         /// Add children count to query total rows. We can not get total rows in advance,
@@ -712,7 +693,7 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
     const Block & header,
     UInt64 max_block_size_)
     : SourceStepWithFilter(
-        header,
+        {.header = header},
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -724,8 +705,7 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
 
 void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    const auto & header = getOutputHeader();
-
+    const auto & header = getOutputStream().header;
     auto source = std::make_shared<SystemZooKeeperSource>(std::move(paths), header, max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);

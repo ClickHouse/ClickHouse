@@ -10,8 +10,6 @@
 
 namespace DB
 {
-struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class CatBoostLibraryBridgeHelper final : public LibraryBridgeHelper
 {

@@ -4,9 +4,9 @@
 namespace DB
 {
 
-ISourceStep::ISourceStep(Header output_header_)
+ISourceStep::ISourceStep(DataStream output_stream_)
 {
-    output_header = std::move(output_header_);
+    output_stream = std::move(output_stream_);
 }
 
 QueryPipelineBuilderPtr ISourceStep::updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings & settings)

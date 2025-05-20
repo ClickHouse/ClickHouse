@@ -1,5 +1,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/WindowTransform.h>
@@ -43,11 +44,11 @@ static Block addWindowFunctionResultColumns(const Block & block,
 }
 
 WindowStep::WindowStep(
-    const Header & input_header_,
+    const DataStream & input_stream_,
     const WindowDescription & window_description_,
     const std::vector<WindowFunctionDescription> & window_functions_,
     bool streams_fan_out_)
-    : ITransformingStep(input_header_, addWindowFunctionResultColumns(input_header_, window_functions_), getTraits(!streams_fan_out_))
+    : ITransformingStep(input_stream_, addWindowFunctionResultColumns(input_stream_.header, window_functions_), getTraits(!streams_fan_out_))
     , window_description(window_description_)
     , window_functions(window_functions_)
     , streams_fan_out(streams_fan_out_)
@@ -73,7 +74,7 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         [&](const Block & /*header*/)
         {
             return std::make_shared<WindowTransform>(
-                input_headers.front(), *output_header, window_description, window_functions);
+                input_streams.front().header, output_stream->header, window_description, window_functions);
         });
 
     if (streams_fan_out)
@@ -81,7 +82,7 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         pipeline.resize(num_threads);
     }
 
-    assertBlocksHaveEqualStructure(pipeline.getHeader(), *output_header,
+    assertBlocksHaveEqualStructure(pipeline.getHeader(), output_stream->header,
         "WindowStep transform for '" + window_description.window_name + "'");
 }
 
@@ -143,9 +144,10 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Functions", std::move(functions_array));
 }
 
-void WindowStep::updateOutputHeader()
+void WindowStep::updateOutputStream()
 {
-    output_header = addWindowFunctionResultColumns(input_headers.front(), window_functions);
+    output_stream = createOutputStream(
+        input_streams.front(), addWindowFunctionResultColumns(input_streams.front().header, window_functions), getDataStreamTraits());
 
     window_description.checkValid();
 }

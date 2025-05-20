@@ -1,17 +1,17 @@
 #pragma once
 
 #include <IO/WriteBuffer.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
 
 /// Simply do nothing, can be used to measure amount of written bytes.
-class NullWriteBuffer final : public WriteBufferFromPointer
+class NullWriteBuffer : public WriteBuffer, boost::noncopyable
 {
 public:
     NullWriteBuffer();
-    ~NullWriteBuffer() override;
-
     void nextImpl() override;
 
 private:

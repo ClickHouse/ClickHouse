@@ -17,7 +17,6 @@
     <keeper_server>
         <tcp_port>2181</tcp_port>
         <server_id>2</server_id>
-        <digest_enabled>1</digest_enabled>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
@@ -28,7 +27,6 @@
             <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
 
             <async_replication>1</async_replication>
-            <use_xid_64>1</use_xid_64>
         </coordination_settings>
 
         <raft_configuration>
