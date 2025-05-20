@@ -26,6 +26,10 @@ RETRIES_SIGN = "Some tests were restarted"
 #         out = csv.writer(f, delimiter="\t")
 #         out.writerow(status)
 
+BROKEN_TESTS_ANALYZER_TECH_DEBT = [
+    "01624_soft_constraints",
+]
+
 
 class FTResultsProcessor:
     @dataclasses.dataclass
@@ -46,6 +50,7 @@ class FTResultsProcessor:
         self.tests_output_file = f"{wd}/test_result.txt"
         # self.test_results_parsed_file = f"{wd}/test_result.tsv"
         # self.status_file = f"{wd}/check_status.tsv"
+        self.broken_tests = BROKEN_TESTS_ANALYZER_TECH_DEBT
 
     def _process_test_output(self):
         total = 0
@@ -92,11 +97,19 @@ class FTResultsProcessor:
 
                     total += 1
                     if TIMEOUT_SIGN in line:
-                        failed += 1
-                        test_results.append((test_name, "Timeout", test_time, []))
+                        if test_name in self.broken_tests:
+                            success += 1
+                            test_results.append((test_name, "BROKEN", test_time, []))
+                        else:
+                            failed += 1
+                            test_results.append((test_name, "Timeout", test_time, []))
                     elif FAIL_SIGN in line:
-                        failed += 1
-                        test_results.append((test_name, "FAIL", test_time, []))
+                        if test_name in self.broken_tests:
+                            success += 1
+                            test_results.append((test_name, "BROKEN", test_time, []))
+                        else:
+                            failed += 1
+                            test_results.append((test_name, "FAIL", test_time, []))
                     elif UNKNOWN_SIGN in line:
                         unknown += 1
                         test_results.append((test_name, "FAIL", test_time, []))
@@ -104,8 +117,21 @@ class FTResultsProcessor:
                         skipped += 1
                         test_results.append((test_name, "SKIPPED", test_time, []))
                     else:
-                        success += int(OK_SIGN in line)
-                        test_results.append((test_name, "OK", test_time, []))
+                        if OK_SIGN in line and test_name in self.broken_tests:
+                            skipped += 1
+                            test_results.append(
+                                (
+                                    test_name,
+                                    "NOT_FAILED",
+                                    test_time,
+                                    [
+                                        "This test passed. Update analyzer_tech_debt.txt.\n"
+                                    ],
+                                )
+                            )
+                        else:
+                            success += int(OK_SIGN in line)
+                            test_results.append((test_name, "OK", test_time, []))
                     test_end = False
                 elif (
                     len(test_results) > 0
@@ -204,7 +230,7 @@ class FTResultsProcessor:
         else:
             pass
 
-        info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
+        info = f"Total: {s.total - s.skipped}, Failed: {s.failed}"
 
         # TODO: !!!
         # def test_result_comparator(item):
@@ -226,7 +252,7 @@ class FTResultsProcessor:
             name="Tests",
             results=test_results,
             status=state,
-            files=[],
+            files=[self.tests_output_file],
             info=info,
             with_info_from_results=False,
         )

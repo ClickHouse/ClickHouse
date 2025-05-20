@@ -5,6 +5,7 @@
 #include <base/types.h>
 
 #include <ctime>
+#include <cassert>
 #include <string>
 #include <type_traits>
 
@@ -283,7 +284,7 @@ private:
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
-        chassert(divisor > 0);
+        assert(divisor > 0);
 
         if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
         {
@@ -1204,16 +1205,6 @@ public:
         return lut[index].date + time_offset;
     }
 
-    Time makeTime(uint64_t hour, UInt8 minute, UInt8 second) const
-    {
-        Time time_offset = hour * 3600 + minute * 60 + second;
-
-        if (time_offset >= lut[1].time_at_offset_change())
-            time_offset -= lut[0].amount_of_offset_change();
-
-        return time_offset;
-    }
-
     template <typename DateOrTime>
     const Values & getValues(DateOrTime v) const { return lut[toLUTIndex(v)]; }
 
@@ -1251,8 +1242,7 @@ public:
 
     struct TimeComponents
     {
-        bool is_negative = false;
-        uint64_t hour;
+        uint8_t hour;
         uint8_t minute;
         uint8_t second;
     };
@@ -1300,29 +1290,6 @@ public:
         /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
         if (unlikely(res.time.hour > 23))
             res.time.hour = 23;
-
-        return res;
-    }
-
-    TimeComponents toTimeComponents(Time t) const
-    {
-        TimeComponents res;
-
-        bool is_negative = false;
-
-        if (unlikely(t < 0))
-        {
-            is_negative = true;
-            t = -t;
-        }
-        res.second = t % 60;
-        res.minute = t / 60 % 60;
-        res.hour = t / 3600;
-
-        if (unlikely(res.hour > 999))
-            res.hour = 999;
-
-        res.is_negative = is_negative;
 
         return res;
     }

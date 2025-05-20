@@ -28,18 +28,6 @@ struct ActionDAGNodes;
 class MergeTreeSetIndex;
 
 
-/// Canonize the predicate
-/// * push down NOT to leaf nodes
-/// * remove aliases and re-generate function names
-/// * remove unneeded functions (e.g. materialize)
-struct ActionsDAGWithInversionPushDown
-{
-    std::optional<ActionsDAG> dag;
-    const ActionsDAG::Node * predicate = nullptr;
-
-    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
-};
-
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -53,7 +41,7 @@ class KeyCondition
 public:
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        const ActionsDAGWithInversionPushDown & filter_dag,
+        const ActionsDAG * filter_dag,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -161,6 +149,8 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
+    static ActionsDAG cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
+
     bool matchesExactContinuousRange() const;
 
     /// Extract plain ranges of the condition.
@@ -217,9 +207,6 @@ public:
         String toString(std::string_view column_name, bool print_constants) const;
 
         Function function = FUNCTION_UNKNOWN;
-
-        /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
-        bool relaxed = false;
 
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
@@ -484,6 +471,6 @@ private:
     bool relaxed = false;
 };
 
-std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
+String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
 }

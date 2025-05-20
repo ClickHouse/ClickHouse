@@ -163,7 +163,7 @@ bool PolygonDictionaryIndexCell::find(const Point & point, size_t & polygon_inde
 }
 
 template <class PolygonDictionary>
-DictionaryPtr createLayout(const std::string & /*name*/,
+DictionaryPtr createLayout(const std::string & ,
                            const DictionaryStructure & dict_struct,
                            const Poco::Util::AbstractConfiguration & config,
                            const std::string & config_prefix,

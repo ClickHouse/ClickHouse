@@ -15,8 +15,7 @@ function run_with_custom_key {
 , parallel_replicas_mode ='$filter_type'\
 , parallel_replicas_custom_key='$2'\
 , parallel_replicas_for_non_replicated_merge_tree=1 \
-, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost' \
-, serialize_query_plan=0"
+, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost'"
             $CLICKHOUSE_CLIENT --query="$query"
         done
     done

@@ -1,3 +1,4 @@
+#include <cerrno>
 #include <ctime>
 #include <optional>
 #include <Common/ProfileEvents.h>

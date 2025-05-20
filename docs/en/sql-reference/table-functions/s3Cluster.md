@@ -16,8 +16,8 @@ Allows processing files from [Amazon S3](https://aws.amazon.com/s3/) and Google 
 
 **Syntax**
 
-```sql
-s3Cluster(cluster_name, url[, NOSIGN | access_key_id, secret_access_key,[session_token]][, format][, structure][, compression_method][, headers][, extra_credentials])
+``` sql
+s3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers])
 s3Cluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
@@ -31,8 +31,7 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 - `format` — The [format](/sql-reference/formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 - `compression_method` — Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.
-- `headers` - Optional. Allows headers to be passed in the S3 request. Pass in the format `headers(key=value)` e.g. `headers('x-amz-request-payer' = 'requester')`. See [here](/sql-reference/table-functions/s3#accessing-requester-pays-buckets) for an example.
-- `extra_credentials` - Optional. `roleARN` can be passed via this parameter. See [here](/cloud/security/secure-s3#access-your-s3-bucket-with-the-clickhouseaccess-role) for an example.
+- `headers` - Parameter is optional. Allows headers to be passed in the S3 request. Pass in the format `headers(key=value)` e.g. `headers('x-amz-request-payer' = 'requester')`. See [here](/sql-reference/table-functions/s3#accessing-requester-pays-buckets) for example of use.
 
 Arguments can also be passed using [named collections](operations/named-collections.md). In this case `url`, `access_key_id`, `secret_access_key`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
 
@@ -49,7 +48,7 @@ A table with the specified structure for reading or writing data in the specifie
 
 Select the data from all the files in the `/root/data/clickhouse` and `/root/data/database/` folders, using all the nodes in the `cluster_simple` cluster:
 
-```sql
+``` sql
 SELECT * FROM s3Cluster(
     'cluster_simple',
     'http://minio1:9001/root/data/{clickhouse,database}/*',
@@ -67,7 +66,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 :::
 
 For production use cases, it is recommended to use [named collections](operations/named-collections.md). Here is the example:
-```sql
+``` sql
 
 CREATE NAMED COLLECTION creds AS
         access_key_id = 'minio',
