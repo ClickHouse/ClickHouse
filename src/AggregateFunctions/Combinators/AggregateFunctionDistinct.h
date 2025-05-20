@@ -24,7 +24,8 @@ struct AggregateFunctionDistinctSingleNumericData
     /// history will hold all values added so far
     Set history;
 
-    void add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, MutableColumns & argument_columns, Arena *)
+    /// Returns true if the value did not exist in the history before
+    bool add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena *)
     {
         const auto & vec = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
         const T value = vec[row_num];
@@ -32,8 +33,9 @@ struct AggregateFunctionDistinctSingleNumericData
         if (!history.contains(value))
         {
             history.insert(value);
-            argument_columns[0]->insert(value); /// argument_columns later will be passed to the nested function
+            return true;
         }
+        return false;
     }
 
     /// Pass the new values from rhs to the nested function via argument_columns
@@ -82,7 +84,7 @@ struct AggregateFunctionDistinctGenericData
 template <bool is_plain_column>
 struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDistinctGenericData
 {
-    void add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, MutableColumns & argument_columns, Arena * arena)
+    bool add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena * arena)
     {
         auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
 
@@ -92,8 +94,9 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
             bool inserted;
 
             history.emplace(key_holder, it, inserted);
-            deserializeAndInsert<is_plain_column>(it->getValue(), *argument_columns[0]);
+            return true;
         }
+        return false;
     }
 
     void merge(const Self & rhs, MutableColumns & argument_columns, Arena * arena)
@@ -116,7 +119,7 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
 
 struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDistinctGenericData
 {
-    void add(const IColumn ** columns, size_t columns_num, size_t row_num, MutableColumns & argument_columns, Arena * arena)
+    bool add(const IColumn ** columns, size_t columns_num, size_t row_num, Arena * arena)
     {
         const char * begin = nullptr;
         StringRef value(begin, 0);
@@ -133,10 +136,10 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             bool inserted;
             auto key_holder = SerializedKeyHolder{value, *arena};
             history.emplace(key_holder, it, inserted);
-            const char * pos = it->getValue().data;
-            for (auto & column : argument_columns)
-                pos = column->deserializeAndInsertFromArena(pos);
+
+            return true;
         }
+        return false;
     }
 
     void merge(const Self & rhs, MutableColumns & argument_columns, Arena * arena)
@@ -190,14 +193,19 @@ private:
         return argument_columns;
     }
 
-    void addToNested(AggregateDataPtr __restrict place, MutableColumns & argument_columns, Arena * arena) const
+    void addToNested(size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena) const
+    {
+        nested_func->addBatchSinglePlace(row_begin, row_end, getNestedPlace(place), columns, arena);
+    }
+
+    void addToNested(AggregateDataPtr __restrict place, const MutableColumns & argument_columns, Arena * arena) const
     {
         ColumnRawPtrs arguments_raw(argument_columns.size());
         for (size_t i = 0; i < argument_columns.size(); ++i)
             arguments_raw[i] = argument_columns[i].get();
 
         assert(!argument_columns.empty());
-        nested_func->addBatchSinglePlace(0, argument_columns[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
+        addToNested(0, argument_columns[0]->size(), place, arguments_raw.data(), arena);
     }
 
 public:
@@ -212,9 +220,9 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        auto argument_columns = prepareArgumentColumns();
-        this->data(place).add(columns, arguments_num, row_num, argument_columns, arena);
-        addToNested(place, argument_columns, arena);
+        bool added = this->data(place).add(columns, arguments_num, row_num, arena);
+        if (added)
+            addToNested(row_num, row_num + 1, place, columns, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
