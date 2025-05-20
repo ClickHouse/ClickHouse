@@ -3249,9 +3249,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// if transform_null_in is off, we might want to replace `IN` with `if(isNull(x), Null, has([1], x)), arrayJoin([0, 1, Null])`
                     if (!scope.context->getSettingsRef()[Setting::transform_null_in])
                     {
-                        // after swap:  
-                        //   in_first_argument  -> array node  
-                        //   in_second_argument -> element node 
+                        // after swap:
+                        //   in_first_argument  -> array node
+                        //   in_second_argument -> element node
                         auto [wrapped_node, proj_names] =
                                     makeNullSafeHas(in_first_argument, in_second_argument,
                                         parameters_projection_names,
