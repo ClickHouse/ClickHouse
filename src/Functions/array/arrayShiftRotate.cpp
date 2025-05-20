@@ -265,7 +265,7 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     FunctionDocumentation::Syntax syntax_rotateleft = "arrayRotateLeft(arr, n)";
     FunctionDocumentation::Arguments arguments_rotateleft =
     {
-    	{"arr", "The array for which to rotate the elements. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_rotateleft = "An array rotated to the left by the specified number of elements. [`Array(T)`](/sql-reference/data-types/array).";
