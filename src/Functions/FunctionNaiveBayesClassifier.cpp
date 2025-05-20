@@ -85,7 +85,7 @@ void NBModelRegistry::load(ContextPtr context)
         const String model_name = config.getString(model_name_path);
 
         /// Check if there is already a model with the same name
-        if (models.find(model_name) != models.end())
+        if (models.contains(model_name))
         {
             throw Exception(
                 ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
@@ -308,7 +308,7 @@ private:
     {
         const auto & models = NBModelRegistry::instance(context);
 
-        if (models.find(model_name) == models.end())
+        if (!models.contains(model_name))
         {
             String available_models;
             for (const auto & model : models)

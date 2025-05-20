@@ -266,7 +266,7 @@ public:
             for (const auto & prior : priors)
             {
                 const UInt32 class_id = prior.getKey();
-                if (class_totals.find(class_id) == class_totals.end()) /// Class present in config's <priors> not found in model
+                if (!class_totals.contains(class_id)) /// Class present in config's <priors> not found in model
                 {
                     String available_classes;
                     for (const auto & class_entry : class_totals)
