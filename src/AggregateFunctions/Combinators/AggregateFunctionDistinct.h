@@ -47,12 +47,12 @@ struct AggregateFunctionDistinctSingleNumericData
 
     void serialize(WriteBuffer & buf) const
     {
-      history.write(buf);
+        history.write(buf);
     }
 
     void deserialize(ReadBuffer & buf, Arena *)
     {
-      history.read(buf);
+        history.read(buf);
     }
 };
 
