@@ -56,7 +56,7 @@ select * from tab order by (a + b) * c desc, sin(a / b) desc;
 0	0	0	0
 0	0	0	0
 select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, sin(a / b) desc) where explain like '%sort description%';
-  Prefix sort description: multiply(plus(a, b), c) DESC, sin(divide(a, b)) DESC
+  Prefix sort description: multiply(plus(a, b), c) DESC
   Result sort description: multiply(plus(a, b), c) DESC, sin(divide(a, b)) DESC
 -- Exact match, mixed direction
 select * from tab order by (a + b) * c desc, sin(a / b);
@@ -169,7 +169,7 @@ select * from (explain plan actions = 1 select * from tab order by (a + b) * c, 
   Result sort description: multiply(plus(a, b), c) ASC, intDiv(sin(divide(a, b)), 2) DESC
 -- select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc;
 select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc) where explain like '%sort description%';
-  Prefix sort description: multiply(plus(a, b), c) DESC, intDiv(sin(divide(a, b)), 2) DESC
+  Prefix sort description: multiply(plus(a, b), c) DESC
   Result sort description: multiply(plus(a, b), c) DESC, intDiv(sin(divide(a, b)), 2) DESC
 -- select * from tab order by (a + b) * c desc, intDiv(sin(a / b), -2);
 select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), -2)) where explain like '%sort description%';
