@@ -8,9 +8,11 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnTuple.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Common/register_objects.h>
 
@@ -85,14 +87,13 @@ public:
     }
 };
 
-template <class NameHolder, class ReturnType, class ReturnColumn, class Extractor>
-class FunctionMergeTreePartInfoExtractor : public IFunction
+class FunctionMergeTreePartInfo : public IFunction
 {
 public:
-    static constexpr auto name = NameHolder::name;
+    static constexpr auto name = "mergeTreePartInfo";
     String getName() const override { return name; }
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMergeTreePartInfoExtractor>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMergeTreePartInfo>(); }
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForSparseColumns() const override { return false; }
@@ -105,66 +106,62 @@ public:
             {"part_name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"}
         });
 
-        return std::make_shared<ReturnType>();
+        DataTypes types = {
+            std::make_shared<DataTypeString>(),
+            std::make_shared<DataTypeInt64>(),
+            std::make_shared<DataTypeInt64>(),
+            std::make_shared<DataTypeInt64>(),
+            std::make_shared<DataTypeInt64>(),
+        };
+
+        Names names = {
+            "partition_id",
+            "min_block",
+            "max_block",
+            "level",
+            "mutation",
+        };
+
+        return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto result_column = ReturnColumn::create();
         const IColumn * input_column = arguments[0].column.get();
 
-        Extractor extractor;
+        auto partition_column = ColumnString::create();
+        auto min_block_column = ColumnInt64::create();
+        auto max_block_column = ColumnInt64::create();
+        auto level_column = ColumnInt64::create();
+        auto mutation_column = ColumnInt64::create();
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const MergeTreePartInfo part_info = constructPartInfo(input_column->getDataAt(i).toView());
-            extractor(part_info, *result_column);
+
+            partition_column->insertData(part_info.getPartitionId().data(), part_info.getPartitionId().size());
+            min_block_column->insertValue(part_info.min_block);
+            max_block_column->insertValue(part_info.max_block);
+            level_column->insertValue(part_info.level);
+            mutation_column->insertValue(part_info.mutation);
         }
 
-        return result_column;
+        return ColumnTuple::create(Columns{
+            std::move(partition_column),
+            std::move(min_block_column),
+            std::move(max_block_column),
+            std::move(level_column),
+            std::move(mutation_column),
+        });
     }
 };
-
-struct NamePartitionId { static constexpr auto name{"partPartitionId"}; };
-struct NameMinBlock { static constexpr auto name{"partMinBlock"}; };
-struct NameMaxBlock { static constexpr auto name{"partMaxBlock"}; };
-struct NameMergeLevel { static constexpr auto name{"partMergeLevel"}; };
-struct NameMutationLevel { static constexpr auto name{"partMutationLevel"}; };
 
 }
 
 REGISTER_FUNCTION(MergeTreePartInfoTools)
 {
-    constexpr static auto partition_id_extractor = [](const MergeTreePartInfo & part_info, ColumnString & result_column)
-    {
-        result_column.insertData(part_info.getPartitionId().data(), part_info.getPartitionId().size());
-    };
-
-    constexpr static auto min_block_extractor = [](const MergeTreePartInfo & part_info, ColumnInt64 & result_column)
-    {
-        result_column.insertValue(part_info.min_block);
-    };
-
-    constexpr static auto max_block_extractor = [](const MergeTreePartInfo & part_info, ColumnInt64 & result_column)
-    {
-        result_column.insertValue(part_info.max_block);
-    };
-
-    constexpr static auto merge_level_extractor = [](const MergeTreePartInfo & part_info, ColumnInt64 & result_column)
-    {
-        result_column.insertValue(part_info.level);
-    };
-
-    constexpr static auto mutation_extractor = [](const MergeTreePartInfo & part_info, ColumnInt64 & result_column)
-    {
-        result_column.insertValue(part_info.mutation);
-    };
-
-    factory.registerFunction<FunctionMergeTreePartInfoExtractor<NamePartitionId, DataTypeString, ColumnString, decltype(partition_id_extractor)>>();
-    factory.registerFunction<FunctionMergeTreePartInfoExtractor<NameMinBlock, DataTypeInt64, ColumnInt64, decltype(min_block_extractor)>>();
-    factory.registerFunction<FunctionMergeTreePartInfoExtractor<NameMaxBlock, DataTypeInt64, ColumnInt64, decltype(max_block_extractor)>>();
-    factory.registerFunction<FunctionMergeTreePartInfoExtractor<NameMergeLevel, DataTypeInt64, ColumnInt64, decltype(merge_level_extractor)>>();
-    factory.registerFunction<FunctionMergeTreePartInfoExtractor<NameMutationLevel, DataTypeInt64, ColumnInt64, decltype(mutation_extractor)>>();
     factory.registerFunction<FunctionMergeTreePartCoverage>();
+    factory.registerFunction<FunctionMergeTreePartInfo>();
 }
 
 }
