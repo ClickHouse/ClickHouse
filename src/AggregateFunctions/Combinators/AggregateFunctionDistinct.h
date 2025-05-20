@@ -33,7 +33,7 @@ struct AggregateFunctionDistinctSingleNumericData
         if (!history.contains(value))
         {
             history.insert(value);
-            argument_columns[0]->insert(value); /// arguments_columns later will be passed to the nested function
+            argument_columns[0]->insert(value); /// argument_columns later will be passed to the nested function
         }
     }
 
@@ -181,7 +181,7 @@ private:
         return place + prefix_size;
     }
 
-    MutableColumns prepareArguments() const
+    MutableColumns prepareArgumentColumns() const
     {
         MutableColumns argument_columns;
         argument_columns.reserve(this->argument_types.size());
@@ -191,14 +191,14 @@ private:
         return argument_columns;
     }
 
-    void addToNested(AggregateDataPtr __restrict place, MutableColumns & arguments, Arena * arena) const
+    void addToNested(AggregateDataPtr __restrict place, MutableColumns & argument_columns, Arena * arena) const
     {
-        ColumnRawPtrs arguments_raw(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            arguments_raw[i] = arguments[i].get();
+        ColumnRawPtrs arguments_raw(argument_columns.size());
+        for (size_t i = 0; i < argument_columns.size(); ++i)
+            arguments_raw[i] = argument_columns[i].get();
 
-        assert(!arguments.empty());
-        nested_func->addBatchSinglePlace(0, arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
+        assert(!argument_columns.empty());
+        nested_func->addBatchSinglePlace(0, argument_columns[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
     }
 
 public:
@@ -213,16 +213,16 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        auto arguments = prepareArguments();
-        this->data(place).add(columns, arguments_num, row_num, arguments, arena);
-        addToNested(place, arguments, arena);
+        auto argument_columns = prepareArgumentColumns();
+        this->data(place).add(columns, arguments_num, row_num, argument_columns, arena);
+        addToNested(place, argument_columns, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        auto arguments = prepareArguments();
-        this->data(place).merge(this->data(rhs), arguments, arena);
-        addToNested(place, arguments, arena);
+        auto argument_columns = prepareArgumentColumns();
+        this->data(place).merge(this->data(rhs), argument_columns, arena);
+        addToNested(place, argument_columns, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
