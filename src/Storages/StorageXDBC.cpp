@@ -192,8 +192,8 @@ namespace
             if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.getLocalContext()))
             {
                 connection_string = name == "JDBC" ? named_collection->get<String>("datasource") : named_collection->get<String>("connection_settings");
-                table = name == "JDBC" ? named_collection->get<String>("table") : named_collection->get<String>("external_table");
                 database_or_schema = name == "JDBC" ? named_collection->get<String>("schema") : named_collection->get<String>("external_database");
+                table = name == "JDBC" ? named_collection->get<String>("table") : named_collection->get<String>("external_table");
             }
             else
             {
