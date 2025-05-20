@@ -76,6 +76,24 @@ class IcebergSchemaProcessor
     using Node = ActionsDAG::Node;
 
 public:
+    IcebergSchemaProcessor() = default;
+
+    IcebergSchemaProcessor clone()
+    {
+        std::lock_guard lock(mutex);
+
+        IcebergSchemaProcessor ret;
+
+        ret.iceberg_table_schemas_by_ids = iceberg_table_schemas_by_ids;
+        ret.clickhouse_table_schemas_by_ids = clickhouse_table_schemas_by_ids;
+        ret.transform_dags_by_ids = transform_dags_by_ids;
+        ret.clickhouse_types_by_source_ids = clickhouse_types_by_source_ids;
+        ret.clickhouse_ids_by_source_names = clickhouse_ids_by_source_names;
+        ret.current_schema_id = current_schema_id;
+
+        return ret;
+    }
+
     void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
@@ -88,6 +106,15 @@ public:
 
     static DataTypePtr getSimpleType(const String & type_name);
 private:
+    IcebergSchemaProcessor(const IcebergSchemaProcessor & other)
+    : iceberg_table_schemas_by_ids(other.iceberg_table_schemas_by_ids),
+      clickhouse_table_schemas_by_ids(other.clickhouse_table_schemas_by_ids),
+      transform_dags_by_ids(other.transform_dags_by_ids),
+      clickhouse_types_by_source_ids(other.clickhouse_types_by_source_ids),
+      clickhouse_ids_by_source_names(other.clickhouse_ids_by_source_names),
+      current_schema_id(other.current_schema_id)
+        {}
+
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;

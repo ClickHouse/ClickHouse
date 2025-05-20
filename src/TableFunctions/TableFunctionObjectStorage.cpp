@@ -16,6 +16,8 @@
 
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
+#include <Parsers/ASTInsertQuery.h>
+
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -127,7 +129,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription cached_columns,
-    bool is_insert_query) const
+    const ASTPtr & insert_query) const
 {
     chassert(configuration);
     ColumnsDescription columns;
@@ -150,12 +152,12 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
+    if (can_use_parallel_replicas && !is_secondary_query && !insert_query)
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
             configuration,
-            getObjectStorage(context, !is_insert_query),
+            getObjectStorage(context, !insert_query),
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
@@ -165,9 +167,18 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         return storage;
     }
 
+    ASTPtr partition_by;
+    if (insert_query)
+    {
+        if (const auto * insert_query_class = insert_query->as<ASTInsertQuery>())
+        {
+            partition_by = insert_query_class->partition_by;
+        }
+    }
+
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        getObjectStorage(context, !is_insert_query),
+        getObjectStorage(context, !insert_query),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -176,7 +187,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
         /* distributed_processing */ is_secondary_query,
-        /* partition_by */ nullptr,
+        /* partition_by */ partition_by,
         /* is_table_function */true);
 
     storage->startup();
