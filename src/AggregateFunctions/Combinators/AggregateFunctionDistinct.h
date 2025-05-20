@@ -29,13 +29,7 @@ struct AggregateFunctionDistinctSingleNumericData
     {
         const auto & vec = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
         const T value = vec[row_num];
-
-        if (!history.contains(value))
-        {
-            history.insert(value);
-            return true;
-        }
-        return false;
+        return history.insert(value).second;
     }
 
     /// Pass the new values from rhs to the nested function via argument_columns
@@ -44,11 +38,10 @@ struct AggregateFunctionDistinctSingleNumericData
         for (const auto & elem : rhs.history)
         {
             const auto & value = elem.getValue();
-            if (!history.contains(value))
-            {
-                history.insert(value);
+            bool inserted = history.insert(value).second;
+
+            if (inserted)
                 argument_columns[0]->insert(value);
-            }
         }
     }
 
@@ -87,16 +80,11 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
     bool add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena * arena)
     {
         auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
+        Set::LookupResult it;
+        bool inserted;
+        history.emplace(key_holder, it, inserted);
 
-        if (!history.contains(key_holder.key))
-        {
-            Set::LookupResult it;
-            bool inserted;
-
-            history.emplace(key_holder, it, inserted);
-            return true;
-        }
-        return false;
+        return inserted;
     }
 
     void merge(const Self & rhs, MutableColumns & argument_columns, Arena * arena)
@@ -108,9 +96,7 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
             {
                 Set::LookupResult it;
                 bool inserted;
-                auto key_holder = ArenaKeyHolder{value, *arena};
-
-                history.emplace(key_holder, it, inserted);
+                history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
                 deserializeAndInsert<is_plain_column>(it->getValue(), *argument_columns[0]);
             }
         }
@@ -130,16 +116,11 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             value.size += cur_ref.size;
         }
 
-        if (!history.contains(value))
-        {
-            Set::LookupResult it;
-            bool inserted;
-            auto key_holder = SerializedKeyHolder{value, *arena};
-            history.emplace(key_holder, it, inserted);
+        Set::LookupResult it;
+        bool inserted;
+        history.emplace(SerializedKeyHolder{value, *arena}, it, inserted);
 
-            return true;
-        }
-        return false;
+        return inserted;
     }
 
     void merge(const Self & rhs, MutableColumns & argument_columns, Arena * arena)
@@ -151,9 +132,7 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             {
                 Set::LookupResult it;
                 bool inserted;
-                auto key_holder = SerializedKeyHolder{value, *arena};
-
-                history.emplace(key_holder, it, inserted);
+                history.emplace(SerializedKeyHolder{value, *arena}, it, inserted);
                 const char * pos = it->getValue().data;
                 for (auto & column : argument_columns)
                     pos = column->deserializeAndInsertFromArena(pos);
