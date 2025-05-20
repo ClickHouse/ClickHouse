@@ -108,33 +108,6 @@ private:
     std::unordered_map<uint64_t, FuncId> func_addr_to_id;
 };
 
-template <typename... Args>
-struct Sig;
-
-template <typename Ret, typename... Args>
-struct Sig<Ret(Args...)>
-{
-    using type = Ret (*)(Args...);
-};
-
-template <typename Ret, typename... Args>
-struct Sig<Ret (*)(Args...)>
-{
-    using type = Ret (*)(Args...);
-};
-
-template <typename Class, typename Ret, typename... Args>
-struct Sig<Ret (Class::*)(Args...)>
-{
-    using type = Ret (Class::*)(Args...);
-};
-
-template <typename Class, typename Ret, typename... Args>
-struct Sig<Ret (Class::*)(Args...) const>
-{
-    using type = Ret (Class::*)(Args...) const;
-};
-
 template <typename Ptr>
 unsigned char get_vtable_index(Ptr func)
 {
@@ -162,15 +135,13 @@ uint64_t get_virtual_address(const Class * instance, Ptr func)
 #pragma clang diagnostic ignored "-Wunused-macros"
 
 #define OMG(foo) \
-    using namespace XRayTracing; \
-    using FuncType = Sig<decltype(&(foo))>::type; \
+    using FuncType = decltype(&(foo)); \
     const auto func_ptr = reinterpret_cast<FuncType>(&(foo)); \
     const auto func_addr = reinterpret_cast<uint64_t>(func_ptr); \
-    XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
+    XRayTracing::XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
 
 #define OMG_MEMBER(class_name, member_func) \
-    using namespace XRayTracing; \
-    using FuncType = Sig<decltype(&class_name::member_func)>::type; \
+    using FuncType = decltype(&class_name::member_func); \
     union \
     { \
         const FuncType ptr; \
@@ -178,7 +149,7 @@ uint64_t get_virtual_address(const Class * instance, Ptr func)
     } converter{.ptr = &class_name::member_func}; \
     static constexpr uint64_t REAL_FUNC_ADDR_THRESHOLD = 0x00400000; \
     const auto func_addr \
-        = converter.func_addr >= REAL_FUNC_ADDR_THRESHOLD ? converter.func_addr : get_virtual_address(this, converter.ptr); \
-    XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
+        = converter.func_addr >= REAL_FUNC_ADDR_THRESHOLD ? converter.func_addr : XRayTracing::get_virtual_address(this, converter.ptr); \
+    XRayTracing::XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
 
 #pragma clang diagnostic pop
