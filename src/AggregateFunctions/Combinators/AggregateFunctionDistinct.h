@@ -22,7 +22,7 @@ struct AggregateFunctionDistinctSingleNumericData
     using Set = HashSetWithStackMemory<T, DefaultHash<T>, 4>;
     using Self = AggregateFunctionDistinctSingleNumericData<T>;
 
-    /// queue will hold values that are not yet processed.
+    /// history will hold all values added so far
     Set history;
 
     void add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, MutableColumns & argument_columns, Arena *)
@@ -33,12 +33,11 @@ struct AggregateFunctionDistinctSingleNumericData
         if (!history.contains(value))
         {
             history.insert(value);
-            argument_columns[0]->insert(value);
+            argument_columns[0]->insert(value); /// arguments_columns later will be passed to the nested function
         }
     }
 
-    /// We make sure that the new queue does not contain values that are
-    /// already processed by rhs.
+    /// Pass the new values from rhs to the nested function via argument_columns
     void merge(const Self & rhs, MutableColumns & argument_columns, Arena *)
     {
         for (const auto & elem : rhs.history)
