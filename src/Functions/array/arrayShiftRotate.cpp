@@ -289,7 +289,7 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     FunctionDocumentation::Description description_rotateright = "Rotates an array to the right by the specified number of elements. Negative values of `n` are treated as rotating to the left by the absolute value of the rotation.";
     FunctionDocumentation::Syntax syntax_rotateright = "arrayRotateRight(arr, n)";
     FunctionDocumentation::Arguments arguments_rotateright = {
-        {"arr", "The array for which to rotate the elements. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_rotateright = "An array rotated to the right by the specified number of elements. [`Array(T)`](/sql-reference/data-types/array).";
@@ -317,20 +317,23 @@ New elements are filled with the provided argument or the default value of the a
 If the number of elements is negative, the array is shifted to the right.
     )";
     FunctionDocumentation::Syntax syntax_shiftleft = "arrayShiftLeft(arr, n[, default])";
-    FunctionDocumentation::Arguments arguments_shiftleft = {
-        {"arr", "The array for which to shift the elements. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"n", "Number of elements to shift. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
+    FunctionDocumentation::Arguments arguments_shiftleft =
+    {
+        {"arr", "The array for which to shift the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to shift.[`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
         {"default", "Optional. Default value for new elements."}
     };
     FunctionDocumentation::ReturnedValue returned_value_shiftleft = "An array shifted to the left by the specified number of elements. [`Array(T)`](/sql-reference/data-types/array).";
-    FunctionDocumentation::Examples examples_shiftleft = {
+    FunctionDocumentation::Examples examples_shiftleft =
+    {
         {"Usage example", "SELECT arrayShiftLeft([1,2,3,4,5,6], 2) as res;", "[3,4,5,6,0,0]"},
         {"Negative value of n", "SELECT arrayShiftLeft([1,2,3,4,5,6], -2) as res;", "[0,0,1,2,3,4]"},
         {"Using a default value", "SELECT arrayShiftLeft([1,2,3,4,5,6], 2, 42) as res;", "[3,4,5,6,42,42]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_shiftleft = {23, 8};
     FunctionDocumentation::Category category_shiftleft = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_shiftleft = {
+    FunctionDocumentation documentation_shiftleft =
+    {
         description_shiftleft,
         syntax_shiftleft,
         arguments_shiftleft,
