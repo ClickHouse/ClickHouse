@@ -175,14 +175,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         was_query_sent = true;
     }
 
-    if (query_executor->isReadingCompleted())
-    {
-        if (manually_add_rows_before_limit_counter)
-            rows_before_limit->add(rows);
-        query_executor->finish();
-        return {};
-    }
-
     Block block;
 
     if (async_read)
