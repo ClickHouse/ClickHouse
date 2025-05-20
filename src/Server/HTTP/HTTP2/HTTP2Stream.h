@@ -35,7 +35,7 @@ struct HTTP2StreamEvent
     uint32_t payload = 0;
 };
 
-class HTTP2Stream : public Poco::Runnable
+class HTTP2Stream : public Poco::Runnable, public std::enable_shared_from_this<HTTP2Stream>
 {
 public:
     explicit HTTP2Stream(
@@ -47,17 +47,25 @@ public:
         const Poco::Net::SocketAddress & client_address_,
         const Poco::Net::SocketAddress & server_address_,
         bool secure_,
-        Poco::Net::SocketImpl * socket_)
+        Poco::Net::SocketImpl * socket_,
+        std::function<void()> on_finish_)
          : id(id_), context(context_), factory(factory_), forwarded_for(std::move(forwarded_for_))
          , client_address(client_address_), server_address(server_address_), secure(secure_), socket(socket_)
-         , response(*this), stream_event_pipe(stream_event_pipe_)
+         , response(*this), stream_event_pipe(stream_event_pipe_), on_finish(std::move(on_finish_))
     {
+    }
+
+    ~HTTP2Stream() override
+    {
+        on_finish();
     }
 
 private:
     void run() override;
 
 public:
+    std::shared_ptr<HTTP2Stream> guard;
+
     const uint32_t id;
     HTTPContextPtr context;
     HTTPRequestHandlerFactoryPtr factory;
@@ -87,6 +95,8 @@ public:
     std::condition_variable output_cv;
 
     std::shared_ptr<Poco::Pipe> stream_event_pipe;
+
+    std::function<void()> on_finish;
 };
 
 }

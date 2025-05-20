@@ -64,6 +64,7 @@ void sendErrorResponse(HTTP2ServerResponse & response, Poco::Net::HTTPResponse::
 
 void HTTP2Stream::run()
 {
+    guard = shared_from_this();
     LoggerPtr log = getLogger("HTTP2Stream");
     try
     {
@@ -111,6 +112,7 @@ void HTTP2Stream::run()
         }
         throw;
     }
+    guard.reset();
 }
 
 }

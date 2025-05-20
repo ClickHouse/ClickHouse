@@ -110,6 +110,16 @@ void HTTP2ServerConnection::run()
     {
         LOG_ERROR(log, "Error in HTTP/2 connection with {}: {}", peer_address, e.what());
     }
+
+    for (const auto & [stream_id, stream] : streams)
+        notifyStreamClose(*stream);
+
+    {
+        std::unique_lock lock(active_streams_mutex);
+        while (active_streams > 0)
+            active_streams_cv.wait(lock);
+    }
+
     nghttp2_session_del(session);
     nghttp2_option_del(option_no_auto_window_update);
     socket_out->finalize();
@@ -299,7 +309,9 @@ void HTTP2ServerConnection::submit100Continue(uint32_t stream_id)
 void HTTP2ServerConnection::onOutputReady(uint32_t stream_id)
 {
     auto it = streams.find(stream_id);
-    chassert(it != streams.end() && it->second);
+    if (it == streams.end())
+        return;
+    chassert(it->second);
     HTTP2Stream & stream = *it->second;
 
     if (!stream.response_submitted)
@@ -442,10 +454,17 @@ int HTTP2ServerConnection::onBeginHeadersCallback(nghttp2_session * /*session*/,
 
     chassert(frame->hd.type == NGHTTP2_HEADERS && frame->headers.cat == NGHTTP2_HCAT_REQUEST);
 
-    std::unique_ptr<HTTP2Stream> stream = std::make_unique<HTTP2Stream>(
-        frame->hd.stream_id, self->stream_event_pipe, self->context, self->factory, self->forwarded_for, self->socket().peerAddress(), self->socket().address(), self->socket().secure(), self->socket().impl());
-
+    std::shared_ptr<HTTP2Stream> stream = std::make_shared<HTTP2Stream>(
+        frame->hd.stream_id, self->stream_event_pipe, self->context, self->factory, self->forwarded_for,
+        self->socket().peerAddress(), self->socket().address(), self->socket().secure(), self->socket().impl(),
+        [self]() { std::lock_guard lock(self->active_streams_mutex); --self->active_streams; });
     self->streams.emplace(frame->hd.stream_id, std::move(stream));
+
+    {
+        std::lock_guard lock(self->active_streams_mutex);
+        ++self->active_streams;
+    }
+
     return 0;
 }
 
@@ -486,7 +505,9 @@ int HTTP2ServerConnection::onFrameRecvCallback(nghttp2_session * session,
         return 0;
 
     auto it = self->streams.find(frame->hd.stream_id);
-    chassert(it != self->streams.end() && it->second);
+    if (it == self->streams.end())
+        return 0;
+    chassert(it->second);
     HTTP2Stream & stream = *it->second;
 
     if (frame->hd.type == NGHTTP2_DATA && frame->hd.length == 0 && (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) && !stream.eof)
@@ -499,7 +520,7 @@ int HTTP2ServerConnection::onFrameRecvCallback(nghttp2_session * session,
     if (frame->hd.type != NGHTTP2_HEADERS)
         return 0;
 
-    if (frame->hd.type == NGHTTP2_HCAT_HEADERS)
+    if (frame->headers.cat == NGHTTP2_HCAT_HEADERS)
     {
         /// Trailers are not supported
         LOG_ERROR(self->log, "Received trailers in stream {} of an HTTP/2 connection with {}, going to close the stream", self->peer_address, frame->hd.stream_id);
@@ -507,7 +528,7 @@ int HTTP2ServerConnection::onFrameRecvCallback(nghttp2_session * session,
         return 0;
     }
 
-    chassert(frame->hd.type == NGHTTP2_HCAT_REQUEST);
+    chassert(frame->headers.cat == NGHTTP2_HCAT_REQUEST);
 
     if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM)
         stream.eof = true;
@@ -532,9 +553,8 @@ int HTTP2ServerConnection::onStreamCloseCallback(nghttp2_session * /*session*/, 
 
     auto it = self->streams.find(stream_id);
     chassert(it != self->streams.end() && it->second);
-    it->second->closed = true;
-    it->second->input_cv.notify_one();
-    it->second->output_cv.notify_one();
+    self->notifyStreamClose(*it->second);
+    self->streams.erase(it);
 
     return 0;
 }
@@ -559,6 +579,19 @@ int HTTP2ServerConnection::onDataChunkRecvCallback(nghttp2_session * /* session*
     stream.input_cv.notify_one();
 
     return 0;
+}
+
+void HTTP2ServerConnection::notifyStreamClose(HTTP2Stream & stream)
+{
+    stream.closed = true;
+    {
+        std::lock_guard lock(stream.input_mutex);
+        stream.input_cv.notify_one();
+    }
+    {
+        std::lock_guard lock(stream.output_mutex);
+        stream.output_cv.notify_one();
+    }
 }
 
 }

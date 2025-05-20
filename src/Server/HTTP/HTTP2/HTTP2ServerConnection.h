@@ -1,5 +1,7 @@
 #pragma once
 
+#include <condition_variable>
+#include <mutex>
 #include "config.h"
 #if USE_NGHTTP2
 
@@ -100,6 +102,8 @@ private:
         int32_t stream_id, const uint8_t * data,
         size_t len, void * user_data);
 
+    void notifyStreamClose(HTTP2Stream & stream);
+
     HTTPContextPtr context;
     TCPServer & tcp_server;
     HTTP2ServerParams::Ptr params;
@@ -114,7 +118,10 @@ private:
 
     nghttp2_session * session = nullptr;
     nghttp2_option * option_no_auto_window_update = nullptr;
-    std::unordered_map<int32_t, std::unique_ptr<HTTP2Stream>> streams;
+    std::unordered_map<int32_t, std::shared_ptr<HTTP2Stream>> streams;
+    size_t active_streams = 0;
+    std::mutex active_streams_mutex;
+    std::condition_variable active_streams_cv;
 
     std::unique_ptr<ReadBufferFromPocoSocket> socket_in;
     Memory<> buf;
