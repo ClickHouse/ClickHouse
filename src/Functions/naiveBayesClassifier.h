@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int CORRUPTED_DATA;
 extern const int FILE_DOESNT_EXIST;
 extern const int RECEIVED_EMPTY_DATA;
 }
@@ -183,6 +184,8 @@ private:
     /// Arena to own all the key strings
     Arena pool;
 
+    constexpr UInt32 MAX_NGRAM_LENGTH = 1024 * 1024;
+
 public:
     ~NaiveBayesClassifier() = default;
 
@@ -217,6 +220,19 @@ public:
             DB::readBinary(class_id, in); // read the 4-byte class id
 
             DB::readBinary(ngram_length, in); // read the 4-byte length of the ngram string
+
+            if (ngram_length > MAX_NGRAM_LENGTH)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupt model {} of model {}: ngram length {} exceeds maximum of {}",
+                    model_path,
+                    model_name,
+                    ngram_length,
+                    MAX_NGRAM_LENGTH);
+
+            if (ngram_length == 0)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA, "Corrupt model {} of model {}: ngram length given is 0", model_path, model_name);
 
             ngram.resize(ngram_length);
             in.readStrict(ngram.data(), ngram_length); // read the ngram bytes
