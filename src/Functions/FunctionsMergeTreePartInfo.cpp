@@ -10,6 +10,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Common/register_objects.h>
 
@@ -30,6 +31,11 @@ MergeTreePartInfo constructPartInfo(std::string_view data) {
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid MergeTree Part Name.");
 }
 
+bool isAnyStringType(const IDataType & data_type)
+{
+    return isStringOrFixedString(removeLowCardinality(data_type.getPtr()));
+}
+
 class FunctionMergeTreePartCoverage : public IFunction
 {
     static MergeTreePartInfo constructCoveringPart(const IColumn * covering_column)
@@ -46,16 +52,16 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMergeTreePartCoverage>(); }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    bool isVariadic() const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateFunctionArguments(*this, arguments, FunctionArgumentDescriptors{
-            {"nested_part", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-            {"covering_part", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+            {"nested_part", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"},
+            {"covering_part", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"}
         });
 
         return std::make_shared<DataTypeUInt8>();
@@ -86,15 +92,15 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMergeTreePartInfoExtractor>(); }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    bool isVariadic() const override { return false; }
     size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateFunctionArguments(*this, arguments, FunctionArgumentDescriptors{
-            {"part_name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+            {"part_name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"}
         });
 
         return std::make_shared<ReturnType>();
@@ -103,7 +109,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto result_column = ReturnColumn::create();
-        const IColumn * input_column = arguments.front().column.get();
+        const IColumn * input_column = arguments[0].column.get();
 
         Extractor extractor;
         for (size_t i = 0; i < input_rows_count; ++i)
