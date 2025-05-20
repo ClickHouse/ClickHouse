@@ -160,8 +160,19 @@ public:
 
 REGISTER_FUNCTION(MergeTreePartInfoTools)
 {
-    factory.registerFunction<FunctionMergeTreePartCoverage>();
-    factory.registerFunction<FunctionMergeTreePartInfo>();
+    factory.registerFunction<FunctionMergeTreePartCoverage>(
+        FunctionDocumentation{
+            .description = "Checks if one MergeTree part covers another",
+            .category = FunctionDocumentation::Category::Introspection,
+        },
+        FunctionFactory::Case::Insensitive);
+
+    factory.registerFunction<FunctionMergeTreePartInfo>(
+        FunctionDocumentation{
+            .description = "Represents String value as a MergeTreePartInfo structure",
+            .category = FunctionDocumentation::Category::Introspection,
+        },
+        FunctionFactory::Case::Insensitive);
 }
 
 }
