@@ -14,35 +14,35 @@ class PlayWebUIRequestHandler : public HTTPRequestHandler
 {
 public:
     explicit PlayWebUIRequestHandler(IServer &) {}
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 };
 
 class DashboardWebUIRequestHandler : public HTTPRequestHandler
 {
 public:
     explicit DashboardWebUIRequestHandler(IServer &) {}
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 };
 
 class BinaryWebUIRequestHandler : public HTTPRequestHandler
 {
 public:
     explicit BinaryWebUIRequestHandler(IServer &) {}
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 };
 
 class MergesWebUIRequestHandler : public HTTPRequestHandler
 {
 public:
     explicit MergesWebUIRequestHandler(IServer &) {}
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 };
 
 class JavaScriptWebUIRequestHandler : public HTTPRequestHandler
 {
 public:
     explicit JavaScriptWebUIRequestHandler(IServer &) {}
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 };
 
 }

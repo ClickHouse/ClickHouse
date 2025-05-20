@@ -6,7 +6,7 @@
 
 namespace DB
 {
-void NotFoundHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & /*write_event*/)
+void NotFoundHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     try
     {

@@ -28,7 +28,7 @@ public:
     {
     }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 
 private:
     using OutputPtr = std::shared_ptr<WriteBufferFromHTTPServerResponseBase>;

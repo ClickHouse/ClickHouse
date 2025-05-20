@@ -672,7 +672,7 @@ catch (...)
     return false;
 }
 
-void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & /* write_event */)
+void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     setThreadName("HTTPHandler");
 

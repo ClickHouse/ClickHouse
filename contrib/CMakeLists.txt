@@ -50,7 +50,6 @@ add_contrib (grpc-cmake grpc)
 add_contrib (llvm-project-cmake llvm-project)
 enable_dummy_launchers_if_needed()
 
-add_contrib (nghttp2-cmake nghttp2)
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
 add_contrib (pocketfft-cmake pocketfft)
@@ -248,6 +247,9 @@ add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf,
 add_contrib (jwt-cpp-cmake jwt-cpp)
 
 add_contrib (sha3iuf-cmake SHA3IUF)
+
+add_contrib (nghttp2-cmake nghttp2)
+
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

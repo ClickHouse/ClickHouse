@@ -81,7 +81,7 @@ static inline ResponseOutput responseWriteBuffer(HTTPServerRequest & request, HT
     return result;
 }
 
-void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & /*write_event*/)
+void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     applyHTTPResponseHeaders(response, http_response_headers_override);
 

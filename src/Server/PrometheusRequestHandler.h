@@ -22,7 +22,7 @@ public:
         std::shared_ptr<PrometheusMetricsWriter> metrics_writer_);
     ~PrometheusRequestHandler() override;
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & write_event_) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 
 private:
     /// Creates an internal implementation based on which PrometheusRequestHandlerConfig::Type is used.
@@ -49,7 +49,6 @@ private:
 
     String http_method;
     std::unique_ptr<WriteBufferFromHTTPServerResponseBase> write_buffer_from_response;
-    ProfileEvents::Event write_event;
     bool send_stacktrace = false;
 };
 

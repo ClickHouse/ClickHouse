@@ -210,7 +210,7 @@ void HTTP1ServerConnection::run()
                         if (request.getExpectContinue() && response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
                             response.send100Continue();
 
-                        handler->handleRequest(request, response, write_event);
+                        handler->handleRequest(request, response);
                         session.setKeepAlive(params->getKeepAlive() && response.getKeepAlive() && session.canKeepAlive());
                     }
                     else

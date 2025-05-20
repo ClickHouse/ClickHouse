@@ -39,7 +39,7 @@ public:
     {
     }
 
-    void handleRequest(HTTPServerRequest &, HTTPServerResponseBase & response, const ProfileEvents::Event &) override
+    void handleRequest(HTTPServerRequest &, HTTPServerResponseBase & response) override
     {
         response.setContentLength(Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH);
         response.setChunkedTransferEncoding(false);

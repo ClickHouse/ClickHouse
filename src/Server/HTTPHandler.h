@@ -50,7 +50,7 @@ public:
     HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_);
     ~HTTPHandler() override;
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 
     /// This method is called right before the query execution.
     virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}

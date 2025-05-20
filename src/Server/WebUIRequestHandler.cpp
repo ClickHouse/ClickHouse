@@ -39,12 +39,12 @@ static void handle(HTTPServerRequest & request, HTTPServerResponseBase & respons
     wb->finalize();
 }
 
-void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event &)
+void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     handle(request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize});
 }
 
-void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event &)
+void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     std::string html(reinterpret_cast<const char *>(gresource_dashboard_htmlData), gresource_dashboard_htmlSize);
 
@@ -62,17 +62,17 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
     handle(request, response, html);
 }
 
-void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event &)
+void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
 }
 
-void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event &)
+void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize});
 }
 
-void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event &)
+void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     if (request.getURI() == "/js/uplot.js")
     {

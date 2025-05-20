@@ -81,7 +81,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 }
 
 
-void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & /* write_event */)
+void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     setThreadName("IntersrvHandler");
 

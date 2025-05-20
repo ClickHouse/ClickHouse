@@ -339,13 +339,12 @@ void PrometheusRequestHandler::createImpl()
     UNREACHABLE();
 }
 
-void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & write_event_)
+void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     setThreadName("PrometheusHndlr");
 
     try
     {
-        write_event = write_event_;
         http_method = request.getMethod();
         chassert(!write_buffer_from_response); /// Nothing is written to the response yet.
 
