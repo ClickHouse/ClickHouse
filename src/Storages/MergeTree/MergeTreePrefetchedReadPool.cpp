@@ -27,7 +27,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const NonZeroSettingsUInt64 filesystem_prefetch_max_memory_usage;
+    extern const SettingsNonZeroUInt64 filesystem_prefetch_max_memory_usage;
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 filesystem_prefetch_step_bytes;
     extern const SettingsUInt64 filesystem_prefetch_step_marks;
