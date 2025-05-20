@@ -820,6 +820,7 @@ void DatabaseReplicated::initDDLWorkerUnlocked()
 {
     chassert(!ddl_worker);
     chassert(!is_probably_dropped.load());
+    chassert(!ddl_worker_initialized.load());
 
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     ddl_worker->startup();
@@ -887,7 +888,7 @@ void DatabaseReplicated::reinitializeDDLWorker()
 
     if (ddl_worker)
     {
-        LOG_TRACE(log, "Ddl_worker will be reset.");
+        LOG_TRACE(log, "Resetting DDL worker.");
         ddl_worker->shutdown();
         {
             ddl_worker_initialized = false;
@@ -895,7 +896,7 @@ void DatabaseReplicated::reinitializeDDLWorker()
         }
     }
 
-    LOG_TRACE(log, "Ddl_worker will be initialized to restore database metadata in keeper.");
+    LOG_TRACE(log, "Initializing DDL worker to restore database metadata in keeper.");
     initDDLWorkerUnlocked();
 }
 
