@@ -47,8 +47,8 @@ function drawLegend(containerId) {
 function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
     const container = d3.select(containerId);
     const n = cov.length;
-    const cellSize = 20;
-    const axisLabelOffset = 120;
+    const cellSize = 10;
+    const axisLabelOffset = 250;
     const matrixSize = cellSize * n;
     const bandMargin = 20;
     const bandAreaWidth = container.node().getBoundingClientRect().width - matrixSize - bandMargin - axisLabelOffset;
