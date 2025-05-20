@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_BECH32
+
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -26,6 +30,10 @@ constexpr size_t max_hrp_len = 83; // Note: if we only support segwit addresses,
 
 using bech32_data = std::vector<uint8_t>;
 
+/// -------------------------------------------------------------------------------------------------------
+/// Function copied from contrib/bech32/ref/c++/segwit_addr.cpp
+/// -------------------------------------------------------------------------------------------------------
+///
 /** Convert from one power-of-2 number base to another.
  *
  *  Function will convert a input vector of <frombits>-bit data to an output vector of <tobit>-bit data,
@@ -68,6 +76,7 @@ bool convertbits(bech32_data & out, const bech32_data & in)
     }
     return true;
 }
+/// -------------------------------------------------------------------------------------------------------
 
 void finalizeRow(DB::ColumnString::Offsets & offsets, char *& pos, const char * const begin, const size_t i)
 {
@@ -88,19 +97,19 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int ILLEGAL_COLUMN;
-extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-// Encode string to Bech32 or Bech32m address
+/// Encode string to Bech32 or Bech32m address
 class EncodeToBech32Representation : public IFunction
 {
 public:
     static constexpr auto name = "bech32Encode";
 
-    // Default to the new and improved Bech32m algorithm
+    /// Default to the new and improved Bech32m algorithm
     static constexpr int default_witver = 1;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBech32Representation>(); }
@@ -129,7 +138,7 @@ public:
                 "A maximum of 3 arguments (hrp, data, witness version) are allowed for function {}",
                 getName());
 
-        // check first two args, hrp and input string
+        /// check first two args, hrp and input string
         for (size_t i = 0; i < 2; ++i)
             if (!WhichDataType(arguments[i]).isStringOrFixedString())
                 throw Exception(
@@ -139,46 +148,45 @@ public:
                     i + 1,
                     getName());
 
-        // check 3rd (optional) arg, specifying witness version aka whether to use Bech32 or Bech32m algo
-        size_t argIdx = 2;
-        if (arguments.size() == 3 && !WhichDataType(arguments[argIdx]).isNativeUInt())
+        /// check 3rd (optional) arg, specifying witness version aka whether to use Bech32 or Bech32m algo
+        size_t arg_idx = 2;
+        if (arguments.size() == 3 && !WhichDataType(arguments[arg_idx]).isNativeUInt())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument {} of function {}, expected unsigned integer",
-                arguments[argIdx]->getName(),
-                argIdx + 1,
+                arguments[arg_idx]->getName(),
+                arg_idx + 1,
                 getName());
 
         return std::make_shared<DataTypeString>();
     }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         bool have_witver = arguments.size() == 3;
+
         ColumnPtr col0 = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr col1 = arguments[1].column->convertToFullColumnIfConst();
         ColumnPtr col2;
         if (have_witver)
             col2 = arguments[2].column;
 
-        if (const ColumnString * col0_str_ptr = checkAndGetColumn<ColumnString>(col0.get()))
+        if (const ColumnString * col0_string = checkAndGetColumn<ColumnString>(col0.get()))
         {
-            const ColumnString::Chars & col0_vec = col0_str_ptr->getChars();
-            const ColumnString::Offsets * col0_offsets = &col0_str_ptr->getOffsets();
+            const ColumnString::Chars & col0_vec = col0_string->getChars();
+            const ColumnString::Offsets * col0_offsets = &col0_string->getOffsets();
 
             return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witver);
         }
 
-        if (const ColumnFixedString * col0_fstr_ptr = checkAndGetColumn<ColumnFixedString>(col0.get()))
+        if (const ColumnFixedString * col0_fixed_string = checkAndGetColumn<ColumnFixedString>(col0.get()))
         {
-            const ColumnString::Chars & col0_vec = col0_fstr_ptr->getChars();
-            const ColumnString::Offsets * col0_offsets = nullptr; // dummy
+            const ColumnString::Chars & col0_vec = col0_fixed_string->getChars();
+            const ColumnString::Offsets * col0_offsets = nullptr; /// dummy
 
-            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witver, col0_fstr_ptr->getN());
+            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witver, col0_fixed_string->getN());
         }
 
         throw Exception(
@@ -206,7 +214,7 @@ private:
         if (const ColumnFixedString * col1_fstr_ptr = checkAndGetColumn<ColumnFixedString>(col1.get()))
         {
             const ColumnString::Chars & col1_vec = col1_fstr_ptr->getChars();
-            const ColumnString::Offsets * col1_offsets = nullptr; // dummy
+            const ColumnString::Offsets * col1_offsets = nullptr; /// dummy
 
             return execute(
                 col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witver, col0_width, col1_fstr_ptr->getN());
@@ -226,7 +234,7 @@ private:
         const size_t hrp_width = 0,
         const size_t data_width = 0)
     {
-        // outputs
+        /// outputs
         auto out_col = ColumnString::create();
         ColumnString::Chars & out_vec = out_col->getChars();
         ColumnString::Offsets & out_offsets = out_col->getOffsets();
@@ -240,7 +248,7 @@ private:
         size_t hrp_prev_offset = 0;
         size_t data_prev_offset = 0;
 
-        // In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
+        /// In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
         size_t hrp_zero_offset = hrp_width == 0 ? 1 : 0;
         size_t data_zero_offset = data_width == 0 ? 1 : 0;
 
@@ -249,14 +257,12 @@ private:
             size_t hrp_new_offset = hrp_width == 0 ? (*hrp_offsets)[i] : hrp_prev_offset + hrp_width;
             size_t data_new_offset = data_width == 0 ? (*data_offsets)[i] : data_prev_offset + data_width;
 
-            // NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
+            /// NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
             while (hrp_width > 0 && hrp_vec[hrp_new_offset - 1] == 0 && hrp_new_offset > hrp_prev_offset)
-            {
                 --hrp_new_offset;
-            }
 
-            // max encodable data to stay within 90-char limit on Bech32 output
-            // hrp must be at least 1 character and no more than 83
+            /// max encodable data to stay within 90-char limit on Bech32 output
+            /// hrp must be at least 1 character and no more than 83
             auto data_len = data_new_offset - data_prev_offset - data_zero_offset;
             auto hrp_len = hrp_new_offset - hrp_prev_offset - hrp_zero_offset;
             if (data_len > max_data_len || hrp_len > max_hrp_len || hrp_len < 1)
@@ -279,7 +285,7 @@ private:
             uint8_t witver = have_witver ? witver_col->getUInt(i) : default_witver;
 
             bech32_data input_5bit;
-            convertbits<8, 5, true>(input_5bit, input); // squash input from 8-bit -> 5-bit bytes
+            convertbits<8, 5, true>(input_5bit, input); /// squash input from 8-bit -> 5-bit bytes
             std::string address = bech32::encode(hrp, input_5bit, witver > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32);
 
             if (address.empty() || address.size() > max_address_len)
@@ -291,7 +297,7 @@ private:
                 continue;
             }
 
-            // store address in out_pos
+            /// store address in out_pos
             std::memcpy(out_pos, address.data(), address.size());
             out_pos += address.size();
 
@@ -311,12 +317,12 @@ private:
     }
 };
 
-// Decode original address from string containing Bech32 or Bech32m address
+/// Decode original address from string containing Bech32 or Bech32m address
 class DecodeFromBech32Representation : public IFunction
 {
 public:
     static constexpr auto name = "bech32Decode";
-    static constexpr size_t tuple_size = 2; // (hrp, data)
+    static constexpr size_t tuple_size = 2; /// (hrp, data)
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<DecodeFromBech32Representation>(); }
 
@@ -324,8 +330,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    // Bech32 and Bech32m are each bijective, but since our decode function accepts either of them,
-    // then decode(bech32(input)) == decode(bech32m(input))
+    /// Bech32 and Bech32m are each bijective, but since our decode function accepts either of them,
+    /// then decode(bech32(input)) == decode(bech32m(input))
     bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -337,11 +343,6 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
-        return getReturnTypeForDefaultImplementationForDynamic();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         DataTypes types(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
             types[i] = std::make_shared<DataTypeString>();
@@ -366,7 +367,7 @@ public:
         if (const ColumnFixedString * col_fix_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             const ColumnString::Chars & in_vec = col_fix_string->getChars();
-            const ColumnString::Offsets * in_offsets = nullptr; // dummy
+            const ColumnString::Offsets * in_offsets = nullptr; /// dummy
 
             return execute(in_vec, in_offsets, input_rows_count, col_fix_string->getN());
         }
@@ -402,20 +403,20 @@ private:
 
         size_t prev_offset = 0;
 
-        // In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
+        /// In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
         size_t trailing_zero_offset = col_width == 0 ? 1 : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t new_offset = col_width == 0 ? (*in_offsets)[i] : prev_offset + col_width;
 
-            // NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
+            /// NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
             while (col_width > 0 && in_vec[new_offset - 1] == 0 && new_offset > prev_offset)
             {
                 --new_offset;
             }
 
-            // enforce char limit
+            /// enforce char limit
             if ((new_offset - prev_offset - trailing_zero_offset) > max_address_len)
             {
                 finalizeRow(hrp_offsets, hrp_pos, hrp_begin, i);
@@ -442,13 +443,13 @@ private:
                 continue;
             }
 
-            // store hrp output in hrp_pos
+            /// store hrp output in hrp_pos
             std::memcpy(hrp_pos, dec.hrp.c_str(), dec.hrp.size());
             hrp_pos += dec.hrp.size();
 
             finalizeRow(hrp_offsets, hrp_pos, hrp_begin, i);
 
-            // store data output in data_pos
+            /// store data output in data_pos
             std::memcpy(data_pos, data_8bit.data(), data_8bit.size());
             data_pos += data_8bit.size();
 
@@ -478,8 +479,10 @@ private:
 
 REGISTER_FUNCTION(Bech32Repr)
 {
-    factory.registerFunction<EncodeToBech32Representation>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<DecodeFromBech32Representation>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<EncodeToBech32Representation>();
+    factory.registerFunction<DecodeFromBech32Representation>();
 }
 
 }
+
+#endif
