@@ -45,16 +45,16 @@ public:
     virtual ~MyClass() = default;
 
     ATTRIBUTES
-    void f(int arg)
+    void f(int arg) const
     {
-        XRAY_TRACE_MEMBER(MyClass, f)
+        XRAY_TRACE(MyClass, f)
         doWork(arg);
     }
 
     ATTRIBUTES
     virtual void g(int arg)
     {
-        XRAY_TRACE_MEMBER(MyClass, g)
+        XRAY_TRACE(MyClass, g)
         doWork(arg);
     }
 };

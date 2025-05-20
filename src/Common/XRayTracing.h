@@ -1,19 +1,14 @@
 #pragma once
 
-#include <xray/xray_interface.h>
-
-#include <llvm/DebugInfo/Symbolize/Symbolize.h>
-#include <llvm/Object/ObjectFile.h>
-#include <llvm/Support/Error.h>
-#include <llvm/Support/raw_ostream.h>
-#include <llvm/XRay/InstrumentationMap.h>
-
 #include <fmt/ranges.h>
-
-#include <dlfcn.h>
+#include <llvm/XRay/InstrumentationMap.h>
+#include <xray/xray_interface.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+
+#include <dlfcn.h>
+
 
 namespace XRayTracing
 {
@@ -131,16 +126,19 @@ uint64_t get_virtual_address(const Class * instance, Ptr func)
 
 }
 
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-macros"
 
-#define XRAY_TRACE(foo) \
-    using FuncType = decltype(&(foo)); \
-    const auto func_ptr = reinterpret_cast<FuncType>(&(foo)); \
+
+#define XRAY_TRACE_1(func) \
+    using FuncType = decltype(&(func)); \
+    const auto func_ptr = reinterpret_cast<FuncType>(&(func)); \
     const auto func_addr = reinterpret_cast<uint64_t>(func_ptr); \
     XRayTracing::XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
 
-#define XRAY_TRACE_MEMBER(class_name, member_func) \
+
+#define XRAY_TRACE_2(class_name, member_func) \
     using FuncType = decltype(&class_name::member_func); \
     union \
     { \
@@ -151,5 +149,18 @@ uint64_t get_virtual_address(const Class * instance, Ptr func)
     const auto func_addr \
         = converter.func_addr >= REAL_FUNC_ADDR_THRESHOLD ? converter.func_addr : XRayTracing::get_virtual_address(this, converter.ptr); \
     XRayTracing::XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
+
+
+#define XRAY_TRACE_EXPAND(x) x
+#define XRAY_TRACE_COUNT_ARGS(...) XRAY_TRACE_EXPAND(XRAY_TRACE_COUNT_ARGS_IMPL(__VA_ARGS__, 2, 1))
+#define XRAY_TRACE_COUNT_ARGS_IMPL(_1, _2, n, ...) n
+
+#define XRAY_TRACE_CONCAT(x, y) XRAY_TRACE_CONCAT_IMPL(x, y)
+#define XRAY_TRACE_CONCAT_IMPL(x, y) x##y
+
+#define XRAY_TRACE_CHOOSER(...) XRAY_TRACE_CONCAT(XRAY_TRACE_, XRAY_TRACE_COUNT_ARGS(__VA_ARGS__))
+
+#define XRAY_TRACE(...) XRAY_TRACE_CHOOSER(__VA_ARGS__)(__VA_ARGS__)
+
 
 #pragma clang diagnostic pop
