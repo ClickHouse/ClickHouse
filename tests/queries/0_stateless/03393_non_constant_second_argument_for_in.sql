@@ -7,10 +7,6 @@ SELECT '-- MORE CASES --';
 
 -- { echoOn }
 
-SELECT null in [number % 3, number % 5] FROM numbers(2); -- { serverError UNSUPPORTED_METHOD }
-SELECT null in [number % 3, number % 5, null] FROM numbers(2); -- { serverError UNSUPPORTED_METHOD }
-SELECT 5 in [number % 3, number % 5, null] FROM numbers(2); -- { serverError UNSUPPORTED_METHOD }
-
 SELECT (1, 2) in [number % 3, number % 5] FROM numbers(2); -- { serverError NO_COMMON_TYPE }
 SELECT (1, 2) in (SELECT [0, 0] UNION ALL SELECT [1, 1]); -- { serverError TYPE_MISMATCH }
 
@@ -29,10 +25,6 @@ SELECT (1, null) in (SELECT (0, 0::Nullable(Int)) UNION ALL SELECT (1, null)), (
 SELECT 'ANOTHER SETTING';
 
 set transform_null_in = 1;
-
-SELECT null in [number % 3, number % 5] FROM numbers(2); -- { serverError UNSUPPORTED_METHOD }
-SELECT null in [number % 3, number % 5, null] FROM numbers(2); -- { serverError UNSUPPORTED_METHOD }
-SELECT 5 in [number % 3, number % 5, null] FROM numbers(2); -- { serverError UNSUPPORTED_METHOD }
 
 SELECT (1, 2) in [number % 3, number % 5] FROM numbers(2); -- { serverError NO_COMMON_TYPE }
 SELECT (1, 2) in (SELECT [0, 0] UNION ALL SELECT [1, 1]); -- { serverError TYPE_MISMATCH }
@@ -53,3 +45,31 @@ SELECT (1, null) in (SELECT (0, 0::Nullable(Int)) UNION ALL SELECT (1, null)), (
 SELECT *
 FROM numbers(1000)
 WHERE number IN (123, 10 - number, 456);
+
+-- Consistency of transform_null_in to non-const arguments
+SELECT  
+    NULL IN (1, number),  
+    NULL IN (1, number, NULL),  
+    NULL IN (1, 2),  
+    NULL IN (1, NULL)  
+FROM numbers(1)  
+SETTINGS transform_null_in = 1;
+
+SELECT  
+    NULL IN (1, number),  
+    NULL IN (1, number, NULL),  
+    NULL IN (1, 2),  
+    NULL IN (1, NULL)  
+FROM numbers(1)  
+SETTINGS transform_null_in = 0;
+
+-- Consistency for arrays/tuples
+SELECT toNullable(1) IN [1, number]  
+FROM numbers(2);
+
+SELECT toNullable(1) IN (1, number)  
+FROM numbers(2);
+
+-- Common type consistency
+SELECT 'a' IN (5, number, 'a')  
+FROM numbers(2);

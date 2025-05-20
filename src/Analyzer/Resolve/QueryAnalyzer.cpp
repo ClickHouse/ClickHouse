@@ -1,5 +1,7 @@
+#include <utility>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Common/FieldVisitorToString.h>
+#include "DataTypes/DataTypeNothing.h"
 #include <Core/NamesAndTypes.h>
 
 #include <Columns/ColumnNullable.h>
@@ -1140,6 +1142,43 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     }
 
     return result_aggregate_function_name;
+}
+
+/// A helper that builds and resolves `IF(isNull(lhs), lhs, has(rhs, lhs))`
+std::pair<QueryTreeNodePtr, ProjectionNames> QueryAnalyzer::makeNullSafeHas(
+    QueryTreeNodePtr array_arg,    // [1,2,number]
+    QueryTreeNodePtr element_arg,  // x (e.g. NULL)
+    const ProjectionNames & params_proj,
+    const ProjectionNames & args_proj,
+    IdentifierResolveScope & scope)
+{
+    // 1) isNull(element)
+    auto is_null_fn = std::make_shared<FunctionNode>("isNull");
+    is_null_fn->getArguments().getNodes().push_back(element_arg);
+
+    // 2) literal NULL of type Nullable(Nothing)
+    auto null_const = std::make_shared<ConstantNode>(
+        Field{},
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()));
+
+    // 3) has(array, element)
+    auto has_fn = std::make_shared<FunctionNode>("has");
+    has_fn->getArguments().getNodes().push_back(array_arg);
+    has_fn->getArguments().getNodes().push_back(element_arg);
+
+    // 4) IF(isNull(element), NULL, has(array, element))
+    auto raw_if = std::make_shared<FunctionNode>("if");
+    raw_if->getArguments().getNodes() = { is_null_fn, null_const, has_fn };
+
+    // compute the projection name *before* constant folding can erase it
+    QueryTreeNodePtr if_node = raw_if;
+    auto single_name = calculateFunctionProjectionName(if_node, params_proj, args_proj);
+    ProjectionNames proj = { single_name };
+
+    // now resolve (wiring up types, constant-folding, etc.)
+    resolveFunction(if_node, scope);
+
+    return std::make_pair(if_node, proj);
 }
 
 /// Resolve identifier functions implementation
@@ -3037,10 +3076,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto & in_first_argument = function_in_arguments_nodes[0];
         auto & in_second_argument = function_in_arguments_nodes[1];
+
         if (isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[0]) || isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[1]))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Correlated subqueries are not supported as IN function arguments yet, but found in expression: {}",
                 node->formatASTForErrorMessage());
+
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
@@ -3110,8 +3151,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 const auto & candidate_name = non_const_set_candidate->getFunctionName();
 
                 /// Case 1: array(..) node – keep existing behavior
-                if (candidate_name == "array"
-                    && !isNullableOrLowCardinalityNullable(in_first_argument->getResultType()))
+                if (candidate_name == "array")
                 {
                     bool contains_nullable = false;
                     for (const auto & array_elem : non_const_set_candidate->getArguments().getNodes())
@@ -3133,17 +3173,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Case 2: tuple(..) node – rewrite it into an array
                 else if (candidate_name == "tuple")
                 {
+                    bool left_is_null = false;
+                    if (const auto * const_node = in_first_argument->as<ConstantNode>())
+                        left_is_null = const_node->getValue().isNull();
                     /// Infer a common type among the tuple elements
                     DataTypePtr common_type = nullptr;
-                    auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
-                    for (const auto & arg : tuple_args)
+                    /// Use the type from the left-hand side of the IN statement if it's not NULL
+                    if (!left_is_null)
                     {
-                        if (!common_type)
-                            common_type = arg->getResultType(); // start with the first element’s type
-                        else
-                            common_type = tryGetLeastSupertype(DataTypes{common_type, arg->getResultType()});
+                        common_type = in_first_argument->getResultType();
                     }
-
+                    else
+                    {
+                        auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
+                        for (const auto & arg : tuple_args)
+                        {
+                            if (!common_type)
+                                common_type = arg->getResultType(); // start with the first element’s type
+                            else
+                                common_type = tryGetLeastSupertype(DataTypes{common_type, arg->getResultType()});
+                        }
+                    }
                     if (!common_type)
                         throw Exception(ErrorCodes::NO_COMMON_TYPE, "Could not find a common type for all types in the tuple at the right part of the IN statement");
 
@@ -3151,9 +3201,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     auto array_function_node = std::make_shared<FunctionNode>("array");
                     auto array_arguments_list = std::make_shared<ListNode>();
 
-                    /// for each tuple element, build a CAST function node
+                    /// for each tuple element, build a CAST function node to the target type
+                    /// except for NULL values which are passed through directly
+                    auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
                     for (auto & arg : tuple_args)
                     {
+                        /// If we have a NULL constant, pass it through directly without casting
+                        if (const auto * const_node = arg->as<ConstantNode>())
+                        {
+                            if (const_node->getValue().isNull())
+                            {
+                                array_arguments_list->getNodes().push_back(arg);
+                                continue;
+                            }
+                        }
+
+                        /// Otherwise cast to target type
                         auto cast_function_node = std::make_shared<FunctionNode>("CAST");
                         auto cast_arguments_list = std::make_shared<ListNode>();
 
@@ -3182,6 +3245,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     is_special_function_in = false;
                     auto & fn_args = function_node.getArguments().getNodes();
                     std::swap(fn_args[0], fn_args[1]);
+
+                    /// if transform_null_in is off, we might want to replace `IN` with `if(isNull(x), Null, has([1], x)), arrayJoin([0, 1, Null])`
+                    if (!scope.context->getSettingsRef()[Setting::transform_null_in])
+                    {
+                        // after swap:  
+                        //   in_first_argument  -> array node  
+                        //   in_second_argument -> element node 
+                        auto [wrapped_node, proj_names] =
+                                    makeNullSafeHas(in_first_argument, in_second_argument,
+                                        parameters_projection_names,
+                                        arguments_projection_names,
+                                        scope);
+
+                        node = wrapped_node;
+                        return proj_names;
+                    }
                 }
             }
         }
