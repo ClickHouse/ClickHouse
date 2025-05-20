@@ -5649,7 +5649,7 @@ Prefetch step in bytes. Zero means `auto` - approximately the best prefetch step
     DECLARE(UInt64, filesystem_prefetch_step_marks, 0, R"(
 Prefetch step in marks. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
 )", 0) \
-    DECLARE(UInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
+    DECLARE(NonZeroUInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
 Maximum memory usage for prefetches.
 )", 0) \
     DECLARE(UInt64, filesystem_prefetches_limit, 200, R"(
