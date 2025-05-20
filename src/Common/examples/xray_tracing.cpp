@@ -7,6 +7,8 @@
 
 using namespace DB;
 
+#define ATTRIBUTES [[clang::xray_always_instrument, clang::optnone]]
+
 template <typename T>
 ALWAYS_INLINE void doWork(T arg)
 {
@@ -15,27 +17,23 @@ ALWAYS_INLINE void doWork(T arg)
     T sum = arg;
     for (int i = 0; i < 1000000; ++i)
         sum += dist(rndgen);
-    LOG_DEBUG(&Poco::Logger::get("debug"), "sum={}", sum);
 }
 
-[[clang::xray_always_instrument]]
-void always_traced_function()
+ATTRIBUTES void always_traced_function()
 {
     OMG(always_traced_function)
     doWork(42);
 }
 
 template <typename T>
-[[clang::xray_always_instrument]]
-void always_traced_template_function(T & arg)
+ATTRIBUTES void always_traced_template_function(T & arg)
 {
     OMG(always_traced_template_function<T>)
     doWork(arg);
 }
 
 template <typename T, typename U>
-[[clang::xray_always_instrument]]
-void always_traced_template_function(T & arg1, U & arg2)
+ATTRIBUTES void always_traced_template_function(T & arg1, U & arg2)
 {
     OMG((always_traced_template_function<T, U>))
     doWork(arg1 + arg2);
@@ -46,14 +44,14 @@ class MyClass
 public:
     virtual ~MyClass() = default;
 
-    [[clang::xray_always_instrument]]
+    ATTRIBUTES
     void f(int arg)
     {
         OMG_MEMBER(MyClass, f)
         doWork(arg);
     }
 
-    [[clang::xray_always_instrument]]
+    ATTRIBUTES
     virtual void g(int arg)
     {
         OMG_VIRT_MEMBER(MyClass, g)
