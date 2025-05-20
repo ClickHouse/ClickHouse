@@ -263,7 +263,8 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
 {
     FunctionDocumentation::Description description_rotateleft = "Rotates an array to the left by the specified number of elements. Negative values of `n` are treated as rotating to the right by the absolute value of the rotation.";
     FunctionDocumentation::Syntax syntax_rotateleft = "arrayRotateLeft(arr, n)";
-    FunctionDocumentation::Arguments arguments_rotateleft = {
+    FunctionDocumentation::Arguments arguments_rotateleft =
+    {
     	{"arr", "The array for which to rotate the elements. [`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
     };
