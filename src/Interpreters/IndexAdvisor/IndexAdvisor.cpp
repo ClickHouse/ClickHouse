@@ -1,8 +1,8 @@
 #include "IndexAdvisor.h"
 #include <algorithm>
-#include <unordered_set>
 #include <Core/Settings.h>
 #include <Interpreters/IndexAdvisor/TableManager.h>
+#include <Interpreters/IndexAdvisor/IndexManager.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
@@ -27,6 +27,54 @@ String makePKExpr(const Strings & columns)
 namespace Setting
 {
 extern const SettingsUInt64 max_pk_columns_count;
+extern const SettingsUInt64 advise_index_columns_count;
+}
+
+
+IndexTypes IndexAdvisor::getBestMinMaxIndexForTable(const String & table)
+{
+    IndexManager index_manager(context, workload, table);
+    auto columns = index_manager.getColumns();
+    std::map<UInt64, std::vector<std::pair<String, String>>> estimations;
+
+    for (const auto & index_type : index_types)
+    {
+        for (const auto & column : columns)
+        {
+            if (!index_manager.addIndex("test_index_" + column, column, index_type))
+                continue;
+            auto estimation = index_manager.estimate();
+            estimations[estimation].push_back(std::make_pair(column, index_type));
+            // LOG_INFO(getLogger("IndexAdvisor"), "Index: column: {} type: {} estimation: {}", column, index_type, estimation);
+            index_manager.dropIndex("test_index_" + column);
+        }
+    }
+
+    if (estimations.empty())
+        return {};
+
+    auto advise_index_columns_count = context->getSettingsRef()[Setting::advise_index_columns_count];
+    std::vector<std::pair<String, String>> result;
+    for (const auto & [estimation, indexed_columns] : estimations) {
+        for (const auto & column : indexed_columns) {
+            if (result.size() >= advise_index_columns_count)
+                break;
+            result.push_back(column);
+            // LOG_INFO(getLogger("IndexAdvisor"), "Adding index: column: {} type: {} estimation: {}", column.first, column.second, estimation);
+        }
+        if (result.size() >= advise_index_columns_count)
+            break;
+    }
+    return result;
+}
+
+std::unordered_map<String, IndexTypes> IndexAdvisor::getBestMinMaxIndexForTables()
+{
+    std::unordered_map<String, IndexTypes> result;
+    for (const auto & table : workload.getTables()) {
+        result[table] = getBestMinMaxIndexForTable(table);
+    }
+    return result;
 }
 
 std::pair<Strings, UInt64> IndexAdvisor::getBestPKColumnsForTable(const String & table)
@@ -43,10 +91,8 @@ std::pair<Strings, UInt64> IndexAdvisor::getBestPKColumnsForTable(const String &
     UInt64 new_best_score = best_score;
     for (size_t current_len = 1; current_len <= max_columns_in_pk; ++current_len)
     {
-        LOG_INFO(getLogger("IndexAdvisor"), "Current length: {}", current_len);
         for (const auto & solution : current_best_solutions)
         {
-            LOG_INFO(getLogger("IndexAdvisor"), "Current solution: {}", makePKExpr(solution));
             for (const auto & column : columns)
             {
                 if (std::find(solution.begin(), solution.end(), column) != solution.end())
@@ -57,7 +103,6 @@ std::pair<Strings, UInt64> IndexAdvisor::getBestPKColumnsForTable(const String &
 
                 auto pk_expr = makePKExpr(new_solution);
                 auto new_estimation = table_manager.estimate(pk_expr);
-                LOG_INFO(getLogger("IndexAdvisor"), "New estimation for {} is {}", pk_expr, new_estimation);
                 if (new_estimation < new_best_score)
                 {
                     new_best_score = new_estimation;

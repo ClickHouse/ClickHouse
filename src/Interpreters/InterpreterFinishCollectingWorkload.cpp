@@ -14,7 +14,9 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsString collection_file_path;
+    extern const SettingsString collection_file_path;
+    extern const SettingsBool find_best_pk_for_tables;
+    extern const SettingsBool find_best_minmax_index_for_tables;
 }
 
 BlockIO InterpreterFinishCollectingWorkload::execute()
@@ -22,33 +24,56 @@ BlockIO InterpreterFinishCollectingWorkload::execute()
     executeQuery("SET collect_workload = 0", context, QueryFlags{.internal = true});
 
     QueryInfo query_info(context->getSettingsRef()[Setting::collection_file_path], context);
-    for (const auto & table : query_info.getTables()) {
-        String columns_str;
-        for(const auto& column: query_info.getColumns(table)){
-            columns_str += column + ", ";
-        }
-        LOG_DEBUG(getLogger("InterpreterFinishCollectingWorkload"), "Table {} has columns {}", table, columns_str);
-    }
     IndexAdvisor index_advisor(context, query_info);
-    auto res = index_advisor.getBestPKColumns();
     MutableColumns columns;
     columns.emplace_back(ColumnString::create());
     columns.emplace_back(ColumnString::create());
     columns.emplace_back(ColumnString::create());
 
-    for (const auto & [table_name, table_data] : res)
-    {
-        const auto & [pk_columns_list, estimation] = table_data;
-        for (const auto & pk_columns : pk_columns_list)
+    bool have_some_indexes = false;
+
+    LOG_INFO(getLogger("InterpreterFinishCollectingWorkload"), "find_best_pk_for_tables: {}", (context->getSettingsRef()[Setting::find_best_pk_for_tables] ? "true" : "false"));
+    if (context->getSettingsRef()[Setting::find_best_pk_for_tables]) {
+        auto res = index_advisor.getBestPKColumns();
+    
+        for (const auto & [table_name, table_data] : res)
         {
-            columns[0]->insert(table_name);
-            columns[1]->insert(pk_columns);
+            const auto & [pk_columns_list, estimation] = table_data;
+            for (const auto & pk_columns : pk_columns_list)
+            {
+                columns[0]->insert(table_name);
+                columns[1]->insert("primary_key");
+                columns[2]->insert(pk_columns);
+                have_some_indexes = true;
+            }
         }
+    }
+
+    LOG_INFO(getLogger("InterpreterFinishCollectingWorkload"), "find_best_minmax_index_for_tables: {}", (context->getSettingsRef()[Setting::find_best_minmax_index_for_tables] ? "true" : "false"));
+    if (context->getSettingsRef()[Setting::find_best_minmax_index_for_tables]) {
+        auto res = index_advisor.getBestMinMaxIndexForTables();
+        for (const auto & [table_name, minmax_index_columns] : res)
+        {
+            for (const auto & [minmax_index_column, index_type] : minmax_index_columns)
+            {
+                columns[0]->insert(table_name);
+                columns[1]->insert(index_type);
+                columns[2]->insert(minmax_index_column);
+                have_some_indexes = true;
+            }
+        }
+    }
+
+    if (!have_some_indexes) {
+        LOG_INFO(getLogger("InterpreterFinishCollectingWorkload"), "No indexes found");
+        return {};
     }
 
     Block block;
     block.insert(ColumnWithTypeAndName{std::move(columns[0]), std::make_shared<DataTypeString>(), "table_name"});
-    block.insert(ColumnWithTypeAndName{std::move(columns[1]), std::make_shared<DataTypeString>(), "primary_key_columns"});
+    block.insert(ColumnWithTypeAndName{std::move(columns[1]), std::make_shared<DataTypeString>(), "index_type"});
+    block.insert(ColumnWithTypeAndName{std::move(columns[2]), std::make_shared<DataTypeString>(), "columns for index"});
+
     BlockIO block_io;
     block_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::move(block)));
     return block_io;

@@ -100,6 +100,7 @@ QueryInfo::QueryInfo(const String & path, ContextMutablePtr context_)
         if (isCreateViewQuery(query))
         {
             create_view_queries.push_back(query);
+            //TODO: if already exists? Don't drop later? Separate database?
             executeQuery(query, context, QueryFlags{.internal = true});
             parseColumnsFromQuery(query);
         }

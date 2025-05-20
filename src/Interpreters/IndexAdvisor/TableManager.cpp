@@ -44,7 +44,6 @@ String replaceTableNames(const String & input, const String & table, const Strin
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid regex: {}", pattern);
 
     RE2::GlobalReplace(&result, re, estimation_table);
-    LOG_INFO(getLogger("TableManager"), "Replaced table name {} with {} in {}", table, estimation_table, result);
     return result;
 }
 
@@ -124,7 +123,6 @@ void insertSample(const String & table, const String & estimation_table, Context
     {
         CompletedPipelineExecutor executor(io.pipeline);
         executor.execute();
-        LOG_INFO(getLogger("TableManager"), "Inserted sample for table {}", table);
     }
     else
     {
@@ -142,7 +140,6 @@ void insertWithLimit(const String & table, const String & estimation_table, Cont
     {
         CompletedPipelineExecutor executor(io.pipeline);
         executor.execute();
-        LOG_INFO(getLogger("TableManager"), "Inserted with limit for table {}", table);
     }
     else
     {
@@ -271,9 +268,9 @@ UInt64 TableManager::estimateQueries()
             continue;
         }
         String new_query = replaceTableNames(query, table, estimation_table);
-        LOG_DEBUG(getLogger("TableManager"), "New query: {}", new_query);
+        // LOG_DEBUG(getLogger("TableManager"), "New query: {}", new_query);
         sum_read += getReadMarks(new_query, context);
-        LOG_DEBUG(getLogger("TableManager"), "Estimated query: {} with read marks: {}", query, sum_read);
+        // LOG_DEBUG(getLogger("TableManager"), "Estimated query: {} with read marks: {}", query, sum_read);
     }
     return sum_read;
 }
