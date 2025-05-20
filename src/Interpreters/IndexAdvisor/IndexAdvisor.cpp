@@ -45,7 +45,7 @@ IndexTypes IndexAdvisor::getBestMinMaxIndexForTable(const String & table)
                 continue;
             auto estimation = index_manager.estimate();
             estimations[estimation].push_back(std::make_pair(column, index_type));
-            // LOG_INFO(getLogger("IndexAdvisor"), "Index: column: {} type: {} estimation: {}", column, index_type, estimation);
+            LOG_INFO(getLogger("IndexAdvisor"), "Index: column: {} type: {} estimation: {}", column, index_type, estimation);
             index_manager.dropIndex("test_index_" + column);
         }
     }

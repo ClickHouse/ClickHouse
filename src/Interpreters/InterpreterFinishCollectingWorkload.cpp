@@ -32,7 +32,7 @@ BlockIO InterpreterFinishCollectingWorkload::execute()
 
     bool have_some_indexes = false;
 
-    LOG_INFO(getLogger("InterpreterFinishCollectingWorkload"), "find_best_pk_for_tables: {}", (context->getSettingsRef()[Setting::find_best_pk_for_tables] ? "true" : "false"));
+    // LOG_INFO(getLogger("InterpreterFinishCollectingWorkload"), "find_best_pk_for_tables: {}", (context->getSettingsRef()[Setting::find_best_pk_for_tables] ? "true" : "false"));
     if (context->getSettingsRef()[Setting::find_best_pk_for_tables]) {
         auto res = index_advisor.getBestPKColumns();
     
@@ -49,7 +49,7 @@ BlockIO InterpreterFinishCollectingWorkload::execute()
         }
     }
 
-    LOG_INFO(getLogger("InterpreterFinishCollectingWorkload"), "find_best_minmax_index_for_tables: {}", (context->getSettingsRef()[Setting::find_best_minmax_index_for_tables] ? "true" : "false"));
+    // LOG_INFO(getLogger("InterpreterFinishCollectingWorkload"), "find_best_minmax_index_for_tables: {}", (context->getSettingsRef()[Setting::find_best_minmax_index_for_tables] ? "true" : "false"));
     if (context->getSettingsRef()[Setting::find_best_minmax_index_for_tables]) {
         auto res = index_advisor.getBestMinMaxIndexForTables();
         for (const auto & [table_name, minmax_index_columns] : res)
