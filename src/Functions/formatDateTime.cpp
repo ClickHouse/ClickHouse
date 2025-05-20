@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/NumberTraits.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 
 #include <Functions/DateTimeTransforms.h>
@@ -922,6 +923,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -1044,7 +1047,11 @@ public:
         if (arguments.size() == 2)
             time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         else if (arguments.size() > 2)
+        {
             const_time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
+            if (!const_time_zone_column)
+                const_time_zone_column = checkAndGetColumnConst<ColumnLowCardinality>(arguments[2].column.get());
+        }
 
         UInt32 scale [[maybe_unused]] = 0;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
