@@ -1035,7 +1035,7 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
 {
     /// Reporting some fake sizes to enable prewhere optimization.
-    //TODO: Propagate real sizes from file metadata.
+    /// TODO [parquet]: Propagate real sizes from file metadata.
     auto meta = getInMemoryMetadataPtr();
     ColumnSizeByName sizes;
     for (const auto & col : meta->columns)

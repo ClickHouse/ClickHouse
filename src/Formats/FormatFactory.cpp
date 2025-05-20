@@ -199,8 +199,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.use_native_reader = settings[Setting::input_format_parquet_use_native_reader];
     format_settings.parquet.use_native_reader_with_filter_push_down = settings[Setting::input_format_parquet_use_native_reader_v2];
     format_settings.parquet.use_native_reader_v3 = settings[Setting::input_format_parquet_use_native_reader_v3];
-    format_settings.parquet.memory_target = settings[Setting::input_format_parquet_memory_usage_target];
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
+    format_settings.parquet.memory_low_watermark = settings[Setting::input_format_parquet_memory_low_watermark];
+    format_settings.parquet.memory_high_watermark = settings[Setting::input_format_parquet_memory_high_watermark];
     format_settings.parquet.allow_missing_columns = settings[Setting::input_format_parquet_allow_missing_columns];
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference];
     format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];

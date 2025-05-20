@@ -16,7 +16,7 @@ void ReadManager::init(SharedParsingThreadPoolPtr thread_pool_)
     reader.prefilterAndInitRowGroups();
     reader.preparePrewhere();
 
-    //TODO: distribute memory_target_fraction more carefully: 0 for skipped stages, higher for prewhere
+    /// TODO [parquet]: distribute memory_target_fraction more carefully: 0 for skipped stages, higher for prewhere
     double sum = 0;
     stages[size_t(ReadStage::MainData)].memory_target_fraction *= 5;
     stages[size_t(ReadStage::NotStarted)].memory_target_fraction = 0;
@@ -139,7 +139,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, MemoryUsageDiff && d
         {
             if (first_incomplete_row_group.compare_exchange_weak(i, i + 1))
             {
-                diff.retry_scheduling = true;
+                diff.retry_scheduling_for_all_stages = true;
 
                 if (i + 1 == reader.row_groups.size())
                 {
@@ -373,7 +373,22 @@ void ReadManager::advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDi
             continue;
         i += 1;
         if (first_incomplete_row_group.load() == row_group_idx)
-            diff.retry_scheduling = true;
+            diff.retry_scheduling_for_all_stages = true;
+    }
+}
+
+static bool checkTaskSchedulingLimits(size_t memory_usage, size_t added_memory, size_t batches_in_progress, size_t added_tasks, const SharedParsingThreadPool::Limits & limits)
+{
+    if (added_tasks == 0)
+    {
+        return memory_usage < limits.memory_low_watermark ||
+            (memory_usage <= limits.memory_high_watermark && batches_in_progress < limits.parsing_threads);
+    }
+    else
+    {
+        /// If we're going to pay the cost of adding tasks to the queue, prefer to add many at once.
+        return added_memory < limits.memory_low_watermark ||
+               added_tasks < limits.parsing_threads;
     }
 }
 
@@ -392,10 +407,24 @@ void ReadManager::flushMemoryUsageDiff(MemoryUsageDiff && diff)
         if (d != 0)
             stages[i].memory_usage.fetch_add(d, std::memory_order_relaxed);
 
-        if (diff.retry_scheduling || (d < 0 && stages[i].memory_usage.load(std::memory_order_relaxed) <= thread_pool->getMemoryTargetPerReader() * stages[i].memory_target_fraction))
+        bool should_schedule = diff.retry_scheduling_for_all_stages ||
+            (diff.retry_scheduling_for_cur_stage && i == size_t(diff.cur_stage));
+        if (!should_schedule && d < 0)
         {
-            std::unique_lock lock(stages[i].mutex);
-            scheduleTasksIfNeeded(ReadStage(i), lock);
+            const auto & stage = stages[i];
+            auto limits = thread_pool->getLimitsPerReader(stage.memory_target_fraction);
+            should_schedule = checkTaskSchedulingLimits(
+                stage.memory_usage.load(std::memory_order_relaxed), 0,
+                stage.batches_in_progress.load(std::memory_order_relaxed), 0, limits);
+        }
+        if (should_schedule)
+        {
+            size_t status = stages[i].task_scheduling_status.fetch_or(Stage::TASK_SCHEDULING_NEEDED, std::memory_order_release);
+            if (status == 0)
+            {
+                std::unique_lock lock(stages[i].mutex);
+                scheduleTasksIfNeeded(ReadStage(i), lock);
+            }
         }
     }
 }
@@ -405,53 +434,102 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx, std::unique_lock<st
     chassert(stage_idx < ReadStage::Deliver);
 
     Stage & stage = stages.at(size_t(stage_idx));
-    if (stage.tasks_to_schedule.empty())
-        return;
 
-    MemoryUsageDiff diff(stage_idx);
-    size_t memory_target = size_t(stage.memory_target_fraction * thread_pool->getMemoryTargetPerReader());
-    size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed);
-    /// Need to be careful to avoid getting deadlocked in a situation where tasks can't be scheduled
-    /// because memory usage is high, while memory usage can't decrease because tasks can't be scheduled.
-    /// The way we prevent it is by always allowing scheduling tasks for the lowest-numbered
-    /// <row group, row subgroup> pair that hasn't been completed (delivered or skipped) yet.
-    /// TODO: Surely there's a simpler way to avoid getting stuck, and to do scheduling in general?
-    auto is_privileged_task = [&](const Task & task)
+    while (true)
     {
-        size_t i = first_incomplete_row_group.load();
-        if (task.row_group_idx != i)
-            return false;
-        if (task.row_subgroup_idx == UINT64_MAX)
-            return true;
-        return task.row_subgroup_idx == reader.row_groups.at(i).delivery_ptr.load();
-    };
-    while (!stage.tasks_to_schedule.empty() &&
-           (memory_usage + diff.by_stage[size_t(stage_idx)] <= memory_target ||
-            is_privileged_task(stage.tasks_to_schedule.top())))
-    {
-        /// Kicks off prefetches and adds their (and other) memory usage estimate to `diff`.
-        scheduleTask(stage.tasks_to_schedule.top(), &diff);
-        stage.tasks_to_schedule.pop();
-    }
+        stage.task_scheduling_status.exchange(Stage::TASK_SCHEDULING_IN_PROGRESS, std::memory_order_acquire);
 
-    chassert(!diff.finalized);
-    diff.finalized = true;
-    for (size_t i = 0; i < diff.by_stage.size(); ++i)
-    {
-        chassert(diff.by_stage[i] >= 0); // scheduleTask doesn't do tracked deallocations
-        if (diff.by_stage[i] != 0)
+        if (!stage.tasks_to_schedule.empty())
         {
-            chassert(i != size_t(ReadStage::Deliver));
-            stages[i].memory_usage.fetch_add(diff.by_stage[i], std::memory_order_relaxed);
+            MemoryUsageDiff diff(stage_idx);
+            std::vector<Task> tasks;
+            auto limits = thread_pool->getLimitsPerReader(stage.memory_target_fraction);
+            size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed);
+            size_t batches_in_progress = stage.batches_in_progress.load(std::memory_order_relaxed);
+            /// Need to be careful to avoid getting deadlocked in a situation where tasks can't be scheduled
+            /// because memory usage is high, while memory usage can't decrease because tasks can't be scheduled.
+            /// The way we prevent it is by always allowing scheduling tasks for the lowest-numbered
+            /// <row group, row subgroup> pair that hasn't been completed (delivered or skipped) yet.
+            /// TODO: Surely there's a simpler way to avoid getting stuck, and to do scheduling in general?
+            auto is_privileged_task = [&](const Task & task)
+            {
+                size_t i = first_incomplete_row_group.load();
+                if (task.row_group_idx != i)
+                    return false;
+                if (task.row_subgroup_idx == UINT64_MAX)
+                    return true;
+                return task.row_subgroup_idx == reader.row_groups.at(i).delivery_ptr.load();
+            };
+            while (!stage.tasks_to_schedule.empty() &&
+                   (checkTaskSchedulingLimits(
+                       memory_usage, size_t(diff.by_stage[size_t(stage_idx)]),
+                       batches_in_progress, tasks.size(),
+                       limits) ||
+                    is_privileged_task(stage.tasks_to_schedule.top())))
+            {
+                /// Kicks off prefetches and adds their (and other) memory usage estimate to `diff`.
+                scheduleTask(stage.tasks_to_schedule.top(), &diff, tasks);
+                stage.tasks_to_schedule.pop();
+            }
+
+            chassert(!diff.finalized);
+            diff.finalized = true;
+            for (size_t i = 0; i < diff.by_stage.size(); ++i)
+            {
+                chassert(diff.by_stage[i] >= 0); // scheduleTask doesn't do tracked deallocations
+                if (diff.by_stage[i] != 0)
+                {
+                    chassert(i != size_t(ReadStage::Deliver));
+                    stages[i].memory_usage.fetch_add(diff.by_stage[i], std::memory_order_relaxed);
+                }
+            }
+
+            if (!tasks.empty())
+            {
+                /// Group tiny tasks into batches to reduce scheduling overhead.
+                std::vector<std::function<void()>> funcs;
+                funcs.reserve(std::min(tasks.size(), limits.parsing_threads) + 1);
+                size_t bytes_per_batch = size_t(diff.by_stage[size_t(stage_idx)]) / limits.parsing_threads;
+                size_t tasks_per_batch = tasks.size() / limits.parsing_threads;
+                size_t i = 0;
+                while (i < tasks.size())
+                {
+                    size_t bytes = 0;
+                    size_t n = 0;
+                    std::vector<Task> batch;
+                    while (i < tasks.size() && bytes <= bytes_per_batch && n <= tasks_per_batch)
+                    {
+                        batch.push_back(tasks[i]);
+                        bytes += tasks[i].cost_estimate_bytes;
+                        n += 1;
+                        ++i;
+                    }
+                    funcs.push_back([this, batch_ = std::move(batch)]
+                    {
+                        std::shared_lock shutdown_lock(*shutdown, std::try_to_lock);
+                        if (!shutdown_lock.owns_lock())
+                            return;
+                        runBatchOfTasks(batch_);
+                    });
+                }
+                stage.batches_in_progress.fetch_add(funcs.size(), std::memory_order_relaxed);
+                thread_pool->parsing_runner.bulkSchedule(std::move(funcs));
+            }
         }
+
+        /// Check if another thread asked us to retry scheduling.
+        /// (If TASK_SCHEDULING_IN_PROGRESS was unset by another thread, it's that thread's responsibility.)
+        if (stage.task_scheduling_status.exchange(0, std::memory_order_relaxed) != (Stage::TASK_SCHEDULING_IN_PROGRESS | Stage::TASK_SCHEDULING_NEEDED))
+            break;
     }
 }
 
-void ReadManager::scheduleTask(Task task, MemoryUsageDiff * diff)
+void ReadManager::scheduleTask(Task task, MemoryUsageDiff * diff, std::vector<Task> & out_tasks)
 {
     /// Kick off prefetches and count estimated memory usage.
     std::vector<PrefetchHandle *> prefetches;
     RowGroup & row_group = reader.row_groups[task.row_group_idx];
+    ssize_t memory_before = diff->by_stage[size_t(diff->cur_stage)];
     if (task.column_idx != UINT64_MAX)
     {
         ColumnChunk & column = row_group.columns.at(task.column_idx);
@@ -522,121 +600,46 @@ void ReadManager::scheduleTask(Task task, MemoryUsageDiff * diff)
 
     reader.prefetcher.startPrefetch(prefetches, diff);
 
-    thread_pool->parsing_runner([this, task]
-        {
-            std::shared_lock shutdown_lock(*shutdown, std::try_to_lock);
-            if (!shutdown_lock.owns_lock())
-                return;
-            runTask(task);
-        });
+    /// We want to detect tiny tasks to group them together to reduce scheduling overhead.
+    /// Use the predicted memory usage as a rough estimate of how long a task will take.
+    /// E.g. main data read task's memory estimate consists of the input page sizes and the output
+    /// column size; the run time is also roughly proportional to these sizes.
+    /// Hope it's a good enough proxy in all cases.
+    ssize_t memory_after = diff->by_stage[size_t(diff->cur_stage)];
+    task.cost_estimate_bytes = size_t(std::max(0l, memory_after - memory_before));
+
+    out_tasks.push_back(task);
 }
 
-void ReadManager::runTask(Task task)
+void ReadManager::runBatchOfTasks(const std::vector<Task> & tasks) noexcept
 {
+    ReadStage stage = tasks.at(0).stage;
+    size_t column_idx = UINT64_MAX;
+
     std::exception_ptr exc;
+    std::optional<MemoryUsageDiff> diff;
     try
     {
-        MemoryUsageDiff diff(task.stage);
-
-        RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
-        RowSubgroup * row_subgroup = task.row_subgroup_idx == UINT64_MAX ? nullptr : &row_group.subgroups.at(task.row_subgroup_idx);
-        if (task.column_idx != UINT64_MAX)
+        for (size_t i = 0; i < tasks.size(); ++i)
         {
-            ColumnChunk & column = row_group.columns.at(task.column_idx);
-            const PrimitiveColumnInfo & column_info = reader.primitive_columns.at(task.column_idx);
+            chassert(tasks[i].stage == stage);
+            if (!diff.has_value())
+                diff.emplace(stage);
+            column_idx = tasks[i].column_idx;
 
-            switch (task.stage)
-            {
-                case ReadStage::BloomFilterHeader:
-                    reader.processBloomFilterHeader(column, column_info);
-                    break;
-                case ReadStage::BloomFilterBlocksOrDictionary:
-                    if (column.use_dictionary_filter)
-                        reader.decodeDictionaryPage(column, column_info);
-                    else
-                        reader.decodeBloomFilterBlocks(column, column_info);
-                    column.bloom_filter_header_prefetch.reset(&diff);
-                    break;
-                case ReadStage::ColumnIndexAndOffsetIndex:
-                    reader.decodeOffsetIndex(column);
-                    column.offset_index_prefetch.reset(&diff);
-                    reader.applyColumnIndex(column, column_info);
-                    column.column_index_prefetch.reset(&diff);
-                    break;
-                case ReadStage::PrewhereOffsetIndex:
-                case ReadStage::MainOffsetIndex:
-                    reader.decodeOffsetIndex(column);
-                    column.offset_index_prefetch.reset(&diff);
-                    break;
-                case ReadStage::PrewhereData:
-                case ReadStage::MainData:
-                {
-                    if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
-                        reader.decodeDictionaryPage(column, column_info);
-                    size_t prev_page_idx = column.data_pages_idx;
+            runTask(tasks[i], i + 1 == tasks.size(), *diff);
 
-                    reader.decodePrimitiveColumn(
-                        column, column_info, row_subgroup->columns.at(task.column_idx),
-                        row_group, *row_subgroup);
-
-                    for (size_t i = prev_page_idx; i < column.data_pages_idx; ++i)
-                        column.data_pages.at(i).prefetch.reset(&diff);
-                    break;
-                }
-                case ReadStage::NotStarted:
-                case ReadStage::Deliver:
-                case ReadStage::Deallocated:
-                    chassert(false);
-                    break;
-            }
+            if (diff->finalized)
+                diff.reset();
         }
-
-        switch (task.scope)
-        {
-            case TaskScope::ColumnChunk:
-            {
-                flushMemoryUsageDiff(std::move(diff));
-                ReadStage new_stage = ReadStage(size_t(task.stage) + 1);
-                row_group.columns.at(task.column_idx).stage = new_stage;
-                Task new_task = task;
-                new_task.stage = new_stage;
-                new_task.scope = new_stage == ReadStage::BloomFilterBlocksOrDictionary
-                    ? TaskScope::RowGroup : TaskScope::RowSubgroup;
-                Stage & new_stage_state = stages.at(size_t(new_stage));
-                {
-                    std::unique_lock lock(new_stage_state.mutex);
-                    new_stage_state.tasks_to_schedule.push(new_task);
-                    scheduleTasksIfNeeded(new_stage, lock);
-                }
-                break;
-            }
-            case TaskScope::RowSubgroup:
-            {
-                size_t remaining = row_subgroup->stage_tasks_remaining.fetch_sub(1);
-                chassert(remaining > 0);
-                if (remaining == 1)
-                    finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, std::move(diff));
-                else
-                    flushMemoryUsageDiff(std::move(diff));
-                break;
-            }
-            case TaskScope::RowGroup:
-            {
-                size_t remaining = row_group.stage_tasks_remaining.fetch_sub(1);
-                chassert(remaining > 0);
-                if (remaining == 1)
-                    finishRowGroupStage(task.row_group_idx, std::move(diff));
-                else
-                    flushMemoryUsageDiff(std::move(diff));
-                break;
-            }
-        }
+        if (diff.has_value())
+            flushMemoryUsageDiff(std::move(*diff));
     }
     catch (DB::Exception & e)
     {
-        e.addMessage("read stage: {}", magic_enum::enum_name(task.stage));
-        if (task.column_idx != UINT64_MAX)
-            e.addMessage("column: {}", reader.primitive_columns[task.column_idx].name);
+        e.addMessage("read stage: {}", magic_enum::enum_name(stage));
+        if (column_idx != UINT64_MAX)
+            e.addMessage("column: {}", reader.primitive_columns[column_idx].name);
         exc = std::current_exception();
     }
     catch (...)
@@ -650,6 +653,106 @@ void ReadManager::runTask(Task task)
             exception = exc;
         }
         delivery_cv.notify_all();
+    }
+}
+
+void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
+{
+    RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
+    RowSubgroup * row_subgroup = task.row_subgroup_idx == UINT64_MAX ? nullptr : &row_group.subgroups.at(task.row_subgroup_idx);
+    if (task.column_idx != UINT64_MAX)
+    {
+        ColumnChunk & column = row_group.columns.at(task.column_idx);
+        const PrimitiveColumnInfo & column_info = reader.primitive_columns.at(task.column_idx);
+
+        switch (task.stage)
+        {
+            case ReadStage::BloomFilterHeader:
+                reader.processBloomFilterHeader(column, column_info);
+                break;
+            case ReadStage::BloomFilterBlocksOrDictionary:
+                if (column.use_dictionary_filter)
+                    reader.decodeDictionaryPage(column, column_info);
+                else
+                    reader.decodeBloomFilterBlocks(column, column_info);
+                column.bloom_filter_header_prefetch.reset(&diff);
+                break;
+            case ReadStage::ColumnIndexAndOffsetIndex:
+                reader.decodeOffsetIndex(column);
+                column.offset_index_prefetch.reset(&diff);
+                reader.applyColumnIndex(column, column_info);
+                column.column_index_prefetch.reset(&diff);
+                break;
+            case ReadStage::PrewhereOffsetIndex:
+            case ReadStage::MainOffsetIndex:
+                reader.decodeOffsetIndex(column);
+                column.offset_index_prefetch.reset(&diff);
+                break;
+            case ReadStage::PrewhereData:
+            case ReadStage::MainData:
+            {
+                if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
+                    reader.decodeDictionaryPage(column, column_info);
+                size_t prev_page_idx = column.data_pages_idx;
+
+                reader.decodePrimitiveColumn(
+                    column, column_info, row_subgroup->columns.at(task.column_idx),
+                    row_group, *row_subgroup);
+
+                for (size_t i = prev_page_idx; i < column.data_pages_idx; ++i)
+                    column.data_pages.at(i).prefetch.reset(&diff);
+                break;
+            }
+            case ReadStage::NotStarted:
+            case ReadStage::Deliver:
+            case ReadStage::Deallocated:
+                chassert(false);
+                break;
+        }
+    }
+
+    if (last_in_batch)
+    {
+        /// Decrement it before scheduling more tasks.
+        size_t prev_batches_in_progress = stages.at(size_t(task.stage)).batches_in_progress.fetch_sub(1, std::memory_order_relaxed);
+        chassert(prev_batches_in_progress > 0);
+        diff.retry_scheduling_for_cur_stage = true;
+    }
+
+    switch (task.scope)
+    {
+        case TaskScope::ColumnChunk:
+        {
+            ReadStage new_stage = ReadStage(size_t(task.stage) + 1);
+            row_group.columns.at(task.column_idx).stage = new_stage;
+            Task new_task = task;
+            new_task.stage = new_stage;
+            new_task.scope = new_stage == ReadStage::BloomFilterBlocksOrDictionary
+                ? TaskScope::RowGroup : TaskScope::RowSubgroup;
+            Stage & new_stage_state = stages.at(size_t(new_stage));
+            {
+                std::unique_lock lock(new_stage_state.mutex);
+                new_stage_state.tasks_to_schedule.push(new_task);
+                scheduleTasksIfNeeded(new_stage, lock);
+            }
+            break;
+        }
+        case TaskScope::RowSubgroup:
+        {
+            size_t remaining = row_subgroup->stage_tasks_remaining.fetch_sub(1);
+            chassert(remaining > 0);
+            if (remaining == 1)
+                finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, std::move(diff));
+            break;
+        }
+        case TaskScope::RowGroup:
+        {
+            size_t remaining = row_group.stage_tasks_remaining.fetch_sub(1);
+            chassert(remaining > 0);
+            if (remaining == 1)
+                finishRowGroupStage(task.row_group_idx, std::move(diff));
+            break;
+        }
     }
 }
 
@@ -689,6 +792,7 @@ Chunk ReadManager::read()
     Stage & stage = stages.at(size_t(ReadStage::Deliver));
     {
         std::unique_lock lock(stage.mutex);
+        size_t consecutive_timeouts_with_no_running_tasks = 0;
         while (true)
         {
             if (exception)
@@ -707,9 +811,10 @@ Chunk ReadManager::read()
                 for (size_t i = 0; i < stages.size(); ++i)
                 {
                     size_t mem = stages[i].memory_usage.load(std::memory_order_relaxed);
-                    size_t tasks = stages[i].tasks_to_schedule.size();
-                    if (mem != 0 || tasks != 0)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in memory or task accounting in parquet reader: got {} bytes and {} tasks in stage {}", mem, tasks, i);
+                    size_t batches = stages[i].batches_in_progress.load(std::memory_order_relaxed);
+                    size_t unsched = stages[i].tasks_to_schedule.size();
+                    if (mem != 0 || batches != 0 || unsched != 0)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in memory or task accounting in parquet reader: got {} bytes, {} batches, {} tasks in stage {}", mem, batches, unsched, i);
                 }
                 return {};
             }
@@ -724,7 +829,25 @@ Chunk ReadManager::read()
             }
             else
             {
-                delivery_cv.wait(lock);
+                auto wait_result = delivery_cv.wait_for(lock, std::chrono::seconds(10));
+
+                if (wait_result == std::cv_status::timeout)
+                {
+                    /// Task scheduling code is complicated and error-prone. In particular it's easy to
+                    /// have a bug where tasks stop getting scheduled under some conditions (see is_privileged_task).
+                    /// So let's have this hacky check to detect if nothing is running for a while.
+                    ++consecutive_timeouts_with_no_running_tasks;
+                    for (const Stage & s : stages)
+                    {
+                        if (s.batches_in_progress.load(std::memory_order_relaxed) != 0)
+                        {
+                            consecutive_timeouts_with_no_running_tasks = 0;
+                            break;
+                        }
+                    }
+                    if (consecutive_timeouts_with_no_running_tasks >= 3)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet task scheduling appears to be stuck");
+                }
             }
         }
     }

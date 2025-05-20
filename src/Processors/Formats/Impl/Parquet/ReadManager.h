@@ -5,7 +5,7 @@
 namespace DB::Parquet
 {
 
-// I'd like to speak to the manager.
+// I'd like to talk to the manager.
 class ReadManager
 {
 public:
@@ -58,10 +58,16 @@ private:
         size_t row_group_idx;
         size_t row_subgroup_idx = UINT64_MAX;
         size_t column_idx = UINT64_MAX;
+        size_t cost_estimate_bytes = 0;
 
         bool operator<(const Task & rhs) const
         {
             /// Inverted for priority_queue.
+            /// This serves two purposes:
+            ///  * Making sure scheduling always makes progress. See is_privileged_task.
+            ///  * Improving cache locality. If we do all work on a row subgroup in quick succession
+            ///    (read from file -> decode columns -> run prewhere -> etc), it's more likely that
+            ///    the data will stay in CPU cache between stages.
             return std::tie(row_group_idx, row_subgroup_idx) > std::tie(rhs.row_group_idx, rhs.row_subgroup_idx);
         }
     };
@@ -69,8 +75,22 @@ private:
     struct Stage
     {
         std::atomic<size_t> memory_usage {0};
+        /// Tasks that are either in thread_pool's queue or executing. Not in tasks_to_schedule.
+        std::atomic<size_t> batches_in_progress {0};
+
+        /// An optimization to avoid excessive calls to scheduleTasksIfNeeded.
+        /// If TASK_SCHEDULING_NEEDED bit is set, a round of scheduleTasksIfNeeded is needed.
+        /// If TASK_SCHEDULING_IN_PROGRESS bit is set, a scheduleTasksIfNeeded is running;
+        /// it will re-check the TASK_SCHEDULING_NEEDED bit before returning, so there's no need for
+        /// other threads to call scheduleTasksIfNeeded.
+        /// (This was added because there was noticeable mutex contention in flushMemoryUsageDiff.)
+        std::atomic<size_t> task_scheduling_status {0};
+        static constexpr size_t TASK_SCHEDULING_NEEDED = 1ul << 0;
+        static constexpr size_t TASK_SCHEDULING_IN_PROGRESS = 1ul << 1;
+
         double memory_target_fraction = 1;
 
+        alignas(std::hardware_destructive_interference_size)
         std::mutex mutex;
 
         /// Tasks that are ready to go (i.e. all dependencies are fulfilled) but not scheduled on
@@ -78,7 +98,8 @@ private:
         /// Whenever we have enough memory budget available, we move tasks from here into the thread
         /// pool's queue ("schedule" the tasks), increasing `memory_usage` and starting prefetches.
         /// (Why not make worker threads pick up tasks directly from this queue instead of going
-        ///  through another queue? To make prefetching work.)
+        ///  through another queue? To make prefetching work. And because the thread pool's queue
+        ///  can be shared among multiple readers.)
         ///
         /// For Delivering stage, these tasks are picked up by read() instead of going to thread pool.
         ///
@@ -115,8 +136,9 @@ private:
     std::condition_variable delivery_cv;
     std::exception_ptr exception;
 
-    void scheduleTask(Task task, MemoryUsageDiff * diff);
-    void runTask(Task task);
+    void scheduleTask(Task task, MemoryUsageDiff * diff, std::vector<Task> & out_tasks);
+    void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
+    void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx, std::unique_lock<std::mutex> &);
     void finishRowGroupStage(size_t row_group_idx, MemoryUsageDiff && diff);
     void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, MemoryUsageDiff && diff);

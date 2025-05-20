@@ -295,7 +295,8 @@ struct FormatSettings
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         size_t dictionary_filter_limit_bytes = 4 << 10;
         size_t local_read_min_bytes_for_seek = 8192;
-        size_t memory_target = 4ul << 30;
+        size_t memory_low_watermark = 2ul << 20;
+        size_t memory_high_watermark = 4ul << 30;
 
         /// Write.
         UInt64 row_group_rows = 1000000;
