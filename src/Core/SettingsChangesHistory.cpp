@@ -69,7 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.6",
         {
-
+            {"skip_unavailable_shards_mode", "unavailable_or_exception", "unavailable", "If set to `unavailable`, connection-related exceptions are ignored, whereas `unavailable_or_exception` ignores all exceptions from remote instances."},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {

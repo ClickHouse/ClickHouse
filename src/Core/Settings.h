@@ -104,6 +104,7 @@ class WriteBuffer;
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI) \
+    M(CLASS_NAME, SkipUnavailableShardsMode) \
     M(CLASS_NAME, VectorSearchFilterStrategy)
 
 

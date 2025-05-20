@@ -396,6 +396,15 @@ enum class DatabaseDataLakeCatalogType : uint8_t
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
 
+/// The setting for executing distributed subqueries inside IN or JOIN sections.
+enum class SkipUnavailableShardsMode : uint8_t
+{
+    UNAVAILABLE = 0,
+    UNAVAILABLE_OR_EXCEPTION,
+};
+
+DECLARE_SETTING_ENUM(SkipUnavailableShardsMode)
+
 enum class VectorSearchFilterStrategy : uint8_t
 {
     AUTO,
