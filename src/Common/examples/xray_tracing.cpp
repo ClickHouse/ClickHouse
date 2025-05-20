@@ -54,7 +54,7 @@ public:
     ATTRIBUTES
     virtual void g(int arg)
     {
-        OMG_VIRT_MEMBER(MyClass, g)
+        OMG_MEMBER(MyClass, g)
         doWork(arg);
     }
 };

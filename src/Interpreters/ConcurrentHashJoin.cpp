@@ -34,7 +34,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#include <Common/XRayTracing.h>
+// #include <Common/XRayTracing.h>
 
 #include <algorithm>
 #include <bit>
@@ -253,7 +253,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
 {
-    OMG_VIRT_MEMBER(ConcurrentHashJoin, addBlockToJoin)
+    // OMG_MEMBER(ConcurrentHashJoin, addBlockToJoin)
 
     /// We materialize columns here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.
@@ -389,7 +389,7 @@ const Block & ConcurrentHashJoin::getTotals() const
 
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
-    OMG_VIRT_MEMBER(ConcurrentHashJoin, getTotalRowCount)
+    // OMG_MEMBER(ConcurrentHashJoin, getTotalRowCount)
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {
@@ -401,7 +401,7 @@ size_t ConcurrentHashJoin::getTotalRowCount() const
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
 {
-    OMG_VIRT_MEMBER(ConcurrentHashJoin, getTotalByteCount)
+    // OMG_MEMBER(ConcurrentHashJoin, getTotalByteCount)
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {
@@ -546,7 +546,7 @@ ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Sele
 
 ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block)
 {
-    OMG_MEMBER(ConcurrentHashJoin, dispatchBlock)
+    // OMG_MEMBER(ConcurrentHashJoin, dispatchBlock)
 
     const size_t num_shards = hash_joins.size();
     if (num_shards == 1)

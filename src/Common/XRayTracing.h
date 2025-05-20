@@ -8,14 +8,18 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/XRay/InstrumentationMap.h>
 
+#include <fmt/ranges.h>
+
 #include <dlfcn.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
-namespace DB
+namespace XRayTracing
 {
 
+// On some systems, you need to subtract the base address of the executable
+// from the addresses in the instrumentation map
 static uint64_t getRelocationOffset()
 {
     // Get info about the executable
@@ -23,15 +27,20 @@ static uint64_t getRelocationOffset()
     dladdr(reinterpret_cast<void *>(&getRelocationOffset), &info);
 
     // Calculate the offset between the loaded address and the expected address
-    uint64_t load_addr = reinterpret_cast<uint64_t>(info.dli_fbase);
-
-    // On some systems, you need to subtract the base address of the executable
-    // from the addresses in the instrumentation map
-    return load_addr;
+    return reinterpret_cast<uint64_t>(info.dli_fbase);
 }
 
 class XRayFunctionMapper
 {
+    using FuncId = int32_t;
+
+    std::string getSelfPath()
+    {
+        char result[PATH_MAX];
+        ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+        return std::string(result, (count > 0) ? count : 0);
+    }
+
 public:
     explicit XRayFunctionMapper()
         : executable_path(getSelfPath())
@@ -42,51 +51,32 @@ public:
 
     void listAllFunctions() const
     {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "Available instrumented functions:");
-        for (const auto & [name, id] : func_addr_to_id)
-            LOG_DEBUG(&Poco::Logger::get("debug"), "ID: {} - Function: {}", id, name);
+        LOG_DEBUG(&Poco::Logger::get("debug"), "Available instrumented functions: \n{}", fmt::join(func_addr_to_id, ","));
     }
 
     bool patchFunction(uint64_t func_addr) const
     {
-        int32_t func_id = getFunctionId(func_addr);
-        if (func_id == -1)
-        {
-            LOG_DEBUG(&Poco::Logger::get("debug"), "Function '{}' not found in instrumentation map", func_addr);
-            return false;
-        }
-
-        auto status = __xray_patch_function(func_id);
-        return (status == XRayPatchingStatus::SUCCESS);
+        if (const auto func_id = getFunctionId(func_addr))
+            return __xray_patch_function(*func_id) == XRayPatchingStatus::SUCCESS;
+        LOG_DEBUG(&Poco::Logger::get("debug"), "Function '{}' not found in instrumentation map", func_addr);
+        return false;
     }
 
     bool unpatchFunction(uint64_t func_addr) const
     {
-        int32_t func_id = getFunctionId(func_addr);
-        if (func_id == -1)
-        {
-            LOG_DEBUG(&Poco::Logger::get("debug"), "Function '{}' not found in instrumentation map", func_addr);
-            return false;
-        }
-
-        auto status = __xray_unpatch_function(func_id);
-        return (status == XRayPatchingStatus::SUCCESS);
+        if (const auto func_id = getFunctionId(func_addr))
+            return __xray_unpatch_function(*func_id) == XRayPatchingStatus::SUCCESS;
+        LOG_DEBUG(&Poco::Logger::get("debug"), "Function '{}' not found in instrumentation map", func_addr);
+        return false;
     }
 
-    static XRayFunctionMapper & getXrayFunctionMapper()
+    static XRayFunctionMapper & getXRayFunctionMapper()
     {
         static XRayFunctionMapper instance;
         return instance;
     }
 
 private:
-    std::string getSelfPath()
-    {
-        char result[PATH_MAX];
-        ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
-        return std::string(result, (count > 0) ? count : 0);
-    }
-
     bool loadInstrumentationMap()
     {
         auto error_or_instr_map = llvm::xray::loadInstrumentationMap(executable_path);
@@ -102,40 +92,20 @@ private:
 
     void buildFunctionNameMaps()
     {
+        static const auto relocation_offset = getRelocationOffset();
         for (const auto & [func_id, func_addr] : instr_map.getFunctionAddresses())
-            func_addr_to_id[func_addr + getRelocationOffset()] = func_id;
+            func_addr_to_id[func_addr + relocation_offset] = func_id;
     }
 
-    int32_t getFunctionId(uint64_t func_addr) const
+    std::optional<FuncId> getFunctionId(uint64_t func_addr) const
     {
-        auto it = func_addr_to_id.find(func_addr);
-        return it != func_addr_to_id.end() ? it->second : -1;
+        const auto it = func_addr_to_id.find(func_addr);
+        return it != func_addr_to_id.end() ? std::make_optional(it->second) : std::nullopt;
     }
 
     std::string executable_path;
     llvm::xray::InstrumentationMap instr_map;
-    std::unordered_map<uint64_t, int32_t> func_addr_to_id;
-};
-
-struct TraceScope
-{
-    explicit TraceScope(uint64_t func_addr_)
-        : function_name(func_addr_)
-        , mapper(XRayFunctionMapper::getXrayFunctionMapper())
-    {
-        if (!mapper.patchFunction(function_name))
-            LOG_DEBUG(&Poco::Logger::get("debug"), "Failed to patch function: {}", function_name);
-    }
-
-    ~TraceScope()
-    {
-        // if (!mapper.unpatchFunction(function_name))
-        //     LOG_DEBUG(&Poco::Logger::get("debug"), "Failed to unpatch function: {}", function_name);
-    }
-
-private:
-    uint64_t function_name;
-    const XRayFunctionMapper & mapper;
+    std::unordered_map<uint64_t, FuncId> func_addr_to_id;
 };
 
 template <typename... Args>
@@ -166,53 +136,49 @@ struct Sig<Ret (Class::*)(Args...) const>
 };
 
 template <typename Ptr>
-int get_vtable_index(Ptr func)
+unsigned char get_vtable_index(Ptr func)
 {
     unsigned char bytes[sizeof(func)];
     std::memcpy(bytes, &func, sizeof(func));
 
     // The first byte (in little-endian systems) is the vtable index
-    return static_cast<int>(bytes[0]);
+    return static_cast<unsigned char>(bytes[0]);
 }
 
 template <typename Class, typename Ptr>
 uint64_t get_virtual_address(const Class * instance, Ptr func)
 {
-    const auto vtable_index = get_vtable_index(func);
-    const auto true_index = vtable_index / sizeof(void *);
-    LOG_DEBUG(&Poco::Logger::get("debug"), "vtable_index={}, true_index={}", vtable_index, true_index);
+    const auto vtable_offset = get_vtable_index(func);
+    const auto vtable_index = vtable_offset / sizeof(void *);
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
-
-    const void * const * vtable = *reinterpret_cast<const void * const * const *>(instance);
-    const void * function_ptr = vtable[true_index];
-
-#pragma clang diagnostic pop
-
+    const void * const * vtable = *std::bit_cast<const void * const * const *>(instance);
+    const void * function_ptr = vtable[vtable_index];
     return reinterpret_cast<uint64_t>(function_ptr);
 }
 
+}
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-macros"
+
 #define OMG(foo) \
+    using namespace XRayTracing; \
     using FuncType = Sig<decltype(&(foo))>::type; \
-    FuncType func_ptr = reinterpret_cast<FuncType>(&(foo)); \
-    uint64_t func_addr = reinterpret_cast<uint64_t>(func_ptr); \
-    TraceScope scope(func_addr);
+    const auto func_ptr = reinterpret_cast<FuncType>(&(foo)); \
+    const auto func_addr = reinterpret_cast<uint64_t>(func_ptr); \
+    XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
 
 #define OMG_MEMBER(class_name, member_func) \
+    using namespace XRayTracing; \
     using FuncType = Sig<decltype(&class_name::member_func)>::type; \
     union \
     { \
-        FuncType ptr; \
-        uint64_t value; \
-    } converter; \
-    converter.ptr = &class_name::member_func; \
-    uint64_t func_addr = converter.value; \
-    TraceScope scope(func_addr);
+        const FuncType ptr; \
+        const uint64_t func_addr; \
+    } converter{.ptr = &class_name::member_func}; \
+    static constexpr uint64_t REAL_FUNC_ADDR_THRESHOLD = 0x00400000; \
+    const auto func_addr \
+        = converter.func_addr >= REAL_FUNC_ADDR_THRESHOLD ? converter.func_addr : get_virtual_address(this, converter.ptr); \
+    XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
 
-#define OMG_VIRT_MEMBER(class_name, member_func) \
-    using FuncType = Sig<decltype(&class_name::member_func)>::type; \
-    FuncType func_ptr = &class_name::member_func; \
-    uint64_t func_addr = get_virtual_address(this, func_ptr); \
-    TraceScope scope(func_addr);
-}
+#pragma clang diagnostic pop
