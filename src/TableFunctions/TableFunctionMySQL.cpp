@@ -8,14 +8,14 @@
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/MySQL/MySQLHelpers.h>
+#include <Storages/MySQL/MySQLSettings.h>
 #include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/registerTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
-#include "registerTableFunctions.h"
 
 #include <Databases/MySQL/DatabaseMySQL.h>
 #include <Common/parseRemoteDescription.h>
@@ -46,6 +46,9 @@ namespace
 /* mysql ('host:port', database, table, user, password) - creates a temporary StorageMySQL.
  * The structure of the table is taken from the mysql query DESCRIBE table.
  * If there is no such table, an exception is thrown.
+ *
+ * Alternatively, instead of table, one can pass a SELECT query. Either as (SELECT x FROM y...) or as query('SELECT x FROM y...').
+ * In which case, the table structure is taken from the query execution result provided by MySQL API.
  */
 class TableFunctionMySQL : public ITableFunction
 {
@@ -55,6 +58,9 @@ public:
     {
         return name;
     }
+
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const override { return {2}; }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
     const char * getStorageTypeName() const override { return "MySQL"; }
@@ -98,7 +104,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table, context);
+    return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table_or_query, context);
 }
 
 StoragePtr TableFunctionMySQL::executeImpl(
@@ -112,7 +118,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
         StorageID(getDatabaseName(), table_name),
         std::move(*pool),
         configuration->database,
-        configuration->table,
+        configuration->table_or_query,
         configuration->replace_query,
         configuration->on_duplicate_clause,
         cached_columns,

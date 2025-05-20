@@ -1,3 +1,14 @@
+#include "config.h"
+#if USE_MYSQL
+
+#if __has_include(<mysql.h>)
+#include <mysql.h>
+#else
+#include <mysql/mysql.h>
+#endif
+
+// NB: swapping mysql.h include with unit's header breaks the build because of enum forward declaration in mysqlxx/Types.h
+// See another example of such issue in mysqlxx/Row.cpp
 #include "convertMySQLDataType.h"
 
 #include <Core/Field.h>
@@ -14,6 +25,7 @@
 #include "DataTypeFixedString.h"
 #include "DataTypeNullable.h"
 #include "DataTypeString.h"
+#include "DataTypeNothing.h"
 #include "DataTypesNumber.h"
 #include "DataTypeCustomGeo.h"
 #include "DataTypeFactory.h"
@@ -135,4 +147,127 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     return res;
 }
 
+DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, MYSQL_FIELD & field)
+{
+    bool is_nullable = !(field.flags & NOT_NULL_FLAG);
+    bool is_unsigned = (field.flags & UNSIGNED_FLAG);
+
+    DataTypePtr data_type;
+
+    switch (field.type)
+    {
+        case enum_field_types::MYSQL_TYPE_TINY:
+            if (is_unsigned)
+                data_type = std::make_shared<DataTypeUInt8>();
+            else
+                data_type = std::make_shared<DataTypeInt8>();
+            break;
+        case enum_field_types::MYSQL_TYPE_SHORT:
+            if (is_unsigned)
+                data_type = std::make_shared<DataTypeUInt16>();
+            else
+                data_type = std::make_shared<DataTypeInt16>();
+            break;
+        case enum_field_types::MYSQL_TYPE_INT24: // Treat int24 as int32
+        case enum_field_types::MYSQL_TYPE_LONG:
+            if (is_unsigned)
+                data_type = std::make_shared<DataTypeUInt32>();
+            else
+                data_type = std::make_shared<DataTypeInt32>();
+            break;
+        case enum_field_types::MYSQL_TYPE_LONGLONG:
+            if (is_unsigned)
+                data_type = std::make_shared<DataTypeUInt64>();
+            else
+                data_type = std::make_shared<DataTypeInt64>();
+            break;
+
+        case enum_field_types::MYSQL_TYPE_DECIMAL:
+        case enum_field_types::MYSQL_TYPE_NEWDECIMAL:
+            if (type_support.isSet(MySQLDataTypesSupport::DECIMAL))
+            {
+                // MySQL DECIMAL includes space for sign and decimal point in length
+                auto precision = field.length;
+                if (field.decimals > 0)
+                    precision -= 1; // Decimal point
+                if (!(field.flags & UNSIGNED_FLAG))
+                    precision -= 1; // Sign
+
+                data_type = createDecimal<DataTypeDecimal>(precision, field.decimals);
+            }
+            break;
+
+        case enum_field_types::MYSQL_TYPE_FLOAT:
+            data_type = std::make_shared<DataTypeFloat32>();
+            break;
+        case enum_field_types::MYSQL_TYPE_DOUBLE:
+            data_type = std::make_shared<DataTypeFloat64>();
+            break;
+
+        case enum_field_types::MYSQL_TYPE_BIT:
+            data_type = std::make_shared<DataTypeUInt64>();
+            break;
+
+        case enum_field_types::MYSQL_TYPE_DATETIME: // Process DATETIME and TIMESTAMP as in string->DataType cast
+        case enum_field_types::MYSQL_TYPE_TIMESTAMP:
+            if (!type_support.isSet(MySQLDataTypesSupport::DATETIME64))
+            {
+                data_type = std::make_shared<DataTypeDateTime>();
+            }
+            else if (field.type == MYSQL_TYPE_TIMESTAMP && field.decimals == 0) // scale == field.decimals
+            {
+                data_type = std::make_shared<DataTypeDateTime>();
+            }
+            data_type = std::make_shared<DataTypeDateTime64>(field.decimals);
+            break;
+
+        case enum_field_types::MYSQL_TYPE_DATE:
+        case enum_field_types::MYSQL_TYPE_NEWDATE:
+            if (type_support.isSet(MySQLDataTypesSupport::DATE2DATE32))
+                data_type = std::make_shared<DataTypeDate32>();
+            else if (type_support.isSet(MySQLDataTypesSupport::DATE2STRING))
+                data_type = std::make_shared<DataTypeString>();
+            else
+                data_type = std::make_shared<DataTypeDate>();
+            break;
+
+        case enum_field_types::MYSQL_TYPE_TIME:
+            data_type = std::make_shared<DataTypeString>(); // ClickHouse doesn't have a TIME type
+            break;
+        case enum_field_types::MYSQL_TYPE_YEAR:
+            data_type = std::make_shared<DataTypeString>(); // ClickHouse doesn't have a YEAR type
+            break;
+
+        case enum_field_types::MYSQL_TYPE_GEOMETRY:
+            data_type = DataTypeFactory::instance().get("Point");
+            break;
+
+        case enum_field_types::MYSQL_TYPE_NULL:
+            data_type = std::make_shared<DataTypeNothing>();
+            break;
+
+        case enum_field_types::MYSQL_TYPE_STRING:
+        case enum_field_types::MYSQL_TYPE_VAR_STRING:
+        case enum_field_types::MYSQL_TYPE_BLOB:
+        case enum_field_types::MYSQL_TYPE_VARCHAR:
+            data_type = std::make_shared<DataTypeString>();
+            break;
+        default:
+            // For unknown types, fallback to String
+            data_type = std::make_shared<DataTypeString>();
+    }
+
+    // If type conversion conditions weren't met (e.g. DECIMAL), fallback to String
+    if (!data_type)
+    {
+        data_type = std::make_shared<DataTypeString>();
+    }
+
+    if (is_nullable && !data_type->isNullable())
+        data_type = makeNullable(data_type);
+    return data_type;
 }
+
+}
+
+#endif
