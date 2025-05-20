@@ -122,7 +122,6 @@ add_contrib (aws-cmake
     aws-c-mqtt
     aws-c-s3
     aws-c-sdkutils
-    aws-s2n-tls
     aws-checksums
     aws-crt-cpp
     aws-cmake
