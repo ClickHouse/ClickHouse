@@ -10,6 +10,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <base/range.h>
 
 #include <constants.h>
@@ -20,7 +21,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsString geotoh3_argument_order;
+    extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
 }
 namespace ErrorCodes
 {
@@ -37,7 +38,7 @@ namespace
 /// and returns h3 index of this point
 class FunctionGeoToH3 : public IFunction
 {
-    const String geotoh3_argument_order;
+    GeoToH3ArgumentOrder geotoh3_argument_order;
 public:
     static constexpr auto name = "geoToH3";
 
@@ -46,12 +47,6 @@ public:
     explicit FunctionGeoToH3(ContextPtr context)
     : geotoh3_argument_order(context->getSettingsRef()[Setting::geotoh3_argument_order])
     {
-        // Validate that the setting value is either "lat_lon" or "lon_lat".
-        if (geotoh3_argument_order != "lat_lon" || geotoh3_argument_order != "lon_lat")
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Invalid value for 'geotoh3_argument_order'. Must be 'lat_lon' or 'lon_lat'. Got: {}",
-                geotoh3_argument_order);
     }
 
     std::string getName() const override { return name; }
@@ -100,12 +95,12 @@ public:
         const ColumnFloat64 * col_lat = nullptr;
         const ColumnFloat64 * col_lon = nullptr;
 
-        if (geotoh3_argument_order == "lon_lat")
+        if (geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT)
         {
             col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
             col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
         }
-        else // "lat_lon" (setting value is validated in the constructor)
+        else
         {
             col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
             col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
