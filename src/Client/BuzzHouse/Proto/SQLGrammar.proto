@@ -1656,52 +1656,56 @@ message Window {
     required string window = 1;
 }
 
-enum SpecialVal {
-    VAL_NULL = 1;
-    VAL_TRUE = 2;
-    VAL_FALSE = 3;
-    VAL_ZERO = 4;
-    VAL_ONE = 5;
-    VAL_MINUS_ONE = 6;
-    VAL_EMPTY_STRING = 7;
-    VAL_EMPTY_ARRAY = 8;
-    VAL_EMPTY_TUPLE = 9;
-    VAL_EMPTY_MAP = 10;
-    VAL_EMPTY_JSON = 11;
-    VAL_MINUS_ZERO_FP = 12;
-    VAL_PLUS_ZERO_FP = 13;
-    VAL_ZERO_FP = 14;
-    VAL_INF = 15;
-    VAL_PLUS_INF = 16;
-    VAL_MINUS_INF = 17;
-    VAL_NAN = 18;
-    VAL_PLUS_NAN = 19;
-    VAL_MINUS_NAN = 20;
-    VAL_HAPPY = 21;
-    VAL_TEN_HAPPY = 22;
-    MIN_INT32 = 23;
-    MAX_INT32 = 24;
-    MIN_INT64 = 25;
-    MAX_INT64 = 26;
-    MIN_INT128 = 27;
-    MAX_INT128 = 28;
-    MIN_INT256 = 29;
-    MAX_INT256 = 30;
-    MAX_UINT32 = 31;
-    MAX_UINT64 = 32;
-    MAX_UINT128 = 33;
-    MAX_UINT256 = 34;
-    MIN_DATE = 35;
-    MAX_DATE = 36;
-    MIN_DATE32 = 37;
-    MAX_DATE32 = 38;
-    MIN_DATETIME = 39;
-    MAX_DATETIME = 40;
-    MIN_DATETIME64 = 41;
-    MAX_DATETIME64 = 42;
-    VAL_NULL_CHAR = 43;
-    VAL_DEFAULT = 44;
-    VAL_STAR = 45;
+message SpecialVal {
+    enum SpecialValEnum {
+        VAL_NULL = 1;
+        VAL_TRUE = 2;
+        VAL_FALSE = 3;
+        VAL_ZERO = 4;
+        VAL_ONE = 5;
+        VAL_MINUS_ONE = 6;
+        VAL_EMPTY_STRING = 7;
+        VAL_EMPTY_ARRAY = 8;
+        VAL_EMPTY_TUPLE = 9;
+        VAL_EMPTY_MAP = 10;
+        VAL_EMPTY_JSON = 11;
+        VAL_MINUS_ZERO_FP = 12;
+        VAL_PLUS_ZERO_FP = 13;
+        VAL_ZERO_FP = 14;
+        VAL_INF = 15;
+        VAL_PLUS_INF = 16;
+        VAL_MINUS_INF = 17;
+        VAL_NAN = 18;
+        VAL_PLUS_NAN = 19;
+        VAL_MINUS_NAN = 20;
+        VAL_HAPPY = 21;
+        VAL_TEN_HAPPY = 22;
+        MIN_INT32 = 23;
+        MAX_INT32 = 24;
+        MIN_INT64 = 25;
+        MAX_INT64 = 26;
+        MIN_INT128 = 27;
+        MAX_INT128 = 28;
+        MIN_INT256 = 29;
+        MAX_INT256 = 30;
+        MAX_UINT32 = 31;
+        MAX_UINT64 = 32;
+        MAX_UINT128 = 33;
+        MAX_UINT256 = 34;
+        MIN_DATE = 35;
+        MAX_DATE = 36;
+        MIN_DATE32 = 37;
+        MAX_DATE32 = 38;
+        MIN_DATETIME = 39;
+        MAX_DATETIME = 40;
+        MIN_DATETIME64 = 41;
+        MAX_DATETIME64 = 42;
+        VAL_NULL_CHAR = 43;
+        VAL_DEFAULT = 44;
+        VAL_STAR = 45;
+    }
+    required SpecialValEnum val = 1;
+    optional bool paren = 2;
 }
 
 message NumericLiteral {

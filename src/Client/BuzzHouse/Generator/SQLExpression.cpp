@@ -277,9 +277,11 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     }
     else if (noption < 801)
     {
-        std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal_MAX));
+        SpecialVal * val = lv->mutable_special_val();
+        std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
 
-        lv->set_special_val(static_cast<SpecialVal>(special_range(rg.generator)));
+        val->set_val(static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator)));
+        val->set_paren(complex && rg.nextBool());
         nested_prob = 3;
     }
     else if (noption < 951)
@@ -291,7 +293,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     }
     else
     {
-        lv->set_special_val(SpecialVal::VAL_NULL);
+        lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL);
     }
     addFieldAccess(rg, expr, nested_prob);
 }
