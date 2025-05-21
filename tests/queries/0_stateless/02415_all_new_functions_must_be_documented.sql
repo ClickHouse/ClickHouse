@@ -13,7 +13,7 @@ AND name NOT IN (
     'h3IsPentagon', 'h3IsResClassIII', 'h3IsValid', 'h3Line', 'h3NumHexagons', 'h3PointDistKm', 'h3PointDistM', 'h3PointDistRads', 'h3ToCenterChild', 'h3ToChildren', 'h3ToGeo',
     'h3ToGeoBoundary', 'h3ToParent', 'h3ToString', 'h3UnidirectionalEdgeIsValid', 'h3kRing', 'stringToH3',
     'geoToS2', 's2CapContains', 's2CapUnion', 's2CellsIntersect', 's2GetNeighbors', 's2RectAdd', 's2RectContains', 's2RectIntersection', 's2RectUnion', 's2ToGeo',
-    'normalizeUTF8NFC', 'normalizeUTF8NFD', 'normalizeUTF8NFKC', 'normalizeUTF8NFKD',
+    'normalizeUTF8NFC', 'normalizeUTF8NFD', 'normalizeUTF8NFKC', 'normalizeUTF8NFKD', 'bech32Encode', 'bech32Decode',
     'lemmatize', 'stem', 'synonyms', 'kql_array_sort_asc', 'kql_array_sort_desc',
     'detectCharset', 'detectLanguageUnknown', 'detectProgrammingLanguage', 'detectTonality'
 ) ORDER BY name;
