@@ -265,7 +265,7 @@ String formatQuery(String query)
         const char * query_end = token_iterator->end;
         bool has_semicolon = token_iterator.isValid() && token_iterator->type == TokenType::Semicolon;
 
-        const ASTPtr ast = parseQueryAndMovePosition(parser, pos, query_end, "query in editor", true, /*max_query_size=*/ 0, max_parser_depth, max_parser_backtracks);
+        const ASTPtr ast = parseQueryAndMovePosition(parser, pos, query_end, "query in editor", /*allow_multi_statements=*/ false, /*max_query_size=*/ 0, max_parser_depth, max_parser_backtracks);
 
         bool multiline_query = std::string_view(query_start, query_end).contains('\n');
         if (multiline_query)
