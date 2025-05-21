@@ -20,6 +20,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_json_type;
     extern const SettingsBool allow_experimental_object_type;
     extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool allow_experimental_time_time64_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
