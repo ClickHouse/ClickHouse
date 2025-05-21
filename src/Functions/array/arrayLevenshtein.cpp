@@ -572,7 +572,7 @@ ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(std::vector<const Column
 
 REGISTER_FUNCTION(ArrayLevenshtein)
 {
-    FunctionDocumentation::Description descriptio_arrayLevDis = "Calculates the Levenshtein distance for two arrays.";
+    FunctionDocumentation::Description description_arrayLevDis = "Calculates the Levenshtein distance for two arrays.";
     FunctionDocumentation::Syntax syntax_arrayLevDis = "arrayLevenshteinDistance(from, to)";
     FunctionDocumentation::Arguments arguments_arrayLevDis = {
         {"from", "The first array. [`Array(T)`](/sql-reference/data-types/array)."},
@@ -593,7 +593,7 @@ REGISTER_FUNCTION(ArrayLevenshtein)
         syntax_arrayLevDis,
         arguments_arrayLevDis,
         returned_value_arrayLevDis,
-        examples_arrayLevDis,
+        example_arrayLevDis,
         introduced_in_arrayLevDis,
         category_arrayLevDis
     };
@@ -607,8 +607,8 @@ The number of elements for the array and its weights should match.
     FunctionDocumentation::Syntax syntax_arrayLevDisW = "arrayLevenshteinDistanceWeighted(from, to, from_weights, to_weights)";
     FunctionDocumentation::Arguments arguments_arrayLevDisW = {
         {"from", "first array. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"to", "second array. [`Array(T)`](/sql-reference/data-types/array)."}
-        {"from_weights", "weights for the first array. [`Array(Float32)`](/sql-reference/data-types/array)."}
+        {"to", "second array. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"from_weights", "weights for the first array. [`Array(Float32)`](/sql-reference/data-types/array)."},
         {"to_weights", "weights for the second array. [`Array(Float32)`](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value_arrayLevDisW = "Levenshtein distance between the first and the second arrays with custom weights for each element. [`Float64`](/sql-reference/data-types/float).";
@@ -636,13 +636,13 @@ The number of elements for the array and its weights should match.
     FunctionDocumentation::Description description_arraySim = R"(
 Calculates the similarity of two arrays from `0` to `1` based on weighted Levenshtein distance.
 )";
-    FunctionDocumentation::Syntax_arraySim = "arraySimilarity(from, to, from_weights, to_weights)";
+    FunctionDocumentation::Syntax syntax_arraySim = "arraySimilarity(from, to, from_weights, to_weights)";
     FunctionDocumentation::Arguments arguments_arraySim = {
         {"from", "first array"},
         {"to", "second array"},
         {"from_weights", "weights for the first array"},
         {"to_weights", "weights for the second array"},
-    },
+    };
     FunctionDocumentation::ReturnedValue returned_value_arraySim = "Returns the similarity between `0` and `1` of the two arrays based on the weighted Levenshtein distance. [`Float64`](/sql-reference/data-types/float).";
     FunctionDocumentation::Examples examples_arraySim = {
         {
@@ -651,7 +651,8 @@ Calculates the similarity of two arrays from `0` to `1` based on weighted Levens
             "0.2222222222222222"
         }
     };
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+	FunctionDocumentation::IntroducedIn introduced_in_arraySim = {25, 4};
+    FunctionDocumentation::Category category_arraySim = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_arraySim = {
         description_arraySim,
         syntax_arraySim,

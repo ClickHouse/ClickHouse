@@ -365,7 +365,7 @@ If the number of elements is negative, the array is shifted to the left.
     {
         {"Usage example", "SELECT arrayShiftRight([1,2,3,4,5,6], 2) as res;", "[0,0,1,2,3,4]"},
         {"Negative value of n", "SELECT arrayShiftRight([1,2,3,4,5,6], -2) as res;", "[3,4,5,6,0,0]"},
-        {"Using a default value", "SELECT arrayShiftRight([1,2,3,4,5,6], 2, 42) as res;"}
+        {"Using a default value", "SELECT arrayShiftRight([1,2,3,4,5,6], 2, 42) as res;", "[42,42,1,2,3,4]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_shiftright = {23, 8};
     FunctionDocumentation::Category category_shiftright = FunctionDocumentation::Category::Array;
