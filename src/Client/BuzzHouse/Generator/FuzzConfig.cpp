@@ -139,7 +139,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"compare_success_results", [&](const JSONObjectType & value) { compare_success_results = value.getBool(); }},
         {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
         {"compare_explains", [&](const JSONObjectType & value) { compare_explains = value.getBool(); }},
-        {"fail_on_timeout", [&](const JSONObjectType & value) { fail_on_timeout = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -194,6 +193,33 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
                  }
                  type_mask &= (~type_entries.at(entry));
              }
+         }},
+        {"disallowed_error_codes",
+         [&](const JSONObjectType & value)
+         {
+             using std::operator""sv;
+             constexpr auto delim{","sv};
+
+             for (const auto word : std::views::split(String(value.getString()), delim))
+             {
+                 uint32_t result;
+                 const auto & sv = std::string_view(word);
+                 auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
+
+                 if (ec == std::errc::invalid_argument)
+                 {
+                     throw std::invalid_argument("Not a valid number for an error code");
+                 }
+                 else if (ec == std::errc::result_out_of_range)
+                 {
+                     throw std::out_of_range("Number out of range for uint32_t");
+                 }
+                 else if (ptr != sv.data() + sv.size())
+                 {
+                     throw std::invalid_argument("Invalid characters in input");
+                 }
+                 disallowed_error_codes.insert(result);
+             }
          }}};
 
     for (const auto [key, value] : object.getObject())
@@ -221,10 +247,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
             "min_nested_rows value ({}) is higher than max_nested_rows value ({})",
             min_nested_rows,
             max_nested_rows);
-    }
-    if (allow_infinite_tables && fail_on_timeout)
-    {
-        LOG_WARNING(log, "Setting both \"allow_infinite_tables\" and \"fail_on_timeout\" is not recommended");
     }
     for (const auto & entry : std::views::values(metrics))
     {

@@ -3024,8 +3024,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     const uint32_t backup_dictionary = 10 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
     const uint32_t backup_database = 10 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
     const uint32_t everything = 3;
-    const uint32_t prob_space
-        = backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + everything;
+    const uint32_t prob_space = backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + everything;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     BackupRestoreElement * bre = br->mutable_backup_element();
@@ -3072,9 +3071,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
         cluster = backupOrRestoreDatabase(
             bre->mutable_bobject(), rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)));
     }
-    else if (
-        everything
-        && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + everything + 1))
+    else if (everything && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + everything + 1))
     {
         bre->set_all(true);
     }

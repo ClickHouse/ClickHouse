@@ -502,14 +502,14 @@ bool Client::processBuzzHouseQuery(const String & full_query)
         // Also discard the exception that we now know to be non-fatal,
         // so that it doesn't influence the exit code.
         const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
-        const bool throw_timeout_error = fuzz_config->fail_on_timeout && exception
-            && (exception->code() == ErrorCodes::TIMEOUT_EXCEEDED || exception->code() == ErrorCodes::SOCKET_TIMEOUT);
+        const bool found_disallowed_code
+            = exception && fuzz_config->disallowed_error_codes.find(exception->code()) != fuzz_config->disallowed_error_codes.end();
 
         server_exception.reset();
         client_exception.reset();
-        if (throw_timeout_error)
+        if (found_disallowed_code)
         {
-            throw Exception(ErrorCodes::BUZZHOUSE, "BuzzHouse exception on timeout");
+            throw Exception(ErrorCodes::BUZZHOUSE, "Found disallowed error code");
         }
     }
     return server_up;
