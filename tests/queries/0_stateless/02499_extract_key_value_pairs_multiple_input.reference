@@ -347,7 +347,7 @@ SELECT
 {'argument1':'1','argument2':'2','char':'=','char2':'=','formula':'1+2=3','result':'3','string':'foo=bar'}
 -- https://github.com/ClickHouse/ClickHouse/issues/56357
 WITH
-    extractKeyValuePairs('{"a":"1", "b":"2"}') as s_map,
+    extractKeyValuePairs('{"a":"1", "b":"2"}', ':', '{, }') as s_map,
     CAST(
         arrayMap(
             (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -381,3 +381,15 @@ WITH
 SELECT
     x;
 {'age':'31','name':'neymar','nationality':'brazil','team':'psg'}
+-- Quoting character must be escaped, otherwise key will be discarded
+WITH
+    extractKeyValuePairs('key:"#123"junk", second_key:0') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+{'key':'#123','second_key':'0'}
