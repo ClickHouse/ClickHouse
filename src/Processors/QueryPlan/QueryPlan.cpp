@@ -696,7 +696,7 @@ QueryPlan QueryPlan::clone() const
     return result;
 }
 
-void QueryPlan::replaceNode(Node * node,  QueryPlanPtr plan)
+void QueryPlan::replaceNode(Node * node, QueryPlanPtr plan)
 {
     const auto & header = node->step->getOutputHeader();
     const auto & plan_header = plan->getCurrentHeader();
@@ -717,5 +717,4 @@ void QueryPlan::replaceNode(Node * node,  QueryPlanPtr plan)
     max_threads = std::max(max_threads, plan->max_threads);
     resources = std::move(plan->resources);
 }
-
 }

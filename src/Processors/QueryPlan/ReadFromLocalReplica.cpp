@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(
     const ASTPtr & query_ast_,
     Block header_,
