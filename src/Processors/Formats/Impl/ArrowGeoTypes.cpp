@@ -167,7 +167,7 @@ inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
             for (auto&& point : parsed_line)
                 poly.outer().push_back(point);
         }
-        else 
+        else
         {
             poly.inners().push_back({});
             poly.inners().back().reserve(parsed_line.size());

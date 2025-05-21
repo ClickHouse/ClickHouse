@@ -1,3 +1,4 @@
+#include "Common/Exception.h"
 #include <Common/WKB.h>
 #include "Functions/geometryConverters.h"
 
@@ -14,8 +15,8 @@ extern const int BAD_ARGUMENTS;
 
 inline CartesianPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
-    double x;
-    double y;
+    Float64 x;
+    Float64 y;
     readBinaryEndian(x, in_buffer, endian_to_read);
     readBinaryEndian(y, in_buffer, endian_to_read);
     return CartesianPoint(x, y);
@@ -112,6 +113,7 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
         case WKBGeometry::MultiPolygon:
             return readMultiPolygonWKB(in_buffer, endian_to_read);
     }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geometry type {}", geom_type);
 }
 
 }
