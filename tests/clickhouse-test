@@ -308,7 +308,7 @@ class SharedEngineReplacer:
                 # Replace table engines if echo enabled to match changed reference
                 if (
                     self.cloud or self.args.replace_log_memory_with_mergetree
-                ) and re.match("-- ?\{ ?echo.*", line):
+                ) and re.match("-- ?{ ?echo.*", line):
                     self.with_echo = True
 
                 if self.cloud and self.with_echo:

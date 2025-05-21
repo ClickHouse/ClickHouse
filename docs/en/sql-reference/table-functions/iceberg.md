@@ -33,6 +33,7 @@ Description of the arguments coincides with description of arguments in table fu
 `format` stands for the format of data files in the Iceberg table.
 
 ### Returned value {#returned-value}
+
 A table with the specified structure for reading data in the specified Iceberg table.
 
 ### Example {#example}

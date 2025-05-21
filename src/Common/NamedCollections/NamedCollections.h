@@ -1,5 +1,5 @@
 #pragma once
-#include <Interpreters/Context.h>
+
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
