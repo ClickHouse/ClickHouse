@@ -52,6 +52,7 @@ struct BytePolicy
 
     void join(const std::string_view * start, size_t n, std::string & ngram) const
     {
+        chassert(n != 0);
         ngram.resize(n);
         for (size_t i = 0; i < n; ++i)
             ngram[i] = (*start++)[0];
@@ -80,6 +81,7 @@ struct CodePointPolicy
 
     void join(const std::string_view * start, size_t n, std::string & ngram) const
     {
+        chassert(n != 0);
         size_t total = 0;
         for (size_t i = 0; i < n; ++i)
             total += start[i].size();
@@ -127,6 +129,7 @@ struct TokenPolicy
 
     void join(const std::string_view * start, size_t n, std::string & ngram) const
     {
+        chassert(n != 0);
         size_t total = n - 1; // spaces
         for (size_t i = 0; i < n; ++i)
             total += start[i].size();
