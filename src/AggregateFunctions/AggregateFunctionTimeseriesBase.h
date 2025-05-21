@@ -63,7 +63,7 @@ public:
 
     explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, TimestampType timestamp_scale_multiplier_)
-        : Base(argument_types_, {}, createResultType())
+        : Base(argument_types_, {start_timestamp_, end_timestamp_, step_, window_}, createResultType())
         , bucket_count(bucketCount(start_timestamp_, end_timestamp_, step_))
         , start_timestamp(start_timestamp_)
         , end_timestamp(static_cast<TimestampType>(start_timestamp_ + (bucket_count - 1) * step_))  /// Align end timestamp down by step
