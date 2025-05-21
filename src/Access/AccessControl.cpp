@@ -21,7 +21,6 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <base/defines.h>
 #include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>
@@ -307,6 +306,9 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
 
+    /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
+    setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
+
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
     role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
@@ -580,11 +582,11 @@ AccessChangesNotifier & AccessControl::getChangesNotifier()
 }
 
 
-AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const
+AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ClientInfo & client_info) const
 {
     // NOTE: In the case where the user has never been logged in using LDAP,
     // Then user_id is not generated, and the authentication quota will always be nullptr.
-    auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, forwarded_address);
+    auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, client_info.getLastForwardedForHost());
     if (authentication_quota)
     {
         /// Reserve a single try from the quota to check whether we have another authentication try.
@@ -601,8 +603,8 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
 
     try
     {
-        const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
-                                                                     allow_plaintext_password);
+        const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, client_info,
+                                                                     allow_no_password, allow_plaintext_password);
         if (authentication_quota)
             authentication_quota->reset(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
 
@@ -772,6 +774,15 @@ int AccessControl::getBcryptWorkfactor() const
     return bcrypt_workfactor;
 }
 
+void AccessControl::setEnableUserNameAccessType(bool enable_user_name_access_type_)
+{
+    enable_user_name_access_type = enable_user_name_access_type_;
+}
+
+bool AccessControl::isEnabledUserNameAccessType() const
+{
+    return enable_user_name_access_type;
+}
 
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const
 {

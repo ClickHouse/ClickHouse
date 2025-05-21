@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/avgweighted
+description: 'Calculates the weighted arithmetic mean.'
 sidebar_position: 113
-title: "avgWeighted"
-description: "Calculates the weighted arithmetic mean."
+slug: /sql-reference/aggregate-functions/reference/avgweighted
+title: 'avgWeighted'
 ---
 
 # avgWeighted
@@ -11,7 +11,7 @@ Calculates the [weighted arithmetic mean](https://en.wikipedia.org/wiki/Weighted
 
 **Syntax**
 
-``` sql
+```sql
 avgWeighted(x, weight)
 ```
 
@@ -35,14 +35,14 @@ but may have different types.
 
 Query:
 
-``` sql
+```sql
 SELECT avgWeighted(x, w)
 FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
 ```
 
 Result:
 
-``` text
+```text
 ┌─avgWeighted(x, weight)─┐
 │                      8 │
 └────────────────────────┘
@@ -52,14 +52,14 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT avgWeighted(x, w)
 FROM values('x Int8, w Float64', (4, 1), (1, 0), (10, 2))
 ```
 
 Result:
 
-``` text
+```text
 ┌─avgWeighted(x, weight)─┐
 │                      8 │
 └────────────────────────┘
@@ -69,14 +69,14 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT avgWeighted(x, w)
 FROM values('x Int8, w Int8', (0, 0), (1, 0), (10, 0))
 ```
 
 Result:
 
-``` text
+```text
 ┌─avgWeighted(x, weight)─┐
 │                    nan │
 └────────────────────────┘
@@ -86,14 +86,14 @@ Result:
 
 Query:
 
-``` sql
+```sql
 CREATE table test (t UInt8) ENGINE = Memory;
 SELECT avgWeighted(t) FROM test
 ```
 
 Result:
 
-``` text
+```text
 ┌─avgWeighted(x, weight)─┐
 │                    nan │
 └────────────────────────┘

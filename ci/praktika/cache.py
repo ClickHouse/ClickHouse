@@ -54,7 +54,10 @@ class Cache:
         record_file = Path(Settings.TEMP_DIR) / type_
         record.dump(record_file)
         S3.put(
-            s3_path=record_path, local_path=record_file, if_none_matched=if_not_exist
+            s3_path=record_path,
+            local_path=record_file,
+            if_none_matched=if_not_exist,
+            no_strict=True,
         )
         record_file.unlink()
 
@@ -69,8 +72,12 @@ class Cache:
         )
         Path(record_file_local_dir).mkdir(parents=True, exist_ok=True)
 
+        # _skip_download_counter=True to avoid races for multithreaded downloads
         res = S3.copy_file_from_s3(
-            s3_path=record_path, local_path=record_file_local_dir
+            s3_path=record_path,
+            local_path=record_file_local_dir,
+            _skip_download_counter=True,
+            no_strict=True,
         )
 
         if res:

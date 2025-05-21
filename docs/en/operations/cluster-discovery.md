@@ -1,7 +1,10 @@
 ---
+description: 'Documentation for cluster discovery in ClickHouse'
+sidebar_label: 'Cluster Discovery'
 slug: /operations/cluster-discovery
-sidebar_label: Cluster Discovery
+title: 'Cluster Discovery'
 ---
+
 # Cluster Discovery
 
 ## Overview {#overview}
@@ -117,6 +120,48 @@ To enable observer mode, include the `<observer/>` tag within the `<discovery>` 
     <observer/>
 </discovery>
 ```
+
+
+### Discovery of clusters {#discovery-of-clusters}
+
+Sometimes you may need to add and remove not only hosts in clusters, but clusters themselves. You can use the `<multicluster_root_path>` node with root path for several clusters:
+
+```xml
+<remote_servers>
+    <some_unused_name>
+        <discovery>
+            <multicluster_root_path>/clickhouse/discovery</multicluster_root_path>
+            <observer/>
+        </discovery>
+    </some_unused_name>
+</remote_servers>
+```
+
+In this case, when some other host registers itself with the path `/clickhouse/discovery/some_new_cluster`, a cluster with name `some_new_cluster` will be added.
+
+You can use both features simultaneously, the host can register itself in cluster `my_cluster` and discovery any other clusters:
+
+```xml
+<remote_servers>
+    <my_cluster>
+        <discovery>
+            <path>/clickhouse/discovery/my_cluster</path>
+        </discovery>
+    </my_cluster>
+    <some_unused_name>
+        <discovery>
+            <multicluster_root_path>/clickhouse/discovery</multicluster_root_path>
+            <observer/>
+        </discovery>
+    </some_unused_name>
+</remote_servers>
+```
+
+Limitations:
+- You can't use both `<path>` and `<multicluster_root_path>` in the same `remote_servers` subtree.
+- `<multicluster_root_path>` can only be with `<observer/>`.
+- The last part of path from Keeper is used as the cluster name, while during registration the name is taken from the XML tag.
+
 
 
 ## Use-Cases and Limitations {#use-cases-and-limitations}

@@ -8,7 +8,7 @@
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Interpreters/Context_fwd.h>
 
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -22,9 +22,6 @@ public:
     ASTPtr tryGet(const String & entity_name) const override;
 
     bool has(const String & entity_name) const override;
-
-    std::vector<String> getAllEntityNames() const override;
-    std::vector<String> getAllEntityNames(WorkloadEntityType entity_type) const override;
 
     std::vector<std::pair<String, ASTPtr>> getAllEntities() const override;
 
@@ -47,6 +44,9 @@ public:
 
     scope_guard getAllEntitiesAndSubscribe(
         const OnChangedHandler & handler) override;
+
+    String getMasterThreadResourceName() override;
+    String getWorkerThreadResourceName() override;
 
 protected:
     enum class OperationResult
@@ -117,6 +117,8 @@ private:
     // Validation
     std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Value is set of sources
     String root_name; /// current root workload name
+    String master_thread_resource; /// current resource name for worker threads
+    String worker_thread_resource; /// current resource name for master threads
 
 protected:
     ContextPtr global_context;

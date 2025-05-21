@@ -34,7 +34,7 @@ ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 'system.query_cache with old
 
 # Run query again. The 1st run must be a cache miss, the 2nd run a cache hit
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
-${CLICKHOUSE_CLIENT} --user "admin" --query "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} --user "admin" --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query = 'SELECT 0 == $rnd SETTINGS use_query_cache = 1' order by event_time_microseconds"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS admin"
@@ -46,7 +46,7 @@ ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 'system.query_cache with new
 
 # Run same query as old user. Expect a cache miss.
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
-${CLICKHOUSE_CLIENT} --user "admin" --query "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} --user "admin" --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query = 'SELECT 0 == $rnd SETTINGS use_query_cache = 1' order by event_time_microseconds"
 
 # Cleanup

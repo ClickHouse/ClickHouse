@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/math-functions
+description: 'Documentation for Mathematical Functions'
+sidebar_label: 'Mathematical'
 sidebar_position: 125
-sidebar_label: Mathematical
+slug: /sql-reference/functions/math-functions
+title: 'Mathematical Functions'
 ---
 
 # Mathematical Functions
@@ -233,7 +235,7 @@ Type: [Float*](../data-types/float.md).
 
 (three sigma rule)
 
-``` sql
+```sql
 SELECT erf(3 / sqrt(2));
 ```
 
@@ -444,7 +446,7 @@ Returns the [hyperbolic cosine](https://in.mathworks.com/help/matlab/ref/cosh.ht
 
 **Syntax**
 
-``` sql
+```sql
 cosh(x)
 ```
 
@@ -460,7 +462,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT cosh(0);
 ```
 
@@ -478,7 +480,7 @@ Returns the [inverse hyperbolic cosine](https://www.mathworks.com/help/matlab/re
 
 **Syntax**
 
-``` sql
+```sql
 acosh(x)
 ```
 
@@ -494,7 +496,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT acosh(1);
 ```
 
@@ -512,7 +514,7 @@ Returns the [hyperbolic sine](https://www.mathworks.com/help/matlab/ref/sinh.htm
 
 **Syntax**
 
-``` sql
+```sql
 sinh(x)
 ```
 
@@ -528,7 +530,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT sinh(0);
 ```
 
@@ -546,7 +548,7 @@ Returns the [inverse hyperbolic sine](https://www.mathworks.com/help/matlab/ref/
 
 **Syntax**
 
-``` sql
+```sql
 asinh(x)
 ```
 
@@ -562,7 +564,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT asinh(0);
 ```
 
@@ -579,7 +581,7 @@ Returns the [hyperbolic tangent](https://www.mathworks.com/help/matlab/ref/tanh.
 
 **Syntax**
 
-``` sql
+```sql
 tanh(x)
 ```
 
@@ -595,7 +597,7 @@ Type: [Float*](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT tanh(0);
 ```
 
@@ -611,7 +613,7 @@ Returns the [inverse hyperbolic tangent](https://www.mathworks.com/help/matlab/r
 
 **Syntax**
 
-``` sql
+```sql
 atanh(x)
 ```
 
@@ -627,7 +629,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT atanh(0);
 ```
 
@@ -645,7 +647,7 @@ Returns the [atan2](https://en.wikipedia.org/wiki/Atan2) as the angle in the Euc
 
 **Syntax**
 
-``` sql
+```sql
 atan2(y, x)
 ```
 
@@ -662,7 +664,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT atan2(1, 1);
 ```
 
@@ -680,7 +682,7 @@ Returns the length of the hypotenuse of a right-angle triangle. [Hypot](https://
 
 **Syntax**
 
-``` sql
+```sql
 hypot(x, y)
 ```
 
@@ -697,7 +699,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT hypot(1, 1);
 ```
 
@@ -715,7 +717,7 @@ Calculates `log(1+x)`. The [calculation](https://en.wikipedia.org/wiki/Natural_l
 
 **Syntax**
 
-``` sql
+```sql
 log1p(x)
 ```
 
@@ -731,7 +733,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT log1p(0);
 ```
 
@@ -749,7 +751,7 @@ Returns the sign of a real number.
 
 **Syntax**
 
-``` sql
+```sql
 sign(x)
 ```
 
@@ -769,7 +771,7 @@ Type: [Int8](../data-types/int-uint.md).
 
 Sign for the zero value:
 
-``` sql
+```sql
 SELECT sign(0);
 ```
 
@@ -783,7 +785,7 @@ Result:
 
 Sign for the positive value:
 
-``` sql
+```sql
 SELECT sign(1);
 ```
 
@@ -797,7 +799,7 @@ Result:
 
 Sign for the negative value:
 
-``` sql
+```sql
 SELECT sign(-1);
 ```
 
@@ -830,7 +832,7 @@ sigmoid(x)
 
 Query:
 
-``` sql
+```sql
 SELECT round(sigmoid(x), 5) FROM (SELECT arrayJoin([-1, 0, 1]) AS x);
 ```
 
@@ -848,7 +850,7 @@ Converts radians to degrees.
 
 **Syntax**
 
-``` sql
+```sql
 degrees(x)
 ```
 
@@ -863,7 +865,7 @@ degrees(x)
 
 **Example**
 
-``` sql
+```sql
 SELECT degrees(3.141592653589793);
 ```
 
@@ -881,7 +883,7 @@ Converts degrees to radians.
 
 **Syntax**
 
-``` sql
+```sql
 radians(x)
 ```
 
@@ -897,7 +899,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
-``` sql
+```sql
 SELECT radians(180);
 ```
 
@@ -918,13 +920,13 @@ The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any ne
 
 **Syntax**
 
-``` sql
+```sql
 factorial(n)
 ```
 
 **Example**
 
-``` sql
+```sql
 SELECT factorial(10);
 ```
 
@@ -951,7 +953,7 @@ Alias: `WIDTH_BUCKET`
 
 **Example**
 
-``` sql
+```sql
 SELECT widthBucket(10.15, -8.6, 23, 18);
 ```
 

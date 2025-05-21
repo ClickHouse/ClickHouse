@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/fixedstring
+description: 'Documentation for the FixedString data type in ClickHouse'
+sidebar_label: 'FixedString(N)'
 sidebar_position: 10
-sidebar_label: FixedString(N)
+slug: /sql-reference/data-types/fixedstring
+title: 'FixedString(N)'
 ---
 
 # FixedString(N)
@@ -10,7 +12,7 @@ A fixed-length string of `N` bytes (neither characters nor code points).
 
 To declare a column of `FixedString` type, use the following syntax:
 
-``` sql
+```sql
 <column_name> FixedString(N)
 ```
 
@@ -36,7 +38,7 @@ When selecting the data, ClickHouse does not remove the null bytes at the end of
 
 Let's consider the following table with the single `FixedString(2)` column:
 
-``` text
+```text
 ┌─name──┐
 │ b     │
 └───────┘
@@ -44,12 +46,12 @@ Let's consider the following table with the single `FixedString(2)` column:
 
 The query `SELECT * FROM FixedStringTable WHERE a = 'b'` does not return any data as a result. We should complement the filter pattern with null bytes.
 
-``` sql
+```sql
 SELECT * FROM FixedStringTable
 WHERE a = 'b\0'
 ```
 
-``` text
+```text
 ┌─a─┐
 │ b │
 └───┘

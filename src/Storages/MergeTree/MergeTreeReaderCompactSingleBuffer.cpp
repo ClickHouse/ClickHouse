@@ -8,7 +8,9 @@ namespace DB
 {
 
 size_t MergeTreeReaderCompactSingleBuffer::readRows(
-    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+    size_t from_mark, size_t current_task_last_mark,
+    bool continue_reading, size_t max_rows_to_read,
+    size_t rows_offset, Columns & res_columns)
 try
 {
     init();
@@ -25,12 +27,22 @@ try
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
+
+        if (rows_to_read <= rows_offset)
+        {
+            rows_offset -= rows_to_read;
+            ++from_mark;
+            continue;
+        }
+        rows_to_read -= rows_offset;
+
         deserialize_binary_bulk_state_map.clear();
         deserialize_binary_bulk_state_map_for_subcolumns.clear();
 
         /// Use cache to avoid reading the column with the same name twice.
         /// It may happen if there are empty array Nested in the part.
         ISerialization::SubstreamsCache cache;
+        std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
 
         /// If we need to read multiple subcolumns from a single column in storage,
         /// we will read it this column only once and then reuse to extract all subcolumns.
@@ -42,19 +54,24 @@ try
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
             if (!res_columns[pos])
+            {
                 continue;
+            }
 
             stream->adjustRightMark(current_task_last_mark); /// Must go before seek.
-            stream->seekToMarkAndColumn(from_mark, *column_positions[pos]);
+            /// If it's a subcolumn and we have substream marks, we will seek to the specific substream mark during deserialization later.
+            if (!columns_to_read[pos].isSubcolumn() || !have_substream_marks)
+                stream->seekToMarkAndColumn(from_mark, have_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos]);
 
             auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
 
-            readPrefix(pos, *stream);
-            readData(pos, res_columns[pos], rows_to_read, *stream, cache, cache_for_subcolumns);
+            readPrefix(pos, from_mark, *stream, &deserialize_states_caches[columns_to_read[pos].getNameInStorage()]);
+            readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, *stream, cache, cache_for_subcolumns);
         }
 
         ++from_mark;
         read_rows += rows_to_read;
+        rows_offset = 0;
     }
 
     next_mark = from_mark;
@@ -72,7 +89,7 @@ catch (...)
     }
     catch (Exception & e)
     {
-        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
+        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, rows_offset));
     }
 
     throw;

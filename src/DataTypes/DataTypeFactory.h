@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 #include <DataTypes/DataTypeCustom.h>
 
@@ -12,6 +11,9 @@
 
 namespace DB
 {
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -82,6 +84,7 @@ void registerDataTypeDecimal(DataTypeFactory & factory);
 void registerDataTypeDate(DataTypeFactory & factory);
 void registerDataTypeDate32(DataTypeFactory & factory);
 void registerDataTypeDateTime(DataTypeFactory & factory);
+void registerDataTypeTime(DataTypeFactory & factory);
 void registerDataTypeString(DataTypeFactory & factory);
 void registerDataTypeFixedString(DataTypeFactory & factory);
 void registerDataTypeEnum(DataTypeFactory & factory);

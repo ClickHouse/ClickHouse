@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/encoding-functions
+description: 'Documentation for Encoding Functions'
+sidebar_label: 'Encoding'
 sidebar_position: 65
-sidebar_label: Encoding
+slug: /sql-reference/functions/encoding-functions
+title: 'Encoding Functions'
 ---
 
 # Encoding Functions
@@ -12,7 +14,7 @@ Returns the string with the length as the number of passed arguments and each by
 
 **Syntax**
 
-``` sql
+```sql
 char(number_1, [number_2, ..., number_n]);
 ```
 
@@ -28,13 +30,13 @@ char(number_1, [number_2, ..., number_n]);
 
 Query:
 
-``` sql
+```sql
 SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello;
 ```
 
 Result:
 
-``` text
+```text
 ┌─hello─┐
 │ hello │
 └───────┘
@@ -44,13 +46,13 @@ You can construct a string of arbitrary encoding by passing the corresponding by
 
 Query:
 
-``` sql
+```sql
 SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x82) AS hello;
 ```
 
 Result:
 
-``` text
+```text
 ┌─hello──┐
 │ привет │
 └────────┘
@@ -58,13 +60,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
 ```
 
 Result:
 
-``` text
+```text
 ┌─hello─┐
 │ 你好  │
 └───────┘
@@ -78,7 +80,7 @@ Alias: `HEX`.
 
 **Syntax**
 
-``` sql
+```sql
 hex(arg)
 ```
 
@@ -106,25 +108,25 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 Query:
 
-``` sql
+```sql
 SELECT hex(1);
 ```
 
 Result:
 
-``` text
+```text
 01
 ```
 
 Query:
 
-``` sql
+```sql
 SELECT hex(toFloat32(number)) AS hex_presentation FROM numbers(15, 2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─hex_presentation─┐
 │ 00007041         │
 │ 00008041         │
@@ -133,13 +135,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT hex(toFloat64(number)) AS hex_presentation FROM numbers(15, 2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─hex_presentation─┐
 │ 0000000000002E40 │
 │ 0000000000003040 │
@@ -148,13 +150,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT lower(hex(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) as uuid_hex
 ```
 
 Result:
 
-``` text
+```text
 ┌─uuid_hex─────────────────────────┐
 │ 61f0c4045cb311e7907ba6006ad3dba0 │
 └──────────────────────────────────┘
@@ -175,7 +177,7 @@ Alias: `UNHEX`.
 
 **Syntax**
 
-``` sql
+```sql
 unhex(arg)
 ```
 
@@ -192,12 +194,12 @@ Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal d
 **Example**
 
 Query:
-``` sql
+```sql
 SELECT unhex('303132'), UNHEX('4D7953514C');
 ```
 
 Result:
-``` text
+```text
 ┌─unhex('303132')─┬─unhex('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
@@ -205,13 +207,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num;
 ```
 
 Result:
 
-``` text
+```text
 ┌──num─┐
 │ 4095 │
 └──────┘
@@ -223,7 +225,7 @@ Returns a string containing the argument's binary representation.
 
 **Syntax**
 
-``` sql
+```sql
 bin(arg)
 ```
 
@@ -251,13 +253,13 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 Query:
 
-``` sql
+```sql
 SELECT bin(14);
 ```
 
 Result:
 
-``` text
+```text
 ┌─bin(14)──┐
 │ 00001110 │
 └──────────┘
@@ -265,13 +267,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT bin(toFloat32(number)) AS bin_presentation FROM numbers(15, 2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─bin_presentation─────────────────┐
 │ 00000000000000000111000001000001 │
 │ 00000000000000001000000001000001 │
@@ -280,13 +282,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT bin(toFloat64(number)) AS bin_presentation FROM numbers(15, 2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─bin_presentation─────────────────────────────────────────────────┐
 │ 0000000000000000000000000000000000000000000000000010111001000000 │
 │ 0000000000000000000000000000000000000000000000000011000001000000 │
@@ -295,13 +297,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT bin(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')) as bin_uuid
 ```
 
 Result:
 
-``` text
+```text
 ┌─bin_uuid─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ 01100001111100001100010000000100010111001011001100010001111001111001000001111011101001100000000001101010110100111101101110100000 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -314,7 +316,7 @@ Interprets each pair of binary digits (in the argument) as a number and converts
 
 **Syntax**
 
-``` sql
+```sql
 unbin(arg)
 ```
 
@@ -340,13 +342,13 @@ Supports binary digits `0` and `1`. The number of binary digits does not have to
 
 Query:
 
-``` sql
+```sql
 SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000101001100');
 ```
 
 Result:
 
-``` text
+```text
 ┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
@@ -354,13 +356,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num;
 ```
 
 Result:
 
-``` text
+```text
 ┌─num─┐
 │  14 │
 └─────┘
@@ -396,13 +398,13 @@ bitPositionsToArray(arg)
 
 Query:
 
-``` sql
+```sql
 SELECT bitPositionsToArray(toInt8(1)) AS bit_positions;
 ```
 
 Result:
 
-``` text
+```text
 ┌─bit_positions─┐
 │ [0]           │
 └───────────────┘
@@ -410,13 +412,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions;
 ```
 
 Result:
 
-``` text
+```text
 ┌─bit_positions─────┐
 │ [0,1,2,3,4,5,6,7] │
 └───────────────────┘
@@ -698,7 +700,7 @@ select untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) fr
 Result:
 
 ```response
-1	2	3	4	5	6	7	8
+1    2    3    4    5    6    7    8
 ```
 
 ## hilbertEncode {#hilbertencode}
@@ -963,5 +965,5 @@ select untuple(hilbertDecode(2, hilbertEncode(n1, n2))) from hilbert_numbers;
 Result:
 
 ```response
-1	2
+1    2
 ```

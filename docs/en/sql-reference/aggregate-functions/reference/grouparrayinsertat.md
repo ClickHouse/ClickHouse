@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparrayinsertat
+description: 'Inserts a value into the array at the specified position.'
 sidebar_position: 140
-title: "groupArrayInsertAt"
-description: "Inserts a value into the array at the specified position."
+slug: /sql-reference/aggregate-functions/reference/grouparrayinsertat
+title: 'groupArrayInsertAt'
 ---
 
 # groupArrayInsertAt
@@ -11,7 +11,7 @@ Inserts a value into the array at the specified position.
 
 **Syntax**
 
-``` sql
+```sql
 groupArrayInsertAt(default_x, size)(x, pos)
 ```
 
@@ -37,13 +37,13 @@ Type: [Array](/sql-reference/data-types/array).
 
 Query:
 
-``` sql
+```sql
 SELECT groupArrayInsertAt(toString(number), number * 2) FROM numbers(5);
 ```
 
 Result:
 
-``` text
+```text
 ┌─groupArrayInsertAt(toString(number), multiply(number, 2))─┐
 │ ['0','','1','','2','','3','','4']                         │
 └───────────────────────────────────────────────────────────┘
@@ -51,13 +51,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT groupArrayInsertAt('-')(toString(number), number * 2) FROM numbers(5);
 ```
 
 Result:
 
-``` text
+```text
 ┌─groupArrayInsertAt('-')(toString(number), multiply(number, 2))─┐
 │ ['0','-','1','-','2','-','3','-','4']                          │
 └────────────────────────────────────────────────────────────────┘
@@ -65,13 +65,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
 ```
 
 Result:
 
-``` text
+```text
 ┌─groupArrayInsertAt('-', 5)(toString(number), multiply(number, 2))─┐
 │ ['0','-','1','-','2']                                             │
 └───────────────────────────────────────────────────────────────────┘
@@ -81,13 +81,13 @@ Multi-threaded insertion of elements into one position.
 
 Query:
 
-``` sql
+```sql
 SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
 ```
 
 As a result of this query you get random integer in the `[0,9]` range. For example:
 
-``` text
+```text
 ┌─groupArrayInsertAt(number, 0)─┐
 │ [7]                           │
 └───────────────────────────────┘

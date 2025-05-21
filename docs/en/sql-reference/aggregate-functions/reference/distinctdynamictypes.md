@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/distinctdynamictypes
+description: 'Calculates the list of distinct data types stored in Dynamic column.'
 sidebar_position: 215
-title: "distinctDynamicTypes"
-description: "Calculates the list of distinct data types stored in Dynamic column."
+slug: /sql-reference/aggregate-functions/reference/distinctdynamictypes
+title: 'distinctDynamicTypes'
 ---
 
 # distinctDynamicTypes

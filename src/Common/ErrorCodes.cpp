@@ -1,3 +1,4 @@
+#include <Common/CurrentThread.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <chrono>
@@ -248,6 +249,7 @@
     M(290, LIMIT_EXCEEDED) \
     M(291, DATABASE_ACCESS_DENIED) \
     M(293, MONGODB_CANNOT_AUTHENTICATE) \
+    M(294, CANNOT_WRITE_TO_FILE) \
     M(295, RECEIVED_EMPTY_DATA) \
     M(297, SHARD_HAS_NO_CONNECTIONS) \
     M(298, CANNOT_PIPE) \
@@ -613,7 +615,7 @@
     M(733, TABLE_IS_BEING_RESTARTED) \
     M(734, CANNOT_WRITE_AFTER_BUFFER_CANCELED) \
     M(735, QUERY_WAS_CANCELLED_BY_CLIENT) \
-    M(736, ICEBERG_CATALOG_ERROR) \
+    M(736, DATALAKE_DATABASE_ERROR) \
     M(737, GOOGLE_CLOUD_ERROR) \
     M(738, PART_IS_LOCKED) \
     M(739, BUZZHOUSE) \
@@ -621,6 +623,9 @@
     M(741, TABLE_UUID_MISMATCH) \
     M(742, DELTA_KERNEL_ERROR) \
     M(743, ICEBERG_SPECIFICATION_VIOLATION) \
+    M(744, SESSION_ID_EMPTY) \
+    M(745, SERVER_OVERLOADED) \
+    M(746, DEPENDENCIES_NOT_FOUND) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -721,6 +726,7 @@ namespace ErrorCodes
         error.message = message;
         error.trace = trace;
         error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        error.query_id = CurrentThread::getQueryId();
 
         return error_index;
     }

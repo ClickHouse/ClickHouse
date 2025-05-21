@@ -46,6 +46,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/DatabaseReplicated.h>
+#include <DataTypes/DataTypeString.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -384,6 +385,14 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearMarkCache();
             break;
+        case Type::DROP_ICEBERG_METADATA_CACHE:
+#if USE_AVRO
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
+            system_context->clearIcebergMetadataFilesCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
+#endif
         case Type::DROP_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -400,24 +409,24 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearIndexUncompressedCache();
             break;
-        case Type::DROP_SKIPPING_INDEX_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_SKIPPING_INDEX_CACHE);
-            system_context->clearSkippingIndexCache();
+        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+            system_context->clearVectorSimilarityIndexCache();
             break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
             break;
-        case Type::DROP_QUERY_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->clearQueryResultCache(query.query_result_cache_tag);
-            break;
-        }
         case Type::DROP_QUERY_CONDITION_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
             getContext()->clearQueryConditionCache();
+            break;
+        }
+        case Type::DROP_QUERY_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
+            getContext()->clearQueryResultCache(query.query_result_cache_tag);
             break;
         }
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
@@ -708,6 +717,14 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
             startStopAction(ActionLocks::ViewRefresh, false);
+            break;
+        case Type::START_REPLICATED_VIEW:
+            for (const auto & task : getRefreshTasks())
+                task->startReplicated();
+            break;
+        case Type::STOP_REPLICATED_VIEW:
+            for (const auto & task : getRefreshTasks())
+                task->stopReplicated("SYSTEM STOP REPLICATED VIEW");
             break;
         case Type::REFRESH_VIEW:
             for (const auto & task : getRefreshTasks())
@@ -1449,16 +1466,19 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DNS_CACHE:
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
+        case Type::DROP_ICEBERG_METADATA_CACHE:
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_CACHE:
         case Type::DROP_QUERY_CONDITION_CACHE:
+        case Type::DROP_QUERY_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_SKIPPING_INDEX_CACHE:
+        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
+        case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_PAGE_CACHE:
         case Type::DROP_SCHEMA_CACHE:
@@ -1585,12 +1605,38 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.getDatabase(), query.getTable());
             break;
         }
+        case Type::STOP_REPLICATED_DDL_QUERIES:
+        case Type::START_REPLICATED_DDL_QUERIES:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES);
+            break;
+        }
+        case Type::STOP_VIRTUAL_PARTS_UPDATE:
+        case Type::START_VIRTUAL_PARTS_UPDATE:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::STOP_REDUCE_BLOCKING_PARTS:
+        case Type::START_REDUCE_BLOCKING_PARTS:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
+            break;
+        }
         case Type::REFRESH_VIEW:
         case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::START_VIEWS:
+        case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
+        case Type::STOP_REPLICATED_VIEW:
         case Type::CANCEL_VIEW:
         case Type::TEST_VIEW:
         {
@@ -1604,6 +1650,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DATABASE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::DROP_CATALOG_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA);
             break;
         }
         case Type::RESTORE_REPLICA:
@@ -1712,6 +1763,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
             else
                 required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::UNLOCK_SNAPSHOT:
+        {
+            required_access.emplace_back(AccessType::BACKUP);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

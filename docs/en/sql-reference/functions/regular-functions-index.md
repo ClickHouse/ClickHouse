@@ -1,7 +1,7 @@
 ---
-title: "Regular Functions"
+description: 'Landing page for Regular Functions'
 slug: /sql-reference/functions/regular-functions
-description: "Landing page for Regular Functions"
+title: 'Regular Functions'
 ---
 
 | Page                                             | Description                                                                                                                     |

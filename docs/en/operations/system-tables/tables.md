@@ -1,9 +1,12 @@
 ---
-description: "System table containing metadata of each table that the server knows about."
+description: 'System table containing metadata of each table that the server knows
+  about.'
+keywords: ['system table', 'tables']
 slug: /operations/system-tables/tables
-title: "system.tables"
-keywords: ["system table", "tables"]
+title: 'system.tables'
 ---
+
+# system.tables
 
 Contains metadata of each table that the server knows about.
 
@@ -40,6 +43,8 @@ Columns:
 - `engine_full` ([String](../../sql-reference/data-types/string.md)) - Parameters of the table engine.
 
 - `as_select` ([String](../../sql-reference/data-types/string.md)) - `SELECT` query for view.
+
+- `parameterized_view_parameters` ([Array](../../sql-reference/data-types/array.md) of [Tuple](../../sql-reference/data-types/tuple.md)) — Parameters of parameterized view.
 
 - `partition_key` ([String](../../sql-reference/data-types/string.md)) - The partition key expression specified in the table.
 

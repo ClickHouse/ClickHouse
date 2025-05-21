@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/optimize
+description: 'Documentation for Optimize'
+sidebar_label: 'OPTIMIZE'
 sidebar_position: 47
-sidebar_label: OPTIMIZE
-title: "OPTIMIZE Statement"
+slug: /sql-reference/statements/optimize
+title: 'OPTIMIZE Statement'
 ---
 
 This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/optimize/avoidoptimizefinal)) as its use case is meant for administration, not for daily operations.
@@ -13,7 +14,7 @@ This query tries to initialize an unscheduled merge of data parts for tables. No
 
 **Syntax**
 
-``` sql
+```sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL | FORCE] [DEDUPLICATE [BY expression]]
 ```
 
@@ -44,7 +45,7 @@ Also, it is an error to specify empty list of columns, or write an expression th
 
 **Syntax**
 
-``` sql
+```sql
 OPTIMIZE TABLE table DEDUPLICATE; -- all columns
 OPTIMIZE TABLE table DEDUPLICATE BY *; -- excludes MATERIALIZED and ALIAS columns
 OPTIMIZE TABLE table DEDUPLICATE BY colX,colY,colZ;
@@ -59,7 +60,7 @@ OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (c
 
 Consider the table:
 
-``` sql
+```sql
 CREATE TABLE example (
     primary_key Int32,
     secondary_key Int32,
@@ -73,12 +74,12 @@ PARTITION BY partition_key
 ORDER BY (primary_key, secondary_key);
 ```
 
-``` sql
+```sql
 INSERT INTO example (primary_key, secondary_key, value, partition_key)
 VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
 ```
 
-``` sql
+```sql
 SELECT * FROM example;
 ```
 Result:
@@ -103,11 +104,11 @@ All following examples are executed against this state with 5 rows.
 #### `DEDUPLICATE` {#deduplicate}
 When columns for deduplication are not specified, all of them are taken into account. The row is removed only if all values in all columns are equal to corresponding values in the previous row:
 
-``` sql
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE;
 ```
 
-``` sql
+```sql
 SELECT * FROM example;
 ```
 
@@ -134,7 +135,7 @@ When columns are specified implicitly, the table is deduplicated by all columns 
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
 ```
 
-``` sql
+```sql
 SELECT * FROM example;
 ```
 
@@ -156,11 +157,11 @@ Result:
 #### `DEDUPLICATE BY * EXCEPT` {#deduplicate-by--except}
 Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED` and explicitly not `value`: `primary_key`, `secondary_key`, and `partition_key` columns.
 
-``` sql
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT value;
 ```
 
-``` sql
+```sql
 SELECT * FROM example;
 ```
 
@@ -186,7 +187,7 @@ Deduplicate explicitly by `primary_key`, `secondary_key`, and `partition_key` co
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
 ```
 
-``` sql
+```sql
 SELECT * FROM example;
 ```
 Result:
@@ -211,7 +212,7 @@ Deduplicate by all columns matching a regex: `primary_key`, `secondary_key`, and
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
 ```
 
-``` sql
+```sql
 SELECT * FROM example;
 ```
 

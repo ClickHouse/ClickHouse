@@ -32,7 +32,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromString.h>
@@ -52,13 +51,13 @@ namespace DB
 {
 namespace Setting
 {
-extern const SettingsBool analyze_index_with_space_filling_curves;
+    extern const SettingsBool analyze_index_with_space_filling_curves;
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
 }
 
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int BAD_TYPE_OF_FIELD;
 }
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
@@ -66,7 +65,7 @@ extern const int BAD_TYPE_OF_FIELD;
 /// - (1) the pattern has a wildcard
 /// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
 /// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
-String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
+std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
 {
     String fixed_prefix;
     fixed_prefix.reserve(like_pattern.size());
@@ -79,27 +78,39 @@ String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool req
         {
             case '%':
             case '_':
+            {
+                bool is_perfect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
                 if (requires_perfect_prefix)
                 {
-                    bool is_prefect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
-                    return is_prefect_prefix ? fixed_prefix : "";
+                    if (is_perfect_prefix)
+                        return {fixed_prefix, true};
+                    else
+                        return {"", false};
                 }
-            return fixed_prefix;
+                else
+                {
+                    return {fixed_prefix, is_perfect_prefix};
+                }
+            }
             case '\\':
+            {
                 ++pos;
-            if (pos == end)
-                break;
-            [[fallthrough]];
+                if (pos == end)
+                    break;
+                [[fallthrough]];
+            }
             default:
+            {
                 fixed_prefix += *pos;
+            }
         }
 
         ++pos;
     }
     /// If we can reach this code, it means there was no wildcard found in the pattern, so it is not a perfect prefix
     if (requires_perfect_prefix)
-        return "";
-    return fixed_prefix;
+        return {"", false};
+    return {fixed_prefix, false};
 }
 
 /// for "^prefix..." string it returns "prefix"
@@ -361,9 +372,12 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
                 if (prefix.empty())
                     return false;
+
+                if (!is_perfect)
+                    out.relaxed = true;
 
                 String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
@@ -382,9 +396,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
                 if (prefix.empty())
                     return false;
+
+                chassert(is_perfect);
 
                 String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
@@ -441,6 +457,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 out.range = !right_bound.empty()
                     ? Range(prefix, true, right_bound, false)
                     : Range::createLeftBounded(prefix, true);
+                out.relaxed = true;
 
                 return true;
             }
@@ -477,7 +494,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         }
 };
 
-static const std::set<std::string_view> always_relaxed_atom_functions = {"match"};
 static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
     = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE, KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON};
 
@@ -572,19 +588,30 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
     return need_inversion ? makeASTFunction("not", cloned_node) : cloned_node;
 }
 
-static const ActionsDAG::Node & cloneASTWithInversionPushDown(
+static bool isTrivialCast(const ActionsDAG::Node & node)
+{
+    if (node.function_base->getName() != "CAST" || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
+        return false;
+
+    const auto * column_const = typeid_cast<const ColumnConst *>(node.children[1]->column.get());
+    if (!column_const)
+        return false;
+
+    Field field = column_const->getField();
+    if (field.getType() != Field::Types::String)
+        return false;
+
+    auto type_name = field.safeGet<String>();
+    return node.children[0]->result_type->getName() == type_name;
+}
+
+static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
     const ContextPtr & context,
     const bool need_inversion)
 {
-    {
-        auto it = to_inverted.find(&node);
-        if (it != to_inverted.end())
-            return *it->second;
-    }
-
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
 
@@ -592,8 +619,12 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     {
         case (ActionsDAG::ActionType::INPUT):
         {
-            /// Note: inputs order is not important here. Will match columns by names.
-            res = &inverted_dag.addInput({node.column, node.result_type, node.result_name});
+            auto & input = inputs_mapping[&node];
+            if (input == nullptr)
+                /// Note: inputs order is not important here. Will match columns by names.
+                input = &inverted_dag.addInput({node.column, node.result_type, node.result_name});
+
+            res = input;
             break;
         }
         case (ActionsDAG::ActionType::COLUMN):
@@ -617,13 +648,13 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         case (ActionsDAG::ActionType::ALIAS):
         {
             /// Ignore aliases
-            res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
+            res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
             handled_inversion = true;
             break;
         }
         case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
-            const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, false);
+            const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false);
             res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
@@ -632,7 +663,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             auto name = node.function_base->getName();
             if (name == "not")
             {
-                res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, !need_inversion);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion);
                 handled_inversion = true;
             }
             else if (name == "indexHint")
@@ -646,19 +677,29 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                         children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
-                            arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
+                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
                     }
                 }
 
                 res = &inverted_dag.addFunction(node.function_base, children, "");
                 handled_inversion = true;
             }
+            else if (name == "materialize")
+            {
+                /// Remove "materialize" from index analysis.
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+            }
+            else if (isTrivialCast(node))
+            {
+                /// Remove trivial cast and keep its first argument.
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+            }
             else if (need_inversion && (name == "and" || name == "or"))
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
                 for (auto & arg : children)
-                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
 
                 FunctionOverloadResolverPtr function_builder;
 
@@ -679,7 +720,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
                 for (auto & arg : children)
-                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, false);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false);
 
                 auto it = inverse_relations.find(name);
                 if (it != inverse_relations.end())
@@ -717,14 +758,33 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     }
                 }
             }
+            break;
+        }
+        case ActionsDAG::ActionType::PLACEHOLDER:
+        {
+            /// I guess it should work as INPUT.
+            res = &inverted_dag.addPlaceholder(node.result_name, node.result_type);
+            break;
         }
     }
 
     if (!handled_inversion && need_inversion)
         res = &inverted_dag.addFunction(FunctionFactory::instance().get("not", context), {res}, "");
 
-    to_inverted[&node] = res;
     return *res;
+}
+
+static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predicate, const ContextPtr & context)
+{
+    ActionsDAG res;
+
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> inputs_mapping;
+
+    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, inputs_mapping, context, false);
+
+    res.getOutputs() = {predicate};
+
+    return res;
 }
 
 const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
@@ -756,26 +816,6 @@ static bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & conditio
     }
 
     return true;
-}
-
-ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
-{
-    ActionsDAG res;
-
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
-
-    for (auto & node : nodes)
-        node = &DB::cloneASTWithInversionPushDown(*node, res, to_inverted, context, false);
-
-    if (nodes.size() > 1)
-    {
-        auto function_builder = FunctionFactory::instance().get("and", context);
-        nodes = {&res.addFunction(function_builder, std::move(nodes), "")};
-    }
-
-    res.getOutputs().swap(nodes);
-
-    return res;
 }
 
 /** Calculate expressions, that depend only on constants.
@@ -846,8 +886,26 @@ void KeyCondition::getAllSpaceFillingCurves()
     }
 }
 
+ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context)
+{
+    if (!predicate_)
+        return;
+
+    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
+    * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
+    * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
+    * when parsing the AST into internal RPN representation.
+    * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
+    * are pushed down and applied (when possible) to leaf nodes.
+    */
+    dag = cloneDAGWithInversionPushDown(predicate_, context);
+
+    predicate = dag->getOutputs()[0];
+}
+
+
 KeyCondition::KeyCondition(
-    const ActionsDAG * filter_dag,
+    const ActionsDAGWithInversionPushDown & filter_dag,
     ContextPtr context,
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
@@ -855,6 +913,8 @@ KeyCondition::KeyCondition(
     : key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
     , single_point(single_point_)
+    , date_time_overflow_behavior_ignore(
+          context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -870,7 +930,7 @@ KeyCondition::KeyCondition(
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves();
 
-    if (!filter_dag)
+    if (!filter_dag.predicate)
     {
         has_filter = false;
         relaxed = true;
@@ -879,20 +939,9 @@ KeyCondition::KeyCondition(
     }
 
     has_filter = true;
-    column_filter_helper = std::make_shared<ColumnFilterHelper>(*filter_dag);
-    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
-      * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
-      * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
-      * when parsing the AST into internal RPN representation.
-      * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
-      * are pushed down and applied (when possible) to leaf nodes.
-      */
-    auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
-    assert(inverted_dag.getOutputs().size() == 1);
 
-    const auto * inverted_dag_filter_node = inverted_dag.getOutputs()[0];
-
-    RPNBuilder<RPNElement> builder(inverted_dag_filter_node, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
+    column_filter_helper = std::make_shared<ColumnFilterHelper>(*filter_dag.dag);
+    RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
         return extractAtomFromTree(node, out);
     });
@@ -1063,6 +1112,24 @@ bool applyFunctionChainToColumn(
     return true;
 }
 
+bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const
+{
+    if (date_time_overflow_behavior_ignore && func.getName() == "toDateTime")
+    {
+        const IDataType * type = &arg_type;
+        if (const auto * lowcard_type = typeid_cast<const DataTypeLowCardinality *>(type))
+            type = lowcard_type->getDictionaryType().get();
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type))
+            type = nullable_type->getNestedType().get();
+
+        /// toDateTime(date) may overflow, breaking monotonicity.
+        if (isDateOrDate32(type))
+            return false;
+    }
+
+    return true;
+}
+
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     const RPNBuilderTreeNode & node,
     size_t & out_key_column_num,
@@ -1088,9 +1155,12 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         out_key_column_num,
         out_key_column_type,
         transform_functions,
-        [](const IFunctionBase & func, const IDataType & type)
+        [this](const IFunctionBase & func, const IDataType & type)
         {
             if (!func.hasInformationAboutMonotonicity())
+                return false;
+
+            if (!isFunctionReallyMonotonic(func, type))
                 return false;
 
             /// Range is irrelevant in this case.
@@ -1584,6 +1654,9 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
         if (!func || !func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
             return false;
 
+        if (!isFunctionReallyMonotonic(*func, *key_column_type))
+            return false;
+
         key_column_type = func->getResultType();
         if (kind == FunctionWithOptionalConstArg::Kind::NO_CONST)
             out_functions_chain.push_back(func);
@@ -1701,6 +1774,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
+    "toTime",
+    "toTime64",
     "toDateTime",
     "toDateTime64",
     "parseDateTimeBestEffort",
@@ -1796,10 +1871,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     {
                         const auto & arg_types = func_base->getArgumentTypes();
                         if (!arg_types.empty() && isStringOrFixedString(arg_types[0]))
-                        {
                             func_name = func_name + "OrNull";
-                        }
-
                     }
 
                     auto func_builder = FunctionFactory::instance().tryGet(func_name, context);
@@ -1910,19 +1982,6 @@ KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_, con
 {
 }
 
-static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
-{
-    try
-    {
-        src_value = convertFieldToType(src_value, *desired_type, src_type.get());
-    }
-    catch (...)
-    {
-        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Key expression contains comparison between inconvertible types: "
-            "{} and {} inside {}", desired_type->getName(), src_type->getName(), node_column_name);
-    }
-}
-
 
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
@@ -2017,9 +2076,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             boost::geometry::correct(out.polygon->data);
             return atom_it->second(out, const_value);
         };
-
-        if (always_relaxed_atom_functions.contains(func_name))
-            relaxed = true;
 
         bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
         if (num_args == 1)
@@ -2185,7 +2241,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                     if (!const_type->equals(*common_type))
                     {
-                        castValueToType(common_type, const_value, const_type, node.getColumnName());
+                        // Replace direct call that throws exception with try version
+                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                        if (converted.isNull())
+                            return false;
+
+                        const_value = converted;
 
                         // Need to set is_constant_transformed unless we're doing exact conversion
                         if (!key_expr_type_not_null->equals(*common_type))
@@ -2236,7 +2297,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
-        return atom_it->second(out, const_value);
+        bool valid_atom = atom_it->second(out, const_value);
+        if (valid_atom && out.relaxed)
+            relaxed = true;
+        return valid_atom;
     }
     if (node.tryGetConstant(const_value, const_type))
     {

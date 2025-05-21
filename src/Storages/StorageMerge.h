@@ -30,6 +30,8 @@ public:
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
         const DBToTableSetMap & source_databases_and_tables_,
+        const std::optional<String> & table_to_write_,
+        bool table_to_write_auto_,
         ContextPtr context_);
 
     StorageMerge(
@@ -39,6 +41,8 @@ public:
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
         const String & source_table_regexp_,
+        const std::optional<String> & table_to_write_,
+        bool table_to_write_auto_,
         ContextPtr context_);
 
     std::string getName() const override { return "Merge"; }
@@ -70,6 +74,12 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override;
+
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     /// you need to add and remove columns in the sub-tables manually
@@ -81,15 +91,18 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
 
-    /// Returns a unified column structure among multiple tables.
-    /// Takes a function that invokes a callback for every table. NOTE: This is quite inconvenient.
-    static ColumnsDescription unifyColumnsDescription(std::function<void(std::function<void(const StoragePtr &)>)> for_each_table);
+    static ColumnsDescription getColumnsDescriptionFromSourceTables(
+        const ContextPtr & query_context,
+        const String & source_database_name_or_regexp,
+        bool database_is_regexp,
+        const String & source_table_regexp,
+        size_t max_tables_to_look);
 
 private:
     /// (Database, Table, Lock, TableName)
@@ -119,15 +132,31 @@ private:
 
     DatabaseNameOrRegexp database_name_or_regexp;
 
+    std::optional<QualifiedTableName> table_to_write;
+    bool table_to_write_auto = false;
+
     template <typename F>
-    StoragePtr getFirstTable(F && predicate) const;
+    StoragePtr traverseTablesUntil(F && predicate) const;
 
     template <typename F>
     void forEachTable(F && func) const;
 
+    template <typename F>
+    void forEachTableName(F && func) const;
+
+    template <typename F>
+    static StoragePtr traverseTablesUntilImpl(const ContextPtr & query_context, const IStorage * ignore_self, const DatabaseNameOrRegexp & database_name_or_regexp, F && predicate);
+
+    /// Returns a unified column structure among multiple tables.
+    static ColumnsDescription getColumnsDescriptionFromSourceTablesImpl(
+        const ContextPtr & context,
+        const DatabaseNameOrRegexp & database_name_or_regexp,
+        size_t max_tables_to_look,
+        const IStorage * ignore_self);
+
     ColumnSizeByName getColumnSizes() const override;
 
-    ColumnsDescription getColumnsDescriptionFromSourceTables(size_t max_tables_to_look) const;
+    ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
 
     static VirtualColumnsDescription createVirtuals();
 
@@ -135,6 +164,11 @@ private:
 
     template <typename F>
     std::optional<UInt64> totalRowsOrBytes(F && func) const;
+
+    void setTableToWrite(
+        const std::optional<String> & table_to_write_,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_);
 
     friend class ReadFromMerge;
 };

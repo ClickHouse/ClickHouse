@@ -38,7 +38,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
-#include <Storages/MergeTree/SkippingIndexCache.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/S3Settings.h>
@@ -56,8 +57,8 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -111,6 +112,7 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -195,7 +197,6 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
-    extern const SettingsUInt64 backup_threads;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
@@ -227,7 +228,7 @@ namespace Setting
     extern const SettingsUInt64 max_local_read_bandwidth;
     extern const SettingsUInt64 max_local_write_bandwidth;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsUInt64 max_read_buffer_size;
+    extern const SettingsNonZeroUInt64 max_read_buffer_size;
     extern const SettingsUInt64 max_read_buffer_size_local_fs;
     extern const SettingsUInt64 max_read_buffer_size_remote_fs;
     extern const SettingsUInt64 max_remote_read_network_bandwidth;
@@ -240,8 +241,9 @@ namespace Setting
     extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
+    extern const SettingsUInt64 page_cache_block_size;
+    extern const SettingsUInt64 page_cache_lookahead_blocks;
     extern const SettingsInt64 read_priority;
-    extern const SettingsUInt64 restore_threads;
     extern const SettingsString remote_filesystem_read_method;
     extern const SettingsBool remote_filesystem_read_prefetch;
     extern const SettingsUInt64 remote_fs_read_max_backoff_ms;
@@ -257,6 +259,7 @@ namespace Setting
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
+    extern const SettingsBool enable_hdfs_pread;
 }
 
 namespace MergeTreeSetting
@@ -441,11 +444,14 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
-    mutable SkippingIndexCachePtr skipping_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
+    mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
+    mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
-    mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Mark filter for caching query conditions
+#if USE_AVRO
+    mutable IcebergMetadataFilesCachePtr iceberg_metadata_files_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized iceberg metadata files.
+#endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
@@ -517,6 +523,9 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_view_num_to_warn = 10000lu;
     std::atomic_size_t max_dictionary_num_to_warn = 1000lu;
     std::atomic_size_t max_part_num_to_warn = 100000lu;
+    // these variables are used in inserting warning message into system.warning table based on asynchronous metrics
+    size_t max_pending_mutations_to_warn = 500lu;
+    size_t max_pending_mutations_execution_time_to_warn = 86400lu;
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
@@ -531,7 +540,7 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<Context::Dashboards> dashboards;
 
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
-    std::vector<String> warnings TSA_GUARDED_BY(mutex);                           /// Store warning messages about server configuration.
+    std::unordered_map<Context::WarningType, PreformattedMessage> warnings TSA_GUARDED_BY(mutex); /// Store warning messages about server.
 
     /// Background executors for *MergeTree tables
     /// Has background executors for MergeTree tables been initialized?
@@ -930,11 +939,21 @@ struct ContextSharedPart : boost::noncopyable
         trace_collector.emplace();
     }
 
-    void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
+    void addOrUpdateWarningMessage(Context::WarningType warning, const PreformattedMessage & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        LOG_WARNING(log, "{}", message);
-        warnings.push_back(message);
+        LOG_WARNING(log, "{}", message.text);
+        warnings[warning] = message;
+    }
+
+    void removeWarningMessage(Context::WarningType warning) TSA_REQUIRES(mutex)
+    {
+        if (warnings.contains(warning))
+        {
+            /// While removing the warning, log it with INFO level before it's removed from the `system.warnings` table.
+            LOG_INFO(log, "Removing warning {}", warnings[warning].text);
+            warnings.erase(warning);
+        }
     }
 
     void configureServerWideThrottling()
@@ -1018,7 +1037,9 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_read_task_callback(o.merge_tree_read_task_callback),
     merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),
     parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
+    is_under_restore(o.is_under_restore),
     client_protocol_version(o.client_protocol_version),
+    partition_id_to_max_block(o.partition_id_to_max_block),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
     query_factories_info(o.query_factories_info),
     query_privileges_info(o.query_privileges_info),
@@ -1208,22 +1229,22 @@ String Context::getFilesystemCacheUser() const
     return shared->filesystem_cache_user;
 }
 
-Strings Context::getWarnings() const
+std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnings() const
 {
-    Strings common_warnings;
+    std::unordered_map<Context::WarningType, PreformattedMessage> common_warnings;
     {
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn.load()));
+            common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create("The number of attached tables is more than {}.", shared->max_table_num_to_warn.load());
         if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn.load()));
+            common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create("The number of attached views is more than {}.", shared->max_view_num_to_warn.load());
         if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn.load()));
+            common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn.load());
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn.load()));
+            common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create("The number of attached databases is more than {}.", shared->max_database_num_to_warn.load());
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn.load()));
+            common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = PreformattedMessage::create("The number of active parts is more than {}.", shared->max_part_num_to_warn.load());
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
@@ -1231,21 +1252,12 @@ Strings Context::getWarnings() const
     if (!obsolete_settings.empty())
     {
         bool single_element = obsolete_settings.size() == 1;
-        String res = single_element ? "Obsolete setting [" : "Obsolete settings [";
-
-        bool first = true;
-        for (const auto & setting : obsolete_settings)
-        {
-            res += first ? "" : ", ";
-            res += "'";
-            res += setting;
-            res += "'";
-            first = false;
-        }
-        res = res + "]" + (single_element ? " is" : " are")
-            + " changed. "
-              "Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
-        common_warnings.emplace_back(res);
+        constexpr auto message_format_string
+            = "Obsolete setting{} [{}]{} changed. Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the "
+              "changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
+        String settings_list = fmt::format("'{}'", fmt::join(obsolete_settings, "', '"));
+        common_warnings[Context::WarningType::OBSOLETE_SETTINGS]
+            = PreformattedMessage::create(message_format_string, single_element ? "" : "s", settings_list, single_element ? " is" : " are");
     }
 
     return common_warnings;
@@ -1485,14 +1497,14 @@ void Context::setUserScriptsPath(const String & path)
     shared->user_scripts_path = path;
 }
 
-void Context::addWarningMessage(const String & msg) const
+void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const
 {
     std::lock_guard lock(shared->mutex);
     auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
 
-    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(msg, suppress_re);
+    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message.text, suppress_re);
     if (!is_supressed)
-        shared->addWarningMessage(msg);
+        shared->addOrUpdateWarningMessage(warning, message);
 }
 
 void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_name) const
@@ -1504,18 +1516,26 @@ void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_nam
     if (is_called.exchange(true))
         return;
 
-    auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
     /// We don't use getFlagsPath method, because it takes a shared lock.
     auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
-    auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
-            "To convert this database to the new Atomic engine, create a flag {} and make sure that ClickHouse has write permission for it. "
-            "Example: sudo touch '{}' && sudo chmod 666 '{}'",
+    constexpr auto message_format_string
+        = "Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
+          "To convert this database to the new Atomic engine, create a flag {} and make sure that ClickHouse has write permission for it. "
+          "Example: sudo touch '{}' && sudo chmod 666 '{}'";
+    shared->addOrUpdateWarningMessage(
+        Context::WarningType::DB_ORDINARY_DEPRECATED,
+        PreformattedMessage::create(
+            message_format_string,
             database_name,
-            convert_databases_flag.string(), convert_databases_flag.string(), convert_databases_flag.string());
+            convert_databases_flag.string(),
+            convert_databases_flag.string(),
+            convert_databases_flag.string()));
+}
 
-    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message, suppress_re);
-    if (!is_supressed)
-        shared->addWarningMessage(message);
+void Context::removeWarningMessage(WarningType warning) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->removeWarningMessage(warning);
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -2151,6 +2171,12 @@ bool Context::hasScalar(const String & name) const
     return scalars.contains(name);
 }
 
+void Context::addQueryAccessInfo(
+    const StorageID & table_id,
+    const Names & column_names)
+{
+    addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
+}
 
 void Context::addQueryAccessInfo(
     const String & quoted_database_name,
@@ -2294,7 +2320,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         {
             auto query = table->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
-            StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+            StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
             create.select = query->as<ASTSelectWithUnionQuery>();
@@ -2496,7 +2522,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 }
 
 
-StoragePtr Context::buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values)
+StoragePtr Context::buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values)
 {
     if (table_name.empty())
         return nullptr;
@@ -2510,7 +2536,7 @@ StoragePtr Context::buildParametrizedViewStorage(const String & database_name, c
 
     auto original_view_metadata = original_view->getInMemoryMetadataPtr();
     auto query = original_view_metadata->getSelectQuery().inner_query->clone();
-    StorageView::replaceQueryParametersIfParametrizedView(query, param_values);
+    StorageView::replaceQueryParametersIfParameterizedView(query, param_values);
 
     ASTCreateQuery create;
     create.select = query->as<ASTSelectWithUnionQuery>();
@@ -2768,6 +2794,9 @@ String Context::getInitialQueryId() const
 
 void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
 {
+    if (name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
+
     if (!isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot set current database for non global context, this method should "
@@ -2782,6 +2811,9 @@ void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
 
 void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> &)
 {
+    if (name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
+
     DatabaseCatalog::instance().assertDatabaseExists(name);
     current_database = name;
     need_recalculate_access = true;
@@ -3222,9 +3254,9 @@ BackupsWorker & Context::getBackupsWorker() const
 {
     callOnce(shared->backups_worker_initialized, [&] {
         const auto & config = getConfigRef();
-        const auto & settings_ref = getSettingsRef();
-        UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref[Setting::backup_threads]);
-        UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref[Setting::restore_threads]);
+        Poco::UInt64 max_threads_max_value = 256 * getNumberOfCPUCoresToUse(); /// Limit to something unreasonable
+        size_t backup_threads = std::min(max_threads_max_value, std::max(Poco::UInt64{1}, config.getUInt64("backup_threads", 16)));
+        size_t restore_threads = std::min(max_threads_max_value, std::max(Poco::UInt64{1}, config.getUInt64("restore_threads", 16)));
 
         shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads);
     });
@@ -3325,10 +3357,9 @@ void Context::clearUncompressedCache() const
         cache->clear();
 }
 
-void Context::setPageCache(
-    size_t default_block_size, size_t default_lookahead_blocks, std::chrono::milliseconds history_window,
+void Context::setPageCache(std::chrono::milliseconds history_window,
     const String & cache_policy, double size_ratio, size_t min_size_in_bytes, size_t max_size_in_bytes,
-    double free_memory_ratio)
+    double free_memory_ratio, size_t num_shards)
 {
     std::lock_guard lock(shared->mutex);
 
@@ -3336,8 +3367,8 @@ void Context::setPageCache(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Page cache has been already created.");
 
     shared->page_cache = std::make_shared<PageCache>(
-        default_block_size, default_lookahead_blocks, history_window, cache_policy, size_ratio,
-        min_size_in_bytes, max_size_in_bytes, free_memory_ratio);
+        history_window, cache_policy, size_ratio,
+        min_size_in_bytes, max_size_in_bytes, free_memory_ratio, num_shards);
 }
 
 PageCachePtr Context::getPageCache() const
@@ -3531,41 +3562,41 @@ void Context::clearIndexMarkCache() const
         cache->clear();
 }
 
-void Context::setSkippingIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+void Context::setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (shared->skipping_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Skipping index cache has been already created.");
+    if (shared->vector_similarity_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache has been already created.");
 
-    shared->skipping_index_cache = std::make_shared<SkippingIndexCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+    shared->vector_similarity_index_cache = std::make_shared<VectorSimilarityIndexCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
 }
 
-void Context::updateSkippingIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!shared->skipping_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Skipping index cache was not created yet.");
+    if (!shared->vector_similarity_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("skipping_index_cache_size", DEFAULT_SKIPPING_INDEX_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("skipping_index_cache_max_entries", DEFAULT_SKIPPING_INDEX_CACHE_MAX_ENTRIES);
-    shared->skipping_index_cache->setMaxSizeInBytes(max_size_in_bytes);
-    shared->skipping_index_cache->setMaxCount(max_entries);
+    size_t max_size_in_bytes = config.getUInt64("vector_similarity_index_cache_size", DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("vector_similarity_index_cache_max_entries", DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES);
+    shared->vector_similarity_index_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->vector_similarity_index_cache->setMaxCount(max_entries);
 }
 
-SkippingIndexCachePtr Context::getSkippingIndexCache() const
+VectorSimilarityIndexCachePtr Context::getVectorSimilarityIndexCache() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->skipping_index_cache;
+    return shared->vector_similarity_index_cache;
 }
 
-void Context::clearSkippingIndexCache() const
+void Context::clearVectorSimilarityIndexCache() const
 {
     std::lock_guard lock(shared->mutex);
 
-    if (shared->skipping_index_cache)
-        shared->skipping_index_cache->clear();
+    if (shared->vector_similarity_index_cache)
+        shared->vector_similarity_index_cache->clear();
 }
 
 void Context::setMMappedFileCache(size_t max_cache_size_in_num_entries)
@@ -3603,6 +3634,82 @@ void Context::clearMMappedFileCache() const
     if (cache)
         cache->clear();
 }
+
+#if USE_AVRO
+void Context::setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->iceberg_metadata_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg metadata cache has been already created.");
+
+    shared->iceberg_metadata_files_cache = std::make_shared<IcebergMetadataFilesCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->iceberg_metadata_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg metadata cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("iceberg_metadata_files_cache_size", DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("iceberg_metadata_files_cache_max_entries", DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES);
+    shared->iceberg_metadata_files_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->iceberg_metadata_files_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<IcebergMetadataFilesCache> Context::getIcebergMetadataFilesCache() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->iceberg_metadata_files_cache;
+}
+
+void Context::clearIcebergMetadataFilesCache() const
+{
+    auto cache = getIcebergMetadataFilesCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+#endif
+
+void Context::setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark filter cache has been already create.");
+
+    shared->query_condition_cache = std::make_shared<QueryConditionCache>(cache_policy, max_size_in_bytes, size_ratio);
+}
+
+QueryConditionCachePtr Context::getQueryConditionCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->query_condition_cache;
+}
+
+void Context::updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("query_condition_cache_size", DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE);
+    shared->query_condition_cache->setMaxSizeInBytes(max_size_in_bytes);
+}
+
+void Context::clearQueryConditionCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_condition_cache)
+        shared->query_condition_cache->clear();
+}
+
 
 void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
 {
@@ -3643,41 +3750,6 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
         cache->clear(tag);
 }
 
-void Context::setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->query_condition_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark filter cache has been already create.");
-
-    shared->query_condition_cache = std::make_shared<QueryConditionCache>(cache_policy, max_size_in_bytes, size_ratio);
-}
-
-QueryConditionCachePtr Context::getQueryConditionCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->query_condition_cache;
-}
-
-void Context::updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->query_condition_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
-
-    size_t max_size_in_bytes = config.getUInt64("query_condition_cache_size", DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE);
-    shared->query_condition_cache->setMaxSizeInBytes(max_size_in_bytes);
-}
-
-void Context::clearQueryConditionCache() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->query_condition_cache)
-        shared->query_condition_cache->clear();
-}
-
 void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
@@ -3702,19 +3774,19 @@ void Context::clearCaches() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
     shared->index_mark_cache->clear();
 
-    if (!shared->skipping_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Skipping index cache was not created yet.");
-    shared->skipping_index_cache->clear();
+    if (!shared->vector_similarity_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
+    shared->vector_similarity_index_cache->clear();
 
     if (!shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
     shared->mmap_cache->clear();
 
-    /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
-
     if (!shared->query_condition_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
     shared->query_condition_cache->clear();
+
+    /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
 }
 
 void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)
@@ -4410,6 +4482,60 @@ UInt16 Context::getServerPort(const String & port_name) const
     return it->second;
 }
 
+size_t Context::getMaxPendingMutationsToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_pending_mutations_to_warn;
+}
+
+size_t Context::getMaxPendingMutationsExecutionTimeToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_pending_mutations_execution_time_to_warn;
+}
+
+size_t Context::getMaxPartNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_part_num_to_warn;
+}
+
+size_t Context::getMaxTableNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_table_num_to_warn;
+}
+
+size_t Context::getMaxViewNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_view_num_to_warn;
+}
+
+size_t Context::getMaxDictionaryNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_dictionary_num_to_warn;
+}
+
+size_t Context::getMaxDatabaseNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_database_num_to_warn;
+}
+
+void Context::setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_pending_mutations_to_warn = max_pending_mutations_to_warn;
+}
+
+void Context::setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_pending_mutations_execution_time_to_warn = max_pending_mutations_execution_time_to_warn;
+}
+
 void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
@@ -4419,25 +4545,25 @@ void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
 void Context::setMaxTableNumToWarn(size_t max_table_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
-    shared->max_table_num_to_warn= max_table_to_warn;
+    shared->max_table_num_to_warn = max_table_to_warn;
 }
 
 void Context::setMaxViewNumToWarn(size_t max_view_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
-    shared->max_view_num_to_warn= max_view_to_warn;
+    shared->max_view_num_to_warn = max_view_to_warn;
 }
 
 void Context::setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
-    shared->max_dictionary_num_to_warn= max_dictionary_to_warn;
+    shared->max_dictionary_num_to_warn = max_dictionary_to_warn;
 }
 
 void Context::setMaxDatabaseNumToWarn(size_t max_database_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
-    shared->max_database_num_to_warn= max_database_to_warn;
+    shared->max_database_num_to_warn = max_database_to_warn;
 }
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
@@ -4534,7 +4660,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
     std::lock_guard lock(shared->clusters_mutex);
     if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
     {
-        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext());
+        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
     }
 
     /// Do not update clusters if this part of config wasn't changed.
@@ -4698,6 +4824,16 @@ std::shared_ptr<MetricLog> Context::getMetricLog() const
         return {};
 
     return shared->system_logs->metric_log;
+}
+
+std::shared_ptr<TransposedMetricLog> Context::getTransposedMetricLog() const
+{
+     SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->transposed_metric_log;
 }
 
 
@@ -5253,14 +5389,14 @@ InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, co
     return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
 }
 
-OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
+OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
 {
-    return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this());
+    return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this(), format_settings);
 }
 
-OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
 {
-    return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, shared_from_this());
+    return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, shared_from_this(), format_settings);
 }
 
 
@@ -5391,10 +5527,10 @@ void Context::setGoogleProtosPath(const String & path)
     shared->google_protos_path = path;
 }
 
-Context::SampleBlockCache & Context::getSampleBlockCache() const
+std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> Context::getSampleBlockCache() const
 {
     assert(hasQueryContext());
-    return getQueryContext()->sample_block_cache;
+    return std::make_pair(&getQueryContext()->sample_block_cache, std::unique_lock(getQueryContext()->sample_block_cache_mutex));
 }
 
 
@@ -5463,6 +5599,18 @@ void Context::initializeExternalTablesIfSet()
     }
 }
 
+void Context::setQueryPlanDeserializationCallback(QueryPlanDeserializationCallback && callback)
+{
+    query_plan_deserialization_callback = std::move(callback);
+}
+
+std::shared_ptr<QueryPlanAndSets> Context::getDeserializedQueryPlan()
+{
+    if (!query_plan_deserialization_callback)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan deserialization callback is not set");
+
+    return query_plan_deserialization_callback();
+}
 
 void Context::setInputInitializer(InputInitializer && initializer)
 {
@@ -6142,6 +6290,8 @@ ReadSettings Context::getReadSettings() const
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
     res.page_cache_inject_eviction = settings_ref[Setting::page_cache_inject_eviction];
+    res.page_cache_block_size = settings_ref[Setting::page_cache_block_size];
+    res.page_cache_lookahead_blocks = settings_ref[Setting::page_cache_lookahead_blocks];
 
     res.remote_read_min_bytes_for_seek = getSettingsRef()[Setting::remote_read_min_bytes_for_seek];
 
@@ -6171,6 +6321,7 @@ ReadSettings Context::getReadSettings() const
     res.http_make_head_request = settings_ref[Setting::http_make_head_request];
 
     res.mmap_cache = getMMappedFileCache().get();
+    res.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
 
     return res;
 }
@@ -6300,6 +6451,16 @@ UInt64 Context::getClientProtocolVersion() const
 void Context::setClientProtocolVersion(UInt64 version)
 {
     client_protocol_version = version;
+}
+
+void Context::setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions)
+{
+    partition_id_to_max_block = std::move(partitions);
+}
+
+PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock() const
+{
+    return partition_id_to_max_block;
 }
 
 const ServerSettings & Context::getServerSettings() const

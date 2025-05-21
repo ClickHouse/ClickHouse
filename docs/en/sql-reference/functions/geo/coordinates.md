@@ -1,15 +1,16 @@
 ---
-slug: /sql-reference/functions/geo/coordinates
-sidebar_label: Geographical Coordinates
+description: 'Documentation for Coordinates'
+sidebar_label: 'Geographical Coordinates'
 sidebar_position: 62
-title: "Functions for Working with Geographical Coordinates"
+slug: /sql-reference/functions/geo/coordinates
+title: 'Functions for Working with Geographical Coordinates'
 ---
 
 ## greatCircleDistance {#greatcircledistance}
 
 Calculates the distance between two points on the Earth's surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
-``` sql
+```sql
 greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
@@ -30,11 +31,11 @@ Generates an exception when the input parameter values fall outside of the range
 
 **Example**
 
-``` sql
+```sql
 SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance
 ```
 
-``` text
+```text
 ┌─greatCircleDistance─┐
 │            14128352 │
 └─────────────────────┘
@@ -47,7 +48,7 @@ The performance is the same as for `greatCircleDistance` (no performance drawbac
 
 Technical note: for close enough points we calculate the distance using planar approximation with the metric on the tangent plane at the midpoint of the coordinates.
 
-``` sql
+```sql
 geoDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
@@ -68,11 +69,11 @@ Generates an exception when the input parameter values fall outside of the range
 
 **Example**
 
-``` sql
+```sql
 SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 ```
 
-``` text
+```text
 ┌─geoDistance─┐
 │   212458.73 │
 └─────────────┘
@@ -82,7 +83,7 @@ SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 
 Calculates the central angle between two points on the Earth's surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
-``` sql
+```sql
 greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
@@ -99,11 +100,11 @@ The central angle between two points in degrees.
 
 **Example**
 
-``` sql
+```sql
 SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 ```
 
-``` text
+```text
 ┌─arc─┐
 │  45 │
 └─────┘
@@ -114,7 +115,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 Checks whether the point belongs to at least one of the ellipses.
 Coordinates are geometric in the Cartesian coordinate system.
 
-``` sql
+```sql
 pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 ```
 
@@ -132,11 +133,11 @@ The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 
 **Example**
 
-``` sql
+```sql
 SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 ```
 
-``` text
+```text
 ┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
 │                                               1 │
 └─────────────────────────────────────────────────┘
@@ -146,7 +147,7 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 
 Checks whether the point belongs to the polygon on the plane.
 
-``` sql
+```sql
 pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 ```
 
@@ -163,11 +164,11 @@ If the point is on the polygon boundary, the function may return either 0 or 1.
 
 **Example**
 
-``` sql
+```sql
 SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ```
 
-``` text
+```text
 ┌─res─┐
 │   1 │
 └─────┘

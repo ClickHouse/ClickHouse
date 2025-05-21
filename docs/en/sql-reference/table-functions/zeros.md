@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/zeros
+description: 'Used for test purposes as the fastest method to generate many rows.
+  Similar to the `system.zeros` and `system.zeros_mt` system tables.'
+sidebar_label: 'zeros'
 sidebar_position: 145
-sidebar_label: zeros
-title: "zeros"
-description: "Used for test purposes as the fastest method to generate many rows. Similar to the `system.zeros` and `system.zeros_mt` system tables."
+slug: /sql-reference/table-functions/zeros
+title: 'zeros'
 ---
 
 # zeros Table Function
@@ -15,7 +16,7 @@ This function is used for test purposes as the fastest method to generate many r
 
 The following queries are equivalent:
 
-``` sql
+```sql
 SELECT * FROM zeros(10);
 SELECT * FROM system.zeros LIMIT 10;
 SELECT * FROM zeros_mt(10);

@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/avg
+description: 'Calculates the arithmetic mean.'
 sidebar_position: 112
-title: "avg"
-description: "Calculates the arithmetic mean."
+slug: /sql-reference/aggregate-functions/reference/avg
+title: 'avg'
 ---
 
 # avg
@@ -11,7 +11,7 @@ Calculates the arithmetic mean.
 
 **Syntax**
 
-``` sql
+```sql
 avg(x)
 ```
 
@@ -28,13 +28,13 @@ avg(x)
 
 Query:
 
-``` sql
+```sql
 SELECT avg(x) FROM values('x Int8', 0, 1, 2, 3, 4, 5);
 ```
 
 Result:
 
-``` text
+```text
 ┌─avg(x)─┐
 │    2.5 │
 └────────┘
@@ -46,7 +46,7 @@ Create a temp table:
 
 Query:
 
-``` sql
+```sql
 CREATE table test (t UInt8) ENGINE = Memory;
 ```
 
@@ -60,7 +60,7 @@ SELECT avg(t) FROM test;
 
 Result:
 
-``` text
+```text
 ┌─avg(x)─┐
 │    nan │
 └────────┘

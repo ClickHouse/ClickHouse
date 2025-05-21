@@ -16,7 +16,6 @@
 
 #include <Processors/Formats/Impl/Parquet/ColumnFilterHelper.h>
 
-
 namespace DB
 {
 
@@ -29,6 +28,18 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
 class MergeTreeSetIndex;
 
+
+/// Canonize the predicate
+/// * push down NOT to leaf nodes
+/// * remove aliases and re-generate function names
+/// * remove unneeded functions (e.g. materialize)
+struct ActionsDAGWithInversionPushDown
+{
+    std::optional<ActionsDAG> dag;
+    const ActionsDAG::Node * predicate = nullptr;
+
+    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
+};
 
 /** Condition on the index.
   *
@@ -43,7 +54,7 @@ class KeyCondition
 public:
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        const ActionsDAG * filter_dag,
+        const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -151,9 +162,7 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
-    const std::shared_ptr<ColumnFilterHelper> & getColumnFilterHelper() const { return column_filter_helper; }
-
-    static ActionsDAG cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
+    const std::shared_ptr<ColumnFilterHelper> &getColumnFilterHelper() const { return column_filter_helper; }
 
     bool matchesExactContinuousRange() const;
 
@@ -211,6 +220,9 @@ public:
         String toString(std::string_view column_name, bool print_constants) const;
 
         Function function = FUNCTION_UNKNOWN;
+
+        /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
+        bool relaxed = false;
 
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
@@ -414,6 +426,15 @@ private:
     /// PartitionPruner.
     bool single_point;
 
+
+    /// Determines if a function maintains monotonicity.
+    /// Currently only does special checks for toDateTime monotonicity.
+    bool isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const;
+
+    /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
+    /// Used to check toDateTime monotonicity.
+    bool date_time_overflow_behavior_ignore;
+
     /// If true, this key condition is relaxed. When a key condition is relaxed, it
     /// is considered weakened. This is because keys may not always align perfectly
     /// with the condition specified in the query, and the aim is to enhance the
@@ -467,6 +488,6 @@ private:
     bool relaxed = false;
 };
 
-String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
+std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
 }

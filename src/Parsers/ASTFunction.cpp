@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTFunction.h>
 
-#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/KnownObjectNames.h>
@@ -10,12 +9,12 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
 
@@ -205,54 +204,6 @@ ASTPtr ASTFunction::toLiteral() const
 }
 
 
-/** A special hack. If it's [I]LIKE or NOT [I]LIKE expression and the right hand side is a string literal,
-  *  we will highlight unescaped metacharacters % and _ in string literal for convenience.
-  * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.
-  * With highlighting we make it clearly obvious.
-  *
-  * Another case is regexp match. Suppose the user types match(URL, 'www.clickhouse.com'). It often means that the user is unaware that . is a metacharacter.
-  */
-static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, WriteBuffer & ostr, const char * metacharacters)
-{
-    if (const auto * literal = node->as<ASTLiteral>())
-    {
-        if (literal->value.getType() == Field::Types::String)
-        {
-            auto string = applyVisitor(FieldVisitorToString(), literal->value);
-
-            unsigned escaping = 0;
-            for (auto c : string)
-            {
-                if (c == '\\')
-                {
-                    ostr << c;
-                    if (escaping == 2)
-                        escaping = 0;
-                    ++escaping;
-                }
-                else if (nullptr != strchr(metacharacters, c))
-                {
-                    if (escaping == 2)      /// Properly escaped metacharacter
-                        ostr << c;
-                    else                    /// Unescaped metacharacter
-                        ostr << "\033[1;35m" << c << "\033[0m";
-                    escaping = 0;
-                }
-                else
-                {
-                    ostr << c;
-                    escaping = 0;
-                }
-            }
-
-            return true;
-        }
-    }
-
-    return false;
-}
-
-
 ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 {
     if (arguments && arguments->children.size() == 1)
@@ -280,6 +231,27 @@ static bool formatNamedArgWithHiddenValue(IAST * arg, WriteBuffer & ostr, const 
     ostr << "'[HIDDEN]'";
 
     return true;
+}
+
+/// Only some types of arguments are accepted by the parser of the '->' operator.
+static bool isAcceptableArgumentsForLambdaExpression(const ASTs & arguments)
+{
+    if (arguments.size() == 2)
+    {
+        const auto & first_argument = arguments[0];
+        if (first_argument->as<ASTIdentifier>())
+            return true;
+        const ASTFunction * first_argument_function = first_argument->as<ASTFunction>();
+        if (first_argument_function && (first_argument_function->name == "tuple") && first_argument_function->arguments)
+        {
+            const auto & tuple_args = first_argument_function->arguments->children;
+            auto all_tuple_arguments_are_identifiers
+                = std::all_of(tuple_args.begin(), tuple_args.end(), [](const ASTPtr & x) { return x->as<ASTIdentifier>(); });
+            if (all_tuple_arguments_are_identifiers)
+                return true;
+        }
+    }
+    return false;
 }
 
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -511,6 +483,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
                 const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
 
+                if (arguments->children[0]->as<ASTAsterisk>())
+                    tuple_arguments_valid = false;
+
                 if (lit_left)
                 {
                     Field::Types::Which type = lit_left->value.getType();
@@ -543,16 +518,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 }
             }
 
-            const auto & first_argument = arguments->children[0];
-            const ASTIdentifier * first_argument_identifier = first_argument->as<ASTIdentifier>();
-            const ASTFunction * first_argument_function = first_argument->as<ASTFunction>();
-            bool first_argument_is_tuple = first_argument_function && first_argument_function->name == "tuple";
-
-            /// Only these types of arguments are accepted by the parser of the '->' operator.
-            bool acceptable_first_argument_for_lambda_expression = first_argument_identifier || first_argument_is_tuple;
-
-            if (!written && name == "lambda"sv && acceptable_first_argument_for_lambda_expression)
+            /// Only some types of arguments are accepted by the parser of the '->' operator.
+            if (!written && name == "lambda"sv && isAcceptableArgumentsForLambdaExpression(arguments->children))
             {
+                const auto & first_argument = arguments->children[0];
+                const ASTFunction * first_argument_function = first_argument->as<ASTFunction>();
+                bool first_argument_is_tuple = first_argument_function && first_argument_function->name == "tuple";
+
                 /// Special case: zero elements tuple in lhs of lambda is printed as ().
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
                 /// If lambda function is not the first element in the list, it has to be put in parentheses.
@@ -790,7 +762,7 @@ String getFunctionName(const IAST * ast)
     if (tryGetFunctionNameInto(ast, res))
         return res;
     if (ast)
-        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an function", queryToString(*ast));
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an function", ast->formatForErrorMessage());
     throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "AST node is nullptr");
 }
 

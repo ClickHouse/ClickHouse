@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/azureBlobStorageCluster
+description: 'Allows processing files from Azure Blob storage in parallel with many
+  nodes in a specified cluster.'
+sidebar_label: 'azureBlobStorageCluster'
 sidebar_position: 15
-sidebar_label: azureBlobStorageCluster
-title: "azureBlobStorageCluster"
-description: "Allows processing files from Azure Blob storage in parallel with many nodes in a specified cluster."
+slug: /sql-reference/table-functions/azureBlobStorageCluster
+title: 'azureBlobStorageCluster'
 ---
 
 # azureBlobStorageCluster Table Function
@@ -13,7 +14,7 @@ This table function is similar to the [s3Cluster function](../../sql-reference/t
 
 **Syntax**
 
-``` sql
+```sql
 azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
 ```
 
@@ -39,7 +40,7 @@ Similar to the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobS
 
 Select the count for the file `test_cluster_*.csv`, using all the nodes in the `cluster_simple` cluster:
 
-``` sql
+```sql
 SELECT count(*) from azureBlobStorageCluster(
         'cluster_simple', 'http://azurite1:10000/devstoreaccount1', 'testcontainer', 'test_cluster_count.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
