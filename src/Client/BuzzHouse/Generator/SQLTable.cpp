@@ -156,6 +156,7 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_starting_offset"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_uuid"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_id"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_value"}));
