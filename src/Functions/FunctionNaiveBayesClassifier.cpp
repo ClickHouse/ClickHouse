@@ -278,7 +278,9 @@ public:
         {
             const String model_name = const_model_name_col->getValue<String>();
             validateModelName(model_name);
+
             const String input_text = const_input_text_col->getValue<String>();
+            validateInputText(input_text, model_name);
 
             UInt32 predicted_class = std::visit([&](const auto & model) { return model.classify(input_text); }, models.at(model_name));
             return result_type->createColumnConst(input_rows_count, predicted_class);
@@ -293,10 +295,10 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const String model_name = model_name_column->getDataAt(i).toString();
-
             validateModelName(model_name);
 
             const String input_text = input_text_column->getDataAt(i).toString();
+            validateInputText(input_text, model_name);
 
             UInt32 predicted_class = std::visit([&](const auto & model) { return model.classify(input_text); }, models.at(model_name));
             data[i] = predicted_class;
@@ -317,6 +319,14 @@ private:
                 "Model {} not found. Available models: {}",
                 model_name,
                 fmt::join(models | std::views::transform([](const auto & model) { return model.first; }), ", "));
+        }
+    }
+
+    void validateInputText(const String & input_text, const String & model_name) const
+    {
+        if (input_text.empty())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Input text is empty for model {}. Please provide a non-empty string.", model_name);
         }
     }
 };
