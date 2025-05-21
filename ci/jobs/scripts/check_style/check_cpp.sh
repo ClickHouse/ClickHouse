@@ -342,7 +342,17 @@ do
     echo "Found the usage of std::format in '${file}'. Please use fmt::format instead"
 done
 
+# Context.h (and a few similar headers) is included in many parts of the
+# codebase, so any modifications to it trigger a large-scale recompilation.
+# Therefore, it is crucial to avoid unnecessary inclusion of Context.h in
+# headers.
+#
+# In most cases, we can include Context_fwd.h instead, as we usually do not
+# need the full definition of the Context structure in headers - only declaration.
 CONTEXT_H_EXCLUDES=(
+    # For now we have few exceptions (somewhere due to templated code, in other
+    # places just because for now it does not worth it, i.e. the header is not
+    # too generic):
     --exclude "$ROOT_PATH/src/BridgeHelper/XDBCBridgeHelper.h"
     --exclude "$ROOT_PATH/src/Interpreters/AddDefaultDatabaseVisitor.h"
     --exclude "$ROOT_PATH/src/Interpreters/GlobalSubqueriesVisitor.h"
@@ -352,6 +362,8 @@ CONTEXT_H_EXCLUDES=(
     --exclude "$ROOT_PATH/src/Common/tests/gtest_global_context.h"
     --exclude "$ROOT_PATH/src/Analyzer/InDepthQueryTreeVisitor.h"
 
+    # For functions we allow it for regular functions (due to lots of
+    # templates), but forbid it in interface (IFunction) part.
     --exclude "$ROOT_PATH/src/Functions/*"
     --include "$ROOT_PATH/src/Functions/IFunction*"
 )
