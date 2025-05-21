@@ -106,7 +106,7 @@ bool ConstantNode::requiresCastCall(Field::Types::Which type, const DataTypePtr 
 bool ConstantNode::requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type)
 {
     WhichDataType which_field_type(field_type);
-    if (which_field_type.isNullable() || which_field_type.isArray())
+    if (which_field_type.isNullable() || which_field_type.isArray() || which_field_type.isTuple())
         return true;
 
     return field_type->getTypeId() != data_type->getTypeId();
