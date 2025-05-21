@@ -1,0 +1,16 @@
+set(USE_CHDIG_DEFAULT ${ENABLE_RUST})
+if (USE_CHDIG_DEFAULT AND (SANITIZE OR NO_ARMV81_OR_HIGHER))
+    message(STATUS "Environment is not compatible with chdig. Disabling.")
+    set(USE_CHDIG_DEFAULT OFF)
+endif()
+option(USE_CHDIG "Use chdig" ${USE_CHDIG_DEFAULT})
+
+if (NOT USE_CHDIG)
+    message(STATUS "Not using chdig")
+    return()
+endif()
+
+if (USE_CHDIG)
+    clickhouse_import_crate(MANIFEST_PATH ../chdig/Cargo.toml ALL_FEATURES CRATE_TYPES bin)
+    clickhouse_config_crate_flags(chdig)
+endif()
