@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3238 
+personal_ws-1.1 en 3238
 AArch
 ACLs
 ALTERs
@@ -1431,6 +1431,7 @@ bitmaskToArray
 bitmaskToList
 bitov
 blake
+blobpath
 blockNumber
 blockSerializedSize
 blockSize
@@ -1850,7 +1851,6 @@ formatter
 formatters
 fqdn
 frac
-freezed
 frictionless
 fromDaysSinceYearZero
 fromModifiedJulianDay
