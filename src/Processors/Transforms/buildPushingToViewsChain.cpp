@@ -1,7 +1,6 @@
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -60,7 +59,7 @@ namespace Setting
     extern const SettingsLogQueriesType log_queries_min_type;
     extern const SettingsBool log_query_views;
     extern const SettingsBool materialized_views_ignore_errors;
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;

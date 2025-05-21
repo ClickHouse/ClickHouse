@@ -34,9 +34,6 @@ template<bool from_row_list>
 void AddedColumns<false>::buildOutputFromBlocks() {}
 
 template<>
-void AddedColumns<true>::buildOutputFromRowRefLists();
-
-template<>
 void AddedColumns<true>::buildOutput()
 {
     if (!output_by_row_list)
@@ -45,12 +42,15 @@ void AddedColumns<true>::buildOutput()
     {
         if (join_data_avg_perkey_rows < output_by_row_list_threshold)
             buildOutputFromBlocks<true>();
+        else if (join_data_sorted)
+            buildOutputFromRowRefLists<true>();
         else
-            buildOutputFromRowRefLists();
+            buildOutputFromRowRefLists<false>();
     }
 }
 
 template<>
+template<bool join_data_sorted>
 void AddedColumns<true>::buildOutputFromRowRefLists()
 {
     const size_t output_row_count = lazy_output.getRowCount();
@@ -59,7 +59,24 @@ void AddedColumns<true>::buildOutputFromRowRefLists()
     {
         auto & col = columns[i];
         col->reserve(col->size() + output_row_count);
-        col->fillFromRowRefs(type_name[i].type, right_indexes[i], lazy_output.getRowRefs(), join_data_sorted);
+        for (auto row_ref_i : lazy_output.getRowRefs())
+        {
+            if (row_ref_i)
+            {
+                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                if constexpr (join_data_sorted)
+                {
+                    col->insertRangeFrom(*row_ref_list->block->getByPosition(right_indexes[i]).column, row_ref_list->row_num, row_ref_list->rows);
+                }
+                else
+                {
+                    for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                        col->insertFrom(*it->block->getByPosition(right_indexes[i]).column, it->row_num);
+                }
+            }
+            else
+                type_name[i].type->insertDefaultInto(*col);
+        }
     }
 }
 
@@ -124,7 +141,15 @@ void AddedColumns<true>::buildOutputFromBlocks()
     }
     for (size_t i = 0; i < this->size(); ++i)
     {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], blocks, row_nums);
+        auto & col = columns[i];
+        col->reserve(col->size() + blocks.size());
+        for (size_t j = 0; j < blocks.size(); ++j)
+        {
+            if (blocks[j])
+                col->insertFrom(*blocks[j]->getByPosition(right_indexes[i]).column, row_nums[j]);
+            else
+                type_name[i].type->insertDefaultInto(*col);
+        }
     }
 }
 

@@ -75,7 +75,6 @@ private:
     void initializeIfNeeded();
 
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
-    std::shared_ptr<const arrow::KeyValueMetadata> metadata;
     std::shared_ptr<arrow::Schema> schema;
     const FormatSettings format_settings;
 };

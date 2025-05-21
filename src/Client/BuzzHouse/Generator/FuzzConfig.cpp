@@ -3,7 +3,6 @@
 #include <ranges>
 #include <IO/copyData.h>
 #include <Common/Exception.h>
-#include <Common/formatReadable.h>
 
 namespace DB
 {
@@ -31,7 +30,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::filesystem::path user_files_dir = std::filesystem::temp_directory_path();
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
-    static const SettingEntries configEntries
+    static const SettingEntries config_entries
         = {{"hostname", [&](const JSONObjectType & value) { hostname = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
            {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
@@ -46,11 +45,11 @@ static std::optional<ServerCredentials> loadServerCredentials(
     {
         const String & nkey = String(key);
 
-        if (configEntries.find(nkey) == configEntries.end())
+        if (config_entries.find(nkey) == config_entries.end())
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server option: {}", nkey);
         }
-        configEntries.at(nkey)(value);
+        config_entries.at(nkey)(value);
     }
 
     return std::optional<ServerCredentials>(
@@ -64,7 +63,7 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     uint32_t threshold = default_minimum;
     uint32_t minimum = default_threshold;
 
-    static const SettingEntries metricEntries
+    static const SettingEntries metric_entries
         = {{"enabled", [&](const JSONObjectType & value) { enabled = value.getBool(); }},
            {"threshold", [&](const JSONObjectType & value) { threshold = value.getUInt64(); }},
            {"minimum", [&](const JSONObjectType & value) { minimum = value.getUInt64(); }}};
@@ -73,11 +72,11 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     {
         const String & nkey = String(key);
 
-        if (metricEntries.find(nkey) == metricEntries.end())
+        if (metric_entries.find(nkey) == metric_entries.end())
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown metric option: {}", nkey);
         }
-        metricEntries.at(nkey)(value);
+        metric_entries.at(nkey)(value);
     }
 
     return PerformanceMetric(enabled, threshold, minimum);
@@ -102,7 +101,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Parsed BuzzHouse JSON configuration file is not an object");
     }
 
-    static const SettingEntries configEntries = {
+    static const SettingEntries config_entries = {
         {"db_file_path",
          [&](const JSONObjectType & value)
          {
@@ -112,21 +111,16 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
         {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
         {"seed", [&](const JSONObjectType & value) { seed = value.getUInt64(); }},
-        {"host", [&](const JSONObjectType & value) { host = String(value.getString()); }},
-        {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
-        {"secure_port", [&](const JSONObjectType & value) { secure_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
         {"max_nested_rows", [&](const JSONObjectType & value) { max_nested_rows = value.getUInt64(); }},
         {"max_depth", [&](const JSONObjectType & value) { max_depth = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"max_width", [&](const JSONObjectType & value) { max_width = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
-        {"max_columns", [&](const JSONObjectType & value) { max_columns = std::max(UINT64_C(1), value.getUInt64()); }},
         {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
-        {"max_dictionaries", [&](const JSONObjectType & value) { max_dictionaries = static_cast<uint32_t>(value.getUInt64()); }},
         {"query_time", [&](const JSONObjectType & value) { metrics.insert({{"query_time", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_memory", [&](const JSONObjectType & value) { metrics.insert({{"query_memory", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_bytes_read",
@@ -135,11 +129,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"time_to_run", [&](const JSONObjectType & value) { time_to_run = static_cast<uint32_t>(value.getUInt64()); }},
         {"fuzz_floating_points", [&](const JSONObjectType & value) { fuzz_floating_points = value.getBool(); }},
         {"test_with_fill", [&](const JSONObjectType & value) { test_with_fill = value.getBool(); }},
-        {"dump_table_oracle_compare_content", [&](const JSONObjectType & value) { dump_table_oracle_compare_content = value.getBool(); }},
+        {"use_dump_table_oracle", [&](const JSONObjectType & value) { use_dump_table_oracle = value.getBool(); }},
         {"compare_success_results", [&](const JSONObjectType & value) { compare_success_results = value.getBool(); }},
         {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
         {"compare_explains", [&](const JSONObjectType & value) { compare_explains = value.getBool(); }},
-        {"fail_on_timeout", [&](const JSONObjectType & value) { fail_on_timeout = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -200,31 +193,27 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     {
         const String & nkey = String(key);
 
-        if (configEntries.find(nkey) == configEntries.end())
+        if (config_entries.find(nkey) == config_entries.end())
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown BuzzHouse option: {}", nkey);
         }
-        configEntries.at(nkey)(value);
+        config_entries.at(nkey)(value);
     }
     if (min_insert_rows > max_insert_rows)
     {
         throw DB::Exception(
             DB::ErrorCodes::BUZZHOUSE,
             "min_insert_rows value ({}) is higher than max_insert_rows value ({})",
-            min_insert_rows,
-            max_insert_rows);
+            std::to_string(min_insert_rows),
+            std::to_string(max_insert_rows));
     }
     if (min_nested_rows > max_nested_rows)
     {
         throw DB::Exception(
             DB::ErrorCodes::BUZZHOUSE,
             "min_nested_rows value ({}) is higher than max_nested_rows value ({})",
-            min_nested_rows,
-            max_nested_rows);
-    }
-    if (allow_infinite_tables && fail_on_timeout)
-    {
-        LOG_WARNING(log, "Setting both \"allow_infinite_tables\" and \"fail_on_timeout\" is not recommended");
+            std::to_string(min_nested_rows),
+            std::to_string(max_nested_rows));
     }
     for (const auto & entry : std::views::values(metrics))
     {
@@ -277,9 +266,9 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings(this->clusters, true, "clusters", "cluster");
 }
 
-String FuzzConfig::getConnectionHostAndPort(const bool secure) const
+std::string FuzzConfig::getConnectionHostAndPort() const
 {
-    return fmt::format("{}:{}", this->host, secure ? this->secure_port : this->port);
+    return cb->getConnectionHostAndPortForFuzzing();
 }
 
 void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const
