@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1
 (
-    timestamp DateTime64(3, 'Asia/shanghai')
+    timestamp DateTime64(3, 'Asia/Shanghai')
 )
 ENGINE = MergeTree
 ORDER BY timestamp;
