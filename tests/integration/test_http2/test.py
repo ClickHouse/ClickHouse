@@ -1,6 +1,8 @@
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
+import asyncio
+import httpx
 import pytest
 
 
@@ -52,3 +54,27 @@ def test_alpn(started_cluster):
     )
     assert "ALPN, server accepted to use h2" in res
     assert res.endswith(EXPECTED_RESULT)
+
+
+def test_parallel_requests(started_cluster):
+    url = f"http://{node.ip_address}:8123/"
+    n_requests = 10
+    n_numbers = 100000
+    expected_text = "\n".join(str(i) for i in range(n_numbers)) + "\n"
+
+    async def fetch(client):
+        response = await client.post(url, content=f"SELECT number FROM numbers({n_numbers})")
+        return (response.text, response.http_version)
+
+    async def runner():
+        async with httpx.AsyncClient(http1=False, http2=True) as client:
+            tasks = [fetch(client) for _ in range(n_requests)]
+            responses = await asyncio.gather(*tasks)
+        return responses
+
+    responses = asyncio.run(runner())
+    assert len(responses) == n_requests
+
+    for text, http_version in responses:
+        assert http_version == "HTTP/2"
+        assert text == expected_text
