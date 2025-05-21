@@ -42,8 +42,6 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
 extern const int TOO_DEEP_RECURSION;
-extern const int TIMEOUT_EXCEEDED;
-extern const int SOCKET_TIMEOUT;
 extern const int BUZZHOUSE;
 }
 
