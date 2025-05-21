@@ -194,6 +194,10 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         if (res.getType() == RemoteQueryExecutor::ReadResult::Type::ParallelReplicasToken)
         {
             is_async_state = false;
+
+            if (res.read_completed)
+                return {};
+
             return Chunk();
         }
 
@@ -290,7 +294,11 @@ Chunk RemoteExtremesSource::generate()
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, bool async_query_sending)
+    bool add_aggregation_info,
+    bool add_totals,
+    bool add_extremes,
+    bool async_read,
+    bool async_query_sending)
 {
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
 
