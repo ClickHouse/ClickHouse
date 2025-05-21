@@ -2901,9 +2901,41 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 // This allows to use a more efficient lookup with no extra reads.
 bool KeyCondition::matchesExactContinuousRange() const
 {
-    // Not implemented yet.
-    if (hasMonotonicFunctionsChain())
-        return false;
+    const Field field{};
+    auto is_always_monotonic_chain = [&field](const std::vector<FunctionBasePtr> & chain)
+    {
+        for (const auto & func : chain)
+        {
+            if (!func || !func->hasInformationAboutMonotonicity())
+                return false;
+
+            const auto & types = func->getArgumentTypes();
+            if (types.empty() || !types.front())
+                return false;
+
+            const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
+            if (!monotonicity.is_always_monotonic)
+                return false;
+        }
+
+        return true;
+    };
+
+    for (const auto & elem : rpn)
+    {
+        if (!elem.monotonic_functions_chain.empty() && !is_always_monotonic_chain(elem.monotonic_functions_chain))
+            return false;
+
+        if (elem.set_index)
+        {
+            if (elem.function != RPNElement::Function::FUNCTION_IN_SET || elem.set_index->size() != 1)
+                return false;
+
+            for (const auto & mapping : elem.set_index->getIndexesMapping())
+                if (!mapping.functions.empty() && !is_always_monotonic_chain(mapping.functions))
+                    return false;
+        }
+    }
 
     enum Constraint
     {
@@ -2941,6 +2973,11 @@ bool KeyCondition::matchesExactContinuousRange() const
         }
 
         if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
+        {
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::ALWAYS_TRUE)
         {
             continue;
         }
