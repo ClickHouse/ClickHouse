@@ -160,7 +160,8 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     // Constant folding may lead to type transformation and literal on shard
     // may have a different type.
 
-    auto requires_cast = [this]() {
+    auto requires_cast = [this]()
+    {
         const auto & [_, type] = getValueNameAndType();
         return requiresCastCall(type, getResultType());
     };
