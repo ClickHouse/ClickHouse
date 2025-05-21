@@ -1239,7 +1239,6 @@ ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationComman
 
 bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_columns) const
 {
-    LOG_DEBUG(getLogger("KEK"), "output_columns: {}", toString(Names(output_columns.begin(), output_columns.end())));
     /// is subset
     for (const auto & storage_column : storage_columns)
         if (!output_columns.contains(storage_column))

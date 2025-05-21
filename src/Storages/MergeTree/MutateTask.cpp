@@ -833,11 +833,11 @@ static void analyzeCommands(MutationContext & ctx, const AlterConversionsPtr & a
 {
     if (haveMutationsOfDynamicColumns(ctx.source_part, ctx.commands_for_part) || !isWidePart(ctx.source_part) || !isFullPartStorage(ctx.source_part->getDataPartStorage()))
     {
-        analyzeCommandsForSomeColumnsMode(ctx, alter_conversions);
+        analyzeCommandsForAllColumnsMode(ctx, alter_conversions);
     }
     else
     {
-        analyzeCommandsForAllColumnsMode(ctx, alter_conversions);
+        analyzeCommandsForSomeColumnsMode(ctx, alter_conversions);
     }
 }
 
@@ -1254,8 +1254,6 @@ static void addTransformToBuildIndices(QueryPipelineBuilder & builder, const std
 static void addTransformToBuildTTLs(QueryPipelineBuilderPtr & builder, const MutationContext & ctx)
 {
     PreparedSets::Subqueries subqueries;
-
-    LOG_DEBUG(getLogger("KEK"), "ctx.ttls_to_materialize.size: {}", ctx.ttls_to_materialize.size());
 
     if (!ctx.ttls_to_materialize.empty())
     {
@@ -2450,7 +2448,6 @@ bool MutateTask::execute()
     Stopwatch watch;
     SCOPE_EXIT({ ctx->execute_elapsed_ns += watch.elapsedNanoseconds(); });
 
-    LOG_DEBUG(getLogger("KEK"), "MutateTask::execute() state: {}", state);
     switch (state)
     {
         case State::NEED_PREPARE:
@@ -2841,10 +2838,6 @@ bool MutateTask::prepare()
         /// Keeper has to be asked with unlock request to release the references to the blobs
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
         task = std::make_unique<MutateSomePartColumnsTask>(ctx);
-
-        LOG_DEBUG(getLogger("KEK"), "projections_to_mutate: {}", ctx->projections_to_mutate.size());
-        LOG_DEBUG(getLogger("KEK"), "projections_to_build: {}", ctx->projections_to_build.size());
-        LOG_DEBUG(getLogger("KEK"), "projections_to_hardlink: {}", ctx->projections_to_hardlink.size());
 
         for (const auto & [projection, projection_commands] : ctx->projections_to_mutate)
         {
