@@ -99,6 +99,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_STATISTICS;
+    extern const int BAD_ARGUMENTS;
 }
 
 enum class ExecuteTTLType : uint8_t
