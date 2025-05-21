@@ -249,18 +249,18 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
     /// Check like in KeyCondition.
-    std::vector<bool> rpn_stack;
+    std::vector<BoolMask> rpn_stack;
     for (const auto & element : rpn)
     {
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
-            rpn_stack.emplace_back(true);
+            rpn_stack.emplace_back(true, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS
              || element.function == RPNElement::FUNCTION_HAS)
         {
-            rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store));
+            rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
@@ -279,7 +279,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
                     result[row] = result[row] && granule->gin_filters[key_idx].contains(gin_filters[row], cache_store);
             }
 
-            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result));
+            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             if (element.function == RPNElement::FUNCTION_NOT_IN)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -292,7 +292,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             for (size_t row = 0; row < gin_filters.size(); ++row)
                 result[row] = granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
 
-            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result));
+            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
         }
         else if (element.function == RPNElement::FUNCTION_MATCH)
         {
@@ -306,11 +306,11 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
                 for (size_t row = 0; row < gin_filters.size(); ++row)
                     result[row] = granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
 
-                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result));
+                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             }
             else if (element.gin_filter)
             {
-                rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store));
+                rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store), true);
             }
 
         }
@@ -323,22 +323,22 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 && arg2;
+            rpn_stack.back() = arg1 & arg2;
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 || arg2;
+            rpn_stack.back() = arg1 | arg2;
         }
         else if (element.function == RPNElement::ALWAYS_FALSE)
         {
-            rpn_stack.emplace_back(false);
+            rpn_stack.emplace_back(false, true);
         }
         else if (element.function == RPNElement::ALWAYS_TRUE)
         {
-            rpn_stack.emplace_back(true);
+            rpn_stack.emplace_back(true, false);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in GinFilterCondition::RPNElement");
@@ -347,7 +347,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in GinFilterCondition::mayBeTrueOnGranule");
 
-    return rpn_stack[0];
+    return rpn_stack[0].can_be_true;
 }
 
 bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
