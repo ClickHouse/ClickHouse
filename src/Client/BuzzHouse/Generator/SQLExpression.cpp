@@ -368,9 +368,12 @@ void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * e
             {
                 this->levels[this->current_level].rels.push_back(rel);
             }
-            for (const auto & gcol : this->levels[this->current_level - 1].gcols)
+            if (rg.nextBool())
             {
-                this->levels[this->current_level].gcols.push_back(gcol);
+                for (const auto & gcol : this->levels[this->current_level - 1].gcols)
+                {
+                    this->levels[this->current_level].gcols.push_back(gcol);
+                }
             }
         }
         this->generateSelect(
