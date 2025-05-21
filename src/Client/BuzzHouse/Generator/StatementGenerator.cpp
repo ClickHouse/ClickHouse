@@ -3032,10 +3032,9 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     const uint32_t backup_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
     const uint32_t backup_dictionary = 10 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
     const uint32_t backup_database = 10 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
-    const uint32_t all_temporary = 3;
     const uint32_t everything = 3;
     const uint32_t prob_space
-        = backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + all_temporary + everything;
+        = backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + everything;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     BackupRestoreElement * bre = br->mutable_backup_element();
@@ -3083,14 +3082,8 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
             bre->mutable_bobject(), rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)));
     }
     else if (
-        all_temporary
-        && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + all_temporary + 1))
-    {
-        bre->set_all_temporary(true);
-    }
-    else if (
         everything
-        && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + all_temporary + everything + 1))
+        && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + everything + 1))
     {
         bre->set_all(true);
     }
@@ -3170,11 +3163,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
     std::optional<String> cluster;
 
     br->set_command(BackupRestore_BackupCommand_RESTORE);
-    if (backup.all_temporary)
-    {
-        bre->set_all_temporary(true);
-    }
-    else if (backup.everything)
+    if (backup.everything)
     {
         bre->set_all(true);
     }
@@ -4268,18 +4257,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 newb.out_params.push_back(br.out_params(i));
             }
-            if (bre.has_all_temporary())
-            {
-                for (auto & [key, value] : this->tables)
-                {
-                    if (value.is_temp)
-                    {
-                        newb.tables[key] = value;
-                    }
-                }
-                newb.all_temporary = true;
-            }
-            else if (bre.has_all())
+            if (bre.has_all())
             {
                 newb.tables = this->tables;
                 newb.views = this->views;

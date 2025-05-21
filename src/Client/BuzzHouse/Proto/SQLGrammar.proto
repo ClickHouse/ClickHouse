@@ -3730,10 +3730,9 @@ message BackupRestoreObject {
 message BackupRestoreElement {
     oneof backup_oneof {
         BackupRestoreObject bobject = 1;
-        bool all_temporary = 2;
-        bool all = 3;
+        bool all = 2;
     }
-    repeated ExprSchemaTable except_tables = 4;
+    repeated ExprSchemaTable except_tables = 3;
 }
 
 message BackupRestore {

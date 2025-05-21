@@ -4493,9 +4493,6 @@ CONV_FN(BackupRestoreElement, backup)
         case BackupType::kBobject:
             BackupRestoreObjectToString(ret, backup.bobject());
             break;
-        case BackupType::kAllTemporary:
-            ret += "ALL TEMPORARY TABLES";
-            break;
         default:
             ret += "ALL";
             break;
