@@ -57,6 +57,13 @@ public:
         XRAY_TRACE(MyClass, g)
         doWork(arg);
     }
+
+    template <typename T>
+    ATTRIBUTES void h(T arg)
+    {
+        XRAY_TRACE(MyClass, h<T>)
+        doWork(arg);
+    }
 };
 
 int main()
@@ -97,6 +104,13 @@ int main()
         MyClass obj;
         obj.g(arg);
         obj.g(arg);
+    }
+
+    {
+        int arg = 42;
+        MyClass obj;
+        obj.h(arg);
+        obj.h(arg);
     }
 
     return 0;

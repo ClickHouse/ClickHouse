@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdexcept>
 #include <fmt/ranges.h>
 #include <llvm/XRay/InstrumentationMap.h>
 #include <xray/xray_interface.h>
@@ -49,20 +50,26 @@ public:
         LOG_DEBUG(&Poco::Logger::get("debug"), "Available instrumented functions: \n{}", fmt::join(func_addr_to_id, ","));
     }
 
-    bool patchFunction(uint64_t func_addr) const
+    void patchFunction(uint64_t func_addr) const
     {
         if (const auto func_id = getFunctionId(func_addr))
-            return __xray_patch_function(*func_id) == XRayPatchingStatus::SUCCESS;
-        LOG_DEBUG(&Poco::Logger::get("debug"), "Function '{}' not found in instrumentation map", func_addr);
-        return false;
+        {
+            if (__xray_patch_function(*func_id) != XRayPatchingStatus::SUCCESS)
+                throw std::runtime_error(fmt::format("Failed to patch function; addr={}, id={}", func_addr, *func_id));
+        }
+        else
+            throw std::runtime_error(fmt::format("Function '{}' not found in instrumentation map", func_addr));
     }
 
-    bool unpatchFunction(uint64_t func_addr) const
+    void unpatchFunction(uint64_t func_addr) const
     {
         if (const auto func_id = getFunctionId(func_addr))
-            return __xray_unpatch_function(*func_id) == XRayPatchingStatus::SUCCESS;
-        LOG_DEBUG(&Poco::Logger::get("debug"), "Function '{}' not found in instrumentation map", func_addr);
-        return false;
+        {
+            if (__xray_unpatch_function(*func_id) != XRayPatchingStatus::SUCCESS)
+                throw std::runtime_error(fmt::format("Failed to unpatch function; addr={}, id={}", func_addr, *func_id));
+        }
+        else
+            throw std::runtime_error(fmt::format("Function '{}' not found in instrumentation map", func_addr));
     }
 
     static XRayFunctionMapper & getXRayFunctionMapper()
