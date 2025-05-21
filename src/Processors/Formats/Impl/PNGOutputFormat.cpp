@@ -53,7 +53,7 @@ void PNGOutputFormat::consume(Chunk chunk)
     catch (const Poco::Exception & e)
     {
         LOG_ERROR(log, "Failed to set columns for png image: {}", e.what());
-        throw;
+        return ;
     }
 
     for (size_t i = 0; i < num_rows; ++i)
@@ -65,7 +65,7 @@ void PNGOutputFormat::consume(Chunk chunk)
         catch (const Poco::Exception & e)
         {
             LOG_ERROR(log, "Failed to write png image: {}", e.what());
-            throw;
+            return ;
         }
     }
 }
@@ -79,7 +79,7 @@ void PNGOutputFormat::writeSuffix()
     catch (const Poco::Exception & e)
     {
         LOG_ERROR(log, "Failed to write png image: {}", e.what());
-        throw;
+        return ;
     }
 }
 

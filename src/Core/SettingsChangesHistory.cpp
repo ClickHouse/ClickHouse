@@ -69,7 +69,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.6",
         {
-
+            {"output_format_png_pixel_output_format", true, false, "A new setting used to control the resulting pixel output format for PNG"},
+           {"output_format_png_coordinates_format", true, false, "A new setting used to control incoming coordinate format for PNG"},
+           {"output_format_png_max_height", true, false, "A new setting used to control maximum height of resulting PNG"},
+           {"output_format_png_max_width", true, false, "A new setting used to control maximum width of resulting PNG"}, 
+           {"output_format_png_compression_level", true, false, "A new setting used to control compression level of resulting PNG"}, 
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -873,7 +877,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"deduplicate_merge_projection_mode", "ignore", "throw", "Do not allow to create inconsistent projection"}
         });
     });
-
     return merge_tree_settings_changes_history;
 }
 
