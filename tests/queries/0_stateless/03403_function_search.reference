@@ -1,0 +1,36 @@
+Negative tests
+Default tokenizer
+0
+1
+1
+1
+1
+0
+0
+0
+0
+0
+1
+1
+Ngram tokenizer
+0
+1
+1
+0
+0
+0
+0
+1
+0
+1
+0
+0
+NoOp tokenizer
+0
+0
+0
+1
+0
+0
+0
+1

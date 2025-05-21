@@ -18,6 +18,12 @@ static inline constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
 static inline constexpr UInt64 MIN_ROWS_PER_POSTINGS_LIST = 8 * 1024;
 static inline constexpr UInt64 DEFAULT_MAX_ROWS_PER_POSTINGS_LIST = 64 * 1024;
 
+enum class GinSearchMode : uint8_t
+{
+    ANY,
+    ALL
+};
+
 struct GinFilterParameters
 {
     GinFilterParameters(String tokenizer_, UInt64 max_rows_per_postings_list_);
