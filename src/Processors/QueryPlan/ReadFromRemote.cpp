@@ -492,7 +492,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     }
 
     auto lazily_create_stream = [
-            my_shard = shard, query = shard.query, header = shard.header,
+            my_shard = shard, my_shard_count = shard_count, query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
@@ -502,6 +502,75 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             pushed_down_filters]() mutable
         -> QueryPipelineBuilder
     {
+        auto current_settings = my_context->getSettingsRef();
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings)
+                            .getSaturated(current_settings[Setting::max_execution_time]);
+
+        std::vector<ConnectionPoolWithFailover::TryResult> try_results;
+        try
+        {
+            if (my_table_func_ptr)
+                try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, current_settings, PoolMode::GET_MANY);
+            else
+                try_results = my_shard.shard_info.pool->getManyChecked(
+                    timeouts, current_settings, PoolMode::GET_MANY,
+                    my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName());
+        }
+        catch (const Exception & ex)
+        {
+            if (ex.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
+                LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
+                    "Connections to remote replicas of local shard {} failed, will use stale local replica", my_shard.shard_info.shard_num);
+            else
+                throw;
+        }
+
+        UInt32 max_remote_delay = 0;
+        for (const auto & try_result : try_results)
+        {
+            if (!try_result.is_up_to_date)
+                max_remote_delay = std::max(try_result.delay, max_remote_delay);
+        }
+
+        bool use_delayed_remote_source = false;
+        fiu_do_on(FailPoints::use_delayed_remote_source,
+        {
+            use_delayed_remote_source = true;
+        });
+
+        if (!use_delayed_remote_source)
+        {
+            const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
+            if (!replicated_storage)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());
+            }
+            const UInt64 local_delay = replicated_storage->getAbsoluteDelay();
+            const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
+
+            if (try_results.empty() && local_delay >= max_allowed_delay)
+            {
+                throw Exception(
+                    ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                    "Failed to connect to other replicas and the local replica's delay is {} which is higher than max_replica_delay_for_distributed_queries",
+                    local_delay
+                );
+            }
+
+            if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
+            {
+                auto plan = createLocalPlan(
+                    query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
+
+                return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
+            }
+        }
+
+        std::vector<IConnectionPool::Entry> connections;
+        connections.reserve(try_results.size());
+        for (auto & try_result : try_results)
+            connections.emplace_back(std::move(try_result.entry));
+
         /// For the lazy case we are ignoring external tables.
         /// This is because the set could be build before the lambda call,
         /// and the temporary table which we are about to send would be empty.
@@ -513,9 +582,9 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
 
         my_scalars["_shard_num"] = Block{
             {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
-
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            my_shard.shard_info.pool, query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
+            std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
+
         auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
         QueryPipelineBuilder builder;
         builder.init(std::move(pipe));

@@ -199,15 +199,18 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     /// Note that `error_count` and `slowdown_count` are used for ordering, but set to zero in the resulting ShuffledPool
     std::vector<ShuffledPool> shuffled_pools;
     shuffled_pools.reserve(nested_pools.size());
-    for (size_t i = 0; i < nested_pools.size(); ++i)
-        shuffled_pools.emplace_back(ShuffledPool{.pool = nested_pools[i], .state = &pool_states[i], .index = i});
 
-    auto current_time = std::time_t(nullptr);
+    auto current_time = std::time(nullptr);
+    for (size_t i = 0; i < nested_pools.size(); ++i)
+        shuffled_pools.emplace_back(ShuffledPool{.pool = nested_pools[i], .state = &pool_states[i], .index = i, .is_stable = pool_states[i].is_unstable_until <= current_time});
+
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
-        [use_slowdown_count, current_time](const ShuffledPool & lhs, const ShuffledPool & rhs)
+        [use_slowdown_count](const ShuffledPool & lhs, const ShuffledPool & rhs)
         {
-            return PoolState::compare(*lhs.state, *rhs.state, use_slowdown_count, current_time);
+            if (lhs.is_stable != rhs.is_stable)
+                return lhs.is_stable > rhs.is_stable;
+            return PoolState::compare(*lhs.state, *rhs.state, use_slowdown_count);
         });
 
     return shuffled_pools;
@@ -231,7 +234,7 @@ inline void PoolWithFailoverBase<TNestedPool>::updateSharedErrorCounts(std::vect
         else
         {
             pool_state.unstable_period = pool_state.unstable_period == 0 ? min_unstable_period : std::min(pool_state.unstable_period * 2, max_unstable_period);
-            pool_state.is_unstable_until = std::time_t(nullptr) + pool_state.unstable_period;
+            pool_state.is_unstable_until = std::time(nullptr) + pool_state.unstable_period;
         }
     }
 }
@@ -418,13 +421,13 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
         random = rng();
     }
 
-    static bool compare(const PoolState & lhs, const PoolState & rhs, bool use_slowdown_count, time_t current_time)
+    static bool compare(const PoolState & lhs, const PoolState & rhs, bool use_slowdown_count)
     {
         if (use_slowdown_count)
-            return std::forward_as_tuple(lhs.is_unstable_until >= current_time, lhs.error_count, lhs.slowdown_count, lhs.config_priority, lhs.priority, lhs.random)
-                < std::forward_as_tuple(rhs.is_unstable_until >= current_time, rhs.error_count, rhs.slowdown_count, rhs.config_priority, rhs.priority, rhs.random);
-        return std::forward_as_tuple(lhs.is_unstable_until >= current_time, lhs.error_count, lhs.config_priority, lhs.priority, lhs.random)
-            < std::forward_as_tuple(rhs.is_unstable_until >= current_time, rhs.error_count, rhs.config_priority, rhs.priority, rhs.random);
+            return std::forward_as_tuple(lhs.error_count, lhs.slowdown_count, lhs.config_priority, lhs.priority, lhs.random)
+                < std::forward_as_tuple(rhs.error_count, rhs.slowdown_count, rhs.config_priority, rhs.priority, rhs.random);
+        return std::forward_as_tuple(lhs.error_count, lhs.config_priority, lhs.priority, lhs.random)
+            < std::forward_as_tuple(rhs.error_count, rhs.config_priority, rhs.priority, rhs.random);
     }
 
 private:

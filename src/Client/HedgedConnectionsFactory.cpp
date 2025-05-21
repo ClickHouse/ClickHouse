@@ -266,7 +266,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
 
         /// If we already determined state of each `stable` replica
         /// then we should fallback to take stale replicas.
-        /// In case when it's still not enought, we will return  to processing epoll
+        /// In case when it's still not enough, we will return to processing epoll
         /// with waiting all replicas (not stable too).
         if (prefer_stable_pools && stable_pools_to_try_connections == 0)
             return State::CANNOT_CHOOSE;
