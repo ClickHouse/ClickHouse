@@ -568,6 +568,8 @@
     Failpoint
 02910_prefetch_unexpceted_exception
 
+    https://github.com/ClickHouse/ClickHouse/issues/80604 (Bad cast)
+01825_type_json_10
 
     investigate failed tests
 00148_monotonic_functions_and_index
