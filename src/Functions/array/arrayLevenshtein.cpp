@@ -651,7 +651,7 @@ Calculates the similarity of two arrays from `0` to `1` based on weighted Levens
             "0.2222222222222222"
         }
     };
-	FunctionDocumentation::IntroducedIn introduced_in_arraySim = {25, 4};
+    FunctionDocumentation::IntroducedIn introduced_in_arraySim = {25, 4};
     FunctionDocumentation::Category category_arraySim = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_arraySim = {
         description_arraySim,
