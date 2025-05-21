@@ -9,15 +9,17 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IInterpreter.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Parsers/ASTFunction.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
+#include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -29,7 +31,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Storages/getStructureOfRemoteTable.h>
 
 namespace DB
@@ -623,7 +624,21 @@ void executeQueryWithParallelReplicas(
         }
         pools_to_use.resize(max_replicas_to_use);
 
-        auto [local_plan, with_parallel_replicas] = createLocalPlanForParallelReplicas(
+        if (pools_to_use.size() == 1)
+        {
+            auto [local_plan, with_parallel_replicas] = createLocalPlanForParallelReplicas(
+                query_ast,
+                header,
+                new_context,
+                processed_stage,
+                coordinator,
+                std::move(analyzed_read_from_merge_tree),
+                local_replica_index.value());
+            query_plan = std::move(*local_plan);
+            return;
+        }
+
+        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
             query_ast,
             header,
             new_context,
@@ -631,13 +646,8 @@ void executeQueryWithParallelReplicas(
             coordinator,
             std::move(analyzed_read_from_merge_tree),
             local_replica_index.value());
-
-        /// If there's only one replica or the source is empty, just read locally.
-        if (!with_parallel_replicas || pools_to_use.size() == 1)
-        {
-            query_plan = std::move(*local_plan);
-            return;
-        }
+        auto local_plan = std::make_unique<QueryPlan>();
+        local_plan->addStep(std::move(read_from_local));
 
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 

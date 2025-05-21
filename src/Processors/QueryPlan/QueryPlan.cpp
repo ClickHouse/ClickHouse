@@ -486,7 +486,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
     if (optimization_settings.build_sets)
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
 }
@@ -618,6 +618,28 @@ QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
 std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndResources(QueryPlan && plan)
 {
     return {std::move(plan.nodes), std::move(plan.resources)};
+}
+
+void QueryPlan::replaceNode(Node * node,  QueryPlanPtr plan)
+{
+    const auto & header = node->step->getOutputHeader();
+    const auto & plan_header = plan->getCurrentHeader();
+    if (!blocksHaveEqualStructure(header, plan_header))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
+            node->step->getName(),
+            root->step->getName(),
+            plan_header.dumpStructure(),
+            header.dumpStructure());
+
+    nodes.splice(nodes.end(), std::move(plan->nodes));
+
+    node->step = std::move(plan->getRootNode()->step);
+    node->children = plan->getRootNode()->children;
+
+    max_threads = std::max(max_threads, plan->max_threads);
+    resources = std::move(plan->resources);
 }
 
 }

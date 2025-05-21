@@ -134,6 +134,7 @@ public:
 
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
+    void replaceNode(Node * node,  QueryPlanPtr plan);
 
 private:
     struct SerializationFlags;
