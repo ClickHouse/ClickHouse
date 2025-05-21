@@ -128,7 +128,7 @@ public:
 
     void setName(Database * db) const { SQLDatabase::setName(db, dname); }
 
-    void finishDatabaseSpecification(DatabaseEngine * dspec)
+    void finishDatabaseSpecification(DatabaseEngine * dspec) const
     {
         if (isReplicatedDatabase())
         {
