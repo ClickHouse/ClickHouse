@@ -356,7 +356,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"rows_before_aggregation", false, false, "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"},
             {"restore_replace_external_table_functions_tof_null", false, false, "New setting."},
-            {"restore_replace_external_engines_to_null", alse, false, "New setting."},
+            {"restore_replace_external_engines_to_null", false, false, "New setting."},
             {"input_format_json_max_depth", 1000000, 1000, "It was unlimited in previous versions, but that was unsafe."},
             {"merge_tree_min_bytes_per_task_for_remote_reading", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"},
             {"use_hive_partitioning", false, false, "Allows to use hive partitioning for File, URL, S3, AzureBlobStorage and HDFS engines."},
