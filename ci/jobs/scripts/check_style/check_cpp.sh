@@ -355,7 +355,6 @@ CONTEXT_H_EXCLUDES=(
     # too generic):
     --exclude "$ROOT_PATH/src/BridgeHelper/XDBCBridgeHelper.h"
     --exclude "$ROOT_PATH/src/Interpreters/AddDefaultDatabaseVisitor.h"
-    --exclude "$ROOT_PATH/src/Interpreters/GlobalSubqueriesVisitor.h"
     --exclude "$ROOT_PATH/src/TableFunctions/ITableFunctionCluster.h"
     --exclude "$ROOT_PATH/src/Core/PostgreSQLProtocol.h"
     --exclude "$ROOT_PATH/src/Client/ClientBase.h"
