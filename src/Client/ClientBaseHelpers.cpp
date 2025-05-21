@@ -241,6 +241,31 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 }
 #endif
 
+void skipSpacesAndComments(const char*& pos, const char* end, std::function<void(std::string_view)> comment_callback)
+{
+    do
+    {
+        /// skip spaces to avoid throw exception after last query
+        while (pos != end && std::isspace(*pos))
+            ++pos;
+
+        const char * comment_begin = pos;
+        /// for skip comment after the last query and to not throw exception
+        if (end - pos > 2 && *pos == '-' && *(pos + 1) == '-')
+        {
+            pos += 2;
+            /// skip until the end of the line
+            while (pos != end && *pos != '\n')
+                ++pos;
+            if (comment_callback)
+                comment_callback(std::string_view(comment_begin, pos - comment_begin));
+        }
+        /// need to parse next sql
+        else
+            break;
+    } while (pos != end);
+}
+
 String formatQuery(String query)
 {
     const unsigned max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;

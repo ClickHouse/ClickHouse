@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include <Core/Types.h>
 #include "config.h"
 
@@ -25,5 +26,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 #endif
 
 String formatQuery(String query);
+
+void skipSpacesAndComments(const char*& pos, const char* end, std::function<void(std::string_view)> comment_callback);
 
 }
