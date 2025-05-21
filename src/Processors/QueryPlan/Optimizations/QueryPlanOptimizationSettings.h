@@ -54,6 +54,7 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
+    bool try_use_gin_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
 

@@ -16,9 +16,10 @@
 namespace DB
 {
 
-GinFilterParameters::GinFilterParameters(String tokenizer_, UInt64 max_rows_per_postings_list_)
+GinFilterParameters::GinFilterParameters(String tokenizer_, UInt64 max_rows_per_postings_list_, std::optional<UInt64> ngram_size_)
     : tokenizer(std::move(tokenizer_))
     , max_rows_per_postings_list(max_rows_per_postings_list_)
+    , ngram_size(ngram_size_)
 {
     if (max_rows_per_postings_list == UNLIMITED_ROWS_PER_POSTINGS_LIST)
         max_rows_per_postings_list = std::numeric_limits<UInt64>::max();
@@ -80,22 +81,6 @@ void GinFilter::clear()
     rowid_ranges.clear();
 }
 
-bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache_store) const
-{
-    if (filter.getTerms().empty())
-        return true;
-
-    GinPostingsCachePtr postings_cache = cache_store.getPostings(filter.getQueryString());
-    if (postings_cache == nullptr)
-    {
-        GinIndexStoreDeserializer reader(cache_store.store);
-        postings_cache = reader.createPostingsCacheFromTerms(filter.getTerms());
-        cache_store.cache[filter.getQueryString()] = postings_cache;
-    }
-
-    return match(*postings_cache);
-}
-
 namespace
 {
 
@@ -114,12 +99,12 @@ bool hasEmptyPostingsList(const GinPostingsCache & postings_cache)
     return false;
 }
 
-/// Helper method to check if the postings list cache has intersection with given row ID range
-bool matchInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
+/// Helper method to check if all terms in postings list cache has intersection with given row ID range
+[[nodiscard]] bool matchAllInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
 {
     /// Check for each term
-    GinIndexPostingsList intersection_result;
-    bool intersection_result_init = false;
+    GinIndexPostingsList range_bitset{};
+    range_bitset.addRange(range_start, range_end + 1);
 
     for (const auto & term_postings : postings_cache)
     {
@@ -135,34 +120,88 @@ bool matchInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UI
         if (container_it->second->cardinality() == 1 && UINT32_MAX == min_in_container)
             continue; //always match
 
-        if (range_start > max_in_container ||  min_in_container > range_end)
+        if (range_start > max_in_container || min_in_container > range_end)
             return false;
 
-        /// Delay initialization as late as possible
-        if (!intersection_result_init)
-        {
-            intersection_result_init = true;
-            intersection_result.addRange(range_start, range_end+1);
-        }
-        intersection_result &= *container_it->second;
-        if (intersection_result.cardinality() == 0)
+        range_bitset &= *container_it->second;
+
+        if (range_bitset.isEmpty())
             return false;
     }
     return true;
 }
 
+/// Helper method to check if any term in postings list cache has intersection with given row ID range
+[[nodiscard]] bool matchAnyInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
+{
+    /// Check for each term
+    GinIndexPostingsList postings_bitset{0};
+
+    for (const auto & term_postings : postings_cache)
+    {
+        /// Check if it is in the same segment by searching for segment_id
+        const GinSegmentedPostingsListContainer & container = term_postings.second;
+        if (auto container_it = container.find(segment_id); container_it != container.cend())
+        {
+            postings_bitset |= *container_it->second;
+        }
+    }
+
+    GinIndexPostingsList range_bitset{};
+    range_bitset.addRange(range_start, range_end + 1);
+    range_bitset &= postings_bitset;
+
+    return !range_bitset.isEmpty();
 }
 
-bool GinFilter::match(const GinPostingsCache & postings_cache) const
+
+template <GinSearchMode search_mode>
+[[nodiscard]] bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const GinPostingsCache & postings_cache)
 {
     if (hasEmptyPostingsList(postings_cache))
-        return false;
+    {
+        if constexpr (search_mode == GinSearchMode::ALL)
+            /// Definitely no match in ALL search mode when any of terms does not exists in FST.
+            return false;
+        else if constexpr (search_mode == GinSearchMode::ANY)
+            /// Definitely no match when there is a single term in ANY search mode and the term does not exists in FST.
+            return postings_cache.size() == 1 ? false : true;
+    }
 
     /// Check for each row ID ranges
-    for (const auto & rowid_range: rowid_ranges)
-        if (matchInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
-            return true;
+    for (const auto & rowid_range : rowid_ranges)
+    {
+        if constexpr (search_mode == GinSearchMode::ALL)
+        {
+            if (matchAllInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
+                return true;
+        }
+        else if constexpr (search_mode == GinSearchMode::ANY)
+        {
+            if (matchAnyInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
+                return true;
+        }
+    }
     return false;
+}
+
+}
+
+bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
+{
+    if (filter.getTerms().empty())
+        return true;
+
+    GinPostingsCachePtr postings_cache = cache_store.getPostings(filter.getQueryString());
+    if (postings_cache == nullptr)
+    {
+        GinIndexStoreDeserializer reader(cache_store.store);
+        postings_cache = reader.createPostingsCacheFromTerms(filter.getTerms());
+        cache_store.cache[filter.getQueryString()] = postings_cache;
+    }
+
+    return search_mode == GinSearchMode::ANY ? matchInRange<GinSearchMode::ANY>(rowid_ranges, *postings_cache)
+                                             : matchInRange<GinSearchMode::ALL>(rowid_ranges, *postings_cache);
 }
 
 }
