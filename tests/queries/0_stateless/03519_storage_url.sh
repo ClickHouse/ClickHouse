@@ -44,10 +44,14 @@ select 'dst_remote', * from dst_remote order by ALL;
 $CLICKHOUSE_CLIENT -q "
 system flush logs query_log;
 
-select query, written_rows, ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] + ProfileEvents['WriteBufferFromHTTPRequestsSent'] as HTTPRequests, ProfileEvents['StorageConnectionsCreated'] + ProfileEvents['StorageConnectionsReused'] as HTTPConnections
+select
+    query,
+    written_rows,
+    ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] + ProfileEvents['WriteBufferFromHTTPRequestsSent'] as HTTPRequests,
+    ProfileEvents['StorageConnectionsCreated'] + ProfileEvents['StorageConnectionsReused'] as HTTPConnections
 from system.query_log
 where
-    current_database = '${CLICKHOUSE_DATABASE}' and
+    current_database = currentDatabase() and
     type = 'QueryFinish' and
     query_kind = 'Insert'
 order by ALL
