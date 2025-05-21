@@ -165,7 +165,6 @@ class CHServer:
                 --profile-seconds 10 \
                 {test_file}",
             verbose=True,
-            strip=False,
         )
         duration = sw.duration
         if res != 0:

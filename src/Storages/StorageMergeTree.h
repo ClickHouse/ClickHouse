@@ -22,9 +22,6 @@
 namespace DB
 {
 
-class PreparedSetsCache;
-using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
-
 /** See the description of the data structure in MergeTreeData.
   */
 class StorageMergeTree final : public MergeTreeData

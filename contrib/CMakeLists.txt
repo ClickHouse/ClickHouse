@@ -122,6 +122,7 @@ add_contrib (aws-cmake
     aws-c-mqtt
     aws-c-s3
     aws-c-sdkutils
+    aws-s2n-tls
     aws-checksums
     aws-crt-cpp
     aws-cmake
@@ -137,6 +138,9 @@ add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
 add_contrib (curl-cmake curl)
 add_contrib (azure-cmake azure) # requires: curl
+if (NOT OS_DARWIN)
+    add_contrib (sentry-native-cmake sentry-native) # requires: curl
+endif()
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5

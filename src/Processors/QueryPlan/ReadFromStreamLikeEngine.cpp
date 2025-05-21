@@ -2,7 +2,6 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB

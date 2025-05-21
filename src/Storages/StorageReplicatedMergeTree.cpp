@@ -5984,7 +5984,7 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
             query_settings[Setting::insert_quorum_timeout].totalMilliseconds(),
             query_settings[Setting::max_partitions_per_insert_block],
             query_settings[Setting::insert_quorum_parallel],
-            async_deduplicate,
+            deduplicate,
             query_settings[Setting::insert_quorum].is_auto,
             local_context);
 
@@ -10921,7 +10921,7 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
-void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const
+void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
     try
     {
@@ -10939,7 +10939,7 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(ASTP
     catch (...)
     {
         /// We can continue making a backup with non-adjusted query.
-        tryLogCurrentException(log, fmt::format("Failed to apply metadata changes to the create query of table {}", getStorageID().getNameForLogs()));
+        tryLogCurrentException(log, "Failed to adjust the create query of this table for backup");
     }
 }
 

@@ -5649,7 +5649,7 @@ Prefetch step in bytes. Zero means `auto` - approximately the best prefetch step
     DECLARE(UInt64, filesystem_prefetch_step_marks, 0, R"(
 Prefetch step in marks. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
 )", 0) \
-    DECLARE(NonZeroUInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
+    DECLARE(UInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
 Maximum memory usage for prefetches.
 )", 0) \
     DECLARE(UInt64, filesystem_prefetches_limit, 200, R"(
@@ -6274,7 +6274,7 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
-    DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
+    DECLARE(Bool, use_iceberg_partition_pruning, false, R"(
 Use Iceberg partition pruning for Iceberg tables
 )", 0) \
     DECLARE(Bool, allow_deprecated_snowflake_conversion_functions, false, R"(
@@ -6394,9 +6394,6 @@ The analyzer should be enabled to use parallel replicas. With disabled analyzer 
 )", BETA) \
     DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
 Use local pipeline during distributed INSERT SELECT with parallel replicas
-)", BETA) \
-    DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
-The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
@@ -7171,9 +7168,8 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
         Field min;
         Field max;
-        std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        params.constraints.get(*this, setting_name, min, max, disallowed_values, writability);
+        params.constraints.get(*this, setting_name, min, max, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -7181,18 +7177,13 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         if (!max.isNull())
             max = Settings::valueToStringUtil(setting_name, max);
 
-        Array disallowed_array;
-        for (const auto & value : disallowed_values)
-            disallowed_array.emplace_back(Settings::valueToStringUtil(setting_name, value));
-
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
-        res_columns[6]->insert(disallowed_array);
-        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[8]->insert(setting.getTypeName());
-        res_columns[9]->insert(setting.getDefaultValueString());
-        res_columns[11]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[12]->insert(setting.getTier());
+        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[7]->insert(setting.getTypeName());
+        res_columns[8]->insert(setting.getDefaultValueString());
+        res_columns[10]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[11]->insert(setting.getTier());
     };
 
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
@@ -7202,7 +7193,7 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         res_columns[0]->insert(setting_name);
 
         fill_data_for_setting(setting_name, setting);
-        res_columns[10]->insert("");
+        res_columns[9]->insert("");
 
         if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
         {
@@ -7210,7 +7201,7 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
             {
                 res_columns[0]->insert(alias);
                 fill_data_for_setting(alias, setting);
-                res_columns[10]->insert(setting_name);
+                res_columns[9]->insert(setting_name);
             }
         }
     }

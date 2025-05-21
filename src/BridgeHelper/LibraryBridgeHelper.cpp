@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <Common/ShellCommandsHolder.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {

@@ -390,8 +390,7 @@ public:
         const std::string & filter_name,
         bool removes_filter,
         const Names & available_inputs,
-        const ColumnsWithTypeAndName & all_inputs,
-        bool allow_non_deterministic_functions);
+        const ColumnsWithTypeAndName & all_inputs);
 
     struct ActionsForJOINFilterPushDown;
 

@@ -37,7 +37,7 @@ curl https://clickhouse.com/ | sh
 Every month we get together with the community (users, contributors, customers, those interested in learning more about ClickHouse) to discuss what is coming in the latest release.
 If you are interested in sharing what you've built on ClickHouse, let us know.
 
-* [v25.5 Community & Release Call](https://clickhouse.com/company/events/v25-5-community-release-call) - May 22
+* [v25.4 Community & Release Call](https://clickhouse.com/company/events/v25-4-community-release-call) - April 22
 
 ## Upcoming Events
 

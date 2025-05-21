@@ -7,7 +7,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
-#include <Interpreters/Context.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>

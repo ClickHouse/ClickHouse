@@ -182,7 +182,7 @@ class Shell:
         return res.stdout.strip()
 
     @classmethod
-    def get_res_stdout_stderr(cls, command, verbose=True, strip=True):
+    def get_res_stdout_stderr(cls, command, verbose=True):
         if verbose:
             print(f"Run command [{command}]")
         res = subprocess.run(
@@ -192,10 +192,7 @@ class Shell:
             stderr=subprocess.PIPE,
             text=True,
         )
-        if strip:
-            return res.returncode, res.stdout.strip(), res.stderr.strip()
-        else:
-            return res.returncode, res.stdout, res.stderr
+        return res.returncode, res.stdout.strip(), res.stderr.strip()
 
     @classmethod
     def check(

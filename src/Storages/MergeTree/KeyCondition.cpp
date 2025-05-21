@@ -58,6 +58,7 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int BAD_TYPE_OF_FIELD;
 }
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
@@ -1981,6 +1982,19 @@ KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_, con
 {
 }
 
+static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
+{
+    try
+    {
+        src_value = convertFieldToType(src_value, *desired_type, src_type.get());
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Key expression contains comparison between inconvertible types: "
+            "{} and {} inside {}", desired_type->getName(), src_type->getName(), node_column_name);
+    }
+}
+
 
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
@@ -2240,12 +2254,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                     if (!const_type->equals(*common_type))
                     {
-                        // Replace direct call that throws exception with try version
-                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
-                        if (converted.isNull())
-                            return false;
-
-                        const_value = converted;
+                        castValueToType(common_type, const_value, const_type, node.getColumnName());
 
                         // Need to set is_constant_transformed unless we're doing exact conversion
                         if (!key_expr_type_not_null->equals(*common_type))

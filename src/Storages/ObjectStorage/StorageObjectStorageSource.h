@@ -14,8 +14,6 @@ namespace DB
 
 class SchemaCache;
 
-using ReadTaskCallback = std::function<String()>;
-
 class StorageObjectStorageSource : public SourceWithKeyCondition
 {
     friend class ObjectStorageQueueSource;
