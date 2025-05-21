@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3238 
+personal_ws-1.1 en 3238
 AArch
 ACLs
 ALTERs
@@ -152,6 +152,7 @@ CapContains
 CapUnion
 CapnProto
 CapnProtoEnumComparingMode
+CardSecondary
 CatBoost
 CellAreaM
 CellAreaRads
@@ -167,6 +168,7 @@ CityHash
 Clangd
 ClickBench
 ClickCat
+ClickHaskell
 ClickHouse
 ClickHouse's
 ClickHouseClient
@@ -1251,6 +1253,7 @@ aggthrow
 aiochclient
 alloc
 allocator
+allowlist
 alphaTokens
 amplab
 analysisOfVariance
@@ -1349,6 +1352,7 @@ arrayZipUnaligned
 ascii
 asin
 asinh
+aspell
 assumeNotNull
 async
 asynch
@@ -1427,6 +1431,7 @@ bitmaskToArray
 bitmaskToList
 bitov
 blake
+blobpath
 blockNumber
 blockSerializedSize
 blockSize
@@ -1529,6 +1534,7 @@ codec
 codecs
 codepoint
 codepoints
+codespell
 collapsingmergetree
 combinator
 combinators
@@ -1685,6 +1691,7 @@ denormalize
 denormalized
 denormalizing
 denormals
+denylist
 dequeued
 dequeues
 dereference
@@ -1725,6 +1732,7 @@ distinctdynamictypes
 distinctjsonpaths
 distro
 divideDecimal
+divideOrNull
 dmesg
 doesnt
 domainRFC
@@ -1843,7 +1851,6 @@ formatter
 formatters
 fqdn
 frac
-freezed
 frictionless
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1884,8 +1891,10 @@ geospatial
 getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
+getMergeTreeSetting
 getOSKernelVersion
 getServerPort
+getServerSetting
 getSetting
 getSettingOrDefault
 getSizeOfEnumType
@@ -1952,6 +1961,7 @@ grpcio
 gtest
 gtid
 gzip
+gunzip
 gzipped
 hadoop
 halfMD
@@ -2000,6 +2010,7 @@ http
 https
 hudi
 hudiCluster
+hyperparameter
 hyperscan
 hypot
 hyvor
@@ -2033,6 +2044,7 @@ inodes
 instantiation
 instantiations
 intDiv
+intDivOrNull
 intDivOrZero
 intExp
 intHash
@@ -2198,9 +2210,13 @@ mapAll
 mapApply
 mapConcat
 mapContains
+mapContainsKey
 mapContainsKeyLike
+mapContainsValue
+mapContainsValueLike
 mapExists
 mapExtractKeyLike
+mapExtractValueLike
 mapFilter
 mapFromArrays
 mapKeys
@@ -2230,6 +2246,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreeProjection
 mergeable
 mergetree
 messageID
@@ -2258,6 +2275,7 @@ mmap
 mmapped
 modularization
 moduli
+moduloOrNull
 moduloOrZero
 mongoc
 mongocxx
@@ -2313,6 +2331,7 @@ musqldump
 mutex
 mydb
 myfilter
+mypy
 mysql
 mysqldump
 mysqljs
@@ -2327,6 +2346,8 @@ namespace
 namespaces
 natively
 nats
+ncat
+netcat
 ness
 nestjs
 netloc
@@ -2470,6 +2491,8 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
+positiveModuloOrNull
+postfilter
 postfix
 postfixes
 postgres
@@ -2487,6 +2510,7 @@ prefetched
 prefetches
 prefetching
 prefetchsize
+prefilter
 preflight
 preimage
 preloaded
@@ -2825,6 +2849,8 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringBytesEntropy
+stringBytesUniq
 stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
@@ -3030,6 +3056,7 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
+toTimeWithFixedDate
 toTimeZone
 toType
 toTypeName

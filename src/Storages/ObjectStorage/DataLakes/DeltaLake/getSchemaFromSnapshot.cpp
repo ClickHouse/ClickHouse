@@ -149,13 +149,14 @@ private:
  */
 class SchemaVisitor
 {
-    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_global_read_schema>;
+    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
     using KernelStringSliceIterator = KernelPointerWrapper<ffi::StringSliceIterator, ffi::free_string_slice_data>;
 public:
     static void visitTableSchema(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
+        KernelSharedSchema schema(ffi::logical_schema(snapshot));
         auto visitor = createVisitor(data);
-        size_t result = ffi::visit_snapshot_schema(snapshot, &visitor);
+        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
@@ -163,17 +164,17 @@ public:
         ffi::SharedGlobalScanState * scan_state,
         SchemaVisitorData & data)
     {
-        KernelSharedSchema schema = ffi::get_global_read_schema(scan_state);
+        KernelSharedSchema schema(ffi::get_global_read_schema(scan_state));
         auto visitor = createVisitor(data);
-        size_t result = ffi::visit_schema(schema.get(), &visitor);
+        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
     static void visitPartitionColumns(
-        ffi::SharedGlobalScanState * scan_state,
+        ffi::SharedSnapshot * snapshot,
         SchemaVisitorData & data)
     {
-        KernelStringSliceIterator partition_columns_iter = ffi::get_partition_columns(scan_state);
+        KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(snapshot));
         while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
     }
 
@@ -306,7 +307,7 @@ private:
         const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Array>(data, sibling_list_id, name, nullable, metadata, child_list_id);
+        listBasedTypeVisitor<DB::TypeIndex::Array>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     static void tupleTypeVisitor(
@@ -317,7 +318,7 @@ private:
         const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Tuple>(data, sibling_list_id, name, nullable, metadata, child_list_id);
+        listBasedTypeVisitor<DB::TypeIndex::Tuple>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     static void mapTypeVisitor(
@@ -328,7 +329,7 @@ private:
         const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, metadata, child_list_id);
+        listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     template <DB::TypeIndex type>
@@ -481,10 +482,10 @@ DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedGlobalScanState * sca
     return data.getSchemaResult().names_and_types;
 }
 
-DB::Names getPartitionColumnsFromSnapshot(ffi::SharedGlobalScanState * scan_state)
+DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
 {
     SchemaVisitorData data;
-    SchemaVisitor::visitPartitionColumns(scan_state, data);
+    SchemaVisitor::visitPartitionColumns(snapshot, data);
     return data.getPartitionColumns();
 }
 
