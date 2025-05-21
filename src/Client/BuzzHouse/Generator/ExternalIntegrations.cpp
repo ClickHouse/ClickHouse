@@ -1403,9 +1403,10 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return;
     }
-    if (fc.processServerQuery(fmt::format(
-            "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-            fc.fuzz_out.generic_string())))
+    if (fc.processServerQuery(
+            fmt::format(
+                "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                fc.fuzz_out.generic_string())))
     {
         std::ifstream infile(fc.fuzz_out);
         while (std::getline(infile, buf) && buf.size() > 1)

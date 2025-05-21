@@ -2097,6 +2097,19 @@ CONV_FN(JoinedTableOrFunction, jtf)
         ret += " AS ";
         TableToString(ret, jtf.table_alias());
     }
+    if (jtf.col_aliases_size())
+    {
+        ret += "(";
+        for (int i = 0; i < jtf.col_aliases_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ColumnToString(ret, 1, jtf.col_aliases(i));
+        }
+        ret += ")";
+    }
     if (jtf.final())
     {
         ret += " FINAL";

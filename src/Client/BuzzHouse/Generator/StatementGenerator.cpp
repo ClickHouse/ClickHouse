@@ -12,10 +12,12 @@ StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations 
     , connections(conn)
     , supports_cloud_features(scf)
     , replica_setup(rs)
-    , deterministic_funcs_limit(static_cast<size_t>(
-          std::find_if(CHFuncs.begin(), CHFuncs.end(), StatementGenerator::funcNotDeterministicIndexLambda) - CHFuncs.begin()))
-    , deterministic_aggrs_limit(static_cast<size_t>(
-          std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
+    , deterministic_funcs_limit(
+          static_cast<size_t>(
+              std::find_if(CHFuncs.begin(), CHFuncs.end(), StatementGenerator::funcNotDeterministicIndexLambda) - CHFuncs.begin()))
+    , deterministic_aggrs_limit(
+          static_cast<size_t>(
+              std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
 {
     chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
 
@@ -185,28 +187,25 @@ void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, Refre
 static void matchQueryAliases(const SQLView & v, Select * osel, Select * nsel)
 {
     /// Make sure aliases match
-    uint32_t i = 0;
     SelectStatementCore * ssc = nsel->mutable_select_core();
+    JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
     for (const auto & entry : v.cols)
     {
-        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+        const String ncname = "c" + std::to_string(entry);
 
-        eca->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(
-            "a" + std::to_string(i));
-        eca->mutable_col_alias()->set_column("c" + std::to_string(entry));
-        i++;
+        ssc->add_result_columns()
+            ->mutable_eca()
+            ->mutable_expr()
+            ->mutable_comp_expr()
+            ->mutable_expr_stc()
+            ->mutable_col()
+            ->mutable_path()
+            ->mutable_col()
+            ->set_column(ncname);
+        jtf->add_col_aliases()->set_column(ncname);
     }
-    ssc->mutable_from()
-        ->mutable_tos()
-        ->mutable_join_clause()
-        ->mutable_tos()
-        ->mutable_joined_table()
-        ->mutable_tof()
-        ->mutable_select()
-        ->mutable_inner_query()
-        ->mutable_select()
-        ->set_allocated_sel(osel);
+    jtf->mutable_tof()->mutable_select()->mutable_inner_query()->mutable_select()->set_allocated_sel(osel);
 }
 
 void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView * cv)
@@ -3712,6 +3711,7 @@ void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & 
         const uint32_t nopt = next_dist(rg.generator);
         SingleSQLQuery * ssq = i == 0 ? sq.mutable_single_query() : sq.add_parallel_queries();
 
+        this->aliases_counter = 0;
         chassert(this->levels.empty());
         if (start_transaction && nopt < (start_transaction + 1))
         {

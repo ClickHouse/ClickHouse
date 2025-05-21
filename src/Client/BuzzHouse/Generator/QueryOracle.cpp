@@ -56,6 +56,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.setAllowEngineUDF(!can_test_query_success);
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
+    gen.resetAliasCounter();
     gen.levels[gen.current_level] = QueryLevel(gen.current_level);
     const auto u = gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
 
@@ -523,6 +524,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         eq->set_is_explain(true);
         sel = eq->mutable_inner_query()->mutable_select()->mutable_sel();
     }
+    gen.resetAliasCounter();
     gen.generateSelect(rg, true, global_aggregate, ncols, std::numeric_limits<uint32_t>::max(), sel);
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);

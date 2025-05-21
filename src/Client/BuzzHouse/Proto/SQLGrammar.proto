@@ -2556,7 +2556,8 @@ message TableFunction {
 message JoinedTableOrFunction {
     required TableOrFunction tof = 1;
     optional Table table_alias = 2;
-    optional bool final = 3;
+    repeated Column col_aliases = 3;
+    optional bool final = 4;
 }
 
 message TableOrSubquery {
