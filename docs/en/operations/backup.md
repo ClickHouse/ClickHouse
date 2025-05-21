@@ -24,8 +24,7 @@ title: 'Backup and Restore'
     [EXCEPT TABLES ...] |
   TEMPORARY TABLE table_name [AS table_name_in_backup] |
   VIEW view_name [AS view_name_in_backup]
-  ALL TEMPORARY TABLES [EXCEPT ...] |
-  ALL [EXCEPT ...] } [,...]
+  ALL [EXCEPT {TABLES|DATABASES}...] } [,...]
   [ON CLUSTER 'cluster_name']
   TO|FROM File('<path>/<filename>') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')
   [SETTINGS base_backup = File('<path>/<filename>') | Disk(...) | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')]
