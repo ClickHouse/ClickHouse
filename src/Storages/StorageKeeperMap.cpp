@@ -740,7 +740,7 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
         case ZNONODE:
         {
             size_t failed_op = zkutil::getFailedOpIndex(code, responses);
-            LOG_ERROR(logger, "Got ZNONODE code while trying to drop {}", ops[failed_op]->getPath());
+            LOG_ERROR(log, "Got ZNONODE code while trying to drop {}", ops[failed_op]->getPath());
             throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of metadata. It's a bug");
         }
         case ZNOTEMPTY:
