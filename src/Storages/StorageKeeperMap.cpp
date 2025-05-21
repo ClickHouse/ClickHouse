@@ -542,7 +542,7 @@ StorageKeeperMap::StorageKeeperMap(
                         Coordination::Responses drop_lock_responses;
                         auto code = client->tryMulti(drop_lock_requests, drop_lock_responses);
 
-                        if (code == Coordination::Error::ZNONODE)
+                        if (code == Coordination::Error::Z)
                         {
                             LOG_INFO(log, "Someone else removed leftover nodes");
                         }
@@ -738,7 +738,11 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
             break;
         }
         case ZNONODE:
+        {
+            size_t failed_op = zkutil::getFailedOpIndex(code, responses);
+            LOG_ERROR(logger, "Got ZNONODE code while trying to drop {}", ops[failed_op]->getPath());
             throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of metadata. It's a bug");
+        }
         case ZNOTEMPTY:
             LOG_ERROR(log, "Metadata was not completely removed from ZooKeeper");
             break;
