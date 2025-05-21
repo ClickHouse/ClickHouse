@@ -464,11 +464,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
     auto builder = InterpreterSelectQuery(
                        query_ast,
                        mut_context,
-<<<<<<< HEAD
-                       Pipe(std::make_shared<SourceFromSingleChunk>(block_copy)),
-=======
                        Pipe(std::make_shared<ProjectionDataSource>(std::move(source_block))),
->>>>>>> upstream/master
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState}

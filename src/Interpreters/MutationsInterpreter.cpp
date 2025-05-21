@@ -772,10 +772,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             //     }
             // }
         }
-        else
-        {
-            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
-        }
+        // else
+        // {
+        //     throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
+        // }
     }
 
     if (!read_columns.empty())

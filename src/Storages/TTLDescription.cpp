@@ -450,19 +450,19 @@ TTLTableDescription TTLTableDescription::parse(
     return getTTLForTableFromAST(ast, columns, context, primary_key, is_attach);
 }
 
-TTLDescriptionRawPtrs TTLTableDescription::getAllDescriptions() const
+TTLDescriptions TTLTableDescription::getAllDescriptions() const
 {
-    TTLDescriptionRawPtrs result;
+    TTLDescriptions result;
     if (rows_ttl.expression_ast)
-        result.push_back(&rows_ttl);
+        result.push_back(rows_ttl);
     for (const auto & ttl : rows_where_ttl)
-        result.push_back(&ttl);
+        result.push_back(ttl);
     for (const auto & ttl : move_ttl)
-        result.push_back(&ttl);
+        result.push_back(ttl);
     for (const auto & ttl : recompression_ttl)
-        result.push_back(&ttl);
+        result.push_back(ttl);
     for (const auto & ttl : group_by_ttl)
-        result.push_back(&ttl);
+        result.push_back(ttl);
     return result;
 }
 
