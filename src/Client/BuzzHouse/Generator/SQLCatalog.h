@@ -120,8 +120,6 @@ public:
 
     bool isReplicatedOrSharedDatabase() const { return deng == DatabaseEngineValues::DReplicated || deng == DatabaseEngineValues::DShared; }
 
-    bool isBackupDatabase() const { return deng == DatabaseEngineValues::DBackup; }
-
     const std::optional<String> & getCluster() const { return cluster; }
 
     bool isAttached() const { return attached == DetachStatus::ATTACHED; }
@@ -137,13 +135,6 @@ public:
             dspec->add_params()->set_svalue("/test/db" + std::to_string(zoo_path_counter));
             dspec->add_params()->set_svalue("s1");
             dspec->add_params()->set_svalue("r1");
-        }
-        else if (isBackupDatabase())
-        {
-            dspec->add_params()->mutable_database()->set_database(backed_db);
-            BackupDisk * bd = dspec->add_params()->mutable_disk();
-            bd->set_disk(backed_disk);
-            this->setName(bd->mutable_database());
         }
     }
 };
