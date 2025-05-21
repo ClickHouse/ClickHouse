@@ -434,8 +434,7 @@ private:
 
             bech32_data data_8bit;
             if (dec.encoding == bech32::Encoding::INVALID
-                || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin(), dec.data.end()))
-                || data_8bit.empty())
+                || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin(), dec.data.end())))
             {
                 finalizeRow(hrp_offsets, hrp_pos, hrp_begin, i);
                 finalizeRow(data_offsets, data_pos, data_begin, i);
