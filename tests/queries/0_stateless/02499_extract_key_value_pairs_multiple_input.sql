@@ -528,3 +528,14 @@ WITH
     ) AS x
 SELECT
     x;
+-- after parsing a quoted value, the next key should only start after a pair delimiter
+WITH
+    extractKeyValuePairs('key:"quoted_value"junk,second_key:0') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;

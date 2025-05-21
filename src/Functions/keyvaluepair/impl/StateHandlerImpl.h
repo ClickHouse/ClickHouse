@@ -43,10 +43,11 @@ public:
          * */
         NeedleFactory<WITH_ESCAPING> needle_factory;
 
-        wait_needles = needle_factory.getWaitNeedles(configuration);
+        wait_key_needles = needle_factory.getWaitKeyNeedles(configuration);
         read_key_needles = needle_factory.getReadKeyNeedles(configuration);
         read_value_needles = needle_factory.getReadValueNeedles(configuration);
         read_quoted_needles = needle_factory.getReadQuotedNeedles(configuration);
+        wait_pair_delimiter_needles = needle_factory.getWaitPairDelimiterNeedles(configuration);
     }
 
     /*
@@ -54,7 +55,7 @@ public:
      * */
     [[nodiscard]] NextState waitKey(std::string_view file) const
     {
-        if (const auto * p = find_first_not_symbols_or_null(file, wait_needles))
+        if (const auto * p = find_first_not_symbols_or_null(file, wait_key_needles))
         {
             const size_t character_position = p - file.data();
             if (isQuotingCharacter(*p))
@@ -281,7 +282,7 @@ public:
             {
                 pair_writer.appendValue(file.data() + pos, file.data() + character_position);
 
-                return {next_pos, State::FLUSH_PAIR};
+                return {next_pos, State::FLUSH_PAIR_AFTER_QUOTED_VALUE};
             }
 
             pos = next_pos;
@@ -290,13 +291,43 @@ public:
         return {file.size(), State::END};
     }
 
+    [[nodiscard]] NextState flushPair(std::string_view file, auto & pair_writer) const
+    {
+        pair_writer.commitKey();
+        pair_writer.commitValue();
+
+        return {0, file.empty() ? State::END : State::WAITING_KEY};
+    }
+
+    [[nodiscard]] NextState flushPairAfterQuotedValue(std::string_view file, auto & pair_writer) const
+    {
+        pair_writer.commitKey();
+        pair_writer.commitValue();
+
+        return {0, file.empty() ? State::END : State::WAITING_PAIR_DELIMITER};
+    }
+
+    [[nodiscard]] NextState waitPairDelimiter(std::string_view file) const
+    {
+        if (const auto * p = find_first_symbols_or_null(file, wait_pair_delimiter_needles))
+        {
+            const size_t character_position = p - file.data();
+            size_t next_pos = character_position + 1u;
+
+            return {next_pos, State::WAITING_KEY};
+        }
+
+        return {file.size(), State::END};
+    }
+
     const Configuration configuration;
 
 private:
-    SearchSymbols wait_needles;
+    SearchSymbols wait_key_needles;
     SearchSymbols read_key_needles;
     SearchSymbols read_value_needles;
     SearchSymbols read_quoted_needles;
+    SearchSymbols wait_pair_delimiter_needles;
 
     /*
      * Helper method to copy bytes until `character_pos` and process possible escape sequence. Returns a pair containing a boolean
