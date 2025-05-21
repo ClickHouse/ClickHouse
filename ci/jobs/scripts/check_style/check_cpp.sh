@@ -341,3 +341,21 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -
 do
     echo "Found the usage of std::format in '${file}'. Please use fmt::format instead"
 done
+
+CONTEXT_H_EXCLUDES=(
+    --exclude "$ROOT_PATH/src/BridgeHelper/XDBCBridgeHelper.h"
+    --exclude "$ROOT_PATH/src/Interpreters/AddDefaultDatabaseVisitor.h"
+    --exclude "$ROOT_PATH/src/Interpreters/GlobalSubqueriesVisitor.h"
+    --exclude "$ROOT_PATH/src/TableFunctions/ITableFunctionCluster.h"
+    --exclude "$ROOT_PATH/src/Core/PostgreSQLProtocol.h"
+    --exclude "$ROOT_PATH/src/Client/ClientBase.h"
+    --exclude "$ROOT_PATH/src/Common/tests/gtest_global_context.h"
+    --exclude "$ROOT_PATH/src/Analyzer/InDepthQueryTreeVisitor.h"
+
+    --exclude "$ROOT_PATH/src/Functions/*"
+    --include "$ROOT_PATH/src/Functions/IFunction*"
+)
+find $ROOT_PATH/src -name '*.h' -print0 | xargs -0 grep -P '#include[\s]*(<|")Interpreters/Context.h(>|")' "${CONTEXT_H_EXCLUDES[@]}" | \
+    grep . && echo '^ Too broad Context.h usage. Consider using Context_fwd.h and Context.h out from .h into .cpp'
+
+exit 0
