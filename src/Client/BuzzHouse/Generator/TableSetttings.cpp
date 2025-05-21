@@ -29,6 +29,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"allow_vertical_merges_from_compact_to_wide_parts", CHSetting(trueOrFalse, {}, false)},
        {"always_fetch_merged_part", CHSetting(trueOrFalse, {}, false)},
        {"always_use_copy_instead_of_hardlinks", CHSetting(trueOrFalse, {}, false)},
+       {"apply_patches_on_merge", CHSetting(trueOrFalse, {}, false)},
        {"assign_part_uuids", CHSetting(trueOrFalse, {}, false)},
        {"async_insert", CHSetting(trueOrFalse, {}, false)},
        {"cache_populated_by_fetch", CHSetting(trueOrFalse, {}, false)},
@@ -150,6 +151,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"remote_fs_zero_copy_path_compatible_mode", CHSetting(trueOrFalse, {}, false)},
        {"remove_empty_parts", CHSetting(trueOrFalse, {}, false)},
        {"remove_rolled_back_parts_immediately", CHSetting(trueOrFalse, {}, false)},
+       {"remove_unused_patch_parts", CHSetting(trueOrFalse, {}, false)},
        {"replace_long_file_name_to_hash", CHSetting(trueOrFalse, {}, false)},
        {"replicated_can_become_leader", CHSetting(trueOrFalse, {}, false)},
        {"replicated_max_mutations_in_one_entry",
@@ -159,6 +161,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"shared_merge_tree_create_per_replica_metadata_nodes", CHSetting(trueOrFalse, {}, false)},
        /// ClickHouse cloud setting
        {"shared_merge_tree_disable_merges_and_mutations_assignment", CHSetting(trueOrFalse, {}, false)},
+       /// ClickHouse cloud setting
+       {"shared_merge_tree_enable_coordinated_merges", CHSetting(trueOrFalse, {}, false)},  
        /// ClickHouse cloud setting
        {"shared_merge_tree_enable_keeper_parts_extra_data", CHSetting(trueOrFalse, {}, false)},
        /// ClickHouse cloud setting
@@ -194,6 +198,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.4, 0.8, 1, 16)); }, {}, false)},
        {"vertical_merge_algorithm_min_rows_to_activate", CHSetting(bytesRange, {}, false)},
        {"vertical_merge_remote_filesystem_prefetch", CHSetting(trueOrFalse, {}, false)},
+       {"write_marks_for_substreams_in_compact_parts", CHSetting(trueOrFalse, {}, false)},
        {"zero_copy_concurrent_part_removal_max_postpone_ratio", CHSetting(probRange, {}, false)}};
 
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;

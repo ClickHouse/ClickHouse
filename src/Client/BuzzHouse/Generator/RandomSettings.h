@@ -94,6 +94,7 @@ const std::unordered_map<String, CHSetting> s3QueueTableSettings
             {},
             false)},
        {"enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
+       {"parallel_inserts", CHSetting(trueOrFalse, {}, false)},
        {"processing_threads_num", threadSetting}};
 
 const std::unordered_map<String, CHSetting> distributedTableSettings
