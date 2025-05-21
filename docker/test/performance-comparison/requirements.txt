@@ -1,6 +1,6 @@
 blinker==1.4
 clickhouse-driver==0.2.7
-cryptography==3.4.8
+cryptography==43.0.1
 dbus-python==1.2.18
 distro==1.7.0
 httplib2==0.20.2
@@ -17,7 +17,7 @@ packaging==24.1
 pip==24.1.1
 pipdeptree==2.23.0
 Pygments==2.11.2
-PyJWT==2.3.0
+PyJWT==2.10.1
 pyparsing==2.4.7
 pytz==2023.4
 PyYAML==6.0.1
