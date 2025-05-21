@@ -123,8 +123,6 @@ bar
 base58Decode
 base58Encode
 basename
-bech32Decode
-bech32Encode
 bin
 bitAnd
 bitCount
