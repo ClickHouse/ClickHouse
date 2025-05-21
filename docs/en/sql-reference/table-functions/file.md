@@ -18,22 +18,23 @@ A table engine which provides a table-like interface to SELECT from and INSERT i
 
 The `file` function can be used in `SELECT` and `INSERT` queries to read from or write to files.
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 file([path_to_archive ::] path [,format] [,structure] [,compression])
 ```
 
-**Parameters**
+## Arguments {#arguments}
 
-- `path` — The relative path to the file from [user_files_path](operations/server-configuration-parameters/settings.md#user_files_path). Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers).
-- `path_to_archive` - The relative path to a zip/tar/7z archive. Supports the same globs as `path`.
-- `format` — The [format](/interfaces/formats) of the file.
-- `structure` — Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.
-- `compression` — The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.
+| Parameter         | Description                                                                                                                                                                                                                                                                                                   |
+|-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `path`            | The relative path to the file from [user_files_path](operations/server-configuration-parameters/settings.md#user_files_path). Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers). |
+| `path_to_archive` | The relative path to a zip/tar/7z archive. Supports the same globs as `path`.                                                                                                                                                                                                                                 |
+| `format`          | The [format](/interfaces/formats) of the file.                                                                                                                                                                                                                                                                |
+| `structure`       | Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                |
+| `compression`     | The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.                                                                                                       |
 
-
-**Returned value**
+# Returned value {#returned_value}
 
 A table for reading or writing data in a file.
 
@@ -150,6 +151,8 @@ all the files in the directory are selected.
 
 Constructions with `{}` are similar to the [remote](remote.md) and [hdfs](hdfs.md) table functions.
 
+## Examples {#examples}
+
 **Example**
 
 Suppose there are these files with the following relative paths:
@@ -228,13 +231,15 @@ SELECT * from file('data/path/date=*/country=*/code=*/*.parquet') where _date > 
 
 ## Settings {#settings}
 
-- [engine_file_empty_if_not_exists](/operations/settings/settings#engine_file_empty_if_not_exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
-- [engine_file_truncate_on_insert](/operations/settings/settings#engine_file_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [engine_file_allow_create_multiple_files](operations/settings/settings.md#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [engine_file_skip_empty_files](operations/settings/settings.md#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [storage_file_read_method](/operations/settings/settings#engine_file_empty_if_not_exists) - method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
+| Setting                                                                                                            | Description                                                                                                                                                                 |
+|--------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [engine_file_empty_if_not_exists](/operations/settings/settings#engine_file_empty_if_not_exists)                   | allows to select empty data from a file that doesn't exist. Disabled by default.                                                                                            |
+| [engine_file_truncate_on_insert](/operations/settings/settings#engine_file_truncate_on_insert)                     | allows to truncate file before insert into it. Disabled by default.                                                                                                         |
+| [engine_file_allow_create_multiple_files](operations/settings/settings.md#engine_file_allow_create_multiple_files) | allows to create a new file on each insert if format has suffix. Disabled by default.                                                                                       |
+| [engine_file_skip_empty_files](operations/settings/settings.md#engine_file_skip_empty_files)                       | allows to skip empty files while reading. Disabled by default.                                                                                                              |
+| [storage_file_read_method](/operations/settings/settings#engine_file_empty_if_not_exists)                          | method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local. |
 
-**See Also**
+## Related {#related}
 
 - [Virtual columns](engines/table-engines/index.md#table_engines-virtual_columns)
 - [Rename files after processing](operations/settings/settings.md#rename_files_after_processing)
