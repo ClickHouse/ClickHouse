@@ -11,6 +11,8 @@
 #include <Common/UTF8Helpers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <base/find_symbols.h>
+#include <Poco/String.h>
 #include <string_view>
 
 
@@ -276,40 +278,72 @@ String formatQuery(String query)
     String res;
     res.reserve(query.size());
 
+    auto comments_callback = [&](std::string_view comment)
+    {
+        res += comment;
+        res += '\n';
+    };
+
     const char * begin = query.data();
     const char * pos = begin;
     const char * end = begin + query.size();
+
+    skipSpacesAndComments(pos, end, comments_callback);
+
+    size_t queries = 0;
     while (pos < end)
     {
         const char * query_start = pos;
+        const ASTPtr ast = parseQueryAndMovePosition(parser, pos, end, "query in editor", /*allow_multi_statements=*/ true, /*max_query_size=*/ 0, max_parser_depth, max_parser_backtracks);
 
-        Tokens tokens(pos, end);
-        IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
-        while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
-            ++token_iterator;
-        const char * query_end = token_iterator->end;
-        bool has_semicolon = token_iterator.isValid() && token_iterator->type == TokenType::Semicolon;
+        std::string_view insert_query_payload;
+        if (auto * insert_ast = ast->as<ASTInsertQuery>(); insert_ast && insert_ast->data)
+        {
+            if (Poco::toLower(insert_ast->format) == "values")
+            {
+                /// Reset format to default to have `INSERT INTO table VALUES` instead of `INSERT INTO table VALUES FORMAT Values`
+                insert_ast->format.clear();
 
-        const ASTPtr ast = parseQueryAndMovePosition(parser, pos, query_end, "query in editor", /*allow_multi_statements=*/ false, /*max_query_size=*/ 0, max_parser_depth, max_parser_backtracks);
+                /// We assume that data ends with a newline character (same as in other places)
+                const char * this_query_end = find_first_symbols<'\n'>(insert_ast->data, end);
+                insert_ast->end = this_query_end;
+                pos = this_query_end;
 
-        bool multiline_query = std::string_view(query_start, query_end).contains('\n');
+                /// Remove semicolon from the INSERT query payload, since it will be added explicitly below
+                if (*insert_ast->end == '\n')
+                {
+                    while (insert_ast->end > insert_ast->data && std::isspace(*insert_ast->end))
+                        --insert_ast->end;
+                }
+            }
+            else
+                pos = insert_ast->end;
+
+            /// No need to use getReadBufferFromASTInsertQuery() here, since it does extra things that we do not need here (i.e. handle INFILE)
+            insert_query_payload = std::string_view(insert_ast->data, insert_ast->end);
+        }
+
+        bool multiline_query = std::string_view(query_start, pos).contains('\n');
         if (multiline_query)
             res += ast->formatWithSecretsMultiLine();
         else
             res += ast->formatWithSecretsOneLine();
 
-        if (const auto * insert_ast = ast->as<ASTInsertQuery>(); insert_ast && insert_ast->data)
+        if (!insert_query_payload.empty())
         {
             res += ' ';
-            res += std::string_view(insert_ast->data, insert_ast->end);
-            pos = insert_ast->end;
+            res += insert_query_payload;
         }
 
-        if (has_semicolon)
+        bool need_query_delimiter = pos != end || queries > 0;
+        if (need_query_delimiter)
+        {
             res += ';';
+            res += '\n';
+        }
 
-        while (pos < end && isWhitespaceASCII(*pos))
-            res.push_back(*pos++);
+        ++queries;
+        skipSpacesAndComments(pos, end, comments_callback);
     }
 
     return res;

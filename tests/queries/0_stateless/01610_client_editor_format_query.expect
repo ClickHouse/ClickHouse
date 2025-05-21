@@ -78,7 +78,7 @@ expect ":) "
 send -- "insert into function null() values (1)"
 # editor with format (M-F)
 send -- "\033F"
-expect "INSERT INTO FUNCTION null() FORMAT Values (1)"
+expect "INSERT INTO FUNCTION null() VALUES (1)"
 send -- "\r"
 expect "Elapsed"
 expect ":) "
