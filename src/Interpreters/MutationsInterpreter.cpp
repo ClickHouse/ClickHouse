@@ -23,12 +23,13 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/queryToString.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
@@ -52,7 +53,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_nondeterministic_mutations;
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool validate_mutation_query;
 }
@@ -160,19 +161,15 @@ ColumnDependencies getAllColumnDependencies(
 }
 
 
-IsStorageTouched isStorageTouchedByMutations(
+bool isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context)
 {
-    static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
-    static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
-    static constexpr IsStorageTouched some_rows = {.any_rows_affected = true, .all_rows_affected = false};
-
     if (commands.empty())
-        return no_rows;
+        return false;
 
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
     bool all_commands_can_be_skipped = true;
@@ -182,17 +179,17 @@ IsStorageTouched isStorageTouchedByMutations(
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
         {
             if (source_part->hasLightweightDelete())
-                return some_rows;
+                return true;
         }
         else
         {
             if (!command.predicate) /// The command touches all rows.
-                return all_rows;
+                return true;
 
             if (command.partition)
             {
                 const String partition_id = storage_from_part->getPartitionIDFromQuery(command.partition, context);
-                if (partition_id == source_part->info.getPartitionId())
+                if (partition_id == source_part->info.partition_id)
                     all_commands_can_be_skipped = false;
             }
             else
@@ -203,7 +200,7 @@ IsStorageTouched isStorageTouchedByMutations(
     }
 
     if (all_commands_can_be_skipped)
-        return no_rows;
+        return false;
 
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
@@ -233,7 +230,7 @@ IsStorageTouched isStorageTouchedByMutations(
     while (block.rows() == 0 && executor.pull(block));
 
     if (!block.rows())
-        return no_rows;
+        return false;
     if (block.rows() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
@@ -241,11 +238,7 @@ IsStorageTouched isStorageTouchedByMutations(
     while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
-
-    IsStorageTouched result;
-    result.any_rows_affected = (count != 0);
-    result.all_rows_affected = (count == source_part->rows_count);
-    return result;
+    return count != 0;
 }
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
@@ -300,7 +293,7 @@ MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
 
     auto mutation_command = MutationCommand::parse(alter_command.get());
     if (!mutation_command)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}. It's a bug", alter_command->formatForErrorMessage());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}. It's a bug", queryToString(alter_command));
 
     return *mutation_command;
 }
@@ -1291,9 +1284,8 @@ void MutationsInterpreter::Source::read(
             plan,
             *data,
             storage_snapshot,
-            RangesInDataPart(part),
+            part,
             alter_conversions,
-            nullptr,
             required_columns,
             nullptr,
             apply_deleted_mask_,

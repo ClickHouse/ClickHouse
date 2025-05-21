@@ -275,8 +275,7 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
                     address.host_name == replica_address.host_name &&
                     address.port == replica_address.port &&
                     address.default_database == replica_address.default_database &&
-                    address.secure == replica_address.secure &&
-                    address.bind_host == replica_address.bind_host)
+                    address.secure == replica_address.secure)
                 {
                     return shards_info[shard_index].per_replica_pools[replica_index];
                 }
@@ -297,8 +296,7 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
             address.cluster_secret,
             storage.getName() + '_' + address.user, /* client */
             Protocol::Compression::Enable,
-            address.secure,
-            address.bind_host);
+            address.secure);
     };
 
     auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
@@ -550,10 +548,18 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
         LOG_DEBUG(log, "Restoring the batch");
 
         DistributedAsyncInsertBatch batch(*this);
-        if (batch.recoverBatch())
-            batch.send(settings_changes, /*update_current_batch=*/ false);
+        batch.deserialize();
 
-        /// Remove the batch info unconditionally since it is either valid and sent or broken and should be re-created from scratch.
+        /// In case of recovery it is possible that some of files will be
+        /// missing, if server had been restarted abnormally
+        /// (between unlink(*.bin) and unlink(current_batch.txt)).
+        ///
+        /// But current_batch_file_path should be removed anyway, since if some
+        /// file was missing, then the batch is not complete and there is no
+        /// point in trying to pretend that it will not break deduplication.
+        if (batch.valid())
+            batch.send(settings_changes);
+
         auto dir_sync_guard = getDirectorySyncGuard(relative_path);
         fs::remove(current_batch_file_path);
     }
@@ -632,13 +638,15 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
             batch.total_bytes += total_bytes;
 
             if (batch.isEnoughSize())
-                batch.send(settings_changes, /*update_current_batch=*/ true);
+            {
+                batch.send(settings_changes);
+            }
         }
 
         for (auto & kv : header_to_batch)
         {
             DistributedAsyncInsertBatch & batch = kv.second;
-            batch.send(settings_changes, /*update_current_batch=*/ true);
+            batch.send(settings_changes);
         }
     }
     catch (...)

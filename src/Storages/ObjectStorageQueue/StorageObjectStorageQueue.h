@@ -10,7 +10,6 @@
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
-#include <base/defines.h>
 
 
 namespace DB
@@ -64,9 +63,6 @@ public:
 
     ObjectStorageQueueSettings getSettings() const;
 
-    /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
-    static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
-
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
@@ -94,28 +90,26 @@ private:
 
     const std::optional<FormatSettings> format_settings;
 
-    UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
+    BackgroundSchedulePoolTaskHolder task;
+    std::atomic<bool> stream_cancelled{false};
+    UInt64 reschedule_processing_interval_ms;
 
     std::atomic<bool> mv_attached = false;
     std::atomic<bool> shutdown_called = false;
-    std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
-
-    mutable std::mutex streaming_mutex;
-    std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
-    std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
 
     LoggerPtr log;
 
     void startup() override;
     void shutdown(bool is_drop) override;
+    void drop() override;
 
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    const ObjectStorageQueueTableMetadata & getTableMetadata() const;
+    const ObjectStorageQueueTableMetadata & getTableMetadata() const { return files_metadata->getTableMetadata(); }
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
@@ -132,16 +126,15 @@ private:
     /// A background thread function,
     /// executing the whole process of reading from object storage
     /// and pushing result to dependent tables.
-    void threadFunc(size_t streaming_tasks_index);
+    void threadFunc();
     /// A subset of logic executed by threadFunc.
-    bool streamToViews(size_t streaming_tasks_index);
+    bool streamToViews();
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        const std::string & exception_message = {},
-        int error_code = 0) const;
+        const std::string & exception_message = {}) const;
 };
 
 }

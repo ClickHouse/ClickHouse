@@ -8,6 +8,7 @@
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -60,7 +61,9 @@ TEST_P(ParserTest, parseQuery)
             {
                 ASTPtr ast_clone = ast->clone();
                 {
-                    String formatted_ast = ast_clone->formatWithSecretsMultiLine();
+                    WriteBufferFromOwnString buf;
+                    formatAST(*ast_clone, buf, false, false);
+                    String formatted_ast = buf.str();
                     EXPECT_EQ(expected_ast, formatted_ast);
                 }
 
@@ -74,7 +77,9 @@ TEST_P(ParserTest, parseQuery)
                 }
 
                 {
-                    String formatted_ast = ast_clone->formatWithSecretsMultiLine();
+                    WriteBufferFromOwnString buf;
+                    formatAST(*ast_clone, buf, false, false);
+                    String formatted_ast = buf.str();
                     EXPECT_EQ(expected_ast, formatted_ast);
                 }
             }
@@ -87,7 +92,9 @@ TEST_P(ParserTest, parseQuery)
                 }
                 else
                 {
-                    String formatted_ast = ast->clone()->formatWithSecretsMultiLine();
+                    WriteBufferFromOwnString buf;
+                    formatAST(*ast->clone(), buf, false, false);
+                    String formatted_ast = buf.str();
                     EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, expected_ast));
                 }
             }
@@ -174,30 +181,12 @@ INSTANTIATE_TEST_SUITE_P(ParserAlterCommand_MODIFY_COMMENT, ParserTest,
             {
                 // Empty comment value
                 "MODIFY COMMENT ''",
-                "(MODIFY COMMENT '')",
+                "MODIFY COMMENT ''",
             },
             {
                 // Non-empty comment value
                 "MODIFY COMMENT 'some comment value'",
-                "(MODIFY COMMENT 'some comment value')",
-            }
-        }
-)));
-
-INSTANTIATE_TEST_SUITE_P(ParserAlterCommand_MODIFY_COMMENT_WITH_PARENS, ParserTest,
-    ::testing::Combine(
-        ::testing::Values(std::make_shared<ParserAlterCommand>(true)),
-        ::testing::ValuesIn(std::initializer_list<ParserTestCase>
-        {
-            {
-                // Empty comment value
-                "(MODIFY COMMENT '')",
-                "(MODIFY COMMENT '')",
-            },
-            {
-                // Non-empty comment value
-                "(MODIFY COMMENT 'some comment value')",
-                "(MODIFY COMMENT 'some comment value')",
+                "MODIFY COMMENT 'some comment value'",
             }
         }
 )));
@@ -295,10 +284,6 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'"
         },
         {
-            "CREATE USER user1 IDENTIFIED WITH scram_sha256_password BY 'qwe123'",
-            "CREATE USER user1 IDENTIFIED WITH scram_sha256_password BY 'qwe123'"
-        },
-        {
             "CREATE USER user1 IDENTIFIED WITH no_password",
             "CREATE USER user1 IDENTIFIED WITH no_password"
         },
@@ -313,10 +298,6 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         {
             "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",
             "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'"
-        },
-        {
-            "CREATE USER user1 IDENTIFIED WITH scram_sha256_hash BY '04e7a70338d7af7bb6142fe7e19fef46d9b605f3e78b932a60e8200ef9154976' SALT ''",
-            "CREATE USER user1 IDENTIFIED WITH scram_sha256_hash BY '04e7a70338d7af7bb6142fe7e19fef46d9b605f3e78b932a60e8200ef9154976' SALT ''"
         },
         {
             "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'",

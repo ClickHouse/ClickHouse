@@ -67,7 +67,7 @@ SET implicit_transaction=False;
 SELECT 'Looking_at_transaction_id_True' FORMAT Null SETTINGS implicit_transaction=1;
 -- Verify that the transaction_id column is NOT populated without transaction
 SELECT 'Looking_at_transaction_id_False' FORMAT Null SETTINGS implicit_transaction=0;
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     'implicit_True',

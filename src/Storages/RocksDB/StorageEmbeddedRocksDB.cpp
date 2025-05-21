@@ -15,7 +15,6 @@
 
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsInterpreter.h>
 
@@ -715,10 +714,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
     }
-
-    if (metadata.getColumns().hasSubcolumn(primary_key_names[0]))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB doesn't support subcolumns in primary key");
-
     auto settings = std::make_unique<RocksDBSettings>();
     settings->loadFromQuery(*args.storage_def);
     if (args.storage_def->settings)
@@ -824,9 +819,9 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
     return Chunk(std::move(columns), num_rows);
 }
 
-std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context) const
+std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & query_settings) const
 {
-    if (!query_context->getSettingsRef()[Setting::optimize_trivial_approximate_count_query])
+    if (!query_settings[Setting::optimize_trivial_approximate_count_query])
         return {};
     std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
@@ -837,7 +832,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
     return estimated_rows;
 }
 
-std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
+std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(const Settings & /*settings*/) const
 {
     std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)

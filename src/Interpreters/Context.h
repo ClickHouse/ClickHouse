@@ -97,8 +97,6 @@ class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
-class IcebergMetadataFilesCache;
-class VectorSimilarityIndexCache;
 class ProcessList;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -106,8 +104,7 @@ class Macros;
 struct Progress;
 struct FileProgress;
 class Clusters;
-class QueryResultCache;
-class QueryConditionCache;
+class QueryCache;
 class ISystemLog;
 class QueryLog;
 class QueryMetricLog;
@@ -117,7 +114,6 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
-class TransposedMetricLog;
 class LatencyLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
@@ -238,17 +234,11 @@ using ReadTaskCallback = std::function<String()>;
 using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
-struct QueryPlanAndSets;
-using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
-
 class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
-
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class SessionTracker;
 
@@ -299,7 +289,6 @@ protected:
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
-    QueryPlanDeserializationCallback query_plan_deserialization_callback;
 
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
@@ -349,13 +338,8 @@ protected:
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
 
-    bool is_under_restore = false;
-
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
-
-    /// Max block numbers in partitions to read from MergeTree tables.
-    PartitionIdToMaxBlockPtr partition_id_to_max_block;
 
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
@@ -534,7 +518,6 @@ public:
 protected:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
-    mutable std::mutex sample_block_cache_mutex;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -612,52 +595,10 @@ public:
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
-
-    // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
 
-    /// Different kinds of warnings available for use with the `system.warnings` table.
-    /// More can be added as necessary. These are used to track if a warning is already
-    /// present to be able to add, remove or update warnings from the table
-    enum class WarningType
-    {
-        AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
-        AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
-        AVAILABLE_MEMORY_TOO_LOW,
-        DELAY_ACCOUNTING_DISABLED,
-        DB_ORDINARY_DEPRECATED,
-        ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
-        LINUX_MAX_PID_TOO_LOW,
-        LINUX_MEMORY_OVERCOMMIT_DISABLED,
-        LINUX_FAST_CLOCK_SOURCE_NOT_USED,
-        LINUX_MAX_THREADS_COUNT_TOO_LOW,
-        LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
-        MAX_ATTACHED_TABLES,
-        MAX_ATTACHED_VIEWS,
-        MAX_ATTACHED_DICTIONARIES,
-        MAX_ATTACHED_DATABASES,
-        MAX_ACTIVE_PARTS,
-        MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
-        MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
-        MAX_NUM_THREADS_LOWER_THAN_LIMIT,
-        OBSOLETE_SETTINGS,
-        PROCESS_USER_MATCHES_DATA_OWNER,
-        RABBITMQ_UNSUPPORTED_COLUMNS,
-        REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
-        SERVER_LOGGING_LEVEL_TEST,
-        SERVER_RUN_UNDER_DEBUGGER,
-        SERVER_BUILT_IN_DEBUG_MODE,
-        SERVER_BUILT_WITH_SANITIZERS,
-        SERVER_BUILT_WITH_COVERAGE,
-        SETTING_ZERO_COPY_REPLICATION_ENABLED,
-        SKIPPING_CONDITION_QUERY,
-        THREAD_FUZZER_IS_ENABLED
-    };
-
-    std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
-    void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
-    void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
-    void removeWarningMessage(WarningType warning) const;
+    /// A list of warnings about server configuration to place in `system.warnings` table.
+    Strings getWarnings() const;
 
     VolumePtr getGlobalTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
@@ -673,6 +614,9 @@ public:
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
+
+    void addWarningMessage(const String & msg) const;
+    void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -762,11 +706,6 @@ public:
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
     /// This method is called in executeQuery() and will call the external tables initializer.
     void initializeExternalTablesIfSet();
-
-    /// This is a callback which returns deserialized QueryPlan if the packet with QueryPlan was received.
-    void setQueryPlanDeserializationCallback(QueryPlanDeserializationCallback && callback);
-    /// This method is called in executeQuery() and will call the query plan deserialization callback.
-    std::shared_ptr<QueryPlanAndSets> getDeserializedQueryPlan();
 
     /// When input() is present we have to send columns structure to client
     void setInputInitializer(InputInitializer && initializer);
@@ -887,7 +826,7 @@ public:
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
-    StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
+    StoragePtr buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -921,9 +860,6 @@ public:
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
-
-    bool isUnderRestore() const { return is_under_restore; }
-    void setUnderRestore(bool under_restore) { is_under_restore = under_restore; }
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
@@ -993,8 +929,8 @@ public:
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
                                   const std::optional<FormatSettings> & format_settings = std::nullopt, std::optional<size_t> max_parsing_threads = std::nullopt) const;
 
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
-    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
+    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
     const InterserverIOHandler & getInterserverIOHandler() const;
@@ -1019,23 +955,11 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
-    size_t getMaxTableNumToWarn() const;
-    size_t getMaxViewNumToWarn() const;
-    size_t getMaxDictionaryNumToWarn() const;
-    size_t getMaxDatabaseNumToWarn() const;
-    size_t getMaxPartNumToWarn() const;
-    size_t getMaxPendingMutationsToWarn() const;
-    size_t getMaxPendingMutationsExecutionTimeToWarn() const;
-
     void setMaxTableNumToWarn(size_t max_table_to_warn);
     void setMaxViewNumToWarn(size_t max_view_to_warn);
     void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
     void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
     void setMaxPartNumToWarn(size_t max_part_to_warn);
-    // Based on asynchronous metrics
-    void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
-    void setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn);
-
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -1162,12 +1086,9 @@ public:
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void clearUncompressedCache() const;
 
-    void setPageCache(
-        std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio,
-        size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio,
-        size_t num_shards);
+    void setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages);
     std::shared_ptr<PageCache> getPageCache() const;
-    void clearPageCache() const;
+    void dropPageCache() const;
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1190,32 +1111,15 @@ public:
     std::shared_ptr<MarkCache> getIndexMarkCache() const;
     void clearIndexMarkCache() const;
 
-    void setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
-    void clearVectorSimilarityIndexCache() const;
-
     void setMMappedFileCache(size_t max_cache_size_in_num_entries);
     void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void clearMMappedFileCache() const;
 
-    void setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
-    void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<QueryResultCache> getQueryResultCache() const;
-    void clearQueryResultCache(const std::optional<String> & tag) const;
-
-#if USE_AVRO
-    void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
-    void clearIcebergMetadataFilesCache() const;
-#endif
-
-    void setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
-    void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
-    void clearQueryConditionCache() const;
+    void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
+    void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<QueryCache> getQueryCache() const;
+    void clearQueryCache(const std::optional<String> & tag) const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -1288,7 +1192,6 @@ public:
     std::shared_ptr<TraceLog> getTraceLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
-    std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
     std::shared_ptr<LatencyLog> getLatencyLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
@@ -1381,6 +1284,7 @@ public:
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
+        EMBEDDED_CLIENT,/// clickhouse-client being run over SSH tunnel
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
         DISKS,          /// clickhouse-disks
@@ -1402,7 +1306,7 @@ public:
     String getGoogleProtosPath() const;
     void setGoogleProtosPath(const String & path);
 
-    std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
+    SampleBlockCache & getSampleBlockCache() const;
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
@@ -1510,9 +1414,6 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
-
-    void setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions);
-    PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock() const;
 
     const ServerSettings & getServerSettings() const;
 

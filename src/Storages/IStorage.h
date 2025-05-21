@@ -8,7 +8,6 @@
 #include <Interpreters/StorageID.h>
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
-#include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -66,6 +65,22 @@ class RestorerFromBackup;
 class ConditionSelectivityEstimator;
 
 class ActionsDAG;
+
+struct ColumnSize
+{
+    size_t marks = 0;
+    size_t data_compressed = 0;
+    size_t data_uncompressed = 0;
+
+    void add(const ColumnSize & other)
+    {
+        marks += other.marks;
+        data_compressed += other.data_compressed;
+        data_uncompressed += other.data_uncompressed;
+    }
+};
+
+using IndexSize = ColumnSize;
 
 /** Storage. Describes the table. Responsible for
   * - storage of the table data;
@@ -172,8 +187,6 @@ public:
 
     /// Returns true if asynchronous inserts are enabled for table.
     virtual bool areAsynchronousInsertsEnabled() const { return false; }
-
-    virtual bool isSharedStorage() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -331,7 +344,7 @@ public:
       * It will also store needed stuff for projection query pipeline.
       *
       * QueryProcessingStage::Enum required for Distributed over Distributed,
-      * since it cannot return Complete for intermediate queries ever.
+      * since it cannot return Complete for intermediate queries never.
       */
     virtual QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const
     {
@@ -578,10 +591,8 @@ public:
       */
     virtual void shutdown(bool is_drop = false) { UNUSED(is_drop); } // NOLINT
 
-    /// Called before shutdown() to flush data to underlying storage.
-    /// Might be called multiple times; only the first call needs to be processed.
-    /// Data in memory need to be persistent. Any background work that affects other tables
-    /// (e.g. materialized view refreshes that create/drop tables) needs to be stopped.
+    /// Called before shutdown() to flush data to underlying storage
+    /// Data in memory need to be persistent
     virtual void flushAndPrepareForShutdown() {}
 
     /// Asks table to stop executing some action identified by action_type
@@ -665,7 +676,7 @@ public:
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.
-    virtual std::optional<UInt64> totalRows(ContextPtr) const { return {}; }
+    virtual std::optional<UInt64> totalRows(const Settings &) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
@@ -683,7 +694,7 @@ public:
     /// Memory part should be estimated as a resident memory size.
     /// In particular, alloctedBytes() is preferable over bytes()
     /// when considering in-memory blocks.
-    virtual std::optional<UInt64> totalBytes(ContextPtr) const { return {}; }
+    virtual std::optional<UInt64> totalBytes(const Settings &) const { return {}; }
 
     /// If it is possible to quickly determine exact number of uncompressed bytes for the table on storage:
     /// - disk (uncompressed)

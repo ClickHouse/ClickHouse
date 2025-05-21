@@ -1,18 +1,17 @@
 #include "IDisk.h"
-#include <Core/Field.h>
-#include <Core/ServerUUID.h>
-#include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
-#include <Interpreters/Context.h>
-#include <Storages/PartitionCommands.h>
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
 #include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Core/Field.h>
+#include <Core/ServerUUID.h>
+#include <Disks/FakeDiskTransaction.h>
 
 namespace CurrentMetrics
 {
@@ -133,6 +132,7 @@ void asyncCopy(
     IDisk & to_disk,
     String to_path,
     ThreadPoolCallbackRunnerLocal<void> & runner,
+    bool copy_root_dir,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     const std::function<void()> & cancellation_hook)
@@ -142,16 +142,21 @@ void asyncCopy(
         runner(
             [&from_disk, from_path, &to_disk, to_path, &read_settings, &write_settings, &cancellation_hook] {
                 from_disk.copyFile(
-                    from_path, to_disk, to_path, read_settings, write_settings, cancellation_hook);
+                    from_path, to_disk, fs::path(to_path) / fileName(from_path), read_settings, write_settings, cancellation_hook);
             });
     }
-    else /// Directory
+    else
     {
         fs::path dest(to_path);
-        to_disk.createDirectories(dest);
+        if (copy_root_dir)
+        {
+            fs::path dir_name = fs::path(from_path).parent_path().filename();
+            dest /= dir_name;
+            to_disk.createDirectories(dest);
+        }
 
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
-            asyncCopy(from_disk, it->path(), to_disk, dest / it->name(), runner, read_settings, write_settings, cancellation_hook);
+            asyncCopy(from_disk, it->path(), to_disk, dest, runner, true, read_settings, write_settings, cancellation_hook);
     }
 }
 
@@ -159,6 +164,7 @@ void IDisk::copyThroughBuffers(
     const String & from_path,
     const std::shared_ptr<IDisk> & to_disk,
     const String & to_path,
+    bool copy_root_dir,
     const ReadSettings & read_settings,
     WriteSettings write_settings,
     const std::function<void()> & cancellation_hook)
@@ -170,7 +176,7 @@ void IDisk::copyThroughBuffers(
     write_settings.s3_allow_parallel_part_upload = false;
     write_settings.azure_allow_parallel_part_upload = false;
 
-    asyncCopy(*this, from_path, *to_disk, to_path, runner, read_settings, write_settings, cancellation_hook);
+    asyncCopy(*this, from_path, *to_disk, to_path, runner, copy_root_dir, read_settings, write_settings, cancellation_hook);
 
     runner.waitForAllToFinishAndRethrowFirstError();
 }
@@ -184,17 +190,15 @@ void IDisk::copyDirectoryContent(
     const WriteSettings & write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    copyThroughBuffers(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
+    if (!to_disk->existsDirectory(to_dir))
+        to_disk->createDirectories(to_dir);
+
+    copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir= */ false, read_settings, write_settings, cancellation_hook);
 }
 
 void IDisk::truncateFile(const String &, size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-bool IDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return true;
 }
 
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const

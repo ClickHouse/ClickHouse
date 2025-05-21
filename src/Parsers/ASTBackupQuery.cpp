@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB

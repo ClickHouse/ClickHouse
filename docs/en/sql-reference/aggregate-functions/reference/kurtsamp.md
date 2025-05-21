@@ -1,8 +1,6 @@
 ---
-description: 'Computes the sample kurtosis of a sequence.'
-sidebar_position: 158
 slug: /sql-reference/aggregate-functions/reference/kurtsamp
-title: 'kurtSamp'
+sidebar_position: 158
 ---
 
 # kurtSamp
@@ -11,13 +9,13 @@ Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequ
 
 It represents an unbiased estimate of the kurtosis of a random variable if passed values form its sample.
 
-```sql
+``` sql
 kurtSamp(expr)
 ```
 
 **Arguments**
 
-`expr` — [Expression](/sql-reference/syntax#expressions) returning a number.
+`expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 
@@ -25,6 +23,6 @@ The kurtosis of the given distribution. Type — [Float64](../../../sql-referenc
 
 **Example**
 
-```sql
+``` sql
 SELECT kurtSamp(value) FROM series_with_value_column;
 ```

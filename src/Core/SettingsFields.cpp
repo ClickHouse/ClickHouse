@@ -27,19 +27,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+
 namespace
 {
-    template<typename T>
-    void validateFloatingPointSettingValue(T value)
-    {
-        if constexpr (std::is_floating_point_v<T>)
-        {
-            if (!std::isfinite(value))
-                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                    "Float setting value must be finite, got {}", value);
-        }
-    }
-
     template <typename T>
     T stringToNumber(const String & str)
     {
@@ -56,11 +46,7 @@ namespace
             throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
         }
         else
-        {
-            T value = parseWithSizeSuffix<T>(str);
-            validateFloatingPointSettingValue(value);
-            return value;
-        }
+            return parseWithSizeSuffix<T>(str);
     }
 
     template <typename T>
@@ -74,18 +60,16 @@ namespace
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<UInt64>(), result))
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
-                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
-            validateFloatingPointSettingValue(result);
+                throw Exception(
+                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
             return result;
         }
         if (f.getType() == Field::Types::Int64)
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<Int64>(), result))
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
-                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
-            validateFloatingPointSettingValue(result);
+                throw Exception(
+                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
             return result;
         }
         if (f.getType() == Field::Types::Bool)
@@ -95,7 +79,6 @@ namespace
         if (f.getType() == Field::Types::Float64)
         {
             Float64 x = f.safeGet<Float64>();
-            validateFloatingPointSettingValue(x);
             if constexpr (std::is_floating_point_v<T>)
             {
                 return T(x);
@@ -147,22 +130,6 @@ namespace
         return f.safeGet<Map>();
     }
 
-}
-
-template <typename T>
-SettingFieldNumber<T>::SettingFieldNumber(Type x)
-{
-    validateFloatingPointSettingValue(x);
-    value = x;
-};
-
-template <typename T>
-SettingFieldNumber<T> & SettingFieldNumber<T>::operator=(Type x)
-{
-    validateFloatingPointSettingValue(x);
-    value = x;
-    changed = true;
-    return *this;
 }
 
 template <typename T>

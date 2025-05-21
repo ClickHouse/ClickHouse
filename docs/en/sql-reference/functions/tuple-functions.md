@@ -1,12 +1,10 @@
 ---
-description: 'Documentation for Tuple Functions'
-sidebar_label: 'Tuples'
-sidebar_position: 180
 slug: /sql-reference/functions/tuple-functions
-title: 'Tuple Functions'
+sidebar_position: 180
+sidebar_label: Tuples
 ---
 
-## tuple {#tuple}
+## tuple
 
 A function that allows grouping multiple columns.
 For columns C1, C2, ... with the types T1, T2, ..., it returns a named Tuple(C1 T1, C2 T2, ...) type tuple containing these columns if their names are unique and can be treated as unquoted identifiers, otherwise a Tuple(T1, T2, ...) is returned. There is no cost to execute the function.
@@ -16,11 +14,11 @@ The function implements the operator `(x, y, ...)`.
 
 **Syntax**
 
-```sql
+``` sql
 tuple(x, y, ...)
 ```
 
-## tupleElement {#tupleelement}
+## tupleElement
 
 A function that allows getting a column from a tuple.
 
@@ -30,20 +28,20 @@ The function implements operators `x.index` and `x.name`.
 
 **Syntax**
 
-```sql
+``` sql
 tupleElement(tuple, index, [, default_value])
 tupleElement(tuple, name, [, default_value])
 ```
 
-## untuple {#untuple}
+## untuple
 
-Performs syntactic substitution of [tuple](/sql-reference/data-types/tuple) elements in the call location.
+Performs syntactic substitution of [tuple](../data-types/tuple.md#tuplet1-t2) elements in the call location.
 
 The names of the result columns are implementation-specific and subject to change. Do not assume specific column names after `untuple`.
 
 **Syntax**
 
-```sql
+``` sql
 untuple(x)
 ```
 
@@ -61,7 +59,7 @@ You can use the `EXCEPT` expression to skip columns as a result of the query.
 
 Input table:
 
-```text
+``` text
 ┌─key─┬─v1─┬─v2─┬─v3─┬─v4─┬─v5─┬─v6────────┐
 │   1 │ 10 │ 20 │ 40 │ 30 │ 15 │ (33,'ab') │
 │   2 │ 25 │ 65 │ 70 │ 40 │  6 │ (44,'cd') │
@@ -75,13 +73,13 @@ Example of using a `Tuple`-type column as the `untuple` function parameter:
 
 Query:
 
-```sql
+``` sql
 SELECT untuple(v6) FROM kv;
 ```
 
 Result:
 
-```text
+``` text
 ┌─_ut_1─┬─_ut_2─┐
 │    33 │ ab    │
 │    44 │ cd    │
@@ -95,13 +93,13 @@ Example of using an `EXCEPT` expression:
 
 Query:
 
-```sql
+``` sql
 SELECT untuple((* EXCEPT (v2, v3),)) FROM kv;
 ```
 
 Result:
 
-```text
+``` text
 ┌─key─┬─v1─┬─v4─┬─v5─┬─v6────────┐
 │   1 │ 10 │ 30 │ 15 │ (33,'ab') │
 │   2 │ 25 │ 40 │  6 │ (44,'cd') │
@@ -115,13 +113,13 @@ Result:
 
 - [Tuple](../data-types/tuple.md)
 
-## tupleHammingDistance {#tuplehammingdistance}
+## tupleHammingDistance
 
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between two tuples of the same size.
 
 **Syntax**
 
-```sql
+``` sql
 tupleHammingDistance(tuple1, tuple2)
 ```
 
@@ -140,7 +138,7 @@ Tuples should have the same type of the elements.
 The result type is calculated the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
 :::
 
-```sql
+``` sql
 SELECT
     toTypeName(tupleHammingDistance(tuple(0), tuple(0))) AS t1,
     toTypeName(tupleHammingDistance((0, 0), (0, 0))) AS t2,
@@ -149,7 +147,7 @@ SELECT
     toTypeName(tupleHammingDistance((0, 0, 0, 0, 0), (0, 0, 0, 0, 0))) AS t5
 ```
 
-```text
+``` text
 ┌─t1────┬─t2─────┬─t3─────┬─t4─────┬─t5─────┐
 │ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
 └───────┴────────┴────────┴────────┴────────┘
@@ -160,13 +158,13 @@ SELECT
 
 Query:
 
-```sql
+``` sql
 SELECT tupleHammingDistance((1, 2, 3), (3, 2, 1)) AS HammingDistance;
 ```
 
 Result:
 
-```text
+``` text
 ┌─HammingDistance─┐
 │               2 │
 └─────────────────┘
@@ -174,27 +172,27 @@ Result:
 
 Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
 
-```sql
+``` sql
 SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) AS HammingDistance
 FROM (SELECT 'ClickHouse is a column-oriented database management system for online analytical processing of queries.' AS string);
 ```
 
 Result:
 
-```text
+``` text
 ┌─HammingDistance─┐
 │               2 │
 └─────────────────┘
 ```
 
-## tupleToNameValuePairs {#tupletonamevaluepairs}
+## tupleToNameValuePairs
 
 Turns a named tuple into an array of (name, value) pairs. For a `Tuple(a T, b T, ..., c T)` returns `Array(Tuple(String, T), ...)`
 in which the `Strings` represents the named fields of the tuple and `T` are the values associated with those names. All values in the tuple should be of the same type.
 
 **Syntax**
 
-```sql
+``` sql
 tupleToNameValuePairs(tuple)
 ```
 
@@ -210,7 +208,7 @@ tupleToNameValuePairs(tuple)
 
 Query:
 
-```sql
+``` sql
 CREATE TABLE tupletest (col Tuple(user_ID UInt64, session_ID UInt64)) ENGINE = Memory;
 
 INSERT INTO tupletest VALUES (tuple( 100, 2502)), (tuple(1,100));
@@ -220,7 +218,7 @@ SELECT tupleToNameValuePairs(col) FROM tupletest;
 
 Result:
 
-```text
+``` text
 ┌─tupleToNameValuePairs(col)────────────┐
 │ [('user_ID',100),('session_ID',2502)] │
 │ [('user_ID',1),('session_ID',100)]    │
@@ -229,7 +227,7 @@ Result:
 
 It is possible to transform columns to rows using this function:
 
-```sql
+``` sql
 CREATE TABLE tupletest (col Tuple(CPU Float64, Memory Float64, Disk Float64)) ENGINE = Memory;
 
 INSERT INTO tupletest VALUES(tuple(3.3, 5.5, 6.6));
@@ -239,7 +237,7 @@ SELECT arrayJoin(tupleToNameValuePairs(col)) FROM tupletest;
 
 Result:
 
-```text
+``` text
 ┌─arrayJoin(tupleToNameValuePairs(col))─┐
 │ ('CPU',3.3)                           │
 │ ('Memory',5.5)                        │
@@ -249,25 +247,25 @@ Result:
 
 If you pass a simple tuple to the function, ClickHouse uses the indexes of the values as their names:
 
-```sql
+``` sql
 SELECT tupleToNameValuePairs(tuple(3, 2, 1));
 ```
 
 Result:
 
-```text
+``` text
 ┌─tupleToNameValuePairs(tuple(3, 2, 1))─┐
 │ [('1',3),('2',2),('3',1)]             │
 └───────────────────────────────────────┘
 ```
 
-## tupleNames {#tuplenames}
+## tupleNames
 
 Converts a tuple into an array of column names. For a tuple in the form `Tuple(a T, b T, ...)`, it returns an array of strings representing the named columns of the tuple. If the tuple elements do not have explicit names, their indices will be used as the column names instead.
 
 **Syntax**
 
-```sql
+``` sql
 tupleNames(tuple)
 ```
 
@@ -285,7 +283,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-referen
 
 Query:
 
-```sql
+``` sql
 CREATE TABLE tupletest (col Tuple(user_ID UInt64, session_ID UInt64)) ENGINE = Memory;
 
 INSERT INTO tupletest VALUES (tuple(1, 2));
@@ -295,7 +293,7 @@ SELECT tupleNames(col) FROM tupletest;
 
 Result:
 
-```text
+``` text
 ┌─tupleNames(col)──────────┐
 │ ['user_ID','session_ID'] │
 └──────────────────────────┘
@@ -303,19 +301,19 @@ Result:
 
 If you pass a simple tuple to the function, ClickHouse uses the indexes of the columns as their names:
 
-```sql
+``` sql
 SELECT tupleNames(tuple(3, 2, 1));
 ```
 
 Result:
 
-```text
+``` text
 ┌─tupleNames((3, 2, 1))─┐
 │ ['1','2','3']         │
 └───────────────────────┘
 ```
 
-## tuplePlus {#tupleplus}
+## tuplePlus
 
 Calculates the sum of corresponding values of two tuples of the same size.
 
@@ -352,7 +350,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## tupleMinus {#tupleminus}
+## tupleMinus
 
 Calculates the subtraction of corresponding values of two tuples of the same size.
 
@@ -389,7 +387,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## tupleMultiply {#tuplemultiply}
+## tupleMultiply
 
 Calculates the multiplication of corresponding values of two tuples of the same size.
 
@@ -424,7 +422,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## tupleDivide {#tupledivide}
+## tupleDivide
 
 Calculates the division of corresponding values of two tuples of the same size. Note that division by zero will return `inf`.
 
@@ -459,7 +457,7 @@ Result:
 └─────────────────────────────┘
 ```
 
-## tupleNegate {#tuplenegate}
+## tupleNegate
 
 Calculates the negation of the tuple values.
 
@@ -493,7 +491,7 @@ Result:
 └─────────────────────┘
 ```
 
-## tupleMultiplyByNumber {#tuplemultiplybynumber}
+## tupleMultiplyByNumber
 
 Returns a tuple with all values multiplied by a number.
 
@@ -528,7 +526,7 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## tupleDivideByNumber {#tupledividebynumber}
+## tupleDivideByNumber
 
 Returns a tuple with all values divided by a number. Note that division by zero will return `inf`.
 
@@ -563,11 +561,11 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## tupleConcat {#tupleconcat}
+## tupleConcat
 
 Combines tuples passed as arguments.
 
-```sql
+``` sql
 tupleConcat(tuples)
 ```
 
@@ -577,17 +575,17 @@ tupleConcat(tuples)
 
 **Example**
 
-```sql
+``` sql
 SELECT tupleConcat((1, 2), (3, 4), (true, false)) AS res
 ```
 
-```text
+``` text
 ┌─res──────────────────┐
 │ (1,2,3,4,true,false) │
 └──────────────────────┘
 ```
 
-## tupleIntDiv {#tupleintdiv}
+## tupleIntDiv
 
 Does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients.
 
@@ -615,13 +613,13 @@ tupleIntDiv(tuple_num, tuple_div)
 
 Query:
 
-```sql
+``` sql
 SELECT tupleIntDiv((15, 10, 5), (5, 5, 5));
 ```
 
 Result:
 
-```text
+``` text
 ┌─tupleIntDiv((15, 10, 5), (5, 5, 5))─┐
 │ (3,2,1)                             │
 └─────────────────────────────────────┘
@@ -629,19 +627,19 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5));
 ```
 
 Result:
 
-```text
+``` text
 ┌─tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))─┐
 │ (2,1,0)                                   │
 └───────────────────────────────────────────┘
 ```
 
-## tupleIntDivOrZero {#tupleintdivorzero}
+## tupleIntDivOrZero
 
 Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0. 
 
@@ -667,19 +665,19 @@ tupleIntDivOrZero(tuple_num, tuple_div)
 
 Query:
 
-```sql
+``` sql
 SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0));
 ```
 
 Result:
 
-```text
+``` text
 ┌─tupleIntDivOrZero((5, 10, 15), (0, 0, 0))─┐
 │ (0,0,0)                                   │
 └───────────────────────────────────────────┘
 ```
 
-## tupleIntDivByNumber {#tupleintdivbynumber}
+## tupleIntDivByNumber
 
 Does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients.
 
@@ -707,13 +705,13 @@ tupleIntDivByNumber(tuple_num, div)
 
 Query:
 
-```sql
+``` sql
 SELECT tupleIntDivByNumber((15, 10, 5), 5);
 ```
 
 Result:
 
-```text
+``` text
 ┌─tupleIntDivByNumber((15, 10, 5), 5)─┐
 │ (3,2,1)                             │
 └─────────────────────────────────────┘
@@ -721,19 +719,19 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8);
 ```
 
 Result:
 
-```text
+``` text
 ┌─tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8)─┐
 │ (2,1,0)                                     │
 └─────────────────────────────────────────────┘
 ```
 
-## tupleIntDivOrZeroByNumber {#tupleintdivorzerobynumber}
+## tupleIntDivOrZeroByNumber
 
 Like [tupleIntDivByNumber](#tupleintdivbynumber) it does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0.
 
@@ -761,13 +759,13 @@ tupleIntDivOrZeroByNumber(tuple_num, div)
 
 Query:
 
-```sql
+``` sql
 SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 5);
 ```
 
 Result:
 
-```text
+``` text
 ┌─tupleIntDivOrZeroByNumber((15, 10, 5), 5)─┐
 │ (3,2,1)                                   │
 └───────────────────────────────────────────┘
@@ -775,19 +773,19 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 0)
 ```
 
 Result:
 
-```text
+``` text
 ┌─tupleIntDivOrZeroByNumber((15, 10, 5), 0)─┐
 │ (0,0,0)                                   │
 └───────────────────────────────────────────┘
 ```
 
-## tupleModulo {#tuplemodulo}
+## tupleModulo
 
 Returns a tuple of the moduli (remainders) of division operations of two tuples.
 
@@ -811,19 +809,19 @@ tupleModulo(tuple_num, tuple_mod)
 
 Query:
 
-```sql
+``` sql
 SELECT tupleModulo((15, 10, 5), (5, 3, 2));
 ```
 
 Result:
 
-```text
+``` text
 ┌─tupleModulo((15, 10, 5), (5, 3, 2))─┐
 │ (0,1,1)                             │
 └─────────────────────────────────────┘
 ```
 
-## tupleModuloByNumber {#tuplemodulobynumber}
+## tupleModuloByNumber
 
 Returns a tuple of the moduli (remainders) of division operations of a tuple and a given divisor.
 
@@ -847,19 +845,19 @@ tupleModuloByNumber(tuple_num, div)
 
 Query:
 
-```sql
+``` sql
 SELECT tupleModuloByNumber((15, 10, 5), 2);
 ```
 
 Result:
 
-```text
+``` text
 ┌─tupleModuloByNumber((15, 10, 5), 2)─┐
 │ (1,0,1)                             │
 └─────────────────────────────────────┘
 ```
 
-## flattenTuple {#flattentuple}
+## flattenTuple
 
 Returns a flattened `output` tuple from a nested named `input` tuple. Elements of the `output` tuple are the paths from the original `input` tuple. For instance: `Tuple(a Int, Tuple(b Int, c Int)) -> Tuple(a Int, b Int, c Int)`. `flattenTuple` can be used to select all paths from type `Object` as separate columns.
 
@@ -881,7 +879,7 @@ flattenTuple(input)
 
 Query:
 
-```sql
+``` sql
 CREATE TABLE t_flatten_tuple(t Tuple(t1 Nested(a UInt32, s String), b UInt32, t2 Tuple(k String, v UInt32))) ENGINE = Memory;
 INSERT INTO t_flatten_tuple VALUES (([(1, 'a'), (2, 'b')], 3, ('c', 4)));
 SELECT flattenTuple(t) FROM t_flatten_tuple;
@@ -889,12 +887,12 @@ SELECT flattenTuple(t) FROM t_flatten_tuple;
 
 Result:
 
-```text
+``` text
 ┌─flattenTuple(t)───────────┐
 │ ([1,2],['a','b'],3,'c',4) │
 └───────────────────────────┘
 ```
 
-## Distance functions {#distance-functions}
+## Distance functions
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).

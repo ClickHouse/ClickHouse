@@ -1,6 +1,7 @@
 #include "inplaceBlockConversions.h"
 
 #include <Core/Block.h>
+#include <Parsers/queryToString.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>

@@ -1,15 +1,11 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Core/Names.h>
-#include <DataTypes/IDataType.h>
-#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
 
-class ColumnsDescription;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 

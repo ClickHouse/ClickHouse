@@ -4,6 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/formatAST.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 

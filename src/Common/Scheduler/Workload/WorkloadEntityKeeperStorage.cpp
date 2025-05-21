@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ParserCreateWorkloadEntity.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/sleep.h>
 #include <Common/Exception.h>
@@ -254,7 +255,7 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
     std::vector<std::pair<String, ASTPtr>> new_entities;
     for (const auto & query : queries)
     {
-        LOG_TRACE(log, "Read keeper entity definition: {}", query->formatForLogging());
+        LOG_TRACE(log, "Read keeper entity definition: {}", serializeAST(*query));
         if (auto * create_workload_query = query->as<ASTCreateWorkloadQuery>())
             new_entities.emplace_back(create_workload_query->getWorkloadName(), query);
         else if (auto * create_resource_query = query->as<ASTCreateResourceQuery>())
@@ -270,3 +271,4 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
 }
 
 }
+

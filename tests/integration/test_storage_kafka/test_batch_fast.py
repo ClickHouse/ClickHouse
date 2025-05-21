@@ -1,15 +1,43 @@
 """Quick tests, faster than 30 seconds"""
 
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
-import helpers.kafka.common as k
+import json
+import logging
+import math
+import random
+import threading
+import time
 
+import avro.datafile
+import avro.io
+import avro.schema
+import kafka.errors
+import pytest
+from confluent_kafka.avro.cached_schema_registry_client import (
+    CachedSchemaRegistryClient,
+)
+from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
+from google.protobuf.internal.encoder import _VarintBytes
+from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
+from kafka.admin import NewTopic
+from kafka.protocol.admin import DescribeGroupsRequest_v1
+from kafka.protocol.group import MemberAssignment
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.network import PartitionManager
+from helpers.test_tools import TSV, assert_eq_with_retry
+
+from . import common as k
+from . import message_with_repeated_pb2
 
 # protoc --version
 # libprotoc 3.0.0
 # # to create kafka_pb2.py
 # protoc --python_out=. kafka.proto
 
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
 # TODO: add test for SELECT LIMIT is working.
@@ -431,8 +459,9 @@ def test_kafka_consumer_hang(kafka_cluster):
     # This should trigger heartbeat fail,
     # which will trigger REBALANCE_IN_PROGRESS,
     # and which can lead to consumer hang.
-    with kafka_cluster.pause_container("kafka1"):
-        instance.wait_for_log_line("heartbeat error")
+    kafka_cluster.pause_container("kafka1")
+    instance.wait_for_log_line("heartbeat error")
+    kafka_cluster.unpause_container("kafka1")
 
     # logging.debug("Attempt to drop")
     instance.query("DROP TABLE test.kafka")
@@ -1200,10 +1229,6 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
     """
     )
 
-    # we have to wait > kafka_poll_timeout_ms before producing data,
-    #  otherwise it is expected that data might go via the first MV only
-    time.sleep(3)
-
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
@@ -1228,6 +1253,7 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
 
         k.kafka_check_result(result1, True)
         k.kafka_check_result(result2, True)
+
 
 @pytest.mark.parametrize(
     "create_query_generator",
@@ -2800,17 +2826,17 @@ def test_issue26643(kafka_cluster, create_query_generator):
     thread_per_consumer = k.must_use_thread_per_consumer(create_query_generator)
 
     with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
-        msg = k.message_with_repeated_pb2.Message(
+        msg = message_with_repeated_pb2.Message(
             tnow=1629000000,
             server="server1",
             clien="host1",
             sPort=443,
             cPort=50000,
             r=[
-                k.message_with_repeated_pb2.dd(
+                message_with_repeated_pb2.dd(
                     name="1", type=444, ttl=123123, data=b"adsfasd"
                 ),
-                k.message_with_repeated_pb2.dd(name="2"),
+                message_with_repeated_pb2.dd(name="2"),
             ],
             method="GET",
         )
@@ -2819,7 +2845,7 @@ def test_issue26643(kafka_cluster, create_query_generator):
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
 
-        msg = k.message_with_repeated_pb2.Message(tnow=1629000002)
+        msg = message_with_repeated_pb2.Message(tnow=1629000002)
 
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
@@ -3525,7 +3551,7 @@ def test_kafka_json_type(kafka_cluster):
 
     instance.query(
         """
-        SET enable_json_type = 1;
+        SET allow_experimental_json_type = 1;
         CREATE TABLE test.dst (
             a Int64,
         )

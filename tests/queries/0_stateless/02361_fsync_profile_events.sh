@@ -28,7 +28,7 @@ for i in {1..100}; do
 
     read -r FileSync FileOpen DirectorySync FileSyncElapsedMicroseconds DirectorySyncElapsedMicroseconds <<<"$(
     $CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
-        system flush logs query_log;
+        system flush logs;
 
         select
             ProfileEvents['FileSync'],
@@ -45,7 +45,7 @@ for i in {1..100}; do
     ")"
 
     # Non retriable errors
-    if [[ $FileSync -ne 9 ]]; then
+    if [[ $FileSync -ne 8 ]]; then
         echo "FileSync: $FileSync != 8" >&2
         exit 2
     fi

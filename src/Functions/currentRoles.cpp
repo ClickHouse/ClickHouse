@@ -1,17 +1,15 @@
 #include <base/sort.h>
-
+#include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
-#include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/User.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
+#include <DataTypes/DataTypeArray.h>
 
 
 namespace DB
@@ -77,8 +75,8 @@ namespace
             {
                 static_assert(kind == Kind::DEFAULT_ROLES);
                 const auto & manager = context->getAccessControl();
-                if (const auto user = context->getAccess()->tryGetUser())
-                    role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
+                auto user = context->getUser();
+                role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
             }
 
             /// We sort the names because the result of the function should not depend on the order of UUIDs.

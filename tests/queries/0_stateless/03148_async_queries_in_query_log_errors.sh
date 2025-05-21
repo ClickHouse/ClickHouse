@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function print_flush_query_logs()
 {
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log, query_log"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
     echo ""
 
     echo "system.asynchronous_insert_log"

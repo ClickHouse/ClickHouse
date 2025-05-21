@@ -1,11 +1,9 @@
 ---
-description: 'System table containing information about configured roles.'
-keywords: ['system table', 'roles']
+description: "System table containing information about configured roles."
 slug: /operations/system-tables/roles
-title: 'system.roles'
+title: "roles"
+keywords: ["system table", "roles"]
 ---
-
-# system.roles
 
 Contains information about configured [roles](../../guides/sre/user-management/index.md#role-management).
 
@@ -17,4 +15,4 @@ Columns:
 
 ## See Also {#see-also}
 
-- [SHOW ROLES](/sql-reference/statements/show#show-roles)
+- [SHOW ROLES](../../sql-reference/statements/show.md#show-roles-statement)

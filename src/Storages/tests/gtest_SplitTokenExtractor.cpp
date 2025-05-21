@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
-#include <Common/PODArray.h>
+#include <Common/PODArray_fwd.h>
 
 #include <gtest/gtest.h>
 

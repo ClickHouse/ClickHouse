@@ -1,17 +1,15 @@
 ---
-description: 'Calculates a concatenated string from a group of strings, optionally
-  separated by a delimiter, and optionally limited by a maximum number of elements.'
-sidebar_label: 'groupConcat'
-sidebar_position: 363
 slug: /sql-reference/aggregate-functions/reference/groupconcat
-title: 'groupConcat'
+sidebar_position: 363
+sidebar_label: groupConcat
+title: groupConcat
 ---
 
 Calculates a concatenated string from a group of strings, optionally separated by a delimiter, and optionally limited by a maximum number of elements.
 
 **Syntax**
 
-```sql
+``` sql
 groupConcat[(delimiter [, limit])](expression);
 ```
 
@@ -40,7 +38,7 @@ Also, if different delimiters are specified as parameters and arguments, the del
 
 Input table:
 
-```text
+``` text
 ┌─id─┬─name─┐
 │  1 │ John │
 │  2 │ Jane │
@@ -48,17 +46,17 @@ Input table:
 └────┴──────┘
 ```
 
-1.    Basic usage without a delimiter:
+1.	Basic usage without a delimiter:
 
 Query:
 
-```sql
+``` sql
 SELECT groupConcat(Name) FROM Employees;
 ```
 
 Result:
 
-```text
+``` text
 JohnJaneBob
 ```
 
@@ -69,19 +67,19 @@ This concatenates all names into one continuous string without any separator.
 
 Query:
 
-```sql
+``` sql
 SELECT groupConcat(', ')(Name)  FROM Employees;
 ```
 
 or
 
-```sql
+``` sql
 SELECT groupConcat(Name, ', ')  FROM Employees;
 ```
 
 Result:
 
-```text
+``` text
 John, Jane, Bob
 ```
 
@@ -92,13 +90,13 @@ This output shows the names separated by a comma followed by a space.
 
 Query:
 
-```sql
+``` sql
 SELECT groupConcat(', ', 2)(Name) FROM Employees;
 ```
 
 Result:
 
-```text
+``` text
 John, Jane
 ```
 

@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
@@ -39,8 +38,6 @@
 #include <Common/RemoteHostFilter.h>
 
 #include <base/range.h>
-
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -191,11 +188,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         SSL_library_init();
 
     if (!columns_.getMaterialized().empty() || !columns_.getAliases().empty() || !columns_.getDefaults().empty() || !columns_.getEphemeral().empty())
-    {
-        context_->addOrUpdateWarningMessage(
-            Context::WarningType::RABBITMQ_UNSUPPORTED_COLUMNS,
-            PreformattedMessage::create("RabbitMQ table engine doesn't support ALIAS, DEFAULT or MATERIALIZED columns. They will be ignored and filled with default values"));
-    }
+        context_->addWarningMessage("RabbitMQ table engine doesn't support ALIAS, DEFAULT or MATERIALIZED columns. They will be ignored and filled with default values");
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
@@ -1056,6 +1050,7 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
     return true;
 }
 
+
 void StorageRabbitMQ::streamingToViewsFunc()
 {
     try
@@ -1214,7 +1209,7 @@ bool StorageRabbitMQ::tryStreamToViews()
         write_failed = true;
     }
 
-    LOG_TRACE(log, "Processed {} rows", rows.load());
+    LOG_TRACE(log, "Processed {} rows", rows);
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent

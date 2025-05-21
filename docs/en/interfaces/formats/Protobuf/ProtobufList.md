@@ -1,11 +1,10 @@
 ---
-alias: []
-description: 'Documentation for the ProtobufList format'
-input_format: true
-keywords: ['ProtobufList']
-output_format: true
+title : ProtobufList
 slug: /interfaces/formats/ProtobufList
-title: 'ProtobufList'
+keywords : [ProtobufList]
+input_format: true
+output_format: true
+alias: []
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -16,11 +15,11 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description
 
 The `ProtobufList` format is similar to the [`Protobuf`](./Protobuf.md) format but rows are represented as a sequence of sub-messages contained in a message with a fixed name of "Envelope".
 
-## Example Usage {#example-usage}
+## Example Usage
 
 For example:
 
@@ -47,4 +46,4 @@ message Envelope {
 };
 ```
 
-## Format Settings {#format-settings}
+## Format Settings

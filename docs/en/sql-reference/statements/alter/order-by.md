@@ -1,14 +1,12 @@
 ---
-description: 'Documentation for Manipulating Key Expressions'
-sidebar_label: 'ORDER BY'
-sidebar_position: 41
 slug: /sql-reference/statements/alter/order-by
-title: 'Manipulating Key Expressions'
+sidebar_position: 41
+sidebar_label: ORDER BY
 ---
 
 # Manipulating Key Expressions
 
-```sql
+``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 ```
 

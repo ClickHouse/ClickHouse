@@ -238,11 +238,6 @@ def fn_setup_tables():
     "empty",
     [True, False],
 )
-@pytest.mark.skipif(
-    datetime.now().minute > 57,
-    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
-           'which might trigger it earlier than expected'
-)
 def test_append(
     module_setup_tables,
     fn_setup_tables,
@@ -301,11 +296,6 @@ def test_append(
             "refresh_retry_max_backoff_ms": "20",
         },
     ],
-)
-@pytest.mark.skipif(
-    datetime.now().minute > 57,
-    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
-           'which might trigger it earlier than expected'
 )
 def test_alters(
     module_setup_tables,
@@ -392,7 +382,7 @@ def test_real_wait_refresh(
 
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="AFTER 10 SECOND",
+        refresh_interval="EVERY 10 SECOND",
         to_clause=to_clause_,
         table_clause=table_clause,
         select_query="SELECT now() as a, b FROM src1 SETTINGS insert_deduplicate=0",
@@ -412,12 +402,10 @@ def test_real_wait_refresh(
         expected_rows += 2
         expect_rows(expected_rows, table=tgt)
 
-    is_close = lambda x, y: x is not None and y is not None and abs(x.timestamp() - y.timestamp()) <= 3
-
     rmv2 = get_rmv_info(
         node,
         "test_rmv",
-        condition=lambda x: is_close(x["last_refresh_time"], rmv["next_refresh_time"]),
+        condition=lambda x: x["last_refresh_time"] == rmv["next_refresh_time"],
         # wait for refresh a little bit more than 10 seconds
         max_attempts=30,
         delay=0.5,
@@ -440,8 +428,8 @@ def test_real_wait_refresh(
 
     assert rmv2["exception"] is None
     assert rmv2["status"] in ["Scheduled", "Running"]
-    assert is_close(rmv2["last_success_time"], rmv["next_refresh_time"])
-    assert is_close(rmv2["last_refresh_time"], rmv["next_refresh_time"])
+    assert rmv2["last_success_time"] == rmv["next_refresh_time"]
+    assert rmv2["last_refresh_time"] == rmv["next_refresh_time"]
     assert rmv2["retry"] == 0 and rmv22["retry"] == 0
 
     for n in nodes:

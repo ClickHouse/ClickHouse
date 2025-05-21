@@ -21,7 +21,6 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -151,14 +150,6 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
 
     /// New filter column is the first one.
     String split_filter_column_name = split_filter.getOutputs().front()->result_name;
-
-    // If no new columns added, filter just used one of the input columns as-is and moved it to the front, move it back to keep aggregation key in order.
-    if (const auto & input = node.children.at(0)->step->getOutputHeader(); split_filter.getOutputs().size() == input.columns())
-    {
-        auto pos = input.getPositionByName(split_filter_column_name);
-        if (pos != 0)
-            std::rotate(split_filter.getOutputs().begin(), split_filter.getOutputs().begin() + 1, split_filter.getOutputs().begin() + pos + 1);
-    }
 
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter), std::move(split_filter_column_name), can_remove_filter);
@@ -535,14 +526,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// CreatingSets does not change header.
         /// We can push down filter and update header.
         /// Filter - DelayedCreatingSets - Something
-
-        child = std::make_unique<DelayedCreatingSetsStep>(
-            filter->getOutputHeader(),
-            delayed->detachSets(),
-            delayed->getNetworkTransferLimits(),
-            delayed->getPreparedSetsCache());
-
+        child = std::make_unique<DelayedCreatingSetsStep>(filter->getOutputHeader(), delayed->detachSets(), delayed->getContext());
         std::swap(parent, child);
+        std::swap(parent_node->children, child_node->children);
+        std::swap(parent_node->children.front(), child_node->children.front());
         /// DelayedCreatingSets - Filter - Something
         return 2;
     }
@@ -620,13 +607,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         Names allowed_inputs = child->getOutputHeader().getNames();
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
-            return updated_steps;
-    }
-
-    if (typeid_cast<CustomMetricLogViewStep *>(child.get()))
-    {
-        Names allowed_inputs = {"event_date", "event_time", "hostname"};
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, true))
             return updated_steps;
     }
 
