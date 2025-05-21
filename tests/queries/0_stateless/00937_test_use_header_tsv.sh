@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS tsv"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE tsv (d Date, u UInt8, str String) ENGINE = TinyLog"
 
 INSERT_QUERY='$CLICKHOUSE_CLIENT --query="INSERT INTO tsv FORMAT TSVWithNames"'
-USE_HEADER='--input_format_with_names_use_header=1'
+USE_HEADER='--input_format_with_names_use_header=1 --output_format_parallel_formatting=1'
 SKIP_UNKNOWN='--input_format_skip_unknown_fields=1'
 
 # Simple check for parsing
