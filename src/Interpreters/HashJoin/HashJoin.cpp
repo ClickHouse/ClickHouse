@@ -1332,7 +1332,7 @@ private:
                 for (size_t i = 0; i < mapped_block.rows(); ++i)
                 {
                     size_t row = mapped_block.getRowIdx(i);
-                    if (!used_flags_holder.getUsedSafe(row))
+                    if (!used_flags_holder.isUsed(row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
                         {
@@ -1362,7 +1362,7 @@ private:
                 const Mapped & mapped = it->getMapped();
 
                 size_t offset = map.offsetInternal(it.getPtr());
-                if (used_flags_holder.getUsedSafe(offset))
+                if (used_flags_holder.isUsed(offset))
                     continue;
 
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);

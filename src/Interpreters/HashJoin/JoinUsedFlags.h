@@ -37,7 +37,7 @@ public:
         {
         }
 
-        ALWAYS_INLINE bool getUsedSafe(size_t i) const
+        ALWAYS_INLINE bool isUsed(size_t i) const
         {
             /// Equivelant to `return need_flags ? (*flags)[i].load() : true`
             return !!need_flags * (*flags)[i].load() + !need_flags;
