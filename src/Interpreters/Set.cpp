@@ -440,6 +440,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
         }
 
+        // TODO: Implement for Time64
         // If the original column is DateTime64, check for sub-second precision
         if (isDateTime64(column_to_cast.column->getDataType()) && !isDateTime64(removeNullable(result)->getDataType()))
         {
