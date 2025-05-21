@@ -500,7 +500,7 @@ WITH mergeTreePartInfo('all_12_25_7_4') AS info SELECT info.partition_id, info.m
 
 Result:
 
-```
+```text
 ┌─info.partition_id─┬─info.min_block─┬─info.max_block─┬─info.level─┬─info.mutation─┐
 │ all               │             12 │             25 │          7 │             4 │
 └───────────────────┴────────────────┴────────────────┴────────────┴───────────────┘
@@ -535,7 +535,7 @@ WITH 'all_12_25_7_4' AS lhs, 'all_7_100_10_20' AS rhs SELECT isMergeTreePartCove
 
 Result:
 
-```
+```text
 ┌─isMergeTreeP⋯y(rhs, lhs)─┬─isMergeTreeP⋯y(lhs, rhs)─┐
 │                        0 │                        1 │
 └──────────────────────────┴──────────────────────────┘
