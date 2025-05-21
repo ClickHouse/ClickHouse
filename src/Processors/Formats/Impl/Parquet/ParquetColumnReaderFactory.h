@@ -38,6 +38,8 @@ public:
         Builder& pageReader(PageReaderCreator page_reader_creator);
         Builder& columnChunkMeta(std::unique_ptr<parquet::ColumnChunkMetaData> column_chunk_meta);
         SelectiveColumnReaderPtr build();
+        SelectiveColumnReaderPtr buildV2();
+        SelectiveColumnReaderPtr throwUnsupported(std::string msg = "") const;
     private:
         bool dictionary_ = false;
         bool nullable_ = false;

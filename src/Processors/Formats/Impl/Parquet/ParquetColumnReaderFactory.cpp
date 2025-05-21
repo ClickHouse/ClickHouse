@@ -580,6 +580,219 @@ ParquetColumnReaderFactory::Builder::columnChunkMeta(std::unique_ptr<parquet::Co
     return *this;
 }
 
+SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::throwUnsupported(std::string msg) const {
+    throw Exception(
+        ErrorCodes::PARQUET_EXCEPTION,
+        "Unsupported logical type: {} and physical type: {} for field `{}`{}",
+        column_descriptor_->logical_type()->ToString(), column_descriptor_->physical_type(), column_descriptor_->name(),
+        msg);
+}
+
+SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::buildV2() {
+    if (!column_descriptor_ || !page_reader_creator || !target_type_)
+        throw DB::Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "ParquetColumnReaderFactory::Builder: column descriptor, page reader and target type must be set");
+    ScanSpec scan_spec{.column_name = column_descriptor_->name(), .column_desc = column_descriptor_, .filter = filter_};
+    parquet::Type::type physical_type = column_descriptor_->physical_type();
+    auto converted_type = column_descriptor_->converted_type();
+    TypeIndex target_type = target_type_->getTypeId();
+    const auto &logical_type = *column_descriptor_->logical_type();
+    SelectiveColumnReaderPtr leaf_reader = nullptr;
+    const auto &final_logical_type = logical_type.is_serialized()
+                                         ? logical_type
+                                         : *parquet::LogicalType::FromConvertedType(converted_type);
+    if (logical_type.is_none() && converted_type == parquet::ConvertedType::NONE) {
+    } else if (final_logical_type.is_string() || final_logical_type.is_enum() || final_logical_type.is_JSON() ||
+               final_logical_type.is_BSON()) {
+        if (physical_type != parquet::Type::BYTE_ARRAY && physical_type != parquet::Type::FIXED_LEN_BYTE_ARRAY) {
+            return throwUnsupported();
+        }
+    } else if (final_logical_type.is_int()) {
+        if (physical_type != parquet::Type::INT32 && physical_type != parquet::Type::INT64) {
+            return throwUnsupported();
+        }
+        if (!dynamic_cast<const parquet::IntLogicalType &>(final_logical_type).is_signed()) {
+            if (physical_type == parquet::Type::INT32) {
+                leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeUInt32, Int32> >(
+                    std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeUInt32>());
+            }
+            if (physical_type == parquet::Type::INT64) {
+                leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeUInt64, Int64> >(
+                    std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeUInt64>());
+            }
+            leaf_reader->setColumnChunkMeta(std::move(column_chunk_meta_));
+            if (nullable_)
+                return std::make_shared<OptionalColumnReader>(scan_spec, leaf_reader, is_optional_);
+            return leaf_reader;
+        }
+    } else if (final_logical_type.is_time()) {
+        if (physical_type != parquet::Type::INT32 && physical_type != parquet::Type::INT64) {
+            return throwUnsupported();
+        }
+    } else if (final_logical_type.is_timestamp()) {
+        if (physical_type != parquet::Type::INT64 && physical_type != parquet::Type::INT32) {
+            return throwUnsupported();
+        }
+        DataTypePtr type_datetime64 = std::make_shared<DataTypeDateTime64>(
+            getScaleFromLogicalTimestamp(
+                dynamic_cast<const parquet::TimestampLogicalType &>(final_logical_type).time_unit()));
+        leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeDateTime64, Int64> >(
+            std::move(page_reader_creator), scan_spec, type_datetime64);
+        leaf_reader->setColumnChunkMeta(std::move(column_chunk_meta_));
+        if (nullable_)
+            return std::make_shared<OptionalColumnReader>(scan_spec, leaf_reader, is_optional_);
+        return leaf_reader;
+    } else if (final_logical_type.is_date()) {
+        if (physical_type != parquet::Type::INT32 && physical_type != parquet::Type::INT64) {
+            return throwUnsupported();
+        }
+        if (physical_type == parquet::Type::INT64) {
+            leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeDateTime64, Int64> >(
+                std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDateTime>());
+        } else {
+            leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeDate32, Int32> >(
+                std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDate32>());
+        }
+        leaf_reader->setColumnChunkMeta(std::move(column_chunk_meta_));
+        if (nullable_)
+            return std::make_shared<OptionalColumnReader>(scan_spec, leaf_reader, is_optional_);
+        return leaf_reader;
+    } else if (final_logical_type.is_decimal()) {
+        auto precision = scan_spec.column_desc->type_precision();
+        auto scale = scan_spec.column_desc->type_scale();
+
+        if (physical_type == parquet::Type::INT32) {
+            if (precision > 9) {
+                return throwUnsupported();
+            }
+            leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeDecimal32, Int32> >(
+                std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal32>(precision, scale));
+        } else if (physical_type == parquet::Type::INT64) {
+            if (precision > 18) {
+                return throwUnsupported();
+            }
+            leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeDecimal64, Int64> >(
+                std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal64>(precision, scale));
+        } else if (physical_type == parquet::Type::FIXED_LEN_BYTE_ARRAY) {
+            auto length = scan_spec.column_desc->type_length();
+            if (precision <= 9 && length <= 4) {
+                leaf_reader = std::make_shared<FixedLengthColumnDictionaryReader<DataTypeDecimal32, Decimal32> >(
+                    std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal32>(precision, scale));
+            } else if (precision <= 18 && length <= 8) {
+                leaf_reader = std::make_shared<FixedLengthColumnDictionaryReader<DataTypeDecimal64, Decimal64> >(
+                    std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal64>(precision, scale));
+            } else if (precision <= 38 && length <= 16) {
+                leaf_reader = std::make_shared<FixedLengthColumnDictionaryReader<DataTypeDecimal128, Decimal128> >(
+                    std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal128>(precision, scale));
+            } else if (precision <= 76 && length <= 32) {
+                leaf_reader = std::make_shared<FixedLengthColumnDictionaryReader<DataTypeDecimal256, Decimal256> >(
+                    std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal256>(precision, scale));
+            } else {
+                return throwUnsupported();
+            }
+        }
+        if (nullable_)
+            return std::make_shared<OptionalColumnReader>(scan_spec, leaf_reader, is_optional_);
+        leaf_reader->setColumnChunkMeta(std::move(column_chunk_meta_));
+        return leaf_reader;
+    } else if (final_logical_type.is_nested()) {
+        return throwUnsupported();
+    } else if (final_logical_type.is_invalid()) {
+        if (physical_type == parquet::Type::INT32) {
+            leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeUInt32, Int32> >(
+                std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeUInt32>());
+            leaf_reader->setColumnChunkMeta(std::move(column_chunk_meta_));
+        } else if (physical_type == parquet::Type::INT64) {
+            leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeUInt64, Int64> >(
+                std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeUInt64>());
+        }
+        if (leaf_reader == nullptr) {
+            return throwUnsupported();
+        }
+        leaf_reader->setColumnChunkMeta(std::move(column_chunk_meta_));
+        if (nullable_)
+            return std::make_shared<OptionalColumnReader>(scan_spec, leaf_reader, is_optional_);
+        return leaf_reader;
+    } else if (final_logical_type.is_UUID() || final_logical_type.is_float16()) {
+        return throwUnsupported();
+    } else if (!final_logical_type.is_none()) {
+        return throwUnsupported();
+    }
+    switch (physical_type) {
+        case parquet::Type::BOOLEAN:
+            leaf_reader = std::make_shared<BooleanColumnReader>(std::move(page_reader_creator), scan_spec);
+            break;
+        case parquet::Type::INT32: {
+            // 先用data做尝试看后续是否需要time做转换
+            if (logical_type.is_none() && converted_type == parquet::ConvertedType::NONE) {
+                leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeInt32, Int32> >(
+                    std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt32>());
+                break;
+            }
+            switch (dynamic_cast<const parquet::IntLogicalType &>(final_logical_type).bit_width()) {
+                case 8: {
+                    leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeInt8, Int32> >(
+                        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt8>());
+                    break;
+                }
+                case 16: {
+                    leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeInt16, Int32> >(
+                        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt16>());
+                    break;
+                }
+                case 32: {
+                    leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeInt32, Int32> >(
+                        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt32>());
+                    break;
+                }
+                default:
+                    return throwUnsupported();
+            }
+            break;
+        }
+        case parquet::Type::INT64:
+            leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeInt64, Int64> >(
+                std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt64>());
+            break;
+        case parquet::Type::FIXED_LEN_BYTE_ARRAY: {
+            auto length = scan_spec.column_desc->type_length();
+            leaf_reader = std::make_shared<FixedLengthColumnDictionaryReader<DataTypeFixedString, String> >(
+                std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeFixedString>(length));
+            break;
+        }
+        case parquet::Type::BYTE_ARRAY:
+            leaf_reader = std::make_shared<StringDictionaryReader>(std::move(page_reader_creator), scan_spec);
+            break;
+        case parquet::Type::FLOAT:
+            leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeFloat32, Float32> >(
+                std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeFloat32>());
+            break;
+        case parquet::Type::DOUBLE:
+            leaf_reader = std::make_shared<NumberDictionaryReader<DataTypeFloat64, Float64> >(
+                std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeFloat64>());
+            break;
+        case parquet::Type::INT96: {
+            if (isDateTime64(target_type)) {
+                leaf_reader = std::make_shared<FixedLengthColumnDictionaryReader<DataTypeDateTime64, DateTime64> >(
+                    std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDateTime64>(9));
+                break;
+            }
+            if (isInt64(target_type)) {
+                leaf_reader = std::make_shared<FixedLengthColumnDictionaryReader<DataTypeInt64, Int64> >(
+                    std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt64>());
+                break;
+            }
+            return throwUnsupported();
+        }
+        default:
+            return throwUnsupported();
+    }
+    leaf_reader->setColumnChunkMeta(std::move(column_chunk_meta_));
+    if (nullable_)
+        return std::make_shared<OptionalColumnReader>(scan_spec, leaf_reader, is_optional_);
+    return leaf_reader;
+}
 SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
 {
     if (!column_descriptor_ || !page_reader_creator || !target_type_)
