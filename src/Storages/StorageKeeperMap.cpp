@@ -542,7 +542,7 @@ StorageKeeperMap::StorageKeeperMap(
                         Coordination::Responses drop_lock_responses;
                         auto code = client->tryMulti(drop_lock_requests, drop_lock_responses);
 
-                        if (code == Coordination::Error::Z)
+                        if (code == Coordination::Error::ZNONODE)
                         {
                             LOG_INFO(log, "Someone else removed leftover nodes");
                         }
