@@ -31,6 +31,7 @@ inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endia
 
     LineString<CartesianPoint> line;
     line.reserve(num_points);
+
     for (UInt32 i = 0; i < num_points; ++i)
     {
         line.push_back(readPointWKB(in_buffer, endian_to_read));
