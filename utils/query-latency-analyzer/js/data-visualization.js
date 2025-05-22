@@ -48,10 +48,11 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
     const container = d3.select(containerId);
     const n = cov.length;
     const cellSize = 10;
-    const axisLabelOffset = 250;
+    const axisLabelOffset = 260;
     const matrixSize = cellSize * n;
     const bandMargin = 20;
-    const bandAreaWidth = container.node().getBoundingClientRect().width - matrixSize - bandMargin - axisLabelOffset;
+    // Use the pre-computed available width, subtract the matrix and fixed elements
+    const bandAreaWidth = (window.availableWidth || 1200) - matrixSize - axisLabelOffset - bandMargin - 270;
     const margin = {
         top: 2,
         right: axisLabelOffset + bandAreaWidth + bandMargin,
