@@ -104,7 +104,7 @@ struct ScanState
     // next page position in the column chunk
     Int32 page_position = 0;
 
-    Int32 getCurrentPagePosition()
+    Int32 getCurrentPagePosition() const
     {
         if (offsets.remain_rows)
             return std::max(page_position - 1, 0);
@@ -446,7 +446,7 @@ public:
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     void computeRowSetSpace(OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
-    void readSpace(MutableColumnPtr & ptr, OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t size) override;
+    void readSpace(MutableColumnPtr & column, OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
     DataTypePtr getResultType() override { return datatype; }
     MutableColumnPtr createColumn() override { return datatype->createColumn(); }
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;

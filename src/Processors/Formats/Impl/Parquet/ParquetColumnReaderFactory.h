@@ -16,6 +16,10 @@ namespace parquet
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int PARQUET_EXCEPTION;
+}
 class SelectiveColumnReader;
 using SelectiveColumnReaderPtr = std::shared_ptr<SelectiveColumnReader>;
 class LazyPageReader;
@@ -39,7 +43,17 @@ public:
         Builder& columnChunkMeta(std::unique_ptr<parquet::ColumnChunkMetaData> column_chunk_meta);
         SelectiveColumnReaderPtr build();
         SelectiveColumnReaderPtr buildV2();
-        SelectiveColumnReaderPtr throwUnsupported(std::string msg = "") const;
+
+        SelectiveColumnReaderPtr throwUnsupported(std::string msg = "")
+        {
+            throw Exception(
+                ErrorCodes::PARQUET_EXCEPTION,
+                "Unsupported logical type: {} and physical type: {} for field `{}`{}",
+                column_descriptor_->logical_type()->ToString(),
+                column_descriptor_->physical_type(),
+                column_descriptor_->name(),
+                msg);
+        }
     private:
         bool dictionary_ = false;
         bool nullable_ = false;
