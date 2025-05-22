@@ -1701,13 +1701,17 @@ message SpecialVal {
         MAX_DATE = 36;
         MIN_DATE32 = 37;
         MAX_DATE32 = 38;
-        MIN_DATETIME = 39;
-        MAX_DATETIME = 40;
-        MIN_DATETIME64 = 41;
-        MAX_DATETIME64 = 42;
-        VAL_NULL_CHAR = 43;
-        VAL_DEFAULT = 44;
-        VAL_STAR = 45;
+        MIN_TIME = 39;
+        MAX_TIME = 40;
+        MIN_TIME64 = 41;
+        MAX_TIME64 = 42;
+        MIN_DATETIME = 43;
+        MAX_DATETIME = 44;
+        MIN_DATETIME64 = 45;
+        MAX_DATETIME64 = 46;
+        VAL_NULL_CHAR = 47;
+        VAL_DEFAULT = 48;
+        VAL_STAR = 49;
     }
     required SpecialValEnum val = 1;
     optional bool paren = 2;
@@ -1749,9 +1753,19 @@ enum Dates {
     Date32 = 2;
 }
 
+enum Times {
+    Time = 1;
+    Time64 = 2;
+}
+
 enum DateTimes {
     DateTime = 1;
     DateTime64 = 2;
+}
+
+message TimeTp {
+    required Times type = 1;
+    optional uint32 precision = 2;
 }
 
 message DateTimeTp {
@@ -2840,15 +2854,16 @@ message BottomTypeName {
         bool standard_string = 3;
         uint32 fixed_string = 4;
         Dates dates = 5;
-        DateTimeTp datetimes = 6;
-        Decimal decimal = 7;
-        bool boolean = 8;
-        bool uuid = 9;
-        JSONDef jdef = 10;
-        Dynamic dynamic = 11;
-        EnumDef enum_def = 12;
-        bool IPv4 = 13;
-        bool IPv6 = 14;
+        TimeTp times = 6;
+        DateTimeTp datetimes = 7;
+        Decimal decimal = 8;
+        bool boolean = 9;
+        bool uuid = 10;
+        JSONDef jdef = 11;
+        Dynamic dynamic = 12;
+        EnumDef enum_def = 13;
+        bool IPv4 = 14;
+        bool IPv6 = 15;
     }
 }
 

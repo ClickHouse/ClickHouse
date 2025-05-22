@@ -211,6 +211,13 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             }
         }
     }
+    else if (noption < 251)
+    {
+        const SQLType * tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
+        lv->set_no_quote_str(
+            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+        delete tp;
+    }
     else if (noption < 301)
     {
         const SQLType * tp;

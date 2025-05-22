@@ -399,6 +399,7 @@ private:
     std::tuple<SQLType *, Integers> randomIntType(RandomGenerator & rg, uint32_t allowed_types);
     std::tuple<SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg) const;
     std::tuple<SQLType *, Dates> randomDateType(RandomGenerator & rg, uint32_t allowed_types) const;
+    SQLType * randomTimeType(RandomGenerator & rg, uint32_t allowed_types, TimeTp * dt) const;
     SQLType * randomDateTimeType(RandomGenerator & rg, uint32_t allowed_types, DateTimeTp * dt) const;
     SQLType * bottomType(RandomGenerator & rg, uint32_t allowed_types, bool low_card, BottomTypeName * tp);
 

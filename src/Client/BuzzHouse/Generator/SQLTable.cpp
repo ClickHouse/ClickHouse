@@ -590,7 +590,9 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
                     const ColumnPathChain & entry = this->entries[i];
                     SQLType * tp = entry.getBottomType();
 
-                    if ((hasType<DateType>(false, true, false, tp) || hasType<DateTimeType>(false, true, false, tp)) && rg.nextBool())
+                    if ((hasType<DateType>(false, true, false, tp) || hasType<TimeType>(false, true, false, tp)
+                         || hasType<DateTimeType>(false, true, false, tp))
+                        && rg.nextBool())
                     {
                         /// Use date functions for partitioning/keys
                         SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
