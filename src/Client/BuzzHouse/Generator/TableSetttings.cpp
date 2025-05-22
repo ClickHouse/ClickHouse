@@ -162,7 +162,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        /// ClickHouse cloud setting
        {"shared_merge_tree_disable_merges_and_mutations_assignment", CHSetting(trueOrFalse, {}, false)},
        /// ClickHouse cloud setting
-       {"shared_merge_tree_enable_coordinated_merges", CHSetting(trueOrFalse, {}, false)},  
+       {"shared_merge_tree_enable_coordinated_merges", CHSetting(trueOrFalse, {}, false)},
        /// ClickHouse cloud setting
        {"shared_merge_tree_enable_keeper_parts_extra_data", CHSetting(trueOrFalse, {}, false)},
        /// ClickHouse cloud setting
