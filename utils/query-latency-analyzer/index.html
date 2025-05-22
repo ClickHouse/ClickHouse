@@ -377,6 +377,11 @@ function renderTable(data) {
     // Store it as a global variable so visualizations can access it
     window.availableWidth = containerWidth;
 
+    // Calculate global maximum across all groups
+    const globalMax = Math.max(...Object.values(data.groups).flatMap(group => group.max));
+    // Store it for visualizations
+    window.globalMaxValue = globalMax;
+
     d3.select("#table-container").selectAll("table").remove();
 
     const table = d3.select("#table-container")
@@ -450,7 +455,6 @@ function handleData(raw_data, filterByDuration = true) {
 
     // Apply both filters
     const combinedPredicate = (label, i, groups) => {
-        console.log(label, nonZeroMeanPredicate(label, i, groups), durationFilterPredicate(label, i, groups));
         return nonZeroMeanPredicate(label, i, groups) && durationFilterPredicate(label, i, groups);
     };
 

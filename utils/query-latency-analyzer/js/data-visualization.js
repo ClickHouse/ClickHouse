@@ -144,9 +144,9 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
         })
         .on("mouseout", () => svg.selectAll(".cell").classed("unlight", false));
 
-    // Distribution bands
+    // Distribution bands with consistent scale across all visualizations
     const xScale = d3.scaleLinear()
-        .domain([d3.min(min), d3.max(max)])
+        .domain([0, window.globalMaxValue || d3.max(max)])
         .range([0, bandAreaWidth]);
 
     // Add ruler elements
