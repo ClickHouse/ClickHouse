@@ -790,7 +790,7 @@ void sanityChecks(Server & server)
 
     try
     {
-        if (!logs_path.empty())
+        if (!logs_path.empty() && fs::is_regular_file(logs_path))
         {
             auto logs_parent = fs::path(logs_path).parent_path();
             if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
