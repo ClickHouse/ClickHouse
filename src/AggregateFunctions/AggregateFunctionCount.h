@@ -73,6 +73,7 @@ public:
         Arena *,
         ssize_t if_argument_pos) const override
     {
+        chassert(place != nullptr);
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
