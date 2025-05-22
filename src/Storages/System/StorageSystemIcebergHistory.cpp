@@ -22,7 +22,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Core/Settings.h>
 
-// Iceberg specs mention that the timestamps is stored in ms https://iceberg.apache.org/spec/#table-metadata-fields
+/// Iceberg specs mention that the timestamps are stored in ms: https://iceberg.apache.org/spec/#table-metadata-fields
 static constexpr auto TIME_SCALE = 3;
 
 namespace DB
