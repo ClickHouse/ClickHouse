@@ -4,7 +4,7 @@
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 
-// #include <Common/XRayTracing.h>
+#include <Common/XRayTracing.h>
 
 #include <type_traits>
 
@@ -233,7 +233,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     Arena & pool,
     bool & is_inserted)
 {
-    // XRAY_TRACE((insertFromBlockImplTypeCase<KeyGetter, HashMap, Selector>))
+    XRAY_TRACE((insertFromBlockImplTypeCase<KeyGetter, HashMap, Selector>))
 
     [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename HashMap::mapped_type, RowRef>;
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
@@ -412,6 +412,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     JoinStuff::JoinUsedFlags & used_flags,
     const Selector & selector)
 {
+    XRAY_TRACE((joinRightColumns<KeyGetter, Map, need_filter, flag_per_row, AddedColumns, Selector>))
+
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
     auto & block = added_columns.src_block;

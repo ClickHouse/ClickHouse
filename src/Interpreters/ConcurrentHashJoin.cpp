@@ -28,9 +28,9 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
+#include <DataTypes/NullableUtils.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
-#include <DataTypes/NullableUtils.h>
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -43,20 +43,20 @@
 using namespace DB;
 
 #define INVOKE_WITH_MAP(TYPE, maps, f) \
-    case HashJoin::Type::TYPE:         \
+    case HashJoin::Type::TYPE: \
         return f(*(maps).TYPE);
 
 #define INVOKE_WITH_MAPS(TYPE, lhs_maps, rhs_maps, f) \
-    case HashJoin::Type::TYPE:                        \
+    case HashJoin::Type::TYPE: \
         return f(*(lhs_maps).TYPE, *(rhs_maps).TYPE);
 
-#define APPLY_TO_MAP(M, type, ...)                        \
-    switch (type)                                         \
-    {                                                     \
+#define APPLY_TO_MAP(M, type, ...) \
+    switch (type) \
+    { \
         APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, __VA_ARGS__) \
-                                                          \
-        default:                                          \
-            UNREACHABLE();                                \
+\
+        default: \
+            UNREACHABLE(); \
     }
 
 namespace ProfileEvents
@@ -146,8 +146,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int SET_SIZE_LIMIT_EXCEEDED;
+extern const int LOGICAL_ERROR;
+extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
 
@@ -306,6 +306,9 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
 void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
+    void (ConcurrentHashJoin::*ptr)(Block &, std::shared_ptr<ExtraBlock> &) = &ConcurrentHashJoin::joinBlock;
+    XRAY_TRACE(ptr)
+
     Blocks res;
     ExtraScatteredBlocks extra_blocks;
     joinBlock(block, extra_blocks, res);
@@ -315,7 +318,8 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & 
 
 void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_blocks, std::vector<Block> & res)
 {
-    [[maybe_unused]] void (ConcurrentHashJoin::*ptr)(Block &, ExtraScatteredBlocks &, std::vector<Block> &);
+    void (ConcurrentHashJoin::*ptr)(Block &, ExtraScatteredBlocks &, std::vector<Block> &) = &ConcurrentHashJoin::joinBlock;
+    XRAY_TRACE(ptr)
 
     ScatteredBlocks dispatched_blocks;
     auto & remaining_blocks = extra_blocks.remaining_blocks;
@@ -389,7 +393,6 @@ const Block & ConcurrentHashJoin::getTotals() const
 
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
-    XRAY_TRACE(ConcurrentHashJoin, getTotalRowCount)
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {
@@ -401,7 +404,6 @@ size_t ConcurrentHashJoin::getTotalRowCount() const
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
 {
-    XRAY_TRACE(ConcurrentHashJoin, getTotalByteCount)
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {
@@ -423,13 +425,13 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 }
 
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
-        const Block & /*left_sample_block*/, const Block & /*result_sample_block*/, UInt64 /*max_block_size*/) const
+    const Block & /*left_sample_block*/, const Block & /*result_sample_block*/, UInt64 /*max_block_size*/) const
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
-                    table_join->kind(), table_join->strictness());
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}", table_join->kind(), table_join->strictness());
 }
 
 template <typename HashTable>
@@ -481,14 +483,13 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
 
         switch (join.getJoinedData()->type)
         {
-        #define M(TYPE)                                                                                                                       \
-            case HashJoin::Type::TYPE:                                                                                                        \
-                hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-                    *maps.TYPE, key_columns, join.getKeySizes().at(0));                                                                       \
-                return hashToSelector(*maps.TYPE, hash, num_shards);
-
-                APPLY_FOR_JOIN_VARIANTS(M)
-        #undef M
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: \
+        hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
+            *maps.TYPE, key_columns, join.getKeySizes().at(0)); \
+        return hashToSelector(*maps.TYPE, hash, num_shards);
+            APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
 
             default:
                 UNREACHABLE();
