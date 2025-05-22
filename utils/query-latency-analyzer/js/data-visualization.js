@@ -237,16 +237,18 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
         });
 
         // Standard deviation bar
+        const stdLeft = avg[i] - std[i];
+        const stdRight = avg[i] + std[i];
         const stdBar = svg.append("line")
-            .attr("x1", matrixSize + axisLabelOffset + xScale(avg[i] - std[i]))
-            .attr("x2", matrixSize + axisLabelOffset + xScale(avg[i] + std[i]))
+            .attr("x1", matrixSize + axisLabelOffset + xScale(Math.max(0, stdLeft)))
+            .attr("x2", matrixSize + axisLabelOffset + xScale(stdRight))
             .attr("y1", y + cellSize / 2)
             .attr("y2", y + cellSize / 2)
             .style("stroke", "black")
             .node();
 
         tippy(stdBar, {
-            content: `${label} ±1σ: [${(avg[i]-std[i]).toFixed(2)}, ${(avg[i]+std[i]).toFixed(2)}]`,
+            content: `${label} ±1σ: [${stdLeft.toFixed(2)}, ${stdRight.toFixed(2)}]`,
             placement: 'left',
             theme: 'latency-data',
             delay: [0, 0],
