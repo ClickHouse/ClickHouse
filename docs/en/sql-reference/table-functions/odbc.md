@@ -10,7 +10,7 @@ title: 'odbc'
 
 Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 odbc(connection_settings, external_database, external_table)
@@ -18,11 +18,13 @@ odbc(connection_settings, external_table)
 odbc(named_collection)
 ```
 
-Parameters:
+## Arguments {#arguments}
 
-- `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
-- `external_database` — Name of a database in an external DBMS.
-- `external_table` — Name of a table in the `external_database`.
+| Argument            | Description                                                            |
+|---------------------|------------------------------------------------------------------------|
+| `connection_settings` | Name of the section with connection settings in the `odbc.ini` file. |
+| `external_database` | Name of a database in an external DBMS.                                |
+| `external_table`    | Name of a table in the `external_database`.                            |
 
 These parameters can also be passed using [named collections](operations/named-collections.md).
 
@@ -107,7 +109,7 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## See Also {#see-also}
+## Related {#see-also}
 
 - [ODBC dictionaries](/sql-reference/dictionaries#dbms)
 - [ODBC table engine](/engines/table-engines/integrations/odbc).

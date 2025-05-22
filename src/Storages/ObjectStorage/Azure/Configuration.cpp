@@ -12,6 +12,7 @@
 #include <Formats/FormatFactory.h>
 #include <azure/storage/blobs.hpp>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 #include <Core/Settings.h>
