@@ -71,6 +71,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
             {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
+            {"enable_shared_storage_snapshot_in_query", false, false, "A new setting to share storage snapshot in query"},
+            {"merge_tree_storage_snapshot_sleep_ms", 0, 0, "A new setting to debug storage snapshot consistency in query"},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -115,8 +117,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_url_encoding", true, false, "Changed existing setting's default value"},
             {"s3_slow_all_threads_after_network_error", false, true, "New setting"},
             /// Release closed. Please use 25.6
-            {"enable_shared_storage_snapshot_in_query", false, false, "A new setting to shard storage snapshot in query"},
-            {"merge_tree_storage_snapshot_sleep_ms", 0, 0, "A new setting to debug storage snapshot consistency in query"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
