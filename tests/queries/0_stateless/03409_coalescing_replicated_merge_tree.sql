@@ -1,4 +1,6 @@
--- Tags: replica
+-- Tags: replica, no-shared-merge-tree, no-distributed-cache
+-- Tag no-shared-merge-tree: Requires update in private (@jkartseva)
+-- Tag no-distributed-cache: Requires update in private (@jkartseva)
 
 SELECT 'Test without parameters';
 
