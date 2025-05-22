@@ -47,13 +47,13 @@ class ClickHouseProc:
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
         self.user_files_path = f"{self.run_path0}/user_files"
+        self.user_files_path1 = f"{self.run_path1}/user_files"
+        self.user_files_path2 = f"{self.run_path2}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
         self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.run_path0} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --keeper_server.storage_path {self.ch_config_dir}/coordination --logger.stderr {self.log_dir}/stderr.log"
-
-        #self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.run_path0} --user_files_path {self.ch_var_lib_dir}/user_files --top_level_domains_path {self.ch_config_dir}/top_level_domains --keeper_server.storage_path {self.ch_config_dir}/coordination --logger.stderr {self.log_dir}/stderr.log"
-        self.ch_config_dir_replica_1 = f"/etc/clickhouse-server/1"
+        self.ch_config_dir_replica_1 = f"/etc/clickhouse-server1"
         self.config_file_replica_1 = f"{self.ch_config_dir_replica_1}/config.xml"
-        self.ch_config_dir_replica_2 = f"/etc/clickhouse-server/2"
+        self.ch_config_dir_replica_2 = f"/etc/clickhouse-server2"
         self.config_file_replica_2 = f"{self.ch_config_dir_replica_2}/config.xml"
         self.pid_file_replica_1 = (
             f"{self.ch_config_dir_replica_1}/clickhouse-server.pid"
@@ -62,8 +62,8 @@ class ClickHouseProc:
             f"{self.ch_config_dir_replica_2}/clickhouse-server.pid"
         )
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
-        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --daemon --pid-file {self.pid_file_replica_1} -- --user_files_path {self.user_files_path} --path {self.run_path1} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
-        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --daemon --pid-file {self.pid_file_replica_2} -- --user_files_path {self.user_files_path} --path {self.run_path2} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
+        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --daemon --pid-file {self.pid_file_replica_1} -- --user_files_path {self.user_files_path1} --path {self.run_path1} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
+        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --daemon --pid-file {self.pid_file_replica_2} -- --user_files_path {self.user_files_path2} --path {self.run_path2} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
         self.proc = None
         self.proc_1 = None
         self.proc_2 = None
@@ -76,15 +76,11 @@ class ClickHouseProc:
         self.info_file = ""
 
         Shell.check(
-            f"rm -rf {self.log_dir} && mkdir -p {self.log_dir}",
-            strict=True,
+            f"rm -rf {self.log_dir}",
             verbose=True,
         )
-        Shell.check(
-            f"rm -rf {self.log_dir} && mkdir -p {self.log_dir}",
-            strict=True,
-            verbose=True,
-        )
+        Shell.check(f"mkdir -p {self.log_dir}", verbose=True, strict=True)
+
         Shell.check(f"chmod +x {temp_dir}/clickhouse", strict=True, verbose=True)
         Utils.set_env("CLICKHOUSE_CONFIG_DIR", self.ch_config_dir)
         Utils.set_env("CLICKHOUSE_CONFIG", self.config_file)

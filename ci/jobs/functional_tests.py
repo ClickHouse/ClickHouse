@@ -337,12 +337,10 @@ def main():
 
     # TODO: collect logs
     # blob_storage_log.tsv.zst
-    # coordination.tar
     # dmesg.log
     # error_log.tsv.zst
     # latency_log.tsv.zst
     # metric_log.tsv.zst
-    # minio.log.zst
     # minio_audit_logs.jsonl.zst
     # minio_server_logs.jsonl.zst
     # part_log.tsv.zst

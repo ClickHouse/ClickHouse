@@ -501,7 +501,9 @@ class Result(MetaClasses.Serializable):
             info=(
                 error_infos
                 if len(error_infos) < MAX_LINES_IN_INFO
-                else [f"~~~~~ truncated {len(error_infos)-MAX_LINES_IN_INFO} lines ~~~~~"]
+                else [
+                    f"~~~~~ truncated {len(error_infos)-MAX_LINES_IN_INFO} lines ~~~~~"
+                ]
                 + error_infos[-MAX_LINES_IN_INFO:]
             ),
             files=[log_file] if with_log else None,
@@ -525,7 +527,15 @@ class Result(MetaClasses.Serializable):
             res += f"{indent}{self.status} [{self.name}]\n"
             info_lines = self.info.splitlines()
             if len(info_lines) > 30:
-                info_lines = info_lines[:10] + ["~~~~~~~~~~~~~~~~~~~~~", "~~~~~ truncated ~~~~~", "~~~~~~~~~~~~~~~~~~~~~"] + info_lines[-10:]
+                info_lines = (
+                    info_lines[:10]
+                    + [
+                        "~~~~~~~~~~~~~~~~~~~~~",
+                        "~~~~~ truncated ~~~~~",
+                        "~~~~~~~~~~~~~~~~~~~~~",
+                    ]
+                    + info_lines[-10:]
+                )
             for line in info_lines:
                 res += f"{sub_indent}| {line}\n"
 

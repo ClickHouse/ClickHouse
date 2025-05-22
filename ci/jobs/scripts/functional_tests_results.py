@@ -1,4 +1,5 @@
 import dataclasses
+import traceback
 from typing import List
 
 from praktika.result import Result
@@ -120,16 +121,31 @@ class FTResultsProcessor:
                 if DATABASE_SIGN in line:
                     test_end = True
 
-        test_results = [
-            Result(
-                name=test[0],
-                status=test[1],
-                start_time=None,
-                duration=float(test[2]),
-                info="".join(test[3])[:16384],
-            )
-            for test in test_results
-        ]
+        test_results_ = []
+        for test in test_results:
+            try:
+                test_results_.append(
+                    Result(
+                        name=test[0],
+                        status=test[1],
+                        start_time=None,
+                        duration=float(test[2]),
+                        info="".join(test[3])[:16384],
+                    )
+                )
+            except Exception as e:
+                print(f"ERROR: Failed to parse test results: [{test}]")
+                traceback.print_exc()
+                test_results_.append(
+                    Result(
+                        name=test[0],
+                        status=Result.Status.ERROR,
+                        start_time=None,
+                        duration=None,
+                        info=f"test results parse failure:\n{traceback.print_exc()}",
+                    )
+                )
+        test_results = test_results_
 
         s = self.Summary(
             total=total,
