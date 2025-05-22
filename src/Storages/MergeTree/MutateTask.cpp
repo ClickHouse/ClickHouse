@@ -481,29 +481,6 @@ static void analyzeStatisticsCommands(MutationContext & ctx, const MutatedData &
     }
 }
 
-static std::map<String, MergeTreeDataPartTTLInfo> getAllTTLInfos(const IMergeTreeDataPart & part, const StorageMetadataPtr & metadata_snapshot)
-{
-    std::map<String, MergeTreeDataPartTTLInfo> result;
-
-    auto add_infos = [&](const auto & infos)
-    {
-        for (const auto & [name, ttl] : infos)
-            result[name] = ttl;
-    };
-
-    /// Table TTL doesn't have name in TTLInfos.
-    if (metadata_snapshot->hasRowsTTL())
-        result[metadata_snapshot->getRowsTTL().result_column] = part.ttl_infos.table_ttl;
-
-    add_infos(part.ttl_infos.columns_ttl);
-    add_infos(part.ttl_infos.rows_where_ttl);
-    add_infos(part.ttl_infos.group_by_ttl);
-    add_infos(part.ttl_infos.recompression_ttl);
-    add_infos(part.ttl_infos.moves_ttl);
-
-    return result;
-}
-
 static void analyzeTTLCommands(MutationContext & ctx, MutatedData & mutated_data)
 {
     bool drop_only = (*ctx.data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
@@ -515,21 +492,6 @@ static void analyzeTTLCommands(MutationContext & ctx, MutatedData & mutated_data
     if (column_ttls.empty() && table_ttls.empty())
         return;
 
-    auto all_ttl_infos = getAllTTLInfos(*ctx.source_part, ctx.metadata_snapshot);
-
-    bool has_materialize_ttl = false;
-    bool materialize_expired_only = false;
-
-    for (const auto & command : ctx.commands_for_part)
-    {
-        if (command.type == MutationCommand::MATERIALIZE_TTL)
-        {
-            has_materialize_ttl = true;
-            materialize_expired_only = command.materialize_ttl_only_expired;
-            break;
-        }
-    }
-
     auto add_required_columns = [&](const TTLDescription & ttl)
     {
         auto required_columns = ttl.expression_columns.getNames();
@@ -539,29 +501,19 @@ static void analyzeTTLCommands(MutationContext & ctx, MutatedData & mutated_data
 
     auto analyze_ttl = [&](const TTLDescription & ttl, const String & ttl_name, bool is_column_ttl)
     {
-        if (materialize_expired_only)
-        {
-            auto it = all_ttl_infos.find(ttl_name);
-            if (it == all_ttl_infos.end())
-                return;
-
-            const auto & ttl_info = it->second;
-            auto & ttls_to_drop_data = is_column_ttl ? ctx.column_ttls_to_drop_data : ctx.table_ttls_to_drop_data;
-
-            if (ttl_info.isMaxTTLExpired(ctx.time_of_mutation))
-            {
-                ttls_to_drop_data.insert(ttl_name);
-            }
-            else if (!drop_only && ttl_info.isMinTTLExpired(ctx.time_of_mutation))
-            {
-                add_required_columns(ttl);
-                ctx.ttls_to_materialize.insert(ttl_name);
-            }
-        }
-        else if (recalculate_only)
+        if (recalculate_only)
         {
             add_required_columns(ttl);
             ctx.ttls_to_calculate.insert(ttl_name);
+        }
+        else if (drop_only)
+        {
+            if (is_column_ttl)
+                ctx.column_ttls_to_drop_data.insert(ttl_name);
+            else
+                ctx.table_ttls_to_drop_data.insert(ttl_name);
+
+            add_required_columns(ttl);
         }
         else
         {
@@ -575,8 +527,14 @@ static void analyzeTTLCommands(MutationContext & ctx, MutatedData & mutated_data
         }
     };
 
-    if (has_materialize_ttl)
+    auto it = std::ranges::find_if(ctx.commands_for_part, [](const auto & command)
     {
+        return command.type == MutationCommand::MATERIALIZE_TTL;
+    });
+
+    if (it != ctx.commands_for_part.end())
+    {
+        ctx.for_interpreter.push_back(*it);
 
         for (const auto & ttl : table_ttls)
             analyze_ttl(ttl, ttl.result_column, false);
@@ -788,11 +746,11 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
             /// set of columns for new part and their serializations
             ctx.for_file_renames.push_back(
             {
-                    .type = MutationCommand::Type::DROP_COLUMN,
-                    .column_name = column.name,
+                .type = MutationCommand::Type::DROP_COLUMN,
+                .column_name = column.name,
             });
         }
-        else if (!mutated_data.isColumnMutated(column.name) && !read_columns.contains(column.name))
+        else if (!read_columns.contains(column.name))
         {
             const auto & part = ctx.source_part;
             const auto & metadata_snapshot = ctx.metadata_snapshot;
@@ -841,172 +799,6 @@ static void analyzeCommands(MutationContext & ctx, const AlterConversionsPtr & a
     }
 }
 
-/** Split mutation commands into two parts:
-*   First part should be executed by mutations interpreter.
-*   Other is just simple drop/renames, so they can be executed without interpreter.
-*/
-static void splitAndModifyMutationCommands(
-    MergeTreeData::DataPartPtr part,
-    StorageMetadataPtr metadata_snapshot,
-    AlterConversionsPtr alter_conversions,
-    const MutationCommands & commands,
-    MutationCommands & for_interpreter,
-    MutationCommands & for_file_renames,
-    bool suitable_for_ttl_optimization,
-    LoggerPtr log)
-{
-    auto part_columns = part->getColumnsDescription();
-    const auto & table_columns = metadata_snapshot->getColumns();
-
-    if (haveMutationsOfDynamicColumns(part, commands) || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
-    {
-        NameSet mutated_columns;
-        NameSet dropped_columns;
-        NameSet ignored_columns;
-
-        for (const auto & command : commands)
-        {
-            if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
-            {
-                /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
-                /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
-                auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
-                {
-                    for_interpreter.push_back(command);
-                    mutated_columns.emplace(command.column_name);
-                }
-            }
-            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
-                || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
-                || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
-                || command.type == MutationCommand::Type::MATERIALIZE_TTL
-                || command.type == MutationCommand::Type::DELETE
-                || command.type == MutationCommand::Type::UPDATE
-                || command.type == MutationCommand::Type::APPLY_DELETED_MASK)
-            {
-                for_interpreter.push_back(command);
-                for (const auto & [column_name, expr] : command.column_to_update_expression)
-                    mutated_columns.emplace(column_name);
-
-                if (command.type == MutationCommand::Type::MATERIALIZE_TTL && suitable_for_ttl_optimization)
-                {
-                    for (const auto & col : part_columns)
-                    {
-                        if (!mutated_columns.contains(col.name))
-                            ignored_columns.emplace(col.name);
-                    }
-                }
-            }
-            else if (command.type == MutationCommand::Type::DROP_INDEX
-                     || command.type == MutationCommand::Type::DROP_PROJECTION
-                     || command.type == MutationCommand::Type::DROP_STATISTICS)
-            {
-                for_file_renames.push_back(command);
-            }
-            else if (bool has_column = part_columns.has(command.column_name), has_nested_column = part_columns.hasNested(command.column_name); has_column || has_nested_column)
-            {
-                if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
-                {
-                    if (has_nested_column)
-                    {
-                        const auto & nested = part_columns.getNested(command.column_name);
-                        assert(!nested.empty());
-                        for (const auto & nested_column : nested)
-                            mutated_columns.emplace(nested_column.name);
-                    }
-                    else
-                        mutated_columns.emplace(command.column_name);
-
-                    if (command.type == MutationCommand::Type::DROP_COLUMN)
-                        dropped_columns.emplace(command.column_name);
-                }
-                else if (command.type == MutationCommand::READ_COLUMN)
-                {
-                    for_interpreter.push_back(command);
-                    mutated_columns.emplace(command.column_name);
-                }
-            }
-        }
-
-        /// We don't add renames from commands, instead we take them from rename_map.
-        /// It's important because required renames depend not only on part's data version (i.e. mutation version)
-        /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
-        /// can be deduced based on difference between part's schema and table schema.
-        for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
-        {
-            if (part_columns.has(rename_from))
-            {
-                /// Actual rename
-                for_interpreter.push_back(
-                {
-                    .type = MutationCommand::Type::READ_COLUMN,
-                    .column_name = rename_to,
-                });
-
-                /// Not needed for compact parts (not executed), added here only to produce correct
-                /// set of columns for new part and their serializations
-                for_file_renames.push_back(
-                {
-                     .type = MutationCommand::Type::RENAME_COLUMN,
-                     .column_name = rename_from,
-                     .rename_to = rename_to
-                });
-
-                part_columns.rename(rename_from, rename_to);
-            }
-        }
-
-        /// If it's compact part, then we don't need to actually remove files
-        /// from disk we just don't read dropped columns
-        for (const auto & column : part_columns)
-        {
-            if (!mutated_columns.contains(column.name))
-            {
-                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name) && !ignored_columns.contains(column.name))
-                {
-                    /// We cannot add the column because there's no such column in table.
-                    /// It's okay if the column was dropped. It may also absent in dropped_columns
-                    /// if the corresponding MUTATE_PART entry was not created yet or was created separately from current MUTATE_PART.
-                    /// But we don't know for sure what happened.
-                    auto part_metadata_version = part->getMetadataVersion();
-                    auto table_metadata_version = metadata_snapshot->getMetadataVersion();
-
-                    bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
-                    if (part_metadata_version < table_metadata_version || allow_equal_versions)
-                    {
-                        LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
-                                         "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
-                                    part_metadata_version, part->storage.getStorageID().getNameForLogs(), table_metadata_version);
-                        continue;
-                    }
-
-                    /// StorageMergeTree does not have metadata version
-                    if (part->storage.supportsReplication())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
-                                        "in table {} with metadata version {}",
-                                        part->name, part_metadata_version, column.name,
-                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
-                }
-
-                for_interpreter.emplace_back(
-                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
-            }
-            else if (dropped_columns.contains(column.name))
-            {
-                /// Not needed for compact parts (not executed), added here only to produce correct
-                /// set of columns for new part and their serializations
-                for_file_renames.push_back(
-                {
-                     .type = MutationCommand::Type::DROP_COLUMN,
-                     .column_name = column.name,
-                });
-            }
-        }
-    }
-}
-
-
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::pair<NamesAndTypesList, SerializationInfoByName>
 getColumnsForNewDataPart(
@@ -1017,8 +809,6 @@ getColumnsForNewDataPart(
     const MutationCommands & commands_for_interpreter,
     const MutationCommands & commands_for_removes)
 {
-    UNUSED(splitAndModifyMutationCommands);
-
     MutationCommands all_commands;
     all_commands.insert(all_commands.end(), commands_for_interpreter.begin(), commands_for_interpreter.end());
     all_commands.insert(all_commands.end(), commands_for_removes.begin(), commands_for_removes.end());

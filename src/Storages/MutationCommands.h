@@ -72,9 +72,6 @@ struct MutationCommand
     /// Column rename_to
     String rename_to = {};
 
-    /// TODO: comment
-    bool materialize_ttl_only_expired = false;
-
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
     static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
 
