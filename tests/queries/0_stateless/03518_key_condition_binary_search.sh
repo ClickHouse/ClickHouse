@@ -31,7 +31,7 @@ ORDER BY timestamp;
 INSERT INTO t1 VALUES ('2025-05-21 00:00:00');"
 
 $CLICKHOUSE_CLIENT -n -q "SELECT * FROM t1 WHERE toDayOfMonth(timestamp) = 1 FORMAT Null;" --query-id="${query_prefix}_generic"
-$CLICKHOUSE_CLIENT -n -q "SYSTEM FLUSH LOGS;"
+$CLICKHOUSE_CLIENT -n -q "SYSTEM FLUSH LOGS query_log;"
 
 $CLICKHOUSE_CLIENT -n -q "SELECT sum(ProfileEvents['IndexBinarySearchAlgorithm']), sum(ProfileEvents['IndexGenericExclusionSearchAlgorithm']) FROM system.query_log
     WHERE type > 1 AND event_date >= yesterday() AND query_id ILIKE '${query_prefix}_binary%' AND current_database = currentDatabase()"
