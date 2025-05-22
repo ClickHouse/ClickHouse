@@ -1,8 +1,6 @@
-#include <exception>
 #include <optional>
 #include <string_view>
 
-#include <type_traits>
 #include <unordered_map>
 #include <base/defines.h>
 
@@ -15,6 +13,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
