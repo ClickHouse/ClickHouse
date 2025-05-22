@@ -184,8 +184,7 @@ void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> &
     std::string_view matched;
 
     /// enum_regexp does not match elements of one char, e.g. {a}.tsv
-    auto definitely_no_selector_globs = path.find_first_of("{}") == std::string::npos
-                                        && path.find_first_of("*?") == std::string::npos;
+    auto definitely_no_selector_globs = path.find_first_of("{}") == std::string::npos;
 
     /// No (more) selector globs found, quit
     if (!RE2::PartialMatch(path_view, Regexps::instance().enum_regex, &matched) && definitely_no_selector_globs)
