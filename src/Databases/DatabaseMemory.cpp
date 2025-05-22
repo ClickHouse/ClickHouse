@@ -8,8 +8,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/formatAST.h>
 #include <Common/quoteString.h>
-#include <Storages/IStorage.h>
+#include "Storages/IStorage.h"
 
 namespace DB
 {
@@ -46,7 +47,7 @@ void DatabaseMemory::createTable(
         query_to_store = query->clone();
         auto * create = query_to_store->as<ASTCreateQuery>();
         if (!create)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
         cleanupObjectDefinitionFromTemporaryFlags(*create);
     }
 
@@ -156,6 +157,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
+    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies, loading_dependencies);
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
 }
 

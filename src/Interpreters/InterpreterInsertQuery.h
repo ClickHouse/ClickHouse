@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QueryPipeline/BlockIO.h>
-#include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -12,7 +11,6 @@ namespace DB
 
 class Chain;
 class ThreadStatus;
-class ReadBuffer;
 
 struct ThreadStatusesHolder;
 using ThreadStatusesHolderPtr = std::shared_ptr<ThreadStatusesHolder>;
@@ -67,7 +65,7 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer);
+    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
 
     bool shouldAddSquashingForStorage(const StoragePtr & table) const;
 

@@ -201,21 +201,13 @@ def get_creation_expression(
     table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
     run_on_cluster=False,
-    explicit_metadata_path="",
     **kwargs,
 ):
-
-    settings_array = []
-    if allow_dynamic_metadata_for_data_lakes:
-        settings_array.append("allow_dynamic_metadata_for_data_lakes = 1")
-
-    if explicit_metadata_path:
-        settings_array.append(f"iceberg_metadata_file_path = '{explicit_metadata_path}'")
-
-    if settings_array:
-        settings_expression = " SETTINGS " + ",".join(settings_array)
-    else:
-        settings_expression = ""
+    allow_dynamic_metadata_for_datalakes_suffix = (
+        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
+        if allow_dynamic_metadata_for_data_lakes
+        else ""
+    )
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -235,7 +227,7 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
-                    + settings_expression
+                    + allow_dynamic_metadata_for_datalakes_suffix
                 )
 
     elif storage_type == "azure":
@@ -255,7 +247,7 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
-                    + settings_expression
+                    + allow_dynamic_metadata_for_datalakes_suffix
                 )
 
     elif storage_type == "local":
@@ -271,7 +263,7 @@ def get_creation_expression(
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {table_name}
                 ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})"""
-                + settings_expression
+                + allow_dynamic_metadata_for_datalakes_suffix
             )
 
     else:
@@ -1091,6 +1083,36 @@ def test_evolved_schema_simple(
         ],
     )
 
+    # Do a single check to verify that restarting CH maintains the setting (ATTACH)
+    # We are just interested on the setting working after restart, so no need to run it on all combinations
+    if format_version == "1" and storage_type == "s3" and not is_table_function:
+
+        instance.restart_clickhouse()
+
+        execute_spark_query(
+            f"""
+                ALTER TABLE {TABLE_NAME} RENAME COLUMN e TO z;
+            """
+        )
+
+        check_schema_and_data(
+            instance,
+            table_select_expression,
+            [
+                ["b", "Nullable(Float64)"],
+                ["f", "Nullable(Int64)"],
+                ["c", "Decimal(12, 2)"],
+                ["z", "Nullable(String)"],
+            ],
+            [
+                ["3", "-30", "7.12", "AAA"],
+                ["3", "12", "-9.13", "BBB"],
+                ["3.4", "\\N", "-9.13", "\\N"],
+                ["5", "7", "18.1", "\\N"],
+                ["\\N", "4", "7.12", "\\N"],
+            ],
+        )
+
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -1904,12 +1926,11 @@ def test_partition_pruning(started_cluster, storage_type):
                 date2 DATE,
                 ts TIMESTAMP,
                 ts2 TIMESTAMP,
-                time_struct struct<a : DATE, b : TIMESTAMP>,
-                name VARCHAR(50),
-                number BIGINT
+                time_struct struct<a : DATE, b : TIMESTAMP>
+
             )
             USING iceberg
-            PARTITIONED BY (identity(tag), days(date), years(date2), hours(ts), months(ts2), TRUNCATE(3, name), TRUNCATE(3, number))
+            PARTITIONED BY (identity(tag), days(date), years(date2), hours(ts), months(ts2))
             OPTIONS('format-version'='2')
         """
     )
@@ -1918,13 +1939,13 @@ def test_partition_pruning(started_cluster, storage_type):
         f"""
         INSERT INTO {TABLE_NAME} VALUES
         (1, DATE '2024-01-20', DATE '2024-01-20',
-        TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-01-20', 'b', TIMESTAMP '2024-02-20 10:00:00'), 'vasya', 5),
+        TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-01-20', 'b', TIMESTAMP '2024-02-20 10:00:00')),
         (2, DATE '2024-01-30', DATE '2024-01-30',
-        TIMESTAMP '2024-03-20 15:00:00', TIMESTAMP '2024-03-20 15:00:00', named_struct('a', DATE '2024-03-20', 'b', TIMESTAMP '2024-03-20 14:00:00'), 'vasilisa', 6),
+        TIMESTAMP '2024-03-20 15:00:00', TIMESTAMP '2024-03-20 15:00:00', named_struct('a', DATE '2024-03-20', 'b', TIMESTAMP '2024-03-20 14:00:00')),
         (1, DATE '2024-02-20', DATE '2024-02-20',
-        TIMESTAMP '2024-03-20 20:00:00', TIMESTAMP '2024-03-20 20:00:00', named_struct('a', DATE '2024-02-20', 'b', TIMESTAMP '2024-02-20 10:00:00'), 'iceberg', 7),
+        TIMESTAMP '2024-03-20 20:00:00', TIMESTAMP '2024-03-20 20:00:00', named_struct('a', DATE '2024-02-20', 'b', TIMESTAMP '2024-02-20 10:00:00')),
         (2, DATE '2025-01-20', DATE '2025-01-20',
-        TIMESTAMP '2024-04-30 14:00:00', TIMESTAMP '2024-04-30 14:00:00', named_struct('a', DATE '2024-04-30', 'b', TIMESTAMP '2024-04-30 14:00:00'), 'icebreaker', 8);
+        TIMESTAMP '2024-04-30 14:00:00', TIMESTAMP '2024-04-30 14:00:00', named_struct('a', DATE '2024-04-30', 'b', TIMESTAMP '2024-04-30 14:00:00'));
     """
     )
 
@@ -2033,34 +2054,6 @@ def test_partition_pruning(started_cluster, storage_type):
         == 2
     )
 
-    assert (
-        check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE name == 'vasilisa' ORDER BY ALL"
-        )
-        == 2
-    )
-
-    assert (
-        check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE name < 'kek' ORDER BY ALL"
-        )
-        == 2
-    )
-
-    assert (
-        check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE number == 8 ORDER BY ALL"
-        )
-        == 1
-    )
-
-    assert (
-        check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE number <= 5 ORDER BY ALL"
-        )
-        == 3
-    )
-
     execute_spark_query(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN date TO date3")
 
     assert (
@@ -2089,7 +2082,7 @@ def test_partition_pruning(started_cluster, storage_type):
     )
 
     execute_spark_query(
-        f"INSERT INTO {TABLE_NAME} VALUES (1, DATE '2024-01-20', DATE '2024-01-20', TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-03-15', 'b', TIMESTAMP '2024-02-20 10:00:00'), 'kek', 10)"
+        f"INSERT INTO {TABLE_NAME} VALUES (1, DATE '2024-01-20', DATE '2024-01-20', TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-03-15', 'b', TIMESTAMP '2024-02-20 10:00:00'))"
     )
 
     assert (
@@ -2098,42 +2091,3 @@ def test_partition_pruning(started_cluster, storage_type):
         )
         == 1
     )
-
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_explicit_metadata_file(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = (
-        "test_explicit_metadata_file_"
-        + storage_type
-        + "_"
-        + get_uuid_str()
-    )
-
-    spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
-    )
-
-    for i in range(50):
-        spark.sql(
-            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10)"
-        )
-
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="")
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="metadata/v31.metadata.json")
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="metadata/v11.metadata.json")
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100

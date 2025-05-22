@@ -36,6 +36,7 @@ namespace
 
     bool isSimpleDataType(TypeIndex type_index)
     {
+        DataTypePtr data_type;
         switch (type_index)
         {
             case TypeIndex::UInt8: [[fallthrough]];
@@ -55,6 +56,7 @@ namespace
             case TypeIndex::Date: [[fallthrough]];
             case TypeIndex::Date32: [[fallthrough]];
             case TypeIndex::DateTime: [[fallthrough]];
+            case TypeIndex::DateTime64: [[fallthrough]];
             case TypeIndex::UUID: [[fallthrough]];
             case TypeIndex::String:
                 return true;
@@ -439,7 +441,7 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
             {
                 throw DB::Exception(
                     DB::ErrorCodes::NOT_IMPLEMENTED,
-                    "Unsupported complex data type: {}", field.child_list_id);
+                    "Column {} has unsupported complex data type: {}", field.name, field.type);
             }
         }
     }

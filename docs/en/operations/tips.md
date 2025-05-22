@@ -1,16 +1,14 @@
 ---
-description: 'Documentation for http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html'
-sidebar_label: 'Usage Recommendations'
-sidebar_position: 58
 slug: /operations/tips
-title: 'Usage Recommendations'
+sidebar_position: 58
+sidebar_label: Usage Recommendations
+title: "Usage Recommendations"
 ---
-
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
 
 <SelfManaged />
 
-## CPU Scaling Governor {#cpu-scaling-governor}
+## CPU Scaling Governor
 
 Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
 
@@ -38,7 +36,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
-### Using less than 16GB of RAM {#using-less-than-16gb-of-ram}
+### Using less than 16GB of RAM
 
 The recommended amount of RAM is 32 GB or more.
 
@@ -136,7 +134,7 @@ $ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
 
 After that, run the `sudo update-grub` command then reboot to take effect.
 
-## Hypervisor configuration {#hypervisor-configuration}
+## Hypervisor configuration
 
 If you are using OpenStack, set
 ```ini
@@ -314,6 +312,6 @@ end script
 
 If you use antivirus software configure it to skip folders with ClickHouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
 
-## Related Content {#related-content}
+## Related Content
 
 - [Getting started with ClickHouse? Here are 13 "Deadly Sins" and how to avoid them](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

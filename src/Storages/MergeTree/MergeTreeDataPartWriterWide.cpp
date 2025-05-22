@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageInMemoryMetadata.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -261,7 +260,7 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
     }
 }
 
-void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation)
+void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Permutation * permutation)
 {
     Block block_to_write = block;
 

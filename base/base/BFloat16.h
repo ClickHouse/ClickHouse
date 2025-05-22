@@ -48,6 +48,13 @@ public:
     {
     }
 
+    static constexpr BFloat16 fromBits(UInt16 bits) noexcept
+    {
+        BFloat16 res;
+        res.x = bits;
+        return res;
+    }
+
     template <typename T>
     constexpr BFloat16 & operator=(const T & other)
     {
@@ -311,4 +318,17 @@ requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator/(BFloat16 a, T b)
 {
     return Float32(a) / b;
+}
+
+namespace std
+{
+template <>
+class numeric_limits<BFloat16>
+{
+public:
+    static constexpr BFloat16 lowest() noexcept { return BFloat16::fromBits(0b1111111101111111); }
+    static constexpr BFloat16 min() noexcept { return BFloat16::fromBits(0b0000000100000000); }
+    static constexpr BFloat16 max() noexcept { return BFloat16::fromBits(0b0111111101111111); }
+    static constexpr BFloat16 infinity() noexcept { return BFloat16::fromBits(0b0111111110000000); }
+};
 }

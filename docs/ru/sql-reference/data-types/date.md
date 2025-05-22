@@ -40,5 +40,5 @@ SELECT * FROM dt;
 **См. также**
 
 -   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
--   [Операторы для работы с датой и временем](../../sql-reference/operators#operators-for-working-with-dates-and-times)
+-   [Операторы для работы с датой и временем](../../sql-reference/operators/index.md#operators-datetime)
 -   [Тип данных `DateTime`](../../sql-reference/data-types/datetime.md)

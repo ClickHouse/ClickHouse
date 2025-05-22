@@ -2,8 +2,8 @@
 
 #include <Storages/IStorage.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/ActionsDAG.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {

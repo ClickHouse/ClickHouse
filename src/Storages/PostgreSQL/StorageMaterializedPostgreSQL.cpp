@@ -26,6 +26,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/formatAST.h>
 
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/InterpreterDropQuery.h>

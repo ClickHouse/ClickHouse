@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT -q "INSERT into floats FORMAT CSV 1.0"
 $CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format Native | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+floats+FORMAT+Native" --data-binary @-
 $CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format RowBinary | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+floats+FORMAT+RowBinary" --data-binary @-
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, query_views_log"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT -q \
   "SELECT
     read_rows,

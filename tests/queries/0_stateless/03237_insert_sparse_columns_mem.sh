@@ -13,7 +13,7 @@ for i in {1..250}; do
     table_structure+=", c$i String"
 done
 
-MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parsing_to_custom_serialization 1 --parallel_replicas_for_cluster_engines 0"
+MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parsing_to_custom_serialization 1"
 
 $MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_insert_mem;

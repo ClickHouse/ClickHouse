@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-flaky-check
-# Tag no-flaky-check -- not compatible with ThreadFuzzer
+# Tags: long, no-fasttest, no-parallel, no-azure-blob-storage, no-s3-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

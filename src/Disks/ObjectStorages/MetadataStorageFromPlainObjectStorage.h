@@ -18,7 +18,7 @@
 namespace DB
 {
 
-class InMemoryDirectoryPathMap;
+struct InMemoryDirectoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
@@ -98,7 +98,6 @@ protected:
     ObjectMetadataEntryPtr getObjectMetadataEntryWithCache(const std::string & path) const;
 };
 
-
 class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction, private MetadataOperationsHolder
 {
 protected:
@@ -144,5 +143,4 @@ public:
 
     bool supportsChmod() const override { return false; }
 };
-
 }

@@ -14,7 +14,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/parseAddress.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/RemoteHostFilter.h>

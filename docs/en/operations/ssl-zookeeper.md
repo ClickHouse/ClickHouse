@@ -1,10 +1,7 @@
 ---
-description: 'Guide to configuring secure SSL/TLS communication between ClickHouse
-  and ZooKeeper'
-sidebar_label: 'Secured Communication with Zookeeper'
-sidebar_position: 45
 slug: /operations/ssl-zookeeper
-title: 'Optional secured communication between ClickHouse and Zookeeper'
+sidebar_position: 45
+sidebar_label: Secured Communication with Zookeeper
 ---
 
 # Optional secured communication between ClickHouse and Zookeeper

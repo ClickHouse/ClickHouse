@@ -16,13 +16,12 @@ class Logger;
 namespace DB
 {
 
-using NATSSubscriptionPtr = std::unique_ptr<natsSubscription, decltype(&natsSubscription_Destroy)>;
-
 class NATSConsumer
 {
 public:
     NATSConsumer(
-        NATSConnectionPtr connection_,
+        std::shared_ptr<NATSConnectionManager> connection_,
+        StorageNATS & storage_,
         std::vector<String> & subjects_,
         const String & subscribe_queue_name,
         LoggerPtr log_,
@@ -55,12 +54,14 @@ public:
 private:
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
 
-    NATSConnectionPtr connection;
-    std::vector<NATSSubscriptionPtr> subscriptions;
+    std::shared_ptr<NATSConnectionManager> connection;
+    StorageNATS & storage;
+    std::vector<SubscriptionPtr> subscriptions;
     std::vector<String> subjects;
     LoggerPtr log;
     const std::atomic<bool> & stopped;
 
+    bool subscribed = false;
     String queue_name;
 
     String channel_id;

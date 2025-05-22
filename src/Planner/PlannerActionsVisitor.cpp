@@ -607,7 +607,7 @@ private:
 
     NodeNameAndNodeMinLevel visitColumn(const QueryTreeNodePtr & node);
 
-    NodeNameAndNodeMinLevel visitConstant(const QueryTreeNodePtr & node);
+    NodeNameAndNodeMinLevel visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name = {});
 
     NodeNameAndNodeMinLevel visitLambda(const QueryTreeNodePtr & node);
 
@@ -675,8 +675,17 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 {
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
     const auto & column_node = node->as<ColumnNode &>();
-    if (column_node.hasExpression() && !use_column_identifier_as_action_node_name)
-        return visitImpl(column_node.getExpression());
+    if (column_node.hasExpression())
+    {
+        auto expression = column_node.getExpression();
+        /// In case of constant expression, prefer constant value from QueryTree vs. re-calculating the expression.
+        /// It is possible that during the execution of distributed queries
+        /// source columns from constant expression are removed, so that the attempt to recalculate it fails.
+        if (expression->getNodeType() == QueryTreeNodeType::CONSTANT)
+            return visitConstant(expression, column_node_name);
+        else if (!use_column_identifier_as_action_node_name)
+            return visitImpl(expression);
+    }
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
     for (Int64 i = actions_stack_size; i >= 0; --i)
     {
@@ -694,12 +703,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return {column_node_name, Levels(0)};
 }
 
-PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node)
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name)
 {
     const auto & constant_node = node->as<ConstantNode &>();
     const auto & constant_type = constant_node.getResultType();
 
-    auto constant_node_name = [&]()
+    auto constant_node_name = !override_column_name.empty() ? override_column_name : [&]()
     {
         /* To ensure that headers match during distributed query we need to simulate action node naming on
          * secondary servers. If we don't do that headers will mismatch due to constant folding.

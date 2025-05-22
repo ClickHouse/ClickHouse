@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/GinFilter.h>
-#include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -196,9 +195,13 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
         return;
     }
 
+    /// Clone ActionsDAG with re-generated column name for constants.
+    /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
+    /// DAG from the skip indexes does not use it. This breaks matching by column name sometimes.
+    auto cloned_filter_actions_dag = cloneFilterDAGForIndexesAnalysis(*filter_actions_dag);
     rpn = std::move(
             RPNBuilder<RPNElement>(
-                    filter_actions_dag->getOutputs().at(0), context_,
+                    cloned_filter_actions_dag.getOutputs().at(0), context_,
                     [&](const RPNBuilderTreeNode & node, RPNElement & out)
                     {
                         return this->traverseAtomAST(node, out);

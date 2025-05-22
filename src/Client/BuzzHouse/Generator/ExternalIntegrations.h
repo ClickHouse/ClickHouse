@@ -316,11 +316,7 @@ public:
     {
     }
 
-    String getConnectionURL();
-
     void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
-
-    void setBackupDetails(const String & filename, BackupRestore * br);
 
     bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t tname, bool, std::vector<ColumnPathChain> &) override;
 
@@ -392,13 +388,11 @@ public:
 
     bool performQuery(PeerTableDatabase pt, const String & query);
 
-    bool getPerformanceMetricsForLastQuery(PeerTableDatabase pt, PerformanceResult & res);
+    bool getPerformanceMetricsForLastQuery(PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage);
 
     void setDefaultSettings(PeerTableDatabase pt, const DB::Strings & settings);
 
     void replicateSettings(PeerTableDatabase pt);
-
-    void setBackupDetails(const String & filename, BackupRestore * br);
 };
 
 }

@@ -11,6 +11,7 @@
 #include <Access/ContextAccess.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -175,6 +176,9 @@ void RestorerFromBackup::run(Mode mode_)
     setStage(Stage::INSERTING_DATA_TO_TABLES);
     insertDataToTables();
     runDataRestoreTasks();
+
+    setStage(Stage::FINALIZING_TABLES);
+    finalizeTables();
 
     /// Restored successfully!
     setStage(Stage::COMPLETED);
@@ -456,7 +460,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     applyCustomStoragePolicy(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
-    String create_table_query_str = create_table_query->formatWithSecretsOneLine();
+    String create_table_query_str = serializeAST(*create_table_query);
 
     bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
     auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query, context->getCurrentDatabase());
@@ -545,7 +549,7 @@ void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_i
         ParserCreateQuery create_parser;
         ASTPtr create_database_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         renameDatabaseAndTableNameInCreateQuery(create_database_query, renaming_map, context->getGlobalContext());
-        String create_database_query_str = create_database_query->formatWithSecretsOneLine();
+        String create_database_query_str = serializeAST(*create_database_query);
 
         String database_name = renaming_map.getNewDatabaseName(database_name_in_backup);
         bool is_predefined_database = DatabaseCatalog::isPredefinedDatabase(database_name);
@@ -791,7 +795,7 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         /// Add the clause `IF NOT EXISTS` if that is specified in the restore settings.
         create_database_query->if_not_exists = (restore_settings.create_database == RestoreTableCreationMode::kCreateIfNotExists);
 
-        LOG_TRACE(log, "Creating database {}: {}", backQuoteIfNeed(database_name), create_database_query->formatForLogging());
+        LOG_TRACE(log, "Creating database {}: {}", backQuoteIfNeed(database_name), serializeAST(*create_database_query));
 
         auto create_query_context = Context::createCopy(query_context);
         create_query_context->setSetting("allow_deprecated_database_ordinary", 1);
@@ -836,8 +840,8 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
                     ErrorCodes::CANNOT_RESTORE_DATABASE,
                     "The database has a different definition: {} "
                     "comparing to its definition in the backup: {}",
-                    existing_database_def->formatForErrorMessage(),
-                    database_def_from_backup->formatForErrorMessage());
+                    serializeAST(*existing_database_def),
+                    serializeAST(*database_def_from_backup));
             }
         }
     }
@@ -979,7 +983,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         create_table_query->if_not_exists = (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists);
 
         LOG_TRACE(log, "Creating {}: {}",
-                  tableNameWithTypeToString(table_name.database, table_name.table, false), create_table_query->formatForLogging());
+                  tableNameWithTypeToString(table_name.database, table_name.table, false), serializeAST(*create_table_query));
 
         if (!database)
         {
@@ -1065,8 +1069,8 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
                     ErrorCodes::CANNOT_RESTORE_TABLE,
                     "The table has a different definition: {} "
                     "comparing to its definition in the backup: {}",
-                    existing_table_def->formatForErrorMessage(),
-                    table_def_from_backup->formatForErrorMessage());
+                    serializeAST(*existing_table_def),
+                    serializeAST(*table_def_from_backup));
             }
         }
     }
@@ -1170,6 +1174,20 @@ void RestorerFromBackup::runDataRestoreTasks()
 
         waitFutures();
     }
+}
+
+void RestorerFromBackup::finalizeTables()
+{
+    std::vector<StoragePtr> tables;
+    {
+        std::lock_guard lock{mutex};
+        tables.reserve(table_infos.size());
+        for (const auto & [_, info] : table_infos)
+            tables.push_back(info.storage);
+    }
+
+    for (const auto & storage : tables)
+        storage->finalizeRestoreFromBackup();
 }
 
 void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)

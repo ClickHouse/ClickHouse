@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for arrayJoin function'
-sidebar_label: 'arrayJoin'
-sidebar_position: 15
 slug: /sql-reference/functions/array-join
-title: 'arrayJoin function'
+sidebar_position: 15
+sidebar_label: arrayJoin
 ---
 
 # arrayJoin function
@@ -80,7 +78,7 @@ GROUP BY
 │           1 │ Bobruisk │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
-### Important note! {#important-note}
+### Important note!
 Using multiple `arrayJoin` with same expression may not produce expected results due to optimizations.
 For that cases, consider modifying repeated array expression with extra operations that do not affect join result - e.g. `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`
 

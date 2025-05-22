@@ -9,8 +9,6 @@
 #include <atomic>
 #include <memory>
 
-#include <fmt/ranges.h>
-
 namespace DB
 {
 struct FileCacheReserveStat;
@@ -36,7 +34,7 @@ public:
         std::atomic<size_t> size;
         size_t hits = 0;
 
-        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }
+        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size); }
 
         bool isEvicting(const CachePriorityGuard::Lock &) const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }

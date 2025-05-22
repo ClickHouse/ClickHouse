@@ -113,7 +113,8 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
     using Node = typename Storage::Node;
     Node node{};
     node.setData(data);
-    node.stats.setEphemeralOwner(ephemeral_owner);
+    if (ephemeral_owner)
+        node.stats.setEphemeralOwner(ephemeral_owner);
     storage.container.insertOrReplace(path, node);
     auto child_it = storage.container.find(path);
     auto child_path = DB::getBaseNodeName(child_it->key);

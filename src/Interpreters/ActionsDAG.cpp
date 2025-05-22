@@ -26,7 +26,6 @@
 #include <stack>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
-#include <Common/SipHash.h>
 #include <DataTypes/DataTypeSet.h>
 
 #include <absl/container/flat_hash_map.h>
@@ -136,73 +135,6 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
         map.add("Compiled", is_function_compiled);
 }
 
-size_t ActionsDAG::Node::getHash() const
-{
-    SipHash hash_state;
-    updateHash(hash_state);
-    return hash_state.get64();
-}
-
-void ActionsDAG::Node::updateHash(SipHash & hash_state) const
-{
-    hash_state.update(type);
-
-    if (!result_name.empty())
-        hash_state.update(result_name);
-
-    if (result_type)
-        hash_state.update(result_type->getName());
-
-    if (function_base)
-        hash_state.update(function_base->getName());
-
-    if (function)
-        hash_state.update(function->getName());
-
-    hash_state.update(is_function_compiled);
-    hash_state.update(is_deterministic_constant);
-
-    if (column)
-        hash_state.update(column->getName());
-
-    for (const auto & child : children)
-        child->updateHash(hash_state);
-}
-
-UInt64 ActionsDAG::getHash() const
-{
-    SipHash hash;
-    updateHash(hash);
-    return hash.get64();
-}
-
-void ActionsDAG::updateHash(SipHash & hash_state) const
-{
-    struct Frame
-    {
-        const ActionsDAG::Node * const node;
-        size_t next_child = 0;
-    };
-
-    std::stack<Frame> stack;
-    for (const auto & node : outputs)
-        stack.push({.node = node});
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.top();
-        if (frame.next_child == frame.node->children.size())
-        {
-            frame.node->updateHash(hash_state);
-            stack.pop();
-        }
-        else
-        {
-            stack.push({.node = frame.node->children[frame.next_child]});
-            ++frame.next_child;
-        }
-    }
-}
 
 ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
 {
@@ -3325,7 +3257,11 @@ static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in)
     }
 }
 
-static void serializeConstant(const IDataType & type, const IColumn & value, WriteBuffer & out, SerializedSetsRegistry & registry)
+static void serialzieConstant(
+    const IDataType & type,
+    const IColumn & value,
+    WriteBuffer & out,
+    SerializedSetsRegistry & registry)
 {
     if (WhichDataType(type).isSet())
     {
@@ -3393,7 +3329,7 @@ static void serializeConstant(const IDataType & type, const IColumn & value, Wri
         for (const auto & captured_column : captured_columns)
         {
             encodeDataType(captured_column.type, out);
-            serializeConstant(*captured_column.type, *captured_column.column, out, registry);
+            serialzieConstant(*captured_column.type, *captured_column.column, out, registry);
         }
 
         return;
@@ -3487,7 +3423,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
             writeVarUInt(node_to_id.at(child), out);
 
         /// Serialize column if it is present
-        const bool has_column = (node.type != ActionType::INPUT && node.column != nullptr);
+        const bool has_column = node.column != nullptr;
         UInt8 column_flags = 0;
         if (has_column)
         {
@@ -3503,7 +3439,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         writeIntBinary(column_flags, out);
 
         if (has_column)
-            serializeConstant(*node.result_type, *node.column, out, registry);
+            serialzieConstant(*node.result_type, *node.column, out, registry);
 
         if (node.type == ActionType::INPUT)
         {

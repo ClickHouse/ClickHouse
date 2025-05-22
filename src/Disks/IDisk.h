@@ -171,7 +171,7 @@ public:
     virtual DirectoryIteratorPtr iterateDirectory(const String & path) const = 0;
 
     /// Return `true` if the specified directory is empty.
-    virtual bool isDirectoryEmpty(const String & path) const;
+    bool isDirectoryEmpty(const String & path) const;
 
     /// Create empty file at `path`.
     virtual void createFile(const String & path) = 0;
@@ -456,14 +456,6 @@ public:
     /// Performs custom action on disk startup.
     virtual void startupImpl(ContextPtr) {}
 
-    /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
-    /// Note: for performance reasons, it's allowed to assume that only some subset of changes are possible
-    /// (those that MergeTree tables can make).
-    virtual void refresh()
-    {
-        /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
-    }
-
     /// Return some uniq string for file, overrode for IDiskRemote
     /// Required for distinguish different copies of the same part on remote disk
     virtual String getUniqueId(const String & path) const { return path; }
@@ -474,7 +466,7 @@ public:
     virtual bool checkUniqueId(const String & id) const { return existsFile(id); }
 
     /// Invoked on partitions freeze query.
-    virtual void onFreeze(const String &) {}
+    virtual void onFreeze(const String &) { }
 
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
@@ -580,6 +572,7 @@ protected:
         const String & from_path,
         const std::shared_ptr<IDisk> & to_disk,
         const String & to_path,
+        bool copy_root_dir,
         const ReadSettings & read_settings,
         WriteSettings write_settings,
         const std::function<void()> & cancellation_hook);

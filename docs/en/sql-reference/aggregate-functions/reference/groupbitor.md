@@ -1,13 +1,11 @@
 ---
-description: 'Applies bit-wise `OR` to a series of numbers.'
-sidebar_position: 152
 slug: /sql-reference/aggregate-functions/reference/groupbitor
-title: 'groupBitOr'
+sidebar_position: 152
 ---
 
 # groupBitOr
 
-Applies bit-wise `OR` to a series of numbers.
+Applies bit-wise `OR` for series of numbers.
 
 ``` sql
 groupBitOr(expr)

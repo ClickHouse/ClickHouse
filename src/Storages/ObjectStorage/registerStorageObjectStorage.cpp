@@ -1,7 +1,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
@@ -34,12 +33,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     const auto context = args.getLocalContext();
-    auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
+    auto queue_settings = std::make_unique<StorageObjectStorageSettings>();
 
     if (args.storage_def->settings)
-        storage_settings->loadFromQuery(*args.storage_def->settings);
+        queue_settings->loadFromQuery(*args.storage_def->settings);
 
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, storage_settings);
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, queue_settings.get());
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

@@ -1,6 +1,4 @@
 #pragma once
-
-#include <Interpreters/PreparedSets.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>

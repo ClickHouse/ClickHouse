@@ -17,10 +17,10 @@ std::string FunctionDocumentation::examplesAsString() const
     for (const auto & [name, query, result] : examples)
     {
         res += name + ":\n\n";
-        res += "```sql\n";
+        res += "``` sql\n";
         res += query + "\n";
         res += "```\n\n";
-        res += "```text\n";
+        res += "``` text\n";
         res += result + "\n";
         res += "```\n";
     }

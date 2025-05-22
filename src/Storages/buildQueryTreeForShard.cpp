@@ -14,8 +14,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <IO/WriteHelpers.h>
-#include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -202,6 +200,8 @@ private:
             const auto & distributed_storage_columns = table_node_typed.getStorageSnapshot()->metadata->getColumns();
             auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_columns);
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
+            if (auto table_expression_modifiers = table_node_typed.getTableExpressionModifiers())
+                replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
             replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
         }
         else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings()[Setting::prefer_global_in_and_join]) &&

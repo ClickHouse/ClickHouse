@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>

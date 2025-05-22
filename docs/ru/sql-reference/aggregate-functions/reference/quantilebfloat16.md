@@ -29,7 +29,7 @@ quantileBFloat16[(level)](expr)
 
 -   Приближенное значение квантиля.
 
-Тип: [Float64](/sql-reference/data-types/float).
+Тип: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 
 **Пример**
 

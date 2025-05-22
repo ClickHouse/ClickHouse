@@ -1,9 +1,6 @@
 ---
-description: 'Calculates the approximate number of different argument values, using
-  the HyperLogLog algorithm.'
-sidebar_position: 208
 slug: /sql-reference/aggregate-functions/reference/uniqhll12
-title: 'uniqHLL12'
+sidebar_position: 208
 ---
 
 # uniqHLL12
@@ -34,12 +31,11 @@ Function:
 
 - Provides the determinate result (it does not depend on the query processing order).
 
-
-We do not recommend using this function. In most cases, use the [uniq](/sql-reference/aggregate-functions/reference/uniq) or [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined) function.
+We do not recommend using this function. In most cases, use the [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) or [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined) function.
 
 **See Also**
 
-- [uniq](/sql-reference/aggregate-functions/reference/uniq)
-- [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined)
-- [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
-- [uniqTheta](/sql-reference/aggregate-functions/reference/uniqthetasketch)
+- [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+- [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
+- [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
+- [uniqTheta](../../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)

@@ -5,8 +5,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <DataTypes/IDataType.h>
-
 #include <algorithm>
 
 namespace DB

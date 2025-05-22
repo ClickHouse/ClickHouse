@@ -1,9 +1,7 @@
 ---
-description: 'Describes available third-party proxy solutions for ClickHouse'
-sidebar_label: 'Proxies'
-sidebar_position: 29
 slug: /interfaces/third-party/proxy
-title: 'Proxy Servers from Third-party Developers'
+sidebar_position: 29
+sidebar_label: Proxies
 ---
 
 # Proxy Servers from Third-party Developers

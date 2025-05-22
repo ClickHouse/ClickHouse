@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
-# no-fasttest: around 10 seconds of blocking execution
+# Tags: no-parallel
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

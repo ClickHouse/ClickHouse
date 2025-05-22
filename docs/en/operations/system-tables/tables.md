@@ -1,12 +1,9 @@
 ---
-description: 'System table containing metadata of each table that the server knows
-  about.'
-keywords: ['system table', 'tables']
+description: "System table containing metadata of each table that the server knows about."
 slug: /operations/system-tables/tables
-title: 'system.tables'
+title: "tables"
+keywords: ["system table", "tables"]
 ---
-
-# system.tables
 
 Contains metadata of each table that the server knows about.
 
@@ -36,7 +33,7 @@ Columns:
 
 - `dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database dependencies.
 
-- `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([materialized views](/sql-reference/statements/create/view#materialized-view) the current table).
+- `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([materialized views](../../sql-reference/statements/create/view.md#materialized-view) the current table).
 
 - `create_table_query` ([String](../../sql-reference/data-types/string.md)) - The query that was used to create the table.
 
@@ -55,7 +52,7 @@ Columns:
 - `storage_policy` ([String](../../sql-reference/data-types/string.md)) - The storage policy:
 
     - [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
-    - [Distributed](/engines/table-engines/special/distributed)
+    - [Distributed](../../engines/table-engines/special/distributed.md#distributed)
 
 - `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `NULL` (including underlying `Buffer` table).
 

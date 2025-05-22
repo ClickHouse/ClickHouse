@@ -199,13 +199,6 @@ public:
         bool use_skip_indexes,
         bool find_exact_ranges);
 
-    /// Filter parts using query condition cache.
-    static void filterPartsByQueryConditionCache(
-        RangesInDataParts & parts_with_ranges,
-        const SelectQueryInfo & select_query_info,
-        const ContextPtr & context,
-        LoggerPtr log);
-
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.
     /// Also, update key condition with selected sampling range.

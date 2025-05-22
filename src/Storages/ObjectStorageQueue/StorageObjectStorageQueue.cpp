@@ -8,9 +8,9 @@
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -32,8 +32,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
-
-#include <fmt/ranges.h>
 
 namespace fs = std::filesystem;
 
@@ -144,7 +142,7 @@ namespace
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
-                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value, queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms], queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
         }
     }
 
@@ -959,7 +957,7 @@ void StorageObjectStorageQueue::alter(
             changed_settings.push_back(setting);
         }
 
-        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
+        LOG_TEST(log, "New settings: {}", serializeAST(*new_metadata.settings_changes));
 
         /// Alter settings which are stored in keeper.
         files_metadata->alterSettings(changed_settings, local_context);

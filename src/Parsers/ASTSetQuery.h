@@ -16,6 +16,12 @@ class ASTSetQuery : public IAST
 public:
     bool is_standalone = true; /// If false, this AST is a part of another query, such as SELECT.
 
+    /// To support overriding certain settings in a **subquery**, we add a ASTSetQuery with Settings to all subqueries, containing
+    /// the list of all settings that affect them (specifically or globally to the whole query).
+    /// We use `print_in_format` to avoid printing these nodes when they were left unchanged from the parent copy
+    /// See more: https://github.com/ClickHouse/ClickHouse/issues/38895
+    bool print_in_format = true;
+
     SettingsChanges changes;
     /// settings that will be reset to default value
     std::vector<String> default_settings;

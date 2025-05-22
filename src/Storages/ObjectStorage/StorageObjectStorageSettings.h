@@ -8,7 +8,7 @@
 
 namespace DB
 {
-class ASTSetQuery;
+class ASTStorage;
 struct StorageObjectStorageSettingsImpl;
 struct MutableColumnsAndConstraints;
 class StorageObjectStorage;
@@ -63,7 +63,5 @@ struct StorageObjectStorageSettings
 private:
     std::unique_ptr<StorageObjectStorageSettingsImpl> impl;
 };
-
-using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 
 }

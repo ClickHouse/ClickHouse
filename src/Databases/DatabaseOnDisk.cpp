@@ -18,9 +18,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
@@ -130,18 +132,16 @@ std::pair<String, StoragePtr> createTableFromAST(
         }
     }
 
-    return
-    {
-        ast_create_query.getTable(),
-        StorageFactory::instance().get(
-            ast_create_query,
-            table_data_path_relative,
-            context,
-            context->getGlobalContext(),
-            columns,
-            constraints,
-            mode)
-    };
+    /// Before 24.10 it was possible for query settings to be stored with the .sql definition with some engines, which would ignore them
+    /// Later (breaking) changes to table storages made the engines throw, which now prevents attaching old definitions which include
+    /// those query settings
+    /// In order to ignore them now we call `applySettingsFromQuery` which will move the settings from engine to query level
+    auto ast = std::make_shared<ASTCreateQuery>(std::move(ast_create_query));
+    InterpreterSetQuery::applySettingsFromQuery(ast, context);
+
+    return {
+        ast->getTable(),
+        StorageFactory::instance().get(*ast, table_data_path_relative, context, context->getGlobalContext(), columns, constraints, mode)};
 }
 
 
@@ -151,7 +151,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     auto * create = query_clone->as<ASTCreateQuery>();
 
     if (!create)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
 
     /// Clean the query from temporary flags.
     cleanupObjectDefinitionFromTemporaryFlags(*create);
@@ -167,8 +167,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     WriteBufferFromOwnString statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
-    create->format(statement_buf, format_settings);
+    formatAST(*create, statement_buf, false);
     writeChar('\n', statement_buf);
     return statement_buf.str();
 }
@@ -392,17 +391,7 @@ void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_n
 
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
-    // Compute allowed max length directly
-    size_t allowed_max_length = computeMaxTableNameLength(database_name, getContext());
-    String table_metadata_path = getObjectMetadataPath(to_table_name);
-
-    const auto escaped_name_length = escapeForFileName(to_table_name).length();
-
-    if (escaped_name_length > allowed_max_length)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The max length of table name for database {} is {}, current length is {}",
-                        database_name, allowed_max_length, escaped_name_length);
-
+    const String table_metadata_path = getObjectMetadataPath(to_table_name);
     if (db_disk->existsFile(table_metadata_path))
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
@@ -891,8 +880,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     create->if_not_exists = false;
 
     WriteBufferFromOwnString statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
-    create->format(statement_buf, format_settings);
+    formatAST(*create, statement_buf, false);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
@@ -905,4 +893,23 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
 
     db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
 }
+
+void DatabaseOnDisk::checkTableNameLength(const String & table_name) const
+{
+    std::lock_guard lock(mutex);
+    checkTableNameLengthUnlocked(table_name);
+}
+
+void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & table_name) const TSA_REQUIRES(mutex)
+{
+    const size_t allowed_max_length = computeMaxTableNameLength(database_name, getContext());
+    const size_t escaped_name_length = escapeForFileName(table_name).length();
+    if (escaped_name_length > allowed_max_length)
+    {
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "The max length of table name for database {} is {}, current length is {}",
+            database_name, allowed_max_length, escaped_name_length);
+    }
+}
+
 }

@@ -6,13 +6,13 @@
 #include <base/types.h>
 #include <base/defines.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/ColumnSize.h>
-#include <Storages/IStorage_fwd.h>
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -24,6 +24,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Storages/MergeTree/DeserializationPrefixesCache.h>
+
 
 namespace zkutil
 {
@@ -36,7 +38,6 @@ namespace DB
 
 class Block;
 struct ColumnSize;
-class DeserializationPrefixesCache;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
 class IReservation;
@@ -62,7 +63,7 @@ enum class DataPartRemovalState : uint8_t
     HAS_SKIPPED_MUTATION_PARENT,
     EMPTY_PART_COVERS_OTHER_PARTS,
     REMOVE,
-    REMOVE_ROLLED_BACK,
+    REMOVE_ROLLBACKED,
     REMOVE_RETRY,
 };
 

@@ -618,6 +618,10 @@ class PackageDownloader:
         "clickhouse-server",
     )
 
+    EXTRA_PACKAGES = (
+        "clickhouse-library-bridge",
+        "clickhouse-odbc-bridge",
+    )
     PACKAGE_TYPES = (CI.BuildNames.PACKAGE_RELEASE, CI.BuildNames.PACKAGE_AARCH64)
     MACOS_PACKAGE_TO_BIN_SUFFIX = {
         CI.BuildNames.BINARY_DARWIN: "macos",
@@ -639,7 +643,10 @@ class PackageDownloader:
 
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
+        major, minor = map(int, release.split("."))
         self.package_names = list(self.PACKAGES)
+        if major > 24 or (major == 24 and minor > 3):
+            self.package_names += list(self.EXTRA_PACKAGES)
         self.release = release
         self.commit_sha = commit_sha
         self.version = version

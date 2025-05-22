@@ -93,7 +93,7 @@ public:
 
     bool has(const std::string & name, bool case_insensitive = false) const;
 
-    size_t getPositionByName(const std::string & name, bool case_insensitive = false) const;
+    size_t getPositionByName(const std::string & name) const;
 
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
     NamesAndTypesList getNamesAndTypesList() const;

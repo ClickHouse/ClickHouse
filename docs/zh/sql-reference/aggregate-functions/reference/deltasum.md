@@ -67,4 +67,4 @@ SELECT deltaSum(arrayJoin([2.25, 3, 4.5]));
 
 **参见**
 
--   [runningDifference](/sql-reference/functions/other-functions#runningDifference)
+-   [runningDifference](../../functions/other-functions.md#other_functions-runningdifference)

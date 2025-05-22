@@ -8,7 +8,6 @@
 #include <Interpreters/StorageID.h>
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
-#include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -66,6 +65,22 @@ class RestorerFromBackup;
 class ConditionSelectivityEstimator;
 
 class ActionsDAG;
+
+struct ColumnSize
+{
+    size_t marks = 0;
+    size_t data_compressed = 0;
+    size_t data_uncompressed = 0;
+
+    void add(const ColumnSize & other)
+    {
+        marks += other.marks;
+        data_compressed += other.data_compressed;
+        data_uncompressed += other.data_uncompressed;
+    }
+};
+
+using IndexSize = ColumnSize;
 
 /** Storage. Describes the table. Responsible for
   * - storage of the table data;
@@ -239,6 +254,12 @@ public:
 
     /// Returns true if the storage supports backup/restore for specific partitions.
     virtual bool supportsBackupPartition() const { return false; }
+
+    /// Called after all databases and tables on all replicas have been restored from backup.
+    /// If this data does some background work that depends on contents of other tables, this is
+    /// the place to kick off that work (and it should be paused when IStorage is created with
+    /// is_restore_from_backup = true in StorageFactory::Arguments).
+    virtual void finalizeRestoreFromBackup() {}
 
     /// Return true if there is at least one part containing lightweight deleted mask.
     virtual bool hasLightweightDeletedMask() const { return false; }
@@ -570,10 +591,8 @@ public:
       */
     virtual void shutdown(bool is_drop = false) { UNUSED(is_drop); } // NOLINT
 
-    /// Called before shutdown() to flush data to underlying storage.
-    /// Might be called multiple times; only the first call needs to be processed.
-    /// Data in memory need to be persistent. Any background work that affects other tables
-    /// (e.g. materialized view refreshes that create/drop tables) needs to be stopped.
+    /// Called before shutdown() to flush data to underlying storage
+    /// Data in memory need to be persistent
     virtual void flushAndPrepareForShutdown() {}
 
     /// Asks table to stop executing some action identified by action_type

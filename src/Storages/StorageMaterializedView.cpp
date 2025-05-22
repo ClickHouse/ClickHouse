@@ -8,7 +8,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTRefreshStrategy.h>
-#include <Parsers/queryNormalization.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
@@ -22,7 +21,6 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Interpreters/executeQuery.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -48,7 +46,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 log_queries_cut_to_length;
 }
 
 namespace ServerSetting
@@ -111,7 +108,8 @@ StorageMaterializedView::StorageMaterializedView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     LoadingStrictnessLevel mode,
-    const String & comment)
+    const String & comment,
+    bool is_restore_from_backup)
     : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -151,7 +149,7 @@ StorageMaterializedView::StorageMaterializedView(
         auto max_materialized_views_count_for_table = getContext()->getServerSettings()[ServerSetting::max_materialized_views_count_for_table];
         if (max_materialized_views_count_for_table && select_table_dependent_views.size() >= max_materialized_views_count_for_table)
             throw Exception(ErrorCodes::TOO_MANY_MATERIALIZED_VIEWS,
-                            "Too many materialized views, maximum: {}", max_materialized_views_count_for_table.value);
+                            "Too many materialized views, maximum: {}", max_materialized_views_count_for_table);
     }
 
     storage_metadata.setSelectQuery(select);
@@ -194,9 +192,9 @@ StorageMaterializedView::StorageMaterializedView(
             }
         }
 
+        /// Sanity-check the table engine.
         if (mode < LoadingStrictnessLevel::ATTACH && !fixed_uuid)
         {
-            /// Sanity-check the table engine.
             String inner_engine;
             if (has_inner_table)
             {
@@ -224,15 +222,9 @@ StorageMaterializedView::StorageMaterializedView(
                 /// each refresh would append to a table on one arbitrarily chosen replica. But in principle it can be useful,
                 /// e.g. if SELECTs are done using clusterAllReplicas(). (For the two disallowed cases above, clusterAllReplicas() wouldn't work reliably.)
             }
-
-            /// Sanity-check permissions. This is just for usability, the main checks are done by the
-            /// actual CREATE/INSERT/SELECT/EXCHANGE/DROP interpreters during refresh.
-            String inner_db_name = has_inner_table ? table_id_.database_name : to_table_id.database_name;
-            auto refresh_context = storage_metadata.getSQLSecurityOverriddenContext(getContext());
-            refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);
         }
 
-        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty);
+        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_restore_from_backup);
     }
 
     if (!fixed_uuid)
@@ -512,16 +504,10 @@ bool StorageMaterializedView::optimize(
     return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
 }
 
-ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & log_comment) const
+ContextMutablePtr StorageMaterializedView::createRefreshContext() const
 {
-    ContextPtr table_context = getContext();
-    ClientInfo client_info = table_context->getClientInfo();
-    client_info.interface = ClientInfo::Interface::BACKGROUND;
-    client_info.client_name = "refreshable materialized view";
-    auto refresh_context = getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(table_context, &client_info);
-    refresh_context->setClientInfo(client_info);
+    auto refresh_context = getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(getContext());
     refresh_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
-    refresh_context->setSetting("log_comment", log_comment);
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
@@ -544,9 +530,6 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name);
         String db_name = db->getDatabaseName();
         auto new_table_name = ".tmp" + generateInnerTableName(getStorageID());
-
-        /// Pre-check the permissions. Would be awkward if we create a temporary table and can't drop it.
-        refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, db_name);
 
         auto create_query = std::dynamic_pointer_cast<ASTCreateQuery>(db->getCreateTableQuery(inner_table_id.table_name, getContext()));
         create_query->setTable(new_table_name);
@@ -613,31 +596,24 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
     return exchange ? std::make_optional(fresh_table) : std::nullopt;
 }
 
-void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context, String & out_exception)
+void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context)
 {
     CurrentThread::QueryScope query_scope(refresh_context);
 
-    auto drop_query = std::make_shared<ASTDropQuery>();
-    drop_query->setDatabase(table_id.database_name);
-    drop_query->setTable(table_id.table_name);
-    drop_query->kind = ASTDropQuery::Kind::Drop;
-    drop_query->if_exists = true;
-    drop_query->sync = false;
-
-    Stopwatch stopwatch;
     try
     {
+        auto drop_query = std::make_shared<ASTDropQuery>();
+        drop_query->setDatabase(table_id.database_name);
+        drop_query->setTable(table_id.table_name);
+        drop_query->kind = ASTDropQuery::Kind::Drop;
+        drop_query->if_exists = true;
+        drop_query->sync = false;
+
         InterpreterDropQuery(drop_query, refresh_context).execute();
     }
     catch (...)
     {
-        auto query_for_logging = drop_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
-        UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds());
-        LOG_ERROR(getLogger("StorageMaterializedView"),
-            "{}: Failed to drop temporary table after refresh. Table {} is left behind and requires manual cleanup.",
-            getStorageID().getFullTableName(), table_id.getFullTableName());
-        out_exception = getCurrentExceptionMessage(true);
+        tryLogCurrentException(&Poco::Logger::get("StorageMaterializedView"), "Failed to drop temporary table after refresh");
     }
 }
 
@@ -781,24 +757,16 @@ void StorageMaterializedView::startup()
         refresher->startup();
 }
 
-void StorageMaterializedView::flushAndPrepareForShutdown()
+void StorageMaterializedView::shutdown(bool)
 {
     if (refresher)
         refresher->shutdown();
-}
 
-void StorageMaterializedView::shutdown(bool)
-{
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, getStorageID());
-}
-
-bool StorageMaterializedView::canCreateOrDropOtherTables() const
-{
-    return refresher && refresher->canCreateOrDropOtherTables();
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const
@@ -845,6 +813,12 @@ void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restore
 {
     if (hasInnerTable() && fixed_uuid)
         getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+}
+
+void StorageMaterializedView::finalizeRestoreFromBackup()
+{
+    if (refresher)
+        refresher->finalizeRestoreFromBackup();
 }
 
 bool StorageMaterializedView::supportsBackupPartition() const
@@ -935,7 +909,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
         /// Pass local_context here to convey setting for inner table
         return std::make_shared<StorageMaterializedView>(
             args.table_id, args.getLocalContext(), args.query,
-            args.columns, args.mode, args.comment);
+            args.columns, args.mode, args.comment, args.is_restore_from_backup);
     });
 }
 

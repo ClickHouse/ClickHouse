@@ -1,8 +1,6 @@
 ---
-description: 'Computes the skewness of a sequence.'
-sidebar_position: 185
 slug: /sql-reference/aggregate-functions/reference/skewpop
-title: 'skewPop'
+sidebar_position: 185
 ---
 
 # skewPop
@@ -15,7 +13,7 @@ skewPop(expr)
 
 **Arguments**
 
-`expr` — [Expression](/sql-reference/syntax#expressions) returning a number.
+`expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 

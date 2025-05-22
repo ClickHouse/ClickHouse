@@ -11,22 +11,9 @@ COPY --from=clickhouse/cctools:d9e3596e706b /cctools /cctools
 ENV RUSTUP_HOME=/rust/rustup
 ENV CARGO_HOME=/rust/cargo
 ENV PATH="/rust/cargo/bin:${PATH}"
-ENV RUSTUP_VERSION=1.28.1
-
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then \
-        RUSTUP_ARCH="x86_64-unknown-linux-gnu"; \
-    elif [ "$ARCH" = "aarch64" ]; then \
-        RUSTUP_ARCH="aarch64-unknown-linux-gnu"; \
-    else \
-        echo "Unsupported architecture: $ARCH"; exit 1; \
-    fi && \
-    curl -fsSL -o rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${RUSTUP_ARCH}/rustup-init" && \
-    chmod +x rustup-init && \
-    ./rustup-init -y && \
-    rm rustup-init && \
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     chmod 777 -R /rust && \
-    rustup toolchain install nightly-2024-12-01 --no-self-update && \
+    rustup toolchain install nightly-2024-12-01 && \
     rustup default nightly-2024-12-01 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \

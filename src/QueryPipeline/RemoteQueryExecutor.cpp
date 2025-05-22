@@ -4,7 +4,6 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>

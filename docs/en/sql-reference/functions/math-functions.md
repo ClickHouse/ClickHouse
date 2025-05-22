@@ -1,14 +1,12 @@
 ---
-description: 'Documentation for Mathematical Functions'
-sidebar_label: 'Mathematical'
-sidebar_position: 125
 slug: /sql-reference/functions/math-functions
-title: 'Mathematical Functions'
+sidebar_position: 125
+sidebar_label: Mathematical
 ---
 
 # Mathematical Functions
 
-## e {#e}
+## e
 
 Returns $e$ ([Euler's constant](https://en.wikipedia.org/wiki/Euler%27s_constant)).
 
@@ -22,7 +20,7 @@ e()
 
 Type: [Float64](../data-types/float.md).
 
-## pi {#pi}
+## pi
 
 Returns $\pi$ ([Pi](https://en.wikipedia.org/wiki/Pi)).
 
@@ -35,7 +33,7 @@ pi()
 
 Type: [Float64](../data-types/float.md).
 
-## exp {#exp}
+## exp
 
 Returns $e^{x}$, where x is the given argument to the function.
 
@@ -69,7 +67,7 @@ Result:
 
 Type: [Float*](../data-types/float.md).
 
-## log {#log}
+## log
 
 Returns the natural logarithm of the argument.
 
@@ -89,7 +87,7 @@ Alias: `ln(x)`
 
 Type: [Float*](../data-types/float.md).
 
-## exp2 {#exp2}
+## exp2
 
 Returns 2 to the power of the given argument
 
@@ -107,7 +105,7 @@ exp2(x)
 
 Type: [Float*](../data-types/float.md).
 
-## intExp2 {#intexp2}
+## intExp2
 
 Like [`exp`](#exp) but returns a UInt64.
 
@@ -117,7 +115,7 @@ Like [`exp`](#exp) but returns a UInt64.
 intExp2(x)
 ```
 
-## log2 {#log2}
+## log2
 
 Returns the binary logarithm of the argument.
 
@@ -135,7 +133,7 @@ log2(x)
 
 Type: [Float*](../data-types/float.md).
 
-## exp10 {#exp10}
+## exp10
 
 Returns 10 to the power of the given argument.
 
@@ -153,7 +151,7 @@ exp10(x)
 
 Type: [Float*](../data-types/float.md).
 
-## intExp10 {#intexp10}
+## intExp10
 
 Like [`exp10`](#exp10) but returns a UInt64.
 
@@ -163,7 +161,7 @@ Like [`exp10`](#exp10) but returns a UInt64.
 intExp10(x)
 ```
 
-## log10 {#log10}
+## log10
 
 Returns the decimal logarithm of the argument.
 
@@ -181,7 +179,7 @@ log10(x)
 
 Type: [Float*](../data-types/float.md).
 
-## sqrt {#sqrt}
+## sqrt
 
 Returns the square root of the argument.
 
@@ -197,7 +195,7 @@ sqrt(x)
 
 Type: [Float*](../data-types/float.md).
 
-## cbrt {#cbrt}
+## cbrt
 
 Returns the cubic root of the argument.
 
@@ -213,7 +211,7 @@ cbrt(x)
 
 Type: [Float*](../data-types/float.md).
 
-## erf {#erf}
+## erf
 
 If `x` is non-negative, then $erf(\frac{x}{\sigma\sqrt{2}})$ is the probability that a random variable having a normal distribution with standard deviation $\sigma$ takes the value that is separated from the expected value by more than `x`.
 
@@ -245,7 +243,7 @@ SELECT erf(3 / sqrt(2));
 └─────────────────────────┘
 ```
 
-## erfc {#erfc}
+## erfc
 
 Returns a number close to $1-erf(x)$ without loss of precision for large `x` values.
 
@@ -263,7 +261,7 @@ erfc(x)
 
 Type: [Float*](../data-types/float.md).
 
-## lgamma {#lgamma}
+## lgamma
 
 Returns the logarithm of the gamma function.
 
@@ -281,7 +279,7 @@ lgamma(x)
 
 Type: [Float*](../data-types/float.md).
 
-## tgamma {#tgamma}
+## tgamma
 
 Returns the gamma function.
 
@@ -299,7 +297,7 @@ gamma(x)
 
 Type: [Float*](../data-types/float.md).
 
-## sin {#sin}
+## sin
 
 Returns the sine of the argument
 
@@ -329,7 +327,7 @@ SELECT sin(1.23);
 0.9424888019316975
 ```
 
-## cos {#cos}
+## cos
 
 Returns the cosine of the argument.
 
@@ -347,7 +345,7 @@ cos(x)
 
 Type: [Float*](../data-types/float.md).
 
-## tan {#tan}
+## tan
 
 Returns the tangent of the argument.
 
@@ -365,7 +363,7 @@ tan(x)
 
 Type: [Float*](../data-types/float.md).
 
-## asin {#asin}
+## asin
 
 Returns the arc sine of the argument.
 
@@ -383,7 +381,7 @@ asin(x)
 
 Type: [Float*](../data-types/float.md).
 
-## acos {#acos}
+## acos
 
 Returns the arc cosine of the argument.
 
@@ -401,7 +399,7 @@ acos(x)
 
 Type: [Float*](../data-types/float.md).
 
-## atan {#atan}
+## atan
 
 Returns the arc tangent of the argument.
 
@@ -419,7 +417,7 @@ atan(x)
 
 Type: [Float*](../data-types/float.md).
 
-## pow {#pow}
+## pow
 
 Returns $x^y$.
 
@@ -440,7 +438,7 @@ Alias: `power(x, y)`
 
 Type: [Float64](../data-types/float.md).
 
-## cosh {#cosh}
+## cosh
 
 Returns the [hyperbolic cosine](https://in.mathworks.com/help/matlab/ref/cosh.html) of the argument.
 
@@ -458,7 +456,7 @@ cosh(x)
 
 - Values from the interval: $1 \le cosh(x) \lt +\infty$.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -474,7 +472,7 @@ Result:
 └──────────┘
 ```
 
-## acosh {#acosh}
+## acosh
 
 Returns the [inverse hyperbolic cosine](https://www.mathworks.com/help/matlab/ref/acosh.html).
 
@@ -492,7 +490,7 @@ acosh(x)
 
 - The angle, in radians. Values from the interval: $0 \le acosh(x) \lt +\infty$.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -508,7 +506,7 @@ Result:
 └──────────┘
 ```
 
-## sinh {#sinh}
+## sinh
 
 Returns the [hyperbolic sine](https://www.mathworks.com/help/matlab/ref/sinh.html).
 
@@ -526,7 +524,7 @@ sinh(x)
 
 - Values from the interval: $-\infty \lt sinh(x) \lt +\infty$.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -542,7 +540,7 @@ Result:
 └──────────┘
 ```
 
-## asinh {#asinh}
+## asinh
 
 Returns the [inverse hyperbolic sine](https://www.mathworks.com/help/matlab/ref/asinh.html).
 
@@ -560,7 +558,7 @@ asinh(x)
 
 - The angle, in radians. Values from the interval: $-\infty \lt asinh(x) \lt +\infty$.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -575,7 +573,7 @@ Result:
 │        0 │
 └──────────┘
 ```
-## tanh {#tanh}
+## tanh
 
 Returns the [hyperbolic tangent](https://www.mathworks.com/help/matlab/ref/tanh.html).
 
@@ -593,7 +591,7 @@ tanh(x)
 
 - Values from the interval: $-1 \lt tanh(x) \lt 1$.
 
-Type: [Float*](/sql-reference/data-types/float).
+Type: [Float*](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -607,7 +605,7 @@ Result:
 0
 ```
 
-## atanh {#atanh}
+## atanh
 
 Returns the [inverse hyperbolic tangent](https://www.mathworks.com/help/matlab/ref/atanh.html).
 
@@ -625,7 +623,7 @@ atanh(x)
 
 - The angle, in radians. Values from the interval: $-\infty \lt atanh(x) \lt +\infty$.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -641,7 +639,7 @@ Result:
 └──────────┘
 ```
 
-## atan2 {#atan2}
+## atan2
 
 Returns the [atan2](https://en.wikipedia.org/wiki/Atan2) as the angle in the Euclidean plane, given in radians, between the positive x axis and the ray to the point `(x, y) ≠ (0, 0)`.
 
@@ -660,7 +658,7 @@ atan2(y, x)
 
 - The angle `θ` such that $-\pi \lt 0 \le \pi$, in radians.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -676,7 +674,7 @@ Result:
 └────────────────────┘
 ```
 
-## hypot {#hypot}
+## hypot
 
 Returns the length of the hypotenuse of a right-angle triangle. [Hypot](https://en.wikipedia.org/wiki/Hypot) avoids problems that occur when squaring very large or very small numbers.
 
@@ -695,7 +693,7 @@ hypot(x, y)
 
 - The length of the hypotenuse of a right-angle triangle.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -711,7 +709,7 @@ Result:
 └────────────────────┘
 ```
 
-## log1p {#log1p}
+## log1p
 
 Calculates `log(1+x)`. The [calculation](https://en.wikipedia.org/wiki/Natural_logarithm#lnp1) `log1p(x)` is more accurate than `log(1+x)` for small values of x.
 
@@ -729,7 +727,7 @@ log1p(x)
 
 - Values from the interval: $-\infty < log1p(x) \lt +\infty$.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -745,7 +743,7 @@ Result:
 └──────────┘
 ```
 
-## sign {#sign}
+## sign
 
 Returns the sign of a real number.
 
@@ -810,7 +808,7 @@ Result:
 │       -1 │
 └──────────┘
 ```
-## sigmoid {#sigmoid}
+## sigmoid
 
 Returns the [sigmoid function](https://en.wikipedia.org/wiki/Sigmoid_function).
 
@@ -844,7 +842,7 @@ Result:
 0.73106
 ```
 
-## degrees {#degrees}
+## degrees
 
 Converts radians to degrees.
 
@@ -861,7 +859,7 @@ degrees(x)
 
 **Returned value**
 
-- Value in degrees. [Float64](/sql-reference/data-types/float).
+- Value in degrees. [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -877,7 +875,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## radians {#radians}
+## radians
 
 Converts degrees to radians.
 
@@ -895,7 +893,7 @@ radians(x)
 
 - Value in radians.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -911,7 +909,7 @@ Result:
 └───────────────────┘
 ```
 
-## factorial {#factorial}
+## factorial
 
 Computes the factorial of an integer value. Works with any native integer type including UInt(8|16|32|64) and Int(8|16|32|64). The return type is UInt64.
 
@@ -938,7 +936,7 @@ Result:
 └───────────────┘
 ```
 
-## width_bucket {#width_bucket}
+## width_bucket
 
 Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. Returns `0` if `operand < low`, and returns `count+1` if `operand >= high`.
 
@@ -965,7 +963,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## proportionsZTest {#proportionsztest}
+## proportionsZTest
 
 Returns test statistics for the two proportion Z-test - a statistical test for comparing the proportions from two populations `x` and `y`.
 

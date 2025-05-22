@@ -81,6 +81,8 @@ def get_additional_envs(
 def get_image_name(check_name: str) -> str:
     if "stateless" in check_name.lower() or "validation" in check_name.lower():
         return "clickhouse/stateless-test"
+    if "stateful" in check_name.lower():
+        return "clickhouse/stateful-test"
     raise ValueError(f"Cannot deduce image name based on check name {check_name}")
 
 
@@ -119,7 +121,9 @@ def get_run_command(
 
     env_str = " ".join(envs)
 
-    if "stateless" in check_name.lower() or "validation" in check_name.lower():
+    if "stateful" in check_name.lower():
+        run_script = "/repo/tests/docker_scripts/stateful_runner.sh"
+    elif "stateless" in check_name.lower() or "validation" in check_name.lower():
         run_script = "/repo/tests/docker_scripts/stateless_runner.sh"
     else:
         assert False

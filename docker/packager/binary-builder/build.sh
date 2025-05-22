@@ -175,8 +175,6 @@ then
     git -C "$PERF_OUTPUT"/ch tag | xargs git -C "$PERF_OUTPUT"/ch tag -d >/dev/null
     git -C "$PERF_OUTPUT"/ch reset --soft pr
     git -C "$PERF_OUTPUT"/ch log -5
-    # Unlike git log, git show requires trees
-    git -C "$PERF_OUTPUT"/ch show -s
     (
         cd "$PERF_OUTPUT"/..
         tar -cv --zstd -f /output/performance.tar.zst output

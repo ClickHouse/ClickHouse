@@ -26,11 +26,12 @@ public:
         float remerge_lowered_memory_bytes_ratio = 0;
         size_t min_external_sort_block_bytes = 0;
         size_t max_bytes_before_external_sort = 0;
+        TemporaryDataOnDiskScopePtr tmp_data = nullptr;
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
 
-        explicit Settings(const DB::Settings & settings);
+        explicit Settings(const Context & context);
         explicit Settings(size_t max_block_size_);
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
@@ -101,7 +102,6 @@ public:
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 

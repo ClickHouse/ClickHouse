@@ -418,7 +418,7 @@ size_t HashJoin::getTotalRowCount() const
 
 void HashJoin::doDebugAsserts() const
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifndef NDEBUG
     size_t debug_blocks_allocated_size = 0;
     for (const auto & block : data->blocks)
         debug_blocks_allocated_size += block.allocatedBytes();

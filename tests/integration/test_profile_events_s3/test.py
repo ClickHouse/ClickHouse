@@ -124,7 +124,6 @@ def test_profile_events(cluster):
     minio0 = get_minio_stat(cluster)
 
     query1 = "CREATE TABLE test_s3.test_s3 (key UInt32, value UInt32) ENGINE=MergeTree PRIMARY KEY key ORDER BY key SETTINGS storage_policy = 's3'"
-    prev_stat1 = get_query_stat(instance, query1)
     instance.query(query1)
 
     size1 = get_minio_size(cluster)
@@ -141,13 +140,12 @@ def test_profile_events(cluster):
     )
     stat1 = get_query_stat(instance, query1)
     for metric in stat1:
-        assert stat1[metric] - prev_stat1.get(metric, 0) == metrics1.get(metric, 0) - metrics0.get(metric, 0)
+        assert stat1[metric] == metrics1.get(metric, 0) - metrics0.get(metric, 0)
     assert (
         metrics1["WriteBufferFromS3Bytes"] - metrics0["WriteBufferFromS3Bytes"] == size1
     )
 
     query2 = "INSERT INTO test_s3.test_s3 VALUES"
-    prev_stat2 = get_query_stat(instance, query2)
     instance.query(query2 + " (1,1)")
 
     size2 = get_minio_size(cluster)
@@ -166,7 +164,7 @@ def test_profile_events(cluster):
     stat2 = get_query_stat(instance, query2)
 
     for metric in stat2:
-        assert stat2[metric] - prev_stat2.get(metric, 0) == metrics2.get(metric, 0) - metrics1.get(metric, 0)
+        assert stat2[metric] == metrics2.get(metric, 0) - metrics1.get(metric, 0)
 
     assert (
         metrics2["WriteBufferFromS3Bytes"] - metrics1["WriteBufferFromS3Bytes"]
@@ -193,6 +191,3 @@ def test_profile_events(cluster):
     # for metric in stat3:
     #    print(metric)
     #    assert stat3[metric] == metrics3.get(metric, 0) - metrics2.get(metric, 0)
-
-    instance.query("DROP TABLE IF EXISTS test_s3.test_s3 SYNC")
-    instance.query("DROP DATABASE IF EXISTS test_s3 SYNC")

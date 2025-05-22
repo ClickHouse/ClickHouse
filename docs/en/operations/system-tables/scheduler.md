@@ -1,18 +1,14 @@
 ---
-description: 'System table containing information about and status of scheduling nodes
-  residing on the local server.'
-keywords: ['system table', 'scheduler']
+description: "System table containing information about and status of scheduling nodes residing on the local server."
 slug: /operations/system-tables/scheduler
-title: 'system.scheduler'
+title: "scheduler"
+keywords: ["system table", "scheduler"]
 ---
-
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-# system.scheduler
 
 <SystemTableCloud/>
 
-Contains information about and status of [scheduling nodes](/operations/workload-scheduling.md/#hierarchy) residing on the local server.
+Contains information about and status of [scheduling nodes](/docs/operations/workload-scheduling.md/#hierarchy) residing on the local server.
 This table can be used for monitoring. The table contains a row for every scheduling node.
 
 Example:

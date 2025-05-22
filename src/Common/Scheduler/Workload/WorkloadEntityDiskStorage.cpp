@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/parseQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateWorkloadQuery.h>
 #include <Parsers/ParserCreateResourceQuery.h>
 
@@ -216,7 +217,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::storeEntit
     try
     {
         WriteBufferFromFile out(temp_file_path);
-        writeString(create_entity_query->formatWithSecretsOneLine(), out);
+        formatAST(*create_entity_query, out, false);
         writeChar('\n', out);
         out.next();
         if (settings[Setting::fsync_metadata])

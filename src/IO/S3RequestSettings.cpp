@@ -241,7 +241,7 @@ void S3RequestSettings::validateUploadSettings()
                             ErrorCodes::INVALID_SETTING_VALUE,
                             "Setting upload_part_size_multiply_factor is too big ({}). "
                             "Multiplication to max_upload_part_size ({}) will cause integer overflow",
-                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size));
+                            impl->upload_part_size_multiply_factor, ReadableSize(impl->max_upload_part_size));
     }
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};

@@ -8,6 +8,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -147,7 +148,7 @@ DistributedSink::DistributedSink(
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
-    , query_string(query_ast->formatWithSecretsOneLine())
+    , query_string(queryToString(query_ast))
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef()[Setting::insert_allow_materialized_columns])

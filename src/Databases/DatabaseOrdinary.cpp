@@ -24,7 +24,9 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
@@ -343,7 +345,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
         {
             e.addMessage(
                 "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
-                + " from query " + query.formatForErrorMessage());
+                + " from query " + serializeAST(query));
 
             if (!Coordination::isHardwareError(e.code))
                 throw;
@@ -358,7 +360,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
         {
             e.addMessage(
                 "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
-                + " from query " + query.formatForErrorMessage());
+                + " from query " + serializeAST(query));
             throw;
         }
     }
@@ -611,6 +613,9 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     applyMetadataChangesToCreateQuery(ast, metadata, local_context);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies, loading_dependencies);
     writeMetadataFile(
         db_disk,
         /*file_path=*/table_metadata_tmp_path,
@@ -618,8 +623,6 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);

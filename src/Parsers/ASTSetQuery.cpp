@@ -6,7 +6,6 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Databases/DataLake/DataLakeConstants.h>
 
 
 namespace DB
@@ -92,9 +91,10 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
                 return true;
             }
 
-            if (DataLake::DATABASE_ENGINE_NAME == state.create_engine_name)
+            if (state.create_engine_name == "Iceberg")
             {
-                if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
+                const std::set<std::string_view> secret_settings = {"catalog_credential", "auth_header"};
+                if (secret_settings.contains(change.name))
                 {
                     ostr << " = " << "'[HIDDEN]'";
                     return true;

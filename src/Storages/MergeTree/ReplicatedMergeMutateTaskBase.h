@@ -1,11 +1,8 @@
 #pragma once
 
 
-#include <pcg_random.hpp>
-
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
-#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -31,7 +28,6 @@ public:
         /// This is needed to ask an asssignee to assign a new merge/mutate operation
         /// It takes bool argument and true means that current task is successfully executed.
         , task_result_callback(task_result_callback_)
-        , rng(randomSeed())
     {
     }
 
@@ -55,8 +51,6 @@ protected:
 
     virtual PrepareResult prepare() = 0;
     virtual bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) = 0;
-
-    void maybeSleepBeforeZeroCopyLock(uint64_t estimated_space_for_result);
 
     /// Will execute a part of inner MergeTask or MutateTask
     virtual bool executeInnerTask() = 0;
@@ -100,7 +94,6 @@ private:
     State state{State::NEED_PREPARE};
     IExecutableTask::TaskResultCallback task_result_callback;
     bool print_exception = true;
-    pcg64 rng;
 };
 
 }
