@@ -644,7 +644,7 @@ Cache **commands**:
 
 - `SYSTEM DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` is only supported when no `<cache_name>` is provided
 
-- `SHOW FILESYSTEM CACHES` -- show list of filesystem caches which were configured on the server. (For versions &lt;= `22.8` the command is named `SHOW CACHES`)
+- `SHOW FILESYSTEM CACHES` -- show list of filesystem caches which were configured on the server. (For versions less than or equal to `22.8` the command is named `SHOW CACHES`)
 
 ```sql
 SHOW FILESYSTEM CACHES
@@ -658,7 +658,7 @@ Result:
 └───────────┘
 ```
 
-- `DESCRIBE FILESYSTEM CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW FILESYSTEM CACHES` command. (For versions &lt;= `22.8` the command is named `DESCRIBE CACHE`)
+- `DESCRIBE FILESYSTEM CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW FILESYSTEM CACHES` command. (For versions less than or equal to `22.8` the command is named `DESCRIBE CACHE`)
 
 ```sql
 DESCRIBE FILESYSTEM CACHE 's3_cache'
