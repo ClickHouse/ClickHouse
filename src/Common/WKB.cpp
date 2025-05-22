@@ -1,6 +1,8 @@
-#include "Common/Exception.h"
+#include <variant>
+#include <Common/Exception.h>
 #include <Common/WKB.h>
-#include "Functions/geometryConverters.h"
+#include <Functions/geometryConverters.h>
+#include <base/types.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -24,11 +26,12 @@ inline CartesianPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to
 
 inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
-    Int32 num_points;
+    UInt32 num_points;
     readBinaryEndian(num_points, in_buffer, endian_to_read);
 
     LineString<CartesianPoint> line;
-    for (int i = 0; i < num_points; ++i)
+    line.reserve(num_points);
+    for (UInt32 i = 0; i < num_points; ++i)
     {
         line.push_back(readPointWKB(in_buffer, endian_to_read));
     }
@@ -37,11 +40,13 @@ inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endia
 
 inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
-    Int32 num_lines;
-    readBinaryEndian(num_lines, in_buffer, endian_to_read);
+    UInt32 num_rings;
+    readBinaryEndian(num_rings, in_buffer, endian_to_read);
 
     Polygon<CartesianPoint> polygon;
-    for (int i = 0; i < num_lines; ++i)
+    if (num_rings > 1)
+        polygon.inners().reserve(num_rings - 1);
+    for (UInt32 i = 0; i < num_rings; ++i)
     {
         auto parsed_points = readLineWKB(in_buffer, endian_to_read);
         if (i == 0)
@@ -67,12 +72,17 @@ MultiLineString<CartesianPoint> readMultiLineStringWKB(ReadBuffer & in_buffer, s
 {
     MultiLineString<CartesianPoint> multiline;
 
-    Int32 num_lines;
-    readBinaryEndian(num_lines, in_buffer, endian_to_read);
+    UInt32 num_rings;
+    readBinaryEndian(num_rings, in_buffer, endian_to_read);
 
-    for (int i = 0; i < num_lines; ++i)
-        multiline.push_back(std::get<LineString<CartesianPoint>>(parseWKBFormat(in_buffer)));
-
+    multiline.reserve(num_rings);
+    for (UInt32 i = 0; i < num_rings; ++i)
+    {
+        auto current_line = parseWKBFormat(in_buffer);
+        if (!std::holds_alternative<LineString<CartesianPoint>>(current_line))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MultiLineString contains an internal type that differs from LineString");
+        multiline.push_back(std::get<LineString<CartesianPoint>>(current_line));
+    }
     return multiline;
 }
 
@@ -80,12 +90,17 @@ MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, std::en
 {
     MultiPolygon<CartesianPoint> multipolygon;
 
-    Int32 num_polygons;
+    UInt32 num_polygons;
     readBinaryEndian(num_polygons, in_buffer, endian_to_read);
 
-    for (int i = 0; i < num_polygons; ++i)
-        multipolygon.push_back(std::get<Polygon<CartesianPoint>>(parseWKBFormat(in_buffer)));
-
+    multipolygon.reserve(num_polygons);
+    for (UInt32 i = 0; i < num_polygons; ++i)
+    {
+        auto current_polygon = parseWKBFormat(in_buffer);
+        if (!std::holds_alternative<Polygon<CartesianPoint>>(current_polygon))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MultiPolygon contains an internal type that differs from Polygon");
+        multipolygon.push_back(std::get<Polygon<CartesianPoint>>(current_polygon));
+    }
     return multipolygon;
 }
 
@@ -96,7 +111,7 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect first flag");
 
     std::endian endian_to_read = little_endian ? std::endian::little : std::endian::big;
-    Int32 geom_type;
+    UInt32 geom_type;
 
     readBinaryEndian(geom_type, in_buffer, endian_to_read);
 

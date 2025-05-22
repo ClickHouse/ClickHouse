@@ -4,12 +4,12 @@
 #include <vector>
 
 #include <IO/ReadBuffer.h>
-#include "Functions/geometryConverters.h"
+#include <Functions/geometryConverters.h>
 
 namespace DB
 {
 
-enum class WKBGeometry : Int32
+enum class WKBGeometry : UInt32
 {
     Point = 1,
     LineString = 2,

@@ -4,11 +4,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/WKB.h>
-#include "Columns/ColumnFixedString.h"
-#include "Columns/IColumn.h"
-#include "DataTypes/DataTypeFixedString.h"
+#include <Columns/ColumnFixedString.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeFixedString.h>
 
 #include <memory>
 #include <string>
@@ -78,8 +78,8 @@ private:
         Serializer serializer;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            auto str = column.getDataAt(i).toString();
-            ReadBuffer in_buffer(str.data(), str.size(), 0);
+            auto str = column.getDataAt(i);
+            ReadBuffer in_buffer(const_cast<char*>(str.data), str.size, 0);
 
             auto object = parseWKBFormat(in_buffer);
             auto boost_object = std::get<Geometry>(object);
@@ -248,6 +248,12 @@ REGISTER_FUNCTION(ReadWKB)
     }
 
     );
+
+    factory.registerAlias("ST_PointFromWKB", ReadWKBPointNameHolder::name);
+    factory.registerAlias("ST_LineFromWKB", ReadWKBLineStringNameHolder::name);
+    factory.registerAlias("ST_MLineFromWKB", ReadWKBMultiLineStringNameHolder::name);
+    factory.registerAlias("ST_PolyFromWKB", ReadWKBPolygonNameHolder::name);
+    factory.registerAlias("ST_MPolyFromWKB", ReadWKBMultiPolygonNameHolder::name);
 }
 
 }
