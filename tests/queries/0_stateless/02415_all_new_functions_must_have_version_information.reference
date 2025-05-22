@@ -119,6 +119,7 @@ arrayLevenshteinDistanceWeighted
 arrayRandomSample
 arrayRotateLeft
 arrayRotateRight
+arrayScan
 arrayShiftLeft
 arrayShiftRight
 arraySimilarity
