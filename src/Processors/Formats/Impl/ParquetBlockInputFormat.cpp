@@ -28,6 +28,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 
 #include <boost/algorithm/string/case_conv.hpp>

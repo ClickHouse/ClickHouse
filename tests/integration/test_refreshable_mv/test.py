@@ -371,6 +371,10 @@ def test_pause(started_cluster, cleanup):
         "select * from re.a",
         "2\n",
     )
+    # Drop while paused.
+    node1.query("system stop replicated view re.a")
+    for node in nodes:
+        node.query("drop database re sync")
 
 backup_id_counter = 0
 

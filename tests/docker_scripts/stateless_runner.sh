@@ -335,6 +335,7 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--no-parallel-replicas')
         ADDITIONAL_OPTIONS+=('--no-zookeeper')
         ADDITIONAL_OPTIONS+=('--no-shard')
+        ADDITIONAL_OPTIONS+=('--replace-log-memory-with-mergetree')
     else
         ADDITIONAL_OPTIONS+=('--zookeeper')
         ADDITIONAL_OPTIONS+=('--shard')

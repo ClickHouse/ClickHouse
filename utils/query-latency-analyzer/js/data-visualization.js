@@ -47,8 +47,8 @@ function drawLegend(containerId) {
 function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
     const container = d3.select(containerId);
     const n = cov.length;
-    const cellSize = 20;
-    const axisLabelOffset = 120;
+    const cellSize = 10;
+    const axisLabelOffset = 250;
     const matrixSize = cellSize * n;
     const bandMargin = 20;
     const bandAreaWidth = container.node().getBoundingClientRect().width - matrixSize - bandMargin - axisLabelOffset;
@@ -107,9 +107,6 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
         }
     }
 
-    // Tooltip for matrix and distributions
-    const tooltip = d3.select(".matrix-tooltip");
-
     // Draw matrix cells with adjusted positions
     svg.selectAll(".cell")
         .data(norm.flatMap((row, i) => row.map((v, j) => ({ i, j, v, label: labels[i] }))).filter(d => d.v != null))
@@ -120,15 +117,15 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
         .attr("width", cellSize)
         .attr("height", cellSize)
         .style("fill", d => colorScale(d.v))
-        .on("mouseover", (event, d) => {
-            tooltip.style("visibility", "visible")
-                .text(`${labels[d.i]} × ${labels[d.j]}: ${(d.v * 100).toFixed(2)}%`);
-        })
-        .on("mousemove", event => {
-            tooltip.style("top", `${event.pageY - 10}px`)
-                .style("left", `${event.pageX + 10}px`);
-        })
-        .on("mouseout", () => tooltip.style("visibility", "hidden"));
+        .each(function(d) {
+            tippy(this, {
+                content: `${labels[d.i]} × ${labels[d.j]}: ${(d.v * 100).toFixed(2)}%`,
+                placement: 'left',
+                theme: 'latency-data',
+                delay: [0, 0],
+                duration: [0, 0]
+            });
+        });
 
     // Y-axis with gap
     const yScale = d3.scaleOrdinal()
@@ -146,7 +143,7 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
         })
         .on("mouseout", () => svg.selectAll(".cell").classed("unlight", false));
 
-    // Distribution bands to the right of matrix per variable
+    // Distribution bands
     const xScale = d3.scaleLinear()
         .domain([d3.min(min), d3.max(max)])
         .range([0, bandAreaWidth]);
@@ -161,88 +158,88 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
             const nextVal = idx < percentileKeys.length - 1 ? percMap[percentileKeys[idx + 1]] : max[i];
             const x0 = matrixSize + axisLabelOffset + xScale(val);
             const x1 = matrixSize + axisLabelOffset + xScale(nextVal);
-            svg.append("rect")
+            const rect = svg.append("rect")
                 .attr("x", Math.floor(x0))
                 .attr("y", y)
                 .attr("width", Math.ceil(x1 - x0))
                 .attr("height", cellSize - 1)
                 .style("fill", colorScale(perc / 100))
-                .on("mouseover", (event) => {
-                    tooltip.style("visibility", "visible")
-                        .text(`${label} ${perc}th percentile: ${val.toFixed(2)}`);
-                })
-                .on("mousemove", event => {
-                    tooltip.style("top", `${event.pageY - 10}px`)
-                        .style("left", `${event.pageX + 10}px`);
-                })
-                .on("mouseout", () => tooltip.style("visibility", "hidden"));
+                .node();
+
+            tippy(rect, {
+                content: `${label} ${perc}th percentile: ${val.toFixed(2)}`,
+                placement: 'left',
+                theme: 'latency-data',
+                delay: [0, 0],
+                duration: [0, 0]
+            });
         });
 
-        // Std bar with adjusted position
-        svg.append("line")
+        // Standard deviation bar
+        const stdBar = svg.append("line")
             .attr("x1", matrixSize + axisLabelOffset + xScale(avg[i] - std[i]))
             .attr("x2", matrixSize + axisLabelOffset + xScale(avg[i] + std[i]))
             .attr("y1", y + cellSize / 2)
             .attr("y2", y + cellSize / 2)
             .style("stroke", "black")
-            .on("mouseover", () => {
-                tooltip.style("visibility", "visible")
-                    .text(`${label} ±1σ: [${(avg[i]-std[i]).toFixed(2)}, ${(avg[i]+std[i]).toFixed(2)}]`);
-            })
-            .on("mousemove", event => {
-                tooltip.style("top", `${event.pageY - 10}px`)
-                    .style("left", `${event.pageX + 10}px`);
-            })
-            .on("mouseout", () => tooltip.style("visibility", "hidden"));
+            .node();
 
-        // Mean point with adjusted position
-        svg.append("circle")
+        tippy(stdBar, {
+            content: `${label} ±1σ: [${(avg[i]-std[i]).toFixed(2)}, ${(avg[i]+std[i]).toFixed(2)}]`,
+            placement: 'left',
+            theme: 'latency-data',
+            delay: [0, 0],
+            duration: [0, 0]
+        });
+
+        // Mean point
+        const meanCircle = svg.append("circle")
             .attr("cx", matrixSize + axisLabelOffset + xScale(avg[i]))
             .attr("cy", y + cellSize / 2)
             .attr("r", 2)
             .style("fill", "black")
-            .on("mouseover", () => {
-                tooltip.style("visibility", "visible")
-                    .text(`${label} mean: ${avg[i].toFixed(2)}`);
-            })
-            .on("mousemove", event => {
-                tooltip.style("top", `${event.pageY - 10}px`)
-                    .style("left", `${event.pageX + 10}px`);
-            })
-            .on("mouseout", () => tooltip.style("visibility", "hidden"));
+            .node();
 
-        // Min tick with adjusted position
-        svg.append("line")
+        tippy(meanCircle, {
+            content: `${label} mean: ${avg[i].toFixed(2)}`,
+            placement: 'left',
+            theme: 'latency-data',
+            delay: [0, 0],
+            duration: [0, 0]
+        });
+
+        // Min tick
+        const minTick = svg.append("line")
             .attr("x1", matrixSize + axisLabelOffset + xScale(min[i]))
             .attr("x2", matrixSize + axisLabelOffset + xScale(min[i]))
             .attr("y1", y)
             .attr("y2", y + cellSize - 1)
             .style("stroke", "black")
-            .on("mouseover", () => {
-                tooltip.style("visibility", "visible")
-                    .text(`${label} min: ${min[i].toFixed(2)}`);
-            })
-            .on("mousemove", event => {
-                tooltip.style("top", `${event.pageY - 10}px`)
-                    .style("left", `${event.pageX + 10}px`);
-            })
-            .on("mouseout", () => tooltip.style("visibility", "hidden"));
+            .node();
 
-        // Max tick with adjusted position
-        svg.append("line")
+        tippy(minTick, {
+            content: `${label} min: ${min[i].toFixed(2)}`,
+            placement: 'left',
+            theme: 'latency-data',
+            delay: [0, 0],
+            duration: [0, 0]
+        });
+
+        // Max tick
+        const maxTick = svg.append("line")
             .attr("x1", matrixSize + axisLabelOffset + xScale(max[i]))
             .attr("x2", matrixSize + axisLabelOffset + xScale(max[i]))
             .attr("y1", y)
             .attr("y2", y + cellSize - 1)
             .style("stroke", "black")
-            .on("mouseover", () => {
-                tooltip.style("visibility", "visible")
-                    .text(`${label} max: ${max[i].toFixed(2)}`);
-            })
-            .on("mousemove", event => {
-                tooltip.style("top", `${event.pageY - 10}px`)
-                    .style("left", `${event.pageX + 10}px`);
-            })
-            .on("mouseout", () => tooltip.style("visibility", "hidden"));
+            .node();
+
+        tippy(maxTick, {
+            content: `${label} max: ${max[i].toFixed(2)}`,
+            placement: 'left',
+            theme: 'latency-data',
+            delay: [0, 0],
+            duration: [0, 0]
+        });
     });
 }

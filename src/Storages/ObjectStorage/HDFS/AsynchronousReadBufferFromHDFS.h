@@ -3,13 +3,11 @@
 #include "config.h"
 
 #if USE_HDFS
-#include <string>
 #include <memory>
 
 #    include <IO/AsynchronousReader.h>
 #    include <IO/BufferWithOwnMemory.h>
 #    include <IO/SeekableReadBuffer.h>
-#    include <Interpreters/Context.h>
 #    include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #    include <base/types.h>
 
@@ -17,6 +15,7 @@ namespace DB
 {
 
 class IAsynchronousReader;
+struct ReadSettings;
 
 class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
 {

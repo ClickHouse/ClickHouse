@@ -504,24 +504,17 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
 
 void BaseDaemon::handleSignal(int signal_id)
 {
-    if (signal_id == SIGINT ||
+    if (!(signal_id == SIGINT ||
         signal_id == SIGQUIT ||
-        signal_id == SIGTERM)
-    {
-        std::lock_guard lock(signal_handler_mutex);
-        {
-            ++terminate_signals_counter;
-            signal_event.notify_all();
-        }
-
-        onInterruptSignals(signal_id);
-    }
-    else
+        signal_id == SIGTERM))
         throw Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-}
 
-void BaseDaemon::onInterruptSignals(int signal_id)
-{
+    std::lock_guard lock(signal_handler_mutex);
+    {
+        ++terminate_signals_counter;
+        signal_event.notify_all();
+    }
+
     is_cancelled = true;
     LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
@@ -533,7 +526,6 @@ void BaseDaemon::onInterruptSignals(int signal_id)
         _exit(128 + signal_id);
     }
 }
-
 
 void BaseDaemon::waitForTerminationRequest()
 {
