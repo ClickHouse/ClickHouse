@@ -1,10 +1,12 @@
 #include <functional>
+#include "DataTypes/DataTypeLowCardinality.h"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include <Functions/FunctionsCodingIP.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -296,9 +298,11 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isStringOrFixedString(removeNullable(arguments[0])))
+        if (!isStringOrFixedString(removeLowCardinalityAndNullable(arguments[0])))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -311,12 +315,15 @@ public:
             return makeNullable(result_type);
         }
 
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+        return removeLowCardinality(arguments[0])->isNullable() ? makeNullable(result_type) : result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr column = arguments[0].column;
+        if (const auto * col_lc = checkAndGetColumn<ColumnLowCardinality>(column.get()))
+            return executeLowCardinality(*col_lc, input_rows_count);
+
         ColumnPtr null_map_column;
         const NullMap * null_map = nullptr;
         if (column->isNullable())
@@ -345,6 +352,67 @@ public:
     }
 
 private:
+    ColumnPtr executeLowCardinality(const ColumnLowCardinality& column, size_t input_rows_count) const
+    {
+        auto col_res = ColumnFixedString::create(IPV6_BINARY_LENGTH);
+        auto & vec_res = col_res->getChars();
+        vec_res.resize(input_rows_count * IPV6_BINARY_LENGTH);
+
+        ColumnUInt8::MutablePtr col_null_map_to;
+        ColumnUInt8::Container * vec_null_map_to = nullptr;
+
+        char src_ipv4_buf[sizeof("::ffff:") + IPV4_MAX_TEXT_LENGTH + 1] = "::ffff:";
+
+        const auto & dictionary = column.getDictionary();
+        auto has_null = false;
+
+        const auto * nested_column = dictionary.getNestedColumn().get();
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(nested_column))
+        {
+            has_null = true;
+            nested_column = col_nullable->getNestedColumnPtr().get();
+        }
+
+        if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
+        {
+            col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+            vec_null_map_to = &col_null_map_to->getData();
+        }
+
+
+        const auto * column_string = checkAndGetColumn<ColumnString>(nested_column);
+        if (!column_string)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type {}. Expected String", nested_column->getName());
+
+        const auto * index_column = column.getIndexesPtr().get();
+
+        auto check_is_null = [&](size_t idx) { return has_null && idx == dictionary.getNullValueIndex(); };
+
+        for (size_t i = 0, o = 0; i != input_rows_count; ++i, o += IPV6_BINARY_LENGTH)
+        {
+            const auto idx = index_column->getUInt(i);
+            auto const is_null = check_is_null(idx);
+            if (is_null)
+            {
+                std::fill_n(&vec_res[o], IPV6_BINARY_LENGTH, 0);
+                if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
+                    (*vec_null_map_to)[i] = true;
+                continue;
+            }
+
+            const auto & value = column_string->getDataAt(idx);
+            const char * src_value = reinterpret_cast<const char *>(value.data);
+            const auto src_value_size = value.size;
+            unsigned char * res_value = reinterpret_cast<unsigned char *>(&vec_res[o]);
+            detail::convertToIPv6Impl<exception_mode>(src_value, src_value_size, src_ipv4_buf, vec_res[o], res_value, [&](auto v){ (*vec_null_map_to)[i] = v;});
+        }
+
+        if (has_null && !col_res->isNullable())
+            return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
+        return col_res;
+    }
+
+
     bool cast_ipv4_ipv6_default_on_conversion_error = false;
 };
 
@@ -467,9 +535,11 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(removeNullable(arguments[0])))
+        if (!isString(removeLowCardinalityAndNullable(arguments[0])))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -482,12 +552,14 @@ public:
             return makeNullable(result_type);
         }
 
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+        return removeLowCardinality(arguments[0])->isNullable() ? makeNullable(result_type) : result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr column = arguments[0].column;
+        if (const auto * col_lc = checkAndGetColumn<ColumnLowCardinality>(column.get()))
+            return executeLowCardinality(*col_lc, input_rows_count);
         ColumnPtr null_map_column;
         const NullMap * null_map = nullptr;
         if (column->isNullable())
@@ -516,6 +588,62 @@ public:
     }
 
 private:
+    ColumnPtr executeLowCardinality(const ColumnLowCardinality& column, size_t input_rows_count) const
+    {
+        auto col_res = ColumnUInt32::create();
+        auto & vec_res = col_res->getData();
+        vec_res.resize(input_rows_count);
+
+        ColumnUInt8::MutablePtr col_null_map_to;
+        ColumnUInt8::Container * vec_null_map_to = nullptr;
+
+        const auto & dictionary = column.getDictionary();
+        auto has_null = false;
+
+        const auto * nested_column = dictionary.getNestedColumn().get();
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(nested_column))
+        {
+            has_null = true;
+            nested_column = col_nullable->getNestedColumnPtr().get();
+        }
+
+        if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
+        {
+            col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+            vec_null_map_to = &col_null_map_to->getData();
+        }
+
+
+        const auto * column_string = checkAndGetColumn<ColumnString>(nested_column);
+        if (!column_string)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type {}. Expected String", nested_column->getName());
+
+        const auto * index_column = column.getIndexesPtr().get();
+
+        auto check_is_null = [&](size_t idx) { return has_null && idx == dictionary.getNullValueIndex(); };
+
+        for (size_t i = 0; i != input_rows_count; ++i)
+        {
+            const auto idx = index_column->getUInt(i);
+            auto const is_null = check_is_null(idx);
+            if (is_null)
+            {
+                vec_res[i] = 0;
+                if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
+                    (*vec_null_map_to)[i] = true;
+                continue;
+            }
+
+            const auto & value = column_string->getDataAt(idx);
+            const char * src_value = reinterpret_cast<const char *>(value.data);
+            convertToIPv4Impl<exception_mode>(src_value, vec_res[i], [&](auto v){ (*vec_null_map_to)[i] = v; });
+        }
+
+        if (has_null && !col_res->isNullable())
+            return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
+        return col_res;
+    }
+
     bool cast_ipv4_ipv6_default_on_conversion_error = false;
 };
 

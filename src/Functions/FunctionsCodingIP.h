@@ -34,6 +34,41 @@ static inline bool tryParseIPv4(const char * pos, UInt32 & result_value)
 
 namespace detail
 {
+
+    template <IPStringToNumExceptionMode exception_mode, typename DstNullMapSetter>
+    void convertToIPv6Impl(const char * src_value, size_t src_size, char * src_ipv4_buf, auto & vec_res, unsigned char * res_value, DstNullMapSetter && dst_null_map_setter)
+    {
+        bool parse_result = false;
+        UInt32 dummy_result = 0;
+
+        /// For both cases below: In case of failure, the function parseIPv6 fills vec_res with zero bytes.
+
+        /// If the source IP address is parsable as an IPv4 address, then transform it into a valid IPv6 address.
+        /// Keeping it simple by just prefixing `::ffff:` to the IPv4 address to represent it as a valid IPv6 address.
+        if (tryParseIPv4(src_value, dummy_result))
+        {
+            std::memcpy(
+                src_ipv4_buf + std::strlen("::ffff:"),
+                src_value,
+                std::min<UInt64>(src_size, IPV4_MAX_TEXT_LENGTH + 1));
+            parse_result = parseIPv6whole(src_ipv4_buf, res_value);
+        }
+        else
+        {
+            parse_result = parseIPv6whole(src_value, res_value);
+        }
+
+        if (!parse_result)
+        {
+            if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+                throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Invalid IPv6 value");
+            else if constexpr (exception_mode == IPStringToNumExceptionMode::Default)
+                vec_res = 0;
+            else if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+                dst_null_map_setter(true);
+        }
+    }
+
     template <IPStringToNumExceptionMode exception_mode, typename ToColumn = ColumnIPv6, typename StringColumnType>
     ColumnPtr convertToIPv6(const StringColumnType & string_column, const PaddedPODArray<UInt8> * null_map = nullptr)
     {
@@ -146,7 +181,6 @@ namespace detail
             size_t src_next_offset = src_offset;
 
             const char * src_value = nullptr;
-            unsigned char * res_value = reinterpret_cast<unsigned char *>(&vec_res[out_offset]);
 
             if constexpr (std::is_same_v<StringColumnType, ColumnString>)
             {
@@ -172,35 +206,9 @@ namespace detail
                 continue;
             }
 
-            bool parse_result = false;
-            UInt32 dummy_result = 0;
-
-            /// For both cases below: In case of failure, the function parseIPv6 fills vec_res with zero bytes.
-
-            /// If the source IP address is parsable as an IPv4 address, then transform it into a valid IPv6 address.
-            /// Keeping it simple by just prefixing `::ffff:` to the IPv4 address to represent it as a valid IPv6 address.
-            if (tryParseIPv4(src_value, dummy_result))
-            {
-                std::memcpy(
-                    src_ipv4_buf + std::strlen("::ffff:"),
-                    src_value,
-                    std::min<UInt64>(src_next_offset - src_offset, IPV4_MAX_TEXT_LENGTH + 1));
-                parse_result = parseIPv6whole(src_ipv4_buf, res_value);
-            }
-            else
-            {
-                parse_result = parseIPv6whole(src_value, res_value);
-            }
-
-            if (!parse_result)
-            {
-                if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Invalid IPv6 value");
-                else if constexpr (exception_mode == IPStringToNumExceptionMode::Default)
-                    vec_res[i] = 0;
-                else if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-                    (*vec_null_map_to)[i] = true;
-            }
+            const auto src_value_size = src_next_offset - src_offset;
+            unsigned char * res_value = reinterpret_cast<unsigned char *>(&vec_res[out_offset]);
+            convertToIPv6Impl<exception_mode>(src_value, src_value_size, src_ipv4_buf, vec_res[i], res_value, [&](auto v){ (*vec_null_map_to)[i] = v;});
 
             src_offset = src_next_offset;
         }
@@ -225,6 +233,29 @@ ColumnPtr convertToIPv6(ColumnPtr column, const PaddedPODArray<UInt8> * null_map
     }
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type {}. Expected String or FixedString", column->getName());
+}
+
+template <IPStringToNumExceptionMode exception_mode, typename DstNullMapSetter>
+void convertToIPv4Impl(const char * src, UInt32 & result_value, DstNullMapSetter && dst_null_map_setter)
+{
+    bool parse_result = tryParseIPv4(src, result_value);
+
+    if (!parse_result)
+    {
+        if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_IPV4, "Invalid IPv4 value");
+        }
+        else if constexpr (exception_mode == IPStringToNumExceptionMode::Default)
+        {
+            result_value = 0;
+        }
+        else if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+        {
+            dst_null_map_setter(true);
+            result_value = 0;
+        }
+    }
 }
 
 template <IPStringToNumExceptionMode exception_mode, typename ToColumn = ColumnIPv4>
@@ -268,24 +299,8 @@ ColumnPtr convertToIPv4(ColumnPtr column, const PaddedPODArray<UInt8> * null_map
             continue;
         }
 
-        bool parse_result = tryParseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]), vec_res[i]);
-
-        if (!parse_result)
-        {
-            if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
-            {
-                throw Exception(ErrorCodes::CANNOT_PARSE_IPV4, "Invalid IPv4 value");
-            }
-            else if constexpr (exception_mode == IPStringToNumExceptionMode::Default)
-            {
-                vec_res[i] = 0;
-            }
-            else if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-            {
-                (*vec_null_map_to)[i] = true;
-                vec_res[i] = 0;
-            }
-        }
+        const auto * src = reinterpret_cast<const char *>(&vec_src[prev_offset]);
+        convertToIPv4Impl<exception_mode>(src, vec_res[i], [&](auto v){ (*vec_null_map_to)[i] = v; });
 
         prev_offset = offsets_src[i];
     }
