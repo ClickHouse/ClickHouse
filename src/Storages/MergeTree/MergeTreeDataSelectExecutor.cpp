@@ -1733,11 +1733,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 else
                 {
                     bool result = false;
-                    const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition);
-                    if (!gin_filter_condition)
-                        result = condition->mayBeTrueOnGranule(granule);
-                    else
+                    if (const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition))
                         result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
+                    else
+                        result = condition->mayBeTrueOnGranule(granule);
 
                     if (!result)
                         continue;
