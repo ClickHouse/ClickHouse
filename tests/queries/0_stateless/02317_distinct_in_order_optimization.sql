@@ -1,5 +1,5 @@
--- Tags: no-parallel-replicas
--- no-parallel-replicas: optimize_read_in_order=0 leads to "Replica 1 decided to read in Default mode, not in WithOrder. This is a bug: While executing Remote. (LOGICAL_ERROR)"
+set optimize_read_in_order=0;
+set enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree=1, parallel_replicas_local_plan=1;
 
 select '-- enable distinct in order optimization';
 set optimize_distinct_in_order=1;
