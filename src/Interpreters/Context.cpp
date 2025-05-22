@@ -5555,16 +5555,16 @@ std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> Context::ge
     return std::make_pair(&getQueryContext()->sample_block_cache, std::unique_lock(getQueryContext()->sample_block_cache_mutex));
 }
 
-Context::StorageMetadataCache & Context::getStorageMetadataCache() const
+std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> Context::getStorageMetadataCache() const
 {
     chassert(hasQueryContext());
-    return getQueryContext()->storage_metadata_cache;
+    return std::make_pair(&getQueryContext()->storage_metadata_cache, std::unique_lock(getQueryContext()->storage_metadata_cache_mutex));
 }
 
-Context::StorageSnapshotCache & Context::getStorageSnapshotCache() const
+std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> Context::getStorageSnapshotCache() const
 {
     chassert(hasQueryContext());
-    return getQueryContext()->storage_snapshot_cache;
+    return std::make_pair(&getQueryContext()->storage_snapshot_cache, std::unique_lock(getQueryContext()->storage_snapshot_cache_mutex));
 }
 
 bool Context::hasQueryParameters() const

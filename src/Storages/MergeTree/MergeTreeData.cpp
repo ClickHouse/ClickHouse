@@ -9237,12 +9237,12 @@ StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
     if (!query_context || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
         return IStorage::getInMemoryMetadataPtr();
 
-    auto & cache = query_context->getStorageMetadataCache();
-    auto it = cache.find(this);
-    if (it != cache.end())
+    auto [cache, lock] = query_context->getStorageMetadataCache();
+    auto it = cache->find(this);
+    if (it != cache->end())
         return it->second;
 
-    return cache.emplace(this, IStorage::getInMemoryMetadataPtr()).first->second;
+    return cache->emplace(this, IStorage::getInMemoryMetadataPtr()).first->second;
 }
 
 StorageSnapshotPtr
@@ -9290,11 +9290,11 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] || !query_context->hasQueryContext())
         return createStorageSnapshot(metadata_snapshot, query_context, false);
 
-    auto & cache = query_context->getStorageSnapshotCache();
-    auto it = cache.find(this);
-    if (it != cache.end())
+    auto [cache, lock] = query_context->getStorageSnapshotCache();
+    auto it = cache->find(this);
+    if (it != cache->end())
         return it->second;
-    return cache.emplace(this, createStorageSnapshot(metadata_snapshot, query_context, false)).first->second;
+    return cache->emplace(this, createStorageSnapshot(metadata_snapshot, query_context, false)).first->second;
 }
 
 StorageSnapshotPtr
