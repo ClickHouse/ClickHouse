@@ -1114,6 +1114,7 @@ struct ConvertThroughParsing
         "ConvertThroughParsing is only applicable for String or FixedString data types");
 
     static constexpr bool to_datetime = std::is_same_v<ToDataType, DataTypeDateTime>;
+    static constexpr bool to_time = std::is_same_v<ToDataType, DataTypeTime>;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
     static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
 
@@ -1162,7 +1163,7 @@ struct ConvertThroughParsing
         const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
 
         /// For conversion to Date/Time or DateTime type, second argument with time zone could be specified.
-        if constexpr (to_datetime|| std::is_same_v<ToDataType, DataTypeTime> || to_datetime64 || to_time64)
+        if constexpr (to_datetime|| to_time || to_datetime64 || to_time64)
         {
             const auto result_type = removeNullable(res_type);
             // Time zone is already figured out during result type resolution, no need to do it here.
@@ -1252,7 +1253,7 @@ struct ConvertThroughParsing
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
-                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
+                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64 || to_time || to_time64))
                 {
                     if constexpr (to_datetime64)
                     {
@@ -1266,7 +1267,7 @@ struct ConvertThroughParsing
                         parseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    else if constexpr (to_time)
                     {
                         time_t res;
                         parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
@@ -1279,7 +1280,7 @@ struct ConvertThroughParsing
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                 }
-                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64))
+                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64 || to_time || to_time64))
                 {
                     if constexpr (to_datetime64)
                     {
@@ -1293,7 +1294,7 @@ struct ConvertThroughParsing
                         parseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    else if constexpr (to_time)
                     {
                         time_t res;
                         parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
@@ -1356,7 +1357,7 @@ struct ConvertThroughParsing
             {
                 bool parsed;
 
-                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
+                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64 || to_time || to_time64))
                 {
                     if constexpr (to_datetime64)
                     {
@@ -1370,7 +1371,7 @@ struct ConvertThroughParsing
                         parsed = tryParseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    else if constexpr (to_time)
                     {
                         time_t res;
                         parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
@@ -1383,7 +1384,7 @@ struct ConvertThroughParsing
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
-                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64))
+                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64 || to_time || to_time64))
                 {
                     if constexpr (to_datetime64)
                     {
@@ -1397,7 +1398,7 @@ struct ConvertThroughParsing
                         parsed = tryParseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    else if constexpr (to_time)
                     {
                         time_t res;
                         parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
