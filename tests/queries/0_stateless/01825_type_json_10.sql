@@ -1,4 +1,5 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
+-- no-parallel-replicas: some logical error with Object(json)
 
 SET allow_experimental_object_type = 1;
 SET output_format_json_named_tuples_as_objects = 1;

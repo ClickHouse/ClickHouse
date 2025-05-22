@@ -13,6 +13,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
 #include "getSchemaFromSnapshot.h"
 #include "PartitionPruner.h"
 #include "KernelUtils.h"

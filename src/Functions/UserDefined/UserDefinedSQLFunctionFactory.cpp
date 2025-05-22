@@ -106,6 +106,10 @@ UserDefinedSQLFunctionFactory & UserDefinedSQLFunctionFactory::instance()
     return result;
 }
 
+UserDefinedSQLFunctionFactory::UserDefinedSQLFunctionFactory()
+    : global_context(Context::getGlobalContextInstance())
+{}
+
 void UserDefinedSQLFunctionFactory::checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name))

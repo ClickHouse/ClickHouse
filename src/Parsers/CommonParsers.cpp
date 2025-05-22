@@ -1,10 +1,8 @@
 #include <algorithm>
 #include <cctype>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <base/find_symbols.h>
 #include <Common/ErrorCodes.h>
-
 namespace DB
 {
 
@@ -154,21 +152,6 @@ bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expecte
     }
 
     return true;
-}
-
-bool isAlwaysTruePredicate(const ASTPtr & predicate)
-{
-    if (!predicate)
-        return true;
-
-    const auto * ast_literal = predicate->as<ASTLiteral>();
-    if (!ast_literal)
-        return false;
-
-    UInt64 result;
-    if (ast_literal->value.tryGet<UInt64>(result) && result == 1)
-        return true;
-    return false;
 }
 
 

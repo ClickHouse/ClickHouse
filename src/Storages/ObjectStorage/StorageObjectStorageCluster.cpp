@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Interpreters/Context.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>

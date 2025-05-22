@@ -125,7 +125,7 @@ protected:
     virtual void logRevision() const;
 
     /// thread safe
-    virtual void handleSignal(int signal_id);
+    void handleSignal(int signal_id);
 
     /// initialize termination process and signal handlers
     virtual void initializeTerminationAndSignalProcessing();

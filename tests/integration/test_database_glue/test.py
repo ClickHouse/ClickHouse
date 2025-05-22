@@ -79,7 +79,7 @@ def load_catalog_impl(started_cluster):
             "type": "glue",
             "glue.endpoint": BASE_URL_LOCAL_HOST,
             "glue.region": "us-east-1",
-            "s3.endpoint": "http://localhost:9002",
+            "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": "minio",
             "s3.secret-access-key": "minio123",
         },
@@ -133,22 +133,6 @@ CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'minio123
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
-
-
-def print_objects():
-    minio_client = Minio(
-        f"minio:9002",
-        access_key="minio",
-        secret_key="minio123",
-        secure=False,
-        http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
-    )
-
-    objects = list(minio_client.list_objects("warehouse", "", recursive=True))
-    names = [x.object_name for x in objects]
-    names.sort()
-    for name in names:
-        print(f"Found object: {name}")
 
 
 @pytest.fixture(scope="module")

@@ -23,6 +23,10 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
+#if defined(OS_LINUX)
+#    include <netinet/tcp.h>
+#endif
+
 
 namespace DB
 {
@@ -86,6 +90,8 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/cpuinfo", cpuinfo);
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/net/dev", net_dev);
+    openFileIfExists("/proc/net/tcp", net_tcp);
+    openFileIfExists("/proc/net/tcp6", net_tcp6);
 
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
@@ -1605,6 +1611,132 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/net/dev", net_dev);
         }
+    }
+
+    if (net_tcp || net_tcp6)
+    {
+        UInt64 total_sockets = 0;
+        UInt64 sockets_by_state[16] = {};
+        UInt64 transmit_queue_size = 0;
+        UInt64 receive_queue_size = 0;
+        UInt64 unrecovered_retransmits = 0;
+        std::unordered_set<std::string> remote_addresses;
+
+        auto process_net = [&](const char * path, auto & file)
+        {
+            try
+            {
+                file->rewind();
+                /// Header
+                skipToNextLineOrEOF(*file);
+
+                while (!file->eof())
+                {
+                    /// Line number
+                    skipWhitespaceIfAny(*file, true);
+                    skipStringUntilWhitespace(*file);
+                    skipWhitespaceIfAny(*file, true);
+
+                    /// Local address and port
+                    skipStringUntilWhitespace(*file);
+                    skipWhitespaceIfAny(*file, true);
+
+                    /// Remote address and port
+                    String remote_address_and_port;
+                    readStringUntilWhitespace(remote_address_and_port, *file);
+                    skipWhitespaceIfAny(*file, true);
+                    if (auto pos = remote_address_and_port.find(':'); pos != std::string::npos)
+                        remote_address_and_port.resize(pos);
+                    remote_addresses.emplace(remote_address_and_port);
+
+                    /// Socket state
+                    UInt8 state = 0;
+                    char state_hex[2]{};
+                    readPODBinary(state_hex, *file);
+                    skipWhitespaceIfAny(*file, true);
+                    state = unhex2(state_hex);
+                    if (state < 16)
+                        ++sockets_by_state[state];
+
+                    /// tx_queue:rx_queue
+                    String tx_rx_queue;
+                    readStringUntilWhitespace(tx_rx_queue, *file);
+                    skipWhitespaceIfAny(*file, true);
+                    if (auto pos = tx_rx_queue.find(':'); pos != std::string::npos)
+                    {
+                        std::string_view tx_queue = std::string_view(tx_rx_queue).substr(0, pos);
+                        std::string_view rx_queue = std::string_view(tx_rx_queue).substr(pos + 1);
+
+                        if (tx_queue.size() == 8 && rx_queue.size() == 8)
+                        {
+                            UInt32 tx_queue_size = unhexUInt<UInt32>(tx_queue.data()); // NOLINT
+                            UInt32 rx_queue_size = unhexUInt<UInt32>(rx_queue.data()); // NOLINT
+
+                            transmit_queue_size += tx_queue_size;
+                            receive_queue_size += rx_queue_size;
+                        }
+                    }
+
+                    /// tr:when
+                    skipStringUntilWhitespace(*file);
+                    skipWhitespaceIfAny(*file, true);
+
+                    /// Retransmits
+                    String retransmits_str;
+                    readStringUntilWhitespace(retransmits_str, *file);
+                    if (retransmits_str.size() == 8)
+                    {
+                        UInt32 retransmits = unhexUInt<UInt32>(retransmits_str.data());
+                        unrecovered_retransmits += retransmits;
+                    }
+
+                    skipToNextLineOrEOF(*file);
+                    ++total_sockets;
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                openFileIfExists(path, file);
+            }
+        };
+
+        if (net_tcp)
+            process_net("/proc/net/tcp", net_tcp);
+
+        if (net_tcp6)
+            process_net("/proc/net/tcp6", net_tcp6);
+
+        new_values["NetworkTCPSockets"] = { total_sockets,
+            "Total number of network sockets used on the server across TCPv4 and TCPv6, in all states." };
+
+        auto process_socket_state = [&](UInt8 state, const char * description)
+        {
+            if (state < 16 && sockets_by_state[state])
+                new_values[fmt::format("NetworkTCPSockets_{}", description)] = { sockets_by_state[state],
+                    "Total number of network sockets in the specific state on the server across TCPv4 and TCPv6." };
+        };
+
+        process_socket_state(TCP_ESTABLISHED, "ESTABLISHED");
+        process_socket_state(TCP_SYN_SENT, "SYN_SENT");
+        process_socket_state(TCP_SYN_RECV, "SYN_RECV");
+        process_socket_state(TCP_FIN_WAIT1, "FIN_WAIT1");
+        process_socket_state(TCP_FIN_WAIT2, "FIN_WAIT2");
+        process_socket_state(TCP_TIME_WAIT, "TIME_WAIT");
+        process_socket_state(TCP_CLOSE, "CLOSE");
+        process_socket_state(TCP_CLOSE_WAIT, "CLOSE_WAIT");
+        process_socket_state(TCP_LAST_ACK, "LAST_ACK");
+        process_socket_state(TCP_LISTEN, "LISTEN");
+        process_socket_state(TCP_CLOSING, "CLOSING");
+
+        new_values["NetworkTCPTransmitQueue"] = { transmit_queue_size,
+            "Total size of transmit queues of network sockets used on the server across TCPv4 and TCPv6." };
+        new_values["NetworkTCPReceiveQueue"] = { receive_queue_size,
+            "Total size of receive queues of network sockets used on the server across TCPv4 and TCPv6." };
+        new_values["NetworkTCPUnrecoveredRetransmits"] = { unrecovered_retransmits,
+            "Total size of current retransmits (unrecovered at this moment) of network sockets used on the server across TCPv4 and TCPv6." };
+        new_values["NetworkTCPSocketRemoteAddresses"] = { remote_addresses.size(),
+            "Total number of unique remote addresses of network sockets used on the server across TCPv4 and TCPv6." };
     }
 
     if (vm_max_map_count)
