@@ -1,0 +1,25 @@
+-- Output when the key condition is the first of the compound key
+Expression ((Project names + Projection))
+  Expression
+    ReadFromMergeTree (default.t)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          a
+        Condition: (a in [0, 0])
+        Parts: 1/1
+        Granules: 1/1
+        Search algorithm: binary search
+
+-- Output when the key condition is the second of the compound key
+Expression ((Project names + Projection))
+  Expression
+    ReadFromMergeTree (default.t)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          b
+        Condition: (b in [0, 0])
+        Parts: 1/1
+        Granules: 1/1
+        Search algorithm: generic exclusion search
