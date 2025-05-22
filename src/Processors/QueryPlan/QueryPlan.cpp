@@ -717,4 +717,9 @@ void QueryPlan::replaceNode(Node * node, QueryPlanPtr plan)
     max_threads = std::max(max_threads, plan->max_threads);
     resources = std::move(plan->resources);
 }
+
+void QueryPlan::mergeExpressions()
+{
+    QueryPlanOptimizations::tryMergeExpressions(getRootNode(), nodes, {});
+}
 }

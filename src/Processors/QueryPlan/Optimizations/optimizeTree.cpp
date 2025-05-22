@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
-#include "Processors/QueryPlan/ReadFromLocalReplica.h"
+#include "Planner/Utils.h"
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -119,7 +120,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     }
 }
 
-void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
+void optimizeTreeSecondPass(
+    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     std::unordered_set<String> applied_projection_names;
@@ -204,8 +206,15 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         {
             // TODO: check if plan used parallel replicas
             auto [local_plan, _] = read_from_local->createQueryPlan();
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "PR local plan (BEFORE optimize):\n{}", dumpQueryPlan(*local_plan));
             local_plan->optimize(optimization_settings);
+            if (optimization_settings.merge_expressions)
+                local_plan->mergeExpressions();
+
+            // local_plan->optimize(optimization_settings);
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "PR local plan (AFTER optimize):\n{}", dumpQueryPlan(*local_plan));
             query_plan.replaceNode(frame.node, std::move(local_plan));
+            // optimizeTreeFirstPass(optimization_settings, root, nodes);
         }
 
         stack.pop_back();
