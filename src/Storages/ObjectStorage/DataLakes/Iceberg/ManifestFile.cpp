@@ -2,6 +2,7 @@
 
 #if USE_AVRO
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
@@ -105,21 +106,6 @@ namespace
 
 }
 
-constexpr const char * COLUMN_STATUS_NAME = "status";
-constexpr const char * COLUMN_TUPLE_DATA_FILE_NAME = "data_file";
-constexpr const char * COLUMN_SEQ_NUMBER_NAME = "sequence_number";
-
-constexpr const char * SUBCOLUMN_FILE_PATH_NAME = "data_file.file_path";
-constexpr const char * SUBCOLUMN_CONTENT_NAME = "data_file.content";
-constexpr const char * SUBCOLUMN_PARTITION_NAME = "data_file.partition";
-
-constexpr const char * SUBCOLUMN_VALUES_COUNT_NAME = "data_file.value_counts";
-constexpr const char * SUBCOLUMN_COLUMN_SIZES_NAME = "data_file.column_sizes";
-constexpr const char * SUBCOLUMN_NULL_VALUE_COUNTS_NAME = "data_file.null_value_counts";
-constexpr const char * SUBCOLUMN_LOWER_BOUNDS_NAME = "data_file.lower_bounds";
-constexpr const char * SUBCOLUMN_UPPER_BOUNDS_NAME = "data_file.upper_bounds";
-
-
 const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles() const
 {
     return files;
@@ -146,16 +132,16 @@ ManifestFileContent::ManifestFileContent(
     this->schema_id = schema_id_;
     this->schema_object = schema_object_;
 
-    for (const auto & column_name : {COLUMN_STATUS_NAME, COLUMN_TUPLE_DATA_FILE_NAME})
+    for (const auto & column_name : {f_status, f_data_file})
     {
         if (!manifest_file_deserializer.hasPath(column_name))
             throw Exception(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
 
-    if (format_version_ > 1 && !manifest_file_deserializer.hasPath(COLUMN_SEQ_NUMBER_NAME))
+    if (format_version_ > 1 && !manifest_file_deserializer.hasPath(f_sequence_number))
         throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", COLUMN_SEQ_NUMBER_NAME);
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
 
     Poco::JSON::Parser parser;
 
@@ -176,12 +162,12 @@ ManifestFileContent::ManifestFileContent(
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
 
-        auto source_id = partition_specification_field->getValue<Int32>("source-id");
+        auto source_id = partition_specification_field->getValue<Int32>(f_source_id);
         /// NOTE: tricky part to support RENAME column in partition key. Instead of some name
         /// we use column internal number as it's name.
         auto numeric_column_name = DB::backQuote(DB::toString(source_id));
         DB::NameAndTypePair manifest_file_column_characteristics = schema_processor.getFieldCharacteristics(schema_id, source_id);
-        auto partition_ast = getASTFromTransform(partition_specification_field->getValue<String>("transform"), numeric_column_name);
+        auto partition_ast = getASTFromTransform(partition_specification_field->getValue<String>(f_transform), numeric_column_name);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
             continue;
@@ -198,14 +184,14 @@ ManifestFileContent::ManifestFileContent(
         FileContentType content_type = FileContentType::DATA;
         if (format_version_ > 1)
         {
-            content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, SUBCOLUMN_CONTENT_NAME, TypeIndex::Int32).safeGet<UInt64>());
+            content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
             if (content_type != FileContentType::DATA)
                 throw Exception(
                     ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
         }
-        const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, COLUMN_STATUS_NAME, TypeIndex::Int32).safeGet<UInt64>());
+        const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>());
 
-        const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, SUBCOLUMN_FILE_PATH_NAME, TypeIndex::String).safeGet<String>(), common_path, table_location);
+        const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
 
         /// NOTE: This is weird, because in manifest file partition looks like this:
         /// {
@@ -219,7 +205,7 @@ ManifestFileContent::ManifestFileContent(
         ///    ....
         /// However, somehow parser ignores all these nested keys like "total_amount_trunc" or "decimal_10_2" and
         /// directly returns tuple of partition values. However it's exactly what we need.
-        Field partition_value = manifest_file_deserializer.getValueFromRowByName(i, SUBCOLUMN_PARTITION_NAME);
+        Field partition_value = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_partition);
         auto tuple = partition_value.safeGet<Tuple>();
 
         DB::Row partition_key_value;
@@ -228,7 +214,7 @@ ManifestFileContent::ManifestFileContent(
 
         std::unordered_map<Int32, ColumnInfo> columns_infos;
 
-        for (const auto & path : {SUBCOLUMN_VALUES_COUNT_NAME, SUBCOLUMN_COLUMN_SIZES_NAME, SUBCOLUMN_NULL_VALUE_COUNTS_NAME})
+        for (const auto & path : {c_data_file_value_counts, c_data_file_column_sizes, c_data_file_null_value_counts})
         {
             if (manifest_file_deserializer.hasPath(path))
             {
@@ -238,9 +224,9 @@ ManifestFileContent::ManifestFileContent(
                     const auto & column_number_and_count = column_stats.safeGet<Tuple>();
                     Int32 number = column_number_and_count[0].safeGet<Int32>();
                     Int64 count = column_number_and_count[1].safeGet<Int64>();
-                    if (path == SUBCOLUMN_VALUES_COUNT_NAME)
+                    if (path == c_data_file_value_counts)
                         columns_infos[number].rows_count = count;
-                    else if (path == SUBCOLUMN_COLUMN_SIZES_NAME)
+                    else if (path == c_data_file_column_sizes)
                         columns_infos[number].bytes_size = count;
                     else
                         columns_infos[number].nulls_count = count;
@@ -249,7 +235,7 @@ ManifestFileContent::ManifestFileContent(
         }
 
         std::unordered_map<Int32, std::pair<Field, Field>> value_for_bounds;
-        for (const auto & path : {SUBCOLUMN_LOWER_BOUNDS_NAME, SUBCOLUMN_UPPER_BOUNDS_NAME})
+        for (const auto & path : {c_data_file_lower_bounds, c_data_file_upper_bounds})
         {
             if (manifest_file_deserializer.hasPath(path))
             {
@@ -260,7 +246,7 @@ ManifestFileContent::ManifestFileContent(
                     Int32 number = column_number_and_bound[0].safeGet<Int32>();
                     const Field & bound_value = column_number_and_bound[1];
 
-                    if (path == SUBCOLUMN_LOWER_BOUNDS_NAME)
+                    if (path == c_data_file_lower_bounds)
                         value_for_bounds[number].first = bound_value;
                     else
                         value_for_bounds[number].second = bound_value;
@@ -300,7 +286,7 @@ ManifestFileContent::ManifestFileContent(
                     break;
                 case ManifestEntryStatus::EXISTING:
                 {
-                    auto value = manifest_file_deserializer.getValueFromRowByName(i, COLUMN_SEQ_NUMBER_NAME);
+                    auto value = manifest_file_deserializer.getValueFromRowByName(i, f_sequence_number);
                     if (value.isNull())
                         throw Exception(
                             DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,

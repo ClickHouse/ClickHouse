@@ -8,10 +8,10 @@ DROP TABLE IF EXISTS tab;
 
 -- Creation only works with the (old) setting enabled.
 SET allow_experimental_inverted_index = 0;
-CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE inverted(2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0; -- { serverError ILLEGAL_INDEX }
+CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE inverted(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0; -- { serverError ILLEGAL_INDEX }
 
 SET allow_experimental_inverted_index = 1;
-CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE inverted(2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0;
+CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE inverted(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0;
 INSERT INTO tab VALUES (1, 'ab') (2, 'bc');
 
 -- Detach and attach should work.
@@ -24,7 +24,7 @@ SELECT * from tab WHERE s = 'bc'; -- { serverError ILLEGAL_INDEX }
 -- The exception recommends to drop the index and create a GIN index instead. Let's try.
 ALTER TABLE tab DROP INDEX idx;
 SET allow_experimental_full_text_index = 1; -- the new setting
-ALTER TABLE tab ADD INDEX idx(s) TYPE gin(2);
+ALTER TABLE tab ADD INDEX idx(s) TYPE gin(tokenizer = 'ngram', ngram_size = 2);
 
 SELECT * from tab WHERE s = 'bc';
 
@@ -40,10 +40,10 @@ DROP TABLE tab;
 
 -- Creation only works with the (old) setting enabled.
 SET allow_experimental_full_text_index = 0;
-CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE full_text(2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0; -- { serverError ILLEGAL_INDEX }
+CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE full_text(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0; -- { serverError ILLEGAL_INDEX }
 
 SET allow_experimental_full_text_index = 1;
-CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE full_text(2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0;
+CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE full_text(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0;
 INSERT INTO tab VALUES (1, 'ab') (2, 'bc');
 
 -- Detach and attach should work.
@@ -55,7 +55,7 @@ SELECT * from tab WHERE s = 'bc'; -- { serverError ILLEGAL_INDEX }
 
 -- The exception recommends to drop the index and create a GIN index instead. Let's try.
 ALTER TABLE tab DROP INDEX idx;
-ALTER TABLE tab ADD INDEX idx(s) TYPE gin(2);
+ALTER TABLE tab ADD INDEX idx(s) TYPE gin(tokenizer = 'ngram', ngram_size = 2);
 
 SELECT * from tab WHERE s = 'bc';
 

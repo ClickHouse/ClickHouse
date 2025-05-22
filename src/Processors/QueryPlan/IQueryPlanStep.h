@@ -3,7 +3,6 @@
 #include <Common/CurrentThread.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
-#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
 namespace DB

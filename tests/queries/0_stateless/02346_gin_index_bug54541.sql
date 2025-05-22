@@ -8,7 +8,7 @@ CREATE TABLE tab
 (
     id UInt32,
     str String,
-    INDEX idx str TYPE gin
+    INDEX idx str TYPE gin(tokenizer = 'default')
 )
 ENGINE = MergeTree
 ORDER BY id

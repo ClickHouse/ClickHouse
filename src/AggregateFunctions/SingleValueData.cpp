@@ -1,5 +1,6 @@
 #include <AggregateFunctions/SingleValueData.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
@@ -178,7 +179,7 @@ void SingleValueDataFixed<T>::write(WriteBuffer & buf, const ISerialization &) c
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::read(ReadBuffer & buf, const ISerialization &, Arena *)
+void SingleValueDataFixed<T>::read(ReadBuffer & buf, const ISerialization &, const DataTypePtr &, Arena *)
 {
     readBinary(has_value, buf);
     if (has())
@@ -946,9 +947,9 @@ void SingleValueDataNumeric<T>::write(DB::WriteBuffer & buf, const DB::ISerializ
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::read(DB::ReadBuffer & buf, const DB::ISerialization & serialization, DB::Arena * arena)
+void SingleValueDataNumeric<T>::read(DB::ReadBuffer & buf, const DB::ISerialization & serialization, const DataTypePtr & type, DB::Arena * arena)
 {
-    return memory.get().read(buf, serialization, arena);
+    return memory.get().read(buf, serialization, type, arena);
 }
 
 template <typename T>
@@ -1187,7 +1188,7 @@ void SingleValueDataString::write(WriteBuffer & buf, const ISerialization & /*se
         buf.write(getData(), size);
 }
 
-void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena)
+void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena)
 {
     /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
     Int32 rhs_size_signed;
@@ -1330,7 +1331,7 @@ void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & ser
         writeBinary(false, buf);
 }
 
-void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, Arena *)
+void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr &, Arena *)
 {
     bool is_not_null;
     readBinary(is_not_null, buf);
@@ -1420,8 +1421,137 @@ bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Are
     return false;
 }
 
-void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBaseMemoryBlock & data)
+void SingleValueDataGenericWithColumn::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
+    if (has())
+        to.insertFrom(*value, 0);
+    else
+        type->insertDefaultInto(to);
+}
+
+void SingleValueDataGenericWithColumn::write(WriteBuffer & buf, const ISerialization & serialization) const
+{
+    if (value)
+    {
+        writeBinary(true, buf);
+        serialization.serializeBinary(*value, 0, buf, {});
+    }
+    else
+        writeBinary(false, buf);
+}
+
+void SingleValueDataGenericWithColumn::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *)
+{
+    bool is_not_null;
+    readBinary(is_not_null, buf);
+
+    if (is_not_null)
+    {
+        auto new_value = type->createColumn();
+        new_value->reserve(1);
+        serialization.deserializeBinary(*new_value, buf, {});
+        value = std::move(new_value);
+    }
+}
+
+bool SingleValueDataGenericWithColumn::isEqualTo(const IColumn & column, size_t row_num) const
+{
+    return has() && !column.compareAt(row_num, 0, *value, -1);
+}
+
+bool SingleValueDataGenericWithColumn::isEqualTo(const DB::SingleValueDataBase & other) const
+{
+    auto const & to = assert_cast<const Self &>(other);
+    return has() && to.has() && !to.value->compareAt(0, 0, *value, -1);
+}
+
+void SingleValueDataGenericWithColumn::set(const IColumn & column, size_t row_num, Arena *)
+{
+    auto new_value = column.cloneEmpty();
+    new_value->reserve(1);
+    new_value->insertFrom(column, row_num);
+    value = recursiveRemoveSparse(std::move(new_value));
+}
+
+void SingleValueDataGenericWithColumn::set(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (other.has())
+        value = to.value;
+}
+
+bool SingleValueDataGenericWithColumn::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has())
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+
+    if (column.compareAt(row_num, 0, *value, -1) < 0)
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+    return false;
+}
+
+bool SingleValueDataGenericWithColumn::setIfSmaller(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) < 0))
+    {
+        value = to.value;
+        return true;
+    }
+    return false;
+}
+
+bool SingleValueDataGenericWithColumn::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has())
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+
+    if (column.compareAt(row_num, 0, *value, -1) > 0)
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+    return false;
+}
+
+bool SingleValueDataGenericWithColumn::setIfGreater(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) > 0))
+    {
+        value = to.value;
+        return true;
+    }
+    return false;
+}
+
+bool canUseFieldForValueData(const DataTypePtr & value_type)
+{
+    bool result = true;
+    auto check = [&](const IDataType & type)
+    {
+        /// Variant, Dynamic and Object types doesn't work well with Field
+        /// because they can store values of different data types in a single column.
+        result &= !isVariant(type) && !isDynamic(type) && !isObject(type);
+    };
+
+    check(*value_type);
+    value_type->forEachChild(check);
+    return result;
+};
+
+void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMemoryBlock & data)
+{
+    auto idx = type->getTypeId();
 #define DISPATCH(TYPE) \
     if (idx == TypeIndex::TYPE) \
     { \
@@ -1455,9 +1585,18 @@ void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBaseMemoryBl
         new (&data.memory) SingleValueDataString;
         return;
     }
-    static_assert(sizeof(SingleValueDataGeneric) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
-    static_assert(alignof(SingleValueDataGeneric) <= alignof(SingleValueDataBaseMemoryBlock));
-    new (&data.memory) SingleValueDataGeneric;
+
+    if (canUseFieldForValueData(type))
+    {
+        static_assert(sizeof(SingleValueDataGeneric) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+        static_assert(alignof(SingleValueDataGeneric) <= alignof(SingleValueDataBaseMemoryBlock));
+        new (&data.memory) SingleValueDataGeneric;
+        return;
+    }
+
+    static_assert(sizeof(SingleValueDataGenericWithColumn) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+    static_assert(alignof(SingleValueDataGenericWithColumn) <= alignof(SingleValueDataBaseMemoryBlock));
+    new (&data.memory) SingleValueDataGenericWithColumn;
 }
 
 bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx)

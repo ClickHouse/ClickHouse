@@ -6,6 +6,7 @@
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <filesystem>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {

@@ -52,7 +52,8 @@
         M(FLOAT, arrow::FloatType) \
         M(DOUBLE, arrow::DoubleType) \
         M(BINARY, arrow::BinaryType) \
-        M(STRING, arrow::StringType)
+        M(STRING, arrow::StringType) \
+        M(FIXED_SIZE_BINARY, arrow::FixedSizeBinaryType)
 
 namespace DB
 {
@@ -512,7 +513,7 @@ namespace DB
         FOR_ARROW_TYPES(DISPATCH)
 #undef DISPATCH
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array with {} data.", column_type->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array {} with {} data", value_type->name(), column_type->getName());
     }
 
     template <typename ColumnType, typename ArrowBuilder>

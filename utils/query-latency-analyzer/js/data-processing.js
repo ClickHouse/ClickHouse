@@ -1,6 +1,6 @@
 /**
  * Computes the statistical info for each group in the input array of objects.
- * @param {Array} data - Array of objects, each containing a "group" property and numerical properties.
+ * @param {Array} raw_data - Array of objects, each containing a "group" property and numerical properties.
  * @returns {Object} - An object containing:
  *   - names: Ordered array of property names (excluding "group").
  *   - groups: An object where keys are group names and values are statistics:
@@ -12,16 +12,16 @@
  *     - max: maximum values vector
  *     - p: percentiles objects vector (key: 1 to 99, value: percentile value)
  */
-function processData(data) {
-    if (!Array.isArray(data) || data.length === 0) {
+function processData(raw_data) {
+    if (!Array.isArray(raw_data) || raw_data.length === 0) {
         return { labels: [], groups: {} };
     }
 
     // Extract variable names (excluding "group")
-    const labels = Object.keys(data[0]).filter(key => key !== "group").sort();
+    const labels = Object.keys(raw_data[0]).filter(key => key !== "group").sort();
 
     // Group data by "group" property
-    const groupedData = data.reduce((acc, item) => {
+    const groupedData = raw_data.reduce((acc, item) => {
         const group = item.group;
         if (!acc[group]) acc[group] = [];
         acc[group].push(item);
@@ -126,4 +126,114 @@ function generateTestData() {
     });
 
     return data;
+}
+
+/**
+ * Reorders labels and corresponding data according to a comparison function
+ * @param {Object} data - Object containing labels array and groups object from processData
+ * @param {Function} comp - Comparison function for sorting labels
+ * @returns {Object} - Object with the same structure but reordered according to comp
+ */
+function orderLabels({ labels, groups }, comp) {
+    // Create array of indices and sort it according to how labels should be sorted
+    const indices = labels.map((_, i) => i);
+    indices.sort((a, b) => comp(labels[a], labels[b]));
+
+    // Create new labels array in the desired order
+    const newLabels = indices.map(i => labels[i]);
+
+    // Create new groups object with reordered arrays
+    const newGroups = {};
+    for (const [groupName, groupData] of Object.entries(groups)) {
+        const { count } = groupData;
+        newGroups[groupName] = {
+            count,
+            // Reorder covariance matrix - need to reorder both rows and columns
+            cov: indices.map(i => indices.map(j => groupData.cov[i][j])),
+            // Reorder 1D arrays
+            avg: indices.map(i => groupData.avg[i]),
+            std: indices.map(i => groupData.std[i]),
+            min: indices.map(i => groupData.min[i]),
+            max: indices.map(i => groupData.max[i]),
+            // Reorder percentiles array
+            p: indices.map(i => groupData.p[i])
+        };
+    }
+
+    return { labels: newLabels, groups: newGroups };
+}
+
+/**
+ * Computes global averages across all groups weighted by group size
+ * @param {Object} data - Object containing labels array and groups object from processData
+ * @returns {Array} - Array of global averages corresponding to labels
+ */
+function computeGlobalAverages({ labels, groups }) {
+    const globalAvg = new Array(labels.length).fill(0);
+    let totalCount = 0;
+
+    // Sum up weighted averages and total count
+    for (const groupData of Object.values(groups)) {
+        for (let i = 0; i < labels.length; i++) {
+            globalAvg[i] += groupData.count * groupData.avg[i];
+        }
+        totalCount += groupData.count;
+    }
+
+    // Normalize by total count
+    if (totalCount > 0) {
+        for (let i = 0; i < globalAvg.length; i++) {
+            globalAvg[i] /= totalCount;
+        }
+    }
+
+    return globalAvg;
+}
+
+/**
+ * Filters labels and corresponding data according to a predicate function
+ * @param {Object} data - Object containing labels array and groups object from processData
+ * @param {Function} predicate - Function that takes label and its data and returns true if label should be kept
+ * @returns {Object} - Filtered object with the same structure
+ */
+function filterData({ labels, groups }, predicate) {
+    // Create array of indices for labels that pass the predicate
+    const indices = labels.map((label, i) => ({label, i}))
+        .filter(({label, i}) => predicate(label, i, groups))
+        .map(({i}) => i);
+
+    // Create new labels array with only filtered labels
+    const newLabels = indices.map(i => labels[i]);
+
+    // Create new groups object with filtered arrays
+    const newGroups = {};
+    for (const [groupName, groupData] of Object.entries(groups)) {
+        const { count } = groupData;
+        newGroups[groupName] = {
+            count,
+            // Filter covariance matrix
+            cov: indices.map(i => indices.map(j => groupData.cov[i][j])),
+            // Filter 1D arrays
+            avg: indices.map(i => groupData.avg[i]),
+            std: indices.map(i => groupData.std[i]),
+            min: indices.map(i => groupData.min[i]),
+            max: indices.map(i => groupData.max[i]),
+            // Filter percentiles array
+            p: indices.map(i => groupData.p[i])
+        };
+    }
+
+    return { labels: newLabels, groups: newGroups };
+}
+
+// Make sure to expose functions if using modules
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { processData, generateTestData, orderLabels, computeGlobalAverages, filterData };
+} else {
+    // For browser environment
+    window.processData = processData;
+    window.generateTestData = generateTestData;
+    window.orderLabels = orderLabels;
+    window.computeGlobalAverages = computeGlobalAverages;
+    window.filterData = filterData;
 }

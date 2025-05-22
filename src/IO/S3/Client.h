@@ -276,6 +276,9 @@ private:
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
+    /// Returns true if a specified error means that the credentials used are expired or may have changed.
+    bool checkIfCredentialsChanged(const Aws::S3::S3Error & error) const;
+
     template <typename RequestResult>
     RequestResult processRequestResult(RequestResult && outcome) const;
 

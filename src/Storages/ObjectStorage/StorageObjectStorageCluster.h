@@ -2,11 +2,10 @@
 #include <Storages/IStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
-
-class Context;
 
 class StorageObjectStorageCluster : public IStorageCluster
 {

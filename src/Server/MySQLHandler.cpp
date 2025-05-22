@@ -18,6 +18,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>

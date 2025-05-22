@@ -18,6 +18,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -637,7 +638,7 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
     return (mark_cache || index_cache) && !cleared_data_in_caches;
 }
 
-void IMergeTreeDataPart::removeIfNeeded() noexcept
+void IMergeTreeDataPart::removeIfNeeded()
 {
     assert(assertHasValidVersionMetadata());
     std::string path;

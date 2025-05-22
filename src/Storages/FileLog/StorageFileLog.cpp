@@ -639,7 +639,7 @@ bool StorageFileLog::checkDependencies(const StorageID & table_id)
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     if (view_ids.empty())
-        return true;
+        return false;
 
     for (const auto & view_id : view_ids)
     {
@@ -650,10 +650,6 @@ bool StorageFileLog::checkDependencies(const StorageID & table_id)
         // If it materialized view, check it's target table
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-
-        // Check all its dependencies
-        if (!checkDependencies(view_id))
             return false;
     }
 

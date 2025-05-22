@@ -510,7 +510,8 @@ class Runner:
                 description=result.info.splitlines()[0] if result.info else "",
                 url=report_url,
             ):
-                print(f"ERROR: Failed to post failed commit status for the job")
+                env.add_info("Failed to post GH commit status for the job")
+                print(f"ERROR: Failed to post commit status for the job")
 
         if workflow.enable_report:
             # to make it visible in GH Actions annotations
