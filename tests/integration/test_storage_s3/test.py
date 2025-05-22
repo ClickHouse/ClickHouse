@@ -699,7 +699,7 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     for night in nights:
         path = f"shard_{night // 100}/night_{night % 100}/tale.csv"
         print(path)
-        query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+        query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
             started_cluster.minio_ip,
             MINIO_INTERNAL_PORT,
             bucket,
