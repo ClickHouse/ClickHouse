@@ -136,11 +136,11 @@ position i, the function replaces that element with the element at position i-1
 from the current state of the array. The first element is always preserved
 regardless of any condition.
 )";
-    FunctionDocumentation::Syntax syntax = "arrayFill(func(x [, y1, ..., yN]), source [, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax = "arrayFill(func(x [, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments = {
         {"func(x [, y1, ..., yN])", "A lambda function `func(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
-        {"source", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
-        {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"source_arr", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns an array. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {
@@ -161,11 +161,11 @@ position i, the function replaces that element with the element at position i+1
 from the current state of the array. The last element is always preserved
 regardless of any condition.
     )";
-    FunctionDocumentation::Syntax syntax_reverse = "arrayReverseFill(func(x[, y1, ..., yN]), source[, cond1, ... , condN])";
+    FunctionDocumentation::Syntax syntax_reverse = "arrayReverseFill(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_reverse = {
         {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
-        {"source", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
-        {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"source_arr", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value_reverse = "Returns an array with elements of the source array replaced by the results of the lambda. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples_reverse = {
