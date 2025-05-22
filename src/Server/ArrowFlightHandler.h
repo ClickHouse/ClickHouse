@@ -38,7 +38,7 @@ namespace DB
 class ArrowFlightHandler : public IGRPCServer, public arrow::flight::FlightServerBase
 {
 public:
-    explicit ArrowFlightHandler(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_);
+    explicit ArrowFlightHandler(IServer & server_, const Poco::Net::SocketAddress & address_to_listen_);
 
     virtual ~ArrowFlightHandler() override;
 
@@ -90,6 +90,7 @@ private:
     LoggerPtr log;
     arrow::flight::Location location;
     const Poco::Net::SocketAddress address_to_listen;
-    std::unique_ptr<Session> session;
+
+    virtual std::unique_ptr<Session> createSession(const arrow::flight::ServerCallContext& context);
 };
 }

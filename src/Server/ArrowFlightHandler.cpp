@@ -44,8 +44,97 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Access/Credentials.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <Common/Base64.h>
+#include <arrow/flight/server_middleware.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <arrow/flight/server.h>
+#include <fstream>
+#include <sstream>
+#include <Poco/FileStream.h>
+#include <Poco/StreamCopier.h>
 
+const std::string AUTHORIZATION_HEADER = "authorization";
+const std::string AUTHORIZATION_MIDDLEWARE_NAME = "arrow_flight_authorization";
 
+class AuthMiddleware : public arrow::flight::ServerMiddleware {
+public:
+    explicit AuthMiddleware(const std::string& token, const std::string& username, const std::string& password):
+        token_(token),
+        username_(username),
+        password_(password) {}
+        
+    const std::string& username() const { return username_; }
+    const std::string& password() const { return password_; }
+
+    std::string name() const override {
+        return AUTHORIZATION_MIDDLEWARE_NAME;
+    }
+
+    void SendingHeaders(arrow::flight::AddCallHeaders* outgoing_headers) override {
+        outgoing_headers->AddHeader(AUTHORIZATION_HEADER, "Bearer " + token_);
+    }
+
+    void CallCompleted(const arrow::Status& /*status*/) override {
+    }
+
+private:
+    const std::string token_;
+    const std::string username_;
+    const std::string password_;
+};
+
+class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory {
+public:
+    arrow::Status StartCall(const arrow::flight::CallInfo& /*info*/, const arrow::flight::ServerCallContext& context,
+                           std::shared_ptr<arrow::flight::ServerMiddleware>* middleware) override {
+        const auto& headers = context.incoming_headers();
+
+        auto it = headers.find(AUTHORIZATION_HEADER);
+        if (it == headers.end()) {
+            return arrow::Status::IOError("Missing Authorization header");
+        }
+
+        auto auth_header = std::string(it->second);
+
+        std::string token;
+
+        const std::string prefix_basic = "Basic ";
+        if (auth_header.compare(0, prefix_basic.size(), prefix_basic) == 0) {
+            token = auth_header.substr(prefix_basic.size());
+        }
+
+        const std::string prefix_bearer = "Bearer ";
+        if (auth_header.compare(0, prefix_bearer.size(), prefix_bearer) == 0) {
+            token = auth_header.substr(prefix_bearer.size());
+        } 
+
+        if (token.empty()) {
+            return arrow::Status::IOError("Expected Basic auth scheme");
+        }
+
+        std::string credentials = DB::base64Decode(token, true);
+        auto pos = credentials.find(':');
+        if (pos == std::string::npos) {
+            return arrow::Status::IOError("Malformed credentials");
+        }
+
+        auto user = credentials.substr(0, pos);
+        auto password = credentials.substr(pos + 1);
+
+        std::cout << token << " : " << user << " : " << password << "\n";
+
+        *middleware = std::make_unique<AuthMiddleware>(token, user, password);
+        return arrow::Status::OK();
+    }
+};
+
+String readFile(const String & filepath)
+{
+    Poco::FileInputStream ifs(filepath);
+    String buf;
+    Poco::StreamCopier::copyToString(ifs, buf);
+    return buf;
+}
 
 namespace DB
 {
@@ -60,24 +149,55 @@ ArrowFlightHandler::ArrowFlightHandler(IServer & server_, const Poco::Net::Socke
     : server(server_)
     , log(getLogger("ArrowFlightHandler"))
     , address_to_listen(address_to_listen_)
-{
-    auto parse_location_status = arrow::flight::Location::ForGrpcTcp(address_to_listen_.host().toString(), address_to_listen_.port());
-    if (!parse_location_status.ok()) {
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-                        "Invalid address {} for Arrow Flight Server: {}",
-                        address_to_listen_.toString(),
-                        parse_location_status->ToString());
-    }
-    location = std::move(parse_location_status).ValueOrDie();
-}
+{}
+
+std::unique_ptr<Session> ArrowFlightHandler::createSession(const arrow::flight::ServerCallContext& context) {
+    AuthMiddleware* auth = static_cast<AuthMiddleware*>(context.GetMiddleware(AUTHORIZATION_MIDDLEWARE_NAME));
+    std::string login = auth->username();
+    std::string password = auth->password();
+    auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::ARROW_FLIGHT);
+    session->authenticate(login, password, address_to_listen);
+    return session;
+ }
 
 void ArrowFlightHandler::start() {
     setThreadName("ArrowFlight");
 
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::ARROW_FLIGHT);
-    session->authenticate("default", "", address_to_listen);
-    session->makeSessionContext();
+    bool use_tls = server.config().getBool("grpc.enable_ssl", false);
+
+    arrow::Result<arrow::flight::Location> parse_location_status;
+
+    if (use_tls)
+    {
+        parse_location_status = arrow::flight::Location::ForGrpcTls(address_to_listen.host().toString(), address_to_listen.port());
+    } 
+    else
+    {
+        parse_location_status = arrow::flight::Location::ForGrpcTcp(address_to_listen.host().toString(), address_to_listen.port());
+    }
+    if (!parse_location_status.ok()) {
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+                        "Invalid address {} for Arrow Flight Server: {}",
+                        address_to_listen.toString(),
+                        parse_location_status->ToString());
+    }
+    location = std::move(parse_location_status).ValueOrDie();
+
     arrow::flight::FlightServerOptions options(location);
+    options.auth_handler = std::make_unique<arrow::flight::NoOpAuthHandler>();
+    options.middleware.emplace_back(AUTHORIZATION_MIDDLEWARE_NAME, std::make_shared<AuthMiddlewareFactory>());
+    
+    if (use_tls)
+    {
+        auto cert_path = server.config().getString("grpc.ssl_cert_file");
+        auto key_path = server.config().getString("grpc.ssl_key_file");
+
+        auto cert = readFile(cert_path);
+        auto key = readFile(key_path);
+
+        options.tls_certificates.push_back(arrow::flight::CertKeyPair{cert, key});
+    }
+    
     auto init_status = Init(options);
     if (!init_status.ok()) {
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
@@ -94,7 +214,6 @@ void ArrowFlightHandler::start() {
 }
 
 ArrowFlightHandler::~ArrowFlightHandler() {
-   // session.reset();
 }
 
 void ArrowFlightHandler::stop() {
@@ -137,34 +256,25 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
 }
 
 arrow::Status ArrowFlightHandler::GetSchema(
-    const arrow::flight::ServerCallContext& /*context*/,
-    const arrow::flight::FlightDescriptor& request,
-    std::unique_ptr<arrow::flight::SchemaResult>* schema) {
+    const arrow::flight::ServerCallContext& context,
+    const arrow::flight::FlightDescriptor& /*request*/,
+    std::unique_ptr<arrow::flight::SchemaResult>* /*schema*/) {
 
-    String query = request.cmd;
-    ContextMutablePtr query_context = Context::createCopy(server.context());
-    ReadBufferFromString input_buffer(query);
-    WriteBufferFromOwnString output_buffer;
+    auto session = createSession(context);
+    session->makeSessionContext();
 
-    try
-    {
-        executeQuery(input_buffer, output_buffer, false, query_context, {});
-        *schema = std::make_unique<arrow::flight::SchemaResult>("");
-        return arrow::Status::OK();
-    }
-    catch (const DB::Exception & e)
-    {
-        return arrow::Status::IOError("GetSchema failed: " + e.displayText());
-    }
+    return arrow::Status::OK();
 }
 
 arrow::Status ArrowFlightHandler::DoGet(
-    const arrow::flight::ServerCallContext& /*ctx*/,
+    const arrow::flight::ServerCallContext& context,
     const arrow::flight::Ticket& request,
     std::unique_ptr<arrow::flight::FlightDataStream>* stream)
 {
     try
     {
+        auto session = createSession(context);
+        session->makeSessionContext();
         const std::string sql = request.ticket;
 
         DB::ThreadStatus thread_status;
@@ -244,12 +354,15 @@ arrow::Status ArrowFlightHandler::DoGet(
 
 
 arrow::Status ArrowFlightHandler::DoPut(
-    const arrow::flight::ServerCallContext& /*context*/,
+    const arrow::flight::ServerCallContext& context,
     std::unique_ptr<arrow::flight::FlightMessageReader> reader,
     std::unique_ptr<arrow::flight::FlightMetadataWriter> /*writer*/)
 {
     try
     {
+        auto session = createSession(context);
+        session->makeSessionContext();
+
         DB::ThreadStatus thread_status; 
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId("arrow_flight");
