@@ -280,7 +280,7 @@ void SerializationDynamic::deserializeBinaryBulkStatePrefix(
 
     auto dynamic_state = std::make_shared<DeserializeBinaryBulkStateDynamic>();
     dynamic_state->structure_state = std::move(structure_state);
-    auto structure_state_typed = checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(dynamic_state->structure_state);
+    auto * structure_state_typed = checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(dynamic_state->structure_state);
     if (structure_state_typed->structure_version.value == DynamicSerializationVersion::Value::FLATTENED)
     {
         dynamic_state->flattened_states.reserve(structure_state_typed->flattened_data_types.size());
