@@ -65,6 +65,9 @@ SELECT timeSeriesResampleToGridWithStalenessMerge(toNullable(60), 100, 200, 20)(
 SELECT timeSeriesIdeltaToGridMerge(toNullable(60), 100, 200, 20)(
     initializeAggregation('timeSeriesIdeltaToGridState(100, 200, 20, 60)', (100 + number*10)::DateTime32, number::Float64)
 ) FROM numbers(5); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT tsToGridMerge(60, 100, 200, 20)(
+    initializeAggregation('tsToGridState(100, 200, 20, 60)', (100 + number*10)::DateTime32, number::Float64)
+) FROM numbers(5); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 -- With matching parameters everything should work
 SELECT timeSeriesResampleToGridWithStalenessMerge(100, 200, 20, 60)(
@@ -72,6 +75,9 @@ SELECT timeSeriesResampleToGridWithStalenessMerge(100, 200, 20, 60)(
 ) FROM numbers(5);
 SELECT timeSeriesIdeltaToGridMerge(100, 200, 20, 60)(
     initializeAggregation('timeSeriesIdeltaToGridState(100, 200, 20, 60)', (100 + number*10)::DateTime32, number::Float64)
+) FROM numbers(5);
+SELECT tsToGridMerge(100, 200, 20, 60)(
+    initializeAggregation('tsToGridState(100, 200, 20, 60)', (100 + number*10)::DateTime32, number::Float64)
 ) FROM numbers(5);
 
 DROP TABLE ts_data;

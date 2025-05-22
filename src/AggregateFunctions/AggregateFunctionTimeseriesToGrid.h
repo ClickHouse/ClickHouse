@@ -50,7 +50,7 @@ public:
 
     explicit AggregateFunctionTimeseriesToGrid(const DataTypes & argument_types_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType staleness_)
-        : Base(argument_types_, {}, createResultType(argument_types_))
+        : Base(argument_types_, {start_timestamp_, end_timestamp_, step_, staleness_}, createResultType(argument_types_))
         , start_timestamp(start_timestamp_)
         , end_timestamp(end_timestamp_)
         , step(step_)
