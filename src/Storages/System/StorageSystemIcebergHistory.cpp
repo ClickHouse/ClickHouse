@@ -22,7 +22,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Core/Settings.h>
 
-static constexpr auto TIME_SCALE = 6;
+// Iceberg specs mention that the timestamps is stored in ms https://iceberg.apache.org/spec/#table-metadata-fields
+static constexpr auto TIME_SCALE = 3;
 
 namespace DB
 {
@@ -36,12 +37,12 @@ ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"database_name",std::make_shared<DataTypeString>(),"Database name"},
-        {"table_name",std::make_shared<DataTypeString>(),"Table name."},
-        {"made_current_at",std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)),"date & time when this snapshot was made current snapshot"},
-        {"snapshot_id",std::make_shared<DataTypeUInt64>(),"snapshot id which is used to identify a snapshot."},
-        {"parent_id",std::make_shared<DataTypeUInt64>(),"parent id of this snapshot."},
-        {"is_current_ancestor",std::make_shared<DataTypeUInt8>(),"Flag that indicates if this snapshot is an ancestor of the current snapshot."}
+        {"database_name", std::make_shared<DataTypeString>(), "Database name"},
+        {"table_name", std::make_shared<DataTypeString>(), "Table name."},
+        {"made_current_at", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)), "date & time when this snapshot was made current snapshot"},
+        {"snapshot_id", std::make_shared<DataTypeUInt64>(), "snapshot id which is used to identify a snapshot."},
+        {"parent_id", std::make_shared<DataTypeUInt64>(), "parent id of this snapshot."},
+        {"is_current_ancestor", std::make_shared<DataTypeUInt8>(), "Flag that indicates if this snapshot is an ancestor of the current snapshot."}
     };
 }
 
