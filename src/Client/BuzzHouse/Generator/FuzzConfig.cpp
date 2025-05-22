@@ -163,6 +163,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
                     {"float", allow_floating_points},
                     {"date", allow_dates},
                     {"date32", allow_date32},
+                    {"time", allow_time},
+                    {"time64", allow_time64},
                     {"datetime", allow_datetimes},
                     {"datetime64", allow_datetime64},
                     {"string", allow_strings},
