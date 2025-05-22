@@ -50,7 +50,7 @@ public:
         if (!storage->isVirtualColumn(column.name, storage_snapshot->metadata))
             return;
 
-        const auto & column_type = column_node->getColumnType();
+        const auto column_type = column_node->getColumnType();
         const auto shard_num_column_numeric_type = column_type->isNullable() ? typeid_cast<const DataTypeNullable *>(column_type.get())->getNestedType() : column_type;
 
         auto shard_num_function_node = std::make_shared<FunctionNode>("shardNum");
