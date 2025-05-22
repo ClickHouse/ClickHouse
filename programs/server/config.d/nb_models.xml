@@ -3,7 +3,7 @@
         <model>
             <mode>token</mode>
             <name>sentiment_token_1</name>
-            <path>/etc/clickhouse-server/config.d/nb_model_sentiment_token_1.bin</path>
+            <path>config.d/nb_model_sentiment_token_1.bin</path>
             <n>1</n>
             <priors>
                 <prior>
@@ -19,7 +19,7 @@
         <model>
             <mode>codepoint</mode>
             <name>lang_codepoint_1</name>
-            <path>/etc/clickhouse-server/config.d/nb_model_lang_codepoint_1.bin</path>
+            <path>config.d/nb_model_lang_codepoint_1.bin</path>
             <n>1</n>
             <priors>
                 <prior>
@@ -59,7 +59,7 @@
         <model>
             <mode>byte</mode>
             <name>lang_byte_2</name>
-            <path>/etc/clickhouse-server/config.d/nb_model_lang_byte_2.bin</path>
+            <path>config.d/nb_model_lang_byte_2.bin</path>
             <n>2</n>
             <priors>
                 <prior>
