@@ -1138,27 +1138,24 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                     sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
                 }
             }
-            else if (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared)
+            else if (
+                b.toption.has_value() && b.toption.value() == TableEngineOption::TShared
+                && (!fc.storage_policies.empty() || !fc.disks.empty()))
             {
-                /// Requires keeper storage
-                bool found = false;
+                /// Requires storage setting
                 const auto & ovals = svs->other_values();
 
-                for (auto it = ovals.begin(); it != ovals.end() && !found; it++)
-                {
-                    if (it->property() == "storage_policy")
-                    {
-                        auto & prop = const_cast<SetValue &>(*it);
-                        prop.set_value("'s3_with_keeper'");
-                        found = true;
-                    }
-                }
-                if (!found)
+                if (std::find_if(
+                        ovals.begin(),
+                        ovals.end(),
+                        [](const auto & val) { return val.property() == "storage_policy" || val.property() == "disk"; })
+                    == ovals.end())
                 {
                     SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+                    const String & pick = (fc.disks.empty() || rg.nextBool()) ? "storage_policy" : "disk";
 
-                    sv->set_property("storage_policy");
-                    sv->set_value("'s3_with_keeper'");
+                    sv->set_property(pick);
+                    sv->set_value("'" + rg.pickRandomly(pick == "storage_policy" ? fc.storage_policies : fc.disks) + "'");
                 }
             }
         }

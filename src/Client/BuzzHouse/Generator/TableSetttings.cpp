@@ -3,7 +3,7 @@
 namespace BuzzHouse
 {
 
-static DB::Strings mergeStoragePolicies;
+static DB::Strings storagePolicies, disks;
 
 static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg)
@@ -136,6 +136,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000)); }, {}, false)},
        {"min_rows_for_wide_part", CHSetting(rowsRange, {}, false)},
        {"non_replicated_deduplication_window", CHSetting(rowsRange, {}, false)},
+       /// ClickHouse cloud setting
        {"notify_newest_block_number", CHSetting(trueOrFalse, {}, false)},
        {"old_parts_lifetime",
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 10, 8 * 60)); }, {}, false)},
@@ -200,6 +201,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"vertical_merge_remote_filesystem_prefetch", CHSetting(trueOrFalse, {}, false)},
        {"write_marks_for_substreams_in_compact_parts", CHSetting(trueOrFalse, {}, false)},
        {"zero_copy_concurrent_part_removal_max_postpone_ratio", CHSetting(probRange, {}, false)}};
+
+static std::unordered_map<String, CHSetting> logTableSettings = {};
 
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
@@ -266,11 +269,19 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
 {
     if (!fc.storage_policies.empty())
     {
-        mergeStoragePolicies.insert(mergeStoragePolicies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
-        const auto & storage_policy
-            = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(mergeStoragePolicies) + "'"; }, {}, false);
-        mergeTreeTableSettings.insert({{"storage_policy", storage_policy}});
-        restoreSettings.insert({{"storage_policy", storage_policy}});
+        storagePolicies.insert(storagePolicies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
+        const auto & storage_policy_setting
+            = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(storagePolicies) + "'"; }, {}, false);
+        mergeTreeTableSettings.insert({{"storage_policy", storage_policy_setting}});
+        logTableSettings.insert({{"storage_policy", storage_policy_setting}});
+        restoreSettings.insert({{"storage_policy", storage_policy_setting}});
+    }
+    if (!fc.disks.empty())
+    {
+        disks.insert(disks.end(), fc.disks.begin(), fc.disks.end());
+        const auto & disk_setting = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(disks) + "'"; }, {}, false);
+        mergeTreeTableSettings.insert({{"disk", disk_setting}});
+        logTableSettings.insert({{"disk", disk_setting}});
     }
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
@@ -284,9 +295,9 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Set, setTableSettings},
          {Join, joinTableSettings},
          {Memory, memoryTableSettings},
-         {StripeLog, {}},
-         {Log, {}},
-         {TinyLog, {}},
+         {StripeLog, logTableSettings},
+         {Log, logTableSettings},
+         {TinyLog, logTableSettings},
          {EmbeddedRocksDB, embeddedRocksDBTableSettings},
          {Buffer, {}},
          {MySQL, mySQLTableSettings},
