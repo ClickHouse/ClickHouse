@@ -15,9 +15,20 @@ DOCKER_COMPOSE_PATH = get_docker_compose_path()
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/config.xml"],
+    main_configs=[
+        "configs/config.xml",
+        "configs/grpc_config.xml",
+        "configs/key.pem",
+        "configs/cert.pem",
+    ],
     user_configs=["configs/users.xml"],
 )
+
+def get_client():
+    client = flight.FlightClient(f"grpc+tls://{node.ip_address}:8888", disable_server_verification=True)
+    token = client.authenticate_basic_token("default", "")
+    options = flight.FlightCallOptions(headers=[token])
+    return client, options
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -38,7 +49,7 @@ def test_doput():
         ORDER BY id
         """
     )
-    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+    client, options = get_client()
     schema = pa.schema([
         ("id", pa.int64()),
         ("name", pa.string()),
@@ -48,7 +59,7 @@ def test_doput():
         pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
     ], schema=schema)
     descriptor = flight.FlightDescriptor.for_path("doput_test")
-    writer, _ = client.do_put(descriptor, schema)
+    writer, _ = client.do_put(descriptor, schema, options)
     writer.write_batch(batch)
     writer.close()
 
@@ -58,7 +69,7 @@ def test_doput():
     node.query("DROP TABLE IF EXISTS doput_test SYNC")
 
 def test_doput_unexisting_table():
-    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+    client, options = get_client()
     schema = pa.schema([
         ("id", pa.int64()),
         ("name", pa.string()),
@@ -69,7 +80,7 @@ def test_doput_unexisting_table():
     ], schema=schema)
     try:
         descriptor = flight.FlightDescriptor.for_path("unexisting_table")
-        writer, _ = client.do_put(descriptor, schema)
+        writer, _ = client.do_put(descriptor, schema, options)
         writer.write_batch(batch)
         writer.close()
         assert False, "Expected error but query succeeded"
@@ -78,7 +89,7 @@ def test_doput_unexisting_table():
 
 
 def test_doput_invalid_query():
-    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+    client, options = get_client()
     schema = pa.schema([
         ("id", pa.int64()),
         ("name", pa.string()),
@@ -89,7 +100,7 @@ def test_doput_invalid_query():
     ], schema=schema)
     try:
         descriptor = flight.FlightDescriptor.for_command("SELECT * FROM my_table")
-        writer, _ = client.do_put(descriptor, schema)
+        writer, _ = client.do_put(descriptor, schema, options)
         writer.write_batch(batch)
         writer.close()
         assert False, "Expected error but query succeeded"
@@ -112,31 +123,31 @@ def test_doget():
             INSERT INTO doget_test VALUES(10, 'abc'), (20, 'cde')
         """)
     
-    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+    client, options = get_client()
 
     try:
         incorrect_ticket = flight.Ticket(b"INSERT INTO doget_test_insert SELECT number, toString(number) FROM numbers(10)")
-        _ = client.do_get(incorrect_ticket)
+        _ = client.do_get(incorrect_ticket, options)
         assert False, "Expected error but query succeeded"
     except flight.FlightServerError:
         pass
     
     try:
         incorrect_ticket = flight.Ticket(b"some incorrect query")
-        _ = client.do_get(incorrect_ticket)
+        _ = client.do_get(incorrect_ticket, options)
         assert False, "Expected error but query succeeded"
     except flight.FlightServerError:
         pass
 
     try:
         incorrect_ticket = flight.Ticket(b"SELECT * FROM unexisting_table")
-        _ = client.do_get(incorrect_ticket)
+        _ = client.do_get(incorrect_ticket, options)
         assert False, "Expected error but query succeeded"
     except flight.FlightServerError:
         pass
     
     real_ticket = flight.Ticket(b"SELECT * FROM doget_test")
-    reader = client.do_get(real_ticket)
+    reader = client.do_get(real_ticket, options)
     actual = reader.read_all()
 
     expected_schema = pa.schema([
@@ -153,7 +164,7 @@ def test_doget():
 
 
     real_ticket = flight.Ticket(b"SELECT id FROM doget_test")
-    reader = client.do_get(real_ticket)
+    reader = client.do_get(real_ticket, options)
     actual = reader.read_all()
 
     expected_schema = pa.schema([
@@ -183,10 +194,10 @@ def test_doget_format_json():
             INSERT INTO doget_test_format_json VALUES(10, 'abc'), (20, 'cde')
         """)
     
-    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+    client, options = get_client()
 
     real_ticket = flight.Ticket(b"SELECT * FROM doget_test_format_json FORMAT JSON")
-    reader = client.do_get(real_ticket)
+    reader = client.do_get(real_ticket, options)
     actual = reader.read_all()
 
     expected_schema = pa.schema([
@@ -202,3 +213,31 @@ def test_doget_format_json():
     assert actual.column("name").equals(expected_names)
 
     node.query("DROP TABLE IF EXISTS doget_test_format_json SYNC")
+
+
+def test_doget_invalid_user():
+    node.query(
+        """
+        CREATE TABLE doget_test_invalid_user (
+            id Int64,
+            name String
+        )
+        ORDER BY id
+        """
+    )
+    node.query(
+        """
+            INSERT INTO doget_test_invalid_user VALUES(10, 'abc'), (20, 'cde')
+        """)
+    client = flight.FlightClient(f"grpc+tls://{node.ip_address}:8888", disable_server_verification=True)
+    try:
+        token = client.authenticate_basic_token(b'invalid', b'password')
+        options = flight.FlightCallOptions(headers=[token])
+        real_ticket = flight.Ticket(b"SELECT * FROM doget_test_invalid_user")
+        client.do_get(real_ticket, options)
+    except Exception as e:
+        print("Unauthenticated:", e)
+    else:
+        raise RuntimeError("Expected call to fail")
+    
+    node.query("DROP TABLE IF EXISTS doget_test_invalid_user SYNC")
