@@ -1,4 +1,4 @@
-SET enable_time_time64_type = 1;
+SET allow_experimental_time_time64_type = 1;
 
 DROP TABLE IF EXISTS test_time;
 CREATE TABLE test_time (a Time, b String) engine=MergeTree order by a;
