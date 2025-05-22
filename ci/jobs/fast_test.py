@@ -55,6 +55,7 @@ def clone_submodules():
         "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
+        "contrib/libpng"
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
@@ -173,7 +174,7 @@ def main():
                 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
                 -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
-                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DCOMPILER_CACHE=sccache",
+                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_LIBPNG=1 -DCOMPILER_CACHE=sccache",
                 workdir=build_dir,
             )
         )

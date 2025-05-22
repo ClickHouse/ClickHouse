@@ -48,9 +48,9 @@ struct FormatSettings
 
     enum class DateTimeInputFormat : uint8_t
     {
-        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort,   /// Use sophisticated rules to parse whatever possible.
-        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
+        Basic, /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort, /// Use sophisticated rules to parse whatever possible.
+        BestEffortUS /// Use sophisticated rules to parse American style: mm/dd/yyyy
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
@@ -485,6 +485,30 @@ struct FormatSettings
         String table_name;
         bool map_column_names = true;
     } mysql_dump{};
+
+    enum class PNGPixelOutputFormat : uint8_t
+    {
+        BINARY,
+        GRAYSCALE,
+        RGB,
+        RGBA
+    };
+
+    enum class PNGCoordinatesFormat : uint8_t
+    {
+        IMPLICIT,
+        EXPLICIT
+    };
+
+    struct
+    {
+        UInt64 max_height;
+        UInt64 max_width;
+        Int32 bit_depth;
+        String pixel_output_format;
+        String coordinates_format;
+        Int64 compression_level;
+    } png_image{};
 
     struct
     {
