@@ -1298,7 +1298,6 @@ std::tuple<SQLType *, Dates> StatementGenerator::randomDateType(RandomGenerator 
 
 SQLType * StatementGenerator::randomTimeType(RandomGenerator & rg, const uint32_t allowed_types, TimeTp * dt) const
 {
-    bool has_precision = false;
     const bool use64 = (allowed_types & allow_time64) && rg.nextBool();
     std::optional<uint32_t> precision;
 
@@ -1306,7 +1305,7 @@ SQLType * StatementGenerator::randomTimeType(RandomGenerator & rg, const uint32_
     {
         dt->set_type(use64 ? Times::Time64 : Times::Time);
     }
-    if (use64 && (has_precision = (!(allowed_types & set_any_datetime_precision) || rg.nextSmallNumber() < 5)))
+    if (use64 && (!(allowed_types & set_any_datetime_precision) || rg.nextSmallNumber() < 5))
     {
         precision = std::optional<uint32_t>(!(allowed_types & set_any_datetime_precision) ? 6 : (rg.nextSmallNumber() - 1));
         if (dt)
