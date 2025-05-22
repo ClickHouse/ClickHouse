@@ -114,14 +114,6 @@ arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayLastIndex
-arrayLevenshteinDistance
-arrayLevenshteinDistanceWeighted
-arrayRandomSample
-arrayRotateLeft
-arrayRotateRight
-arrayShiftLeft
-arrayShiftRight
-arraySimilarity
 arrayStringConcat
 ascii
 asin
