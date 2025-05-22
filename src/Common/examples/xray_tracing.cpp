@@ -19,10 +19,17 @@ ALWAYS_INLINE void doWork(T arg)
         sum += dist(rndgen);
 }
 
-ATTRIBUTES void always_traced_function()
+ATTRIBUTES void always_traced_overloaded_function()
 {
-    XRAY_TRACE(always_traced_function)
+    XRAY_TRACE(always_traced_overloaded_function)
     doWork(42);
+}
+
+ATTRIBUTES void always_traced_overloaded_function(int arg)
+{
+    void (*ptr)(int) = always_traced_overloaded_function;
+    XRAY_TRACE(ptr)
+    doWork(arg);
 }
 
 template <typename T>
@@ -64,6 +71,22 @@ public:
         XRAY_TRACE(MyClass, h<T>)
         doWork(arg);
     }
+
+    ATTRIBUTES
+    void j() const
+    {
+        void (MyClass::*my_ptr)() const = &MyClass::j;
+        XRAY_TRACE(my_ptr)
+        doWork(42);
+    }
+
+    ATTRIBUTES
+    void j(int arg) const
+    {
+        void (MyClass::*my_ptr)(int) const = &MyClass::j;
+        XRAY_TRACE(my_ptr)
+        doWork(arg);
+    }
 };
 
 int main()
@@ -75,8 +98,14 @@ int main()
     __xray_init();
 
     {
-        always_traced_function();
-        always_traced_function();
+        always_traced_overloaded_function();
+        always_traced_overloaded_function();
+    }
+
+    {
+        int arg = 42;
+        always_traced_overloaded_function(arg);
+        always_traced_overloaded_function(arg);
     }
 
     {
@@ -111,6 +140,12 @@ int main()
         MyClass obj;
         obj.h(arg);
         obj.h(arg);
+    }
+
+    {
+        MyClass obj;
+        obj.j();
+        obj.j();
     }
 
     return 0;

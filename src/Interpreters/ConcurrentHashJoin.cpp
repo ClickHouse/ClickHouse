@@ -34,13 +34,11 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-// #include <Common/XRayTracing.h>
+#include <Common/XRayTracing.h>
 
 #include <algorithm>
 #include <bit>
 #include <numeric>
-#include <sstream>
-#include <stdint.h>
 
 using namespace DB;
 
@@ -253,7 +251,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
 {
-    // XRAY_TRACE(ConcurrentHashJoin, addBlockToJoin)
+    XRAY_TRACE(ConcurrentHashJoin, addBlockToJoin)
 
     /// We materialize columns here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.
@@ -317,6 +315,8 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & 
 
 void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_blocks, std::vector<Block> & res)
 {
+    [[maybe_unused]] void (ConcurrentHashJoin::*ptr)(Block &, ExtraScatteredBlocks &, std::vector<Block> &);
+
     ScatteredBlocks dispatched_blocks;
     auto & remaining_blocks = extra_blocks.remaining_blocks;
     if (extra_blocks.rows())
@@ -389,7 +389,7 @@ const Block & ConcurrentHashJoin::getTotals() const
 
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
-    // XRAY_TRACE(ConcurrentHashJoin, getTotalRowCount)
+    XRAY_TRACE(ConcurrentHashJoin, getTotalRowCount)
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {
@@ -401,7 +401,7 @@ size_t ConcurrentHashJoin::getTotalRowCount() const
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
 {
-    // XRAY_TRACE(ConcurrentHashJoin, getTotalByteCount)
+    XRAY_TRACE(ConcurrentHashJoin, getTotalByteCount)
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {
@@ -546,7 +546,7 @@ ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Sele
 
 ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block)
 {
-    // XRAY_TRACE(ConcurrentHashJoin, dispatchBlock)
+    XRAY_TRACE(ConcurrentHashJoin, dispatchBlock)
 
     const size_t num_shards = hash_joins.size();
     if (num_shards == 1)

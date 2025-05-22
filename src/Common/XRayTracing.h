@@ -137,26 +137,49 @@ uint64_t get_virtual_address(const Class * instance, Ptr func)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-macros"
 
+template <typename Ret, typename... Args>
+inline std::pair<uint64_t, Ret (*)(Args...)> asAddress(Ret (*func)(Args...))
+{
+    using FuncType = Ret (*)(Args...);
+    const auto func_ptr = reinterpret_cast<FuncType>(func);
+    return std::make_pair(reinterpret_cast<uint64_t>(func_ptr), func_ptr);
+};
+
+template <typename Ret, typename C, typename... Args>
+inline std::pair<uint64_t, Ret (C::*)(Args...)> asAddress(Ret (C::*func)(Args...))
+{
+    using FuncType = Ret (C::*)(Args...);
+    union
+    {
+        const FuncType ptr;
+        const uint64_t func_addr;
+    } converter{.ptr = (func)};
+    return std::make_pair(converter.func_addr, converter.ptr);
+}
+
+template <typename Ret, typename C, typename... Args>
+inline std::pair<uint64_t, Ret (C::*)(Args...) const> asAddress(Ret (C::*func)(Args...) const)
+{
+    using FuncType = Ret (C::*)(Args...) const;
+    union
+    {
+        const FuncType ptr;
+        const uint64_t func_addr;
+    } converter{.ptr = (func)};
+    return std::make_pair(converter.func_addr, converter.ptr);
+}
+
+#define XRAY_TRACE_0(mbr_func) \
+    const auto [addr, ptr] = asAddress(mbr_func); \
+    static constexpr uint64_t REAL_FUNC_ADDR_THRESHOLD = 0x00400000; \
+    const auto func_addr = addr >= REAL_FUNC_ADDR_THRESHOLD ? addr : XRayTracing::get_virtual_address(this, ptr); \
+    XRayTracing::XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
 
 #define XRAY_TRACE_1(func) \
-    using FuncType = decltype(&(func)); \
-    const auto func_ptr = reinterpret_cast<FuncType>(&(func)); \
-    const auto func_addr = reinterpret_cast<uint64_t>(func_ptr); \
-    XRayTracing::XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
+    const auto [addr, _] = asAddress(func); \
+    XRayTracing::XRayFunctionMapper::getXRayFunctionMapper().patchFunction(addr);
 
-
-#define XRAY_TRACE_2(class_name, member_func) \
-    using FuncType = decltype(&class_name::member_func); \
-    union \
-    { \
-        const FuncType ptr; \
-        const uint64_t func_addr; \
-    } converter{.ptr = &class_name::member_func}; \
-    static constexpr uint64_t REAL_FUNC_ADDR_THRESHOLD = 0x00400000; \
-    const auto func_addr \
-        = converter.func_addr >= REAL_FUNC_ADDR_THRESHOLD ? converter.func_addr : XRayTracing::get_virtual_address(this, converter.ptr); \
-    XRayTracing::XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
-
+#define XRAY_TRACE_2(class_name, member_func) XRAY_TRACE_0(&class_name::member_func)
 
 #define XRAY_TRACE_EXPAND(x) x
 #define XRAY_TRACE_COUNT_ARGS(...) XRAY_TRACE_EXPAND(XRAY_TRACE_COUNT_ARGS_IMPL(__VA_ARGS__, 2, 1))

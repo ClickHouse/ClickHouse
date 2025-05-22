@@ -10,7 +10,7 @@ rm xray-log.* ; \
   | jq '.traceEvents | length'
 )
 
-if [ "$res" -eq "12" ]; then
+if [ "$res" -eq "16" ]; then
   echo -e "Test \033[32mpassed\033[0m"
 else
   echo -e "Test \033[31mfailed\033[0m"
