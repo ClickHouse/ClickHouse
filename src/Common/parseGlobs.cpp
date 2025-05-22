@@ -180,15 +180,15 @@ namespace
 {
 void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> & for_match_paths_expanded)
 {
-    /// regexp for {expr1,expr2,....} (a selector glob);
-    /// expr1, expr2,... cannot contain any of these: '{', '}', ','
-    static const re2::RE2 selector_regex(R"({([^{}*,]+,[^{}*]*[^{}*,])})");
-
     std::string_view path_view(path);
     std::string_view matched;
 
+    /// enum_regexp does not match elements of one char, e.g. {a}.tsv
+    auto definitely_no_selector_globs = path.find_first_of("{}") == std::string::npos
+                                        && path.find_first_of("*?") == std::string::npos;
+
     /// No (more) selector globs found, quit
-    if (!RE2::FindAndConsume(&path_view, selector_regex, &matched))
+    if (!RE2::PartialMatch(path_view, Regexps::instance().enum_regex, &matched) && definitely_no_selector_globs)
     {
         for_match_paths_expanded.push_back(path);
         return;
