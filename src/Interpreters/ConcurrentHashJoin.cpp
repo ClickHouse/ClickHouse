@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <bit>
 #include <numeric>
+#include <type_traits>
 
 using namespace DB;
 
@@ -251,7 +252,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
 {
-    XRAY_TRACE(ConcurrentHashJoin, addBlockToJoin)
+    XRAY_TRACE_MBR(ConcurrentHashJoin, addBlockToJoin)
 
     /// We materialize columns here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.
@@ -306,8 +307,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
 void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
-    void (ConcurrentHashJoin::*ptr)(Block &, std::shared_ptr<ExtraBlock> &) = &ConcurrentHashJoin::joinBlock;
-    XRAY_TRACE(ptr)
+    void (ConcurrentHashJoin::*my_ptr)(Block &, std::shared_ptr<ExtraBlock> &) = &ConcurrentHashJoin::joinBlock;
+    XRAY_TRACE_MBR(my_ptr)
 
     Blocks res;
     ExtraScatteredBlocks extra_blocks;
@@ -318,8 +319,8 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & 
 
 void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_blocks, std::vector<Block> & res)
 {
-    void (ConcurrentHashJoin::*ptr)(Block &, ExtraScatteredBlocks &, std::vector<Block> &) = &ConcurrentHashJoin::joinBlock;
-    XRAY_TRACE(ptr)
+    void (ConcurrentHashJoin::*my_ptr)(Block &, ExtraScatteredBlocks &, std::vector<Block> &) = &ConcurrentHashJoin::joinBlock;
+    XRAY_TRACE_MBR(my_ptr)
 
     ScatteredBlocks dispatched_blocks;
     auto & remaining_blocks = extra_blocks.remaining_blocks;
@@ -547,7 +548,7 @@ ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Sele
 
 ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block)
 {
-    XRAY_TRACE(ConcurrentHashJoin, dispatchBlock)
+    XRAY_TRACE_MBR(ConcurrentHashJoin, dispatchBlock)
 
     const size_t num_shards = hash_joins.size();
     if (num_shards == 1)

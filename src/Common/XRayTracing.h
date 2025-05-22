@@ -52,6 +52,7 @@ public:
 
     void patchFunction(uint64_t func_addr) const
     {
+        std::lock_guard lock(mutex);
         if (const auto func_id = getFunctionId(func_addr))
         {
             if (__xray_patch_function(*func_id) != XRayPatchingStatus::SUCCESS)
@@ -63,6 +64,7 @@ public:
 
     void unpatchFunction(uint64_t func_addr) const
     {
+        std::lock_guard lock(mutex);
         if (const auto func_id = getFunctionId(func_addr))
         {
             if (__xray_unpatch_function(*func_id) != XRayPatchingStatus::SUCCESS)
@@ -81,6 +83,7 @@ public:
 private:
     bool loadInstrumentationMap()
     {
+        std::lock_guard lock(mutex);
         auto error_or_instr_map = llvm::xray::loadInstrumentationMap(executable_path);
         if (auto err = error_or_instr_map.takeError())
         {
@@ -94,6 +97,7 @@ private:
 
     void buildFunctionNameMaps()
     {
+        std::lock_guard lock(mutex);
         static const auto relocation_offset = getRelocationOffset();
         for (const auto & [func_id, func_addr] : instr_map.getFunctionAddresses())
             func_addr_to_id[func_addr + relocation_offset] = func_id;
@@ -104,6 +108,8 @@ private:
         const auto it = func_addr_to_id.find(func_addr);
         return it != func_addr_to_id.end() ? std::make_optional(it->second) : std::nullopt;
     }
+
+    mutable std::mutex mutex;
 
     std::string executable_path;
     llvm::xray::InstrumentationMap instr_map;
@@ -169,17 +175,17 @@ inline std::pair<uint64_t, Ret (C::*)(Args...) const> asAddress(Ret (C::*func)(A
     return std::make_pair(converter.func_addr, converter.ptr);
 }
 
-#define XRAY_TRACE_0(mbr_func) \
+#define XRAY_TRACE_MBR_1(mbr_func) \
     const auto [addr, ptr] = asAddress(mbr_func); \
     static constexpr uint64_t REAL_FUNC_ADDR_THRESHOLD = 0x00400000; \
     const auto func_addr = addr >= REAL_FUNC_ADDR_THRESHOLD ? addr : XRayTracing::get_virtual_address(this, ptr); \
     XRayTracing::XRayFunctionMapper::getXRayFunctionMapper().patchFunction(func_addr);
 
-#define XRAY_TRACE_1(func) \
+#define XRAY_TRACE_MBR_2(class_name, member_func) XRAY_TRACE_MBR_1(&class_name::member_func)
+
+#define XRAY_TRACE(func) \
     const auto [addr, _] = asAddress(func); \
     XRayTracing::XRayFunctionMapper::getXRayFunctionMapper().patchFunction(addr);
-
-#define XRAY_TRACE_2(class_name, member_func) XRAY_TRACE_0(&class_name::member_func)
 
 #define XRAY_TRACE_EXPAND(x) x
 #define XRAY_TRACE_COUNT_ARGS(...) XRAY_TRACE_EXPAND(XRAY_TRACE_COUNT_ARGS_IMPL(__VA_ARGS__, 2, 1))
@@ -188,9 +194,9 @@ inline std::pair<uint64_t, Ret (C::*)(Args...) const> asAddress(Ret (C::*func)(A
 #define XRAY_TRACE_CONCAT(x, y) XRAY_TRACE_CONCAT_IMPL(x, y)
 #define XRAY_TRACE_CONCAT_IMPL(x, y) x##y
 
-#define XRAY_TRACE_CHOOSER(...) XRAY_TRACE_CONCAT(XRAY_TRACE_, XRAY_TRACE_COUNT_ARGS(__VA_ARGS__))
+#define XRAY_TRACE_CHOOSER(...) XRAY_TRACE_CONCAT(XRAY_TRACE_MBR_, XRAY_TRACE_COUNT_ARGS(__VA_ARGS__))
 
-#define XRAY_TRACE(...) XRAY_TRACE_CHOOSER(__VA_ARGS__)(__VA_ARGS__)
+#define XRAY_TRACE_MBR(...) XRAY_TRACE_CHOOSER(__VA_ARGS__)(__VA_ARGS__)
 
 
 #pragma clang diagnostic pop

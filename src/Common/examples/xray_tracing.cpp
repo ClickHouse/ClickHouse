@@ -54,37 +54,37 @@ public:
     ATTRIBUTES
     void f(int arg) const
     {
-        XRAY_TRACE(MyClass, f)
+        XRAY_TRACE_MBR(MyClass, f)
         doWork(arg);
     }
 
     ATTRIBUTES
     virtual void g(int arg)
     {
-        XRAY_TRACE(MyClass, g)
+        XRAY_TRACE_MBR(MyClass, g)
         doWork(arg);
     }
 
     template <typename T>
     ATTRIBUTES void h(T arg)
     {
-        XRAY_TRACE(MyClass, h<T>)
+        XRAY_TRACE_MBR(MyClass, h<T>)
         doWork(arg);
     }
 
     ATTRIBUTES
-    void j() const
+    virtual void j() const
     {
         void (MyClass::*my_ptr)() const = &MyClass::j;
-        XRAY_TRACE(my_ptr)
+        XRAY_TRACE_MBR(my_ptr)
         doWork(42);
     }
 
     ATTRIBUTES
-    void j(int arg) const
+    virtual void j(int arg) const
     {
         void (MyClass::*my_ptr)(int) const = &MyClass::j;
-        XRAY_TRACE(my_ptr)
+        XRAY_TRACE_MBR(my_ptr)
         doWork(arg);
     }
 };
