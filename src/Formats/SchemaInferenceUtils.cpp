@@ -1654,8 +1654,24 @@ DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & set
 NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings)
 {
     NamesAndTypesList result;
+
+    std::unordered_map<String, DataTypeCustomDescPtr> custom_descs;
+    const auto & prev_schema = header.getNamesAndTypesList();
+    for (const auto & [name, type] : prev_schema)
+        if (type->hasCustomName())
+            custom_descs[name] = std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(type->getCustomName()->getName()));
     for (auto & [name, type] : header.getNamesAndTypesList())
         result.emplace_back(name, makeNullableRecursively(type, settings));
+
+    for (auto & [name, type] : result)
+    {
+        auto it = custom_descs.find(name);
+        if (it != custom_descs.end())
+        {
+            type->setCustomization(std::move(it->second));
+        }
+    }
+
     return result;
 }
 
