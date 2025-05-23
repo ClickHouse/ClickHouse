@@ -4,7 +4,7 @@
 <configuration>
     <property>
         <name>fs.defaultFS</name>
-        <value>s3a://warehouse_hms/data</value>
+        <value>s3a://warehouse-hms/data</value>
     </property>
     <property>
         <name>fs.s3a.impl</name>
