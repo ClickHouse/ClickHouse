@@ -63,6 +63,7 @@ bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
 void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, CreateTable & newt)
 {
     TableEngine & te = const_cast<TableEngine &>(newt.engine());
+    const auto & teng = te.engine();
 
     if (te.has_setting_values() && rg.nextSmallNumber() < 10)
     {
@@ -94,20 +95,33 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
             }
         }
     }
-    if (te.has_partition_by() && rg.nextSmallNumber() < 5)
+    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
     {
-        te.clear_partition_by();
+        if (te.has_partition_by() && rg.nextSmallNumber() < 5)
+        {
+            /// Remove partition by
+            te.clear_partition_by();
+        }
+        if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
+        {
+            /// Remove primary key or order by clause
+            if (rg.nextBool())
+            {
+                te.clear_primary_key();
+            }
+            else
+            {
+                te.clear_order();
+            }
+        }
     }
-    if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
+    else if (teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog && rg.nextSmallNumber() < 5)
     {
-        if (rg.nextBool())
-        {
-            te.clear_primary_key();
-        }
-        else
-        {
-            te.clear_order();
-        }
+        /// Swap engine if others are equivalent
+        static const std::vector<TableEngineValues> & logEngines
+            = {TableEngineValues::StripeLog, TableEngineValues::Log, TableEngineValues::TinyLog};
+
+        te.set_engine(rg.pickRandomly(logEngines));
     }
 }
 
