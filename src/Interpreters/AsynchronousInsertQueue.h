@@ -24,7 +24,7 @@ class AsynchronousInsertQueue : public WithContext
 public:
     using Milliseconds = std::chrono::milliseconds;
 
-    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_);
+    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_, size_t parse_pool_size_);
     ~AsynchronousInsertQueue();
 
     struct PushResult
@@ -186,6 +186,8 @@ private:
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
+        using EntriesPair = std::pair<std::list<EntryPtr>::iterator, std::list<EntryPtr>::iterator>;
+
         size_t size_in_bytes = 0;
         Milliseconds timeout_ms = Milliseconds::zero();
     };
@@ -256,6 +258,8 @@ private:
     /// Dump the data only inside this pool.
     ThreadPool pool;
 
+    std::shared_ptr<ThreadPool> parse_pool_ptr;
+
     /// Uses async_insert_busy_timeout_ms and processBatchDeadlines()
     std::vector<ThreadFromGlobalPool> dump_by_first_update_threads;
 
@@ -274,11 +278,21 @@ private:
     void processBatchDeadlines(size_t shard_num);
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num);
 
-    static void processData(
+    void processData(
         InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
-    static Chunk processEntriesWithParsing(
+    Chunk processEntriesWithParsing(
+        const InsertQuery & key,
+        const InsertDataPtr & data,
+        const Block & header,
+        const ContextPtr & insert_context,
+        LoggerPtr logger,
+        LogFunc && add_to_async_insert_log);
+
+    template <typename LogFunc>
+    void processEntriesWithAsyncParsing(
+        Chunks & chunks,
         const InsertQuery & key,
         const InsertDataPtr & data,
         const Block & header,
