@@ -3,6 +3,7 @@
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
+#include <Interpreters/Cache/FileCacheUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -203,13 +204,23 @@ CacheMetadata::CacheMetadata(
 
 size_t CacheMetadata::alignFileSize(size_t file_size) const
 {
-    return ::DB::alignFileSize(path_stat, file_size);
+    if (!path_stat.has_value())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to align file size with empty statvfs of path {}", path);
+    }
+    return FileCacheUtils::roundUpToMultiple(file_size, path_stat->f_bsize);
 }
 
 bool CacheMetadata::useRealDiskSize() const
 {
     return use_real_disk_size;
 }
+
+void CacheMetadata::fillStatVFS()
+{
+    path_stat = getStatVFS(path);
+}
+
 
 String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
 {
@@ -787,7 +798,6 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
 void CacheMetadata::startup()
 {
     download_threads.reserve(download_threads_num);
-    path_stat = getStatVFS(path);
     for (size_t i = 0; i < download_threads_num; ++i)
     {
         download_threads.emplace_back(std::make_shared<DownloadThread>());

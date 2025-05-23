@@ -58,15 +58,9 @@ struct statvfs getStatVFS(String path)
             continue;
         }
 
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not get disk stat (statvfs)");
     }
     return fs;
-}
-
-size_t alignFileSize(const struct statvfs & stat, size_t file_size)
-{
-    size_t aligned_file_size = ((file_size + stat.f_bsize - 1) / stat.f_bsize) * stat.f_bsize;
-    return aligned_file_size;
 }
 
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size)

@@ -26,6 +26,14 @@ def test_cache_size(started_cluster):
         """SYSTEM DROP FILESYSTEM CACHE;""",
     )
 
+    cache_size = node.query(
+        """
+            SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize';
+        """
+    )
+
+    assert int(cache_size) == 0
+
     node.query(
         f"""
             DROP TABLE IF EXISTS {table_name};
@@ -63,5 +71,14 @@ def test_cache_size(started_cluster):
         """
     )
     assert int(cache_size) == node.get_cache_size(cache_path)
-    
+
+    node.restart_clickhouse()
+
+    cache_size = node.query(
+        """
+            SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize';
+        """
+    )
+
+    assert int(cache_size) == node.get_cache_size(cache_path)
         

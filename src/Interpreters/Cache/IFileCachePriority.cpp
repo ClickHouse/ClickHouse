@@ -33,9 +33,9 @@ IFileCachePriority::Entry::Entry(
     , offset(offset_)
     , key_metadata(key_metadata_)
     , size(size_)
-    , aligned_size(key_metadata_->alignFileSize(size_))
+    , aligned_size(key_metadata->alignFileSize(size_))
+    , use_real_disk_size(key_metadata->useRealDiskSize())
 {
-    use_real_disk_size = key_metadata->useRealDiskSize();
 }
 
 IFileCachePriority::Entry::Entry(const Entry & other)
@@ -44,7 +44,8 @@ IFileCachePriority::Entry::Entry(const Entry & other)
     , key_metadata(other.key_metadata)
     , hits(other.hits)
     , size(other.size.load())
-    , aligned_size(other.aligned_size.load())
+    , aligned_size(key_metadata->alignFileSize(size.load()))
+    , use_real_disk_size(key_metadata->useRealDiskSize())
 {
 }
 

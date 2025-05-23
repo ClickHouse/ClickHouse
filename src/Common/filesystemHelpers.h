@@ -58,9 +58,6 @@ String getFilesystemName([[maybe_unused]] const String & mount_point);
 
 struct statvfs getStatVFS(String path);
 
-/// Aligns file size to the actual size on disk considering filesystem block size.
-size_t alignFileSize(const struct statvfs & stat, size_t file_size);
-
 /// Returns true if path starts with prefix path
 bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path);
 

@@ -229,6 +229,7 @@ void FileCache::initialize()
             if (!need_to_load_metadata)
                 fs::create_directories(getBasePath());
 
+            metadata.fillStatVFS();
             auto fs_info = std::filesystem::space(getBasePath());
             const size_t size_limit = main_priority->getSizeLimit(lockCache());
             if (fs_info.capacity < size_limit)
