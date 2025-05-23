@@ -43,3 +43,10 @@ SELECT '-- FixedString inputs';
 SELECT tokens(toFixedString('abc+ def- foo! bar? baz= code; hello: world/', 44));
 SELECT '-- non-const inputs';
 SELECT tokens(materialize('abc+ def- foo! bar? baz= code; hello: world/'));
+
+SELECT 'Sparse tokenizer';
+
+SELECT tokens('', 'sparse_gram') AS tokenized;
+SELECT tokens('abc def cba', 'sparse_gram') AS tokenized;
+SELECT tokens('abc def cba', 'sparse_gram', 4, 10) AS tokenized;
+SELECT tokens('abc def cba', 'sparse_gram', 4, 10, 6) AS tokenized;
