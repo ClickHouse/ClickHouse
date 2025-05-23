@@ -1634,6 +1634,13 @@ namespace ErrorCodes
     - [prefer_warmed_unmerged_parts_seconds](/operations/settings/settings#prefer_warmed_unmerged_parts_seconds)
     - [cache_warmer_threads](/operations/settings/settings#cache_warmer_threads)
     )", 0) \
+    DECLARE(String, cache_populated_by_fetch_filename_regexp, "", R"(
+    :::note
+    This setting applies only to ClickHouse Cloud.
+    :::
+
+    If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
+    )", 0) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, R"(
     Allow experimental CLEANUP merges for ReplacingMergeTree with `is_deleted`
     column. When enabled, allows using `OPTIMIZE ... FINAL CLEANUP` to manually
