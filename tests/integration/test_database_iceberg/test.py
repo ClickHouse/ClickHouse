@@ -27,7 +27,7 @@ from pyiceberg.types import (
 )
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
-from helpers.config_cluster import minio_secret_key
+from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
 from helpers.config_cluster import minio_secret_key
@@ -86,8 +86,8 @@ def load_catalog_impl(started_cluster):
             "uri": BASE_URL_LOCAL_RAW,
             "type": "rest",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
-            "s3.access-key-id": "minio",
-            "s3.secret-access-key": "ClickHouse_Minio_P@ssw0rd",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
         },
     )
 

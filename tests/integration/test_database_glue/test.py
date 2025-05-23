@@ -13,6 +13,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
+from helpers.config_cluster import minio_access_key, minio_secret_key
 from pyiceberg.types import (
     DoubleType,
     FloatType,
@@ -80,8 +81,8 @@ def load_catalog_impl(started_cluster):
             "glue.endpoint": BASE_URL_LOCAL_HOST,
             "glue.region": "us-east-1",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
-            "s3.access-key-id": "minio",
-            "s3.secret-access-key": "minio123",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
         },
     )
 
@@ -129,7 +130,7 @@ def create_clickhouse_glue_database(
         f"""
 DROP DATABASE IF EXISTS {name};
 SET allow_experimental_database_glue_catalog=true;
-CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'minio123')
+CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', '{minio_access_key}', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
