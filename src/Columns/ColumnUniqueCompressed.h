@@ -76,7 +76,7 @@ public:
     bool isDefaultAt(size_t n) const override { return n == getDefaultValueIndex(); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
 
-    /// This methos is not implemented as there is no continuous memory chunk containing the value
+    /// This method is not implemented as there is no continuous memory chunk containing the value
     StringRef getDataAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getDataAt' not implemented for ColumnUniqueFCBlockDF");
@@ -202,7 +202,7 @@ private:
     MutableColumnPtr getDecompressedAll() const;
 
     /// Inserts data from `to_insert` into `column_to_modify`. Stores sorted version of `column_to_modify` in `sorted_column` and returns 
-    /// a column containing the permutation of data initialy in `column_to_mofiy`. This data is `old_indexes_mapping` itself.
+    /// a column containing the permutation of data initially in `column_to_mofiy`. This data is `old_indexes_mapping` itself.
     /// This method provides an optimized way to calculate `old_indexes_mapping` during inserts
     MutableColumnPtr prepareForInsert(const MutableColumnPtr & column_to_modify, const ColumnPtr & to_insert, ColumnPtr & sorted_column);
 

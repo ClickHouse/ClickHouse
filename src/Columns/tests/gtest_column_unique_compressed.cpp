@@ -13,7 +13,7 @@ TEST(ColumnUniqueCompressed, EmptyFCBlockDF)
     const ColumnPtr strings = ColumnString::create();
     const size_t block_size = 4;
 
-    /// not nullable, containts empty string as first element
+    /// not nullable, contains empty string as first element
     {
         auto unique_compressed_column = ColumnUniqueFCBlockDF::create(strings, block_size, false);
         EXPECT_EQ(unique_compressed_column->size(), 1);
@@ -29,7 +29,7 @@ TEST(ColumnUniqueCompressed, EmptyFCBlockDF)
         EXPECT_FALSE(no_index.has_value());
     }
 
-    /// nullable, constains null and empty string as first two elements
+    /// nullable, contains null and empty string as first two elements
     {
         auto unique_compressed_column = ColumnUniqueFCBlockDF::create(strings, block_size, true);
         EXPECT_EQ(unique_compressed_column->size(), 2);

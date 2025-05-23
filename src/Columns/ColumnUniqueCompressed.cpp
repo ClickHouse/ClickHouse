@@ -209,7 +209,7 @@ size_t ColumnUniqueFCBlockDF::getPosOfClosestHeader(StringRef value) const
 size_t ColumnUniqueFCBlockDF::getPosToInsert(StringRef value) const
 {
     size_t pos = getPosOfClosestHeader(value);
-    /// it's guranteed that this takes no more than block_size iterations
+    /// it's guaranteed that this takes no more than block_size iterations
     while (pos < data_column->size())
     {
         const String data = getDecompressedAt(pos);
