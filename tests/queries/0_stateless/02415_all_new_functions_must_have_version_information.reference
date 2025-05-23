@@ -114,14 +114,6 @@ arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayLastIndex
-arrayLevenshteinDistance
-arrayLevenshteinDistanceWeighted
-arrayRandomSample
-arrayRotateLeft
-arrayRotateRight
-arrayShiftLeft
-arrayShiftRight
-arraySimilarity
 arrayStringConcat
 ascii
 asin
@@ -131,8 +123,6 @@ atan
 atan2
 atanh
 bar
-base32Decode
-base32Encode
 base58Decode
 base58Encode
 basename
@@ -494,7 +484,6 @@ minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
 moduloOrNull
-moduloOrZero
 monthName
 mortonDecode
 mortonEncode
@@ -630,7 +619,6 @@ position
 positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
-positiveModuloOrNull
 pow
 printf
 proportionsZTest
@@ -1002,7 +990,6 @@ trimBoth
 trimLeft
 trimRight
 trunc
-tryBase32Decode
 tryBase58Decode
 tumble
 tumbleEnd
