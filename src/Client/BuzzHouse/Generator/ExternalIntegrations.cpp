@@ -62,9 +62,9 @@ bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
 
 void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, CreateTable & newt)
 {
-    const TableEngine & te = newt.engine();
+    TableEngine & te = const_cast<TableEngine &>(newt.engine());
 
-    if (rg.nextMediumNumber() < 91)
+    if (te.has_setting_values() && rg.nextSmallNumber() < 10)
     {
         /// Swap table settings
         const auto & allSettings = allTableSettings.at(te.engine());
@@ -92,6 +92,21 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                     }
                 }
             }
+        }
+    }
+    if (te.has_partition_by() && rg.nextSmallNumber() < 5)
+    {
+        te.clear_partition_by();
+    }
+    if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
+    {
+        if (rg.nextBool())
+        {
+            te.clear_primary_key();
+        }
+        else
+        {
+            te.clear_order();
         }
     }
 }
