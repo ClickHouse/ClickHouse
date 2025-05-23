@@ -112,8 +112,8 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect first flag");
 
     std::endian endian_to_read = little_endian ? std::endian::little : std::endian::big;
-    UInt32 geom_type;
 
+    UInt32 geom_type;
     readBinaryEndian(geom_type, in_buffer, endian_to_read);
 
     switch (static_cast<WKBGeometry>(geom_type))
