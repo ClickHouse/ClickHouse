@@ -167,9 +167,9 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (which.isDate32())
         return wrappedCreator<ColumnVector<Int32>>(creator, std::move(keys));
     if (which.isDateTime())
-        return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
+        return wrappedCreator<ColumnVector<UInt32>>(creator, std::move(keys));
     if (which.isTime())
-        return creator(static_cast<ColumnVector<Int32> *>(nullptr));
+        return wrappedCreator<ColumnVector<Int32>>(creator, std::move(keys));
     if (which.isUUID())
         return wrappedCreator<ColumnVector<UUID>>(creator, std::move(keys));
     if (which.isIPv4())
