@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
