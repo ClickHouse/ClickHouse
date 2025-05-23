@@ -1933,7 +1933,7 @@ try
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
             updateLevels(*config, logger());
-            global_context->setClustersConfig(config, has_zookeeper);
+
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
 
@@ -2088,6 +2088,7 @@ try
 
                 global_context->reloadQueryMaskingRulesIfChanged(config);
 
+                global_context->setClustersConfig(config, has_zookeeper);
                 if (global_context->isServerCompletelyStarted())
                 {
                     std::lock_guard lock(servers_lock);
