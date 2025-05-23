@@ -384,28 +384,39 @@ private:
         if (!column_string)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type {}. Expected String", nested_column->getName());
 
-        const auto * index_column = column.getIndexesPtr().get();
-
         auto check_is_null = [&](size_t idx) { return has_null && idx == dictionary.getNullValueIndex(); };
 
-        for (size_t i = 0, o = 0; i != input_rows_count; ++i, o += IPV6_BINARY_LENGTH)
+        auto process_indexes = [&](const auto& indexes)
         {
-            const auto idx = index_column->getUInt(i);
-            auto const is_null = check_is_null(idx);
-            if (is_null)
+            for (size_t i = 0, o = 0; i != input_rows_count; ++i, o += IPV6_BINARY_LENGTH)
             {
-                std::fill_n(&vec_res[o], IPV6_BINARY_LENGTH, 0);
-                if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
-                    (*vec_null_map_to)[i] = true;
-                continue;
-            }
+                const auto idx = indexes[i];
+                auto const is_null = check_is_null(idx);
+                if (is_null)
+                {
+                    std::fill_n(&vec_res[o], IPV6_BINARY_LENGTH, 0);
+                    if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
+                        (*vec_null_map_to)[i] = true;
+                    continue;
+                }
 
-            const auto & value = column_string->getDataAt(idx);
-            const char * src_value = reinterpret_cast<const char *>(value.data);
-            const auto src_value_size = value.size;
-            unsigned char * res_value = reinterpret_cast<unsigned char *>(&vec_res[o]);
-            detail::convertToIPv6Impl<exception_mode>(src_value, src_value_size, src_ipv4_buf, vec_res[o], res_value, [&](auto v){ (*vec_null_map_to)[i] = v;});
-        }
+                const auto & value = column_string->getDataAt(idx);
+                const char * src_value = reinterpret_cast<const char *>(value.data);
+                const auto src_value_size = value.size;
+                unsigned char * res_value = reinterpret_cast<unsigned char *>(&vec_res[o]);
+                detail::convertToIPv6Impl<exception_mode>(src_value, src_value_size, src_ipv4_buf, vec_res[o], res_value, [&](auto v){ (*vec_null_map_to)[i] = v;});
+            }
+        };
+
+        const auto * index_column = column.getIndexesPtr().get();
+        if (const auto * col8 = checkAndGetColumn<ColumnUInt8>(index_column))
+            process_indexes(col8->getData());
+        else if (const auto * col16 = checkAndGetColumn<ColumnUInt16>(index_column))
+            process_indexes(col16->getData());
+        else if (const auto * col32 = checkAndGetColumn<ColumnUInt32>(index_column))
+            process_indexes(col32->getData());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal index column type {}. Expected UInt8 or UInt16 or UInt32", index_column->getName());
 
         if (has_null && !col_res->isNullable())
             return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
@@ -618,26 +629,37 @@ private:
         if (!column_string)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type {}. Expected String", nested_column->getName());
 
-        const auto * index_column = column.getIndexesPtr().get();
-
         auto check_is_null = [&](size_t idx) { return has_null && idx == dictionary.getNullValueIndex(); };
 
-        for (size_t i = 0; i != input_rows_count; ++i)
+        auto process_indexes = [&](const auto& indexes)
         {
-            const auto idx = index_column->getUInt(i);
-            auto const is_null = check_is_null(idx);
-            if (is_null)
+            for (size_t i = 0; i != input_rows_count; ++i)
             {
-                vec_res[i] = 0;
-                if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
-                    (*vec_null_map_to)[i] = true;
-                continue;
-            }
+                const auto idx = indexes[i];
+                auto const is_null = check_is_null(idx);
+                if (is_null)
+                {
+                    vec_res[i] = 0;
+                    if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
+                        (*vec_null_map_to)[i] = true;
+                    continue;
+                }
 
-            const auto & value = column_string->getDataAt(idx);
-            const char * src_value = reinterpret_cast<const char *>(value.data);
-            convertToIPv4Impl<exception_mode>(src_value, vec_res[i], [&](auto v){ (*vec_null_map_to)[i] = v; });
-        }
+                const auto & value = column_string->getDataAt(idx);
+                const char * src_value = reinterpret_cast<const char *>(value.data);
+                convertToIPv4Impl<exception_mode>(src_value, vec_res[i], [&](auto v){ (*vec_null_map_to)[i] = v; });
+            }
+        };
+
+        const auto * index_column = column.getIndexesPtr().get();
+        if (const auto * col8 = checkAndGetColumn<ColumnUInt8>(index_column))
+            process_indexes(col8->getData());
+        else if (const auto * col16 = checkAndGetColumn<ColumnUInt16>(index_column))
+            process_indexes(col16->getData());
+        else if (const auto * col32 = checkAndGetColumn<ColumnUInt32>(index_column))
+            process_indexes(col32->getData());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal index column type {}. Expected UInt8 or UInt16 or UInt32", index_column->getName());
 
         if (has_null && !col_res->isNullable())
             return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
