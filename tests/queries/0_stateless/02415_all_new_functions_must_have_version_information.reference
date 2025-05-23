@@ -484,7 +484,6 @@ minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
 moduloOrNull
-moduloOrZero
 monthName
 mortonDecode
 mortonEncode
@@ -620,7 +619,6 @@ position
 positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
-positiveModuloOrNull
 pow
 printf
 proportionsZTest
