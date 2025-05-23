@@ -68,7 +68,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     if (te.has_setting_values() && rg.nextSmallNumber() < 10)
     {
         /// Swap table settings
-        const auto & allSettings = allTableSettings.at(te.engine());
+        const auto & allSettings = allTableSettings.at(teng);
         const auto & svs = te.setting_values();
 
         for (int i = 0; i < svs.other_values_size() + 1; i++)
@@ -122,6 +122,68 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
             = {TableEngineValues::StripeLog, TableEngineValues::Log, TableEngineValues::TinyLog};
 
         te.set_engine(rg.pickRandomly(logEngines));
+    }
+    if (newt.has_table_def())
+    {
+        const TableDef & def = newt.table_def();
+
+        for (int i = 0; i < def.other_defs_size() + 1; i++)
+        {
+            if (i == 0 || def.other_defs(i - 1).has_col_def())
+            {
+                ColumnDef & cdef = const_cast<ColumnDef &>(i == 0 ? def.col_def() : def.other_defs(i - 1).col_def());
+                TopTypeName & ttn = const_cast<TopTypeName &>(cdef.type().type());
+
+                if (cdef.has_codecs() && rg.nextBool())
+                {
+                    /// Clear codecs
+                    cdef.clear_codecs();
+                }
+                if (cdef.has_stats() && rg.nextBool())
+                {
+                    /// Clear statistics
+                    cdef.clear_stats();
+                }
+                /// Remove LowCardinality property
+                if (ttn.has_nullable_lcard() && rg.nextBool())
+                {
+                    ttn.set_allocated_nullable(ttn.release_nullable_lcard());
+                }
+                else if (ttn.has_non_nullable_lcard() && rg.nextBool())
+                {
+                    ttn.set_allocated_non_nullable(ttn.release_non_nullable_lcard());
+                }
+                if (cdef.has_setting_values())
+                {
+                    if (rg.nextBool())
+                    {
+                        /// Clear all settings, so far none changes behavior
+                        cdef.clear_setting_values();
+                    }
+                    else
+                    {
+                        const auto & allSettings = allTableSettings.at(teng);
+                        const auto & svs = cdef.setting_values();
+
+                        for (int j = 0; j < svs.other_values_size() + 1; j++)
+                        {
+                            SetValue & sv = const_cast<SetValue &>(j == 0 ? svs.set_value() : svs.other_values(j - 1));
+
+                            if (allSettings.find(sv.property()) != allSettings.end())
+                            {
+                                const CHSetting & chs = allSettings.at(sv.property());
+
+                                assert(!chs.changes_behavior);
+                                if (!chs.oracle_values.empty() && rg.nextSmallNumber() < 8)
+                                {
+                                    sv.set_value(rg.pickRandomly(chs.oracle_values));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
