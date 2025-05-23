@@ -500,7 +500,7 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
         settings.path.pop_back();
         return;
     }
-    
+
     const auto & variant_info = column_dynamic.getVariantInfo();
     const auto * variant_column = &column_dynamic.getVariantColumn();
 
