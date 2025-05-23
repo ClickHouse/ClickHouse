@@ -109,6 +109,9 @@ public:
     bool performQueryOnServerOrRemote(PeerTableDatabase pt, const String & query);
 
     ~ClickHouseIntegratedDatabase() override = default;
+
+private:
+    void swapTableDefinitions(RandomGenerator & rg, CreateTable & newt);
 };
 
 class MySQLIntegration : public ClickHouseIntegratedDatabase

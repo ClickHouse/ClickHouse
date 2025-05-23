@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 
 #include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#include <Client/BuzzHouse/Generator/RandomSettings.h>
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
@@ -59,6 +60,42 @@ bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
     return performQuery(fmt::format("DROP TABLE IF EXISTS {};", getTableName(t.db, t.tname)));
 }
 
+void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, CreateTable & newt)
+{
+    const TableEngine & te = newt.engine();
+
+    if (rg.nextMediumNumber() < 91)
+    {
+        /// Swap table settings
+        const auto & allSettings = allTableSettings.at(te.engine());
+        const auto & svs = te.setting_values();
+
+        for (int i = 0; i < svs.other_values_size() + 1; i++)
+        {
+            SetValue & sv = const_cast<SetValue &>(i == 0 ? svs.set_value() : svs.other_values(i - 1));
+
+            if (allSettings.find(sv.property()) != allSettings.end())
+            {
+                const CHSetting & chs = allSettings.at(sv.property());
+
+                if (!chs.changes_behavior && !chs.oracle_values.empty() && rg.nextSmallNumber() < 8)
+                {
+                    if (chs.oracle_values.size() == 2)
+                    {
+                        const String & fval = *chs.oracle_values.begin();
+
+                        sv.set_value(sv.value() == fval ? *std::next(chs.oracle_values.begin(), 1) : fval);
+                    }
+                    else
+                    {
+                        sv.set_value(rg.pickRandomly(chs.oracle_values));
+                    }
+                }
+            }
+        }
+    }
+}
+
 bool ClickHouseIntegratedDatabase::performCreatePeerTable(
     RandomGenerator & rg,
     const bool is_clickhouse_integration,
@@ -96,6 +133,10 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             if (t.db)
             {
                 t.db->setName(est.mutable_database());
+            }
+            if (rg.nextMediumNumber() < 91)
+            {
+                this->swapTableDefinitions(rg, newt);
             }
 
             CreateTableToString(buf, newt);
