@@ -305,18 +305,18 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     query.out_file = nullptr;
 }
 
-String readMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path)
+String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)
 {
-    auto read_buf = db_disk->readFile(file_path, getReadSettingsForMetadata());
+    auto read_buf = disk->readFile(file_path, getReadSettingsForMetadata());
     String content;
     readStringUntilEOF(content, *read_buf);
 
     return content;
 }
 
-void writeMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path, std::string_view content, bool fsync_metadata)
+void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, std::string_view content, bool fsync_metadata)
 {
-    auto out = db_disk->writeFile(file_path, content.size(), WriteMode::Rewrite, getWriteSettingsForMetadata());
+    auto out = disk->writeFile(file_path, content.size(), WriteMode::Rewrite, getWriteSettingsForMetadata());
     writeString(content, *out);
 
     out->next();
@@ -346,7 +346,9 @@ void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & 
 }
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext()), db_disk(context_->getDatabaseDisk()), log(getLogger(logger))
+    : IDatabase(name_)
+    , WithContext(context_->getGlobalContext())
+    , log(getLogger(logger))
 {
 }
 
