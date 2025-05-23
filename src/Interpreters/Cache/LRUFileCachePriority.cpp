@@ -508,6 +508,8 @@ void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CachePr
         cache_priority->log,
         "Incrementing size with {} in LRU queue for entry {}",
         size, entry->toString());
+    /// We recalculate `diff_size` (not using `size` for `cache_priority` update)
+    /// because if `use_read_cache_size = 1`, the actual size update could be different from `size` as a result of file size alignment.
     size_t prev_size = entry->getSize();
     entry->increaseSize(size);
     cache_priority->updateSize(entry->getSize() - prev_size);
@@ -524,8 +526,10 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
              size, entry->toString());
 
     chassert(size);
-    chassert(entry->getSize() >= size);
+    /// We recalculate `diff_size` (not using `size` for `cache_priority` update)
+    /// because if `use_read_cache_size = 1`, the actual size update could be different from `size` as a result of file size alignment.
     size_t prev_size = entry->getSize();
+    chassert(prev_size >= size);
     entry->decreaseSize(size);
     size_t diff_size = prev_size - entry->getSize();
     cache_priority->updateSize(-diff_size);
