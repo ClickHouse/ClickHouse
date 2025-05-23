@@ -1873,6 +1873,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
         chassert(main_priority->getSizeLimit(lockCache()) == actual_settings[FileCacheSetting::max_size]);
         chassert(main_priority->getElementsLimit(lockCache()) == actual_settings[FileCacheSetting::max_elements]);
+
+        assertCacheCorrectness();
     }
 
     if (new_settings[FileCacheSetting::max_file_segment_size] != actual_settings[FileCacheSetting::max_file_segment_size])
