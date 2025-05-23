@@ -26,6 +26,7 @@ enum class AccessType : uint8_t
                                          implicitly enabled with any grant on the column */\
     M(SHOW_DICTIONARIES, "", DICTIONARY, SHOW) /* allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary>;
                                                   implicitly enabled by any grant on the dictionary */\
+    M(SHOW_USER_DEFINED_TYPES, "", GLOBAL, SHOW) /* allows to execute SHOW TYPES, SHOW TYPE <type_name> */\
     M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, DESCRIBE */\
     M(SHOW_FILESYSTEM_CACHES, "", GROUP, ALL) \
     \

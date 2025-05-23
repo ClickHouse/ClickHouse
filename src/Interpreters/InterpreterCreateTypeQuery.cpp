@@ -22,6 +22,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <unordered_set>
+#include <Interpreters/DatabaseCatalog.h>
 
 namespace DB
 {
@@ -33,10 +34,10 @@ namespace ErrorCodes
     extern const int TYPE_ALREADY_EXISTS;
     extern const int UNKNOWN_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int BAD_ARGUMENTS; // For invalid type parameter usage
+    extern const int BAD_ARGUMENTS;
 }
 
-namespace // Anonymous namespace for helper functions
+namespace
 {
 
 void validateBaseTypeRecursive(
@@ -138,50 +139,45 @@ void validateBaseTypeRecursive(
     }
 }
 
-} // Anonymous namespace
+}
 
 
 BlockIO InterpreterCreateTypeQuery::execute()
 {
     const auto & create = query_ptr->as<ASTCreateTypeQuery &>();
     auto * log = &Poco::Logger::get("InterpreterCreateTypeQuery");
-    LOG_DEBUG(log, "Executing CREATE TYPE query for type '{}'", create.name);
-    
+
     auto current_context = getContext();
     current_context->checkAccess(AccessType::CREATE_TYPE);
+    
+    auto & udt_factory = UserDefinedTypeFactory::instance();
     
     String type_name = create.name;
     
     bool is_replace = create.or_replace;
     bool type_existed_before_replace = false;
 
-    if (UserDefinedTypeFactory::instance().isTypeRegistered(type_name, current_context))
+    if (udt_factory.isTypeRegistered(type_name, current_context))
     {
         type_existed_before_replace = true;
-        LOG_DEBUG(log, "Type '{}' already exists in UserDefinedTypeFactory", type_name);
         if (create.if_not_exists && !is_replace)
         {
-            LOG_DEBUG(log, "IF NOT EXISTS specified, skipping for type '{}'", type_name);
             return {};
         }
         if (is_replace)
         {
-            LOG_DEBUG(log, "OR REPLACE specified, will attempt to remove old type '{}' before registration", type_name);
+            // Will remove existing type before creating new one
         }
         else
         {
-            LOG_WARNING(log, "Type '{}' already exists and no OR REPLACE/IF NOT EXISTS, throwing exception", type_name);
             throw Exception(ErrorCodes::TYPE_ALREADY_EXISTS, "Type '{}' already exists", type_name);
         }
     }
 
     if (!create.base_type)
     {
-        LOG_WARNING(log, "Base type not specified for UDT '{}', throwing exception", type_name);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Base type not specified for user-defined type '{}'", type_name);
     }
-
-    LOG_DEBUG(log, "Base type AST provided for UDT '{}'", type_name);
 
     try
     {
@@ -207,7 +203,6 @@ BlockIO InterpreterCreateTypeQuery::execute()
         };
 
         validateBaseTypeRecursive(create.base_type, type_name, formal_param_names_set, DataTypeFactory::instance(), current_context, known_type_families_set);
-        LOG_DEBUG(log, "Base type validation successful for UDT '{}'", type_name);
     }
     catch (const Exception & e)
     {
@@ -219,27 +214,11 @@ BlockIO InterpreterCreateTypeQuery::execute()
     {
         try
         {
-            String delete_query_str = fmt::format("DELETE FROM system.user_defined_types WHERE name = {}", quoteString(type_name));
-            ContextMutablePtr delete_query_context = Context::createCopy(current_context);
-            executeQuery(delete_query_str, delete_query_context, QueryFlags{ .internal = true }, QueryProcessingStage::Complete);
-            LOG_DEBUG(log, "Successfully deleted old type '{}' from system.user_defined_types due to OR REPLACE", type_name);
-        }
-        catch (const Exception & e)
-        {
-            LOG_WARNING(log, "Failed to delete type '{}' from system.user_defined_types during OR REPLACE. Error: {}. Proceeding with registration.", type_name, e.what());
-        }
-    }
-
-    if (is_replace && type_existed_before_replace)
-    {
-        try
-        {
-            UserDefinedTypeFactory::instance().removeType(type_name);
-            LOG_DEBUG(log, "Removed existing type '{}' from in-memory factory due to OR REPLACE.", type_name);
+            udt_factory.removeType(current_context, type_name); 
         }
         catch (const DB::Exception & e)
         {
-            LOG_WARNING(log, "Problem removing type '{}' from in-memory factory during OR REPLACE: {}. This might happen if it was only in DB.", type_name, e.what());
+            LOG_WARNING(log, "Problem removing type '{}' during OR REPLACE: {}. Proceeding with registration.", type_name, e.what());
         }
     }
 
@@ -250,62 +229,59 @@ BlockIO InterpreterCreateTypeQuery::execute()
     String default_expression_str;
     
     if (create.input_expression)
-        input_expression_str = create.input_expression->as<ASTLiteral &>().value.safeGet<String>();
+    {
+        const auto * lit = create.input_expression->as<ASTLiteral>();
+        if (!lit) throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Input expression must be a string literal");
+        input_expression_str = lit->value.safeGet<String>();
+    }
     if (create.output_expression)
-        output_expression_str = create.output_expression->as<ASTLiteral &>().value.safeGet<String>();
+    {
+        const auto * lit = create.output_expression->as<ASTLiteral>();
+        if (!lit) throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Output expression must be a string literal");
+        output_expression_str = lit->value.safeGet<String>();
+    }
     if (create.default_expression)
-        default_expression_str = create.default_expression->as<ASTLiteral &>().value.safeGet<String>();
-    
-    UserDefinedTypeFactory::instance().registerType(
-        type_name,
-        create.base_type,
-        type_parameters_ast,
-        input_expression_str,
-        output_expression_str,
-        default_expression_str);
-    
-    LOG_DEBUG(log, "Type '{}' successfully registered in-memory.", type_name);
+    {
+        const auto * lit = create.default_expression->as<ASTLiteral>();
+        if (!lit) throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Default expression must be a string literal");
+        default_expression_str = lit->value.safeGet<String>();
+    }
 
+    WriteBufferFromOwnString query_text_buf;
+    IAST::FormatSettings format_settings_for_storage(true /*one_line*/, false /*hilite=off for storage*/); 
+    format_settings_for_storage.show_secrets = false;
+    query_ptr->format(query_text_buf, format_settings_for_storage);
+    String create_query_string = query_text_buf.str();
+    
     try
     {
-        String base_type_ast_string = UserDefinedTypeFactory::astToString(create.base_type);
-        String type_parameters_ast_string = type_parameters_ast ? UserDefinedTypeFactory::astToString(type_parameters_ast) : "";
-        
-        WriteBufferFromOwnString query_text_buf;
-        IAST::FormatSettings format_settings(true /*one_line*/, false /*hilite*/);
-        query_ptr->format(query_text_buf, format_settings);
-        String create_query_string = query_text_buf.str();
-
-        String insert_query_str = fmt::format(
-            "INSERT INTO system.user_defined_types (name, base_type_ast_string, type_parameters_ast_string, input_expression, output_expression, default_expression, create_query_string) VALUES ({}, {}, {}, {}, {}, {}, {})",
-            quoteString(type_name),
-            quoteString(base_type_ast_string),
-            type_parameters_ast_string.empty() ? "NULL" : quoteString(type_parameters_ast_string),
-            input_expression_str.empty() ? "NULL" : quoteString(input_expression_str),
-            output_expression_str.empty() ? "NULL" : quoteString(output_expression_str),
-            default_expression_str.empty() ? "NULL" : quoteString(default_expression_str),
-            quoteString(create_query_string)
-        );
-        
-        LOG_DEBUG(log, "Persisting UDT '{}'. Executing query: {}", type_name, insert_query_str);
-        ContextMutablePtr insert_query_context = Context::createCopy(current_context);
-        executeQuery(insert_query_str, insert_query_context, QueryFlags{ .internal = true }, QueryProcessingStage::Complete);
-        LOG_INFO(log, "Successfully persisted user-defined type '{}' to system.user_defined_types", type_name);
+        udt_factory.registerType(
+            current_context, 
+            type_name,
+            create.base_type,
+            type_parameters_ast,
+            input_expression_str,
+            output_expression_str,
+            default_expression_str,
+            create_query_string);
     }
     catch (const Exception & e)
     {
-        LOG_ERROR(log, "Failed to persist user-defined type '{}' to system table. Error: {}. Rolling back in-memory registration.", type_name, e.what());
-        try
+        LOG_ERROR(log, "Failed to register user-defined type '{}'. Error: {}", type_name, e.what());
+        if (udt_factory.isTypeRegistered(type_name, current_context))
         {
-            UserDefinedTypeFactory::instance().removeType(type_name);
+            try
+            {
+                udt_factory.removeType(current_context, type_name); 
+            }
+            catch (const DB::Exception & remove_e)
+            {
+                LOG_ERROR(log, "Failed to rollback in-memory registration for type '{}' after persistence error. Double error: {}", type_name, remove_e.what());
+            }
         }
-        catch (const Exception & remove_e)
-        {
-            LOG_ERROR(log, "Failed to rollback in-memory registration for type '{}' after persistence error. Double error: {}", type_name, remove_e.what());
-        }
-        throw;
+        throw; 
     }
-
+    
     return {};
 }
 

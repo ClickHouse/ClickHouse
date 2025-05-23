@@ -719,7 +719,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
-        const AccessFlags type_ddl = AccessType::CREATE_TYPE;
+        const AccessFlags type_ddl = AccessType::CREATE_TYPE | AccessType::DROP_TYPE;
         const AccessFlags workload_ddl = AccessType::CREATE_WORKLOAD | AccessType::DROP_WORKLOAD;
         const AccessFlags resource_ddl = AccessType::CREATE_RESOURCE | AccessType::DROP_RESOURCE;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;

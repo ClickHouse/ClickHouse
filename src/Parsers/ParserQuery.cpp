@@ -26,6 +26,8 @@
 #include <Parsers/ParserTransactionControl.h>
 #include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserShowTypesQuery.h>
+#include <Parsers/ParserShowTypeQuery.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
@@ -70,6 +72,8 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDropIndexQuery drop_index_p;
     ParserDropAccessEntityQuery drop_access_entity_p;
     ParserDropTypeQuery drop_type_p;
+    ParserShowTypesQuery show_types_p;
+    ParserShowTypeQuery show_type_p;
     ParserMoveAccessEntityQuery move_access_entity_p;
     ParserGrantQuery grant_p;
     ParserCheckGrantQuery check_grant_p;
@@ -103,6 +107,8 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || drop_index_p.parse(pos, node, expected)
         || drop_access_entity_p.parse(pos, node, expected)
         || drop_type_p.parse(pos, node, expected)
+        || show_types_p.parse(pos, node, expected)
+        || show_type_p.parse(pos, node, expected)
         || move_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
         || check_grant_p.parse(pos, node, expected)
