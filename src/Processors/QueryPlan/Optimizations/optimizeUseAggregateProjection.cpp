@@ -709,7 +709,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     }
 
     QueryPlanStepPtr projection_reading;
-    bool no_parent_parts;
+    bool has_parent_parts;
     String selected_projection_name;
     if (best_candidate)
         selected_projection_name = best_candidate->projection->name;
@@ -719,7 +719,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     {
         Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(candidates.minmax_projection->block)));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-        no_parent_parts = true;
+        has_parent_parts = false;
     }
     else if (best_candidate == nullptr)
     {
@@ -747,8 +747,8 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
 
         selected_projection_name = EXACT_COUNT_PROJECTION_NAME;
-        no_parent_parts = inexact_ranges_select_result->parts_with_ranges.empty();
-        if (!no_parent_parts)
+        has_parent_parts = !inexact_ranges_select_result->parts_with_ranges.empty();
+        if (has_parent_parts)
             reading->setAnalyzedResult(std::move(inexact_ranges_select_result));
     }
     else
@@ -782,7 +782,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
 
         /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
         filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
-        no_parent_parts = parent_reading_select_result->parts_with_ranges.empty();
+        has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
     }
 
     if (!query_info.is_internal && context->hasQueryContext())
@@ -824,16 +824,16 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         aggregate_projection_node = &projection_reading_node;
     }
 
-    if (no_parent_parts)
+    if (has_parent_parts)
+    {
+        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputHeader());
+        node.children.push_back(aggregate_projection_node);
+    }
+    else
     {
         /// All parts are taken from projection
         aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputHeader());
         node.children.front() = aggregate_projection_node;
-    }
-    else
-    {
-        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputHeader());
-        node.children.push_back(aggregate_projection_node);
     }
 
     return selected_projection_name;

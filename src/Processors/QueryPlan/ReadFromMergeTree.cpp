@@ -2760,7 +2760,7 @@ void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) co
 
         for (const auto & stat : projection_stats)
         {
-            format_settings.out << prefix << indent << indent << "Name: " << stat.name << '\n';
+            format_settings.out << prefix << indent << "Name: " << stat.name << '\n';
 
             if (!stat.description.empty())
                 format_settings.out << prefix << indent << indent << "Description: " << stat.description << '\n';
