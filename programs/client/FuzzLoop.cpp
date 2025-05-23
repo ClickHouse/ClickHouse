@@ -502,15 +502,13 @@ bool Client::processBuzzHouseQuery(const String & full_query)
         // Also discard the exception that we now know to be non-fatal,
         // so that it doesn't influence the exit code.
         const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
-        const bool found_disallowed_code
-            = exception && fuzz_config->disallowed_error_codes.find(exception->code()) != fuzz_config->disallowed_error_codes.end();
+        const int error_code = exception ? exception->code() : 0;
 
         server_exception.reset();
         client_exception.reset();
-        if (found_disallowed_code)
+        if (error_code > 0 && fuzz_config->disallowed_error_codes.find(error_code) != fuzz_config->disallowed_error_codes.end())
         {
-            throw Exception(
-                ErrorCodes::BUZZHOUSE, "Found disallowed error code {} - {}", exception->code(), ErrorCodes::getName(exception->code()));
+            throw Exception(ErrorCodes::BUZZHOUSE, "Found disallowed error code {} - {}", error_code, ErrorCodes::getName(error_code));
         }
     }
     return server_up;
