@@ -20,6 +20,7 @@ namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool optimize_use_projection_filtering;
 }
 }
 
@@ -208,6 +209,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         return true;
     };
 
+    bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
     if (query.dag)
@@ -218,7 +220,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         if (!has_all_required_columns(projection))
         {
             /// Check if projection can be used to filter parts
-            if (query.filter_node)
+            if (query.filter_node && optimize_use_projection_filtering)
             {
                 filterPartsUsingProjection(
                     *projection, reader, empty_mutations_snapshot, *parent_reading_select_result, projection_query_info, context);
@@ -313,14 +315,15 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     auto storage_snapshot = reading->getStorageSnapshot();
     auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
-    auto query_info_copy = query_info;
+
+    /// Enables PREWHERE on projections to improve read efficiency and leverage query condition cache.
     if (query.dag && query.filter_node)
     {
-        query_info_copy.prewhere_info = std::make_shared<PrewhereInfo>();
-        query_info_copy.prewhere_info->need_filter = true;
-        query_info_copy.prewhere_info->remove_prewhere_column = true;
-        query_info_copy.prewhere_info->prewhere_actions = std::move(*query.dag);
-        query_info_copy.prewhere_info->prewhere_column_name = query.filter_node->result_name;
+        projection_query_info.prewhere_info = std::make_shared<PrewhereInfo>();
+        projection_query_info.prewhere_info->need_filter = true;
+        projection_query_info.prewhere_info->remove_prewhere_column = true;
+        projection_query_info.prewhere_info->prewhere_actions = std::move(*query.dag);
+        projection_query_info.prewhere_info->prewhere_column_name = query.filter_node->result_name;
     }
 
     auto projection_reading = reader.readFromParts(
@@ -328,7 +331,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         reading->getMutationsSnapshot()->cloneEmpty(),
         required_columns,
         proj_snapshot,
-        query_info_copy,
+        projection_query_info,
         context,
         reading->getMaxBlockSize(),
         reading->getNumStreams(),
@@ -339,17 +342,17 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     if (!projection_reading)
     {
         Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(required_columns)));
-        if (query_info_copy.prewhere_info)
+        if (projection_query_info.prewhere_info)
         {
-            auto filter_actions = std::make_shared<ExpressionActions>(std::move(query_info_copy.prewhere_info->prewhere_actions));
+            auto filter_actions = std::make_shared<ExpressionActions>(std::move(projection_query_info.prewhere_info->prewhere_actions));
             pipe.addSimpleTransform(
                 [&](const Block & header)
                 {
                     return std::make_shared<FilterTransform>(
                         header,
                         filter_actions,
-                        query_info_copy.prewhere_info->prewhere_column_name,
-                        query_info_copy.prewhere_info->remove_prewhere_column);
+                        projection_query_info.prewhere_info->prewhere_column_name,
+                        projection_query_info.prewhere_info->remove_prewhere_column);
                 });
         }
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));

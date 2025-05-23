@@ -5,6 +5,7 @@
 
 set enable_analyzer = 1;
 set enable_parallel_replicas = 0;
+set optimize_use_projection_filtering = 1;
 
 drop table if exists t;
 
