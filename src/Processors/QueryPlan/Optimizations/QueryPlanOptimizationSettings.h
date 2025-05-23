@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -54,6 +55,7 @@ struct QueryPlanOptimizationSettings
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
+    bool merge_filter_into_join_condition;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -67,7 +69,8 @@ struct QueryPlanOptimizationSettings
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;
     bool optimize_projection;
-    bool use_query_condition_cache = false;
+    bool use_query_condition_cache;
+    bool query_condition_cache_store_conditions_as_plaintext;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -85,7 +88,8 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     size_t max_limit_for_lazy_materialization = 0;
 
-    size_t max_limit_for_ann_queries;
+    VectorSearchFilterStrategy vector_search_filter_strategy;
+    size_t max_limit_for_vector_search_queries;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 
@@ -96,6 +100,8 @@ struct QueryPlanOptimizationSettings
     /// This is needed for conversion JoinLogical -> Join
 
     UInt64 max_entries_for_hash_table_stats;
+    UInt64 max_size_to_preallocate_for_joins;
+    bool collect_hash_table_stats_during_joins;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout;
     ExpressionActionsSettings actions_settings;

@@ -398,6 +398,6 @@ REGISTER_FUNCTION(CompareSubstrings)
              1. │                        0 │
                 └──────────────────────────┘
                 )"}},
-        .category{"String"}});
+        .category = FunctionDocumentation::Category::String});
 }
 }

@@ -5,8 +5,11 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+
 namespace DB
 {
+
+class VectorSimilarityIndexCache;
 
 class MergeTreeIndexReader
 {
@@ -21,7 +24,8 @@ public:
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         MergeTreeReaderSettings settings_);
 
-    MergeTreeIndexGranulePtr read(size_t mark);
+    void read(size_t mark, MergeTreeIndexGranulePtr & granule);
+    void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
 
 private:
     MergeTreeIndexPtr index;

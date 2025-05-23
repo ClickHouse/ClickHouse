@@ -50,6 +50,9 @@ void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerExtremesStep(QueryPlanStepRegistry & registry);
 void registerJoinStep(QueryPlanStepRegistry & registry);
 
+void registerReadFromTableStep(QueryPlanStepRegistry & registry);
+void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
+
 void QueryPlanStepRegistry::registerPlanSteps()
 {
     QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
@@ -67,6 +70,9 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerTotalsHavingStep(registry);
     registerExtremesStep(registry);
     registerJoinStep(registry);
+
+    registerReadFromTableStep(registry);
+    registerReadFromTableFunctionStep(registry);
 }
 
 }

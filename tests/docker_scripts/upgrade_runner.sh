@@ -142,7 +142,7 @@ IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM 
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
   save_settings_clean 'new_settings.native'
-  save_merge_tree_settings_clean 'new_merge_tree_settings.native'
+  save_mergetree_settings_clean 'new_merge_tree_settings.native'
   clickhouse-local -nmq "
   CREATE TABLE old_settings AS file('old_settings.native');
   CREATE TABLE old_merge_tree_settings AS file('old_merge_tree_settings.native');
@@ -161,7 +161,7 @@ then
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Core'
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Session'
       )
       WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))
@@ -197,7 +197,7 @@ then
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Core'
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Session'
       )
       WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))

@@ -479,7 +479,9 @@ def test_force_filesystem_cache_on_merges(cluster):
         )
         assert r_cache_count_2 == r_cache_count
 
-        assert node.query("select current_size from system.filesystem_cache_settings where cache_name = 'force_cache_on_merges'") == node.query("select sum(downloaded_size) from system.filesystem_cache")
+        assert node.query(
+            "select current_size from system.filesystem_cache_settings where cache_name = 'force_cache_on_merges'"
+        ) == node.query("select sum(downloaded_size) from system.filesystem_cache")
 
         node.query("SYSTEM DROP FILESYSTEM CACHE")
         node.query("OPTIMIZE TABLE test FINAL")
@@ -644,6 +646,7 @@ INSERT INTO test SELECT randomString(200);
         time.sleep(1)
     assert elements <= expected
 
+
 cache_dynamic_resize_config = """
 <clickhouse>
     <storage_configuration>
@@ -661,6 +664,16 @@ cache_dynamic_resize_config = """
                 <boundary_alignment>10</boundary_alignment>
                 <path>./cache_dynamic_reload/</path>
             </cache_dynamic_resize>
+            <cache_dynamic_resize_disabled>
+                <type>cache</type>
+                <disk>hdd_blob</disk>
+                <max_size>{}</max_size>
+                <max_elements>{}</max_elements>
+                <max_file_segment_size>10</max_file_segment_size>
+                <boundary_alignment>10</boundary_alignment>
+                <allow_dynamic_cache_resize>0</allow_dynamic_cache_resize>
+                <path>./cache_dynamic_reload_disabled/</path>
+            </cache_dynamic_resize_disabled>
         </disks>
     </storage_configuration>
     <filesystem_cache_log>
@@ -669,6 +682,7 @@ cache_dynamic_resize_config = """
     </filesystem_cache_log>
 </clickhouse>
 """
+
 
 def test_dynamic_resize(cluster):
     node = cluster.instances["cache_dynamic_resize"]
@@ -692,25 +706,32 @@ SELECT * FROM test;
     )
 
     def get_downloaded_size():
-        return int(node.query(
-            f"SELECT sum(downloaded_size) FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
-        ))
+        return int(
+            node.query(
+                f"SELECT sum(downloaded_size) FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+            )
+        )
 
     def get_queue_size():
-        return int(node.query(
-            f"SELECT current_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-        ))
+        return int(
+            node.query(
+                f"SELECT current_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
+            )
+        )
 
     def get_downloaded_elements():
-        return int(node.query(
-            f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
-        ))
+        return int(
+            node.query(
+                f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+            )
+        )
 
     def get_queue_elements():
-        return int(node.query(
-            f"SELECT current_elements_num FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-        ))
-
+        return int(
+            node.query(
+                f"SELECT current_elements_num FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
+            )
+        )
 
     size = get_downloaded_size()
     assert size > 100
@@ -720,9 +741,11 @@ SELECT * FROM test;
     assert elements > 10
     assert elements == get_queue_elements()
 
-    default_config = cache_dynamic_resize_config.format(100000, 100)
-    new_config = cache_dynamic_resize_config.format(100000, 10)
-    node.replace_config("/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", new_config)
+    default_config = cache_dynamic_resize_config.format(100000, 100, 100000, 100)
+    new_config = cache_dynamic_resize_config.format(100000, 10, 100000, 100)
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", new_config
+    )
 
     node.query("SYSTEM RELOAD CONFIG")
 
@@ -731,20 +754,26 @@ SELECT * FROM test;
 
     node.query(f"SYSTEM ENABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
 
-    new_config = cache_dynamic_resize_config.format(100000, 5)
-    node.replace_config("/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", new_config)
+    new_config = cache_dynamic_resize_config.format(100000, 5, 100000, 100)
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", new_config
+    )
 
     node.query("SYSTEM RELOAD CONFIG")
 
     assert 10 == get_queue_elements()
     assert 10 == get_downloaded_elements()
 
-    assert 100000 == int(node.query(
-        f"SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))
-    assert 10 == int(node.query(
-        f"SELECT max_elements FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))
+    assert 100000 == int(
+        node.query(
+            f"SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
+        )
+    )
+    assert 10 == int(
+        node.query(
+            f"SELECT max_elements FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
+        )
+    )
 
     node.query(f"SYSTEM DISABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
     node.query("SYSTEM RELOAD CONFIG")
@@ -752,22 +781,32 @@ SELECT * FROM test;
     assert 5 == get_downloaded_elements()
     assert 5 == get_queue_elements()
 
-    assert 100000 == int(node.query(
-        f"SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))
-    assert 5 == int(node.query(
-        f"SELECT max_elements FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))
+    assert 100000 == int(
+        node.query(
+            f"SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
+        )
+    )
+    assert 5 == int(
+        node.query(
+            f"SELECT max_elements FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
+        )
+    )
 
-    node.replace_config("/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", default_config)
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", default_config
+    )
     node.query("SYSTEM RELOAD CONFIG")
 
-    assert 100000 == int(node.query(
-        f"SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))
-    assert 100 == int(node.query(
-        f"SELECT max_elements FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))
+    assert 100000 == int(
+        node.query(
+            f"SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
+        )
+    )
+    assert 100 == int(
+        node.query(
+            f"SELECT max_elements FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
+        )
+    )
 
 
 def test_filesystem_cache_log(cluster):
@@ -799,7 +838,11 @@ INSERT INTO test SELECT 1, 'test';
     )
 
     node.query("SYSTEM FLUSH LOGS")
-    assert 0 == int(node.query(f"SELECT count() FROM system.filesystem_cache_log WHERE query_id = '{query_id}'"))
+    assert 0 == int(
+        node.query(
+            f"SELECT count() FROM system.filesystem_cache_log WHERE query_id = '{query_id}'"
+        )
+    )
 
     query_id = "system_filesystem_cache_log_2"
     node.query(
@@ -808,4 +851,88 @@ INSERT INTO test SELECT 1, 'test';
     )
 
     node.query("SYSTEM FLUSH LOGS")
-    assert 0 < int(node.query(f"SELECT count() FROM system.filesystem_cache_log WHERE query_id = '{query_id}'"))
+    assert 0 < int(
+        node.query(
+            f"SELECT count() FROM system.filesystem_cache_log WHERE query_id = '{query_id}'"
+        )
+    )
+
+
+def test_dynamic_resize_disabled(cluster):
+    node = cluster.instances["cache_dynamic_resize"]
+    max_elements = 20
+    cache_name = "cache_dynamic_resize_disabled"
+    node.query(
+        f"""
+DROP TABLE IF EXISTS test;
+SYSTEM DROP FILESYSTEM CACHE;
+CREATE TABLE test (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760;
+    """
+    )
+
+    node.query(
+        """
+INSERT INTO test SELECT randomString(200);
+SELECT * FROM test;
+    """
+    )
+
+    def get_downloaded_size():
+        return int(
+            node.query(
+                f"SELECT sum(downloaded_size) FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+            )
+        )
+
+    def get_downloaded_elements():
+        return int(
+            node.query(
+                f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+            )
+        )
+
+    size = get_downloaded_size()
+    assert size > 100
+
+    elements = get_downloaded_elements()
+    assert elements > 10
+
+    default_config = cache_dynamic_resize_config.format(100000, 100, 100000, 100)
+    new_config = cache_dynamic_resize_config.format(100000, 100, 100000, 10)
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", new_config
+    )
+
+    node.query("SYSTEM RELOAD CONFIG")
+
+    assert size == get_downloaded_size()
+    assert elements == get_downloaded_elements()
+
+    assert node.contains_in_log(
+        f"FileCache({cache_name}): Filesystem cache size was modified, but dynamic cache resize is disabled"
+    )
+    # Return config back to initial state.
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", default_config
+    )
+
+
+def test_max_size_ratio(cluster):
+    node = cluster.instances["node"]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test SYNC;
+        CREATE TABLE test (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'test_max_size_ratio',
+            path = 'test_max_size_ratio/',
+            max_size_ratio_to_total_space=0.7,
+            disk = 'hdd_blob');
+        """
+    )
+    assert node.contains_in_log("Using max_size as ratio 0.7 to total disk space")

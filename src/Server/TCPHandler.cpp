@@ -33,6 +33,7 @@
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -59,10 +60,12 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 #if USE_SSL
-#   include <Poco/Net/SecureStreamSocket.h>
-#   include <Poco/Net/SecureStreamSocketImpl.h>
+#    include <Poco/Net/SecureStreamSocket.h>
+#    include <Poco/Net/SecureStreamSocketImpl.h>
+#    include <Common/Crypto/X509Certificate.h>
 #endif
 
 #include <Core/Protocol.h>
@@ -122,6 +125,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
+    extern const ServerSettingsBool process_query_plan_packet;
 }
 }
 
@@ -161,6 +165,7 @@ namespace DB::ErrorCodes
     extern const int UNKNOWN_PROTOCOL;
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
+    extern const int INCORRECT_DATA;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -543,6 +548,22 @@ void TCPHandler::runImpl()
             if (!is_interserver_mode)
                 session->checkIfUserIsStillValid();
 
+            if (query_state->stage == QueryProcessingStage::QueryPlan)
+            {
+                if (!session->globalContext()->getServerSettings()[ServerSetting::process_query_plan_packet])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Reading of QueryPlan packet is disabled. "
+                        "Enable process_query_plan_packet in server config or disable serialize_query_plan setting.");
+
+                query_state->query_context->setQueryPlanDeserializationCallback([&query_state]()
+                {
+                    if (!query_state->plan_and_sets)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Expected query plan packet for QueryPlan stage");
+
+                    return query_state->plan_and_sets;
+                });
+            }
+
             query_state->query_context->setExternalTablesInitializer([this, &query_state] (ContextPtr context)
             {
                 if (context != query_state->query_context)
@@ -757,7 +778,7 @@ void TCPHandler::runImpl()
         }
         catch (...)
         {
-            exception = std::make_unique<DB::Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+            exception = std::make_unique<DB::Exception>(getCurrentExceptionMessageAndPattern(false), ErrorCodes::UNKNOWN_EXCEPTION);
         }
 
         if (exception)
@@ -831,7 +852,7 @@ void TCPHandler::runImpl()
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
 
-                LOG_TEST(log, "Logs and exception has been sent. The connection is preserved.");
+                LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
             }
             catch (...)
             {
@@ -948,7 +969,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     while (!server.isCancelled() && tcp_server.isOpen())
     {
-        if (!in->poll(timeout_us))
+        while (!in->poll(timeout_us))
         {
             size_t elapsed = size_t(watch.elapsedSeconds());
             if (elapsed > size_t(receive_timeout.totalSeconds()))
@@ -988,6 +1009,9 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                     state.read_all_data = true;
                 return !empty_block;
             }
+
+            case Protocol::Client::QueryPlan:
+                return receiveQueryPlan(state);
 
             case Protocol::Client::Ping:
                 writeVarUInt(Protocol::Server::Pong, *out);
@@ -1722,7 +1746,7 @@ void TCPHandler::receiveHello()
             try
             {
                 session->authenticate(
-                    SSLCertificateCredentials{user, extractSSLCertificateSubjects(secure_socket.peerCertificate())},
+                    SSLCertificateCredentials{user, X509Certificate(secure_socket.peerCertificate()).extractAllSubjects()},
                     getClientAddress(client_info));
                 return;
             }
@@ -1882,6 +1906,11 @@ void TCPHandler::sendHello()
             Settings::writeEmpty(*out); // send empty list of setting changes
         else
             session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    }
+
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
+    {
+        writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, *out);
     }
 
     out->next();
@@ -2222,6 +2251,21 @@ void TCPHandler::processUnexpectedQuery()
         skip_settings.read(*in, settings_format);
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
+}
+
+bool TCPHandler::receiveQueryPlan(QueryState & state)
+{
+    bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
+    auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
+
+    auto plan_and_sets = QueryPlan::deserialize(*in, context);
+    LOG_TRACE(log, "Received query plan");
+
+    if (!state.skipping_data && unexpected_packet)
+        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
+
+    state.plan_and_sets = std::make_shared<QueryPlanAndSets>(std::move(plan_and_sets));
+    return true;
 }
 
 bool TCPHandler::processData(QueryState & state, bool scalar)

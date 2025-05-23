@@ -892,7 +892,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 
 Returns the array \[1, 2, 3, ..., length (arr) \]
 
-This function is normally used with ARRAY JOIN. It allows counting something just once for each array after applying ARRAY JOIN. Example:
+This function is normally used with `ARRAY JOIN`. It allows counting something just once for each array after applying `ARRAY JOIN`. Example:
 
 ```sql
 SELECT
@@ -2624,7 +2624,7 @@ Note that the `arrayLastIndex` is a [higher-order function](/sql-reference/funct
 
 Returns the minimum of elements in the source array.
 
-If the `func` function is specified, returns the mininum of elements converted by this function.
+If the `func` function is specified, returns the minimum of elements converted by this function.
 
 Note that the `arrayMin` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
