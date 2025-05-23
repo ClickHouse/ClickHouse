@@ -65,7 +65,7 @@ DEFAULT_SCHEMA = Schema(
     ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse_hms/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-hms/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -98,7 +98,7 @@ def create_table(
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location=f"s3a://warehouse_hms/data",
+        location=f"s3a://warehouse-hms/data",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
@@ -120,7 +120,7 @@ def create_clickhouse_iceberg_database(
     settings = {
         "catalog_type": "hive",
         "warehouse": "demo",
-        "storage_endpoint": "http://minio:9000/warehouse_hms",
+        "storage_endpoint": "http://minio:9000/warehouse-hms",
     }
 
     settings.update(additional_settings)
