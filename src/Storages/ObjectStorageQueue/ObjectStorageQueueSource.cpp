@@ -712,6 +712,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     ProcessingProgressPtr progress_,
     const ReadFromFormatInfo & read_from_format_info_,
     const std::optional<FormatSettings> & format_settings_,
+    FormatParserGroupPtr parser_group_,
     const CommitSettings & commit_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
@@ -732,6 +733,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , progress(progress_)
     , read_from_format_info(read_from_format_info_)
     , format_settings(format_settings_)
+    , parser_group(std::move(parser_group_))
     , commit_settings(commit_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
@@ -855,12 +857,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 object_storage,
                 read_from_format_info,
                 format_settings,
-                nullptr,
                 context,
                 nullptr,
                 log,
                 max_block_size,
-                context->getSettingsRef()[Setting::max_parsing_threads].value,
+                parser_group,
                 /* need_only_count */ false);
 
             if (!reader)

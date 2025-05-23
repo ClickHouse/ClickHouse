@@ -51,7 +51,7 @@ FileLogSource::~FileLogSource()
     try
     {
         if (!finished)
-            onFinish();
+            close();
     }
     catch (...)
     {
@@ -59,7 +59,7 @@ FileLogSource::~FileLogSource()
     }
 }
 
-void FileLogSource::onFinish()
+void FileLogSource::close()
 {
     storage.closeFilesAndStoreMeta(start, end);
     storage.reduceStreams();
@@ -73,9 +73,9 @@ Chunk FileLogSource::generate()
 
     if (!consumer || consumer->noRecords())
     {
-        /// There is no onFinish for ISource, we call it
+        /// There is no close for ISource, we call it
         /// when no records return to close files
-        onFinish();
+        close();
         return {};
     }
 
@@ -83,7 +83,7 @@ Chunk FileLogSource::generate()
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
+        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, FormatParserGroup::singleThreaded(context->getSettingsRef()));
 
     std::optional<String> exception_message;
     size_t total_rows = 0;
@@ -160,7 +160,7 @@ Chunk FileLogSource::generate()
 
     if (total_rows == 0)
     {
-        onFinish();
+        close();
         return {};
     }
 

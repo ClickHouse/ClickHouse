@@ -5,9 +5,10 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatParserGroup.h>
 #include <IO/Archives/IArchiveReader.h>
-#include <Processors/SourceWithKeyCondition.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/ISource.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -203,7 +204,7 @@ private:
     bool distributed_processing = false;
 };
 
-class StorageFileSource : public SourceWithKeyCondition, WithContext
+class StorageFileSource : public ISource, WithContext
 {
 public:
     class FilesIterator : WithContext
@@ -254,7 +255,8 @@ private:
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
-        bool need_only_count_);
+        bool need_only_count_,
+        FormatParserGroupPtr);
 
 
     /**
@@ -270,11 +272,11 @@ private:
         return storage->getName();
     }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
-
     bool tryGetCountFromCache(const struct stat & file_stat);
 
     Chunk generate() override;
+
+    void onFinish() override { parser_group->finishStream(); }
 
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
@@ -292,6 +294,7 @@ private:
     InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
+    FormatParserGroupPtr parser_group;
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;

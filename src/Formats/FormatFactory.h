@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatParserGroup.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ParallelReadBuffer.h>
@@ -47,6 +48,8 @@ using RowOutputFormatPtr = std::shared_ptr<IRowOutputFormat>;
 
 template <typename Allocator>
 struct Memory;
+
+struct FormatParserGroup;
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
@@ -97,8 +100,7 @@ private:
         const FormatSettings & settings,
         const ReadSettings & read_settings,
         bool is_remote_fs,
-        size_t max_download_threads,
-        size_t max_parsing_threads)>;
+        FormatParserGroupPtr parser_group)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
@@ -164,8 +166,7 @@ public:
         const ContextPtr & context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
-        std::optional<size_t> max_parsing_threads = std::nullopt,
-        std::optional<size_t> max_download_threads = std::nullopt,
+        std::shared_ptr<FormatParserGroup> parser_group = nullptr,
         // affects things like buffer sizes and parallel reading
         bool is_remote_fs = false,
         // allows to do: buf -> parallel read -> decompression,
@@ -282,7 +283,7 @@ private:
         const FormatSettings & format_settings,
         const Settings & settings,
         bool is_remote_fs,
-        size_t max_download_threads) const;
+        const FormatParserGroupPtr & parser_group) const;
 };
 
 }
