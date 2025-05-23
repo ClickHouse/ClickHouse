@@ -12,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
 }
 
@@ -39,13 +38,13 @@ public:
     ColumnPtr getNestedColumn() const override;
     ColumnPtr getNestedNotNullableColumn() const override { return getDecompressedAll(); }
     bool nestedColumnIsNullable() const override { return is_nullable; }
-    
+
     /// Afterwards users must reindex
     void nestedToNullable() override;
 
     /// Afterwards users must reindex
     void nestedRemoveNullable() override;
-    
+
     bool nestedCanBeInsideNullable() const override { return true; }
 
     size_t size() const override { return data_column->size(); }
@@ -116,21 +115,21 @@ public:
     size_t allocatedBytes() const override;
 
     void forEachSubcolumn(IColumn::ColumnCallback callback) const override
-    { 
-        callback(data_column); 
+    {
+        callback(data_column);
         callback(common_prefix_lengths);
     }
 
-    void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override 
-    { 
+    void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
+    {
         callback(data_column);
         callback(common_prefix_lengths);
     }
 
     void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override
-    { 
+    {
         callback(*data_column);
-        callback(*common_prefix_lengths); 
+        callback(*common_prefix_lengths);
     }
 
     void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
@@ -201,7 +200,7 @@ private:
     /// Returns a string column containing all the decompressed values
     MutableColumnPtr getDecompressedAll() const;
 
-    /// Inserts data from `to_insert` into `column_to_modify`. Stores sorted version of `column_to_modify` in `sorted_column` and returns 
+    /// Inserts data from `to_insert` into `column_to_modify`. Stores sorted version of `column_to_modify` in `sorted_column` and returns
     /// a column containing the permutation of data initially in `column_to_mofiy`. This data is `old_indexes_mapping` itself.
     /// This method provides an optimized way to calculate `old_indexes_mapping` during inserts
     MutableColumnPtr prepareForInsert(const MutableColumnPtr & column_to_modify, const ColumnPtr & to_insert, ColumnPtr & sorted_column);

@@ -6716,10 +6716,10 @@ Trigger processor to spill data into external storage adpatively. grace join is 
     DECLARE(String, low_cardinality_experimental_compression, "", R"(
 Allows to select compression type inside of dictionaries in LowCardinality.
 The compression is applied only if the nested type is String or Nullable(String).
-It's aimed to enhance LowCardinality performance in case of moderate or high number of unique strings. 
-    
+It's aimed to enhance LowCardinality performance in case of moderate or high number of unique strings.
+
 Possible values:
-    
+
 - "" — The dictionaries are not compressed.
 - "fcblockdf" — The dictionaries are compressed using the Front Coding Block Difference to First algorithm.
 )", EXPERIMENTAL) \

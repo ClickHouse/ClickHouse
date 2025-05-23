@@ -13,6 +13,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
@@ -27,7 +33,7 @@ const ColumnString * getAndCheckColumnString(const IColumn * column)
     {
         ptr = typeid_cast<const ColumnString *>(column);
     }
-    
+
     if (!ptr)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnString, got {}", column->getName());
@@ -375,7 +381,7 @@ MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & sr
             }
         }
     }
-    else 
+    else
     {
         for (size_t i = start; i < start + length; ++i)
         {
@@ -393,7 +399,7 @@ size_t ColumnUniqueFCBlockDF::uniqueInsertData(const char * pos, size_t length)
     const size_t output = getPosToInsert(StringRef{pos, length});
     auto single_value_column = ColumnString::create();
     single_value_column->insertData(pos, length);
-    
+
     ColumnPtr sorted_column;
     old_indexes_mapping = prepareForInsert(getDecompressedAll(), std::move(single_value_column), sorted_column);
     calculateCompression(sorted_column);
@@ -484,7 +490,7 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
             {
                 indexes_data[i] = getNullValueIndex();
             }
-            else 
+            else
             {
                 const StringRef data = src.getDataAt(i);
                 const auto pos = getOrFindValueIndex(data);
@@ -787,7 +793,7 @@ MutableColumnPtr ColumnUniqueFCBlockDF::detachChangedIndexes()
 MutableColumnPtr ColumnUniqueFCBlockDF::prepareForInsert(const MutableColumnPtr & column_to_modify, const ColumnPtr & to_insert, ColumnPtr & sorted_column)
 {
     const size_t initial_size = column_to_modify->size();
-    
+
     IColumn::Permutation sorted_permutation;
     column_to_modify->insertRangeFrom(*to_insert, 0, to_insert->size());
     column_to_modify->getPermutation(
@@ -803,7 +809,7 @@ MutableColumnPtr ColumnUniqueFCBlockDF::prepareForInsert(const MutableColumnPtr 
     {
         map.insert({sorted_column->getDataAt(i), map.size()});
     }
-    
+
     const size_t special_values = specialValuesCount();
     const auto get_column_of_type = [&](auto type)
     {

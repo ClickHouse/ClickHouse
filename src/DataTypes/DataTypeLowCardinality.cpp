@@ -82,7 +82,7 @@ namespace
     enum class ColumnUniqueCompressionType
     {
         NONE,
-        FRONT_CODING_BLOCK_DF, 
+        FRONT_CODING_BLOCK_DF,
     };
 
     struct ColumnUniqueCompressionParameters

@@ -36,7 +36,7 @@ public:
     ///     auto old_to_new_mapping = detachChangedIndexes();
     ///     ... /// apply this mapping
     /// }
-    /// This function should return false between `detachChangedIndexes` calls and following inserts 
+    /// This function should return false between `detachChangedIndexes` calls and following inserts
     virtual bool haveIndexesChanged() const = 0;
 
     /// Returns a column containing the mapping between old and new indexes
@@ -44,7 +44,7 @@ public:
     /// haveIndexesChanged() should return false until next inserts
     virtual MutableColumnPtr detachChangedIndexes() = 0;
 
-    
+
     /// May require reindexing
     virtual void nestedToNullable() = 0;
 
