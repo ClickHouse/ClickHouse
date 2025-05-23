@@ -1649,7 +1649,6 @@ static const std::vector<TableEngineValues> likeEngs
        TableEngineValues::Null,
        TableEngineValues::Set,
        TableEngineValues::Join,
-       TableEngineValues::Memory,
        TableEngineValues::StripeLog,
        TableEngineValues::Log,
        TableEngineValues::TinyLog,
