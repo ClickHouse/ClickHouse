@@ -73,12 +73,6 @@ returns
 
 ClickHouse provides a special "vector similarity" index to perform approximate nearest neighbor search.
 
-:::note
-Vector similarity indexes are currently experimental.
-To enable them, please first run `SET allow_experimental_vector_similarity_index = 1`.
-If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
-:::
-
 ### Creating a Vector Similarity Index {#creating-a-vector-similarity-index}
 
 A vector similarity index can be created on a new table like this:
