@@ -2021,7 +2021,7 @@ DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
 )", 0) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
-Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms
+Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
  )", 0) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
@@ -3651,9 +3651,9 @@ If enabled, functions 'least' and 'greatest' return NULL if one of their argumen
     DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
 Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 )", 0) \
-    DECLARE(Bool, geotoh3_lon_lat_input_order, false, R"(
-Function 'geoToH3' accepts (lon, lat) if true, otherwise (lat, lon).
-)", 0) \
+    DECLARE(GeoToH3ArgumentOrder, geotoh3_argument_order, GeoToH3ArgumentOrder::LAT_LON, R"(
+Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set to 'lat_lon'.
+)", BETA) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limits the maximum number of partitions in a single inserted block
 and an exception is thrown if the block contains too many partitions.
@@ -5267,7 +5267,7 @@ Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters de
 Allow to merge filter into JOIN condition and convert CROSS JOIN to INNER.
 )", 0) \
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
-Allow to convert JOIN to subquery with IN if output columns tied to only left table
+Allow to convert JOIN to subquery with IN if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
@@ -5649,7 +5649,7 @@ Prefetch step in bytes. Zero means `auto` - approximately the best prefetch step
     DECLARE(UInt64, filesystem_prefetch_step_marks, 0, R"(
 Prefetch step in marks. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
 )", 0) \
-    DECLARE(UInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
+    DECLARE(NonZeroUInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
 Maximum memory usage for prefetches.
 )", 0) \
     DECLARE(UInt64, filesystem_prefetches_limit, 200, R"(
@@ -6274,7 +6274,7 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
-    DECLARE(Bool, use_iceberg_partition_pruning, false, R"(
+    DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
 )", 0) \
     DECLARE(Bool, allow_deprecated_snowflake_conversion_functions, false, R"(
@@ -6394,6 +6394,9 @@ The analyzer should be enabled to use parallel replicas. With disabled analyzer 
 )", BETA) \
     DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
 Use local pipeline during distributed INSERT SELECT with parallel replicas
+)", BETA) \
+    DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
+The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
@@ -6716,19 +6719,19 @@ Allow experimental delta-kernel-rs implementation.
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, execute_distributed_plan_locally, false, R"(
+    DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, default_shuffle_join_bucket_count, 8, R"(
+    DECLARE(UInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, default_reader_bucket_count, 8, R"(
+    DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 8, R"(
 Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, optimize_exchanges, false, R"(
+    DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
-)", EXPERIMENTAL) \
-    DECLARE(String, force_exchange_kind, "", R"(
+)", 0) \
+    DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
 Possible values:
@@ -7168,8 +7171,9 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
         Field min;
         Field max;
+        std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        params.constraints.get(*this, setting_name, min, max, writability);
+        params.constraints.get(*this, setting_name, min, max, disallowed_values, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -7177,13 +7181,18 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         if (!max.isNull())
             max = Settings::valueToStringUtil(setting_name, max);
 
+        Array disallowed_array;
+        for (const auto & value : disallowed_values)
+            disallowed_array.emplace_back(Settings::valueToStringUtil(setting_name, value));
+
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
-        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[7]->insert(setting.getTypeName());
-        res_columns[8]->insert(setting.getDefaultValueString());
-        res_columns[10]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[11]->insert(setting.getTier());
+        res_columns[6]->insert(disallowed_array);
+        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[8]->insert(setting.getTypeName());
+        res_columns[9]->insert(setting.getDefaultValueString());
+        res_columns[11]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[12]->insert(setting.getTier());
     };
 
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
@@ -7193,7 +7202,7 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         res_columns[0]->insert(setting_name);
 
         fill_data_for_setting(setting_name, setting);
-        res_columns[9]->insert("");
+        res_columns[10]->insert("");
 
         if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
         {
@@ -7201,7 +7210,7 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
             {
                 res_columns[0]->insert(alias);
                 fill_data_for_setting(alias, setting);
-                res_columns[9]->insert(setting_name);
+                res_columns[10]->insert(setting_name);
             }
         }
     }
