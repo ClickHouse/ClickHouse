@@ -2,6 +2,7 @@
 
 set enable_analyzer = 1;
 set enable_parallel_replicas = 0;
+set optimize_use_projection_filtering = 1;
 drop table if exists t;
 create table t (i int, j int, projection p (select * order by j)) engine MergeTree order by tuple()
 settings index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1; -- disable merge

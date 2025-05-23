@@ -30,6 +30,7 @@ INSERT INTO test_simple_projection VALUES (5, '2023-01-03', 104, 'https://exampl
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
+SET optimize_use_projection_filtering = 1;
 
 -- region projection is enough effective for filtering
 EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'europe' AND user_id = 101;
