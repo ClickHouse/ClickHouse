@@ -112,7 +112,7 @@ FROM (
     SELECT intDiv(toUnixTimestamp(timestamp), 130)*130 as fake_key, timeSeriesResampleToGridWithStaleness(100, 200, 10, 15)(timestamp, value) AS values FROM ts_data GROUP BY fake_key
 );
 
--- AggregatingMergeTree Table to test (de)serialization of tsToGrid state
+-- AggregatingMergeTree Table to test (de)serialization of timeSeriesResampleToGridWithStaleness state
 CREATE TABLE ts_data_agg(k UInt64, agg AggregateFunction(timeSeriesResampleToGridWithStaleness(100, 200, 10, 15), DateTime('UTC'), Float64)) ENGINE AggregatingMergeTree() ORDER BY k;
 
 -- Insert the data splitting it into several pieces
@@ -134,7 +134,7 @@ SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(timestamp, value)
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(timestamp::DateTime64(2,'UTC'), value) AS res FROM ts_data;
 SELECT timeSeriesResampleToGridWithStaleness(100::Int32, 150::UInt16, 15::Decimal(10,2), 50)(timestamp::DateTime64(3, 'UTC'), value::Float32) AS res FROM ts_data;
 SELECT timeSeriesResampleToGridWithStaleness(100, 100, 15, 50)(timestamp::DateTime64(3, 'UTC'), value::Float32) AS res FROM ts_data;
-SELECT tsToGridIf(100, 150, 15, 50)(timestamp, value, value%2==0) AS res FROM ts_data;
+SELECT timeSeriesResampleToGridWithStalenessIf(100, 150, 15, 50)(timestamp, value, value%2==0) AS res FROM ts_data;
 
 -- Test with Nullable timestamps and values
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(if (value < 10120, Null, timestamp), value::Float32) AS res FROM ts_data;
