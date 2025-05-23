@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# no-parallel-replicas: the ProfileEvents with the expected values are reported on the replicas the query runs in,
+# and the coordinator does not collect all ProfileEvents values.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
