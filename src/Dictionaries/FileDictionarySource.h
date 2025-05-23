@@ -3,7 +3,7 @@
 #include <Poco/Timestamp.h>
 #include "IDictionarySource.h"
 #include <Core/Block.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
