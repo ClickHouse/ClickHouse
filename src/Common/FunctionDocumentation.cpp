@@ -1,8 +1,7 @@
 #include <Common/FunctionDocumentation.h>
-
 #include <Common/Exception.h>
-
 #include <unordered_map>
+#include <regex>
 
 namespace DB
 {
@@ -13,6 +12,12 @@ namespace ErrorCodes
 }
 
 VersionNumber VERSION_UNKNOWN = {0};
+
+std::string FunctionDocumentation::trimBlankLines(const std::string& str) const
+{
+	std::regex pattern(R"(^\s*\n+\s*$)");
+    return std::regex_replace(str, pattern, "");
+}
 
 std::string FunctionDocumentation::argumentsAsString() const
 {
@@ -29,11 +34,12 @@ std::string FunctionDocumentation::examplesAsString() const
     {
         res += "**" + name + "**" + "\n\n";
         res += "```sql title=""Query""\n";
-        res += query + "\n";
+        res += trimBlankLines(query) + "\n";
         res += "```\n\n";
         res += "```response title=""Response""\n";
-        res += result + "\n";
+        res += trimBlankLines(result) + "\n";
         res += "```";
+        res += "\n\n";
     }
     return res;
 }
@@ -96,6 +102,11 @@ std::string FunctionDocumentation::categoryAsString() const
         return it->second;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
+}
+
+std::string FunctionDocumentation::returnedValueAsString() const
+{
+    return trimBlankLines(returned_value);
 }
 
 }
