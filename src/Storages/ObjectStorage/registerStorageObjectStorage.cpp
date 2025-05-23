@@ -11,7 +11,6 @@
 #include <Poco/Logger.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.cpp>
 #include <Interpreters/Context.h>
 
 namespace DB
