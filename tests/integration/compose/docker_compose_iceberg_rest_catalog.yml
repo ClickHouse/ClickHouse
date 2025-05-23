@@ -41,7 +41,7 @@ services:
     networks:
       default:
         aliases:
-          - warehouse.minio
+          - warehouse-rest.minio
     ports:
       - 9001
       - 9000
