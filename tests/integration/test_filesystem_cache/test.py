@@ -514,7 +514,7 @@ CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
             max_size = '10Gi',
-            path = "test_system_sync_filesystem_cache",
+            path = f"test_system_sync_filesystem_cache_{uuid.uuid4()}",
             cache_policy = 'lru',
             disk = hdd_blob),
         min_bytes_for_wide_part = 10485760;
@@ -529,7 +529,7 @@ INSERT INTO test SELECT 1, 'test';
     """
     )
 
-    query_id = "system_sync_filesystem_cache_1"
+    query_id = f"system_sync_filesystem_cache_1_{uuid.uuid4()}"
     node.query(
         "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
         query_id=query_id,
@@ -557,7 +557,7 @@ INSERT INTO test SELECT 1, 'test';
     node.query("SELECT * FROM test FORMAT Null")
     assert key not in node.query("SYSTEM SYNC FILESYSTEM CACHE")
 
-    query_id = "system_sync_filesystem_cache_2"
+    query_id = f"system_sync_filesystem_cache_2_{uuid.uuid4()}"
     node.query(
         "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
         query_id=query_id,
