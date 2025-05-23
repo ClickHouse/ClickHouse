@@ -43,7 +43,10 @@ def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
 def test_simple_select(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test_simple_select"]
-    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    try:
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -82,7 +85,10 @@ def test_simple_select(started_cluster):
 def test_simple_select_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test_simple_select_uri"]
-    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    try:
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -121,7 +127,10 @@ def test_simple_select_uri(started_cluster):
 def test_complex_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test_complex_data_type"]
-    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    try:
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
     incomplete_mongo_table = db["complex_table"]
     data = []
     for i in range(0, 100):
@@ -178,7 +187,10 @@ def test_complex_data_type(started_cluster):
 def test_incorrect_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test_incorrect_data_type"]
-    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    try:
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
     strange_mongo_table = db["strange_table"]
     data = []
     for i in range(0, 100):
@@ -198,7 +210,10 @@ def test_incorrect_data_type(started_cluster):
 def test_secure_connection(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test_secure_connection"]
-    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    try:
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -267,7 +282,10 @@ def test_secure_connection(started_cluster):
 def test_secure_connection_with_validation(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test_secure_connection_with_validation"]
-    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    try:
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -292,7 +310,10 @@ def test_secure_connection_with_validation(started_cluster):
 def test_secure_connection_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test_secure_connection_uri"]
-    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    try:
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -364,12 +385,15 @@ def test_no_credentials(started_cluster):
 def test_auth_source(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
     admin_db = mongo_connection["admin"]
-    admin_db.command(
-        "createUser",
-        "root",
-        pwd=mongo_pass,
-        roles=[{"role": "userAdminAnyDatabase", "db": "admin"}, "readWriteAnyDatabase"],
-    )
+    try:
+        admin_db.command(
+            "createUser",
+            "root",
+            pwd=mongo_pass,
+            roles=[{"role": "userAdminAnyDatabase", "db": "admin"}, "readWriteAnyDatabase"],
+        )
+    except pymongo.errors.OperationFailure:
+        pass
     simple_mongo_table = admin_db["simple_table"]
     data = []
     for i in range(0, 50):
@@ -401,7 +425,10 @@ def test_auth_source(started_cluster):
 def test_missing_columns(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test_missing_columns"]
-    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    try:
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 10):
