@@ -41,13 +41,20 @@ class Result(MetaClasses.Serializable):
 
     class Status:
         SKIPPED = "skipped"
+        DROPPED = "dropped"
         SUCCESS = "success"
         FAILED = "failure"
         PENDING = "pending"
         RUNNING = "running"
         ERROR = "error"
 
+    class StatusExtended:
+        OK = "OK"
+        FAIL = "FAIL"
+        SKIPPED = "SKIPPED"
+
     class Label:
+        REQUIRED = "required"
         NOT_REQUIRED = "not required"
         FLAKY = "flaky"
         BROKEN = "broken"
@@ -151,7 +158,12 @@ class Result(MetaClasses.Serializable):
         return self.status in (Result.Status.RUNNING,)
 
     def is_ok(self):
-        return self.status in (Result.Status.SKIPPED, Result.Status.SUCCESS)
+        return self.status in (
+            Result.Status.SKIPPED,
+            Result.Status.SUCCESS,
+            Result.StatusExtended.OK,
+            Result.StatusExtended.SKIPPED,
+        )
 
     def is_error(self):
         return self.status in (Result.Status.ERROR,)
@@ -226,11 +238,6 @@ class Result(MetaClasses.Serializable):
         # Collect failed test case names
         failed = [r.name for r in subresult_with_tests.results if not r.is_ok()]
 
-        if failed:
-            if len(failed) < 10:
-                failed_tcs = ", ".join(failed)
-                self.set_info(f"Failed: {failed_tcs}")
-
         # Suggest local command to rerun
         command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
         if with_test_in_run_command and failed:
@@ -288,12 +295,29 @@ class Result(MetaClasses.Serializable):
         return self
 
     def set_label(self, label):
-        if not self.ext["labels"]:
+        if not self.ext.get("labels", None):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
 
-    def set_not_required_label(self):
-        self.set_label(self.Label.NOT_REQUIRED)
+    def set_required_label(self):
+        self.set_label(self.Label.REQUIRED)
+
+    @classmethod
+    def filter_out_ok_results(cls, result_obj):
+        if not result_obj.results:
+            return result_obj
+
+        filtered = []
+        for r in result_obj.results:
+            if not r.is_ok():
+                filtered.append(cls.filter_out_ok_results(r))
+
+        if len(filtered) == len(result_obj.results):
+            return result_obj  # No filtering needed
+
+        result_copy = copy.deepcopy(result_obj)
+        result_copy.results = filtered
+        return result_copy
 
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
@@ -301,6 +325,9 @@ class Result(MetaClasses.Serializable):
             if result_.name == result.name:
                 if drop_nested_results:
                     res_ = copy.deepcopy(result)
+                    res_.ext["results_preview"] = self.filter_out_ok_results(
+                        res_
+                    ).results
                     res_.results = []
                     self.results[i] = res_
                 else:
@@ -474,7 +501,9 @@ class Result(MetaClasses.Serializable):
             info=(
                 error_infos
                 if len(error_infos) < MAX_LINES_IN_INFO
-                else [f" ~~~ truncated {len(error_infos)-MAX_LINES_IN_INFO} lines ~~~"]
+                else [
+                    f"~~~~~ truncated {len(error_infos)-MAX_LINES_IN_INFO} lines ~~~~~"
+                ]
                 + error_infos[-MAX_LINES_IN_INFO:]
             ),
             files=[log_file] if with_log else None,
@@ -484,31 +513,38 @@ class Result(MetaClasses.Serializable):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
         self.dump()
+        print(self.to_stdout_formatted())
         if not self.is_ok():
-            print("ERROR: Job Failed")
-            print(self.to_stdout_formatted())
             sys.exit(1)
-        else:
-            print("ok")
 
     def to_stdout_formatted(self, indent="", res=""):
-        if self.is_ok():
-            return res
-
-        res += f"{indent}Task [{self.name}] failed.\n"
-        fail_info = ""
+        add_frame = not res
         sub_indent = indent + "  "
 
-        if not self.results:
-            if not self.is_ok():
-                fail_info += f"{sub_indent}{self.name}:\n"
-                for line in self.info.splitlines():
-                    fail_info += f"{sub_indent}{sub_indent}{line}\n"
-            return res + fail_info
+        if add_frame:
+            res = "+" * 80 + "\n"
+        if add_frame or not self.is_ok():
+            res += f"{indent}{self.status} [{self.name}]\n"
+            info_lines = self.info.splitlines()
+            if len(info_lines) > 30:
+                info_lines = (
+                    info_lines[:10]
+                    + [
+                        "~~~~~~~~~~~~~~~~~~~~~",
+                        "~~~~~ truncated ~~~~~",
+                        "~~~~~~~~~~~~~~~~~~~~~",
+                    ]
+                    + info_lines[-10:]
+                )
+            for line in info_lines:
+                res += f"{sub_indent}| {line}\n"
 
-        for sub_result in self.results:
-            res = sub_result.to_stdout_formatted(sub_indent, res)
+        if not self.is_ok():
+            for sub_result in self.results:
+                res = sub_result.to_stdout_formatted(sub_indent, res)
 
+        if add_frame:
+            res += "+" * 80 + "\n"
         return res
 
 
@@ -523,7 +559,7 @@ class ResultInfo:
     NOT_FOUND_IMPOSSIBLE = (
         "No Result file (bug, or job misbehaviour, must not ever happen)"
     )
-    SKIPPED_DUE_TO_PREVIOUS_FAILURE = "Skipped due to previous failure"
+    DROPPED_DUE_TO_PREVIOUS_FAILURE = "Dropped due to previous failure"
     TIMEOUT = "Timeout"
 
     GH_STATUS_ERROR = "Failed to set GH commit status"
@@ -607,11 +643,15 @@ class _ResultS3:
             local_path=result.file_name(),
             if_none_matched=True,
             no_strict=no_strict,
+            text=True,
         ):
             print("Failed to put versioned Result")
             return False
         if not S3.put(
-            s3_path=s3_path, local_path=result.file_name(), no_strict=no_strict
+            s3_path=s3_path,
+            local_path=result.file_name(),
+            no_strict=no_strict,
+            text=True,
         ):
             print("Failed to put non-versioned Result")
         return True

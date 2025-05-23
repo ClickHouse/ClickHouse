@@ -293,8 +293,8 @@ class HtmlRunnerHooks:
                 new_sub_results.append(
                     Result(
                         name=dependee,
-                        status=Result.Status.SKIPPED,
-                        info=ResultInfo.SKIPPED_DUE_TO_PREVIOUS_FAILURE
+                        status=Result.Status.DROPPED,
+                        info=ResultInfo.DROPPED_DUE_TO_PREVIOUS_FAILURE
                         + f" [{_job.name}]",
                     )
                 )
