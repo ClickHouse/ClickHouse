@@ -148,8 +148,8 @@ def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node1",
-            main_configs=[],
+            "node",
+            main_configs=["configs/backups.xml"],
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
@@ -168,7 +168,7 @@ def started_cluster():
 
 
 def test_list_tables(started_cluster):
-    node = started_cluster.instances["node1"]
+    node = started_cluster.instances["node"]
 
     root_namespace = f"clickhouse_{uuid.uuid4()}"
     namespace_1 = f"{root_namespace}.testA.A"
@@ -234,7 +234,7 @@ def test_list_tables(started_cluster):
 
 
 def test_many_namespaces(started_cluster):
-    node = started_cluster.instances["node1"]
+    node = started_cluster.instances["node"]
     root_namespace_1 = f"A_{uuid.uuid4()}"
     root_namespace_2 = f"B_{uuid.uuid4()}"
     namespaces = [
@@ -267,7 +267,7 @@ def test_many_namespaces(started_cluster):
 
 
 def test_select(started_cluster):
-    node = started_cluster.instances["node1"]
+    node = started_cluster.instances["node"]
 
     test_ref = f"test_list_tables_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
@@ -307,7 +307,7 @@ def test_select(started_cluster):
 
 
 def test_hide_sensitive_info(started_cluster):
-    node = started_cluster.instances["node1"]
+    node = started_cluster.instances["node"]
 
     test_ref = f"test_hide_sensitive_info_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
@@ -337,7 +337,7 @@ def test_hide_sensitive_info(started_cluster):
 
 
 def test_tables_with_same_location(started_cluster):
-    node = started_cluster.instances["node1"]
+    node = started_cluster.instances["node"]
 
     test_ref = f"test_tables_with_same_location_{uuid.uuid4()}"
     namespace = f"{test_ref}_namespace"
@@ -371,3 +371,21 @@ def test_tables_with_same_location(started_cluster):
 
     assert 'aaa\naaa\naaa' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
     assert 'bbb\nbbb\nbbb' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name_2}`").strip()
+
+
+def test_backup_database(started_cluster):
+    node = started_cluster.instances["node"]
+    create_clickhouse_iceberg_database(started_cluster, node, "backup_database")
+
+    backup_id = uuid.uuid4().hex
+    backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+    node.query(f"BACKUP DATABASE backup_database TO {backup_name}")
+    node.query("DROP DATABASE backup_database SYNC")
+    assert "backup_database" not in node.query("SHOW DATABASES")
+
+    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_experimental_database_iceberg": 1})
+    assert (
+        node.query("SHOW CREATE DATABASE backup_database")
+        == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://rest:8181/v1\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'demo\\', storage_endpoint = \\'http://minio:9000/warehouse\\'\n"
+    )
