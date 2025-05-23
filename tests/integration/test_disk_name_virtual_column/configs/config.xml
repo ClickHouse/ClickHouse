@@ -23,15 +23,27 @@
             </disk_local3>
         </disks>
         <policies>
-            <default>
+            <disk_local1>
                 <volumes>
                     <main>
                         <disk>disk_local1</disk>
+                    </main>
+                </volumes>
+            </disk_local1>
+            <disk_local2>
+                <volumes>
+                    <main>
                         <disk>disk_local2</disk>
+                    </main>
+                </volumes>
+            </disk_local2>
+            <disk_local3>
+                <volumes>
+                    <main>
                         <disk>disk_local3</disk>
                     </main>
                 </volumes>
-            </default>
+            </disk_local3>
         </policies>
     </storage_configuration>
 
