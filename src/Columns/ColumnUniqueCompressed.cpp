@@ -630,9 +630,17 @@ char * ColumnUniqueFCBlockDF::serializeIntoMemory(size_t pos, DecompressedValue 
 
     memcpy(memory, &value_size, sizeof(value_size));
     memory += sizeof(value_size);
-    memcpy(memory, value.prefix.data, value.prefix.size);
+
+    if (value.prefix.data) /// clang tidy is mad at nullptrs in memcpy even if count is zero
+    {
+        memcpy(memory, value.prefix.data, value.prefix.size);
+    }
     memory += value.prefix.size;
-    memcpy(memory, value.suffix.data, value.suffix.size);
+
+    if (value.suffix.data)
+    {
+        memcpy(memory, value.suffix.data, value.suffix.size);
+    }
     memory += value.suffix.size;
     *memory = '\0';
     ++memory;
