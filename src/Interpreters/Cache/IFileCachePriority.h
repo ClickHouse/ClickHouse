@@ -72,9 +72,9 @@ public:
         }
 
     private:
-        bool use_real_disk_size = false;
         std::atomic<size_t> size;
         std::atomic<size_t> aligned_size;
+        const bool use_real_disk_size = false;
         mutable std::atomic<bool> evicting = false;
     };
     using EntryPtr = std::shared_ptr<Entry>;

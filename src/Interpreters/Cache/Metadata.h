@@ -12,6 +12,7 @@
 #include <Common/filesystemHelpers.h>
 #include <memory>
 #include <shared_mutex>
+#include <optional>
 
 namespace DB
 {
@@ -223,6 +224,8 @@ public:
 
     bool useRealDiskSize() const;
 
+    void fillStatVFS();
+
 private:
     static constexpr size_t buckets_num = 1024;
 
@@ -230,7 +233,7 @@ private:
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
     const bool write_cache_per_user_directory;
-    struct statvfs path_stat;
+    std::optional<struct statvfs> path_stat = std::nullopt;
     bool use_real_disk_size;
 
     LoggerPtr log;
