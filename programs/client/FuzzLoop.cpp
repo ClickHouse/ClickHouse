@@ -43,6 +43,8 @@ extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
 extern const int TOO_DEEP_RECURSION;
 extern const int BUZZHOUSE;
+using ErrorCode = int;
+extern std::string_view getName(ErrorCode error_code);
 }
 
 std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool permissive)
@@ -507,7 +509,8 @@ bool Client::processBuzzHouseQuery(const String & full_query)
         client_exception.reset();
         if (found_disallowed_code)
         {
-            throw Exception(ErrorCodes::BUZZHOUSE, "Found disallowed error code");
+            throw Exception(
+                ErrorCodes::BUZZHOUSE, "Found disallowed error code {} - {}", exception->code(), ErrorCodes::getName(exception->code()));
         }
     }
     return server_up;
