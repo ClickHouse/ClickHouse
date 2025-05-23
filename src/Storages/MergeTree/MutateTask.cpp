@@ -1756,17 +1756,21 @@ private:
                 renamed_stats[STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX] = STATS_FILE_PREFIX + command.rename_to + STATS_FILE_SUFFIX;
         }
 
-        const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
+        MergeTreeIndices skip_indices_to_build;
+        NameSet skip_indices_to_build_names;
 
-        MergeTreeIndices skip_indices;
-        for (const auto & idx : indices)
+        for (const auto & idx : ctx->indices_to_build)
         {
-            if (ctx->dropped_indices.contains(idx.name))
-                continue;
+            skip_indices_to_build.push_back(idx);
+            skip_indices_to_build_names.insert(idx->index.name);
+        }
 
-            /// TODO: fix
-            // if (ctx->indices_to_build.contains(idx.name))
-            //     continue;
+        const auto & all_indices = ctx->metadata_snapshot->getSecondaryIndices();
+
+        for (const auto & idx : all_indices)
+        {
+            if (ctx->dropped_indices.contains(idx.name) || skip_indices_to_build_names.contains(idx.name))
+                continue;
 
             auto prefix = fmt::format("{}{}.", INDEX_FILE_PREFIX, idx.name);
             auto it = ctx->source_part->checksums.files.upper_bound(prefix);
@@ -1862,7 +1866,7 @@ private:
 
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
-            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
+            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices_to_build)->getActionsDAG().clone();
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
             if (!extracting_subcolumns_dag.getNodes().empty())
                 indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
@@ -1911,7 +1915,7 @@ private:
             ctx->new_data_part,
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
-            skip_indices,
+            skip_indices_to_build,
             stats_to_rewrite,
             ctx->compression_codec,
             std::move(index_granularity_ptr),
