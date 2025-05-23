@@ -193,6 +193,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_the_endpoint_id_with_zookeeper_name_prefix;
     extern const MergeTreeSettingsFloat fault_probability_after_part_commit;
     extern const MergeTreeSettingsFloat fault_probability_before_part_commit;
+    extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
@@ -1652,7 +1653,7 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(fs::path(zookeeper_prefix) / "metadata", &metadata_stat);
     auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
-    old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->getColumns(), getStorageID().getNameForLogs(), getContext());
+    bool is_metadata_equal = old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->getColumns(), getStorageID().getNameForLogs(), getContext(), /*check_index_granularity*/ true, strict_check, log.load());
 
     if (metadata_version)
         *metadata_version = metadata_stat.version;
@@ -1661,7 +1662,7 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns", &columns_stat));
 
     const ColumnsDescription & old_columns = metadata_snapshot->getColumns();
-    if (columns_from_zk == old_columns)
+    if (columns_from_zk == old_columns && is_metadata_equal)
         return true;
 
     if (!strict_check && metadata_stat.version != 0)
@@ -2236,7 +2237,8 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
 
             try
             {
-                part->loadColumnsChecksumsIndexes(true, true);
+                part->loadColumnsChecksumsIndexes(
+                    /* require_columns_checksums = */ true, /* check_consistency = */ true, /* load_metadata_version = */ false);
             }
             catch (const Exception&)
             {
@@ -2247,6 +2249,9 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
 
             if (entry.part_checksum == part->checksums.getTotalChecksumHex())
             {
+                auto metadata_version = getInMemoryMetadataPtr()->getMetadataVersion();
+                part->writeMetadataVersion(getContext(), metadata_version, (*getSettings())[MergeTreeSetting::fsync_after_insert]);
+                part->setMetadataVersion(metadata_version);
                 part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
                 return part;
             }
@@ -5984,7 +5989,7 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
             query_settings[Setting::insert_quorum_timeout].totalMilliseconds(),
             query_settings[Setting::max_partitions_per_insert_block],
             query_settings[Setting::insert_quorum_parallel],
-            deduplicate,
+            async_deduplicate,
             query_settings[Setting::insert_quorum].is_auto,
             local_context);
 
@@ -10921,7 +10926,7 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
-void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
+void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const
 {
     try
     {
@@ -10939,7 +10944,7 @@ void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_quer
     catch (...)
     {
         /// We can continue making a backup with non-adjusted query.
-        tryLogCurrentException(log, "Failed to adjust the create query of this table for backup");
+        tryLogCurrentException(log, fmt::format("Failed to apply metadata changes to the create query of table {}", getStorageID().getNameForLogs()));
     }
 }
 

@@ -985,12 +985,31 @@ The server successfully detected this situation and will download merged part fr
     M(ReadWriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by ReadWriteBufferFromHTTP", ValueType::Number) \
     M(ReadWriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by ReadWriteBufferFromHTTP. Doesn't include HTTP headers.", ValueType::Bytes) \
     \
+    M(WriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by WriteBufferFromHTTP", ValueType::Number) \
+    M(WriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by WriteBufferFromHTTP. Doesn't include HTTP headers.", ValueType::Bytes) \
+    \
     M(ConcurrencyControlSlotsGranted, "Number of CPU slot granted according to guarantee of 1 thread per query and for queries with setting 'use_concurrency_control' = 0", ValueType::Number) \
     M(ConcurrencyControlSlotsDelayed, "Number of CPU slot not granted initially and required to wait for a free CPU slot", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquired, "Total number of CPU slot acquired", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquiredNonCompeting, "Total number of noncompeting CPU slot acquired", ValueType::Number) \
     M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
     M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots.", ValueType::Microseconds) \
+    \
+    M(CoordinatedMergesMergeCoordinatorUpdateCount, "Total number of merge coordinator updates", ValueType::Number) \
+    M(CoordinatedMergesMergeCoordinatorUpdateMicroseconds, "Total time spend on updating merge coordinator state", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorFetchMetadataMicroseconds, "Total time spend on fetching fresh metadata inside merge coordinator", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorFilterMicroseconds, "Total time spend on filtering prepared merges inside merge coordinator", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorSelectMergesMicroseconds, "Total time spend on finding merge using merge selectors inside merge coordinator", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorLockStateForShareCount, "Total number of for share captures of coordinator state lock", ValueType::Number) \
+    M(CoordinatedMergesMergeCoordinatorLockStateExclusivelyCount, "Total number of exclusive captures of coordinator state lock", ValueType::Number) \
+    M(CoordinatedMergesMergeCoordinatorLockStateForShareMicroseconds, "Total time spend on locking coordinator state mutex for share", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorLockStateExclusivelyMicroseconds, "Total time spend on locking coordinator state mutex exclusively", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeWorkerUpdateCount, "Total number merge worker updates", ValueType::Number) \
+    M(CoordinatedMergesMergeWorkerUpdateMicroseconds, "Total time spend on updating local state of assigned merges on worker", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeAssignmentRequest, "Total number of merge assignment requests", ValueType::Number) \
+    M(CoordinatedMergesMergeAssignmentResponse, "Total number of merge assignment requests", ValueType::Number) \
+    M(CoordinatedMergesMergeAssignmentRequestMicroseconds, "Total time spend in merge assignment client", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeAssignmentResponseMicroseconds, "Total time spend in merge assignment handler", ValueType::Microseconds) \
     \
     M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
     M(SharedDatabaseCatalogStateApplicationMicroseconds, "Total time spend on application of new state in SharedDatabaseCatalog", ValueType::Microseconds) \
@@ -1008,6 +1027,8 @@ The server successfully detected this situation and will download merged part fr
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
     M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
+    M(IndexBinarySearchAlgorithm, "Number of times the binary search algorithm is used over the index marks", ValueType::Number) \
+    M(IndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the index marks", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
