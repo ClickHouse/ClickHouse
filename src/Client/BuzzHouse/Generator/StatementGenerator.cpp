@@ -12,10 +12,12 @@ StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations 
     , connections(conn)
     , supports_cloud_features(scf)
     , replica_setup(rs)
-    , deterministic_funcs_limit(static_cast<size_t>(
-          std::find_if(CHFuncs.begin(), CHFuncs.end(), StatementGenerator::funcNotDeterministicIndexLambda) - CHFuncs.begin()))
-    , deterministic_aggrs_limit(static_cast<size_t>(
-          std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
+    , deterministic_funcs_limit(
+          static_cast<size_t>(
+              std::find_if(CHFuncs.begin(), CHFuncs.end(), StatementGenerator::funcNotDeterministicIndexLambda) - CHFuncs.begin()))
+    , deterministic_aggrs_limit(
+          static_cast<size_t>(
+              std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
 {
     chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
 
@@ -94,10 +96,6 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     {
         this->ids.emplace_back(DShared);
     }
-    if (!fc.disks.empty())
-    {
-        this->ids.emplace_back(DBackup);
-    }
     const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomly(this->ids));
     this->ids.clear();
     return res;
@@ -114,11 +112,6 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     if (next.isReplicatedDatabase())
     {
         next.zoo_path_counter = this->zoo_path_counter++;
-    }
-    else if (next.isBackupDatabase())
-    {
-        next.backed_db = "d" + ((databases.empty() || rg.nextSmallNumber() < 3) ? "efault" : std::to_string(rg.pickRandomly(databases)));
-        next.backed_disk = rg.pickRandomly(fc.disks);
     }
     if (!fc.clusters.empty() && rg.nextSmallNumber() < (next.isReplicatedOrSharedDatabase() ? 9 : 4))
     {
@@ -185,28 +178,25 @@ void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, Refre
 static void matchQueryAliases(const SQLView & v, Select * osel, Select * nsel)
 {
     /// Make sure aliases match
-    uint32_t i = 0;
     SelectStatementCore * ssc = nsel->mutable_select_core();
+    JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
     for (const auto & entry : v.cols)
     {
-        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+        const String ncname = "c" + std::to_string(entry);
 
-        eca->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(
-            "a" + std::to_string(i));
-        eca->mutable_col_alias()->set_column("c" + std::to_string(entry));
-        i++;
+        ssc->add_result_columns()
+            ->mutable_eca()
+            ->mutable_expr()
+            ->mutable_comp_expr()
+            ->mutable_expr_stc()
+            ->mutable_col()
+            ->mutable_path()
+            ->mutable_col()
+            ->set_column(ncname);
+        jtf->add_col_aliases()->set_column(ncname);
     }
-    ssc->mutable_from()
-        ->mutable_tos()
-        ->mutable_join_clause()
-        ->mutable_tos()
-        ->mutable_joined_table()
-        ->mutable_tof()
-        ->mutable_select()
-        ->mutable_inner_query()
-        ->mutable_select()
-        ->set_allocated_sel(osel);
+    jtf->mutable_tof()->mutable_select()->mutable_inner_query()->mutable_select()->set_allocated_sel(osel);
 }
 
 void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView * cv)
@@ -798,7 +788,7 @@ void StatementGenerator::generateUptDelWhere(RandomGenerator & rg, const SQLTabl
     }
     else
     {
-        expr->mutable_lit_val()->set_special_val(SpecialVal::VAL_TRUE);
+        expr->mutable_lit_val()->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
     }
 }
 
@@ -3033,10 +3023,8 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     const uint32_t backup_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
     const uint32_t backup_dictionary = 10 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
     const uint32_t backup_database = 10 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
-    const uint32_t all_temporary = 3;
     const uint32_t everything = 3;
-    const uint32_t prob_space
-        = backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + all_temporary + everything;
+    const uint32_t prob_space = backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + everything;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     BackupRestoreElement * bre = br->mutable_backup_element();
@@ -3083,15 +3071,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
         cluster = backupOrRestoreDatabase(
             bre->mutable_bobject(), rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)));
     }
-    else if (
-        all_temporary
-        && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + all_temporary + 1))
-    {
-        bre->set_all_temporary(true);
-    }
-    else if (
-        everything
-        && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + all_temporary + everything + 1))
+    else if (everything && nopt < (backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + everything + 1))
     {
         bre->set_all(true);
     }
@@ -3171,11 +3151,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
     std::optional<String> cluster;
 
     br->set_command(BackupRestore_BackupCommand_RESTORE);
-    if (backup.all_temporary)
-    {
-        bre->set_all_temporary(true);
-    }
-    else if (backup.everything)
+    if (backup.everything)
     {
         bre->set_all(true);
     }
@@ -3712,6 +3688,7 @@ void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & 
         const uint32_t nopt = next_dist(rg.generator);
         SingleSQLQuery * ssq = i == 0 ? sq.mutable_single_query() : sq.add_parallel_queries();
 
+        this->aliases_counter = 0;
         chassert(this->levels.empty());
         if (start_transaction && nopt < (start_transaction + 1))
         {
@@ -4268,18 +4245,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 newb.out_params.push_back(br.out_params(i));
             }
-            if (bre.has_all_temporary())
-            {
-                for (auto & [key, value] : this->tables)
-                {
-                    if (value.is_temp)
-                    {
-                        newb.tables[key] = value;
-                    }
-                }
-                newb.all_temporary = true;
-            }
-            else if (bre.has_all())
+            if (bre.has_all())
             {
                 newb.tables = this->tables;
                 newb.views = this->views;

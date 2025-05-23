@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 
 #include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#include <Client/BuzzHouse/Generator/RandomSettings.h>
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
@@ -59,6 +60,133 @@ bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
     return performQuery(fmt::format("DROP TABLE IF EXISTS {};", getTableName(t.db, t.tname)));
 }
 
+void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, CreateTable & newt)
+{
+    TableEngine & te = const_cast<TableEngine &>(newt.engine());
+    const auto & teng = te.engine();
+
+    if (te.has_setting_values() && rg.nextSmallNumber() < 10)
+    {
+        /// Swap table settings
+        const auto & allSettings = allTableSettings.at(teng);
+        const auto & svs = te.setting_values();
+
+        for (int i = 0; i < svs.other_values_size() + 1; i++)
+        {
+            SetValue & sv = const_cast<SetValue &>(i == 0 ? svs.set_value() : svs.other_values(i - 1));
+
+            if (allSettings.find(sv.property()) != allSettings.end())
+            {
+                const CHSetting & chs = allSettings.at(sv.property());
+
+                if (!chs.changes_behavior && !chs.oracle_values.empty() && rg.nextSmallNumber() < 8)
+                {
+                    if (chs.oracle_values.size() == 2)
+                    {
+                        const String & fval = *chs.oracle_values.begin();
+
+                        sv.set_value(sv.value() == fval ? *std::next(chs.oracle_values.begin(), 1) : fval);
+                    }
+                    else
+                    {
+                        sv.set_value(rg.pickRandomly(chs.oracle_values));
+                    }
+                }
+            }
+        }
+    }
+    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+    {
+        if (te.has_partition_by() && rg.nextSmallNumber() < 5)
+        {
+            /// Remove partition by
+            te.clear_partition_by();
+        }
+        if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
+        {
+            /// Remove primary key or order by clause
+            if (rg.nextBool())
+            {
+                te.clear_primary_key();
+            }
+            else
+            {
+                te.clear_order();
+            }
+        }
+    }
+    else if (teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog && rg.nextSmallNumber() < 5)
+    {
+        /// Swap engine if others are equivalent
+        static const std::vector<TableEngineValues> & logEngines
+            = {TableEngineValues::StripeLog, TableEngineValues::Log, TableEngineValues::TinyLog};
+
+        te.set_engine(rg.pickRandomly(logEngines));
+    }
+    if (newt.has_table_def())
+    {
+        const TableDef & def = newt.table_def();
+
+        for (int i = 0; i < def.other_defs_size() + 1; i++)
+        {
+            if (i == 0 || def.other_defs(i - 1).has_col_def())
+            {
+                ColumnDef & cdef = const_cast<ColumnDef &>(i == 0 ? def.col_def() : def.other_defs(i - 1).col_def());
+                TopTypeName & ttn = const_cast<TopTypeName &>(cdef.type().type());
+
+                if (cdef.has_codecs() && rg.nextBool())
+                {
+                    /// Clear codecs
+                    cdef.clear_codecs();
+                }
+                if (cdef.has_stats() && rg.nextBool())
+                {
+                    /// Clear statistics
+                    cdef.clear_stats();
+                }
+                /// Remove LowCardinality property
+                if (ttn.has_nullable_lcard() && rg.nextBool())
+                {
+                    ttn.set_allocated_nullable(ttn.release_nullable_lcard());
+                }
+                else if (ttn.has_non_nullable_lcard() && rg.nextBool())
+                {
+                    ttn.set_allocated_non_nullable(ttn.release_non_nullable_lcard());
+                }
+                if (cdef.has_setting_values())
+                {
+                    if (rg.nextBool())
+                    {
+                        /// Clear all settings, so far none changes behavior
+                        cdef.clear_setting_values();
+                    }
+                    else
+                    {
+                        const auto & allSettings = allTableSettings.at(teng);
+                        const auto & svs = cdef.setting_values();
+
+                        for (int j = 0; j < svs.other_values_size() + 1; j++)
+                        {
+                            SetValue & sv = const_cast<SetValue &>(j == 0 ? svs.set_value() : svs.other_values(j - 1));
+
+                            if (allSettings.find(sv.property()) != allSettings.end())
+                            {
+                                const CHSetting & chs = allSettings.at(sv.property());
+
+                                assert(!chs.changes_behavior);
+                                if (!chs.oracle_values.empty() && rg.nextSmallNumber() < 8)
+                                {
+                                    sv.set_value(rg.pickRandomly(chs.oracle_values));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 bool ClickHouseIntegratedDatabase::performCreatePeerTable(
     RandomGenerator & rg,
     const bool is_clickhouse_integration,
@@ -96,6 +224,10 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             if (t.db)
             {
                 t.db->setName(est.mutable_database());
+            }
+            if (rg.nextMediumNumber() < 91)
+            {
+                this->swapTableDefinitions(rg, newt);
             }
 
             CreateTableToString(buf, newt);
@@ -1403,9 +1535,10 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return;
     }
-    if (fc.processServerQuery(fmt::format(
-            "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-            fc.fuzz_out.generic_string())))
+    if (fc.processServerQuery(
+            fmt::format(
+                "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                fc.fuzz_out.generic_string())))
     {
         std::ifstream infile(fc.fuzz_out);
         while (std::getline(infile, buf) && buf.size() > 1)

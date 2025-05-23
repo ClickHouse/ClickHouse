@@ -56,6 +56,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.setAllowEngineUDF(!can_test_query_success);
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
+    gen.resetAliasCounter();
     gen.levels[gen.current_level] = QueryLevel(gen.current_level);
     const auto u = gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
 
@@ -68,7 +69,8 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
         BinaryExpr * bexpr = ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
 
         bexpr->set_op(BinaryOperator::BINOP_EQ);
-        bexpr->mutable_rhs()->mutable_lit_val()->set_special_val(SpecialVal::VAL_TRUE);
+        bexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
+            SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
         gen.generateWherePredicate(rg, bexpr->mutable_lhs());
     }
     if (combination != 0)
@@ -103,7 +105,8 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
     sfc1->mutable_func()->set_catalog_func(FUNCifNull);
-    sfc1->add_args()->mutable_expr()->mutable_lit_val()->set_special_val(SpecialVal::VAL_ZERO);
+    sfc1->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
+        SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
     sfc2->mutable_func()->set_catalog_func(FUNCsum);
 
     ssc2->set_allocated_from(ssc1.release_from());
@@ -523,6 +526,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         eq->set_is_explain(true);
         sel = eq->mutable_inner_query()->mutable_select()->mutable_sel();
     }
+    gen.resetAliasCounter();
     gen.generateSelect(rg, true, global_aggregate, ncols, std::numeric_limits<uint32_t>::max(), sel);
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);
