@@ -421,7 +421,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     // Collect all roles granted on this node and pass those to the remote node
     std::vector<String> local_granted_roles;
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries] && !modified_client_info.initial_user.empty())
+    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
     {
         auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
         boost::container::flat_set<String> granted_roles;
