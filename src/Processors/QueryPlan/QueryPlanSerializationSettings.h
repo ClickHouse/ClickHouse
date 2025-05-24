@@ -13,6 +13,7 @@ struct QueryPlanSerializationSettingsImpl;
 #define QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Float) \
+    M(CLASS_NAME, Double) \
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, OverflowMode) \
