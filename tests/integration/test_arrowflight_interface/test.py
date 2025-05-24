@@ -83,9 +83,115 @@ def test_doput_unexisting_table():
         writer, _ = client.do_put(descriptor, schema, options)
         writer.write_batch(batch)
         writer.close()
-        assert False, "Expected error but query succeeded"
+        assert False, "Expected error but query succeeded: insert into unexisting table"
     except flight.FlightServerError:
         pass
+
+def test_doput_cmd_descriptor():
+    node.query("""
+        CREATE TABLE doput_test_cmd_descriptor (
+            id   Int64,
+            name String
+        ) ORDER BY id
+    """)
+
+    client, options = get_client()
+
+    schema = pa.schema([
+        ("id",   pa.int64()),
+        ("name", pa.string()),
+    ])
+    batch = pa.record_batch([
+        pa.array([1, 2, 3], type=pa.int64()),
+        pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
+    ], schema=schema)
+
+    # Testing here where descriptor constains INSERT QUERY.
+    # This may be useful where some columns of the table have default values
+    # And we do not need to pass them
+    descriptor = flight.FlightDescriptor.for_command(
+        "INSERT INTO doput_test_cmd_descriptor FORMAT Arrow"
+    )
+    writer, _ = client.do_put(descriptor, schema, options)
+    writer.write_batch(batch)
+    writer.close()
+
+    result = node.query("SELECT * FROM doput_test_cmd_descriptor ORDER BY id")
+    assert TSV(result) == TSV("1\tAlice\n2\tBob\n3\tCharlie\n")
+
+    node.query("DROP TABLE IF EXISTS doput_test_cmd_descriptor SYNC")
+
+
+def test_doput_cmd_descriptor_with_data():
+    node.query("""
+        CREATE TABLE doput_test_cmd_descriptor_with_data (
+            id   Int64,
+            name String DEFAULT 'unknown'
+        ) ORDER BY id
+    """)
+
+    client, options = get_client()
+
+    schema = pa.schema([
+        ("id",   pa.int64()),
+        ("name", pa.string()),
+    ])
+    batch = pa.record_batch([
+        pa.array([1, 2, 3], type=pa.int64()),
+        pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
+    ], schema=schema)
+
+    # Testing here where descriptor constains INSERT QUERY.
+    # This may be useful where some columns of the table have default values
+    # And we do not need to pass them
+    descriptor = flight.FlightDescriptor.for_command(
+        "INSERT INTO doput_test_cmd_descriptor_with_data (id) SELECT number FROM numbers(3)"
+    )
+    writer, _ = client.do_put(descriptor, schema, options)
+    writer.write_batch(batch)
+    writer.close()
+
+    result = node.query("SELECT * FROM doput_test_cmd_descriptor_with_data ORDER BY id")
+    assert TSV(result) == TSV("0\tunknown\n1\tunknown\n2\tunknown\n")
+
+    node.query("DROP TABLE IF EXISTS doput_test_cmd_descriptor_with_data SYNC")
+
+
+def test_doput_cmd_descriptor_with_default():
+    node.query("""
+        CREATE TABLE IF NOT EXISTS doput_test_cmd_descriptor_default (
+            id   Int64,
+            name String DEFAULT 'unknown'
+        ) ORDER BY id
+    """)
+
+    client, options = get_client()
+
+    schema = pa.schema([
+        ("id", pa.int64()),
+    ])
+    batch = pa.record_batch([
+        pa.array([10, 20, 30], type=pa.int64()),
+    ], schema=schema)
+
+    # Testing here where descriptor constains INSERT QUERY.
+    # This may be useful where some columns of the table have default values
+    # And we do not need to pass them
+    descriptor = flight.FlightDescriptor.for_command(
+        "INSERT INTO doput_test_cmd_descriptor_default (id) FORMAT Arrow"
+    )
+    writer, _ = client.do_put(descriptor, schema, options)
+    writer.write_batch(batch)
+    writer.close()
+
+    result = node.query("SELECT * FROM doput_test_cmd_descriptor_default ORDER BY id")
+    assert TSV(result) == TSV(
+        "10\tunknown\n"
+        "20\tunknown\n"
+        "30\tunknown\n"
+    )
+
+    node.query("DROP TABLE IF EXISTS doput_test_cmd_descriptor_default SYNC")
 
 
 def test_doput_invalid_query():
@@ -99,6 +205,7 @@ def test_doput_invalid_query():
         pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
     ], schema=schema)
     try:
+        # SELECT clause in DoPut query is forbidden
         descriptor = flight.FlightDescriptor.for_command("SELECT * FROM my_table")
         writer, _ = client.do_put(descriptor, schema, options)
         writer.write_batch(batch)
@@ -128,21 +235,21 @@ def test_doget():
     try:
         incorrect_ticket = flight.Ticket(b"INSERT INTO doget_test_insert SELECT number, toString(number) FROM numbers(10)")
         _ = client.do_get(incorrect_ticket, options)
-        assert False, "Expected error but query succeeded"
+        assert False, "INSERT clause in DoGet query is forbidden, but query succeeded"
     except flight.FlightServerError:
         pass
     
     try:
         incorrect_ticket = flight.Ticket(b"some incorrect query")
         _ = client.do_get(incorrect_ticket, options)
-        assert False, "Expected error but query succeeded"
+        assert False, "Query is incorrect, but succeeded"
     except flight.FlightServerError:
         pass
 
     try:
         incorrect_ticket = flight.Ticket(b"SELECT * FROM unexisting_table")
         _ = client.do_get(incorrect_ticket, options)
-        assert False, "Expected error but query succeeded"
+        assert False, "Table is unexisting, but query succeeded"
     except flight.FlightServerError:
         pass
     
@@ -163,6 +270,7 @@ def test_doget():
     assert actual.column("name").equals(expected_names)
 
 
+    # Testing taking only part of the columns in the query
     real_ticket = flight.Ticket(b"SELECT id FROM doget_test")
     reader = client.do_get(real_ticket, options)
     actual = reader.read_all()
@@ -196,6 +304,7 @@ def test_doget_format_json():
     
     client, options = get_client()
 
+    # Testing a query with the FORMAT JSON section
     real_ticket = flight.Ticket(b"SELECT * FROM doget_test_format_json FORMAT JSON")
     reader = client.do_get(real_ticket, options)
     actual = reader.read_all()
@@ -238,6 +347,11 @@ def test_doget_invalid_user():
     except Exception as e:
         print("Unauthenticated:", e)
     else:
-        raise RuntimeError("Expected call to fail")
+        raise RuntimeError("Expected call to fail: login and password are not correct")
+    
+    result = node.query("SELECT * FROM doget_test_invalid_user")
+
+    # This data was in the table initially
+    assert TSV(result) == TSV("10\tabc\n20\tcde\n")
     
     node.query("DROP TABLE IF EXISTS doget_test_invalid_user SYNC")
