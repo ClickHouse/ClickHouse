@@ -237,7 +237,7 @@ private:
 
     bool performance_counters_finalized = false;
 
-    String query_id_from_query_context;
+    String query_id;
 
     struct TimePoint
     {
@@ -278,6 +278,8 @@ public:
 
     ThreadGroupPtr getThreadGroup() const;
 
+    void setQueryId(std::string && new_query_id) noexcept;
+    void clearQueryId() noexcept;
     const String & getQueryId() const;
 
     ContextPtr getQueryContext() const;
