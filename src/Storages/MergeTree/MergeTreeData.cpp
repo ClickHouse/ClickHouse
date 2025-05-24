@@ -9443,6 +9443,7 @@ size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
         return 0;
 
     DataPartsVector parts_to_clear;
+    std::optional<MergeTreePartInfo> part_in_use;
 
     {
         auto parts_lock = lockParts();
@@ -9451,22 +9452,33 @@ size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
         for (const auto & part : parts_range)
         {
             /// Outdated part may be hold by SELECT query and still needs the index.
+            if (!isSharedPtrUnique(part))
+            {
+                if (!part_in_use)
+                    part_in_use = part->info;
+                continue;
+            }
+
             /// This check requires lock of index_mutex but if outdated part is unique then there is no
             /// contention on it, so it's relatively cheap and it's ok to check under a global parts lock.
-            if (isSharedPtrUnique(part) && (part->isIndexLoaded() || part->mayStoreDataInCaches()))
-                parts_to_clear.push_back(part);
+            if (!part->isIndexLoaded() && !part->mayStoreDataInCaches())
+                continue;
+
+            parts_to_clear.push_back(part);
         }
     }
 
     for (const auto & part : parts_to_clear)
     {
         auto & part_mut = const_cast<IMergeTreeDataPart &>(*part);
-
         part_mut.unloadIndex();
         part_mut.clearCaches();
-
-        LOG_TEST(log, "Unloaded primary key for outdated part {}", part->name);
     }
+
+    if (!parts_to_clear.empty())
+        LOG_TRACE(log, "Unloaded primary key for outdated part {} (+{} more)", parts_to_clear.front()->name, parts_to_clear.size() - 1);
+    else if (part_in_use)
+        LOG_TRACE(log, "Outdated part {} is in use and still needs the index", part_in_use->getNameForLogs());
 
     return parts_to_clear.size();
 }
