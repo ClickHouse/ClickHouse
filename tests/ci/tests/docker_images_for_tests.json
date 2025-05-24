@@ -94,6 +94,10 @@
         "name": "clickhouse/mysql-js-client",
         "dependent": []
     },
+    "docker/test/integration/arrowflight": {
+        "name": "clickhouse/arrowflight",
+        "dependent": []
+    },
     "docker/test/integration/mysql_php_client": {
         "name": "clickhouse/mysql-php-client",
         "dependent": []
