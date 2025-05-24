@@ -294,4 +294,4 @@ void registerInterpreterCreateTypeQuery(InterpreterFactory & factory)
     factory.registerInterpreter("InterpreterCreateTypeQuery", create_fn);
 }
 
-} // namespace DB
+}

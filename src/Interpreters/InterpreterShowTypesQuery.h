@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
-#include <Parsers/IAST.h> // For ASTPtr
-#include <Interpreters/Context.h>     // Для ContextMutablePtr
-#include <Interpreters/InterpreterFactory.h> // Для регистрации
+#include <Parsers/IAST.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterFactory.h>
 
 namespace DB
 {
@@ -21,10 +21,6 @@ public:
     }
 
     BlockIO execute() override;
-
-    // Опционально: если нужна более тонкая настройка выполнения, например, игнорировать квоты
-    // bool ignoreQuota() const override { return true; } 
-    // bool ignoreLimits() const override { return true; }
 
 private:
     ASTPtr query_ptr;

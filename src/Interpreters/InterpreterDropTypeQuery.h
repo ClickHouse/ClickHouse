@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
-#include <Parsers/ASTDropTypeQuery.h> // Используем наш новый AST
-#include <Interpreters/Context.h>     // Для WithMutableContext
+#include <Parsers/ASTDropTypeQuery.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -20,8 +20,5 @@ public:
 private:
     ASTPtr query_ptr;
 };
-
-// Объявление функции регистрации, если мы будем выносить ее отдельно
-// void registerInterpreterDropTypeQuery(InterpreterFactory & factory);
 
 }

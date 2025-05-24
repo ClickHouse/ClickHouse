@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTIdentifier.h> // Для имени типа
+#include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {

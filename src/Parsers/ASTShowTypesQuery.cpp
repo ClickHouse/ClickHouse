@@ -1,5 +1,5 @@
 #include <Parsers/ASTShowTypesQuery.h>
-#include <IO/Operators.h> // Для оператора << у WriteBuffer
+#include <IO/Operators.h>
 
 namespace DB
 {

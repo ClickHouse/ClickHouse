@@ -1,16 +1,16 @@
 #include <Interpreters/InterpreterDropTypeQuery.h>
 #include <Parsers/ASTDropTypeQuery.h>
-#include <Access/Common/AccessType.h>     // Для проверки прав
-#include <Access/ContextAccess.h>       // Для getContext()->checkAccess
-#include <DataTypes/UserDefinedTypeFactory.h> // Для удаления типа
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
+#include <DataTypes/UserDefinedTypeFactory.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/InterpreterFactory.h> // Для регистрации
-#include <Interpreters/Context.h> // Для getContext()
-#include <Interpreters/executeQuery.h> // Для выполнения DELETE
-#include <Interpreters/QueryFlags.h>   // Для QueryFlags
-#include <Core/QueryProcessingStage.h> // Для QueryProcessingStage
-#include <Common/quoteString.h>       // Для quoteString
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/QueryFlags.h>
+#include <Core/QueryProcessingStage.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -47,7 +47,6 @@ BlockIO InterpreterDropTypeQuery::execute()
     return {};
 }
 
-// Оставим функцию регистрации здесь же для простоты, либо можно вынести как в InterpreterCreateTypeQuery
 void registerInterpreterDropTypeQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

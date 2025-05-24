@@ -7,7 +7,7 @@
 #include <Common/ThreadPool.h>
 #include <Storages/IStorage.h>
 
-// Forward declarations
+
 namespace DB
 {
 class IParser;
@@ -61,24 +61,20 @@ public:
 
     std::vector<String> getAllTypeNames(ContextPtr context) const;
 
-    // Вспомогательные функции для сериализации/десериализации AST
     static String astToString(const ASTPtr & ast);
     static ASTPtr stringToAst(const String & str, IParser & parser);
 
 private:
     UserDefinedTypeFactory() = default;
 
-    // Приватный метод для ленивой загрузки
     void ensureTypesLoaded(ContextPtr context) const;
 
-    // Методы для работы с системной таблицей
     void loadTypesFromSystemTable(ContextPtr context);
     void loadTypesFromSystemTableUnsafe(ContextPtr context);
     void ensureSystemTableExists(ContextPtr context);
     void createSystemTable(ContextPtr context);
     StoragePtr getSystemTable(ContextPtr context) const;
     
-    // Методы для загрузки и сохранения данных
     void loadTypesFromStorage(ContextPtr context, StoragePtr storage);
     void processUDTBlock(
         const Block & block, 
@@ -89,10 +85,8 @@ private:
     void storeTypeInSystemTable(ContextPtr context, const String & name, const TypeInfo & info);
     void removeTypeFromSystemTable(ContextPtr context, const String & name);
     
-    // Вспомогательные методы
     String getNullableString(const ColumnPtr & column, size_t index) const;
 
-    // Флаг, чтобы избежать повторной загрузки
     mutable bool types_loaded_from_db = false;
 
     mutable SharedMutex mutex;

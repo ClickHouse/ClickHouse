@@ -15,11 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    // Возможно, понадобятся специфичные коды ошибок, но пока не ясно
-}
-
 BlockIO InterpreterShowTypesQuery::execute()
 {
     auto current_context = getContext();

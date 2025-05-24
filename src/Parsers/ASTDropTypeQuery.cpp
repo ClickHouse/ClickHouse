@@ -13,7 +13,6 @@ String ASTDropTypeQuery::getID(char delim) const
 ASTPtr ASTDropTypeQuery::clone() const
 {
     auto res = std::make_shared<ASTDropTypeQuery>(*this);
-    // res->type_name и res->if_exists уже скопированы конструктором по умолчанию
     return res;
 }
 
