@@ -120,7 +120,7 @@ a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -283,7 +283,7 @@ a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -420,7 +420,7 @@ a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -583,7 +583,7 @@ a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -720,7 +720,7 @@ a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -883,7 +883,7 @@ a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
