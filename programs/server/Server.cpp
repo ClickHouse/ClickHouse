@@ -3123,7 +3123,7 @@ void Server::createServers(
 
         if (server_type.shouldStart(ServerType::Type::REDIS))
         {
-            port_name = "redis_port";
+            port_name = "redis.port";
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;

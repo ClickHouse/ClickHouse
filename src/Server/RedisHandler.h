@@ -9,6 +9,8 @@
 #include "IO/WriteBufferFromPocoSocket.h"
 #include "IServer.h"
 #include "Server/TCPServer.h"
+#include "RedisProtocolMapping.h"
+#include "base/types.h"
 
 
 namespace DB 
@@ -20,13 +22,13 @@ class TCPServer;
 class RedisHandler : public Poco::Net::TCPServerConnection 
 {
 public:
-    RedisHandler(IServer& server_, TCPServer& tcp_server_, const Poco::Net::StreamSocket& socket_); 
+    RedisHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, RedisProtocol::Config & config_);
 
     void run() final;
 
 private:
 
-    void process_request();
+    bool process_request();
 
     IServer & server;
     TCPServer & tcp_server;
@@ -34,7 +36,8 @@ private:
     std::shared_ptr<WriteBufferFromPocoSocket> out;
     std::unique_ptr<Session> session;
     
-    Int64 db = 0;
+    UInt32 db = RedisProtocol::DB_MAX_NUM;
+    RedisProtocol::Config config;
 
     Poco::Logger * log = &Poco::Logger::get("RedisHandler");
 };
