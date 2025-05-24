@@ -295,19 +295,20 @@ public:
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(MergeTreeDataPartState new_state) const;
-    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state; }
+    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state.load(std::memory_order_relaxed); }
 
     static std::string_view stateString(MergeTreeDataPartState state);
-    constexpr std::string_view stateString() const { return stateString(state); }
+    std::string_view stateString() const { return stateString(state.load(std::memory_order_relaxed)); }
 
     String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
 
     /// Returns true if state of part is one of affordable_states
     bool checkState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
     {
+        auto current_state = state.load(std::memory_order_relaxed);
         for (auto affordable_state : affordable_states)
         {
-            if (state == affordable_state)
+            if (current_state == affordable_state)
                 return true;
         }
         return false;
@@ -679,7 +680,7 @@ protected:
 
 private:
     String mutable_name;
-    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
+    mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};
 
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
