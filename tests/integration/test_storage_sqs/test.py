@@ -29,7 +29,7 @@ instance = cluster.add_instance(
 
 def check_clickhouse_alive(instance):
     """Check if ClickHouse is running and accepting connections"""
-    for _ in range(30):  # 30 attempts with 2 second interval = 60 seconds maximum
+    for _ in range(30):
         try:
             # Check using HTTP interface instead of nc
             is_port_open = instance.exec_in_container(

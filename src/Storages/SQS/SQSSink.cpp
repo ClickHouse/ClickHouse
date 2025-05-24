@@ -57,26 +57,21 @@ void SQSSink::consume(Chunk & chunk)
     size_t rows = block.rows();
     total_rows += rows;
     
-    // Process rows in chunks of max_rows_per_message
     for (size_t offset = 0; offset < rows; offset += max_rows_per_message)
     {
         size_t current_chunk_size = std::min(max_rows_per_message, rows - offset);
         
-        // Create a block with the specified range of rows
         Block current_block = block.cloneEmpty();
         auto columns = block.getColumns();
         
-        // Create truncated copies of columns
         Columns current_columns;
         for (const auto & column : columns)
         {
             current_columns.emplace_back(column->cut(offset, current_chunk_size));
         }
         
-        // Create a block with truncated columns
         current_block.setColumns(current_columns);
         
-        // Serialize block to message format
         String message;
         WriteBufferFromString string_buf(message);
         
@@ -87,7 +82,6 @@ void SQSSink::consume(Chunk & chunk)
         output_format->finalize();
         string_buf.finalize();
         
-        // Send message to SQS
         sendMessage(message);
     }
 }
@@ -100,8 +94,6 @@ void SQSSink::onFinish()
 
 void SQSSink::sendMessage(const String & message)
 {
-    LOG_INFO(&Poco::Logger::get("SQSSink"), "Sending message to SQS: {}", message);
-
     Aws::SQS::Model::SendMessageRequest request;
     request.SetQueueUrl(queue_url);
     request.SetMessageBody(message);
@@ -120,6 +112,6 @@ void SQSSink::sendMessage(const String & message)
     }
 }
 
-}  // namespace DB 
+}
 
-#endif // USE_AWS_SQS 
+#endif // USE_AWS_SQS

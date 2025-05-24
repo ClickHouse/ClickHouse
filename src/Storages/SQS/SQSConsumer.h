@@ -1,10 +1,10 @@
 #pragma once
 
 #include <memory>
+#include <Common/ConcurrentBoundedQueue.h>
 #include <Core/Types.h>
 #include <Core/Block.h>
 #include <Poco/Logger.h>
-#include <Common/ConcurrentBoundedQueue.h>
 
 #include "config.h"
 
@@ -61,7 +61,6 @@ private:
 
     String queue_url;
     
-    // Reference to client (not managing lifetime)
     const Aws::SQS::SQSClient & client;
     
     size_t max_messages_per_receive;

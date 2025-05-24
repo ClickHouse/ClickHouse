@@ -1,9 +1,3 @@
-/*
-    TODO:
-     1. Подумать, как обойтись без очереди в Source-ах
-     2. Убрать лишние логи
-*/
-
 #include <Storages/SQS/SQSSettings.h>
 #include <Storages/SQS/SQSConsumer.h>
 #include <Storages/SQS/SQSSource.h>
@@ -76,31 +70,17 @@ namespace Setting
 
 namespace
 {
-    Poco::Logger * global_sqs_log = &Poco::Logger::get("SQSGlobal");
-}
-namespace
-{
-    
     void initializeAWSSDK(const Aws::SDKOptions & options)
     {
-        LOG_INFO(global_sqs_log, "Setting up AWS SDK options");
-        
         Aws::InitAPI(options);
         Aws::Http::SetHttpClientFactory(std::make_shared<S3::PocoHTTPClientFactory>());
-        
-        LOG_INFO(global_sqs_log, "AWS SDK successfully initialized");        
     }
 }
 
-// Create SQS client with necessary parameters
 std::shared_ptr<Aws::SQS::SQSClient> createSQSClient(
         std::shared_ptr<SQSSettings> sqs_settings,
         const String & endpoint)
     {
-    LOG_INFO(global_sqs_log, "Starting SQS client creation");
-    
-    // Create client configuration
-    LOG_INFO(global_sqs_log, "Creating client configuration");
     Aws::Client::ClientConfiguration client_configuration;
     
     client_configuration.region = sqs_settings->aws_region;
@@ -138,7 +118,6 @@ std::shared_ptr<Aws::SQS::SQSClient> createSQSClient(
 
     Aws::Auth::AWSCredentials credentials(sqs_settings->aws_access_key_id, sqs_settings->aws_secret_access_key);
 
-    LOG_INFO(global_sqs_log, "About to create SQS client with credentials");
     auto client = std::make_shared<Aws::SQS::SQSClient>(
         credentials,
         Aws::MakeShared<Aws::SQS::SQSEndpointProvider>("SQSEndpointProvider"),
@@ -175,38 +154,30 @@ StorageSQS::StorageSQS(
             endpoint_override += ":" + std::to_string(uri.getPort());
     }
 
-    LOG_INFO(global_sqs_log, "AWS SDK initialization");
     aws_sdk_options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Off;
     aws_sdk_options.httpOptions.installSigPipeHandler = true;
     initializeAWSSDK(aws_sdk_options);
 
     try
     {
-        // Create SQS client with minimum necessary parameters
-        LOG_INFO(global_sqs_log, "Creating SQS client");
-        
-        LOG_INFO(global_sqs_log, "Using explicit credentials for SQS client");
         client = createSQSClient(
             sqs_settings,
             endpoint_override);
         
-        LOG_INFO(global_sqs_log, "SQS client created successfully for endpoint {}", endpoint_override);
     }
     catch (...)
     {
-        tryLogCurrentException(global_sqs_log, "Failed to create SQS client");
+        tryLogCurrentException(log, "Failed to create SQS client");
         throw;
     }
     
-    LOG_INFO(global_sqs_log, "StorageSQS initialization completed");
+    LOG_INFO(log, "StorageSQS initialization completed");
 }
 
 void StorageSQS::startup()
 {
     if (shutdown_called)
         return;
-
-    LOG_INFO(log, "Starting StorageSQS for table {}", getStorageID().getNameForLogs());
     
     for (size_t i = 0; i < sqs_settings->num_consumers; ++i)
     {
@@ -214,14 +185,9 @@ void StorageSQS::startup()
         consumers_ref.push_back(consumer);
         pushConsumer(consumer);
     }
-
-    LOG_INFO(log, "Created {} consumers for table {}", sqs_settings->num_consumers, getStorageID().getNameForLogs());
     
-    // Start background streaming to MaterializedViews
     streaming_task = getContext()->getSchedulePool().createTask(
         "SQSStreamingToViews", [this]() { streamingToViewsFunc(); });
-    
-    LOG_INFO(log, "Activating streaming task for table {}", getStorageID().getNameForLogs());
     streaming_task->activateAndSchedule();
 }
 
@@ -234,7 +200,6 @@ void StorageSQS::shutdown(bool /* is_drop */)
     
     for (auto & consumer : consumers_ref)
     {
-        LOG_INFO(log, "Stopping consumer");
         consumer.lock()->stop();
     }
 
@@ -242,30 +207,22 @@ void StorageSQS::shutdown(bool /* is_drop */)
     
     if (streaming_task)
     {
-        LOG_INFO(log, "Stopping streaming task");
         streaming_task->deactivate();
     }
-    
-    LOG_INFO(log, "Task stopped");
 
     if (client)
     {
-        LOG_INFO(log, "Shutting down SQS client");
-        // Aws::SQS::SQSClient::ShutdownSdkClient(static_cast<void*>(client.get()));
         client.reset();
     }
 
     {
         for (size_t i = 0; i < sqs_settings->num_consumers; ++i)
         {
-            LOG_INFO(log, "Popping consumer");
             popConsumer();
         }
     }
 
     Aws::ShutdownAPI(aws_sdk_options);
-    
-    LOG_INFO(log, "Storage SQS for table {} successfully shut down", getStorageID().getNameForLogs());
 }
 
 SQSConsumerPtr StorageSQS::createConsumer()
@@ -324,9 +281,6 @@ void StorageSQS::read(
     if (shutdown_called)
         throw Exception(ErrorCodes::CANNOT_CONNECT_SQS, "Storage is shutdown");
     
-    LOG_INFO(log, "Reading from SQS");
-
-    // Create a plan with SQS sources
     auto modified_num_streams = std::min(num_streams, sqs_settings->num_consumers);
     
     std::vector<Pipe> pipes;
@@ -390,11 +344,8 @@ bool StorageSQS::tryProcessMessages()
 
         if (view_dependencies.empty())
         {
-            LOG_TRACE(log, "No materialized views for table");
             return false;
         }
-        
-        LOG_DEBUG(log, "Starting batch processing of messages for {} views", view_dependencies.size());
         
         std::vector<std::shared_ptr<SQSSource>> sources;
         Pipes pipes;
@@ -493,30 +444,21 @@ bool StorageSQS::recreateClient()
 {
     try
     {
-        // Recreate client with the same parameters
-        LOG_INFO(log, "Recreating SQS client to restore connection");
-        
-        // Replace existing client
         client.reset();
         client = createSQSClient(
             sqs_settings,
             endpoint_override);
         
-        LOG_INFO(log, "SQS client successfully recreated");
-        
-        // Update client references in all consumers
         std::lock_guard lock(mutex);
         for (auto & consumer_ptr : consumers)
         {
             consumer_ptr.reset();
         }
         
-        // Create new consumers
         consumers.clear();
         for (size_t i = 0; i < sqs_settings->num_consumers; ++i)
             consumers.push_back(createConsumer());
         
-        LOG_INFO(log, "SQS consumers successfully recreated, number: {}", consumers.size());
         return true;
     }
     catch (...)
@@ -540,8 +482,6 @@ void StorageSQS::streamingToViewsFunc()
     {
         if (shutdown_called)
             return;
-        
-        LOG_INFO(log, "Executing streaming task for table {}", getStorageID().getNameForLogs());
         
         bool success = tryProcessMessages();
         

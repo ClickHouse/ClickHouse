@@ -53,43 +53,21 @@ SQSSource::SQSSource(
 
 Chunk SQSSource::generate()
 {
-    auto * logger = &Poco::Logger::get("SQSSource");
-    LOG_INFO(logger, "SQS Source generate() called");
-
     if (!consumer)
-    {
         consumer = storage.popConsumer();
-    }
 
-    if (!consumer)
-    {
-        LOG_INFO(logger, "No consumer");
+    if (!consumer || is_finished)
         return {};
-    }
-
-    if (is_finished)
-    {
-        LOG_INFO(logger, "SQS Source is finished");
-        return {};
-    }
 
     is_finished = true;
 
-    // Process messages from SQS
     size_t total_rows = 0;
     MutableColumns columns = sample_block.cloneEmptyColumns();
-
-    LOG_INFO(logger, "ConsumerID: {}, Processing messages, max_block_size: {}", 
-        consumer->consumer_id, max_block_size);
     
     while (total_rows < max_block_size)
     {
         if (consumer->isStopped())
-        {
-            LOG_INFO(logger, "ConsumerID: {}, Consumer is stopped", 
-                consumer->consumer_id);
             break;
-        }
         
         bool is_time_limit_exceeded = false;
         if (max_execution_time_ms)
@@ -98,52 +76,32 @@ Chunk SQSSource::generate()
             is_time_limit_exceeded = max_execution_time_ms <= elapsed_time_ms;
         }
         if (is_time_limit_exceeded)
-        {
-            LOG_INFO(logger, "ConsumerID: {}, Time limit exceeded", 
-                consumer->consumer_id);
             break;
-        }
         
         // Receive message from consumer queue
         auto message_opt = consumer->getMessage();
         if (!message_opt)
         {
-            LOG_INFO(logger, "ConsumerID: {}, No messages in consumer queue", 
-                consumer->consumer_id);
-
             if (!consumer->receive())
             {
-                LOG_INFO(logger, "ConsumerID: {}, No messages available to receive from SQS", 
-                    consumer->consumer_id);
                 break;
             }
-
-            LOG_INFO(logger, "ConsumerID: {}, Messages were read from SQS, now they are in the consumer queue", 
-                consumer->consumer_id);
             continue;
         }
         
         auto message = message_opt.value();
         if (message.data.empty())
         {
-            LOG_INFO(logger, "ConsumerID: {}, Empty message", 
-                consumer->consumer_id);
             continue;
         }
         
-        LOG_INFO(logger, "ConsumerID: {}, Processing message {}", 
-            consumer->consumer_id, message.data);
-
         read_buf = std::make_unique<ReadBufferFromString>(message.data);
 
-        // Create input format for parsing
         auto input_format = FormatFactory::instance().getInput(
             format, *read_buf, sample_block, context, max_block_size);
         
         if (!input_format)
         {
-            LOG_ERROR(logger, "Failed to create input format for SQS message");
-
             if (!dead_letter_queue_url.empty())
             {
                 consumer->moveMessageToDLQ(message);
@@ -159,20 +117,15 @@ Chunk SQSSource::generate()
             continue;
         }
         
-        // Read data from the input format
         Chunk chunk;
         try 
         {
             chunk = input_format->read();
-            
-            LOG_INFO(logger, "ConsumerID: {}, Chunk read successfully", 
-                consumer->consumer_id);
         } 
         catch (const Exception & e)
         {
-            LOG_ERROR(logger, "Error reading data from SQS message: {}", e.message());
-            
-            // Check if the error is related to data format
+            LOG_ERROR(&Poco::Logger::get("SQSSource"), "Error reading data from SQS message: {}", e.message());
+
             if (e.code() == ErrorCodes::BAD_ARGUMENTS || 
                 e.code() == ErrorCodes::CANNOT_CONNECT_SQS ||
                 e.displayText().find("parse") != String::npos || 
@@ -181,16 +134,15 @@ Chunk SQSSource::generate()
                 // If the problem is in data format and DLQ is configured, move the message there
                 if (!dead_letter_queue_url.empty())
                 {
-                    LOG_WARNING(logger, "Error in data format in message, moving to DLQ");
+                    LOG_WARNING(&Poco::Logger::get("SQSSource"), "Error in data format in message, moving to DLQ");
                     consumer->moveMessageToDLQ(message);
                 }
                 else if (skip_invalid_messages)
                 {
                     // Otherwise, delete the broken message
-                    LOG_WARNING(logger, "Deleting message with data format error");
+                    LOG_WARNING(&Poco::Logger::get("SQSSource"), "Deleting message with data format error");
                     consumer->deleteMessage(message.receipt_handle);
                 } else {
-                    // Throw an exception
                     throw;
                 }
             }
@@ -198,14 +150,9 @@ Chunk SQSSource::generate()
         }
         if (!chunk.hasRows())
         {
-            LOG_INFO(logger, "ConsumerID: {}, No rows in chunk", 
-                consumer->consumer_id);
             continue;
         }
         
-        LOG_INFO(logger, "ConsumerID: {}, Total rows: {}, Max block size: {}", 
-            consumer->consumer_id, total_rows, max_block_size);
-        // Check if we need to start a new chunk because of max_block_size
         if (total_rows + chunk.getNumRows() > max_block_size && total_rows > 0)
         {
             break;
@@ -224,38 +171,26 @@ Chunk SQSSource::generate()
                 {
                     if (column_name == "_message_id")
                     {
-                        LOG_INFO(logger, "ConsumerID: {}, Inserting message_id: {}", 
-                            consumer->consumer_id, message.message_id);
                         columns[i]->insert(message.message_id);
                     }
                     else if (column_name == "_receive_count")
                     {
-                        LOG_INFO(logger, "ConsumerID: {}, Inserting receive_count: {}", 
-                            consumer->consumer_id, message.receive_count);
                         columns[i]->insert(message.receive_count);
                     }
                     else if (column_name == "_sent_timestamp")
                     {
-                        LOG_INFO(logger, "ConsumerID: {}, Inserting sent_timestamp: {}", 
-                            consumer->consumer_id, message.sent_timestamp);
                         columns[i]->insert(message.sent_timestamp);
                     }
                     else if (column_name == "_message_group_id")
                     {
-                        LOG_INFO(logger, "ConsumerID: {}, Inserting message_group_id: {}", 
-                            consumer->consumer_id, message.message_group_id);
                         columns[i]->insert(message.message_group_id);
                     }
                     else if (column_name == "_message_deduplication_id")
                     {
-                        LOG_INFO(logger, "ConsumerID: {}, Inserting message_deduplication_id: {}", 
-                            consumer->consumer_id, message.message_deduplication_id);
                         columns[i]->insert(message.message_deduplication_id);
                     }
                     else if (column_name == "_sequence_number")
                     {
-                        LOG_INFO(logger, "ConsumerID: {}, Inserting sequence_number: {}", 
-                            consumer->consumer_id, message.sequence_number);
                         columns[i]->insert(message.sequence_number);
                     }
                 }
@@ -266,23 +201,14 @@ Chunk SQSSource::generate()
                 const auto & src_column = chunk.getColumns()[i];
                 if (src_column && columns[i])
                 {
-                    LOG_INFO(logger, "ConsumerID: {}, Inserting regular column: {}", 
-                        consumer->consumer_id, column_name);
                     size_t num_rows = chunk.getNumRows();
                     columns[i]->insertRangeFrom(*src_column, 0, num_rows);
                 }
             }
         }
         
-        if (queue.tryPush(message))
+        if (!queue.tryPush(message))
         {
-            LOG_INFO(logger, "ConsumerID: {}, Pushed message to queue", 
-                consumer->consumer_id);
-        }
-        else
-        {
-            LOG_INFO(logger, "ConsumerID: {}, Queue is full, skipping message", 
-                consumer->consumer_id);
             continue;
         }
         total_rows += chunk.getNumRows();
@@ -290,15 +216,11 @@ Chunk SQSSource::generate()
     
     if (total_rows == 0)
     {
-        LOG_INFO(logger, "ConsumerID: {}, No rows in chunk", 
-            consumer->consumer_id);
         return {};
     }
 
     if (is_read && auto_delete)
     {
-        LOG_INFO(logger, "ConsumerID: {}, Deleting messages because of auto_delete and is_read", 
-            consumer->consumer_id);
         deleteMessages();
     }
     
@@ -320,15 +242,10 @@ SQSSource::~SQSSource()
 
     if (consumer)
     {
-        LOG_INFO(&Poco::Logger::get("SQSSource"), "Pushing consumer to storage");
         storage.pushConsumer(consumer);
-    }
-    else
-    {
-        LOG_INFO(&Poco::Logger::get("SQSSource"), "No consumer to push to storage");
     }
 }
 
-}  // namespace DB
+}
 
 #endif // USE_AWS_SQS

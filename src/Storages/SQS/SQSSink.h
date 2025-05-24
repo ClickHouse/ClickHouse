@@ -19,7 +19,6 @@
 namespace DB
 {
 
-
 class SQSSink : public SinkToStorage
 {
 public:

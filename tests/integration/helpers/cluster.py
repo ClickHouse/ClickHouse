@@ -505,6 +505,7 @@ class ClickHouseCluster:
         self.with_kerberized_kafka = False
         self.with_kerberos_kdc = False
         self.with_rabbitmq = False
+        self.with_localstack = False
         self.with_nats = False
         self.with_odbc_drivers = False
         self.with_mongo = False
@@ -533,6 +534,7 @@ class ClickHouseCluster:
         self.minio_redirect_port = 8080
         self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
         self.resolver_logs_dir = os.path.join(self.instances_dir, "resolver")
+        
 
         self.spark_session = None
         self.with_iceberg_catalog = False
@@ -710,6 +712,8 @@ class ClickHouseCluster:
         self.prometheus_remote_read_handler_host = None
         self.prometheus_remote_read_handler_port = 9092
         self.prometheus_remote_read_handler_path = "/read"
+        
+        self._localstack_external_port = 4566
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -810,6 +814,13 @@ class ClickHouseCluster:
             return self._redis_port
         self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    @property
+    def localstack_external_port(self):
+        if self._localstack_external_port:
+            return self._localstack_external_port
+        self._localstack_external_port = self.port_pool.get_port()
+        return self._localstack_external_port
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.port_pool.return_used_ports()
@@ -1299,6 +1310,21 @@ class ClickHouseCluster:
         )
         return self.base_rabbitmq_cmd
 
+    def setup_localstack_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_localstack = True
+        env_variables["LOCALSTACK_PORT"] = str(self.localstack_external_port)
+
+        localstack_compose_file = p.join(docker_compose_yml_dir, "docker_compose_localstack.yml")
+        self.base_cmd.extend(["--file", localstack_compose_file])
+        
+        self.base_localstack_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            localstack_compose_file,
+        )
+        return self.base_localstack_cmd
+
     def setup_nats_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_nats = True
         env_variables["NATS_HOST"] = self.nats_host
@@ -1543,6 +1569,7 @@ class ClickHouseCluster:
         with_kerberos_kdc=False,
         with_secrets=False,
         with_rabbitmq=False,
+        with_localstack=False,
         with_nats=False,
         clickhouse_path_dir=None,
         with_odbc_drivers=False,
@@ -1655,6 +1682,7 @@ class ClickHouseCluster:
             with_kerberized_kafka=with_kerberized_kafka,
             with_kerberos_kdc=with_kerberos_kdc,
             with_rabbitmq=with_rabbitmq,
+            with_localstack=with_localstack,
             with_nats=with_nats,
             with_nginx=with_nginx,
             with_secrets=with_secrets or with_kerberos_kdc or with_kerberized_kafka,
@@ -1812,6 +1840,11 @@ class ClickHouseCluster:
         if with_rabbitmq and not self.with_rabbitmq:
             cmds.append(
                 self.setup_rabbitmq_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+        
+        if with_localstack and not self.with_localstack:
+            cmds.append(
+                self.setup_localstack_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_nats and not self.with_nats:
@@ -2346,6 +2379,28 @@ class ClickHouseCluster:
                 time.sleep(0.5)
 
         raise RuntimeError("Cannot wait RabbitMQ container")
+
+    def wait_localstack_to_start(self, timeout=180):
+        if not hasattr(self, 'localstack_docker_id') or not self.localstack_docker_id:
+            logging.warning("LocalStack Docker ID not set, skipping wait. Ensure LocalStack is configured and cluster.start() was called.")
+            raise Exception("LocalStack not properly configured or cluster not started.")
+
+        localstack_ip = self.get_instance_ip("localstack")
+        health_url = f"http://{localstack_ip}:4566/_localstack/health"
+        
+        logging.info(f"Waiting for LocalStack to start at {health_url}...")
+        try:
+            self.wait_for_url(health_url, timeout=timeout, interval=2)
+            logging.info(f"LocalStack reported as healthy at {health_url}.")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to wait for LocalStack at {health_url}: {e}")
+            try:
+                logs = self.get_container_logs(self.localstack_docker_id)
+                logging.error(f"LocalStack container ({self.localstack_docker_id}) logs:\n{logs}")
+            except Exception as log_e:
+                logging.error(f"Could not retrieve LocalStack logs: {log_e}")
+            raise
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
@@ -2889,6 +2944,18 @@ class ClickHouseCluster:
                 logging.debug(f"RabbitMQ checking container try")
                 self.wait_rabbitmq_to_start()
 
+            if self.with_localstack and self.base_localstack_cmd:
+                logging.debug("Setup LocalStack")
+                if not hasattr(self, 'localstack_docker_id') or not self.localstack_docker_id:
+                    self.localstack_docker_id = self.get_instance_docker_id("localstack")
+
+                subprocess_check_call(
+                    self.base_localstack_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True 
+                logging.info("Trying to connect to LocalStack...")
+                self.wait_localstack_to_start()
+
             if self.with_nats and self.base_nats_cmd:
                 logging.debug("Setup NATS")
                 os.makedirs(self.nats_cert_dir)
@@ -3326,6 +3393,7 @@ class ClickHouseInstance:
         with_kerberized_kafka,
         with_kerberos_kdc,
         with_rabbitmq,
+        with_localstack,
         with_nats,
         with_nginx,
         with_secrets,
@@ -3418,6 +3486,7 @@ class ClickHouseInstance:
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_kerberos_kdc = with_kerberos_kdc
         self.with_rabbitmq = with_rabbitmq
+        self.with_localstack = with_localstack
         self.with_nats = with_nats
         self.with_nginx = with_nginx
         self.with_secrets = with_secrets
@@ -4693,6 +4762,9 @@ class ClickHouseInstance:
 
         if self.with_azurite:
             depends_on.append("azurite1")
+
+        if self.with_localstack:
+            depends_on.append("localstack")
 
         # In case the environment variables are exclusive, we don't want it to be in the cluster's env file.
         # Instead, a separate env file will be created for the instance and needs to be filled with cluster's env variables.

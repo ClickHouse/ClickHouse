@@ -4,17 +4,14 @@ if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN) AND TARGET OpenSSL::Crypto AND T
     set(ENABLE_AWS_KINESIS_DEFAULT ON)
 endif()
 
-# Проверяем наличие aws-c-event-stream
 find_library(AWS_C_EVENT_STREAM_LIBRARY NAMES aws-c-event-stream)
 find_path(AWS_C_EVENT_STREAM_INCLUDE_DIR NAMES aws/event-stream/event_stream.h)
 
 if(NOT AWS_C_EVENT_STREAM_LIBRARY OR NOT AWS_C_EVENT_STREAM_INCLUDE_DIR)
-    # Если библиотеки нет, можно либо отключить Kinesis, либо отключить Enhanced Fan-Out
     message(WARNING "aws-c-event-stream not found, Kinesis Enhanced Fan-Out will be disabled")
     add_definitions(-DAWS_DISABLE_EVENT_STREAM)
 else()
     message(STATUS "Found aws-c-event-stream: ${AWS_C_EVENT_STREAM_LIBRARY}")
-    # Добавляем директорию с заголовочными файлами
     target_include_directories(aws_sdk_kinesis SYSTEM PUBLIC ${AWS_C_EVENT_STREAM_INCLUDE_DIR})
 endif()
 

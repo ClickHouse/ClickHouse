@@ -27,12 +27,8 @@ struct SQSSettings;
 using SQSConsumerPtr = std::shared_ptr<SQSConsumer>;
 class Chunk;
 
-// Используем структуру Message из SQSConsumer
-struct SQSConsumerMessage;
-
 namespace ErrorCodes
 {
-    // Add missing error codes that we need
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int CANNOT_PARSE_DATE;
@@ -52,8 +48,6 @@ public:
         std::shared_ptr<SQSSettings> sqs_settings_);
 
     std::string getName() const override { return "SQS"; }
-
-    bool noPushingToViews() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -100,23 +94,12 @@ private:
     
     BackgroundSchedulePoolTaskHolder streaming_task;
     
-    // Main functions
     SQSConsumerPtr createConsumer();
     void streamingToViewsFunc();
-
-    // Helper functions for streamToViews
-    // Chunk parseMessageData(const String & data, Block & sample_block);
-    // void insertDataIntoViews(Chunk chunk, Block sample_block);
-    // void logMessageStatistics(const String & message_data);
     
-    // Helper functions for streamingToViewsFunc
     bool tryProcessMessages();
-    // bool shouldAttemptReconnect(const Exception & e, time_t & current_time, time_t last_attempt);
     bool recreateClient();
     void scheduleNextExecution(bool success);
-
-    // New methods for batch processing
-    // bool processBatch(std::vector<SQSConsumerPtr> & batch_consumers_vec, std::vector<std::vector<SQSConsumer::Message>> & messages);
 };
 
 } 

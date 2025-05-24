@@ -1,13 +1,7 @@
-/*
-    WIP
-*/
-
-
 #pragma once
 
 #include <Storages/IStorage.h>
 #include <Storages/Kinesis/KinesisSettings.h>
-#include <Storages/Kinesis/KinesisShardsBalancer.h>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Poco/Semaphore.h>
@@ -25,9 +19,13 @@
 namespace DB
 {
 
+struct ShardState;
+
 class KinesisConsumer;
 using KinesisConsumerPtr = std::shared_ptr<KinesisConsumer>;
 
+class KinesisShardsBalancer;
+using KinesisShardsBalancerPtr = std::shared_ptr<KinesisShardsBalancer>;
 struct TaskContext
 {
     BackgroundSchedulePool::TaskHolder holder;
@@ -74,6 +72,11 @@ public:
     KinesisConsumerPtr popConsumer();
     KinesisConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
+    void saveCheckpoints();
+    std::map<String, ShardState> loadCheckpoints();
+    void createCheckpointsTableIfNotExists();
+    void showCheckpointsTable();
+
     // Получение настроек
     size_t getMaxBlockSize() const;
     size_t getFlushIntervalMs() const;
@@ -84,34 +87,43 @@ public:
     StreamingHandleErrorMode getStreamingHandleErrorMode() const;
 
 private:
-    // Метод потока для стриминга данных в материализованные представления
-    void threadFunc(size_t idx);
-    bool streamToViewsFunc();
+    void streamingToViewsFunc();
+    bool tryProcessMessages();
     bool recreateClient();
+    void scheduleNextExecution(bool success);
+
+    void saveOffsets(
+        ContextMutablePtr op_context,
+        const StorageID & table_id, 
+        const String & stream_name, 
+        const std::map<String, ShardState> & states);
+    
+    std::map<String, ShardState> loadOffsets(
+        const StorageID & table_id, 
+        const String & stream_name);
 
     std::shared_ptr<KinesisSettings> kinesis_settings;
     LoggerPtr log;
 
-    // Управление клиентами AWS
+    // AWS client management
     String endpoint_override;
     Aws::SDKOptions aws_sdk_options;
     std::shared_ptr<Aws::Kinesis::KinesisClient> client;
 
-    // Потребители
+    // Consumers
     std::mutex mutex;
     Poco::Semaphore semaphore;
     std::vector<KinesisConsumerPtr> consumers;
     std::vector<std::weak_ptr<KinesisConsumer>> consumers_ref;
+
+    KinesisShardsBalancerPtr shards_balancer;
     
-    // Управление фоновыми задачами
+    // Background tasks management
     std::vector<std::shared_ptr<TaskContext>> tasks;
     BackgroundSchedulePool::TaskHolder streaming_task;
     std::atomic<bool> shutdown_called{false};
     std::atomic<bool> mv_attached{false};
     std::atomic<bool> connection_ok{true};
-
-    // Дополнительные настройки и параметры
-    bool thread_per_consumer;
 };
 
 }

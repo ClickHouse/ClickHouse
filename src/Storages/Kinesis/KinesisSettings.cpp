@@ -37,7 +37,8 @@ bool KinesisSettings::has(std::string_view name)
         "max_records_per_request", "kinesis_max_records_per_request",
         "auto_reconnect", "kinesis_auto_reconnect",
         "retry_backoff_ms", "kinesis_retry_backoff_ms",
-
+        "save_checkpoints", "kinesis_save_checkpoints",
+        "max_execution_time_ms", "kinesis_max_execution_time_ms",
         // Performance parameters
         "max_rows_per_message", "kinesis_max_rows_per_message",
         "poll_timeout_ms", "kinesis_poll_timeout_ms",
@@ -104,6 +105,8 @@ void KinesisSettings::loadFromQuery(const ASTStorage & storage_def)
             aws_secret_access_key = value.safeGet<String>();
         else if (name == "aws_region" || name == "kinesis_aws_region")
             aws_region = value.safeGet<String>();
+        else if (name == "endpoint_override" || name == "kinesis_endpoint")
+            endpoint_override = value.safeGet<String>();
         
         // Stream parameters
         else if (name == "starting_position" || name == "kinesis_starting_position")
@@ -122,7 +125,10 @@ void KinesisSettings::loadFromQuery(const ASTStorage & storage_def)
             auto_reconnect = value.safeGet<bool>();
         else if (name == "retry_backoff_ms" || name == "kinesis_retry_backoff_ms")
             retry_backoff_ms = value.safeGet<UInt64>();
-        
+        else if (name == "save_checkpoints" || name == "kinesis_save_checkpoints")
+            save_checkpoints = value.safeGet<bool>();
+        else if (name == "max_execution_time_ms" || name == "kinesis_max_execution_time_ms")
+            max_execution_time_ms = value.safeGet<UInt64>();
         // Performance parameters
         else if (name == "max_rows_per_message" || name == "kinesis_max_rows_per_message")
             max_rows_per_message = value.safeGet<UInt64>();
@@ -138,8 +144,6 @@ void KinesisSettings::loadFromQuery(const ASTStorage & storage_def)
             flush_interval_ms = value.safeGet<UInt64>();
         else if (name == "internal_queue_size" || name == "kinesis_internal_queue_size")
             internal_queue_size = value.safeGet<size_t>();
-        else if (name == "thread_per_consumer" || name == "kinesis_thread_per_consumer")
-            thread_per_consumer = value.safeGet<bool>();
         else if (name == "max_connections" || name == "kinesis_max_connections")
             max_connections = static_cast<UInt32>(value.safeGet<UInt64>());
         
@@ -150,14 +154,6 @@ void KinesisSettings::loadFromQuery(const ASTStorage & storage_def)
             row_delimiter = value.safeGet<String>();
         else if (name == "schema" || name == "kinesis_schema")
             schema = value.safeGet<String>();
-            
-        // Sharding parameters
-        else if (name == "balance_consumers" || name == "kinesis_balance_consumers")
-            balance_consumers = value.safeGet<bool>();
-        else if (name == "checkpoint_store" || name == "kinesis_checkpoint_store")
-            checkpoint_store = value.safeGet<String>();
-        else if (name == "checkpoint_table" || name == "kinesis_checkpoint_table")
-            checkpoint_table = value.safeGet<String>();
 
         // SSL/HTTP parameters
         else if (name == "verify_ssl" || name == "kinesis_verify_ssl")
@@ -204,39 +200,27 @@ void KinesisSettings::loadFromQuery(const ASTStorage & storage_def)
         stream_name = config.getString("kinesis.stream_name");
     if (format_name.empty() && config.has("kinesis.format_name"))
         format_name = config.getString("kinesis.format_name");
+    if (endpoint_override.empty() && config.has("kinesis.endpoint"))
+        endpoint_override = config.getString("kinesis.endpoint");
 
-    // Проверка обязательных параметров
+    // Check required settings
     if (stream_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required setting 'stream_name' for storage Kinesis is empty");
         
-    // Проверка зависимых параметров
+    // Check dependent settings
     if (enhanced_fan_out && consumer_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required setting 'consumer_name' when using enhanced_fan_out for storage Kinesis");
         
-    // Валидация позиции чтения
+    // Validate starting position
     if (starting_position != "LATEST" && starting_position != "TRIM_HORIZON" && starting_position != "AT_TIMESTAMP")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, 
             "Invalid value for starting_position: '{}'. Valid values are: LATEST, TRIM_HORIZON, AT_TIMESTAMP", 
             starting_position);
             
-    // Проверка наличия временной метки при использовании AT_TIMESTAMP
+    // Check if at_timestamp is set when starting_position is AT_TIMESTAMP
     if (starting_position == "AT_TIMESTAMP" && at_timestamp == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, 
             "Required setting 'at_timestamp' when starting_position is AT_TIMESTAMP");
-            
-    // Валидация хранилища чекпоинтов
-    if (!checkpoint_store.empty() && 
-        checkpoint_store != "memory" && 
-        checkpoint_store != "clickhouse_table" && 
-        checkpoint_store != "dynamodb")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, 
-            "Invalid value for checkpoint_store: '{}'. Valid values are: memory, clickhouse_table, dynamodb", 
-            checkpoint_store);
-            
-    // Проверка наличия таблицы при использовании clickhouse_table
-    if (checkpoint_store == "clickhouse_table" && checkpoint_table.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, 
-            "Required setting 'checkpoint_table' when checkpoint_store is clickhouse_table");
 }
 
 }

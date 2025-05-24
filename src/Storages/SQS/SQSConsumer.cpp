@@ -1,7 +1,9 @@
-#include <atomic>
 #include <Storages/SQS/SQSConsumer.h>
+
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+
+#include <atomic>
 
 #include "config.h"
 
@@ -48,29 +50,18 @@ SQSConsumer::SQSConsumer(
 {
     if (queue_url.empty())
         throw Exception(ErrorCodes::CANNOT_CONNECT_SQS, "SQS queue URL cannot be empty");
-    
-    LOG_INFO(&Poco::Logger::get("SQSConsumer"), "SQSConsumer with wait time {} created", wait_time_seconds);
-
-    if (!dead_letter_queue_url.empty())
-    {
-        LOG_INFO(&Poco::Logger::get("SQSConsumer"), 
-            "Dead Letter Queue is configured: URL={}, max_receive_count={}", 
-            dead_letter_queue_url, max_receive_count);
-    }
 }
 
 SQSConsumer::~SQSConsumer()
 {
     is_running = false;
     queue.clear();
-    LOG_TRACE(&Poco::Logger::get("SQSConsumer"), "SQSConsumer for queue {} destroyed", queue_url);
 }
 
 Aws::SQS::Model::ReceiveMessageRequest SQSConsumer::makeReceiveMessageRequest() {
     Aws::SQS::Model::ReceiveMessageRequest request;
     request.SetQueueUrl(queue_url);
     request.SetMaxNumberOfMessages(static_cast<int>(max_messages_per_receive));
-    
     request.AddAttributeNames(Aws::SQS::Model::QueueAttributeName::All);
     if (visibility_timeout > 0)
     {
@@ -87,17 +78,9 @@ Aws::SQS::Model::ReceiveMessageRequest SQSConsumer::makeReceiveMessageRequest() 
 bool SQSConsumer::receive()
 {
     if (!is_running)
-    {
-        LOG_INFO(&Poco::Logger::get("SQSConsumer"), "ConsumerID: {}, I am stopped", consumer_id);
         return false;
-    }
-
-    LOG_TRACE(&Poco::Logger::get("SQSConsumer"), "ConsumerID: {}, Starting to receive messages from SQS queue: {}", consumer_id, queue_url);
 
     auto request = makeReceiveMessageRequest();
-
-    LOG_TRACE(&Poco::Logger::get("SQSConsumer"), "ConsumerID: {}, Sending ReceiveMessage request to SQS, max messages: {}, visibility timeout: {} sec, wait time: {} sec", 
-        consumer_id, max_messages_per_receive, visibility_timeout, wait_time_seconds);
     
     try
     {
@@ -106,10 +89,8 @@ bool SQSConsumer::receive()
         if (!outcome.IsSuccess())
         {
             const auto & error = outcome.GetError();
-            // Timeout is not a critical error for us
             if (error.GetErrorType() == Aws::SQS::SQSErrors::REQUEST_TIMEOUT)
             {
-                LOG_TRACE(&Poco::Logger::get("SQSConsumer"), "Timeout waiting for messages from SQS queue: {}", queue_url);
                 return false;
             }
             
@@ -129,12 +110,7 @@ bool SQSConsumer::receive()
         const auto & messages = result.GetMessages();
         
         if (messages.empty())
-        {
-            LOG_TRACE(&Poco::Logger::get("SQSConsumer"), "ConsumerID: {}, No messages received from SQS queue: {}", consumer_id, queue_url);
             return false;
-        }
-        
-        LOG_TRACE(&Poco::Logger::get("SQSConsumer"), "ConsumerID: {}, Received {} messages from SQS queue: {}", consumer_id, messages.size(), queue_url);
         
         bool success = false;
         for (const auto & message : messages)
@@ -189,17 +165,6 @@ bool SQSConsumer::receive()
                 }
             }
             
-            // For debugging: output information about received attributes
-            if (!attributes.empty())
-            {
-                LOG_TRACE(&Poco::Logger::get("SQSConsumer"), 
-                    "ConsumerID: {}, Received SQS message attributes, count: {}", consumer_id, attributes.size());
-            }
-
-            LOG_INFO(&Poco::Logger::get("SQSConsumer"), 
-                "ConsumerID: {}, Message with ID {} received, receive count: {}", 
-                consumer_id, msg.message_id, msg.receive_count);
-            
             // Check the number of attempts for DLQ
             if (!dead_letter_queue_url.empty() && msg.receive_count >= max_receive_count)
             {
@@ -211,50 +176,15 @@ bool SQSConsumer::receive()
                 continue; // Skip further processing of this message
             }
             
-            // Log the first bytes of the message for diagnostics
-            if (!msg.data.empty())
-            {
-                String preview = msg.data.size() > 100 ? msg.data.substr(0, 100) + "..." : msg.data;
-                LOG_TRACE(&Poco::Logger::get("SQSConsumer"), 
-                    "ConsumerID: {}, Received message (preview): {}, size: {} bytes", 
-                    consumer_id, preview, msg.data.size());
-                
-                // Check for CSV format (presence of commas and line breaks)
-                size_t commas = 0;
-                size_t newlines = 0;
-                for (size_t i = 0; i < std::min<size_t>(msg.data.size(), 500); ++i) {
-                    if (msg.data[i] == ',') ++commas;
-                    if (msg.data[i] == '\n') ++newlines;
-                }
-                
-                LOG_TRACE(&Poco::Logger::get("SQSConsumer"), 
-                    "ConsumerID: {}, Analysis of first 500 bytes: commas: {}, newlines: {}", 
-                    consumer_id, commas, newlines);
-            }
-            
-            LOG_INFO(&Poco::Logger::get("SQSConsumer"), "ConsumerID: {}, Adding message {} to queue", 
-                consumer_id, msg.data);
-
             if (queue.tryPush(msg))
             {
                 success = true;
-                LOG_INFO(&Poco::Logger::get("SQSConsumer"), "ConsumerID: {}, Message {} added to queue", 
-                    consumer_id, msg.data);
-            }
-            else
-            {
-                LOG_WARNING(&Poco::Logger::get("SQSConsumer"), "ConsumerID: {}, Message queue is full, dropping SQS message", 
-                    consumer_id);
             }
         }
-        
-        LOG_TRACE(&Poco::Logger::get("SQSConsumer"), "ConsumerID: {}, Completed receiving messages from SQS, success: {}", 
-            consumer_id, success ? "true" : "false");
         return success;
     }
     catch (const Poco::Exception & e)
     {
-        // Catch Poco exceptions (timeouts, connection errors), to log them separately
         LOG_WARNING(&Poco::Logger::get("SQSConsumer"), 
             "Network error when working with SQS ({}): {}", queue_url, e.displayText());
         
@@ -266,7 +196,6 @@ bool SQSConsumer::receive()
     }
     catch (const std::exception & e)
     {
-        // Catch all other exceptions for more detailed logging
         LOG_ERROR(&Poco::Logger::get("SQSConsumer"), 
             "Unexpected error when receiving messages from SQS ({}): {}", queue_url, e.what());
         
@@ -393,16 +322,7 @@ void SQSConsumer::moveMessageToDLQ(const Message & message)
         }
         else
         {
-            LOG_INFO(&Poco::Logger::get("SQSConsumer"), 
-                "Message with ID {} successfully moved to DLQ {}, new message ID: {}", 
-                message.message_id, dead_letter_queue_url, outcome.GetResult().GetMessageId());
-            
-            // Delete message from the main queue
             deleteMessage(message.receipt_handle);
-            
-            // Log the successful completion of the entire operation
-            LOG_INFO(&Poco::Logger::get("SQSConsumer"), 
-                "Full cycle of moving message to DLQ completed, original message deleted from queue");
         }
     }
     catch (const std::exception & e)
@@ -414,10 +334,9 @@ void SQSConsumer::moveMessageToDLQ(const Message & message)
 
 void SQSConsumer::stop()
 {
-    LOG_INFO(&Poco::Logger::get("SQSConsumer"), "I am stopping");
     is_running = false;
 }
 
-}  // namespace DB 
+}
 
 #endif // USE_AWS_SQS

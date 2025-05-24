@@ -1,4 +1,5 @@
 #include <Storages/Kinesis/KinesisConsumer.h>
+
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
@@ -6,8 +7,10 @@
 
 #if USE_AWS_KINESIS
 
-#include <aws/kinesis/model/RegisterStreamConsumerRequest.h>
 #include <aws/core/utils/memory/AWSMemory.h>
+#include <aws/kinesis/model/RegisterStreamConsumerRequest.h>
+#include <aws/kinesis/model/SubscribeToShardRequest.h>
+#include <aws/kinesis/model/DescribeStreamRequest.h>
 
 
 namespace DB
@@ -15,7 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_CONNECT_KINESIS;
+    extern const int KINESIS_ERROR;
     extern const int KINESIS_RESHARDING;
     extern const int TIMEOUT_EXCEEDED;
 }
@@ -23,58 +26,71 @@ namespace ErrorCodes
 KinesisConsumer::KinesisConsumer(
     const String & stream_name_,
     const Aws::Kinesis::KinesisClient & client_,
-    const std::vector<Aws::Kinesis::Model::Shard> & shards_,
+    const std::map<String, ShardState> & shard_states_,
     size_t max_messages_per_batch_,
     StartingPositionType starting_position_type_,
     time_t timestamp_,
     const String & consumer_name_,
-    size_t internal_queue_size_)
-    : stream_name(stream_name_)
+    size_t internal_queue_size_,
+    bool is_enhanced_consumer_,
+    UInt64 max_execution_time_ms_)
+    : consumer_name(consumer_name_)
+    , stream_name(stream_name_)
     , client(client_)
     , max_messages_per_batch(max_messages_per_batch_)
     , starting_position_type(starting_position_type_)
     , timestamp(timestamp_)
-    , consumer_name(consumer_name_)
     , queue(internal_queue_size_)
-    , shards(shards_)
+    , shard_states(shard_states_)
+    , max_execution_time_ms(max_execution_time_ms_)
+    , is_enhanced_consumer(is_enhanced_consumer_)
 {
-    LOG_INFO(&Poco::Logger::get("KinesisConsumer"), "KinesisConsumer created. Stream: {}, Starting position: {}",
-        stream_name, 
-        starting_position_type == LATEST ? "LATEST" : 
-        (starting_position_type == TRIM_HORIZON ? "TRIM_HORIZON" : "AT_TIMESTAMP"));
-}
 
-
-void KinesisConsumer::init()
-{
-    // Инициализируем итераторы для каждого шарда
-    for (const auto & shard : shards)
+    if (is_enhanced_consumer)
     {
-        const auto & shard_id = shard.GetShardId();
-        try 
+        Aws::Kinesis::Model::RegisterStreamConsumerRequest request;
+        String stream_arn_value;
+        try
         {
-            std::lock_guard lock(shard_mutex);
-            shard_iterators[shard_id] = getShardIterator(shard_id, starting_position_type, timestamp);
-            LOG_TRACE(&Poco::Logger::get("KinesisConsumer"), "Initialized iterator for shard {}", shard_id);
+            Aws::Kinesis::Model::DescribeStreamRequest describe_request;
+            describe_request.SetStreamName(stream_name);
+            auto describe_outcome = client.DescribeStream(describe_request);
+
+            if (!describe_outcome.IsSuccess())
+            {
+                const auto & error = describe_outcome.GetError();
+                throw Exception(ErrorCodes::KINESIS_ERROR, "Failed to describe stream {}: {} ({})", stream_name, error.GetMessage(), error.GetExceptionName());
+            }
+            stream_arn_value = describe_outcome.GetResult().GetStreamDescription().GetStreamARN();
+        }
+        catch (const DB::Exception &)
+        {
+            throw;
         }
         catch (const std::exception & e)
         {
-            LOG_WARNING(&Poco::Logger::get("KinesisConsumer"), "Failed to initialize iterator for shard {}: {}", shard_id, e.what());
-            // Просто пропускаем проблемный шард
+            throw Exception(ErrorCodes::KINESIS_ERROR, "Exception while describing stream {}: {}", stream_name, e.what());
         }
+        
+        request.SetStreamARN(stream_arn_value);
+        request.SetConsumerName(consumer_name);
+        
+        auto outcome = client.RegisterStreamConsumer(request);
+        if (!outcome.IsSuccess())
+        {
+            const auto & error = outcome.GetError();
+            throw Exception(ErrorCodes::KINESIS_ERROR, "Failed to register consumer: {} ({})", error.GetMessage(), error.GetExceptionName());
+        }
+        consumer_arn = outcome.GetResult().GetConsumer().GetConsumerARN();
     }
 }
 
-/*
-    Получение итератора для шарда с учетом стартовой позиции.
-*/
 String KinesisConsumer::getShardIterator(const String & shard_id, StartingPositionType position_type, time_t timestamp_value)
 {
     Aws::Kinesis::Model::GetShardIteratorRequest request;
     request.SetStreamName(stream_name);
     request.SetShardId(shard_id);
     
-    // Преобразование нашего типа позиции в тип AWS SDK
     switch (position_type)
     {
         case LATEST:
@@ -86,18 +102,15 @@ String KinesisConsumer::getShardIterator(const String & shard_id, StartingPositi
         case AT_TIMESTAMP:
             request.SetShardIteratorType(Aws::Kinesis::Model::ShardIteratorType::AT_TIMESTAMP);
             
-            // Преобразуем timestamp в формат AWS
             Aws::Utils::DateTime aws_timestamp(static_cast<int64_t>(timestamp_value));
             request.SetTimestamp(aws_timestamp);
             break;
     }
     
-    // Если у нас есть сохраненная позиция чтения, используем ее
-    if (position_type == AT_TIMESTAMP && timestamp_value == 0 && 
-        shard_checkpoints.find(shard_id) != shard_checkpoints.end())
+    if (shard_states.find(shard_id) != shard_states.end() && !shard_states[shard_id].checkpoint.empty())
     {
         request.SetShardIteratorType(Aws::Kinesis::Model::ShardIteratorType::AFTER_SEQUENCE_NUMBER);
-        request.SetStartingSequenceNumber(shard_checkpoints[shard_id]);
+        request.SetStartingSequenceNumber(shard_states[shard_id].checkpoint);
     }
     
     auto outcome = client.GetShardIterator(request);
@@ -105,52 +118,147 @@ String KinesisConsumer::getShardIterator(const String & shard_id, StartingPositi
     if (!outcome.IsSuccess())
     {
         const auto & error = outcome.GetError();
-        LOG_ERROR(&Poco::Logger::get("KinesisConsumer"), 
-            "Error getting shard iterator for stream {} shard {}: {} ({})", 
-            stream_name, shard_id, error.GetMessage(), error.GetExceptionName());
-        
         throw Exception(
-            ErrorCodes::CANNOT_CONNECT_KINESIS,
+            ErrorCodes::KINESIS_ERROR,
             "Failed to get shard iterator for stream {} shard {}: {} ({})",
             stream_name, shard_id, error.GetMessage(), error.GetExceptionName());
     }
-    
+
     return outcome.GetResult().GetShardIterator();
 }
 
-/*
-    Эта функция получает данные из Kinesis и кладет их в очередь для дальнейшей обработки. 
-    Она блокирует текущее состояние шардов, чтобы KinesisShardBalancer не выбил шард из-под ног.
-*/
 bool KinesisConsumer::receive()
 {
-    if (!is_running)
-    {
-        LOG_INFO(&Poco::Logger::get("KinesisConsumer"), "Consumer is stopped");
-        return false;
-    }
-    
-    LOG_TRACE(&Poco::Logger::get("KinesisConsumer"), "Starting to receive from Kinesis stream: {}", stream_name);
+    if (is_enhanced_consumer)
+        return receiveEnhanced();
+    else
+        return receiveSimple();
+}
 
-    // Копируем текущие итераторы под мьютексом чтобы не блокировать mutex надолго
-    std::map<String, String> iterators;
+
+bool KinesisConsumer::receiveEnhanced()
+{
+    if (!is_running.load() || waiting_commit.load() || shard_states.empty())
+        return false;
+
+    bool received_any_records = false;
+
+    for (const auto & [shard_id, state] : shard_states)
+    {
+        if (!is_running.load())
+            break;
+        if (state.is_closed)
+            continue;
+
+        Aws::Kinesis::Model::SubscribeToShardRequest request;
+        request.SetConsumerARN(consumer_arn);
+        request.SetShardId(shard_id);
+
+        Aws::Kinesis::Model::StartingPosition pos;
+        if (!state.checkpoint.empty())
+        {
+            pos.SetType(Aws::Kinesis::Model::ShardIteratorType::AFTER_SEQUENCE_NUMBER);
+            pos.SetSequenceNumber(state.checkpoint);
+        }
+        else
+        {
+            switch (starting_position_type)
+            {
+                case LATEST:       
+                    pos.SetType(Aws::Kinesis::Model::ShardIteratorType::LATEST);
+                    break;
+                case TRIM_HORIZON:
+                    pos.SetType(Aws::Kinesis::Model::ShardIteratorType::TRIM_HORIZON);
+                    break;
+                case AT_TIMESTAMP:
+                    pos.SetType(Aws::Kinesis::Model::ShardIteratorType::AT_TIMESTAMP);
+                    pos.SetTimestamp(Aws::Utils::DateTime(static_cast<int64_t>(timestamp * 1000))); // ms
+                    break;
+            }
+        }
+        request.SetStartingPosition(pos);
+        Aws::Kinesis::Model::SubscribeToShardHandler handler;
+
+        handler.SetSubscribeToShardEventCallback([this, shard_id_cb = shard_id, &received_any_records](const Aws::Kinesis::Model::SubscribeToShardEvent &event)
+        {
+            bool is_time_limit_exceeded = false;
+            if (max_execution_time_ms)
+            {
+                uint64_t time_for_one_shard = max_execution_time_ms / shard_states.size();
+                uint64_t elapsed_time_ms = total_stopwatch.elapsedMilliseconds();
+                is_time_limit_exceeded = time_for_one_shard <= elapsed_time_ms;
+            }
+            
+            if (!event.GetRecords().empty())
+            {
+                this->processRecords(event.GetRecords(), shard_id_cb);
+                received_any_records = true;
+            }
+
+            if (!is_running)
+                throw DB::Exception(
+                    ErrorCodes::TIMEOUT_EXCEEDED,
+                    "Consumer is stopped, stopped on shard {}", shard_id_cb);
+
+            if (is_time_limit_exceeded)
+                throw DB::Exception(
+                    ErrorCodes::TIMEOUT_EXCEEDED,
+                    "Time limit for EFO shard {} exceeded, subscription actively stopped", shard_id_cb);
+        });
+
+        request.SetEventStreamHandler(handler);
+        
+        try
+        {
+            total_stopwatch.restart();
+            client.SubscribeToShard(request);
+        }
+        catch (const DB::Exception & e)
+        {
+            LOG_DEBUG(&Poco::Logger::get("KinesisConsumer"), "EFO DB::Exception during SubscribeToShard for shard {}, error: {}", shard_id, e.what());
+        }
+        catch (const Aws::Client::AWSError<Aws::Kinesis::KinesisErrors>& e)
+        {
+            LOG_DEBUG(&Poco::Logger::get("KinesisConsumer"), "EFO AWSError during SubscribeToShard for shard {}, error: {}", shard_id, e.GetExceptionName());
+        }
+        catch (const std::exception& e)
+        {
+            LOG_DEBUG(&Poco::Logger::get("KinesisConsumer"), "EFO std::exception during SubscribeToShard for shard {}, error: {}", shard_id, e.what());
+        }
+    }
+
+    if (received_any_records)
+        waiting_commit = true;
+
+    return received_any_records;
+}
+
+bool KinesisConsumer::receiveSimple()
+{
+    if (!is_running || waiting_commit)
+        return false;
+
+    std::map<String, ShardState> states;
     {
         std::lock_guard lock(shard_mutex);
-        iterators = shard_iterators;
+        states = shard_states;
     }
     
     bool received_any_records = false;
     
-    // Получаем данные из каждого шарда
-    for (auto & [shard_id, iterator] : iterators)
+    for (auto & [shard_id, state] : states)
     {
-        if (iterator.empty())
+        if (!is_running)
+            break;
+        if (state.is_closed)
+            continue;
+
+        if (state.iterator.empty())
         {
             try
             {
                 std::lock_guard lock(shard_mutex);
-                shard_iterators[shard_id] = getShardIterator(shard_id, starting_position_type, timestamp);
-                iterator = shard_iterators[shard_id];
+                state.iterator = getShardIterator(shard_id, starting_position_type, timestamp);
             }
             catch (const std::exception & e)
             {
@@ -158,12 +266,11 @@ bool KinesisConsumer::receive()
                 continue;
             }
         }
-
-        // Создаем запрос для получения записей
-        Aws::Kinesis::Model::GetRecordsRequest request;
-        request.SetShardIterator(iterator);
-        request.SetLimit(max_messages_per_batch);
         
+        Aws::Kinesis::Model::GetRecordsRequest request;
+        request.SetShardIterator(state.iterator);
+        request.SetLimit(static_cast<int>(max_messages_per_batch));
+
         try
         {
             auto outcome = client.GetRecords(request);
@@ -171,55 +278,44 @@ bool KinesisConsumer::receive()
             if (!outcome.IsSuccess())
             {
                 const auto & error = outcome.GetError();
-                LOG_WARNING(&Poco::Logger::get("KinesisConsumer"), 
-                    "Error receiving records from shard {}: {} ({})", 
-                    shard_id, error.GetMessage(), error.GetExceptionName());
+                LOG_WARNING(&Poco::Logger::get("KinesisConsumer"),
+                    "Shard {}: GetRecords failed. Error: {} ({}), Iterator used: {}",
+                    shard_id, error.GetMessage(), error.GetExceptionName(), state.iterator);
                 
-                // Если итератор устарел, нам нужен новый
                 if (error.GetErrorType() == Aws::Kinesis::KinesisErrors::EXPIRED_ITERATOR 
                     || error.GetErrorType() == Aws::Kinesis::KinesisErrors::RESOURCE_NOT_FOUND)
                 {
                     std::lock_guard lock(shard_mutex);
-                    shard_iterators[shard_id] = ""; // Будет получен новый на следующей итерации
+                    state.iterator = "";
                 }
-                
                 continue;
             }
             
             const auto & result = outcome.GetResult();
             const auto & records = result.GetRecords();
             
-            // Сохраняем новый итератор для следующего запроса
             {
                 std::lock_guard lock(shard_mutex);
-                shard_iterators[shard_id] = result.GetNextShardIterator();
+                
+                to_commit[shard_id] = state;
+                to_commit[shard_id].iterator = result.GetNextShardIterator();
+                to_commit[shard_id].is_closed = result.GetNextShardIterator().empty();
             }
             
             if (records.empty())
-            {
-                LOG_TRACE(&Poco::Logger::get("KinesisConsumer"), "No records received from shard {}", shard_id);
                 continue;
-            }
             
-            // Обрабатываем полученные записи
             processRecords(records, shard_id);
             received_any_records = true;
-            
-            LOG_TRACE(&Poco::Logger::get("KinesisConsumer"), "Received {} records from shard {}", 
-                records.size(), shard_id);
-            
-            // Если итератор пустой, значит шард закрыт
-            if (result.GetNextShardIterator().empty())
-            {
-                LOG_INFO(&Poco::Logger::get("KinesisConsumer"), "Shard {} has been closed (empty next iterator)", shard_id);
-            }
         }
         catch (const std::exception & e)
         {
             LOG_WARNING(&Poco::Logger::get("KinesisConsumer"), "Exception when receiving from shard {}: {}", shard_id, e.what());
-            // Просто продолжаем работу со следующим шардом
         }
     }
+
+    if (received_any_records)
+        waiting_commit = true;
     
     UInt64 now = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -228,9 +324,6 @@ bool KinesisConsumer::receive()
     return received_any_records;
 }
 
-/*
-    Преобразование записей из формата AWS SDK в наш формат и отправка в очередь.
-*/
 void KinesisConsumer::processRecords(const std::vector<Aws::Kinesis::Model::Record> & records, const String & shard_id)
 {
     UInt64 now = std::chrono::duration_cast<std::chrono::seconds>(
@@ -240,40 +333,53 @@ void KinesisConsumer::processRecords(const std::vector<Aws::Kinesis::Model::Reco
     {
         Message msg;
         
-        // Копируем данные из AWS SDK структур в наши
         const Aws::Utils::ByteBuffer& data = record.GetData();
         msg.data = String(reinterpret_cast<const char*>(data.GetUnderlyingData()), data.GetLength());
         msg.partition_key = record.GetPartitionKey();
         msg.sequence_number = record.GetSequenceNumber();
         msg.shard_id = shard_id;
-        
-        // Временная метка из Kinesis (когда запись попала в поток)
-        auto aws_timestamp = record.GetApproximateArrivalTimestamp();
-        msg.approximate_arrival_timestamp = static_cast<UInt64>(aws_timestamp.SecondsWithMSPrecision());
-        
+        msg.approximate_arrival_timestamp = static_cast<UInt64>(record.GetApproximateArrivalTimestamp().SecondsWithMSPrecision());
         msg.received_at = now;
-        
-        // Добавляем сообщение в очередь для дальнейшей обработки
+
         if (!queue.tryPush(msg))
         {
-            LOG_WARNING(&Poco::Logger::get("KinesisConsumer"), "Message queue is full, dropping Kinesis record");
+            LOG_WARNING(&Poco::Logger::get("KinesisConsumer"), "Message queue is full, dropping Kinesis record for shard {}", shard_id);
             return;
         }
         
-        // Сохраняем последний прочитанный sequence_number для восстановления позиции
         if (!msg.sequence_number.empty())
         {
             std::lock_guard lock(shard_mutex);
-            shard_checkpoints[shard_id] = msg.sequence_number;
+            to_commit[shard_id].checkpoint = msg.sequence_number;
         }
         
         total_messages_received++;
     }
 }
 
-/*
-    Эта функция используется KinesisSource для получения считанных данных из очереди.
-*/
+bool KinesisConsumer::commit()
+{
+    std::lock_guard lock(shard_mutex);
+    if (!waiting_commit.exchange(false))
+        return false;
+
+    if (to_commit.empty())
+        return false;
+
+    for (auto & [shard_id, state] : to_commit)
+        shard_states[shard_id] = state;
+    to_commit.clear();
+
+    return true;
+}
+
+void KinesisConsumer::rollback()
+{
+    std::lock_guard lock(shard_mutex);
+    waiting_commit.store(false);
+    to_commit.clear();
+}
+
 std::optional<KinesisConsumer::Message> KinesisConsumer::getMessage()
 {
     if (!is_running)
@@ -288,26 +394,27 @@ std::optional<KinesisConsumer::Message> KinesisConsumer::getMessage()
     return message;
 }
 
-/*
-    Остановка потребителя. После вызова этой функции, потребитель больше не будет запрашивать новые сообщения, 
-    ровно как отдавать уже обработанные из очереди.
-*/
+void KinesisConsumer::updateShardsState(std::map<String, ShardState> & new_shard_states)
+{
+    std::lock_guard lock(shard_mutex);
+    shard_states = new_shard_states;
+}
+
+std::map<String, ShardState> KinesisConsumer::getShardsState()
+{
+    std::lock_guard lock(shard_mutex);
+    return shard_states;
+}
+
 void KinesisConsumer::stop()
 {
-    LOG_INFO(&Poco::Logger::get("KinesisConsumer"), "Stopping Kinesis consumer");
-    is_running = false;
-    
+    is_running.store(false);
     queue.clear();
 }
 
-/*
-    Деструктор. Освобождает ресурсы.
-*/
 KinesisConsumer::~KinesisConsumer()
 {
     stop();
-    // Никаких дополнительных ресурсов AWS для освобождения нет
-    // Объекты Kinesis автоматически освобождаются при уничтожении клиента
 }
 
 }
