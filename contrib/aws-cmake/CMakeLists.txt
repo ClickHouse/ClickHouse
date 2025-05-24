@@ -57,6 +57,10 @@ SET(AWS_SDK_S3_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-s3")
 SET(AWS_SDK_KMS_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-kms")
 SET(AWS_SDK_GLUE_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-glue")
 
+SET(AWS_SDK_IDENTITY_MANAGEMENT_DIR "${AWS_SDK_DIR}/src/aws-cpp-sdk-identity-management")
+SET(AWS_SDK_STS_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-sts")
+SET(AWS_SDK_COGNITO_IDENTITY_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-cognito-identity")
+
 SET(AWS_AUTH_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-auth")
 SET(AWS_CAL_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-cal")
 SET(AWS_CHECKSUMS_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-checksums")
@@ -143,6 +147,34 @@ file(GLOB AWS_SDK_S3_SRC
 
 list(APPEND AWS_SOURCES ${AWS_SDK_S3_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_S3_DIR}/include/")
+
+
+# aws-cpp-sdk-identity-management
+file(GLOB AWS_SDK_IDENTITY_MANAGEMENT_SRC
+    "${AWS_SDK_IDENTITY_MANAGEMENT_DIR}/source/auth/*.cpp"
+)
+
+list(APPEND AWS_SOURCES ${AWS_SDK_IDENTITY_MANAGEMENT_SRC})
+list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_IDENTITY_MANAGEMENT_DIR}/include/")
+
+
+# aws-cpp-sdk-sts
+file(GLOB AWS_SDK_STS_SRC
+        "${AWS_SDK_STS_DIR}/source/*.cpp"
+        "${AWS_SDK_STS_DIR}/source/model/*.cpp"
+)
+
+list(APPEND AWS_SOURCES ${AWS_SDK_STS_SRC})
+list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_STS_DIR}/include/")
+
+# aws-cpp-sdk-cognito-identity
+file(GLOB AWS_SDK_COGNITO_IDENTITY_SRC
+        "${AWS_SDK_COGNITO_IDENTITY_DIR}/source/*.cpp"
+        "${AWS_SDK_COGNITO_IDENTITY_DIR}/source/model/*.cpp"
+)
+
+list(APPEND AWS_SOURCES ${AWS_SDK_COGNITO_IDENTITY_SRC})
+list(APPEND AWS_PRIVATE_INCLUDES "${AWS_SDK_COGNITO_IDENTITY_DIR}/include/")
 
 
 if(CLICKHOUSE_CLOUD)
