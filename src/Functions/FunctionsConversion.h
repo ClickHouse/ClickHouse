@@ -3144,6 +3144,224 @@ private:
 
 
 /** Function toTOrZero (where T is number of date or datetime type):
+  *  try to convert from String or int to type T through parsing,
+  *  if cannot parse, return default value instead of throwing exception.
+  * Function toTOrNull will return Nullable type with NULL when cannot parse.
+  * NOTE Also need to implement tryToUnixTimestamp with timezone.
+  */
+template <typename ToDataType, typename Name,
+    ConvertFromStringExceptionMode exception_mode,
+    ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Normal>
+class FunctionConvertFromStringOrInt : public IFunction
+{
+public:
+    static constexpr auto name = Name::name;
+    static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
+    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !to_datetime64;
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertFromStringOrInt>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypePtr res;
+
+        if (isDateTime64<Name, ToDataType>(arguments))
+        {
+            validateFunctionArguments(*this, arguments,
+                FunctionArgumentDescriptors{{"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}},
+                // optional
+                FunctionArgumentDescriptors{
+                    {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
+                    {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"},
+                });
+
+            UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
+            if (arguments.size() > 1)
+                scale = extractToDecimalScale(arguments[1]);
+            const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
+
+            res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
+        }
+        else
+        {
+            if ((arguments.size() != 1 && arguments.size() != 2) || (to_decimal && arguments.size() != 2))
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2. "
+                    "Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
+                    getName(), arguments.size());
+
+            if (!isStringOrFixedString(arguments[0].type) && !isInteger(*arguments[0].type))
+            {
+                if (this->getName().contains("OrZero") || this->getName().contains("OrNull"))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+                            "Conversion functions with postfix 'OrZero' or 'OrNull' should take String or int argument",
+                            arguments[0].type->getName(), getName());
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}",
+                            arguments[0].type->getName(), getName());
+            }
+
+            if (arguments.size() == 2)
+            {
+                if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+                {
+                    if (!isString(arguments[1].type))
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 2nd argument of function {}",
+                            arguments[1].type->getName(), getName());
+                }
+                else if constexpr (to_decimal)
+                {
+                    if (!isInteger(arguments[1].type))
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 2nd argument of function {}",
+                            arguments[1].type->getName(), getName());
+                    if (!arguments[1].column)
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be constant", getName());
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Number of arguments for function {} doesn't match: passed {}, should be 1. "
+                        "Second argument makes sense only for DateTime and Decimal.",
+                        getName(), arguments.size());
+                }
+            }
+
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+                res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected behavior for function {}: DataTypeDateTime64 is not expected here.", getName());
+            else if constexpr (to_decimal)
+            {
+                UInt64 scale = extractToDecimalScale(arguments[1]);
+                res = createDecimalMaxPrecision<typename ToDataType::FieldType>(scale);
+                if (!res)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected behavior for function {}: createDecimalMaxPrecision didn't return any value.", getName());
+            }
+            else
+                res = std::make_shared<ToDataType>();
+        }
+
+        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+            res = std::make_shared<DataTypeNullable>(res);
+
+        return res;
+    }
+
+    template <typename ConvertToDataType>
+    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale) const
+    {
+        const IDataType * from_type = arguments[0].type.get();
+
+        if (checkAndGetDataType<DataTypeString>(from_type))
+        {
+            return ConvertThroughParsing<DataTypeString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
+                arguments, result_type, input_rows_count, scale);
+        }
+        else if (checkAndGetDataType<DataTypeFixedString>(from_type))
+        {
+            return ConvertThroughParsing<DataTypeFixedString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
+                arguments, result_type, input_rows_count, scale);
+        }
+        else if (isInteger(*from_type))
+        {
+            ColumnPtr nested_column;
+            if (checkAndGetDataType<DataTypeUInt64>(from_type))
+            {
+                // We are not supporting uint64 to DateTime conversion, return default value
+                auto temp_nested_column = DataTypeUInt32().createColumn();
+                temp_nested_column->insertManyDefaults(1);
+                auto null_map = ColumnUInt8::create(1, 1);
+                return ColumnNullable::create(std::move(temp_nested_column), std::move(null_map));
+            }
+            else if (checkAndGetDataType<DataTypeUInt32>(from_type))
+            {
+                nested_column = ConvertImpl<DataTypeUInt32, ConvertToDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(
+                arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
+            }
+            else if (checkAndGetDataType<DataTypeUInt16>(from_type))
+            {
+                nested_column = ConvertImpl<DataTypeUInt16, ConvertToDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(
+                arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
+            }
+            else if (checkAndGetDataType<DataTypeUInt8>(from_type))
+            {
+                nested_column = ConvertImpl<DataTypeUInt8, ConvertToDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(
+                arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
+            }
+            if (nested_column != nullptr)
+            {
+                auto null_map = ColumnUInt8::create(nested_column->size(), 0);
+                ColumnPtr result = ColumnNullable::create(nested_column, std::move(null_map));
+                return result;
+            }
+        }
+
+        return nullptr;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        ColumnPtr result_column;
+
+
+                if constexpr (to_decimal)
+                {
+                    result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count,
+                        assert_cast<const ToDataType &>(*removeNullable(result_type)).getScale());
+                }
+                else if constexpr (mightBeDateTime<Name, ToDataType>())
+                {
+                    if (isDateTime64<Name, ToDataType>(arguments))
+                    {
+                        UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
+                        if (arguments.size() > 1)
+                            scale = extractToDecimalScale(arguments[1]);
+
+                        if (scale == 0)
+                        {
+                            result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count, 0);
+                        }
+                        else
+                        {
+                            result_column
+                                = executeInternal<DataTypeDateTime64>(arguments, result_type, input_rows_count, static_cast<UInt32>(scale));
+                        }
+                    }
+                    else
+                    {
+                        result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count, 0);
+                    }
+                }
+                else
+                {
+                    result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count, 0);
+                }
+
+                if (!result_column)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                        "Only String or FixedString argument is accepted for try-conversion function. For other arguments, "
+                        "use function without 'orZero' or 'orNull'.", arguments[0].type->getName(), getName());
+
+                return result_column;
+    }
+};
+
+
+/** Function toTOrZero (where T is number of date or datetime type):
   *  try to convert from String to type T through parsing,
   *  if cannot parse, return default value instead of throwing exception.
   * Function toTOrNull will return Nullable type with NULL when cannot parse.
@@ -3875,9 +4093,11 @@ extern template class FunctionConvertFromString<DataTypeFloat32, NameToFloat32Or
 extern template class FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDate32, NameToDate32OrNull, ConvertFromStringExceptionMode::Null>;
+
+extern template class FunctionConvertFromStringOrInt<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeTime, NameToTimeOrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeTime64, NameToTime64OrNull, ConvertFromStringExceptionMode::Null>;
-extern template class FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
+
 extern template class FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrNull, ConvertFromStringExceptionMode::Null>;
@@ -3904,9 +4124,9 @@ using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameT
 using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDate32OrNull = FunctionConvertFromString<DataTypeDate32, NameToDate32OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToDateTimeOrNull = FunctionConvertFromStringOrInt<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToTimeOrNull = FunctionConvertFromString<DataTypeTime, NameToTimeOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToTime64OrNull = FunctionConvertFromString<DataTypeTime64, NameToTime64OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToDateTimeOrNull = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateTime64OrNull = FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal32OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal64OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrNull, ConvertFromStringExceptionMode::Null>;
