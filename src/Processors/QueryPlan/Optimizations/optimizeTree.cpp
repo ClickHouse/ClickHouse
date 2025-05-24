@@ -206,15 +206,11 @@ void optimizeTreeSecondPass(
         {
             // TODO: check if plan used parallel replicas
             auto [local_plan, _] = read_from_local->createQueryPlan();
-            // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "PR local plan (BEFORE optimize):\n{}", dumpQueryPlan(*local_plan));
             local_plan->optimize(optimization_settings);
             if (optimization_settings.merge_expressions)
                 local_plan->mergeExpressions();
 
-            // local_plan->optimize(optimization_settings);
-            // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "PR local plan (AFTER optimize):\n{}", dumpQueryPlan(*local_plan));
             query_plan.replaceNode(frame.node, std::move(local_plan));
-            // optimizeTreeFirstPass(optimization_settings, root, nodes);
         }
 
         stack.pop_back();
