@@ -194,9 +194,10 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             il->set_int_lit(rg.nextRandomInt64());
             if (complex && rg.nextSmallNumber() < 9)
             {
-                il->set_integers(static_cast<Integers>(
-                    (rg.nextRandomUInt32() % static_cast<uint32_t>(Integers::Int - Integers::UInt256))
-                    + static_cast<uint32_t>(Integers::Int8)));
+                il->set_integers(
+                    static_cast<Integers>(
+                        (rg.nextRandomUInt32() % static_cast<uint32_t>(Integers::Int - Integers::UInt256))
+                        + static_cast<uint32_t>(Integers::Int8)));
             }
         }
         else

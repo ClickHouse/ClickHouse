@@ -51,13 +51,13 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
-from helpers.kazoo_client import KazooClientWithImplicitRetries
+from .kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
-from helpers import pytest_xdist_logging_to_separate_files
-from helpers.client import QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
+from . import pytest_xdist_logging_to_separate_files
+from .client import QueryRuntimeException
+from .test_tools import assert_eq_with_retry, exec_query_with_retry
 
 from .client import Client
 from .config_cluster import *
@@ -1678,6 +1678,7 @@ class ClickHouseCluster:
         randomize_settings=True,
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
+        with_dolor=False
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1799,6 +1800,7 @@ class ClickHouseCluster:
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
+            with_dolor=with_dolor,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -3574,6 +3576,7 @@ class ClickHouseInstance:
         extra_configs=[],
         randomize_settings=True,
         use_docker_init_flag=False,
+        with_dolor=False,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -3701,6 +3704,7 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.with_dolor = with_dolor
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -4757,11 +4761,11 @@ class ClickHouseInstance:
                 self.with_installed_binary,
             )
 
-        write_embedded_config("0_common_instance_users.xml", users_d_dir)
-
-        if self.with_installed_binary:
-            # Ignore CPU overload in this case
-            write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
+        if not self.with_dolor:
+            write_embedded_config("0_common_instance_users.xml", users_d_dir)
+            if self.with_installed_binary:
+                # Ignore CPU overload in this case
+                write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         use_distributed_plan = (

@@ -105,6 +105,11 @@ public:
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
+
+    virtual bool tryToReconnect(const uint32_t, const uint32_t)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconnection is not implemented");
+    }
 protected:
     void runInteractive();
     void runNonInteractive();
@@ -115,7 +120,7 @@ protected:
     /// This is the analogue of Poco::Application::config()
     virtual Poco::Util::LayeredConfiguration & getClientConfiguration() = 0;
 
-    virtual bool processWithFuzzing(std::string_view)
+    virtual bool processWithASTFuzzer(std::string_view)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }

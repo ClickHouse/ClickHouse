@@ -1940,11 +1940,11 @@ void StatementGenerator::generateTopSelect(
     if (rg.nextSmallNumber() < 3)
     {
         SelectIntoFile * sif = ts->mutable_intofile();
-        const std::filesystem::path & qfile = fc.db_file_path / "file.data";
+        const std::filesystem::path & qfile = fc.client_file_path / "file.data";
 
         ts->set_format(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
         sif->set_path(qfile.generic_string());
-        if (rg.nextSmallNumber() < 4)
+        if (rg.nextSmallNumber() < 10)
         {
             sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
         }
