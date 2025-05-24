@@ -501,8 +501,15 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
 
     bool need_additional_keys = !keys->empty();
     bool need_dictionary = settings.low_cardinality_max_dictionary_size != 0;
-    bool need_write_dictionary = !settings.low_cardinality_use_single_dictionary_for_part
-                                 && global_dictionary->size() >= settings.low_cardinality_max_dictionary_size;
+    bool need_write_dictionary = (!settings.low_cardinality_use_single_dictionary_for_part
+                                 && global_dictionary->size() >= settings.low_cardinality_max_dictionary_size)
+                                 || global_dictionary->haveIndexesChanged(); /* if dictionary requires reindexing after inserts, we must use a new one each time */
+
+    if (settings.low_cardinality_use_single_dictionary_for_part && global_dictionary->haveIndexesChanged())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "low_cardinality_use_single_dictionary_for_part is enabled, but current dictionary doesn't support that. "
+                        "Dictionary type is {}", global_dictionary->getName());
+    }
 
     IndexesSerializationType index_version(*positions, need_additional_keys, need_dictionary, need_update_dictionary);
     index_version.serialize(*indexes_stream);

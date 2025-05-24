@@ -78,7 +78,7 @@ private:
     void deserializeImpl(IColumn & column, DeserializeFunctionPtr<Params...> func, Args &&... args) const;
 
     template <typename Creator>
-    static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const Creator & creator);
+    static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const Creator & creator, MutableColumnPtr && keys);
 };
 
 /// Returns dictionary type if type is DataTypeLowCardinality, type otherwise.

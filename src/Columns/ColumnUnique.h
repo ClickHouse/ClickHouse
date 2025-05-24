@@ -49,14 +49,24 @@ private:
 
 public:
     std::string getName() const override { return "Unique(" + getNestedColumn()->getName() + ")"; }
+    std::string getNestedName() const override { return getNestedColumn()->getName(); }
 
     MutableColumnPtr cloneEmpty() const override;
 
-    const ColumnPtr & getNestedColumn() const override;
-    const ColumnPtr & getNestedNotNullableColumn() const override { return column_holder; }
+    ColumnPtr getNestedColumn() const override;
+    ColumnPtr getNestedNotNullableColumn() const override { return column_holder; }
     bool nestedColumnIsNullable() const override { return is_nullable; }
     void nestedToNullable() override;
     void nestedRemoveNullable() override;
+    bool nestedCanBeInsideNullable() const override { return getNestedColumn()->canBeInsideNullable(); }
+
+    size_t size() const override { return column_holder->size(); }
+
+    bool haveIndexesChanged() const override { return false; }
+    MutableColumnPtr detachChangedIndexes() override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'detachChangedIndexes' not implemented for ColumnUnique");
+    }
 
     size_t uniqueInsert(const Field & x) override;
     bool tryUniqueInsert(const Field & x, size_t & index) override;
@@ -72,12 +82,17 @@ public:
     size_t getNestedTypeDefaultValueIndex() const override { return is_nullable ? 1 : 0; }
     bool canContainNulls() const override { return is_nullable; }
 
+    bool isCollationSupported() const override { return getNestedColumn()->isCollationSupported(); }
+
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
     std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
     {
         return getNestedColumn()->getValueNameAndType(n);
     }
+
+    TypeIndex getDataType() const override { return getNestedColumn()->getDataType(); }
+
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
@@ -169,7 +184,7 @@ public:
 
     const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
 
-    UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
+    UInt128 getHash() const override { return hash.getHash(column_holder); }
 
     /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(StringRef value) const override
@@ -197,20 +212,7 @@ private:
     IColumn::WrappedPtr nested_null_mask;
     IColumn::WrappedPtr nested_column_nullable;
 
-    class IncrementalHash
-    {
-    private:
-        UInt128 hash;
-        std::atomic<size_t> num_added_rows;
-
-        std::mutex mutex;
-    public:
-        IncrementalHash() : num_added_rows(0) {}
-
-        UInt128 getHash(const ColumnType & column);
-    };
-
-    mutable IncrementalHash hash;
+    mutable IColumnUnique::IncrementalHash hash;
 
     void createNullMask();
     void updateNullMask();
@@ -327,7 +329,7 @@ void ColumnUnique<ColumnType>::nestedRemoveNullable()
 }
 
 template <typename ColumnType>
-const ColumnPtr & ColumnUnique<ColumnType>::getNestedColumn() const
+ColumnPtr ColumnUnique<ColumnType>::getNestedColumn() const
 {
     if (is_nullable)
         return nested_column_nullable;
