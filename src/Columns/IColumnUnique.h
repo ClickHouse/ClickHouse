@@ -98,8 +98,10 @@ public:
     /// Returns dictionary hash which is SipHash is applied to each row of nested column.
     virtual UInt128 getHash() const = 0;
 
+    /// getName() of the nested type
+    virtual std::string getNestedName() const = 0;
+
     const char * getFamilyName() const override { return "Unique"; }
-    TypeIndex getDataType() const override { return getNestedColumn()->getDataType(); }
 
     void insert(const Field &) override
     {

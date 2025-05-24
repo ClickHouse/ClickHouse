@@ -31,6 +31,7 @@ private:
 
 public:
     std::string getName() const override { return "UniqueFCBlockDF"; }
+    std::string getNestedName() const override { return "String"; }
 
     MutableColumnPtr cloneEmpty() const override;
 
@@ -71,6 +72,7 @@ public:
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+    TypeIndex getDataType() const override { return TypeIndex::String; }
 
     bool isDefaultAt(size_t n) const override { return n == getDefaultValueIndex(); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }

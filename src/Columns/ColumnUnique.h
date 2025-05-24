@@ -49,6 +49,7 @@ private:
 
 public:
     std::string getName() const override { return "Unique(" + getNestedColumn()->getName() + ")"; }
+    std::string getNestedName() const override { return getNestedColumn()->getName(); }
 
     MutableColumnPtr cloneEmpty() const override;
 
@@ -89,6 +90,9 @@ public:
     {
         return getNestedColumn()->getValueNameAndType(n);
     }
+
+    TypeIndex getDataType() const override { return getNestedColumn()->getDataType(); }
+
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }

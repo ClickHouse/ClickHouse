@@ -45,7 +45,7 @@ public:
         return Base::create(std::move(column_unique), std::move(indexes), is_shared);
     }
 
-    std::string getName() const override { return "LowCardinality(" + getDictionary().getName() + ")"; }
+    std::string getName() const override { return "LowCardinality(" + getDictionary().getNestedName() + ")"; }
     const char * getFamilyName() const override { return "LowCardinality"; }
     TypeIndex getDataType() const override { return TypeIndex::LowCardinality; }
 
