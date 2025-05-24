@@ -23,7 +23,7 @@
 #include <Core/Block.h>
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
-#include "Core/TypeId.h"
+#include <Core/TypeId.h>
 
 namespace DB
 {
