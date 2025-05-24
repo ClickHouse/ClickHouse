@@ -23,6 +23,7 @@
 #include <Core/Block.h>
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
+#include "Core/TypeId.h"
 
 namespace DB
 {
@@ -1658,8 +1659,9 @@ NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, cons
     std::unordered_map<String, DataTypeCustomDescPtr> custom_descs;
     const auto & prev_schema = header.getNamesAndTypesList();
     for (const auto & [name, type] : prev_schema)
-        if (type->hasCustomName())
+        if (type->hasCustomName() && (type->getTypeId() == TypeIndex::Tuple || type->getTypeId() == TypeIndex::Array))
             custom_descs[name] = std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(type->getCustomName()->getName()));
+
     for (auto & [name, type] : header.getNamesAndTypesList())
         result.emplace_back(name, makeNullableRecursively(type, settings));
 
