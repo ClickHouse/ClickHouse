@@ -104,15 +104,6 @@ void StorageS3Configuration::validateNamespace(const String & name) const
     S3::URI::validateBucket(name, {});
 }
 
-StorageS3Configuration::StorageS3Configuration(const StorageS3Configuration & other)
-    : Configuration(other)
-{
-    url = other.url;
-    static_configuration = other.static_configuration;
-    headers_from_ast = other.headers_from_ast;
-    keys = other.keys;
-}
-
 StorageObjectStorage::QuerySettings StorageS3Configuration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();

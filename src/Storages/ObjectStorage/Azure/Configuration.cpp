@@ -65,14 +65,6 @@ void StorageAzureConfiguration::check(ContextPtr context) const
     Configuration::check(context);
 }
 
-StorageAzureConfiguration::StorageAzureConfiguration(const StorageAzureConfiguration & other)
-    : Configuration(other)
-{
-    blob_path = other.blob_path;
-    blobs_paths = other.blobs_paths;
-    connection_params = other.connection_params;
-}
-
 StorageObjectStorage::QuerySettings StorageAzureConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
