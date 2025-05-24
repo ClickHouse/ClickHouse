@@ -278,7 +278,8 @@ public:
 
     ThreadGroupPtr getThreadGroup() const;
 
-    void setQueryId(const std::string & new_query_id);
+    void setQueryId(std::string && new_query_id);
+    std::string clearQueryId();
     const String & getQueryId() const;
 
     ContextPtr getQueryContext() const;

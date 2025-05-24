@@ -172,9 +172,14 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
     return thread_group;
 }
 
-void ThreadStatus::setQueryId(const std::string & new_query_id)
+void ThreadStatus::setQueryId(std::string && new_query_id)
 {
-    query_id = new_query_id;
+    query_id = std::move(new_query_id);
+}
+
+std::string ThreadStatus::clearQueryId()
+{
+    return std::exchange(query_id, {});
 }
 
 const String & ThreadStatus::getQueryId() const

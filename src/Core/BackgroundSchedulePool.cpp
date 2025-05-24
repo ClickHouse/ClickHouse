@@ -108,14 +108,17 @@ void BackgroundSchedulePoolTaskInfo::execute()
         executing = true;
     }
 
+    /// Using this tmp query_id storage to prevent bad_alloc thrown under the try/catch.
+    std::string task_query_id = fmt::format("{}::{}", pool.thread_name, UUIDHelpers::generateV4());
+
     try
     {
         chassert(current_thread); /// Thread from global thread pool
-        current_thread->setQueryId(fmt::format("{}::{}", pool.thread_name, UUIDHelpers::generateV4()));
+        current_thread->setQueryId(std::move(task_query_id));
 
         function();
 
-        current_thread->setQueryId("");
+        task_query_id = current_thread->clearQueryId();
     }
     catch (...)
     {
