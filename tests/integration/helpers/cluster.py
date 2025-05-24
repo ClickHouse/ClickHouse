@@ -3475,7 +3475,7 @@ services:
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
-        entrypoint: {entrypoint_cmd}
+        command: {cmd}
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:
@@ -5028,7 +5028,7 @@ class ClickHouseInstance:
                     odbc_ini_path=odbc_ini_path,
                     keytab_path=self.keytab_path,
                     krb5_conf=self.krb5_conf,
-                    entrypoint_cmd=entrypoint_cmd,
+                    cmd=entrypoint_cmd,
                     networks=networks,
                     app_net=app_net,
                     ipv4_address=ipv4_address,
