@@ -377,17 +377,74 @@ arrow::Status ArrowFlightHandler::DoPut(
         auto schema = schema_result.ValueOrDie();
 
         const auto & descriptor = reader->descriptor();
-        if (descriptor.type != arrow::flight::FlightDescriptor::PATH || descriptor.path.empty())
+        if (descriptor.type == arrow::flight::FlightDescriptor::CMD)
+        {
+            auto insert_context = Context::createCopy(query_context);
+
+            std::string sql = descriptor.cmd;
+            DB::QueryFlags flags;
+            auto [_, io] = DB::executeQuery(sql, insert_context, flags, DB::QueryProcessingStage::Complete);
+            if (io.pipeline.completed())
+            {
+                CompletedPipelineExecutor executor(io.pipeline);
+                executor.execute();
+
+                return arrow::Status::OK();
+            }
+            if (!io.pipeline.pushing())
+            {
+                return arrow::Status::ExecutionError("DoPut failed: pipeline is not in pushing state");
+            }
+            Block header = io.pipeline.getHeader();
+
+            ArrowColumnToCHColumn converter(
+                header,
+                "arrow",
+                /*allow_missing_columns=*/true,
+                /*validate_names=*/true,
+                FormatSettings::DateTimeOverflowBehavior::Throw,
+                /*use_objects=*/false,
+                /*is_nullable=*/false
+            );
+
+            while (true)
+            {
+                auto payload = reader->Next();
+                if (!payload.ok())
+                {
+                    return arrow::Status::IOError("Failed to read batch: " + payload.status().ToString());
+                }
+                auto batch = std::move(payload.ValueOrDie().data);
+                if (!batch)
+                    break;
+
+                auto batch_result = arrow::Table::FromRecordBatches(schema, {batch});
+                if (!batch_result.ok())
+                {
+                    return arrow::Status::IOError("Failed to read batch: " + batch_result.status().ToString());
+                }
+                auto arrow_table = batch_result.ValueOrDie();
+                auto chunk = converter.arrowTableToCHChunk(arrow_table, batch->num_rows());
+
+                auto input = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
+                io.pipeline.complete(Pipe(std::move(input)));
+
+                CompletedPipelineExecutor executor(io.pipeline);
+                executor.execute();
+            }
+
+            return arrow::Status::OK();
+        } else if (descriptor.type != arrow::flight::FlightDescriptor::PATH || descriptor.path.empty())
         {
             return arrow::Status::IOError("DoPut failed: Invalid descriptor");
         }
+
         auto dataset_name = descriptor.path[0];
         const auto & table_id = StorageID(query_context->getCurrentDatabase(), dataset_name);
         auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
         auto metadata_snapshot = table->getInMemoryMetadataPtr();
         auto sink = table->write({}, metadata_snapshot, query_context, false);
-
-        // Block header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, "Arrow", false, true, false);
+ 
         Block header = metadata_snapshot->getSampleBlock();
         
         ArrowColumnToCHColumn converter(header, "Arrow", true, true, FormatSettings::DateTimeOverflowBehavior::Throw, false, false);
