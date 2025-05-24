@@ -289,6 +289,9 @@ class CI:
         JobNames.STATELESS_TEST_ASAN_DISTRIBUTED_PLAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
+        JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
+        ),
         JobNames.STATELESS_TEST_AARCH64_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
             num_batches=2,

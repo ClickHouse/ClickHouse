@@ -978,6 +978,11 @@ try
 
     Poco::Logger * log = &logger();
 
+    /// NOLINTNEXTLINE
+    static std::vector<void *> leaky_storage;
+    int * leaked = new int(42);
+    leaky_storage.push_back(leaked);
+
     MainThreadStatus::getInstance();
 
     ServerSettings server_settings;
