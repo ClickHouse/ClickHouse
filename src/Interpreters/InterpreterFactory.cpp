@@ -65,6 +65,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/Context.h>
 
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTExternalDDLQuery.h>

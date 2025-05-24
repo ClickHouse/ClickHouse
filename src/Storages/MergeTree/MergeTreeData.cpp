@@ -90,7 +90,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
-#include <Storages/MaterializedView/RefreshSet.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -299,7 +298,6 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
-    extern const int TABLE_IS_READ_ONLY;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -599,6 +597,7 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
 
     desc.addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part");
     desc.addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result");
+    desc.addEphemeral("_part_starting_offset", std::make_shared<DataTypeUInt64>(), "Cumulative starting row of the part in the query result");
     desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)");
     desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
     desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)");
@@ -623,6 +622,8 @@ VirtualColumnsDescription MergeTreeData::createProjectionVirtuals(const StorageI
     VirtualColumnsDescription desc;
 
     desc.addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part");
+    desc.addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result");
+    desc.addEphemeral("_part_starting_offset", std::make_shared<DataTypeUInt64>(), "Cumulative starting row of the part in the query result");
     desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)");
     desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
     desc.addEphemeral("_part_data_version", std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
@@ -674,15 +675,15 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         for (const auto & part : parts)
         try
         {
-            auto stats = part->loadStatistics();
+            auto stats = part.data_part->loadStatistics();
             /// TODO: We only have one stats file for every part.
-            estimator.incrementRowCount(part->rows_count);
+            estimator.incrementRowCount(part.data_part->rows_count);
             for (const auto & stat : stats)
-                estimator.addStatistics(part->info.getPartNameV1(), stat);
+                estimator.addStatistics(part.data_part->info.getPartNameV1(), stat);
         }
         catch (...)
         {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part->info.getPartNameV1()));
+            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
         }
     }
     else
@@ -690,17 +691,17 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         for (const auto & part : parts)
         try
         {
-            if (!partition_pruner.canBePruned(*part))
+            if (!partition_pruner.canBePruned(*part.data_part))
             {
-                auto stats = part->loadStatistics();
-                estimator.incrementRowCount(part->rows_count);
+                auto stats = part.data_part->loadStatistics();
+                estimator.incrementRowCount(part.data_part->rows_count);
                 for (const auto & stat : stats)
-                    estimator.addStatistics(part->info.getPartNameV1(), stat);
+                    estimator.addStatistics(part.data_part->info.getPartNameV1(), stat);
             }
         }
         catch (...)
         {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part->info.getPartNameV1()));
+            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
         }
     }
 
@@ -1380,18 +1381,18 @@ Block MergeTreeData::getHeaderWithVirtualsForFilter(const StorageMetadataPtr & m
 }
 
 Block MergeTreeData::getBlockWithVirtualsForFilter(
-    const StorageMetadataPtr & metadata, const MergeTreeData::DataPartsVector & parts, bool ignore_empty) const
+    const StorageMetadataPtr & metadata, const RangesInDataParts & parts, bool ignore_empty) const
 {
     auto block = getHeaderWithVirtualsForFilter(metadata);
 
     for (const auto & part : parts)
     {
-        if (ignore_empty && part->isEmpty())
+        if (ignore_empty && part.data_part->isEmpty())
             continue;
 
         for (auto & column : block)
         {
-            auto field = getFieldForConstVirtualColumn(column.name, *part);
+            auto field = getFieldForConstVirtualColumn(column.name, *part.data_part);
             column.column->assumeMutableRef().insert(field);
         }
     }
@@ -1401,7 +1402,7 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
 
 
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
-    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const DataPartsVector & parts) const
+    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const RangesInDataParts & parts) const
 {
     if (parts.empty())
         return 0;
@@ -1409,7 +1410,8 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, {parts[0]});
 
-    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag.getOutputs().at(0), nullptr, /*allow_partial_result=*/ false);
+    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(
+        filter_actions_dag.getOutputs().at(0), nullptr, /*allow_partial_result=*/false);
     if (!filter_dag)
         return {};
 
@@ -1429,7 +1431,8 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (valid)
     {
         virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts);
-        VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter_dag), local_context), virtual_columns_block);
+        VirtualColumnUtils::filterBlockWithExpression(
+            VirtualColumnUtils::buildFilterExpression(std::move(*filter_dag), local_context), virtual_columns_block);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
             return 0;
@@ -1439,8 +1442,9 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     size_t res = 0;
     for (const auto & part : parts)
     {
-        if ((part_values.empty() || part_values.find(part->name) != part_values.end()) && !partition_pruner.canBePruned(*part))
-            res += part->rows_count;
+        if ((part_values.empty() || part_values.find(part.data_part->name) != part_values.end())
+            && !partition_pruner.canBePruned(*part.data_part))
+            res += part.data_part->rows_count;
     }
     return res;
 }
@@ -4212,11 +4216,6 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompresse
     return {part_type, PartStorageType::Full};
 }
 
-MergeTreeDataPartFormat MergeTreeData::choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const
-{
-    return choosePartFormat(bytes_uncompressed, rows_count);
-}
-
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const
 {
@@ -5474,14 +5473,7 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, C
     /// Remove metadata version file and take it from table.
     /// Currently we cannot attach parts with different schema, so
     /// we can assume that it's equal to table's current schema.
-    part->removeMetadataVersion();
-    {
-        auto out_metadata = part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, local_context->getWriteSettings());
-        writeText(metadata_version, *out_metadata);
-        out_metadata->finalize();
-        if (sync)
-            out_metadata->sync();
-    }
+    part->writeMetadataVersion(local_context, metadata_version, sync);
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
@@ -6318,50 +6310,10 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         reservation->update(reservation->getSize() - file_size);
     }
 
-    try
-    {
-        if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
-            restored_parts_holder->addPart(part);
-        else
-            restored_parts_holder->increaseNumBrokenParts();
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::TABLE_IS_READ_ONLY && is_dropped)
-        {
-            /// A hack to work around a race condition:
-            ///  1. RESTORE creates a refreshable materialized view and its target table.
-            ///  2. The view does a refresh and exchanges+drops the target table.
-            ///  3. RESTORE tries to restore target table's data from backup and fails because the table
-            ///     is dropped.
-            ///
-            /// (This can also happen without refreshable materialized view if the user just drops a
-            ///  table during RESTORE, so it may make sense to always ignore this error. But that
-            ///  feels sketchy as it may hide a bug.)
-            ///
-            /// For refreshable MV, this doesn't fully solve the problem. The initial refresh that
-            /// replaces the table usually happens early enough that the *source* table (from which
-            /// the refresh query reads) is still empty, not restored from backup yet. So the
-            /// refresh target table ends up empty until the next scheduled refresh.
-            /// TODO: Figure out a better way to deal with RMV backups. Maybe RESTORE should create
-            ///       RMVs after restoring all other tables (including RMVs' .inner_id.<uuid> tables,
-            ///       somehow).
-            StorageID storage_id = getStorageID();
-            if (storage_id.table_name.starts_with(".tmp") ||
-                getContext()->getRefreshSet().tryGetTaskForInnerTable(storage_id) != nullptr)
-            {
-                LOG_INFO(log, "Table was dropped during RESTORE, presumably by refreshable materialized view.");
-            }
-            else
-            {
-                throw;
-            }
-        }
-        else
-        {
-            throw;
-        }
-    }
+    if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
+        restored_parts_holder->addPart(part);
+    else
+        restored_parts_holder->increaseNumBrokenParts();
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
@@ -7592,7 +7544,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
     const ActionsDAG * filter_dag,
-    const DataPartsVector & parts,
+    const RangesInDataParts & parts,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context) const
 {
@@ -7632,7 +7584,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
     Block virtual_columns_block;
     auto virtual_block = getHeaderWithVirtualsForFilter(metadata_snapshot);
-    bool has_virtual_column = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
+    bool has_virtual_column
+        = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
     if (has_virtual_column || filter_dag)
     {
         virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts, /*ignore_empty=*/true);
@@ -7679,11 +7632,11 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     {
         if (part_name_column)
         {
-            while (parts[part_idx]->name != part_name_column->getDataAt(row))
+            while (parts[part_idx].data_part->name != part_name_column->getDataAt(row))
                 ++part_idx;
         }
 
-        const auto & part = parts[part_idx];
+        const auto & part = parts[part_idx].data_part;
 
         if (part->isEmpty())
             continue;
@@ -8174,7 +8127,7 @@ bool MergeTreeData::canUseAdaptiveGranularity() const
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 {
-    return disk->getPath() + relative_data_path;
+    return fs::path(disk->getPath()) / relative_data_path;
 }
 
 
@@ -9274,9 +9227,11 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     auto snapshot_data = std::make_unique<SnapshotData>();
     ColumnsDescription object_columns_copy;
 
+    DataPartsVector parts;
     {
         auto lock = lockParts();
-        snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
+        parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
+        snapshot_data->parts = RangesInDataParts(parts);
         object_columns_copy = object_columns;
     }
 
@@ -9285,7 +9240,7 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     IMutationsSnapshot::Params params
     {
         .metadata_version = metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = getMinMetadataVersion(snapshot_data->parts),
+        .min_part_metadata_version = getMinMetadataVersion(parts),
         .need_data_mutations = apply_mutations_on_fly,
         .need_alter_mutations = apply_mutations_on_fly,
     };
@@ -9351,7 +9306,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     auto tmp_dir_holder = getTemporaryPartDirectoryHolder(EMPTY_PART_TMP_PREFIX + new_part_name);
     auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings())
-        .withBytesAndRowsOnDisk(0, 0)
+        .withBytesAndRows(0, 0)
         .withPartInfo(new_part_info)
         .build();
 

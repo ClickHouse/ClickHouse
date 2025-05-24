@@ -102,6 +102,7 @@
 #include <Storages/System/StorageSystemLatencyBuckets.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #include <Storages/System/StorageSystemUserDefinedTypes.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 

@@ -1,9 +1,9 @@
 -- Tags: no-fasttest, long, no-asan
 
 SET enable_json_type = 1;
-set max_block_size = 10000;
 set session_timezone = 'UTC';
 set output_format_native_write_json_as_string = 0;
+set max_threads=1;
 
 drop table if exists test;
 
@@ -67,47 +67,39 @@ select json.k0, json.k1, json.k2, json.k3, json.k4, json.k5, json.k6, json.k7, j
 drop table test;
 
 create table test (id UInt64, json JSON(max_dynamic_paths=4)) engine={{ engine }};
-insert into test select number, multiIf(number < 10000, '{"k2" : 42}', number < 30000, '{"k3" : 42}', number < 60000, '{"k4" : 42}', number < 100000, '{"k1" : 42}', '{"k1" : 42, "k2" : 42, "k3" : 42, "k4" : 42}') from numbers(150000);
+insert into test select number, multiIf(number < 1000, '{"k2" : 42}', number < 3000, '{"k3" : 42}', number < 6000, '{"k4" : 42}', number < 10000, '{"k1" : 42}', '{"k1" : 42, "k2" : 42, "k3" : 42, "k4" : 42}') from numbers(15000);
 
 select 'max_dynamic_paths=3';
 alter table test modify column json JSON(max_dynamic_paths=3);
-select 'Dynamic paths';
-select distinct arrayJoin(JSONDynamicPaths(json)) from test order by all;
-select 'Shared data paths';
-select distinct arrayJoin(JSONSharedDataPaths(json)) from test order by all;
+select 'All paths:';
+select distinct arrayJoin(JSONAllPaths(json)) from test order by all;
 
 drop table test;
 create table test (id UInt64, json JSON(max_dynamic_paths=4)) engine={{ engine }};
-insert into test select number, multiIf(number < 10000, '{"k2" : 42}', number < 30000, '{"k3" : 42}', number < 60000, '{"k4" : 42}', number < 100000, '{"k1" : 42}', '{"k1" : 42, "k2" : 42, "k3" : 42, "k4" : 42}') from numbers(150000);
+insert into test select number, multiIf(number < 1000, '{"k2" : 42}', number < 3000, '{"k3" : 42}', number < 6000, '{"k4" : 42}', number < 10000, '{"k1" : 42}', '{"k1" : 42, "k2" : 42, "k3" : 42, "k4" : 42}') from numbers(15000);
 
 select 'max_dynamic_paths=2';
 alter table test modify column json JSON(max_dynamic_paths=2);
-select 'Dynamic paths';
-select distinct arrayJoin(JSONDynamicPaths(json)) from test order by all;
-select 'Shared data paths';
-select distinct arrayJoin(JSONSharedDataPaths(json)) from test order by all;
+select 'All paths:';
+select distinct arrayJoin(JSONAllPaths(json)) from test order by all;
 
 drop table test;
 create table test (id UInt64, json JSON(max_dynamic_paths=4)) engine={{ engine }};
-insert into test select number, multiIf(number < 10000, '{"k2" : 42}', number < 30000, '{"k3" : 42}', number < 60000, '{"k4" : 42}', number < 100000, '{"k1" : 42}', '{"k1" : 42, "k2" : 42, "k3" : 42, "k4" : 42}') from numbers(150000);
+insert into test select number, multiIf(number < 1000, '{"k2" : 42}', number < 3000, '{"k3" : 42}', number < 6000, '{"k4" : 42}', number < 10000, '{"k1" : 42}', '{"k1" : 42, "k2" : 42, "k3" : 42, "k4" : 42}') from numbers(15000);
 
 select 'max_dynamic_paths=1';
 alter table test modify column json JSON(max_dynamic_paths=1);
-select 'Dynamic paths';
-select distinct arrayJoin(JSONDynamicPaths(json)) from test order by all;
-select 'Shared data paths';
-select distinct arrayJoin(JSONSharedDataPaths(json)) from test order by all;
+select 'All paths:';
+select distinct arrayJoin(JSONAllPaths(json)) from test order by all;
 
 drop table test;
 create table test (id UInt64, json JSON(max_dynamic_paths=4)) engine={{ engine }};
-insert into test select number, multiIf(number < 10000, '{"k2" : 42}', number < 30000, '{"k3" : 42}', number < 60000, '{"k4" : 42}', number < 100000, '{"k1" : 42}', '{"k1" : 42, "k2" : 42, "k3" : 42, "k4" : 42}') from numbers(150000);
+insert into test select number, multiIf(number < 1000, '{"k2" : 42}', number < 3000, '{"k3" : 42}', number < 6000, '{"k4" : 42}', number < 10000, '{"k1" : 42}', '{"k1" : 42, "k2" : 42, "k3" : 42, "k4" : 42}') from numbers(15000);
 
 select 'max_dynamic_paths=0';
 alter table test modify column json JSON(max_dynamic_paths=0);
-select 'Dynamic paths';
-select distinct arrayJoin(JSONDynamicPaths(json)) from test order by all;
-select 'Shared data paths';
-select distinct arrayJoin(JSONSharedDataPaths(json)) from test order by all;
+select 'All paths:';
+select distinct arrayJoin(JSONAllPaths(json)) from test order by all;
 
 drop table test;
 

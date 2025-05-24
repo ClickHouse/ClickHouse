@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3238 
+personal_ws-1.1 en 3283 
 AArch
 ACLs
 ALTERs
@@ -82,6 +82,7 @@ BackupsIOThreads
 BackupsIOThreadsActive
 BackupsThreads
 BackupsThreadsActive
+Bech
 BestEffort
 BestEffortOrNull
 BestEffortOrZero
@@ -152,6 +153,7 @@ CapContains
 CapUnion
 CapnProto
 CapnProtoEnumComparingMode
+CardSecondary
 CatBoost
 CellAreaM
 CellAreaRads
@@ -167,6 +169,7 @@ CityHash
 Clangd
 ClickBench
 ClickCat
+ClickHaskell
 ClickHouse
 ClickHouse's
 ClickHouseClient
@@ -332,6 +335,7 @@ FilesystemMainPathTotalINodes
 FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
+FixedStrings
 FlameGraph
 Flink
 ForEach
@@ -595,6 +599,7 @@ MSan
 MVCC
 MacBook
 MacOS
+Mainnet
 MapState
 MarkCacheBytes
 MarkCacheFiles
@@ -982,6 +987,7 @@ Schemas
 Schwartzian
 SeasClick
 SeekTable
+SegWit
 SelfManaged
 Sematext
 SendExternalTables
@@ -1086,6 +1092,7 @@ TemporaryFilesForJoin
 TemporaryFilesForSort
 TemporaryFilesUnknown
 Testflows
+Testnet
 Tgz
 Theil's
 Theils
@@ -1251,6 +1258,7 @@ aggthrow
 aiochclient
 alloc
 allocator
+allowlist
 alphaTokens
 amplab
 analysisOfVariance
@@ -1384,6 +1392,7 @@ backupview
 balancer
 basename
 bcrypt
+bech
 benchmarked
 benchmarking
 bfloat
@@ -1428,6 +1437,7 @@ bitmaskToArray
 bitmaskToList
 bitov
 blake
+blobpath
 blockNumber
 blockSerializedSize
 blockSize
@@ -1687,6 +1697,7 @@ denormalize
 denormalized
 denormalizing
 denormals
+denylist
 dequeued
 dequeues
 dereference
@@ -1846,7 +1857,6 @@ formatter
 formatters
 fqdn
 frac
-freezed
 frictionless
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1956,6 +1966,7 @@ grpc
 grpcio
 gtest
 gtid
+gunzip
 gzip
 gzipped
 hadoop
@@ -2205,9 +2216,13 @@ mapAll
 mapApply
 mapConcat
 mapContains
+mapContainsKey
 mapContainsKeyLike
+mapContainsValue
+mapContainsValueLike
 mapExists
 mapExtractKeyLike
+mapExtractValueLike
 mapFilter
 mapFromArrays
 mapKeys
@@ -2337,8 +2352,10 @@ namespace
 namespaces
 natively
 nats
+ncat
 ness
 nestjs
+netcat
 netloc
 newjson
 ngram
@@ -2481,6 +2498,7 @@ positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
 positiveModuloOrNull
+postfilter
 postfix
 postfixes
 postgres
@@ -2498,6 +2516,7 @@ prefetched
 prefetches
 prefetching
 prefetchsize
+prefilter
 preflight
 preimage
 preloaded
@@ -2836,6 +2855,8 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringBytesEntropy
+stringBytesUniq
 stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
@@ -3041,6 +3062,7 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
+toTimeWithFixedDate
 toTimeZone
 toType
 toTypeName

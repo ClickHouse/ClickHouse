@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -129,8 +130,6 @@ void MergeTreeReaderCompact::findPositionForMissedNested(size_t pos)
     if (!column_for_offsets)
         return;
 
-    column_positions[pos] = data_part_info_for_read->getColumnPosition(column_for_offsets->column.name);
-
     if (is_offsets_subcolumn)
     {
         /// Read offsets from antoher array from the same Nested column.
@@ -138,9 +137,12 @@ void MergeTreeReaderCompact::findPositionForMissedNested(size_t pos)
     }
     else
     {
-        columns_for_offsets[pos] = std::move(column_for_offsets);
+        columns_for_offsets[pos] = column_for_offsets;
         partially_read_columns.insert(column.name);
     }
+
+    column_positions[pos] = data_part_info_for_read->getColumnPosition(column_for_offsets->column.name);
+    serializations_of_full_columns[column.getNameInStorage()] = column_for_offsets->serialization;
 }
 
 static ColumnPtr getFullColumnFromCache(std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns, const String & column_name)

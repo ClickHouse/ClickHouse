@@ -930,7 +930,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTree());
     }
 
-    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
+    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
 }
 
 }
@@ -958,7 +958,7 @@ void StorageDistributed::read(
             remote_storage_id = StorageID{remote_database, remote_table};
 
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
-            query_info.merge_storage_snapshot ? query_info.merge_storage_snapshot : storage_snapshot,
+            query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
@@ -1248,9 +1248,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     if (filter)
         predicate = filter->getOutputs().at(0);
 
-    /// Select query is needed for pruining on virtual columns
-    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context);
-
     auto dst_cluster = getCluster();
 
     auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
@@ -1277,8 +1274,14 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto & current_settings = query_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
-    /// Here we take addresses from destination cluster and assume source table exists on these nodes
     const auto cluster = getCluster();
+
+    /// Select query is needed for pruining on virtual columns
+    auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
+    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context, number_of_replicas);
+
+    /// Here we take addresses from destination cluster and assume source table exists on these nodes
+    size_t replica_index = 0;
     for (const auto & replicas : cluster->getShardsInfo())
     {
         /// Skip unavailable hosts if necessary
@@ -1287,6 +1290,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         /// There will be only one replica, because we consider each replica as a shard
         for (const auto & try_result : try_results)
         {
+            IConnections::ReplicaInfo replica_info{ .number_of_current_replica = replica_index++ };
+
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 std::vector<IConnectionPool::Entry>{try_result},
                 new_query_str,
@@ -1297,7 +1302,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 Tables{},
                 QueryProcessingStage::Complete,
                 nullptr,
-                extension);
+                RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
 
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
                 remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));

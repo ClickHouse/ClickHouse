@@ -77,7 +77,11 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 
     if (config.has("jwt"))
     {
+#if USE_JWT_CPP && USE_SSL
         jwt = config.getString("jwt");
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is disabled, because ClickHouse is built without JWT or SSL support");
+#endif
     }
     else if (config.has("ssh-key-file"))
     {
