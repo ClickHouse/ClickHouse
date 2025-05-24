@@ -24,6 +24,7 @@
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTPredictQuery.h>
 
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/MatcherNode.h>
@@ -846,6 +847,11 @@ std::shared_ptr<TableFunctionNode> QueryTreeBuilder::buildTableFunction(const AS
                 node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases*/, context));
             else if (const auto * ast_set = argument->as<ASTSetQuery>())
                 node->setSettingsChanges(ast_set->changes);
+            else if (const auto * ast_predict = argument->as<ASTPredictQuery>())
+            {
+                node->getArguments().getNodes().push_back(buildExpression(ast_predict->model_name, context));
+                node->getArguments().getNodes().push_back(buildExpression(ast_predict->table_name, context));
+            }
             else
                 node->getArguments().getNodes().push_back(buildExpression(argument, context));
         }

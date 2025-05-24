@@ -10,6 +10,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include "base/types.h"
+#include <Common/logger_useful.h>
 #include "registerTableFunctions.h"
 
 
@@ -69,6 +70,8 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
 {
     if (const auto * function = ast_function->as<ASTFunction>())
     {
+        const auto* my_logger = &Poco::Logger::get("MyCategory");
+        LOG_INFO(my_logger, "TableFunctionNumbers::executeImpl called");
         auto arguments = function->arguments->children;
 
         if (arguments.size() >= 4)
