@@ -974,6 +974,7 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 - `_partition_value` — Values (a tuple) of a `partition by` expression.
 - `_sample_factor` — Sample factor (from the query).
 - `_block_number` — Block number of the row, it is persisted on merges when `allow_experimental_block_number_column` is set to true.
+- `_disk_name` — Disk name used for the storage.
 
 ## Column Statistics {#column-statistics}
 
