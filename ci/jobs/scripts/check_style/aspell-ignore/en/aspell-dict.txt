@@ -2342,6 +2342,7 @@ mysql
 mysqldump
 mysqljs
 mytable
+naiveBayesClassifier
 namedatabases
 namenetworks
 namenode
@@ -3082,6 +3083,7 @@ toYear
 toYearWeek
 tokenbf
 tokenization
+tokenize
 tokenized
 tokenizer
 toml
@@ -3103,6 +3105,7 @@ transactionally
 translateUTF
 translocality
 trie
+trigrams
 trimBoth
 trimLeft
 trimRight
