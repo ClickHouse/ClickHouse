@@ -1,6 +1,5 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
-#include <Databases/LoadingStrictnessLevel.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -12,7 +11,6 @@
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Databases/LoadingStrictnessLevel.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Interpreters/Context.h>
 
 namespace DB
