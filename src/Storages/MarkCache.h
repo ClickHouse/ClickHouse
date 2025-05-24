@@ -12,6 +12,7 @@ namespace ProfileEvents
 {
     extern const Event MarkCacheHits;
     extern const Event MarkCacheMisses;
+    extern const Event MarkCacheEvictedBytes;
 }
 
 namespace DB
@@ -41,7 +42,7 @@ private:
 public:
     MarkCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
-    /// Calculate key from path to file and offset.
+    /// Calculate key from path to file.
     static UInt128 hash(const String & path_to_file);
 
     template <typename LoadFunc>
@@ -54,6 +55,13 @@ public:
             ProfileEvents::increment(ProfileEvents::MarkCacheHits);
 
         return result.first;
+    }
+
+private:
+
+    void onRemoveOverflowWeightLoss(size_t weight_loss) override
+    {
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, weight_loss);
     }
 };
 
