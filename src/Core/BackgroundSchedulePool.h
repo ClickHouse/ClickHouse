@@ -142,6 +142,7 @@ private:
     /// Invariants:
     /// * If deactivated is true then scheduled, delayed and executing are all false.
     /// * scheduled and delayed cannot be true at the same time.
+    bool pool_shutdown TSA_GUARDED_BY(schedule_mutex) = false;  // Pool is being destroyed.
     bool deactivated TSA_GUARDED_BY(schedule_mutex) = false;
     bool scheduled TSA_GUARDED_BY(schedule_mutex) = false;
     bool delayed TSA_GUARDED_BY(schedule_mutex) = false;
