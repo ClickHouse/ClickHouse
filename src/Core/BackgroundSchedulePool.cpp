@@ -1,4 +1,9 @@
-#include "BackgroundSchedulePool.h"
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/UUID.h>
+
+#include <IO/WriteHelpers.h>
+
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -6,6 +11,7 @@
 #include <Common/UniqueLock.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
+
 #include <chrono>
 
 
@@ -104,7 +110,12 @@ void BackgroundSchedulePoolTaskInfo::execute()
 
     try
     {
+        chassert(current_thread); /// Thread from global thread pool
+        current_thread->setQueryId(fmt::format("{}::{}", pool.thread_name, UUIDHelpers::generateV4()));
+
         function();
+
+        current_thread->setQueryId("");
     }
     catch (...)
     {
