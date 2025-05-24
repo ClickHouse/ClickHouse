@@ -26,10 +26,10 @@ BlockIO InterpreterCreateAggregateFunctionQuery::execute()
     ASTCreateAggregateFunctionQuery & create_function_query = updated_query_ptr->as<ASTCreateAggregateFunctionQuery &>();
 
     AccessRightsElements access_rights_elements;
-    access_rights_elements.emplace_back(AccessType::CREATE_AGGREGATE);
+    access_rights_elements.emplace_back(AccessType::CREATE_AGGREGATE_FUNCTION);
 
     if (create_function_query.or_replace)
-        access_rights_elements.emplace_back(AccessType::DROP_AGGREGATE);
+        access_rights_elements.emplace_back(AccessType::DROP_AGGREGATE_FUNCTION);
 
     auto current_context = getContext();
 

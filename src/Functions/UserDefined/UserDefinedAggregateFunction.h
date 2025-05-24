@@ -18,23 +18,24 @@ struct UserDefinedAggregateFunctionConfiguration
     FunctionPtr process_func;
     FunctionPtr merge_func;
     FunctionPtr finalize_func;
-    DataTypes argument_types, 
-    Array parameters_, 
+    DataTypes argument_types;
+    Array parameters;
 };
 
-class UserDefinedAggreagteFunction final : public IExternalLoadable, IAggregateFunctionDataHelper<Field, UserDefinedAggreagteFunction>
+class UserDefinedAggreagteFunction final : public IExternalLoadable, public IAggregateFunctionDataHelper<Field, UserDefinedAggreagteFunction>
 {
 public:
 
 UserDefinedAggreagteFunction(
         const UserDefinedAggregateFunctionConfiguration & configuration_,
         const ExternalLoadableLifetime & lifetime_) 
-        : configuration(configuration_), lifetime(lifetime_), state_type(configuration_.initialize_func->getReturnTypeImpl(DataTypes())),
-          IAggregateFunctionHelper(
-            aconfiguration_.rgument_types_,
-            configuration_.parameters_,
-            configuration_.finalize_func->getReturnTypeImpl(configuration_.initialize_func->getReturnTypeImpl(DataTypes()))
-        ) {}
+        : IAggregateFunctionDataHelper<Field, UserDefinedAggreagteFunction>(
+            configuration_.argument_types,
+            configuration_.parameters,
+            configuration_.finalize_func->getReturnTypeImpl({configuration_.initialize_func->getReturnTypeImpl(DataTypes())})
+        ), configuration(configuration_), lifetime(lifetime_), state_type(configuration_.initialize_func->getReturnTypeImpl(DataTypes()))
+        {}
+        
 
 
     const ExternalLoadableLifetime & getLifetime() const override
@@ -63,7 +64,7 @@ UserDefinedAggreagteFunction(
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
-        return std::make_shared<UserDefinedAggregateFunctionConfiguration>(configuration, lifetime);
+        return std::make_shared<UserDefinedAggreagteFunction>(configuration, lifetime);
     }
 
     const UserDefinedAggregateFunctionConfiguration & getConfiguration() const
@@ -83,7 +84,8 @@ UserDefinedAggreagteFunction(
 
     void create(AggregateDataPtr __restrict place) const override
     {
-        new (place) Field(configuration.initialize_func->executeImpl(ColumnsWithTypeAndName(), state_type, 0));
+        const auto column = configuration.initialize_func->executeImpl(ColumnsWithTypeAndName(), state_type, 0);
+        new (place) Field((*column)[0]);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override;
@@ -94,7 +96,11 @@ UserDefinedAggreagteFunction(
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const override;
 
-    void deserialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const override;
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const override;
+    
+    bool allocatesMemoryInArena() const override {
+        return false;
+    }
 
 private:
     UserDefinedAggregateFunctionConfiguration configuration;

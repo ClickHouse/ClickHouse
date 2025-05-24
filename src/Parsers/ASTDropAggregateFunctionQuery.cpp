@@ -1,4 +1,4 @@
-#include <Parsers/ASTDropFunctionQuery.h>
+#include <Parsers/ASTDropAggregateFunctionQuery.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTDropAggregateFunctionQuery::clone() const
 {
-    return std::make_shared<ASTDropFunctionQuery>(*this);
+    return std::make_shared<ASTDropAggregateFunctionQuery>(*this);
 }
 
 void ASTDropAggregateFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const

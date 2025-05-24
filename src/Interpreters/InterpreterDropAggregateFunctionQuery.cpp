@@ -1,5 +1,5 @@
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterDropFunctionQuery.h>
+#include <Interpreters/InterpreterDropAggregateFunctionQuery.h>
 
 #include <Access/ContextAccess.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
@@ -20,15 +20,15 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-BlockIO InterpreterDropFunctionQuery::execute()
+BlockIO InterpreterDropAggregateFunctionQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
 
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
-    ASTDropFunctionQuery & drop_function_query = updated_query_ptr->as<ASTDropAggregateFunctionQuery &>();
+    ASTDropAggregateFunctionQuery & drop_function_query = updated_query_ptr->as<ASTDropAggregateFunctionQuery &>();
 
     AccessRightsElements access_rights_elements;
-    access_rights_elements.emplace_back(AccessType::DROP_AGGREGATE);
+    access_rights_elements.emplace_back(AccessType::DROP_AGGREGATE_FUNCTION);
 
     auto current_context = getContext();
 
