@@ -210,7 +210,7 @@ void DiskObjectStorageMetadata::addObject(ObjectStorageKey key, size_t size)
     }
 
     total_size += size;
-    keys_with_meta.emplace_back(std::move(key), ObjectMetadata{size, {}, {}, {}});
+    keys_with_meta.emplace_back(std::move(key), ObjectMetadata{size, {}, {}, {}, {}});
 }
 
 ObjectKeyWithMetadata DiskObjectStorageMetadata::popLastObject()
