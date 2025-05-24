@@ -119,6 +119,10 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     openFileIfExists("/proc/meminfo", meminfo);
 
+    openFileIfExists("/proc/pressure/memory", memory_pressure);
+    openFileIfExists("/proc/pressure/cpu", cpu_pressure);
+    openFileIfExists("/proc/pressure/io", io_pressure);
+
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
 
@@ -1361,6 +1365,99 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             openFileIfExists("/proc/cpuinfo", cpuinfo);
         }
     }
+
+
+    if (cpu_pressure)
+        {
+            try
+            {
+                cpu_pressure->rewind();
+                while (!cpu_pressure->eof())
+                {
+                    String stallType;
+                    readStringUntilWhitespaceOrEOF(stallType, *cpu_pressure);
+
+                    String rest;
+                    readStringUntilNewlineOrEOF(rest, *cpu_pressure);
+
+                    auto total_pos = rest.find("total=");
+                    if (total_pos != String::npos)
+                    {
+                        auto total = rest.substr(total_pos + 1);
+                        uint64_t counter = std::stoull(total);
+                        new_values["PSICPUTotal" + stallType] = {counter,
+                            "Total microseconds of CPU stall time for " + stallType + " stall type"};
+                    }
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                openFileIfExists("/proc/pressure/cpu", cpu_pressure);
+            }
+        }
+
+        // Process memory pressure
+            if (memory_pressure)
+            {
+                try
+                {
+                    memory_pressure->rewind();
+                    while (!memory_pressure->eof())
+                    {
+                        String stallType;
+                        readStringUntilWhitespaceOrEOF(stallType, *memory_pressure);
+
+                        String rest;
+                        readStringUntilNewlineOrEOF(rest, *memory_pressure);
+
+                        auto pos = rest.find("total=");
+                        if (pos != String::npos)
+                        {
+                            auto total = rest.substr(pos + 1);
+                            uint64_t counter = std::stoull(total);
+                            new_values["PSIMemory" + stallType] = {counter,
+                                "Total microseconds of memory stall time for " + stallType + " stall type"};
+                        }
+                    }
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    openFileIfExists("/proc/pressure/memory", memory_pressure);
+                }
+            }
+
+            // Process IO pressure
+            if (io_pressure)
+            {
+                try
+                {
+                    io_pressure->rewind();
+                    while (!io_pressure->eof())
+                    {
+                        String stallType;
+                        readStringUntilWhitespaceOrEOF(stallType, *io_pressure);
+
+                        String rest;
+                        readStringUntilNewlineOrEOF(rest, *io_pressure);
+
+                        auto pos = rest.find("total=");
+                        if (pos != String::npos)
+                        {
+                            auto total = rest.substr(pos + 1);
+                            uint64_t counter = std::stoull(total);
+                            new_values["PSIIO" + stallType] = {counter,
+                                "Total microseconds of IO stall time for " + stallType + " stall type"};
+                        }
+                    }
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    openFileIfExists("/proc/pressure/io", io_pressure);
+                }
+            }
 
     if (file_nr)
     {
