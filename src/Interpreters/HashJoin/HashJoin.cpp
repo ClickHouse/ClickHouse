@@ -32,7 +32,6 @@
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
-#include <Interpreters/HashJoin/JoinUsedFlags.h>
 
 namespace DB
 {
@@ -690,17 +689,16 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                 const auto & join_mask = join_mask_col.getData();
                 /// Save rows that do not hold conditions
                 not_joined_map = ColumnUInt8::create(rows, 0);
-                for (size_t i = 0, sz = join_mask->size(); i < sz; ++i)
+
+                if (save_nullmap)
                 {
-                    /// Condition hold, do not save row
-                    if ((*join_mask)[i])
-                        continue;
-
-                    /// NULL key will be saved anyway because, do not save twice
-                    if (save_nullmap && (*null_map)[i])
-                        continue;
-
-                    not_joined_map->getData()[i] = 1;
+                    for (size_t i = 0, sz = join_mask->size(); i < sz; ++i)
+                        not_joined_map->getData()[i] = !(*join_mask)[i] & !(*null_map)[i];
+                }
+                else
+                {
+                    for (size_t i = 0, sz = join_mask->size(); i < sz; ++i)
+                        not_joined_map->getData()[i] = !(*join_mask)[i];
                 }
             }
 
@@ -1328,10 +1326,13 @@ private:
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
+                JoinStuff::JoinUsedFlags::UsedFlagsHolder used_flags_holder
+                    = parent.getUsedFlagsForBlock(&mapped_block.getSourceBlock);
 
-                for (size_t row = 0; row < mapped_block.rows(); ++row)
+                for (size_t i = 0; i < mapped_block.rows(); ++i)
                 {
-                    if (!parent.isUsed(&mapped_block.getSourceBlock(), row))
+                    size_t row = mapped_block.getRowIdx(i);
+                    if (!used_flags_holder.getUsedSafe(row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
                         {
@@ -1355,13 +1356,15 @@ private:
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
 
+            auto used_flags_holder = parent.getUsedFlagsHolder();
             for (; it != end; ++it)
             {
                 const Mapped & mapped = it->getMapped();
 
                 size_t offset = map.offsetInternal(it.getPtr());
-                if (parent.isUsed(offset))
+                if (used_flags_holder.getUsedSafe(offset))
                     continue;
+
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
                 if (rows_added >= max_block_size)
@@ -1389,8 +1392,9 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            for (size_t row = 0; row < block->rows(); ++row)
+            for (size_t i = 0; i < block->rows(); ++i)
             {
+                size_t row = block->getRowIdx(i);
                 if (nullmap && (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
