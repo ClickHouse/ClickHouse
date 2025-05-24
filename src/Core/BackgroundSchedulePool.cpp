@@ -118,7 +118,7 @@ void BackgroundSchedulePoolTaskInfo::execute()
 
         function();
 
-        task_query_id = current_thread->clearQueryId();
+        current_thread->clearQueryId();
     }
     catch (...)
     {
