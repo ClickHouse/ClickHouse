@@ -92,6 +92,7 @@ namespace Setting
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -1090,7 +1091,7 @@ enum class ConvertFromStringExceptionMode : uint8_t
 
 enum class ConvertFromStringParsingMode : uint8_t
 {
-    Normal,
+    Basic,
     BestEffort,  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
     BestEffortUS
 };
@@ -1112,6 +1113,8 @@ struct ConvertThroughParsing
     static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>,
         "ConvertThroughParsing is only applicable for String or FixedString data types");
 
+    static constexpr bool to_datetime = std::is_same_v<ToDataType, DataTypeDateTime>;
+    static constexpr bool to_time = std::is_same_v<ToDataType, DataTypeTime>;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
     static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
 
@@ -1151,7 +1154,7 @@ struct ConvertThroughParsing
     }
 
     template <typename Additions = void *>
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count,
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count, const ContextPtr & context,
                         Additions additions [[maybe_unused]] = Additions())
     {
         using ColVecTo = typename ToDataType::ColumnType;
@@ -1160,7 +1163,7 @@ struct ConvertThroughParsing
         const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
 
         /// For conversion to Date/Time or DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime> || to_datetime64 || to_time64)
+        if constexpr (to_datetime|| to_time || to_datetime64 || to_time64)
         {
             const auto result_type = removeNullable(res_type);
             // Time zone is already figured out during result type resolution, no need to do it here.
@@ -1238,14 +1241,8 @@ struct ConvertThroughParsing
         size_t current_offset = 0;
 
         bool precise_float_parsing = false;
-
-        if (DB::CurrentThread::isInitialized())
-        {
-            const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
-            if (query_context)
-                precise_float_parsing = query_context->getSettingsRef()[Setting::precise_float_parsing];
-        }
+        if (context)
+            precise_float_parsing = context->getSettingsRef()[Setting::precise_float_parsing];
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -1256,7 +1253,7 @@ struct ConvertThroughParsing
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
-                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
+                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64 || to_time || to_time64))
                 {
                     if constexpr (to_datetime64)
                     {
@@ -1270,7 +1267,7 @@ struct ConvertThroughParsing
                         parseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    else if constexpr (to_time)
                     {
                         time_t res;
                         parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
@@ -1283,7 +1280,7 @@ struct ConvertThroughParsing
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                 }
-                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
+                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64 || to_time || to_time64))
                 {
                     if constexpr (to_datetime64)
                     {
@@ -1297,7 +1294,7 @@ struct ConvertThroughParsing
                         parseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    else if constexpr (to_time)
                     {
                         time_t res;
                         parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
@@ -1360,7 +1357,7 @@ struct ConvertThroughParsing
             {
                 bool parsed;
 
-                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
+                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64 || to_time || to_time64))
                 {
                     if constexpr (to_datetime64)
                     {
@@ -1374,7 +1371,7 @@ struct ConvertThroughParsing
                         parsed = tryParseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    else if constexpr (to_time)
                     {
                         time_t res;
                         parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
@@ -1387,7 +1384,7 @@ struct ConvertThroughParsing
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
-                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
+                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64 || to_time || to_time64))
                 {
                     if constexpr (to_datetime64)
                     {
@@ -1401,7 +1398,7 @@ struct ConvertThroughParsing
                         parsed = tryParseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    else if constexpr (to_time)
                     {
                         time_t res;
                         parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
@@ -1495,7 +1492,7 @@ struct ConvertImpl
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
-        BehaviourOnErrorFromString from_string_tag [[maybe_unused]], Additions additions = Additions())
+        BehaviourOnErrorFromString from_string_tag [[maybe_unused]], const ContextPtr & context, Additions additions = Additions())
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
 
@@ -1857,13 +1854,8 @@ struct ConvertImpl
                 ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
 
                 bool cut_trailing_zeros_align_to_groups_of_thousands = false;
-                if (DB::CurrentThread::isInitialized())
-                {
-                    const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
-                    if (query_context)
-                        cut_trailing_zeros_align_to_groups_of_thousands = query_context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
-                }
+                if (context)
+                    cut_trailing_zeros_align_to_groups_of_thousands = context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
 
                 if (!null_map && arguments.size() > 1)
                     null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
@@ -2056,34 +2048,56 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeUInt32>)
         {
             return ConvertImpl<FromDataType, DataTypeDateTime, Name, date_time_overflow_behavior>::template execute<Additions>(
-                arguments, result_type, input_rows_count, from_string_tag);
+                arguments, result_type, input_rows_count, from_string_tag, context);
         }
         else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>))
         {
+            auto parsing_mode = FormatSettings::DateTimeInputFormat::Basic;
+            if (context)
+                parsing_mode = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+
+#define GENERATE_PARSING_MODE_CASE(PARSING_MODE, EXCEPTION_MODE) \
+    case FormatSettings::DateTimeInputFormat::PARSING_MODE: \
+    { \
+        return ConvertThroughParsing<FromDataType, \
+                                     ToDataType, \
+                                     Name, \
+                                     ConvertFromStringExceptionMode::EXCEPTION_MODE, \
+                                     ConvertFromStringParsingMode::PARSING_MODE>::execute(arguments, result_type, input_rows_count, context, additions); \
+    }
+
             switch (from_string_tag)
             {
-            case BehaviourOnErrorFromString::ConvertDefaultBehaviorTag:
-                return ConvertThroughParsing<FromDataType,
-                                             ToDataType,
-                                             Name,
-                                             ConvertFromStringExceptionMode::Throw,
-                                             ConvertFromStringParsingMode::Normal>::execute(
-                        arguments, result_type, input_rows_count, additions);
-            case BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag:
-                return ConvertThroughParsing<FromDataType,
-                                             ToDataType,
-                                             Name,
-                                             ConvertFromStringExceptionMode::Null,
-                                             ConvertFromStringParsingMode::Normal>::execute(
-                        arguments, result_type, input_rows_count, additions);
-            case BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag:
-                return ConvertThroughParsing<FromDataType,
-                                             ToDataType,
-                                             Name,
-                                             ConvertFromStringExceptionMode::Zero,
-                                             ConvertFromStringParsingMode::Normal>::execute(
-                        arguments, result_type, input_rows_count, additions);
+                case BehaviourOnErrorFromString::ConvertDefaultBehaviorTag:
+                {
+                    switch (parsing_mode)
+                    {
+                        GENERATE_PARSING_MODE_CASE(Basic, Throw)
+                        GENERATE_PARSING_MODE_CASE(BestEffort, Throw)
+                        GENERATE_PARSING_MODE_CASE(BestEffortUS, Throw)
+                    }
+                }
+                case BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag:
+                {
+                    switch (parsing_mode)
+                    {
+                        GENERATE_PARSING_MODE_CASE(Basic, Null)
+                        GENERATE_PARSING_MODE_CASE(BestEffort, Null)
+                        GENERATE_PARSING_MODE_CASE(BestEffortUS, Null)
+                    }
+                }
+                case BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag:
+                {
+                    switch (parsing_mode)
+                    {
+                        GENERATE_PARSING_MODE_CASE(Basic, Zero)
+                        GENERATE_PARSING_MODE_CASE(BestEffort, Zero)
+                        GENERATE_PARSING_MODE_CASE(BestEffortUS, Zero)
+                    }
+                }
             }
+
+#undef GENERATE_PARSING_MODE_CASE
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeInterval> && std::is_same_v<ToDataType, DataTypeInterval>)
         {
@@ -2975,13 +2989,13 @@ private:
                 switch (context_datetime_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, context, scale);
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Ignore:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, context, scale);
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, context, scale);
                         break;
                 }
             }
@@ -2991,13 +3005,13 @@ private:
                 switch (context_datetime_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, context, dt64->getScale());
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Ignore:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, context, dt64->getScale());
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, context, dt64->getScale());
                         break;
                 }
             }
@@ -3007,7 +3021,7 @@ private:
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
     case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
-            arguments, result_type, input_rows_count, from_string_tag); \
+            arguments, result_type, input_rows_count, from_string_tag, context); \
         break;
                 switch (context_datetime_overflow_behavior)
                 {
@@ -3037,11 +3051,11 @@ private:
                 else
                 {
                     result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(
-                        arguments, result_type, input_rows_count, from_string_tag);
+                        arguments, result_type, input_rows_count, from_string_tag, context);
                 }
             }
             else
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag, context);
 
             return true;
         };
@@ -3151,7 +3165,7 @@ private:
   */
 template <typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode,
-    ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Normal>
+    ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Basic>
 class FunctionConvertFromString : public IFunction
 {
 public:
@@ -3160,7 +3174,9 @@ public:
     static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
     static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !(to_datetime64 || to_time64);
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertFromString>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvertFromString>(context); }
+
+    explicit FunctionConvertFromString(ContextPtr context_) : context(std::move(context_)) {}
 
     String getName() const override
     {
@@ -3273,12 +3289,12 @@ public:
         if (checkAndGetDataType<DataTypeString>(from_type))
         {
             return ConvertThroughParsing<DataTypeString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                arguments, result_type, input_rows_count, scale);
+                arguments, result_type, input_rows_count, context, scale);
         }
         else if (checkAndGetDataType<DataTypeFixedString>(from_type))
         {
             return ConvertThroughParsing<DataTypeFixedString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                arguments, result_type, input_rows_count, scale);
+                arguments, result_type, input_rows_count, context, scale);
         }
 
         return nullptr;
@@ -3351,6 +3367,9 @@ public:
 
         return result_column;
     }
+
+private:
+    ContextPtr context;
 };
 
 
@@ -4176,7 +4195,7 @@ private:
             }
         }
 
-        return [wrapper_cast_type = cast_type, from_type_index, to_type, date_time_overflow_behavior]
+        return [ctx = this->context, wrapper_cast_type = cast_type, from_type_index, to_type, date_time_overflow_behavior]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
@@ -4194,7 +4213,7 @@ private:
     case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
         result_column \
             = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>:: \
-                execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ADDITIONS()); \
+                execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ctx, ADDITIONS()); \
         break;
                         if (wrapper_cast_type == CastType::accurate)
                         {
@@ -4227,6 +4246,7 @@ private:
                                 result_type,
                                 input_rows_count,
                                 BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                                ctx,
                                 AccurateConvertStrategyAdditions());
                         }
                         else
@@ -4236,6 +4256,7 @@ private:
                                 result_type,
                                 input_rows_count,
                                 BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                                ctx,
                                 AccurateOrNullConvertStrategyAdditions());
                         }
 
@@ -4252,6 +4273,7 @@ private:
                             result_type,
                             input_rows_count,
                             BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                            ctx,
                             AccurateConvertStrategyAdditions());
                     }
                     return true;
@@ -4386,7 +4408,7 @@ private:
 
         auto wrapper_cast_type = cast_type;
 
-        return [wrapper_cast_type, type_index, scale, to_type, requested_result_is_nullable]
+        return [ctx = this->context, wrapper_cast_type, type_index, scale, to_type, requested_result_is_nullable]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
@@ -4403,7 +4425,7 @@ private:
                         AccurateConvertStrategyAdditions additions;
                         additions.scale = scale;
                         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, additions);
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ctx, additions);
 
                         return true;
                     }
@@ -4412,7 +4434,7 @@ private:
                         AccurateOrNullConvertStrategyAdditions additions;
                         additions.scale = scale;
                         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, additions);
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ctx, additions);
 
                         return true;
                     }
@@ -4425,13 +4447,13 @@ private:
                         /// In case when converting to Nullable type, we apply different parsing rule,
                         /// that will not throw an exception but return NULL in case of malformed input.
                         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, ctx, scale);
 
                         return true;
                     }
                 }
 
-                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, scale);
+                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ctx, scale);
 
                 return true;
             });
