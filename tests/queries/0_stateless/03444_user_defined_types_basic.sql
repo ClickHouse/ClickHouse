@@ -1,0 +1,22 @@
+DROP TYPE IF EXISTS TestInt;
+DROP TYPE IF EXISTS TestString;
+
+CREATE TYPE TestInt AS UInt64;
+CREATE TYPE TestString AS String;
+
+SHOW TYPES;
+SHOW TYPE TestInt;
+
+CREATE TYPE TestInt AS UInt32; -- { serverError TYPE_ALREADY_EXISTS }
+CREATE TYPE IF NOT EXISTS TestInt AS UInt32;
+CREATE TYPE OR REPLACE TestInt AS UInt32;
+
+SHOW TYPE TestInt;
+SHOW TYPE NonExistentType; -- { serverError UNKNOWN_TYPE }
+
+DROP TYPE TestString;
+DROP TYPE IF EXISTS NonExistentType;
+DROP TYPE NonExistentType; -- { serverError UNKNOWN_TYPE }
+DROP TYPE TestInt;
+
+SHOW TYPES;
