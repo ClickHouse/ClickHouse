@@ -2480,7 +2480,20 @@ class ClickHouseCluster:
         run_rabbitmqctl(
             self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
         )
-        self.wait_rabbitmq_to_start()
+        self.wait_rabbitmq_to_start(timeout)
+
+    @contextmanager
+    def pause_rabbitmq(self, monitor=None, timeout=120):
+        if monitor is not None:
+            monitor.stop()
+        self.stop_rabbitmq_app(timeout)
+
+        try:
+            yield
+        finally:
+            self.start_rabbitmq_app(timeout)
+            if monitor is not None:
+                monitor.start(self)
 
     def reset_rabbitmq(self, timeout=120):
         self.stop_rabbitmq_app()
@@ -4749,8 +4762,6 @@ class ClickHouseInstance:
         if self.with_installed_binary:
             # Ignore CPU overload in this case
             write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
-        else:
-            write_embedded_config("0_common_max_cpu_load.xml", users_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         use_distributed_plan = (
