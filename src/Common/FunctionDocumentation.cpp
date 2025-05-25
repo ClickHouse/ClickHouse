@@ -15,8 +15,13 @@ VersionNumber VERSION_UNKNOWN = {0};
 
 std::string FunctionDocumentation::trimBlankLines(const std::string& str) const
 {
-	std::regex pattern(R"(^\s*\n+\s*$)");
-    return std::regex_replace(str, pattern, "");
+    // Remove all leading whitespace and newlines
+    std::string trimmed = std::regex_replace(str, std::regex(R"(^[\s\n]+)"), "");
+
+    // Remove all trailing whitespace and newlines
+    trimmed = std::regex_replace(trimmed, std::regex(R"([\s\n]+$)"), "");
+
+    return trimmed;
 }
 
 std::string FunctionDocumentation::argumentsAsString() const
