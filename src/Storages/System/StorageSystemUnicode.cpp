@@ -1,12 +1,13 @@
 #include <cassert>
-#include <string>
 #include <Storages/System/StorageSystemUnicode.h>
+#include "Columns/ColumnArray.h"
 #include "Columns/ColumnString.h"
+#include "Columns/ColumnVector.h"
 #include "Columns/ColumnsNumber.h"
 #include "Columns/IColumn_fwd.h"
 #include "Core/NamesAndTypes.h"
+#include "DataTypes/DataTypeArray.h"
 #include "Interpreters/Context_fwd.h"
-#include "QueryPipeline/Pipe.h"
 #include "Storages/ColumnsDescription.h"
 #include "base/types.h"
 #include <DataTypes/DataTypesNumber.h>
@@ -16,12 +17,12 @@
 #include <unicode/uniset.h>
 #include <unicode/unistr.h>
 #include <unicode/unorm2.h>
+#include <unicode/uscript.h>
 #include <unicode/usetiter.h>
 #include <unicode/uchar.h>
 #include <unicode/utypes.h>
 #include <unicode/uversion.h>
 #include <unicode/ustring.h>
-#include "Common/Exception.h"
 #include "Common/assert_cast.h"
 
 namespace DB
@@ -60,7 +61,8 @@ std::vector<std::pair<const char *, UProperty>> getPropNames()
         UProperty prop = static_cast<UProperty>(i);
         const char* prop_name = u_getPropertyName(prop, U_LONG_PROPERTY_NAME);
         
-        // TODO: maybe we can use short name as alias name
+        // TODO: maybe we can use short name as alias name?
+
         if (prop_name)
         {
             properties.emplace_back(prop_name, prop);
@@ -74,8 +76,8 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
 {
     NamesAndTypes names_and_types;
     auto prop_names = getPropNames();
-    names_and_types.emplace_back("code_point", std::make_shared<DataTypeInt32>());
-    names_and_types.emplace_back("value", std::make_shared<DataTypeString>());
+    names_and_types.emplace_back("code_point", std::make_shared<DataTypeString>());
+    names_and_types.emplace_back("code_point_value", std::make_shared<DataTypeInt32>());
     size_t prop_index = 0;
     while (prop_index < prop_names.size())
     {
@@ -119,6 +121,22 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
         names_and_types.emplace_back(String(prop_name), std::make_shared<DataTypeString>());
         ++prop_index;
     }
+
+    while (prop_index < prop_names.size())
+    {
+        const auto & [prop_name, prop] = prop_names[prop_index];
+        if (prop >= UCHAR_OTHER_PROPERTY_LIMIT)
+            break;
+        if (prop == UCHAR_SCRIPT_EXTENSIONS)
+        {
+            names_and_types.emplace_back(String(prop_name), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
+        }
+
+        // NOT handle UCHAR_IDENTIFIER_TYPE
+        
+        ++prop_index;
+    }
+
     // TODO: Excludes properties available through the UnicodeSet API and patterns
     return ColumnsDescription::fromNamesAndTypes(names_and_types);
 }
@@ -135,35 +153,25 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
     {
         all_unicode.remove(base, base + 1);
     }
-    std::cout << "unicode size: " << all_unicode.size() << std::endl;
     icu::UnicodeSetIterator iter(all_unicode);
-
 
     // common
     UChar buffer[32];
     char char_buffer[80];
     UErrorCode err_code;
 
-    /*
-    UErrorCode error_code = U_ZERO_ERROR;
-    const UNormalizer2 * nfkc = unorm2_getNFKCInstance(&error_code);
-    if (error_code != U_ZERO_ERROR)
-    {
-        // throw Exception
-        return;
-    }
-    */
-
     auto prop_names = getPropNames();
     while (iter.next())
     {
         UChar32 code = iter.getCodepoint();
         int index = 0;
-        assert_cast<ColumnInt32 &>(*res_columns[index++]).insert(code);
+        
         icu::UnicodeString u_value(code);
         String value;
         u_value.toUTF8String(value);
         assert_cast<ColumnString &>(*res_columns[index++]).insert(value);
+
+        assert_cast<ColumnInt32 &>(*res_columns[index++]).insert(code);
 
         size_t prop_index = 0;
         while (prop_index < prop_names.size())
@@ -281,9 +289,32 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
             ++prop_index;
         }
         // TODO: add OTHER_PROPERTIES: UCHAR_SCRIPT_EXTENSIONS UCHAR_IDENTIFIER_TYPE
+        while (prop_index < prop_names.size())
+        {
+            const auto & [prop_name, prop] = prop_names[prop_index];
+            if (prop >= UCHAR_OTHER_PROPERTY_LIMIT)
+                break;
 
-        // TODO: add more excludes properties available through the UnicodeSet API and patterns?
+            if (prop == UCHAR_SCRIPT_EXTENSIONS)
+            {
+                const static int32_t SCX_ARRAY_CAPACITY = 32;
+                UScriptCode scx_val_array[SCX_ARRAY_CAPACITY];
+                int32_t num_scripts = uscript_getScriptExtensions(code, scx_val_array, SCX_ARRAY_CAPACITY, &err_code);
+                Array arr;
+                if (err_code == U_ZERO_ERROR)
+                {
+                    for (int32_t i = 0; i < num_scripts; ++i)
+                    {
+                        arr.push_back(scx_val_array[i]);
+                    }
+                }
+                assert_cast<ColumnArray &>(*res_columns[index++]).insert(arr);
+            }
 
+            // NOT handle UCHAR_IDENTIFIER_TYPE
+
+            prop_index++;
+        }
     }
 }
 
