@@ -342,13 +342,6 @@ void StorageKafka::pushConsumer(KafkaConsumerPtr consumer)
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse, 1);
 }
 
-
-KafkaConsumerPtr StorageKafka::popConsumer()
-{
-    return popConsumer(std::chrono::milliseconds::zero());
-}
-
-
 KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
 {
     std::unique_lock lock(mutex);
