@@ -1,7 +1,7 @@
 #include <Common/FunctionDocumentation.h>
 #include <Common/Exception.h>
 #include <unordered_map>
-#include <regex>
+#include <re2/re2.h>
 
 namespace DB
 {
@@ -15,13 +15,15 @@ VersionNumber VERSION_UNKNOWN = {0};
 
 std::string FunctionDocumentation::trimBlankLines(const std::string& str) const
 {
+    std::string result = str;
+
     // Remove all leading whitespace and newlines
-    std::string trimmed = std::regex_replace(str, std::regex(R"(^[\s\n]+)"), "");
+    RE2::GlobalReplace(&result, R"(^[\s\n]+)", "");
 
     // Remove all trailing whitespace and newlines
-    trimmed = std::regex_replace(trimmed, std::regex(R"([\s\n]+$)"), "");
+    RE2::GlobalReplace(&result, R"([\s\n]+$)", "");
 
-    return trimmed;
+    return result;
 }
 
 std::string FunctionDocumentation::argumentsAsString() const
