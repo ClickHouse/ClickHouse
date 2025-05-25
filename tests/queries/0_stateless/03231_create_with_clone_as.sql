@@ -1,4 +1,4 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, memory-engine
 -- Tag no-replicated-database: Unsupported type of CREATE TABLE ... CLONE AS ... query
 
 DROP TABLE IF EXISTS foo_memory;
