@@ -34,6 +34,7 @@ services:
       retries: 15
       start_period: 45s
 
+  # TODO: can we simply use with_minio=True instead?
   minio:
     image: minio/minio:RELEASE.2024-07-31T05-46-26Z
     environment:
@@ -49,6 +50,7 @@ services:
       - 9000
     command: ["server", "/data", "--console-address", ":9001"]
 
+  # TODO: move this code to cluster.py
   mc:
     depends_on:
       - minio
