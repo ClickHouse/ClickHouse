@@ -3183,7 +3183,7 @@ class ClickHouseCluster:
                 self.wait_custom_minio_to_start(['warehouse-hms'], 'minio', 9000)
 
             if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
-                logging.info("Trying to connect to Minio for hms catalog...")
+                logging.info("Trying to connect to Minio for Iceberg catalog...")
                 subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
                 self.up_called = True
                 self.wait_custom_minio_to_start(['warehouse-rest'], 'minio', 9000)
