@@ -14,4 +14,4 @@ COPY testapp.csproj testapp.csproj
 RUN dotnet add package Npgsql
 RUN dotnet add package CommandLineParser
 
-WORKDIR /jdbc
+WORKDIR /testapp

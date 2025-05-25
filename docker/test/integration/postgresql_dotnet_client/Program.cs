@@ -4,16 +4,16 @@ using CommandLine;
 
 class Program
 {
-    [Option('h', "host", HelpText = "Register slash and context commands for the Discord bot.")]
+    [Option('h', "host", HelpText = "Host of ClickHouse server")]
     public string Host { get; set; }
 
-    [Option('p', "port", HelpText = "Register slash and context commands for the Discord bot.")]
+    [Option('p', "port", HelpText = "Port of ClickHouse server")]
     public string Port { get; set; }
 
-    [Option('u', "username", HelpText = "Register slash and context commands for the Discord bot.")]
+    [Option('u', "username", HelpText = "Username")]
     public string Username { get; set; }
 
-    [Option('p', "password", HelpText = "Register slash and context commands for the Discord bot.")]
+    [Option('p', "password", HelpText = "Password")]
     public string Password { get; set; }
 
     static void Main(string[] args)
