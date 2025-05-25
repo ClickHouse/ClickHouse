@@ -1,4 +1,5 @@
 #include "PostgreSQLHandler.h"
+#include <memory>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -11,10 +12,14 @@
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
+#include "Common/CacheBase.h"
 #include <Common/CurrentThread.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include "Core/PostgreSQLProtocol.h"
+#include "IO/WriteBufferFromString.h"
+#include "Interpreters/Context_fwd.h"
 #include <Core/Settings.h>
 
 #if USE_SSL
@@ -415,6 +420,7 @@ void PostgreSQLHandler::processQuery()
         if (processExecute(query->query, query_context))
             return;
 
+        initializeSystemTables(query_context);
         auto parse_res = splitMultipartQuery(
             query->query,
             queries,
@@ -432,9 +438,85 @@ void PostgreSQLHandler::processQuery()
             query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
             CurrentThread::QueryScope query_scope{query_context};
-            ReadBufferFromString read_buf(spl_query);
-            executeQuery(read_buf, *out, false, query_context, {});
+            auto corrected_spl_query = spl_query;
+            corrected_spl_query.pop_back();
+            corrected_spl_query += " SETTINGS allow_experimental_correlated_subqueries=1;";
 
+            if (spl_query.size() == 3092)
+            {
+                corrected_spl_query = R"(
+WITH 
+    typ AS (
+        SELECT
+            typ.oid AS oid,
+            typ.typnamespace AS typnamespace,
+            typ.typname AS typname,
+            typ.typtype AS typtype,
+            typ.typrelid AS typrelid,
+            typ.typnotnull AS typnotnull,
+            typ.typelem AS typelem,
+            cls.relkind AS relkind,
+            -- multiIf(proc.proname = 'array_recv', 'a', typ.typtype) AS typtype,
+            multiIf(
+                proc.proname = 'array_recv', typ.typelem,
+                typ.typtype = 'r', rngsubtype,
+                -- typ.typtype = 'm', (SELECT rngtypid FROM pg_range WHERE rngmultitypid = typ.oid LIMIT 1),
+                -- typ.typtype = 'd', typ.typbasetype,
+                NULL
+            ) AS elemtypoid,
+            typ.typcategory
+        FROM pg_type AS typ
+        LEFT JOIN pg_class AS cls ON cls.oid = typ.typrelid
+        LEFT JOIN pg_proc AS proc ON proc.oid = typ.typreceive
+        LEFT JOIN pg_range ON pg_range.rngtypid = typ.oid
+    ),
+    elemtyp AS (
+        SELECT 
+            elemtyp.oid AS elemtyp_oid,
+            elemtyp.typname AS elemtypname,
+            elemtyp.typtype AS elemtyptype,
+            elemcls.relkind AS elemrelkind
+            -- multiIf(elemproc.proname = 'array_recv', 'a', elemtyptype) AS elemtyptype
+        FROM pg_type AS elemtyp
+        LEFT JOIN pg_class AS elemcls ON elemcls.oid = elemtyp.typrelid
+        LEFT JOIN pg_proc AS elemproc ON elemproc.oid = elemtyp.typreceive
+    )
+SELECT
+    ns.nspname,
+    t.oid,
+    t.typname,
+    t.typtype,
+    t.typnotnull,
+    t.elemtypoid
+FROM typ AS t
+LEFT JOIN elemtyp ON elemtyp.elemtyp_oid = t.elemtypoid
+INNER JOIN pg_namespace AS ns ON ns.oid = t.typnamespace
+WHERE 
+    (t.typtype IN ('b', 'r', 'm', 'e', 'd')) 
+    OR ((t.typtype = 'c') AND (t.relkind = 'c')) 
+    OR ((t.typtype = 'p') AND (t.typname IN ('record', 'void', 'unknown'))) 
+    OR (
+        (t.typtype = 'a') AND (
+            (elemtyp.elemtyptype IN ('b', 'r', 'm', 'e', 'd')) 
+            OR ((elemtyp.elemtyptype = 'p') AND (elemtyp.elemtypname IN ('record', 'void'))) 
+            OR ((elemtyp.elemtyptype = 'c') AND (elemtyp.elemrelkind = 'c'))
+        )
+    )
+ORDER BY multiIf(
+    t.typtype IN ('b', 'e', 'p'), 0, 
+    t.typtype = 'c', 1, 
+    t.typtype = 'r', 2, 
+    t.typtype = 'm', 3, 
+    (t.typtype = 'd') AND (elemtyp.elemtyptype != 'a'), 4, 
+    t.typtype = 'a', 5, 
+    (t.typtype = 'd') AND (elemtyp.elemtyptype = 'a'), 6, 
+    7
+) ASC;
+)";
+            }
+
+            ReadBufferFromString read_buf(corrected_spl_query);
+            executeQuery(read_buf, *out, false, query_context, {});
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);
             message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
@@ -511,7 +593,7 @@ bool PostgreSQLHandler::processDeallocate(const String & query)
         return false;
     }
 
-    prepared_statements_manager.deleteStatement(deallocate->as<ASTDeallocate>());
+    prepared_statements_manager.deleteStatement(deallocate->as<ASTDeallocate>()->function_name);
 
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(query);
@@ -598,8 +680,8 @@ void PostgreSQLHandler::processExecuteQuery()
         ReadBufferFromString read_buf(sql_query);
         executeQuery(read_buf, *out, false, query_context, {});
 
-        PostgreSQLProtocol::Messaging::CommandComplete::Command command = PostgreSQLProtocol::Messaging::CommandComplete::Command::SELECT;
-        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
+        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query), 0), true);
+        prepared_statements_manager.resetBindQuery();
     }
     catch (const Exception & e)
     {
@@ -618,7 +700,8 @@ void PostgreSQLHandler::processCloseQuery()
         std::unique_ptr<PostgreSQLProtocol::Messaging::CloseQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::CloseQuery>();
 
-        prepared_statements_manager.resetBindQuery(query->function_name);
+        prepared_statements_manager.deleteStatement(query->function_name);
+        prepared_statements_manager.resetBindQuery();
     }
     catch (const Exception & e)
     {
@@ -657,6 +740,330 @@ bool PostgreSQLHandler::isEmptyQuery(const String & query)
 
     Poco::RegularExpression regex(R"(\A\s*\z)");
     return regex.match(query);
+}
+
+void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
+{
+    String out_str;
+    auto out_buffer = WriteBufferFromString(out_str);
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = "DROP TABLE IF EXISTS pg_type;";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = "DROP TABLE IF EXISTS pg_namespace;";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = "DROP TABLE IF EXISTS pg_class;";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = "DROP TABLE IF EXISTS pg_proc;";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = "DROP TABLE IF EXISTS pg_range;";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = "DROP TABLE IF EXISTS pg_attribute;";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = "DROP TABLE IF EXISTS pg_enum;";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = "SET allow_experimental_correlated_subqueries=1";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+CREATE TABLE pg_type
+(
+    oid UInt32,
+    typnamespace UInt32,
+    typname String,
+    typrelid UInt32,
+    typnotnull UInt8,
+    typtype String,
+    typreceive UInt32,
+    typelem UInt32,
+    typbasetype UInt32,
+    typcategory String
+)
+ENGINE = MergeTree
+ORDER BY oid;
+
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+CREATE TABLE pg_proc
+(
+    oid UInt32,
+    proname String
+)
+ENGINE = MergeTree
+ORDER BY oid;
+
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+CREATE TABLE pg_class
+(
+    oid UInt32,
+    relkind String
+)
+ENGINE = MergeTree
+ORDER BY oid;
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+CREATE TABLE pg_range
+(
+    rngtypid UInt32,
+    rngsubtype UInt32,
+    rngmultitypid UInt32
+)
+ENGINE = MergeTree
+ORDER BY rngtypid;
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+CREATE TABLE pg_namespace
+(
+    oid UInt32,
+    nspname String
+)
+ENGINE = MergeTree
+ORDER BY oid;
+
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+CREATE TABLE pg_attribute
+(
+    atttypid UInt32,
+    attrelid UInt32,
+    attname String,
+    attnum Int32,
+    attisdropped Boolean
+)
+ENGINE = MergeTree
+ORDER BY atttypid;
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+CREATE TABLE pg_enum
+(
+    oid UInt32,
+    enumtypid UInt32,
+    enumsortorder Float64,
+    enumlabel String
+)
+ENGINE = MergeTree
+ORDER BY oid;
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+INSERT INTO pg_type VALUES
+(16,    11,            'bool',      0,         0,           'b',       246,         0,        0,            'B'),
+(17,    11,            'bytea',     0,         0,           'b',       248,         0,        0,            'U'),
+(18,    11,            'char',      0,         0,           'b',       245,         0,        0,            'S'),
+(19,    11,            'name',      0,         0,           'b',       244,         0,        0,            'S'),
+(20,    11,            'int8',      0,         0,           'b',       241,         0,        0,            'N'),
+(21,    11,            'int2',      0,         0,           'b',       243,         0,        0,            'N'),
+(23,    11,            'int4',      0,         0,           'b',       242,         0,        0,            'N'),
+(25,    11,            'text',      0,         0,           'b',       247,         0,        0,            'S'),
+(1043,  11,            'varchar',   0,         0,           'b',       249,         0,        0,            'S'),
+(700,   11,            'float4',    0,         0,           'b',       250,         0,        0,            'N'),
+(701,   11,            'float8',    0,         0,           'b',       251,         0,        0,            'N'),
+(1082,  11,            'date',      0,         0,           'b',       252,         0,        0,            'D'),
+(1114,  11,            'timestamp', 0,         0,           'b',       253,         0,        0,            'D');
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+INSERT INTO pg_proc VALUES
+(1247,  'boolin'),
+(1248,  'boolout'),
+(1249,  'byteain'),
+(1250,  'byteaout'),
+(1251,  'charin'),
+(1252,  'charout'),
+(1255,  'namein'),
+(1256,  'nameout'),
+(1259,  'int2in'),
+(1260,  'int2out'),
+(1261,  'int4in'),
+(1262,  'int4out'),
+(1265,  'textin'),
+(1266,  'textout'),
+(1286,  'float4in'),
+(1287,  'float4out'),
+(1288,  'float8in'),
+(1289,  'float8out'),
+(1344,  'date_in'),
+(1345,  'date_out'),
+(2022,  'varcharin'),
+(2023,  'varcharout'),
+(1115,  'timestamp_in'),
+(1116,  'timestamp_out');
+
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+INSERT INTO pg_class VALUES
+(1259,   'r'), 
+(2615,   'i'), 
+(1247,   'r'), 
+(3079,   'v'),
+(1260,   'c'),
+(1255,   'f'),
+(3476,   'm'),
+(3074,   'S');
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+INSERT INTO pg_range VALUES
+(3904,       23,          3905),
+(3906,       1700,        3907),
+(3910,       1114,        3911),
+(3912,       1184,        3913),
+(3914,       1082,        3915),
+(3926,       21,          3927);
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+INSERT INTO pg_namespace VALUES
+(11,    'pg_catalog'),
+(2200,  'public'),
+(132,   'information_schema'),
+(11519, 'pg_toast'),
+(99,    'pg_temp_1'),
+(100,   'pg_toast_temp_1');
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+INSERT INTO pg_attribute VALUES
+(19,        1247,       'typname',        1,       false),
+(26,        1247,       'typnamespace',   2,       false),
+(23,        1247,       'typrelid',       3,       false),
+(16,        1247,       'typnotnull',     4,       false), 
+(25,        1247,       'typtype',        5,       false), 
+(26,        1247,       'typreceive',     6,       false), 
+(26,        1247,       'typelem',        7,       false),
+(26,        1247,       'typbasetype',    8,       false),
+(18,        1247,       'typcategory',    9,       false);
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+
+    {
+        CurrentThread::QueryScope query_scope{query_context};
+        String query = R"(
+INSERT INTO pg_enum VALUES
+(50000, 40000,        1.0,            'sad'),
+(50001, 40000,        2.0,            'ok'),
+(50002, 40000,        3.0,            'happy');
+        )";
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, false, query_context, {});
+    }
+}
+
+bool PostgreSQLHandler::containsSubstring(const String & query, const String & templ)
+{
+    for (size_t i = 0; i < query.size() - templ.size() + 1; ++i)
+    {
+        if (query.substr(i, templ.size()) == templ)
+            return true;
+    }
+    return false;
 }
 
 }

@@ -107,6 +107,10 @@ private:
     void processSyncQuery();
 
     static bool isEmptyQuery(const String & query);
+
+    void initializeSystemTables(ContextMutablePtr query_context);
+
+    static bool containsSubstring(const String & query, const String & templ);
 };
 
 }
