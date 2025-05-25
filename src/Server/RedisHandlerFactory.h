@@ -8,8 +8,10 @@
 
 #include "RedisProtocolMapping.h"
 
-namespace DB {
-    class RedisHandlerFactory : public TCPServerConnectionFactory {
+namespace DB
+{
+    class RedisHandlerFactory : public TCPServerConnectionFactory
+    {
     public:
         explicit RedisHandlerFactory(IServer &_server);
         Poco::Net::TCPServerConnection* createConnection(const Poco::Net::StreamSocket &socket, TCPServer &tcp_server) override;

@@ -3131,9 +3131,9 @@ void Server::createServers(
                 socket.setReceiveTimeout(Poco::Timespan());
                 socket.setSendTimeout(settings[Setting::send_timeout]);
                 return ProtocolServerAdapter(
-                    listen_host, 
-                    port_name, 
-                    "Redis compatibility protocol: " + address.toString(), 
+                    listen_host,
+                    port_name,
+                    "Redis compatibility protocol: " + address.toString(),
                     std::make_unique<TCPServer>(new RedisHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
             });
         }

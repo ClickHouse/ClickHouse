@@ -4,27 +4,29 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <iostream>
 
 #include "Common/Exception.h"
+#include "Common/logger_useful.h"
 #include "base/types.h"
 
 namespace DB
 {
-    namespace ErrorCodes 
+    namespace ErrorCodes
     {
-        extern const int UNKNOWN_PACKET_FROM_CLIENT;
         extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+        extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     }
 
     namespace RedisProtocol
     {
-        enum class DataType : char 
+        enum class DataType : char
         {
             SIMPLE_STRING = '+',
             ERROR = '-',
             INTEGER = ':',
             BULK_STRING = '$',
-            ARRAY = '*',   
+            ARRAY = '*',
         };
 
         class Reader
@@ -32,28 +34,32 @@ namespace DB
         public:
             explicit Reader(ReadBuffer* buf_) : buf(buf_) {}
 
-            DataType readType() {
+            DataType readType()
+            {
                 char byte;
-                bool success = buf->read(byte);
-                if (!success) {
+                if (!buf->read(byte))
+                {
                     throw Exception(
-                        ErrorCodes::CANNOT_PARSE_BOOL,
+                        ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
                         "Can't read redis struct type"
                     );
                 }
                 return static_cast<DataType>(byte);
             }
 
-            Int64 readInteger() {
+            Int64 readInteger()
+            {
                 Int64 num;
                 readIntTextImpl(num, *buf);
                 skipToCRLFOrEOF(*buf);
                 return num;
             }
 
-            String readBulkString() {
+            String readBulkString()
+            {
                 auto type = readType();
-                if (type != DataType::BULK_STRING) {
+                if (type != DataType::BULK_STRING)
+                {
                     throw Exception(
                         ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                         "Tried to read {} type as Bulk string", type
@@ -116,11 +122,13 @@ namespace DB
             }
 
         private:
-            void writeDataType(DataType type) {
+            void writeDataType(DataType type)
+            {
                 buf->write(static_cast<char>(type));
             }
 
-            void writeCRLF() {
+            void writeCRLF()
+            {
                 const char * crlf = "\r\n";
                 buf->write(crlf, 2);
             }

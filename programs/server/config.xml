@@ -193,7 +193,7 @@
                 that can be performed on the table.
                 Current possible options: string, hash -->
                 <db_type>hash</db_type>
-                <clickhouse_db>databse</clickhouse_db>
+                <clickhouse_db>database</clickhouse_db>
                 <clickhouse_table>table</clickhouse_table>
                 <key_column>column</key_column>
             </_0>

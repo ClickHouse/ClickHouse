@@ -3,7 +3,7 @@
 #include "IO/WriteBuffer.h"
 #include "RedisProtocolReaderWriter.h"
 
-namespace DB 
+namespace DB
 {
     namespace RedisProtocol
     {
@@ -11,7 +11,7 @@ namespace DB
         {
         public:
             virtual void serialize(WriteBuffer & out) = 0;
-            
+
             virtual ~IResponse() = default;
         };
 

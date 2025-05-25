@@ -24,7 +24,7 @@ namespace DB
             const String NO_SUCH_DB = "ERR DB index is out of range";
         }
 
-        namespace Command 
+        namespace Command
         {
             const String AUTH = "AUTH";
             const String ECHO = "ECHO";
@@ -33,7 +33,7 @@ namespace DB
             const String SELECT = "SELECT";
         }
 
-        enum class CommandType 
+        enum class CommandType
         {
             AUTH,
             ECHO,
@@ -42,8 +42,10 @@ namespace DB
             SELECT,
         };
 
-        inline String toString(CommandType cmd_type) {
-            switch(cmd_type) {
+        inline String toString(CommandType cmd_type)
+        {
+            switch (cmd_type)
+            {
                 case CommandType::AUTH:
                     return Command::AUTH;
                 case CommandType::ECHO:
@@ -75,16 +77,17 @@ namespace DB
             {
                 Reader reader(&in);
                 DataType type = reader.readType();
-                if (type != DataType::ARRAY) 
+                if (type != DataType::ARRAY)
                 {
                     throw Exception(
                         ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                        "Can't parse incomming request. Unexpected RESP type: {}", static_cast<char>(type)
+                        "Can't parse incoming request. Unexpected RESP type: {}", static_cast<char>(type)
                     );
                 }
 
                 command_len = reader.readInteger();
-                if (command_len < 1) {
+                if (command_len < 1)
+                {
                     throw Exception(
                         ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                         "Wrong command length: {}", command_len
@@ -122,7 +125,7 @@ namespace DB
             }
 
             Int64 getCommandLen() const { return command_len; }
-            
+
             CommandType getCommand() const { return command; }
 
         private:
@@ -149,7 +152,7 @@ namespace DB
             }
 
             UInt32 getDB() const { return db; }
-        
+
         private:
             RedisRequest & request;
             UInt32 db = 0;

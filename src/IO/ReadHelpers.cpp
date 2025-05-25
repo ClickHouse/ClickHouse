@@ -1862,11 +1862,13 @@ void skipToCRLFOrEOF(ReadBuffer & buf)
         char * next_pos = find_first_symbols<'\r'>(buf.position(), buf.buffer().end());
         buf.position() = next_pos;
 
-        if (!buf.hasPendingData()) {
+        if (!buf.hasPendingData())
+        {
             continue;
         }
 
-        if (*buf.position() == '\r' && buf.available() && *(buf.position() + 1) == '\n') {
+        if (*buf.position() == '\r' && buf.available() && *(buf.position() + 1) == '\n')
+        {
             buf.position() += 2;
             return;
         }
