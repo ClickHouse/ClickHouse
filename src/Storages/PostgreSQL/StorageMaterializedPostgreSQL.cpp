@@ -610,6 +610,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             configuration.port,
             configuration.username,
             configuration.password,
+            "",
+            "",
+            "",
             args.getContext()->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
 
         bool has_settings = args.storage_def->settings;
