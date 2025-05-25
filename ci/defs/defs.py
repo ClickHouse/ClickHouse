@@ -234,6 +234,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/postgresql-dotnet-client",
+        path="./docker/test/integration/postgresql_dotnet_client",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/python-bottle",
         path="./docker/test/integration/resolver",
         platforms=Docker.Platforms.arm_amd,

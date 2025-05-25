@@ -1,5 +1,5 @@
-# docker build -t clickhouse/postgresql-java-client .
-# PostgreSQL Java client docker container
+# docker build -t clickhouse/postgresql-dotnet-client .
+# PostgreSQL C# client docker container
 
 FROM ubuntu:18.04
 

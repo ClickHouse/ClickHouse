@@ -102,6 +102,10 @@
         "name": "clickhouse/postgresql-java-client",
         "dependent": []
     },
+    "docker/test/integration/postgresql_dotnet_client": {
+        "name": "clickhouse/postgresql-dotnet-client",
+        "dependent": []
+    },
     "docker/test/integration/kerberos_kdc": {
         "name": "clickhouse/kerberos-kdc",
         "dependent": []
