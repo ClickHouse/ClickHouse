@@ -109,8 +109,7 @@ private:
     static bool isEmptyQuery(const String & query);
 
     void initializeSystemTables(ContextMutablePtr query_context);
-
-    static bool containsSubstring(const String & query, const String & templ);
+    bool should_init_system_tables = true;
 };
 
 }
