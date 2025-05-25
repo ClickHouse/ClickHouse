@@ -17,7 +17,7 @@ services:
       - 10001:10001
 
   hive:
-    build: ./../../hms_extensions/
+    build: ./../../integration/test_database_hms/hms_extensions/
     restart: unless-stopped
     depends_on:
       minio:
