@@ -346,6 +346,9 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
 {
     std::unique_lock lock(mutex);
 
+    if (shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
     KafkaConsumerPtr ret_consumer_ptr;
     std::optional<size_t> closed_consumer_index;
     for (size_t i = 0; i < consumers.size(); ++i)
