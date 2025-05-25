@@ -52,7 +52,8 @@ services:
   mc:
     depends_on:
       - minio
-    image: minio/mc
+    # Stick to version with "mc config"
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
     environment:
       - AWS_ACCESS_KEY_ID=minio
       - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
