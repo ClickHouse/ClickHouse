@@ -220,7 +220,7 @@ StorageKafka::StorageKafka(
         const auto & table = getStorageID().getTableName();
         const auto & thread_name = std::string("KfkCln:") + table;
         setThreadName(thread_name.c_str(), /*truncate=*/ true);
-        cleanConsumers();
+        cleanConsumersByTTL();
     });
 }
 
@@ -318,11 +318,10 @@ void StorageKafka::shutdown(bool)
     }
 
     {
-        std::lock_guard lock(mutex);
         LOG_TRACE(log, "Closing {} consumers", consumers.size());
         Stopwatch watch;
-        consumers.clear();
-        LOG_TRACE(log, "Consumers closed. Took {} ms.", watch.elapsedMilliseconds());
+        cleanConsumers();
+        LOG_TRACE(log, "Consumers closed in {} ms.", watch.elapsedMilliseconds());
     }
 
     {
@@ -333,6 +332,36 @@ void StorageKafka::shutdown(bool)
     }
 }
 
+void StorageKafka::cleanConsumers()
+{
+    /// We need to clear the cppkafka::Consumer separately from KafkaConsumer, since cppkafka::Consumer holds a weak_ptr to the KafkaConsumer (for logging callback)
+    /// So if we will remove cppkafka::Consumer from KafkaConsumer destructor, then due to librdkafka will call the logging again from destructor, it will lead to a deadlock
+    std::vector<ConsumerPtr> consumers_to_close;
+
+    {
+        std::unique_lock lock(mutex);
+        /// Wait until all consumers will be released
+        cv.wait(lock, [&, this]()
+        {
+            auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr)
+            {
+                return ptr->isInUse();
+            });
+            return it == consumers.end();
+        });
+
+        for (const auto & consumer : consumers)
+        {
+            if (!consumer->hasConsumer())
+                continue;
+            consumers_to_close.push_back(consumer->moveConsumer());
+        }
+
+        consumers.clear();
+    }
+
+    consumers_to_close.clear();
+}
 
 void StorageKafka::pushConsumer(KafkaConsumerPtr consumer)
 {
@@ -453,7 +482,7 @@ cppkafka::Configuration StorageKafka::getProducerConfiguration()
     return KafkaConfigLoader::getProducerConfiguration(*this, params);
 }
 
-void StorageKafka::cleanConsumers()
+void StorageKafka::cleanConsumersByTTL()
 {
     UInt64 ttl_usec = (*kafka_settings)[KafkaSetting::kafka_consumers_pool_ttl_ms] * 1'000;
 

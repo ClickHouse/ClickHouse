@@ -163,6 +163,7 @@ private:
 
     bool streamToViews();
 
+    void cleanConsumersByTTL();
     void cleanConsumers();
 };
 
