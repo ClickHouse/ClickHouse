@@ -943,7 +943,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     LOG_TEST(
         key_metadata->logger(), "Remove from cache. Key: {}, offset: {}, size: {}",
-        getKey(), file_segment->offset(), file_segment->reserved_size);
+        getKey(), file_segment->offset(), file_segment->reserved_size.load());
 
     chassert(can_be_broken || file_segment->assertCorrectnessUnlocked(segment_lock));
 

@@ -37,7 +37,7 @@ using FunctionAbs = FunctionUnaryArithmetic<AbsImpl, NameAbs, false>;
 template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
     {
         Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
         Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
@@ -51,7 +51,16 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 
 REGISTER_FUNCTION(Abs)
 {
-    factory.registerFunction<FunctionAbs>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = "Calculates the absolute value of `x`. Has no effect if `x` is of an unsigned type. If `x` is of a signed type, it returns an unsigned number.";
+    FunctionDocumentation::Syntax syntax = "abs(x)";
+    FunctionDocumentation::Arguments argument = {{"x", "Value to get the absolute value of"}};
+    FunctionDocumentation::ReturnedValue returned_value = "The absolute value of `x`";
+    FunctionDocumentation::Examples examples = {{"", "SELECT abs(-0.5)", "0.5"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+
+    factory.registerFunction<FunctionAbs>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

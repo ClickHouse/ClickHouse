@@ -12,6 +12,7 @@
 #    include <Columns/ColumnString.h>
 #    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnVector.h>
+#    include <Core/AccurateComparison.h>
 #    include <Core/DecimalComparison.h>
 #    include <DataTypes/DataTypeAggregateFunction.h>
 #    include <DataTypes/DataTypeArray.h>
@@ -45,7 +46,6 @@
 #    include <boost/container/flat_set.hpp>
 #    include <boost/numeric/conversion/cast.hpp>
 #    include <boost/range/algorithm.hpp>
-#    include <boost/range/algorithm_ext/erase.hpp>
 #    include <google/protobuf/descriptor.h>
 #    include <google/protobuf/descriptor.pb.h>
 

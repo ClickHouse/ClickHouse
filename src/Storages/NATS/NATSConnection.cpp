@@ -9,102 +9,38 @@
 namespace DB
 {
 
-static const auto RETRIES_MAX = 20;
-static const auto CONNECTED_TO_BUFFER_SIZE = 256;
+/// disconnectedCallback may be called after connection destroy
+LoggerPtr NATSConnection::callback_logger = getLogger("NATSConnection callback");
 
-
-NATSConnectionManager::NATSConnectionManager(const NATSConfiguration & configuration_, LoggerPtr log_)
+NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_)
     : configuration(configuration_)
-    , log(log_)
-    , event_handler(loop.getLoop(), log)
+    , log(std::move(log_))
+    , options(std::move(options_))
+    , connection(nullptr, &natsConnection_Destroy)
 {
-    const char * val = std::getenv("CLICKHOUSE_NATS_TLS_SECURE"); // NOLINT(concurrency-mt-unsafe) // this is safe on Linux glibc/Musl, but potentially not safe on other platforms
-    std::string tls_secure = val == nullptr ? std::string("1") : std::string(val);
-    if (tls_secure == "0")
-        skip_verification = true;
-}
-
-
-NATSConnectionManager::~NATSConnectionManager()
-{
-    if (has_connection)
-        natsConnection_Destroy(connection);
-}
-
-String NATSConnectionManager::connectionInfoForLog() const
-{
-    if (!configuration.url.empty())
-    {
-        return "url : " + configuration.url;
-    }
-    return "cluster: " + boost::algorithm::join(configuration.servers, ", ");
-}
-
-bool NATSConnectionManager::isConnected()
-{
-    std::lock_guard lock(mutex);
-    return isConnectedImpl();
-}
-
-bool NATSConnectionManager::connect()
-{
-    std::lock_guard lock(mutex);
-    connectImpl();
-    return isConnectedImpl();
-}
-
-bool NATSConnectionManager::reconnect()
-{
-    std::lock_guard lock(mutex);
-    if (isConnectedImpl())
-        return true;
-
-    disconnectImpl();
-
-    LOG_DEBUG(log, "Trying to restore connection to NATS {}", connectionInfoForLog());
-    connectImpl();
-
-    return isConnectedImpl();
-}
-
-void NATSConnectionManager::disconnect()
-{
-    std::lock_guard lock(mutex);
-    disconnectImpl();
-}
-
-bool NATSConnectionManager::closed()
-{
-    std::lock_guard lock(mutex);
-    return natsConnection_IsClosed(connection);
-}
-
-bool NATSConnectionManager::isConnectedImpl() const
-{
-    return connection && has_connection && !natsConnection_IsClosed(connection);
-}
-
-void NATSConnectionManager::connectImpl()
-{
-    natsOptions * options = event_handler.getOptions();
     if (!configuration.username.empty() && !configuration.password.empty())
-        natsOptions_SetUserInfo(options, configuration.username.c_str(), configuration.password.c_str());
+        natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), configuration.password.c_str());
     if (!configuration.token.empty())
-        natsOptions_SetToken(options, configuration.token.c_str());
+        natsOptions_SetToken(options.get(), configuration.token.c_str());
     if (!configuration.credential_file.empty())
-        natsOptions_SetUserCredentialsFromFiles(options, configuration.credential_file.c_str(), nullptr);
+        natsOptions_SetUserCredentialsFromFiles(options.get(), configuration.credential_file.c_str(), nullptr);
 
     if (configuration.secure)
     {
-        natsOptions_SetSecure(options, true);
+        natsOptions_SetSecure(options.get(), true);
     }
-    if (skip_verification)
+
+    // use CLICKHOUSE_NATS_TLS_SECURE=0 env var to skip TLS verification of server cert
+    const char * val = std::getenv("CLICKHOUSE_NATS_TLS_SECURE"); // NOLINT(concurrency-mt-unsafe) // this is safe on Linux glibc/Musl, but potentially not safe on other platforms
+    std::string tls_secure = val == nullptr ? std::string("1") : std::string(val);
+    if (tls_secure == "0")
     {
-        natsOptions_SkipServerVerification(options, true);
+        natsOptions_SkipServerVerification(options.get(), true);
     }
+
     if (!configuration.url.empty())
     {
-        natsOptions_SetURL(options, configuration.url.c_str());
+        natsOptions_SetURL(options.get(), configuration.url.c_str());
     }
     else
     {
@@ -113,47 +49,115 @@ void NATSConnectionManager::connectImpl()
         {
             servers[i] = configuration.servers[i].c_str();
         }
-        natsOptions_SetServers(options, servers.data(), static_cast<int>(configuration.servers.size()));
+        natsOptions_SetServers(options.get(), servers.data(), static_cast<int>(configuration.servers.size()));
     }
-    natsOptions_SetMaxReconnect(options, configuration.max_reconnect);
-    natsOptions_SetReconnectWait(options, configuration.reconnect_wait);
-    natsOptions_SetDisconnectedCB(options, disconnectedCallback, log.get());
-    natsOptions_SetReconnectedCB(options, reconnectedCallback, log.get());
-    natsStatus status;
+
+    static constexpr int infinite_reconnect_count = -1;
+    natsOptions_SetMaxReconnect(options.get(), infinite_reconnect_count);
+
+    // On connections with significant traffic, the client will often figure out there is a problem between PINGS,
+    // and as a result the default ping interval is typically on the order of minutes.
+    // To close an unresponsive connection after 3m, set the ping interval to 60'000 milliseconds and the maximum pings outstanding to 3
+    natsOptions_SetPingInterval(options.get(), 60'000);
+    natsOptions_SetMaxPingsOut(options.get(), 3);
+
+    natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
+    natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, this);
+    natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, this);
+}
+NATSConnection::~NATSConnection()
+{
+    disconnect();
+}
+
+
+String NATSConnection::connectionInfoForLog() const
+{
+    if (!configuration.url.empty())
     {
-        auto lock = event_handler.setThreadLocalLoop();
-        status = natsConnection_Connect(&connection, options);
+        return "url : " + configuration.url;
     }
-    if (status == NATS_OK)
-        has_connection = true;
-    else
+    return "cluster: " + boost::algorithm::join(configuration.servers, ", ");
+}
+
+bool NATSConnection::isConnected()
+{
+    std::lock_guard lock(mutex);
+    return isConnectedImpl(lock);
+}
+
+bool NATSConnection::isDisconnected()
+{
+    std::lock_guard lock(mutex);
+    return isDisconnectedImpl(lock);
+}
+
+bool NATSConnection::isClosed()
+{
+    std::lock_guard lock(mutex);
+    return isClosedImpl(lock);
+}
+
+bool NATSConnection::connect()
+{
+    std::lock_guard lock(mutex);
+    connectImpl(lock);
+    return isConnectedImpl(lock);
+}
+
+void NATSConnection::disconnect()
+{
+    std::lock_guard lock(mutex);
+    disconnectImpl(lock);
+}
+
+bool NATSConnection::isConnectedImpl(const Lock &) const
+{
+    return connection && (natsConnection_Status(connection.get()) == NATS_CONN_STATUS_CONNECTED || natsConnection_IsDraining(connection.get()));
+}
+
+bool NATSConnection::isDisconnectedImpl(const Lock &) const
+{
+    return !connection || (natsConnection_Status(connection.get()) == NATS_CONN_STATUS_DISCONNECTED || natsConnection_IsClosed(connection.get()));
+}
+
+bool NATSConnection::isClosedImpl(const Lock &) const
+{
+    return !connection || natsConnection_IsClosed(connection.get());
+}
+
+
+void NATSConnection::connectImpl(const Lock &)
+{
+    natsConnection * new_conection = nullptr;
+    natsStatus status = natsConnection_Connect(&new_conection, options.get());
+    if (status != NATS_OK)
+    {
         LOG_DEBUG(log, "New connection to {} failed. Nats status text: {}. Last error message: {}",
                   connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
+        return;
+    }
+    connection.reset(new_conection);
+
+    LOG_DEBUG(log, "New connection {} is connected to {}", static_cast<void*>(this), connectionInfoForLog());
 }
 
-void NATSConnectionManager::disconnectImpl()
+void NATSConnection::disconnectImpl(const Lock & connection_lock)
 {
-    if (!has_connection)
+    if (isDisconnectedImpl(connection_lock))
         return;
 
-    natsConnection_Close(connection);
-
-    size_t cnt_retries = 0;
-    while (!natsConnection_IsClosed(connection) && cnt_retries++ != RETRIES_MAX)
-        event_handler.iterateLoop();
+    natsConnection_Close(connection.get());
 }
 
-void NATSConnectionManager::reconnectedCallback(natsConnection * nc, void * log)
+void NATSConnection::reconnectedCallback(natsConnection *, void * connection)
 {
-    char buffer[CONNECTED_TO_BUFFER_SIZE];
-    buffer[0] = '\0';
-    natsConnection_GetConnectedUrl(nc, buffer, sizeof(buffer));
-    LOG_DEBUG(static_cast<Poco::Logger *>(log), "Got reconnected to NATS server: {}.", buffer);
+    LOG_DEBUG(callback_logger, "Connection {} got reconnected to NATS server", static_cast<void*>(connection));
 }
 
-void NATSConnectionManager::disconnectedCallback(natsConnection *, void * log)
+void NATSConnection::disconnectedCallback(natsConnection *, void * connection)
 {
-    LOG_DEBUG(static_cast<Poco::Logger *>(log), "Got disconnected from NATS server.");
+    LOG_DEBUG(callback_logger, "Connection {} got disconnected from NATS server", connection);
 }
 
 }

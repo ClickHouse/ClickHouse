@@ -153,6 +153,12 @@ std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 
 std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
 {
+    if (!endpoint.sas_auth.empty())
+    {
+        RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
+        return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+    }
+
     return std::visit([this]<typename T>(const T & auth)
     {
         if constexpr (std::is_same_v<T, ConnectionString>)
@@ -323,6 +329,9 @@ static bool containerExists(const ContainerClient & client)
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)
 {
+    if (!params.endpoint.sas_auth.empty())
+        return params.createForContainer();
+
     if (params.endpoint.container_already_exists.value_or(false) || readonly)
     {
         return params.createForContainer();
@@ -433,6 +442,7 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
 
     settings->min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024);
     settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
+    settings->read_only = config.getBool(config_prefix + ".readonly", false);
 
     settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", settings_ref[Setting::azure_max_single_part_upload_size]);
     settings->max_single_read_retries = config.getUInt64(config_prefix + ".max_single_read_retries", settings_ref[Setting::azure_max_single_read_retries]);

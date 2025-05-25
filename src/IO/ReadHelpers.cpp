@@ -285,6 +285,13 @@ void readString(String & s, ReadBuffer & buf)
     readStringInto(s, buf);
 }
 
+void readString(String & s, ReadBuffer & buf, size_t n)
+{
+    s.resize(n);
+    if (n)
+        s.resize(buf.read(s.data(), n));
+}
+
 template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringInto<String>(String & s, ReadBuffer & buf);
 template void readStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
@@ -1562,7 +1569,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         if (unlikely(year == 0))
             datetime = 0;
         else
-            datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
+            datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
     }
     else
     {
@@ -1602,6 +1609,119 @@ template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const
 template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 
+template <typename ReturnType, bool t64_mode>
+ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    /// hhh:mm:ss
+    static constexpr auto time_broken_down_length = 9;
+
+    char s[time_broken_down_length];
+    char * s_pos = s;
+
+    int negative_multiplier = 1;
+
+    if (!buf.eof() && *buf.position() == '-')
+    {
+        negative_multiplier = -1;
+        ++buf.position();
+    }
+
+    /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
+    while (s_pos < s + time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))
+    {
+        *s_pos = *buf.position();
+        ++s_pos;
+        ++buf.position();
+    }
+
+    if (!t64_mode && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
+    {
+        const auto already_read_length = s_pos - s;
+        const size_t remaining_time_size = time_broken_down_length - already_read_length;
+
+        size_t size = buf.read(s_pos, remaining_time_size);
+
+        if constexpr (!throw_exception)
+        {
+            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[4])
+                || !isNumericASCII(s[5]) || !isNumericASCII(s[7]) || !isNumericASCII(s[8]))
+                return false;
+
+            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+                return false;
+        }
+
+        uint64_t hour = 0;
+        UInt8 minute = 0;
+        UInt8 second = 0;
+
+        if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
+        {
+            ++buf.position();
+
+            if (size != time_broken_down_length)
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time {}", std::string_view(s, size));
+                else
+                    return false;
+            }
+
+            if constexpr (!throw_exception)
+            {
+                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[4]) || !isNumericASCII(s[5])
+                    || !isNumericASCII(s[7]) || !isNumericASCII(s[8]))
+                    return false;
+
+                if (!isSymbolIn(s[3], allowed_time_delimiters) || !isSymbolIn(s[6], allowed_time_delimiters))
+                    return false;
+            }
+
+            hour = (s[0] - '0') * 100 + (s[1] - '0') * 10 + (s[2] - '0');
+            minute = (s[4] - '0') * 10 + (s[5] - '0');
+            second = (s[7] - '0') * 10 + (s[8] - '0');
+        }
+
+        time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+    }
+    else
+    {
+        time = 0;
+        bool too_short = s_pos - s <= 4;
+
+        if (!too_short || t64_mode)
+        {
+            for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+            {
+                if constexpr (!throw_exception)
+                {
+                    if (!isNumericASCII(*digit_pos))
+                        return false;
+                }
+                time = time * 10 + *digit_pos - '0';
+            }
+        }
+        time *= negative_multiplier;
+
+        if (too_short && negative_multiplier != -1)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time");
+            else
+                return false;
+        }
+
+    }
+
+    return ReturnType(true);
+}
+
+template void readTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template void readTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 
 template <typename ReturnType>
 ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings, size_t current_depth)

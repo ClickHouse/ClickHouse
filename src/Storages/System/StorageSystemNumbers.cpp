@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Storages/SelectQueryInfo.h>

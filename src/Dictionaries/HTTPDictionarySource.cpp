@@ -15,7 +15,6 @@
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
 #include <Storages/NamedCollectionsHelpers.h>
-#include "registerDictionaries.h"
 
 
 namespace DB
@@ -207,7 +206,8 @@ std::string HTTPDictionarySource::toString() const
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                   const DictionaryStructure & dict_struct,
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,

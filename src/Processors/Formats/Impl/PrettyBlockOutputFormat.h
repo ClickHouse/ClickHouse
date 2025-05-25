@@ -1,9 +1,11 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Formats/FormatSettings.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatSettings.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Common/PODArray.h>
+
 
 namespace DB
 {
@@ -25,7 +27,7 @@ public:
     };
 
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
-    PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_);
+    PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_);
     ~PrettyBlockOutputFormat() override;
 
     String getName() const override { return "PrettyBlockOutputFormat"; }
@@ -37,6 +39,7 @@ protected:
 
     size_t total_rows = 0;
     size_t displayed_rows = 0;
+    size_t prev_row_number_width = 7;
     size_t row_number_width = 7; // "10000. "
 
     const FormatSettings format_settings;
@@ -66,6 +69,7 @@ protected:
     {
         total_rows = 0;
         displayed_rows = 0;
+        use_vertical_format = false;
     }
 
     static bool cutInTheMiddle(size_t row_num, size_t num_rows, size_t max_rows);
@@ -76,12 +80,16 @@ private:
     Style style;
     bool mono_block;
     bool color;
+    bool glue_chunks;
 
     /// Fallback to Vertical format for wide but short tables.
     std::unique_ptr<IRowOutputFormat> vertical_format_fallback;
+    bool use_vertical_format = false;
 
     /// For mono_block == true only
     Chunk mono_chunk;
+    Widths prev_chunk_max_widths;
+    bool had_footer = false;
 
     /// Implements squashing of chunks by time
     std::condition_variable mono_chunk_condvar;

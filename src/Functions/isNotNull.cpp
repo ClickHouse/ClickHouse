@@ -4,6 +4,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>

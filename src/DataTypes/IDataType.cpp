@@ -26,7 +26,23 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+IDataType::IDataType() = default;
+
 IDataType::~IDataType() = default;
+
+String IDataType::getName() const
+{
+    if (custom_name)
+        return custom_name->getName();
+    return doGetName();
+}
+
+String IDataType::getPrettyName(size_t indent) const
+{
+    if (custom_name)
+        return custom_name->getName();
+    return doGetPrettyName(indent);
+}
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {
@@ -135,7 +151,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
                         {
                             dynamic_subcolumn_data->type = tmp_subpath[i].creator->create(dynamic_subcolumn_data->type);
                             dynamic_subcolumn_data->column = tmp_subpath[i].creator->create(dynamic_subcolumn_data->column);
-                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization);
+                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
                         }
 
                         tmp_subpath[i].data = *dynamic_subcolumn_data;
@@ -353,9 +369,12 @@ bool isDate(TYPE data_type) { return WhichDataType(data_type).isDate(); } \
 bool isDate32(TYPE data_type) { return WhichDataType(data_type).isDate32(); } \
 bool isDateOrDate32(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32(); } \
 bool isDateTime(TYPE data_type) { return WhichDataType(data_type).isDateTime(); } \
+bool isTime(TYPE data_type) { return WhichDataType(data_type).isTime(); } \
 bool isDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTime64(); } \
+bool isTime64(TYPE data_type) { return WhichDataType(data_type).isTime64(); } \
 bool isDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTimeOrDateTime64(); } \
 bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrDateTimeOrDateTime64(); } \
+bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(); } \
 \
 bool isString(TYPE data_type) { return WhichDataType(data_type).isString(); } \
 bool isFixedString(TYPE data_type) { return WhichDataType(data_type).isFixedString(); } \
@@ -377,13 +396,13 @@ bool isNothing(TYPE data_type) { return WhichDataType(data_type).isNothing(); } 
 bool isColumnedAsNumber(TYPE data_type) \
 { \
     WhichDataType which(data_type); \
-    return which.isInteger() || which.isFloat() || which.isDateOrDate32OrDateTimeOrDateTime64() || which.isUUID() || which.isIPv4() || which.isIPv6(); \
+    return which.isInteger() || which.isFloat() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() || which.isUUID() || which.isIPv4() || which.isIPv6(); \
 } \
 \
 bool isColumnedAsDecimal(TYPE data_type) \
 { \
     WhichDataType which(data_type); \
-    return which.isDecimal() || which.isDateTime64(); \
+    return which.isDecimal() || which.isDateTime64() || which.isTime64(); \
 } \
 \
 bool isNotCreatable(TYPE data_type) \

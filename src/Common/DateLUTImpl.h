@@ -5,7 +5,6 @@
 #include <base/types.h>
 
 #include <ctime>
-#include <cassert>
 #include <string>
 #include <type_traits>
 
@@ -284,7 +283,7 @@ private:
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
-        assert(divisor > 0);
+        chassert(divisor > 0);
 
         if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
         {
@@ -659,6 +658,9 @@ public:
     template <typename DateOrTime>
     Int16 toYear(DateOrTime v) const { return lut[toLUTIndex(v)].year; }
 
+    template <typename DateOrTime>
+    Int16 toYearSinceEpoch(DateOrTime v) const { return lut[toLUTIndex(v)].year - 1970; }
+
     /// 1-based, starts on Monday
     template <typename DateOrTime>
     UInt8 toDayOfWeek(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_week; }
@@ -953,6 +955,13 @@ public:
     }
 
     template <typename DateOrTime>
+    Int32 toMonthNumSinceEpoch(DateOrTime v) const
+    {
+        const LUTIndex i = toLUTIndex(v);
+        return (lut[i].year - 1970) * 12 + lut[i].month - 1;
+    }
+
+    template <typename DateOrTime>
     Int32 toRelativeQuarterNum(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
@@ -977,7 +986,7 @@ public:
     }
 
     /// The same formula is used for positive time (after Unix epoch) and negative time (before Unix epoch).
-    /// It’s needed for correct work of dateDiff function.
+    /// It's needed for correct work of dateDiff function.
     Time toStableRelativeHourNum(Time t) const
     {
         return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
@@ -1195,6 +1204,16 @@ public:
         return lut[index].date + time_offset;
     }
 
+    Time makeTime(uint64_t hour, UInt8 minute, UInt8 second) const
+    {
+        Time time_offset = hour * 3600 + minute * 60 + second;
+
+        if (time_offset >= lut[1].time_at_offset_change())
+            time_offset -= lut[0].amount_of_offset_change();
+
+        return time_offset;
+    }
+
     template <typename DateOrTime>
     const Values & getValues(DateOrTime v) const { return lut[toLUTIndex(v)]; }
 
@@ -1232,7 +1251,8 @@ public:
 
     struct TimeComponents
     {
-        uint8_t hour;
+        bool is_negative = false;
+        uint64_t hour;
         uint8_t minute;
         uint8_t second;
     };
@@ -1280,6 +1300,29 @@ public:
         /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
         if (unlikely(res.time.hour > 23))
             res.time.hour = 23;
+
+        return res;
+    }
+
+    TimeComponents toTimeComponents(Time t) const
+    {
+        TimeComponents res;
+
+        bool is_negative = false;
+
+        if (unlikely(t < 0))
+        {
+            is_negative = true;
+            t = -t;
+        }
+        res.second = t % 60;
+        res.minute = t / 60 % 60;
+        res.hour = t / 3600;
+
+        if (unlikely(res.hour > 999))
+            res.hour = 999;
+
+        res.is_negative = is_negative;
 
         return res;
     }

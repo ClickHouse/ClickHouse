@@ -2,33 +2,30 @@
 #include "config.h"
 
 #if USE_AVRO
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
+
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <DataTypes/DataTypeDateTime64.h>
+
 namespace Iceberg
 {
 
-class ManifestList
-{
-public:
-    explicit ManifestList(std::vector<ManifestFileEntry> manifest_files_) : manifest_files(std::move(manifest_files_)) { }
-    const std::vector<ManifestFileEntry> & getManifestFiles() const { return manifest_files; }
+using ManifestList = std::vector<ManifestFilePtr>;
+using ManifestListPtr = std::shared_ptr<const ManifestList>;
 
-private:
-    std::vector<ManifestFileEntry> manifest_files;
+struct IcebergSnapshot
+{
+    ManifestListPtr manifest_list;
+    Int64 snapshot_id;
+    std::optional<size_t> total_rows;
+    std::optional<size_t> total_bytes;
 };
 
-using ManifestListsByName = std::map<String, ManifestList>;
-
-class IcebergSnapshot
+struct IcebergHistoryRecord
 {
-public:
-    explicit IcebergSnapshot(const ManifestListsByName::const_iterator & reference_) : reference(reference_) { }
-
-    const ManifestList & getManifestList() const { return reference->second; }
-    const String & getName() const { return reference->first; }
-
-
-private:
-    ManifestListsByName::const_iterator reference;
+    Int64 snapshot_id;
+    DB::DateTime64 made_current_at;
+    Int64 parent_id;
+    bool is_current_ancestor;
 };
 
 }

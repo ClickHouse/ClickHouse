@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -596,11 +597,10 @@ private:
     {
         unalignedStore<UInt64>(buf, 0);
 
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        if constexpr (std::endian::native == std::endian::little)
             unalignedStoreLittleEndian<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32));
-#else
+        else
             unalignedStoreLittleEndian<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(std::byteswap(in)) << 32));
-#endif
     }
 };
 

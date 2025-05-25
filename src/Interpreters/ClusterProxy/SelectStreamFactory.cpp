@@ -13,6 +13,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -42,6 +43,8 @@ namespace Setting
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsBool serialize_query_plan;
+    extern const SettingsUInt64 distributed_group_by_no_merge;
 }
 
 namespace ErrorCodes
@@ -169,23 +172,42 @@ void SelectStreamFactory::createForShardImpl(
             query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
     };
 
-    auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
+    // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
+    auto emplace_remote_stream = [&](bool lazy = false)
     {
         Block shard_header;
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+        PlannerContextPtr planner_context;
+        std::unique_ptr<QueryPlan> query_plan;
+
+        const auto & settings = context->getSettingsRef();
+
+        /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColums,
+        /// But distributed_group_by_no_merge requires Complete.
+        if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
+        {
+            query_plan = createLocalPlan(
+                query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true, shard_info.default_database);
+
+            shard_header = query_plan->getCurrentHeader();
+        }
         else
-            shard_header = header;
+        {
+            if (settings[Setting::allow_experimental_analyzer])
+                std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+            else
+                shard_header = header;
+        }
 
         remote_shards.emplace_back(Shard{
             .query = query_ast,
             .query_tree = query_tree,
+            .planner_context = planner_context,
+            .query_plan = std::move(query_plan),
             .main_table = main_table,
             .header = shard_header,
             .has_missing_objects = has_missing_objects,
             .shard_info = shard_info,
             .lazy = lazy,
-            .local_delay = local_delay,
             .shard_filter_generator = std::move(shard_filter_generator),
         });
     };
@@ -194,7 +216,7 @@ void SelectStreamFactory::createForShardImpl(
 
     fiu_do_on(FailPoints::use_delayed_remote_source,
     {
-        emplace_remote_stream(/*lazy=*/true, /*local_delay=*/999999);
+        emplace_remote_stream(/*lazy=*/true);
         return;
     });
 
@@ -287,7 +309,7 @@ void SelectStreamFactory::createForShardImpl(
 
         /// Try our luck with remote replicas, but if they are stale too, then fallback to local replica.
         /// Do it lazily to avoid connecting in the main thread.
-        emplace_remote_stream(true /* lazy */, local_delay);
+        emplace_remote_stream(true /* lazy */);
     }
     else
         emplace_remote_stream();

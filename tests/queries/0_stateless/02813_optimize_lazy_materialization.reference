@@ -1,0 +1,451 @@
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
+0	0	0	0	['a','b','c']
+1	1	1	1	['a','b','c']
+2	0	2	2	['a','b','c']
+-- queries with _part_offset column in projection
+SELECT a, b, c, d, _part_index, _part_offset FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
+0	0	0	0	0	0
+1	1	1	1	2	0
+2	0	2	2	0	1
+SELECT _part_index, _part_offset FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
+0	0
+2	0
+0	1
+-- queries with filter
+SELECT * FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2	['a','b','c']
+5	1	5	2	['a','b','c']
+8	0	8	2	['a','b','c']
+SELECT * FROM optimize_lazy_materialization PREWHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2	['a','b','c']
+5	1	5	2	['a','b','c']
+8	0	8	2	['a','b','c']
+-- queries with function in order by
+SELECT * FROM optimize_lazy_materialization WHERE d > 1 ORDER BY -c LIMIT 3;
+197	1	197	2	['a','b','c']
+194	0	194	2	['a','b','c']
+191	1	191	2	['a','b','c']
+SELECT * FROM optimize_lazy_materialization WHERE d > 1 ORDER BY -toFloat64(c) LIMIT 3;
+197	1	197	2	['a','b','c']
+194	0	194	2	['a','b','c']
+191	1	191	2	['a','b','c']
+SELECT * FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c + 1 LIMIT 3;
+2	0	2	2	['a','b','c']
+5	1	5	2	['a','b','c']
+8	0	8	2	['a','b','c']
+-- queries with function in filter
+SELECT * FROM optimize_lazy_materialization WHERE d % 3 > 1 ORDER BY c LIMIT 3;
+2	0	2	2	['a','b','c']
+5	1	5	2	['a','b','c']
+8	0	8	2	['a','b','c']
+-- queries with aliases
+SELECT a AS a, b AS b, c AS c, d AS d FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2
+5	1	5	2
+8	0	8	2
+SELECT a AS a, b AS b, c AS c, d AS d FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2
+5	1	5	2
+8	0	8	2
+SELECT a + 1 AS a, b AS b, c + 1 AS c, d + 1 AS d FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3;
+2	1	2	2
+3	0	3	3
+5	0	5	2
+SELECT a + 1 AS a, b AS b, c + 1 AS c, d + 1 AS d FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3;
+2	1	2	2
+3	0	3	3
+5	0	5	2
+-- queries with non-trivial action's chain in expression
+SELECT y, z FROM (SELECT a as y, b as z FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3) ORDER BY y + 1;
+2	0
+5	1
+8	0
+-- queries with default value
+ALTER TABLE optimize_lazy_materialization ADD COLUMN default1 UInt64;
+SELECT * FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
+0	0	0	0	['a','b','c']	0
+1	1	1	1	['a','b','c']	0
+2	0	2	2	['a','b','c']	0
+ALTER TABLE optimize_lazy_materialization ADD COLUMN default2 UInt64 ALIAS 2;
+SELECT * FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
+0	0	0	0	['a','b','c']	0
+1	1	1	1	['a','b','c']	0
+2	0	2	2	['a','b','c']	0
+ALTER TABLE optimize_lazy_materialization ADD COLUMN default3 UInt64 ALIAS a + c;
+SELECT * FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
+0	0	0	0	['a','b','c']	0
+1	1	1	1	['a','b','c']	0
+2	0	2	2	['a','b','c']	0
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
+0	0	0	0	['a','b','c']
+1	1	1	1	['a','b','c']
+2	0	2	2	['a','b','c']
+-- queries with _part_offset column in projection
+SELECT a, b, c, d, _part_index, _part_offset FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
+0	0	0	0	0	0
+1	1	1	1	2	0
+2	0	2	2	0	1
+SELECT _part_index, _part_offset FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
+0	0
+2	0
+0	1
+-- queries with filter
+SELECT * FROM optimize_lazy_materialization_with_compact_mt WHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2	['a','b','c']
+5	1	5	2	['a','b','c']
+8	0	8	2	['a','b','c']
+SELECT * FROM optimize_lazy_materialization_with_compact_mt PREWHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2	['a','b','c']
+5	1	5	2	['a','b','c']
+8	0	8	2	['a','b','c']
+-- queries with default value
+ALTER TABLE optimize_lazy_materialization_with_compact_mt ADD COLUMN default1 UInt64;
+SELECT * FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
+0	0	0	0	['a','b','c']	0
+1	1	1	1	['a','b','c']	0
+2	0	2	2	['a','b','c']	0
+ALTER TABLE optimize_lazy_materialization_with_compact_mt ADD COLUMN default2 UInt64 ALIAS 2;
+SELECT * FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
+0	0	0	0	['a','b','c']	0
+1	1	1	1	['a','b','c']	0
+2	0	2	2	['a','b','c']	0
+ALTER TABLE optimize_lazy_materialization_with_compact_mt ADD COLUMN default3 UInt64 ALIAS a+c;
+SELECT * FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
+0	0	0	0	['a','b','c']	0
+1	1	1	1	['a','b','c']	0
+2	0	2	2	['a','b','c']	0
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_int_data_type ORDER BY b LIMIT 10;
+0	0	3
+2	2	5
+4	4	7
+6	6	9
+8	8	11
+10	10	13
+12	12	15
+14	14	17
+16	16	19
+18	18	21
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_float_data_type ORDER BY b LIMIT 10;
+0	0	3.1
+2	2	5.1
+4	4	7.1
+6	6	9.1
+8	8	11.1
+10	10	13.1
+12	12	15.1
+14	14	17.1
+16	16	19.1
+18	18	21.1
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_decimal_data_type ORDER BY b LIMIT 10;
+0	0	4.1
+2	2	6.1
+4	4	8.1
+6	6	10.1
+8	8	12.1
+10	10	14.1
+12	12	16.1
+14	14	18.1
+16	16	20.1
+18	18	22.1
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_string_data_type ORDER BY b LIMIT 10;
+0	0	
+2	2	aa
+4	4	aaaa
+6	6	aaaaaa
+8	8	aaaaaaaa
+10	10	aaaaaaaaaa
+12	12	aaaaaaaaaaaa
+14	14	aaaaaaaaaaaaaa
+16	16	aaaaaaaaaaaaaaaa
+18	18	aaaaaaaaaaaaaaaaaa
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_fixed_string_data_type ORDER BY b LIMIT 10;
+0	0	\0\0\0\0\0\0\0\0\0\0
+2	2	aa\0\0\0\0\0\0\0\0
+4	4	aaaa\0\0\0\0\0\0
+6	6	aaaaaa\0\0\0\0
+8	8	aaaaaaaa\0\0
+10	10	\0\0\0\0\0\0\0\0\0\0
+12	12	aa\0\0\0\0\0\0\0\0
+14	14	aaaa\0\0\0\0\0\0
+16	16	aaaaaa\0\0\0\0
+18	18	aaaaaaaa\0\0
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_date_data_type ORDER BY b LIMIT 10;
+0	0	1970-01-01
+2	2	1970-01-03
+4	4	1970-01-05
+6	6	1970-01-07
+8	8	1970-01-09
+10	10	1970-01-11
+12	12	1970-01-13
+14	14	1970-01-15
+16	16	1970-01-17
+18	18	1970-01-19
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_date32_data_type ORDER BY b LIMIT 10;
+0	0	1970-01-01
+2	2	1970-01-03
+4	4	1970-01-05
+6	6	1970-01-07
+8	8	1970-01-09
+10	10	1970-01-11
+12	12	1970-01-13
+14	14	1970-01-15
+16	16	1970-01-17
+18	18	1970-01-19
+-- { echoOn }
+SELECT a, b, toUInt64(c) FROM optimize_lazy_materialization_with_datetime_data_type ORDER BY b LIMIT 10;
+0	0	0
+2	2	2
+4	4	4
+6	6	6
+8	8	8
+10	10	10
+12	12	12
+14	14	14
+16	16	16
+18	18	18
+-- { echoOn }
+SELECT a, b, toUInt64(c) FROM optimize_lazy_materialization_with_datetime64_data_type ORDER BY b LIMIT 10;
+0	0	0
+2	2	2
+4	4	4
+6	6	6
+8	8	8
+10	10	10
+12	12	12
+14	14	14
+16	16	16
+18	18	18
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_enum_data_type ORDER BY b LIMIT 10;
+0	0	hello
+2	2	hello
+4	4	hello
+6	6	hello
+8	8	hello
+10	10	hello
+12	12	hello
+14	14	hello
+16	16	hello
+18	18	hello
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_bool_data_type ORDER BY b LIMIT 10;
+0	0	false
+2	2	false
+4	4	false
+6	6	false
+8	8	false
+10	10	false
+12	12	false
+14	14	false
+16	16	false
+18	18	false
+-- { echoOn }
+SELECT a, b, length(toString(c)) FROM optimize_lazy_materialization_with_uuid_data_type ORDER BY b LIMIT 10;
+0	0	36
+2	2	36
+4	4	36
+6	6	36
+8	8	36
+10	10	36
+12	12	36
+14	14	36
+16	16	36
+18	18	36
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_ipv4_data_type ORDER BY b LIMIT 10;
+0	0	1.2.3.0
+2	2	1.2.3.2
+4	4	1.2.3.4
+6	6	1.2.3.6
+8	8	1.2.3.8
+10	10	1.2.3.10
+12	12	1.2.3.12
+14	14	1.2.3.14
+16	16	1.2.3.16
+18	18	1.2.3.18
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_ipv6_data_type ORDER BY b LIMIT 10;
+0	0	1:2:3:4:5:6:7:0
+2	2	1:2:3:4:5:6:7:2
+4	4	1:2:3:4:5:6:7:4
+6	6	1:2:3:4:5:6:7:6
+8	8	1:2:3:4:5:6:7:8
+10	10	1:2:3:4:5:6:7:10
+12	12	1:2:3:4:5:6:7:12
+14	14	1:2:3:4:5:6:7:14
+16	16	1:2:3:4:5:6:7:16
+18	18	1:2:3:4:5:6:7:18
+-- { echoOn }
+SELECT a, b, c, c.size0 FROM optimize_lazy_materialization_with_array_data_type ORDER BY b LIMIT 10;
+0	0	[(0,'2'),(1,'4')]	2
+2	2	[(2,'4'),(3,'6')]	2
+4	4	[(4,'6'),(5,'8')]	2
+6	6	[(6,'8'),(7,'10')]	2
+8	8	[(8,'10'),(9,'12')]	2
+10	10	[(10,'12'),(11,'14')]	2
+12	12	[(12,'14'),(13,'16')]	2
+14	14	[(14,'16'),(15,'18')]	2
+16	16	[(16,'18'),(17,'20')]	2
+18	18	[(18,'20'),(19,'22')]	2
+SELECT a, b, c.field2 FROM optimize_lazy_materialization_with_array_data_type ORDER BY b LIMIT 10;
+0	0	['2','4']
+2	2	['4','6']
+4	4	['6','8']
+6	6	['8','10']
+8	8	['10','12']
+10	10	['12','14']
+12	12	['14','16']
+14	14	['16','18']
+16	16	['18','20']
+18	18	['20','22']
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_tuple_data_type ORDER BY b LIMIT 10;
+0	0	(0,'0')
+2	2	(2,'4')
+4	4	(4,'8')
+6	6	(6,'12')
+8	8	(8,'16')
+10	10	(10,'20')
+12	12	(12,'24')
+14	14	(14,'28')
+16	16	(16,'32')
+18	18	(18,'36')
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_map_data_type ORDER BY b LIMIT 10;
+0	0	{'key1':1,'key2':2}
+2	2	{'key1':3,'key2':4}
+4	4	{'key1':5,'key2':6}
+6	6	{'key1':7,'key2':8}
+8	8	{'key1':9,'key2':10}
+10	10	{'key1':11,'key2':12}
+12	12	{'key1':13,'key2':14}
+14	14	{'key1':15,'key2':16}
+16	16	{'key1':17,'key2':18}
+18	18	{'key1':19,'key2':20}
+SELECT a, b, c['key1'] FROM optimize_lazy_materialization_with_map_data_type ORDER BY b LIMIT 10;
+0	0	1
+2	2	3
+4	4	5
+6	6	7
+8	8	9
+10	10	11
+12	12	13
+14	14	15
+16	16	17
+18	18	19
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_variant_data_type ORDER BY b LIMIT 10;
+0	0	666
+2	2	[4,4,4]
+4	4	\N
+6	6	6
+8	8	\N
+10	10	666
+12	12	[4,4,4]
+14	14	\N
+16	16	16
+18	18	\N
+-- queries with subcolumn of variant data type
+SELECT a, b, c.UInt64 FROM optimize_lazy_materialization_with_variant_data_type ORDER BY b LIMIT 10;
+0	0	666
+2	2	\N
+4	4	\N
+6	6	6
+8	8	\N
+10	10	666
+12	12	\N
+14	14	\N
+16	16	16
+18	18	\N
+SELECT a, b, c.UInt64.null FROM optimize_lazy_materialization_with_variant_data_type ORDER BY b LIMIT 10;
+0	0	0
+2	2	1
+4	4	1
+6	6	0
+8	8	1
+10	10	0
+12	12	1
+14	14	1
+16	16	0
+18	18	1
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_low_cardinality_data_type ORDER BY b LIMIT 10;
+0	0	aa
+2	2	cccc
+4	4	bbb
+6	6	aa
+8	8	cccc
+10	10	bbb
+12	12	aa
+14	14	cccc
+16	16	bbb
+18	18	aa
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_nullable_data_type ORDER BY b LIMIT 10;
+0	0	aa
+2	2	\N
+4	4	\N
+6	6	aa
+8	8	\N
+10	10	\N
+12	12	aa
+14	14	\N
+16	16	\N
+18	18	aa
+-- { echoOn }
+SELECT a, b, c.id, c.order FROM optimize_lazy_materialization_with_nested_data_type ORDER BY b LIMIT 10;
+0	0	[1,2,3]	['1','2','3']
+2	2	[4,5]	['4','5']
+4	4	[4,5]	['4','5']
+6	6	[1,2,3]	['1','2','3']
+8	8	[4,5]	['4','5']
+10	10	[4,5]	['4','5']
+12	12	[1,2,3]	['1','2','3']
+14	14	[4,5]	['4','5']
+16	16	[4,5]	['4','5']
+18	18	[1,2,3]	['1','2','3']
+-- { echoOn }
+SELECT a, b, c FROM optimize_lazy_materialization_with_dynamic_data_type ORDER BY b LIMIT 10;
+0	0	1
+2	2	555
+4	4	\N
+6	6	[2,3]
+8	8	\N
+10	10	1
+12	12	555
+14	14	\N
+16	16	[2,3]
+18	18	\N
+-- queries with subcolumn of dynamic data type
+SELECT a, b, c.IPv4, c.String FROM optimize_lazy_materialization_with_dynamic_data_type ORDER BY b LIMIT 10;
+0	0	\N	\N
+2	2	\N	555
+4	4	\N	\N
+6	6	\N	\N
+8	8	\N	\N
+10	10	\N	\N
+12	12	\N	555
+14	14	\N	\N
+16	16	\N	\N
+18	18	\N	\N
+-- { echoOn }
+SELECT * FROM optimize_lazy_materialization_with_sparse_data_type ORDER BY b LIMIT 10;
+0	0	
+2	2	bb
+4	4	aa
+6	6	
+8	8	bb
+10	10	aa
+12	12	
+14	14	bb
+16	16	aa
+18	18	

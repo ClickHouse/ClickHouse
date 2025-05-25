@@ -3,6 +3,7 @@
 
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 #include <Core/Settings.h>
@@ -83,7 +84,7 @@ bool MutatePlainMergeTreeTask::executeStep()
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
-        switcher.emplace((*merge_list_entry)->thread_group);
+        switcher.emplace((*merge_list_entry)->thread_group, "", /*allow_existing_group*/ true);
 
     switch (state)
     {

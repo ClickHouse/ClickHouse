@@ -99,16 +99,9 @@ struct PushingAsyncPipelineExecutor::Data
 static void threadFunction(
     PushingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
-    setThreadName("QueryPushPipeEx");
-
     try
     {
-        if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, "QueryPushPipeEx");
 
         data.executor->execute(num_threads, concurrency_control);
     }
@@ -116,11 +109,10 @@ static void threadFunction(
     {
         data.exception = std::current_exception();
         data.has_exception = true;
-
-        /// Finish source in case of exception. Otherwise thread.join() may hung.
-        if (data.source)
-            data.source->finish();
     }
+
+    if (data.source)
+        data.source->finish();
 
     data.is_finished = true;
     data.finish_event.set();

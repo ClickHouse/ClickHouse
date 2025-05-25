@@ -11,11 +11,14 @@ CREATE TABLE tbl1
     key Int,
     x Int,
     y Int,
-    INDEX x_idx x TYPE minmax
+    INDEX x_idx x TYPE minmax GRANULARITY 1
 )
 ENGINE=MergeTree()
 ORDER BY key
-SETTINGS add_minmax_index_for_numeric_columns = true, add_minmax_index_for_string_columns = true;
+SETTINGS add_minmax_index_for_numeric_columns = true,
+         add_minmax_index_for_string_columns = true,
+         index_granularity = 8192,
+         index_granularity_bytes = 10485760;
 
 INSERT INTO tbl1 VALUES (1,1,1), (2,2,2), (3,3,3);
 
@@ -117,6 +120,10 @@ ORDER BY key;
 
 SELECT 'tbl5 with add_minmax_index_for_numeric_columns and add_minmax_index_for_string_columns disabled';
 SELECT name,type,expr,data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl5' AND database = currentDatabase();
+
+-- check that ATTACH of such tables will not throw "uses a reserved index name" error
+DETACH TABLE tbl1;
+ATTACH TABLE tbl1;
 
 DROP TABLE tbl1;
 DROP TABLE tbl2;

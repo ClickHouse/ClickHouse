@@ -38,11 +38,11 @@ struct FileLogSettingsImpl : public BaseSettings<FileLogSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) FileLogSettings##TYPE NAME = &FileLogSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) FileLogSettings##TYPE NAME = &FileLogSettingsImpl ::NAME;
 
 namespace FileLogSetting
 {
-LIST_OF_FILELOG_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+LIST_OF_FILELOG_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -90,7 +90,7 @@ void FileLogSettings::loadFromQuery(ASTStorage & storage_def)
     constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
     if (impl->poll_max_batch_size > max_sane_block_rows_size)
         throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: 'poll_max_batch_size' value is too high ({})", impl->poll_max_batch_size);
+            ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: 'poll_max_batch_size' value is too high ({})", impl->poll_max_batch_size.value);
 }
 
 bool FileLogSettings::hasBuiltin(std::string_view name)

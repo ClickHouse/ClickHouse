@@ -2,7 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
+#include <Interpreters/Context.h>
 #include <base/itoa.h>
 #include <base/map.h>
 #include <base/range.h>

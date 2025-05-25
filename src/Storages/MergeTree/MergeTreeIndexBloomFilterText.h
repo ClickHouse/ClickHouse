@@ -64,7 +64,7 @@ class MergeTreeConditionBloomFilterText final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeConditionBloomFilterText(
-            const ActionsDAG * filter_actions_dag,
+            const ActionsDAG::Node * predicate,
             ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
@@ -96,6 +96,7 @@ private:
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
             FUNCTION_HAS_ANY,
+            FUNCTION_HAS_ALL,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -165,7 +166,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const ActionsDAG * filter_dag, ContextPtr context) const override;
+            const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     BloomFilterParameters params;
     /// Function for selecting next token.

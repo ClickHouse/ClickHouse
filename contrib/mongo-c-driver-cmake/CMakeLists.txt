@@ -109,14 +109,15 @@ configure_file(
 )
 
 set(COMMON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/common")
+set(COMMON_BINARY_DIR "${LIBBSON_BINARY_ROOT}/common")
 file(GLOB_RECURSE COMMON_SOURCES "${COMMON_SOURCE_DIR}/*.c")
 configure_file(
         ${COMMON_SOURCE_DIR}/common-config.h.in
-        ${COMMON_SOURCE_DIR}/common-config.h
+        ${COMMON_BINARY_DIR}/common-config.h
 )
 add_library(_libbson ${LIBBSON_SOURCES} ${COMMON_SOURCES})
 add_library(ch_contrib::libbson ALIAS _libbson)
-target_include_directories(_libbson SYSTEM PUBLIC ${LIBBSON_SOURCE_DIR} ${LIBBSON_BINARY_DIR} ${COMMON_SOURCE_DIR})
+target_include_directories(_libbson SYSTEM PUBLIC ${LIBBSON_SOURCE_DIR} ${LIBBSON_BINARY_DIR} ${COMMON_SOURCE_DIR} ${COMMON_BINARY_DIR})
 target_compile_definitions(_libbson PRIVATE BSON_COMPILATION)
 if(OS_LINUX)
     target_compile_definitions(_libbson PRIVATE -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600)
@@ -126,6 +127,7 @@ endif()
 
 
 set(LIBMONGOC_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/libmongoc/src")
+set(LIBMONGOC_BINARY_DIR "${LIBBSON_BINARY_ROOT}/libmongoc/src")
 file(GLOB_RECURSE LIBMONGOC_SOURCES "${LIBMONGOC_SOURCE_DIR}/*.c")
 set(UTF8PROC_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/utf8proc-2.8.0")
 set(UTF8PROC_SOURCES "${UTF8PROC_SOURCE_DIR}/utf8proc.c")
@@ -133,16 +135,15 @@ set(UTHASH_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/uthash")
 
 configure_file(
         ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-config.h.in
-        ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-config.h
+        ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-config.h
 )
 configure_file(
         ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-version.h.in
-        ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-version.h
+        ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-version.h
 )
 add_library(_libmongoc ${LIBMONGOC_SOURCES} ${COMMON_SOURCES} ${UTF8PROC_SOURCES})
 add_library(ch_contrib::libmongoc ALIAS _libmongoc)
-target_include_directories(_libmongoc SYSTEM PUBLIC ${LIBMONGOC_SOURCE_DIR} ${COMMON_SOURCE_DIR} ${UTF8PROC_SOURCE_DIR} ${UTHASH_SOURCE_DIR})
-target_include_directories(_libmongoc SYSTEM PRIVATE ${LIBMONGOC_SOURCE_DIR}/mongoc ${UTHASH_SOURCE_DIR})
+target_include_directories(_libmongoc SYSTEM PUBLIC ${LIBMONGOC_SOURCE_DIR} ${LIBMONGOC_BINARY_DIR} ${LIBMONGOC_SOURCE_DIR}/mongoc ${LIBMONGOC_BINARY_DIR}/mongoc ${COMMON_SOURCE_DIR} ${UTF8PROC_SOURCE_DIR} ${UTHASH_SOURCE_DIR} )
 target_compile_definitions(_libmongoc PRIVATE MONGOC_COMPILATION)
 target_link_libraries(_libmongoc ch_contrib::libbson ch_contrib::c-ares ch_contrib::zstd)
 if(ENABLE_SSL)

@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/intExp.h>
+#include <Common/intExp2.h>
 
 namespace DB
 {
@@ -9,6 +9,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -23,9 +24,22 @@ struct IntExp2Impl
     static ResultType apply([[maybe_unused]] A a)
     {
         if constexpr (is_big_int_v<A>)
+        {
             throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "intExp2 not implemented for big integers");
+        }
         else
+        {
+            if constexpr (std::is_floating_point_v<A>)
+            {
+                if (std::isnan(a))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "intExp2 must not be called with nan");
+                if (a < 0)
+                    return 0;
+                if (a >= 64)
+                    return std::numeric_limits<UInt64>::max();
+            }
             return intExp2(static_cast<int>(a));
+        }
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -49,7 +63,7 @@ using FunctionIntExp2 = FunctionUnaryArithmetic<IntExp2Impl, NameIntExp2, true>;
 template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
     {
         Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
         Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);

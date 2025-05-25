@@ -12,7 +12,8 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #include <Storages/IStorage.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Processors/Chunk.h>
+#include <Core/Block_fwd.h>
 
 #include <mutex>
 #include <condition_variable>
