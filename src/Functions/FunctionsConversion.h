@@ -2866,8 +2866,12 @@ struct ToNumberMonotonicity
         /// Only support types represented by native integers.
         /// It can be extended to big integers, decimals and DateTime64 later.
         /// By the way, NULLs are representing unbounded ranges.
-        if (!((left.isNull() || left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
-            && (right.isNull() || right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
+        /// For null Field, check if the type is a big integer. Monotonicity does not apply to big integers.
+        /// See : https://github.com/ClickHouse/ClickHouse/issues/80742
+        if (!(((left.isNull() && !(which_inner_type.isInteger() && !which_inner_type.isNativeInteger()))
+                || left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
+            && ((right.isNull() && !(which_inner_type.isInteger() && !which_inner_type.isNativeInteger()))
+                || right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
             return {};
 
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
