@@ -51,6 +51,7 @@ private:
     std::set<size_t> replicas_used;
     std::optional<size_t> snapshot_replica_num;
     std::optional<ReadCompletedCallback> read_completed_callback;
+    std::atomic_bool is_reading_completed{false};
 
     /// To initialize `pimpl` we need to know the coordinator mode. We can know it only from initial announcement or regular request.
     /// The problem is `markReplicaAsUnavailable` might be called before any of these requests happened.

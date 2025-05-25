@@ -1089,6 +1089,9 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
 
+    if (is_reading_completed)
+        return;
+
     std::lock_guard lock(mutex);
 
     if (!pimpl)
@@ -1112,26 +1115,39 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleRequestMicroseconds);
 
-    std::lock_guard lock(mutex);
+    ParallelReadResponse response;
+    response.finish = true;
 
-    if (!pimpl)
-        initialize(request.mode);
+    if (is_reading_completed)
+        return response;
 
-    const auto replica_num = request.replica_num;
-    auto response = pimpl->handleRequest(std::move(request));
-    if (!response.finish)
     {
-        if (replicas_used.insert(replica_num).second)
-            ProfileEvents::increment(ProfileEvents::ParallelReplicasUsedCount);
-    }
-    else
-    {
-        if (isReadingCompleted())
+        std::lock_guard lock(mutex);
+        if (is_reading_completed)
+            return response;
+
+        if (!pimpl)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Got read request from replica {} without ranges announcement", request.replica_num);
+
+        const auto replica_num = request.replica_num;
+        response = pimpl->handleRequest(std::move(request));
+        if (!response.finish)
         {
-            if (read_completed_callback.has_value())
-                (*read_completed_callback)(replicas_used);
+            chassert(!is_reading_completed);
+
+            if (replicas_used.insert(replica_num).second)
+                ProfileEvents::increment(ProfileEvents::ParallelReplicasUsedCount);
+        }
+        else
+        {
+            if (isReadingCompleted())
+                is_reading_completed = true;
         }
     }
+
+    if (is_reading_completed && *read_completed_callback)
+        (*read_completed_callback)(replicas_used);
 
     return response;
 }
