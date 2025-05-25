@@ -14,6 +14,7 @@ namespace ProfileEvents
     extern const Event MarkCacheMisses;
     extern const Event MarkCacheEvictedBytes;
     extern const Event MarkCacheEvictedMarks;
+    extern const Event MarkCacheEvictedFiles;
 }
 
 namespace DB
@@ -70,6 +71,8 @@ private:
             {
                 return sum + std::static_pointer_cast<MarksInCompressedFile>(ptr)->getNumberOfMarks();
             }));
+        /// number of files evicted from the cache is same as number of evicted values as both are tied together as a cell in the cache
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles, details.evicted_values.size());
     }
 };
 
