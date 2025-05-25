@@ -35,7 +35,10 @@ public:
 
     static constexpr const char * name = NameHolder::name;
 
-    String getName() const override { return "readWKB"; }
+    String getName() const override
+    {
+        return name;
+    }
 
     size_t getNumberOfArguments() const override { return 1; }
 
