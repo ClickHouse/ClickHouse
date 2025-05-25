@@ -459,6 +459,8 @@ parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
 parseTimeDelta
+parseTimeDeltaOrNull
+parseTimeDeltaOrZero
 partitionId
 path
 pathFull

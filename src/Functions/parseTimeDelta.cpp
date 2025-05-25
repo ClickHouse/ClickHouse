@@ -1,5 +1,7 @@
 #include <boost/convert.hpp>
 #include <boost/convert/strtol.hpp>
+#include "Columns/ColumnNullable.h"
+#include "DataTypes/DataTypeNullable.h"
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -8,6 +10,7 @@
 
 namespace DB
 {
+enum class ErrorHandling : uint8_t;
 
 namespace ErrorCodes
 {
@@ -16,6 +19,35 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
+
+enum class ErrorHandling : uint8_t
+{
+    Exception,
+    Zero,
+    Null
+};
+
+
+
+struct NameParseTimeDelta
+{
+    static constexpr auto name = "parseTimeDelta";
+};
+
+struct NameParseTimeDeltaOrNull
+{
+    static constexpr auto name = "parseTimeDeltaOrNull";
+};
+
+struct NameParseTimeDeltaOrZero
+{
+    static constexpr auto name = "parseTimeDeltaOrZero";
+};
+
+using FunctionParseTimeDelta = FunctionParseTimeDeltaDefinition<NameParseTimeDelta, ErrorHandling::Exception>;
+using FunctionParseTimeDeltaOrNull = FunctionParseTimeDeltaDefinition<NameParseTimeDeltaOrNull, ErrorHandling::Null>;
+using FunctionParseTimeDeltaOrZero = FunctionParseTimeDeltaDefinition<NameParseTimeDeltaOrZero, ErrorHandling::Zero>;
+
 
 namespace
 {
@@ -101,10 +133,11 @@ namespace
      * The length of years and months (and even days in presence of time adjustments) are rough:
      * year is just 365 days, month is 30.5 days, day is 86400 seconds, similarly to what formatReadableTimeDelta is doing.
      */
-    class FunctionParseTimeDelta : public IFunction
+    template <typename Name, ErrorHandling error_handling>
+    class FunctionParseTimeDeltaDefinition : public IFunction
     {
     public:
-        static constexpr auto name = "parseTimeDelta";
+        static constexpr auto name = Name::name;
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseTimeDelta>(); }
 
         String getName() const override { return name; }
@@ -136,7 +169,11 @@ namespace
             if (!isString(type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time string.", type.getName());
 
-            return std::make_shared<DataTypeFloat64>();
+            DataTypePtr return_type = std::make_shared<DataTypeFloat64>();
+            if constexpr (error_handling == ErrorHandling::Null)
+                return std::make_shared<DataTypeNullable>(return_type);
+            else
+                return return_type;
         }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -150,6 +187,10 @@ namespace
         {
             auto col_to = ColumnFloat64::create();
             auto & res_data = col_to->getData();
+
+            ColumnUInt8::MutablePtr col_null_map;
+            if constexpr (error_handling == ErrorHandling::Null)
+                col_null_map = ColumnUInt8::create(input_rows_count, 0);
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -215,11 +256,22 @@ namespace
                     auto value = boost::convert<Float64>(base_str, boost::cnv::strtol());
                     if (!value.has_value())
                     {
-                        throw Exception(
+                        if constexpr (error_handling == ErrorHandling::Exception)
+                        {
+                            throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
                             "Invalid expression for function {}, convert string to float64 failed: \"{}\".",
                             getName(),
                             String(base_str));
+                        }
+                        else
+                        {
+                            result = 0;
+                            if constexpr (error_handling == ErrorHandling::Null)
+                                col_null_map->getData()[i] = 1;
+                            break;
+                        }
+
                     }
                     base = value.get();
 
@@ -229,11 +281,22 @@ namespace
                     /// scan a unit
                     if (!scanUnit(str, token_tail, last_pos))
                     {
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid expression for function {}, find unit failed, str: \"{}\".",
-                            getName(),
-                            String(str));
+                        if constexpr (error_handling == ErrorHandling::Exception)
+                        {
+
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid expression for function {}, find unit failed, str: \"{}\".",
+                                getName(),
+                                String(str));
+                        }
+                        else
+                        {
+                            result = 0;
+                            if constexpr (error_handling == ErrorHandling::Null)
+                                col_null_map->getData()[i] = 1;
+                            break;
+                        }
                     }
 
                     /// get unit number
@@ -241,8 +304,21 @@ namespace
                     auto iter = time_unit_to_float.find(unit);
                     if (iter == time_unit_to_float.end()) /// not find unit
                     {
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, parse unit failed: \"{}\".", getName(), unit);
+
+                        if constexpr (error_handling == ErrorHandling::Exception)
+                        {
+                            throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, parse unit failed: \"{}\".",
+                            getName(), unit);
+                        }
+                        else
+                        {
+                            result = 0;
+                            if constexpr (error_handling == ErrorHandling::Null)
+                                col_null_map->getData()[i] = 1;
+                            break;
+                        }
+
                     }
                     result += base * iter->second;
 
@@ -253,8 +329,10 @@ namespace
 
                 res_data.emplace_back(result);
             }
-
-            return col_to;
+            if constexpr (error_handling == ErrorHandling::Null)
+                return ColumnNullable::create(std::move(col_to), std::move(col_null_map));
+            else
+                return col_to;
         }
 
         /// scan an unsigned integer number
@@ -314,6 +392,8 @@ namespace
 REGISTER_FUNCTION(ParseTimeDelta)
 {
     factory.registerFunction<FunctionParseTimeDelta>();
+    factory.registerFunction<FunctionParseTimeDeltaOrNull>();
+    factory.registerFunction<FunctionParseTimeDeltaOrZero>();
 }
 
 }
