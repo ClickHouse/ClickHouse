@@ -1398,7 +1398,7 @@ dependencies = [
 [[package]]
 name = "tuikit"
 version = "0.5.0"
-source = "git+https://github.com/azat-rust/tuikit.git?rev=e1994c0e03ff02c49cf1471f0cc3cbf185ce0104#e1994c0e03ff02c49cf1471f0cc3cbf185ce0104"
+source = "git+https://github.com/ClickHouse/tuikit.git?rev=e1994c0e03ff02c49cf1471f0cc3cbf185ce0104#e1994c0e03ff02c49cf1471f0cc3cbf185ce0104"
 dependencies = [
  "bitflags 1.3.2",
  "lazy_static",
