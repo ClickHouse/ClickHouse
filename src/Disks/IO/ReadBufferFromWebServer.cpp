@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
 

@@ -104,6 +104,7 @@
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
 #endif
+#include <Interpreters/Context.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
