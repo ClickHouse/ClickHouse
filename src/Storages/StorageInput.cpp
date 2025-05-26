@@ -94,7 +94,11 @@ void StorageInput::read(
     if (query_context->getInputBlocksReaderCallback())
     {
         /// Send structure to the client.
-        query_context->initializeInput(shared_from_this());
+        if (!is_input_initialized)
+        {
+            query_context->initializeInput(shared_from_this());
+            is_input_initialized = true;
+        }
         input_source_pipe = Pipe(std::make_shared<StorageInputSource>(query_context, sample_block));
     }
 
