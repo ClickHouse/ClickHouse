@@ -173,8 +173,8 @@ static ColumnWithTypeAndName readColumnWithJSONData(
     DataTypePtr type_hint,
     const FormatSettings & format_settings)
 {
-    static const auto internal_type = type_hint ? type_hint : std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
-    static const auto serialization = internal_type->getDefaultSerialization();
+   const auto internal_type = type_hint ? type_hint : std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+   const auto serialization = internal_type->getDefaultSerialization();
 
     auto internal_column = internal_type->createColumn();
     auto & column_object = assert_cast<ColumnObject &>(*internal_column);
