@@ -24,7 +24,7 @@ REGISTER_FUNCTION(Bitmap)
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapBuild = {20, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation::Category category_bitmapBuild = FunctionDocumentation::Category::Bitmap;
     FunctionDocumentation documentation_bitmapBuild = {
         description_bitmapBuild,
         syntax_bitmapBuild,
