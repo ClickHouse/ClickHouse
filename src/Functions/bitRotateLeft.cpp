@@ -50,7 +50,7 @@ using FunctionBitRotateLeft = BinaryArithmeticOverloadResolver<BitRotateLeftImpl
 
 REGISTER_FUNCTION(BitRotateLeft)
 {
-        FunctionDocumentation::Description description = "Rotate bits left by a certain number of positions. Bits that fall off wrap around to the right.
+    FunctionDocumentation::Description description = "Rotate bits left by a certain number of positions. Bits that fall off wrap around to the right.";
     FunctionDocumentation::Syntax syntax = "bitRotateLeft(a, N)";
     FunctionDocumentation::Arguments arguments = {
         {"a", "A value to rotate. [`(U)Int8/16/32/64`](../data-types/int-uint.md)."},
