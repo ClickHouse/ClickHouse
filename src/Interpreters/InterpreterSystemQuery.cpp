@@ -123,7 +123,6 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int UNKNOWN_TABLE;
     extern const int TOO_DEEP_RECURSION;
 }
 
@@ -1271,7 +1270,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table;
 
-    if (query.if_exists.has_value() && query.if_exists.value())
+    if (query.if_exists)
     {
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
         if (!table)
