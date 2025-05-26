@@ -491,6 +491,7 @@ struct ActionsDAG::SplitResult
 struct ActionsDAG::ActionsForFilterPushDown
 {
     ActionsDAG dag;
+    size_t filter_pos;
     bool remove_filter;
 };
 

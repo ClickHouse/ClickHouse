@@ -2558,7 +2558,9 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
         result_predicate = &actions.addFunction(func_builder_and, std::move(args), {});
     }
 
-    actions.outputs.push_back(result_predicate);
+    //actions.outputs.push_back(result_predicate);
+    size_t filter_pos = 0;
+    bool has_input_name_collision = false;
 
     for (const auto & col : all_inputs)
     {
@@ -2574,13 +2576,34 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
         }
 
         /// We should not add result_predicate into the outputs for the second time.
-        if (input->result_name == result_predicate->result_name)
+        if (input == result_predicate)
+        {
             remove_filter = false;
+            filter_pos = actions.outputs.size();
+        }
+        else if (input->result_name == result_predicate->result_name)
+            has_input_name_collision = true;
 
         actions.outputs.push_back(input);
     }
 
-    return ActionsForFilterPushDown{std::move(actions), remove_filter};
+    if (has_input_name_collision)
+    {
+        for (size_t idx = 0;;++idx)
+        {
+            std::string rename = fmt::format("_filter_{}", idx);
+            if (required_inputs.contains(rename))
+                continue;
+
+            result_predicate = &actions.addAlias(*result_predicate, std::move(rename));
+            break;
+        }
+    }
+
+    if (remove_filter)
+        actions.outputs.insert(actions.outputs.begin(), result_predicate);
+
+    return ActionsForFilterPushDown{std::move(actions), filter_pos,  remove_filter};
 }
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
@@ -2747,11 +2770,13 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
     auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
 
-    auto replace_equivalent_columns_in_filter = [](const ActionsDAG & filter,
+    auto replace_equivalent_columns_in_filter = [](
+        const ActionsDAG & filter,
+        size_t filter_pos,
         const Block & stream_header,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace)
     {
-        auto updated_filter = *ActionsDAG::buildFilterActionsDAG({filter.getOutputs()[0]}, columns_to_replace);
+        auto updated_filter = *ActionsDAG::buildFilterActionsDAG({filter.getOutputs()[filter_pos]}, columns_to_replace);
         chassert(updated_filter.getOutputs().size() == 1);
 
         /** If result filter to left or right stream has column that is one of the stream inputs, we need distinguish filter column from
@@ -2811,11 +2836,13 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     if (left_stream_filter_to_push_down)
         left_stream_filter_to_push_down->dag = replace_equivalent_columns_in_filter(left_stream_filter_to_push_down->dag,
+            left_stream_filter_to_push_down->filter_pos,
             left_stream_header,
             equivalent_right_stream_column_to_left_stream_column);
 
     if (right_stream_filter_to_push_down)
         right_stream_filter_to_push_down->dag = replace_equivalent_columns_in_filter(right_stream_filter_to_push_down->dag,
+            right_stream_filter_to_push_down->filter_pos,
             right_stream_header,
             equivalent_left_stream_column_to_right_stream_column);
 
