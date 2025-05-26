@@ -4074,7 +4074,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
         UInt64 max_source_parts_size_for_merge = CompactionStatistics::getMaxSourcePartsSizeForMerge(
             *this, (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue], merges_and_mutations_sum);
-        UInt64 max_source_part_size_for_mutation = CompactionStatistics::getMaxSourcePartSizeForMutation(*this);
+        String max_source_part_size_for_mutation_log_comment;
+        UInt64 max_source_part_size_for_mutation = CompactionStatistics::getMaxSourcePartSizeForMutation(*this, &max_source_part_size_for_mutation_log_comment);
 
         bool merge_with_ttl_allowed = merges_and_mutations_queued.merges_with_ttl < (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_with_ttl_in_queue] &&
             getTotalMergesWithTTLInMergeList() < (*storage_settings_ptr)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
@@ -4153,10 +4154,13 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
         if (max_source_part_size_for_mutation == 0 || merges_and_mutations_queued.mutations >= (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue])
         {
+            if (max_source_part_size_for_mutation == 0)
+                max_source_part_size_for_mutation_log_comment = " (" + max_source_part_size_for_mutation_log_comment + ")";
             LOG_TRACE(log, "Number of queued mutations ({}) is greater than max_replicated_mutations_in_queue ({})"
-                " or there are not enough free threads for mutations, so won't select new parts to merge or mutate.",
-                max_source_part_size_for_mutation,
-                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue].value);
+                " or there are not enough free threads for mutations{}, so won't select new parts to merge or mutate.",
+                merges_and_mutations_queued.mutations,
+                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue].value,
+                max_source_part_size_for_mutation_log_comment);
             return AttemptStatus::Limited;
         }
 
