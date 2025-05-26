@@ -114,16 +114,31 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     const auto & hash_data = hash.getData();
     IColumn::Selector selector(num_rows);
+    std::vector<size_t> rows_in_output_bucket(output_size, 0);
 
     for (size_t row = 0; row < num_rows; ++row)
-        selector[row] = hash_data[row] % output_size;
+    {
+        const size_t output_bucket = hash_data[row] % output_size;
+        selector[row] = output_bucket;
+        ++rows_in_output_bucket[output_bucket];
+    }
 
     output_chunks.resize(output_size);
-    for (const auto & column : columns)
+
+    if (columns.empty())
     {
-        auto filtered_columns = column->scatter(output_size, selector);
+        /// In case of no columns (query like 'count()') we still need to return output_chunks with the correct number of rows
         for (size_t i = 0; i < output_size; ++i)
-            output_chunks[i].addColumn(std::move(filtered_columns[i]));
+            output_chunks[i] = Chunk(Columns{}, rows_in_output_bucket[i]);
+    }
+    else
+    {
+        for (const auto & column : columns)
+        {
+            auto filtered_columns = column->scatter(output_size, selector);
+            for (size_t i = 0; i < output_size; ++i)
+                output_chunks[i].addColumn(std::move(filtered_columns[i]));
+        }
     }
 }
 
