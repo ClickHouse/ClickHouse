@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
+#include <Storages/MergeTree/MergeTreeIndexUnionCondition.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
@@ -50,6 +51,10 @@
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <boost/algorithm/string.hpp>
+#include <Functions/IFunction.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #include <algorithm>
 #include <iterator>
@@ -126,6 +131,7 @@ namespace ProfileEvents
     extern const Event SelectedMarks;
     extern const Event SelectedMarksTotal;
     extern const Event SelectQueriesWithPrimaryKeyUsage;
+    extern const Event AnalyzeConditionsForUnionIndexesMicroseconds;
 }
 
 namespace DB
@@ -1683,6 +1689,174 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Range
         find_exact_ranges);
 }
 
+
+/// Analyze filter DAG to find OR conditions that can benefit from union indexes
+/// Returns groups of index names where each group represents indexes that should be combined with OR logic
+static std::vector<std::vector<std::pair<String, const ActionsDAG::Node *>>> analyzeORConditionsForUnionIndexes(
+    const ActionsDAG::Node * predicate,
+    const std::unordered_map<String, MergeTreeIndexPtr> & available_indexes,
+    const LoggerPtr & log)
+{
+    std::vector<std::vector<std::pair<String, const ActionsDAG::Node *>>> union_groups;
+    
+    LOG_DEBUG(log, "analyzeORConditionsForUnionIndexes called with predicate: {}", predicate ? predicate->result_name : "null");
+    
+    if (!predicate || predicate->type != ActionsDAG::ActionType::FUNCTION)
+    {
+        LOG_DEBUG(log, "Predicate is null or not a function, returning empty union groups");
+        return union_groups;
+    }
+    
+    const auto * function = predicate->function_base.get();
+    if (!function)
+    {
+        LOG_DEBUG(log, "Function base is null, returning empty union groups");
+        return union_groups;
+    }
+    
+    // Check function name properly using function_base->getName()
+    String function_name = function->getName();
+    LOG_DEBUG(log, "Function name detected: {}", function_name);
+    if (function_name != "or")
+    {
+        LOG_DEBUG(log, "Function is not 'or', returning empty union groups");
+        return union_groups;
+    }
+    
+    LOG_DEBUG(log, "OR function detected! Available indexes: {}", available_indexes.size());
+    
+    // Helper function to extract the most relevant predicate for an index from a complex condition
+    std::function<const ActionsDAG::Node *(const ActionsDAG::Node *, const std::unordered_set<String> &)> extractRelevantPredicate;
+    extractRelevantPredicate = [&](const ActionsDAG::Node * node, const std::unordered_set<String> & required_columns) -> const ActionsDAG::Node *
+    {
+        if (!node)
+            return nullptr;
+            
+        // Check if this node directly uses any of the required columns
+        std::function<bool(const ActionsDAG::Node *)> uses_required_column;
+        uses_required_column = [&](const ActionsDAG::Node * n) -> bool {
+            if (!n)
+                return false;
+            if (n->type == ActionsDAG::ActionType::INPUT)
+            {
+                return required_columns.contains(n->result_name);
+            }
+            for (const auto * child : n->children)
+                if (uses_required_column(child))
+                    return true;
+            return false;
+        };
+        
+        if (uses_required_column(node))
+        {
+            // If this is an AND node, try to find the most specific sub-predicate
+            if (node->type == ActionsDAG::ActionType::FUNCTION && 
+                node->function_base && node->function_base->getName() == "and")
+            {
+                // Look through AND children to find the most relevant predicate
+                for (const auto * child : node->children)
+                {
+                    if (auto * relevant = extractRelevantPredicate(child, required_columns))
+                        return relevant;
+                }
+            }
+            return node;
+        }
+        
+        return nullptr;
+    };
+    
+    // Collect index usage from each OR branch along with the predicate node
+    std::vector<std::pair<String, const ActionsDAG::Node *>> or_branch_indexes;
+    
+    for (const auto * or_child : predicate->children)
+    {
+        // For each OR branch, find which index it uses
+        for (const auto & [index_name, index] : available_indexes)
+        {
+            // Get columns required for this index
+            auto required_columns = index->getColumnsRequiredForIndexCalc();
+            std::unordered_set<String> required_columns_set(required_columns.begin(), required_columns.end());
+            
+            // Try to extract a relevant predicate for this index from the OR branch
+            const ActionsDAG::Node * relevant_predicate = extractRelevantPredicate(or_child, required_columns_set);
+            
+            if (relevant_predicate)
+            {
+                or_branch_indexes.emplace_back(index_name, relevant_predicate);
+                LOG_TRACE(log, "Found index {} can be used for OR branch with predicate: {}", 
+                    index_name, relevant_predicate->result_name);
+                break; // Each branch should use only one index
+            }
+        }
+    }
+    
+    // If we have multiple branches with different indexes, create union groups
+    if (or_branch_indexes.size() > 1)
+    {
+        // Group predicates by index name
+        std::unordered_map<String, std::vector<const ActionsDAG::Node *>> index_to_predicates;
+        
+        for (const auto & [idx_name, dag_node] : or_branch_indexes)
+        {
+            index_to_predicates[idx_name].push_back(dag_node);
+        }
+        
+        // Only create union if we have multiple different indexes
+        if (index_to_predicates.size() > 1)
+        {
+            // Create union group with unique indexes and their combined predicates
+            std::vector<std::pair<String, const ActionsDAG::Node *>> unique_index_group;
+            
+            for (const auto & [idx_name, predicates] : index_to_predicates)
+            {
+                LOG_DEBUG(log, "Index {} has {} predicates", idx_name, predicates.size());
+                for (const auto & p : predicates)
+                {
+                    LOG_DEBUG(log, "Predicate: {}", p->result_name);
+                }
+                if (predicates.size() == 1)
+                {
+                    // Single predicate for this index
+                    unique_index_group.emplace_back(idx_name, predicates[0]);
+                }
+                else
+                {
+                    std::optional<ActionsDAG> or_dag = ActionsDAG::buildFilterActionsDAG(
+                        predicates, {}, true /* single_output_condition_node */);
+
+                    if (or_dag && !or_dag->getOutputs().empty())
+                    {
+                        LOG_DEBUG(log, "Index {} has {} predicates, using OR predicate {}", idx_name, predicates.size(), or_dag->getOutputs()[0]->result_name);
+                        unique_index_group.emplace_back(idx_name, or_dag->getOutputs()[0]);
+                    }
+
+                    // Multiple predicates for this index - we need to combine them with OR
+                    // TODO: this will fall back to a full scan, i.e no union index will be used
+                    // unique_index_group.emplace_back(idx_name, predicate);
+                    // LOG_DEBUG(log, "Index {} has {} predicates, using full OR predicate", idx_name, predicates.size());
+                }
+            }
+            
+            String joined_indexes;
+            for (size_t i = 0; i < unique_index_group.size(); ++i)
+            {
+                if (i > 0)
+                    joined_indexes += ", ";
+                joined_indexes += unique_index_group[i].first;
+            }
+            LOG_DEBUG(log, "Detected OR condition that can benefit from union indexes: {}", joined_indexes);
+            union_groups.push_back(std::move(unique_index_group));
+        }
+        else
+        {
+            LOG_DEBUG(log, "OR condition uses only one index type ({}), no union needed", index_to_predicates.begin()->first);
+        }
+    }
+    
+    return union_groups;
+}
+
 static void buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     const ActionsDAG * filter_actions_dag,
@@ -1768,7 +1942,7 @@ static void buildIndexes(
 
     UsefulSkipIndexes skip_indexes;
     using Key = std::pair<String, size_t>;
-    std::map<Key, size_t> merged;
+    std::map<Key, size_t> merged_idx;
 
     for (const auto & index : all_indexes)
     {
@@ -1794,7 +1968,7 @@ static void buildIndexes(
 
         if (index_helper->isMergeable())
         {
-            auto [it, inserted] = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
+            auto [it, inserted] = merged_idx.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
             if (inserted)
             {
                 skip_indexes.merged_indices.emplace_back();
@@ -1820,11 +1994,14 @@ static void buildIndexes(
             if (!filter_dag.predicate)
                 continue;
 
+            LOG_DEBUG(log, "Creating index condition for predicate: {}", filter_dag.predicate->result_name);
             condition = index_helper->createIndexCondition(filter_dag.predicate, context);
         }
 
-        if (!condition->alwaysUnknownOrTrue())
+        if (!condition->alwaysUnknownOrTrue()) {
+            LOG_DEBUG(log, "Index {} is useful for predicate: {}", index_helper->index.name, filter_dag.predicate->result_name);
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
+        }
     }
 
     // Move minmax indices to first positions, so they will be applied first as cheapest ones
@@ -1849,6 +2026,175 @@ static void buildIndexes(
 
         return false; // right is min max but left is not
     });
+
+    // Automatically detect OR conditions that can benefit from union indexes
+    std::unordered_map<String, MergeTreeIndexPtr> available_indexes_map;
+    for (const auto & useful_index : skip_indexes.useful_indices)
+    {
+        LOG_DEBUG(log, "Adding index {} to available_indexes_map", useful_index.index->index.name);
+        available_indexes_map[useful_index.index->index.name] = useful_index.index;
+    }
+    
+    // Also include all indexes (not just useful ones) for OR condition analysis
+    // This is important for set indexes which might be marked as not useful due to OR conditions
+    std::unordered_map<String, MergeTreeIndexPtr> all_indexes_map;
+    for (const auto & index : all_indexes)
+    {
+        if (ignored_index_names.contains(index.name)) {
+            LOG_TRACE(log, "Ignoring index {} because it's in ignored_index_names", index.name);
+            continue;
+        }
+        LOG_TRACE(log, "Adding index {} to all_indexes_map", index.name);
+        auto index_helper = MergeTreeIndexFactory::instance().get(index);
+        all_indexes_map[index.name] = index_helper;
+    }
+    
+    {
+        LOG_DEBUG(log, "Analyzing OR conditions for union indexes");
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzeConditionsForUnionIndexesMicroseconds);
+
+        auto union_groups = analyzeORConditionsForUnionIndexes(
+            filter_dag.predicate, 
+            all_indexes_map,  // Use all indexes, not just useful ones
+            log);
+        
+        if (!union_groups.empty())
+        {
+            // Create a map of index names to their helpers and conditions
+            std::unordered_map<String, std::pair<MergeTreeIndexPtr, MergeTreeIndexConditionPtr>> index_map;
+            
+            // First, collect all indexes that we'll need for union groups
+            for (const auto & useful_index : skip_indexes.useful_indices)
+            {
+                index_map[useful_index.index->index.name] = {useful_index.index, useful_index.condition};
+            }
+            
+            // Process each union group
+            for (const auto & group : union_groups)
+            {
+                if (group.size() <= 1)
+                {
+                    // Single index, no need for union - it's already in useful_indices
+                    continue;
+                }
+                
+                // Create a union condition for this group
+                // Check if all indices in the group have the same granularity
+                size_t common_granularity = 0;
+                bool valid_group = true;
+                std::vector<MergeTreeIndexPtr> group_indices;
+                std::vector<const ActionsDAG::Node *> group_predicates;
+                
+                for (const auto & [idx_name, predicate_node] : group)
+                {
+                    // First check in index_map (useful indices)
+                    auto it = index_map.find(idx_name);
+                    if (it != index_map.end())
+                    {
+                        if (common_granularity == 0)
+                            common_granularity = it->second.first->getGranularity();
+                        else if (common_granularity != it->second.first->getGranularity())
+                        {
+                            LOG_WARNING(log, "Indices in union group have different granularities");
+                            valid_group = false;
+                            break;
+                        }
+                        
+                        group_indices.push_back(it->second.first);
+                        group_predicates.push_back(predicate_node);
+                    }
+                    else
+                    {
+                        // Index not in useful_indices, try to find it in all_indexes_map
+                        auto all_it = all_indexes_map.find(idx_name);
+                        if (all_it == all_indexes_map.end())
+                        {
+                            LOG_WARNING(log, "Index {} specified in union group not found", idx_name);
+                            valid_group = false;
+                            break;
+                        }
+                        
+                        if (common_granularity == 0)
+                            common_granularity = all_it->second->getGranularity();
+                        else if (common_granularity != all_it->second->getGranularity())
+                        {
+                            LOG_WARNING(log, "Indices in union group have different granularities");
+                            valid_group = false;
+                            break;
+                        }
+                        
+                        group_indices.push_back(all_it->second);
+                        group_predicates.push_back(predicate_node);
+                        
+                        LOG_DEBUG(log, "Including index {} (type: {}) in union group even though it wasn't initially useful", 
+                            idx_name, all_it->second->index.type);
+                    }
+                }
+                
+                if (valid_group && !group_indices.empty())
+                {
+                    // Create a merged condition for union
+                    skip_indexes.merged_indices.emplace_back();
+                    auto & merged_union = skip_indexes.merged_indices.back();
+                    auto union_condition = std::make_shared<MergeTreeIndexUnionCondition>(common_granularity);
+                    
+                    // Enable statistics collection for detailed reporting
+                    union_condition->enableStatistics();
+                    
+                    merged_union.condition = union_condition;
+                    
+                    // Add indices and create conditions based on specific OR branch predicates
+                    for (size_t idx_pos = 0; idx_pos < group_indices.size(); ++idx_pos)
+                    {
+                        const auto & idx = group_indices[idx_pos];
+                        const auto * branch_predicate = group_predicates[idx_pos];
+                        
+                        // Add index to merged_union (which adds it to union_condition internally)
+                        merged_union.addIndex(idx);
+                        
+                        // Create a condition for this index based on its specific OR branch predicate
+                        MergeTreeIndexConditionPtr branch_condition;
+                        if (idx->isVectorSimilarityIndex())
+                        {
+    #if USE_USEARCH
+                            if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(idx.get()))
+                                branch_condition = vector_similarity_index->createIndexCondition(branch_predicate, context, vector_search_parameters);
+    #endif
+                            if (!branch_condition)
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", idx->index.name);
+                        }
+                        else
+                        {
+                            branch_condition = idx->createIndexCondition(branch_predicate, context);
+                        }
+                        
+                        LOG_DEBUG(log, "Created condition for index {} (type: {}), alwaysUnknownOrTrue: {}", 
+                            idx->index.name, 
+                            idx->index.type,
+                            branch_condition ? branch_condition->alwaysUnknownOrTrue() : true);
+                        
+                        // Set the condition for this index at the same position
+                        if (branch_condition && !branch_condition->alwaysUnknownOrTrue())
+                        {
+                            union_condition->setCondition(idx_pos, branch_condition);
+                        }
+                        else
+                        {
+                            LOG_WARNING(log, "Index {} condition is always unknown or true for its OR branch", idx->index.name);
+                        }
+                        
+                        // Remove from useful_indices to avoid double processing
+                        skip_indexes.useful_indices.erase(
+                            std::remove_if(skip_indexes.useful_indices.begin(), skip_indexes.useful_indices.end(),
+                                [&idx](const auto & item) { return item.index->index.name == idx->index.name; }),
+                            skip_indexes.useful_indices.end());
+                    }
+                    
+                    LOG_INFO(log, "Created union index condition for {} indexes with OR logic", group_indices.size());
+                }
+            }
+        }
+    }
 
     indexes->skip_indexes = std::move(skip_indexes);
 }
@@ -2037,7 +2383,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             .type = ReadFromMergeTree::IndexType::PrimaryKeyExpand,
             .description = "Selects all granules that intersect by PK values with the previous skip indexes selection",
             .num_parts_after = result.parts_with_ranges.size(),
-            .num_granules_after = sum_marks});
+            .num_granules_after = sum_marks,
+            .union_index_infos = {}});
     }
 
     result.total_parts = total_parts;
@@ -2677,6 +3024,18 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             if (i)
                 format_settings.out << '/' << index_stats[i - 1].num_granules_after;
             format_settings.out << '\n';
+            
+            // Display individual indexes for UnionIndex
+            if (stat.name == "UnionIndex" && !stat.union_index_infos.empty())
+            {
+                format_settings.out << prefix << indent << indent << "Indexes in union:\n";
+                for (const auto & union_info : stat.union_index_infos)
+                {
+                    format_settings.out << prefix << indent << indent << indent << "- " << union_info.index_name;
+                    format_settings.out << " (Parts: " << union_info.num_parts_after << "/" << union_info.num_parts_total;
+                    format_settings.out << ", Granules: " << union_info.num_granules_after << "/" << union_info.num_granules_total << ")\n";
+                }
+            }
         }
     }
 }
@@ -2731,12 +3090,28 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
                 index_map->add("Initial Granules", index_stats[i - 1].num_granules_after);
             index_map->add("Selected Granules", stat.num_granules_after);
 
+            // Add union index information for JSON output
+            if (stat.name == "UnionIndex" && !stat.union_index_infos.empty())
+            {
+                auto union_indexes_array = std::make_unique<JSONBuilder::JSONArray>();
+                for (const auto & union_info : stat.union_index_infos)
+                {
+                    auto union_index_map = std::make_unique<JSONBuilder::JSONMap>();
+                    union_index_map->add("Name", union_info.index_name);
+                    union_index_map->add("Parts", union_info.num_parts_after);
+                    union_index_map->add("PartsTotal", union_info.num_parts_total);
+                    union_index_map->add("Granules", union_info.num_granules_after);
+                    union_index_map->add("GranulesTotal", union_info.num_granules_total);
+                    union_indexes_array->add(std::move(union_index_map));
+                }
+                index_map->add("UnionIndexes", std::move(union_indexes_array));
+            }
+
             indexes_array->add(std::move(index_map));
         }
 
         map.add("Indexes", std::move(indexes_array));
     }
 }
-
 
 }

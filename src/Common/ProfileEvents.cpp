@@ -266,6 +266,8 @@
     M(LoadedDataPartsMicroseconds, "Microseconds spent by MergeTree tables for loading data parts during initialization.", ValueType::Microseconds) \
     M(FilteringMarksWithPrimaryKeyMicroseconds, "Time spent filtering parts by PK.", ValueType::Microseconds) \
     M(FilteringMarksWithSecondaryKeysMicroseconds, "Time spent filtering parts by skip indexes.", ValueType::Microseconds) \
+    M(FilteringMarksWithMergedSecondaryKeysMicroseconds, "Time spent filtering parts by merged skip indexes.", ValueType::Microseconds) \
+    M(AnalyzeConditionsForUnionIndexesMicroseconds, "Time spent analyzing conditions for union indexes.", ValueType::Microseconds) \
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks", ValueType::Microseconds) \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks", ValueType::Number) \

@@ -1,0 +1,191 @@
+Test 1: bloom_str OR num
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_union_indexes)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 4/4
+            Granules: 10/10
+          Skip
+            Name: UnionIndex
+            Description: Union of (idx_bloom, idx_minmax)
+            Parts: 2/4
+            Granules: 2/10
+            Indexes in union:
+              - idx_bloom (Parts: 1/4, Granules: 1/10)
+              - idx_minmax (Parts: 1/4, Granules: 1/10)
+2000
+Test 2: bloom_str OR num OR str
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_union_indexes)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 4/4
+            Granules: 10/10
+          Skip
+            Name: UnionIndex
+            Description: Union of (idx_bloom, idx_minmax, idx_set)
+            Parts: 3/4
+            Granules: 3/10
+            Indexes in union:
+              - idx_bloom (Parts: 1/4, Granules: 1/10)
+              - idx_minmax (Parts: 1/4, Granules: 1/10)
+              - idx_set (Parts: 1/4, Granules: 1/10)
+3000
+Test 3: All indexes with OR
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_union_indexes)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 4/4
+            Granules: 10/10
+          Skip
+            Name: UnionIndex
+            Description: Union of (idx_bloom, idx_minmax, idx_set, idx_arr_set)
+            Parts: 4/4
+            Granules: 10/10
+            Indexes in union:
+              - idx_bloom (Parts: 1/4, Granules: 1/10)
+              - idx_minmax (Parts: 1/4, Granules: 1/10)
+              - idx_set (Parts: 1/4, Granules: 1/10)
+              - idx_arr_set (Parts: 1/4, Granules: 7/10)
+10000
+Test 4: Complex nested conditions
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_union_indexes)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 4/4
+            Granules: 10/10
+          Skip
+            Name: UnionIndex
+            Description: Union of (idx_bloom, idx_minmax, idx_set)
+            Parts: 3/4
+            Granules: 3/10
+            Indexes in union:
+              - idx_bloom (Parts: 1/4, Granules: 1/10)
+              - idx_minmax (Parts: 1/4, Granules: 1/10)
+              - idx_set (Parts: 1/4, Granules: 1/10)
+1999
+Test 5: Highly selective query
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_union_indexes)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 4/4
+            Granules: 10/10
+          Skip
+            Name: UnionIndex
+            Description: Union of (idx_bloom, idx_minmax)
+            Parts: 2/4
+            Granules: 2/10
+            Indexes in union:
+              - idx_bloom (Parts: 1/4, Granules: 1/10)
+              - idx_minmax (Parts: 1/4, Granules: 1/10)
+1100
+Test 6: UnionIndex with multiple parts
+Number of parts:	5
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_union_parts)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 5/5
+            Granules: 10/10
+          Partition
+            Condition: true
+            Parts: 5/5
+            Granules: 10/10
+          PrimaryKey
+            Condition: true
+            Parts: 5/5
+            Granules: 10/10
+          Skip
+            Name: UnionIndex
+            Description: Union of (idx_bloom, idx_minmax)
+            Parts: 2/5
+            Granules: 4/10
+            Indexes in union:
+              - idx_bloom (Parts: 1/5, Granules: 2/10)
+              - idx_minmax (Parts: 1/5, Granules: 2/10)
+4000
+Test 7: Three parts match
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_union_parts)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 5/5
+            Granules: 10/10
+          Partition
+            Condition: true
+            Parts: 5/5
+            Granules: 10/10
+          PrimaryKey
+            Condition: true
+            Parts: 5/5
+            Granules: 10/10
+          Skip
+            Name: UnionIndex
+            Description: Union of (idx_bloom, idx_minmax, idx_set)
+            Parts: 3/5
+            Granules: 6/10
+            Indexes in union:
+              - idx_bloom (Parts: 1/5, Granules: 2/10)
+              - idx_minmax (Parts: 1/5, Granules: 2/10)
+              - idx_set (Parts: 1/5, Granules: 2/10)
+6000
+Test 8: No parts match
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_union_parts)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 5/5
+            Granules: 10/10
+          Partition
+            Condition: true
+            Parts: 5/5
+            Granules: 10/10
+          PrimaryKey
+            Condition: true
+            Parts: 5/5
+            Granules: 10/10
+          Skip
+            Name: UnionIndex
+            Description: Union of (idx_bloom, idx_minmax, idx_set)
+            Parts: 0/5
+            Granules: 0/10
+            Indexes in union:
+              - idx_bloom (Parts: 0/5, Granules: 0/10)
+              - idx_minmax (Parts: 0/5, Granules: 0/10)
+              - idx_set (Parts: 0/5, Granules: 0/10)
+0

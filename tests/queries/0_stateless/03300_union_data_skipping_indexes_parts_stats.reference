@@ -1,0 +1,8 @@
+Parts statistics test
+Total parts:	9
+Test 1: OR across all indexes
+3000
+Test 2: OR with two indexes
+2000
+Test 3: Single index
+1000

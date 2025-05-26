@@ -1,0 +1,12 @@
+Test 1: (category=A AND id<500) OR (category=B AND id>1500)
+999
+Test 2: Complex three-way nested
+2500
+Test 3: Deeply nested conditions
+9499
+Test 4: Mix of positive and negative conditions
+8000
+Test 5: Highly selective nested condition
+299
+Test 6: No matches
+0

@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/MergeTreeIndexUnionCondition.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -73,6 +74,7 @@ namespace ProfileEvents
 {
 extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
+extern const Event FilteringMarksWithMergedSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
 }
@@ -641,7 +643,8 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     index_stats.emplace_back(ReadFromMergeTree::IndexStat{
         .type = ReadFromMergeTree::IndexType::None,
         .num_parts_after = part_filter_counters.num_initial_selected_parts,
-        .num_granules_after = part_filter_counters.num_initial_selected_granules});
+        .num_granules_after = part_filter_counters.num_initial_selected_granules,
+        .union_index_infos = {}});
 
     if (minmax_idx_condition)
     {
@@ -651,7 +654,8 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
             .num_parts_after = part_filter_counters.num_parts_after_minmax,
-            .num_granules_after = part_filter_counters.num_granules_after_minmax});
+            .num_granules_after = part_filter_counters.num_granules_after_minmax,
+            .union_index_infos = {}});
         LOG_DEBUG(log, "MinMax index condition: {}", minmax_idx_condition->toString());
     }
 
@@ -663,7 +667,8 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
             .num_parts_after = part_filter_counters.num_parts_after_partition_pruner,
-            .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
+            .num_granules_after = part_filter_counters.num_granules_after_partition_pruner,
+            .union_index_infos = {}});
     }
 }
 
@@ -824,6 +829,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (ranges.ranges.empty())
                     break;
 
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithMergedSecondaryKeysMicroseconds);
+
                 const auto & indices_and_condition = skip_indexes.merged_indices[idx];
                 auto & stat = merged_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
@@ -915,7 +922,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
             .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
-            .num_granules_after = sum_marks_pk.load(std::memory_order_relaxed)});
+            .num_granules_after = sum_marks_pk.load(std::memory_order_relaxed),
+            .union_index_infos = {}});
     }
 
     for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
@@ -940,31 +948,76 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .name = index_name,
             .description = std::move(description),
             .num_parts_after = stat.total_parts - stat.parts_dropped,
-            .num_granules_after = stat.total_granules - stat.granules_dropped});
+            .num_granules_after = stat.total_granules - stat.granules_dropped,
+            .union_index_infos = {}});
     }
 
     for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
     {
         const auto & index_and_condition = skip_indexes.merged_indices[idx];
         const auto & stat = merged_indices_stat[idx];
-        const auto & index_name = "Merged";
-        LOG_DEBUG(
-            log,
-            "Index {} has dropped {}/{} granules, it took {}ms across {} threads.",
-            backQuote(index_name),
-            stat.granules_dropped.load(),
-            stat.total_granules.load(),
-            stat.elapsed_us.load() / 1000,
-            num_threads);
+        
+        // Check if this is a union condition
+        String index_name = "Merged";
+        String description;
+        ReadFromMergeTree::IndexStat index_stat;
+        
+        if (auto * union_condition = dynamic_cast<const MergeTreeIndexUnionCondition *>(index_and_condition.condition.get()))
+        {
+            index_name = "UnionIndex";
+            description = union_condition->getDescription();
+            
+            // Populate individual index information for union indexes
+            auto contributions = union_condition->getIndexContributions();
+            for (const auto & contrib : contributions)
+            {
+                ReadFromMergeTree::IndexStat::UnionIndexInfo info;
+                info.index_name = contrib.index_name;
+                info.num_granules_total = contrib.granules_total;
+                info.num_parts_total = stat.total_parts;
+                
+                // Calculate parts and granules information based on granule statistics
+                if (contrib.granules_total > 0)
+                {
+                    info.num_parts_after = contrib.parts_with_matches.size();
+                    info.num_granules_after = contrib.granules_passed;
+                }
+                else
+                {
+                    info.num_parts_after = 0;
+                    info.num_granules_after = 0;
+                }
+                index_stat.union_index_infos.push_back(info);
+            }
+            
+            LOG_DEBUG(
+                log,
+                "Union index has dropped {}/{} granules, it took {}ms across {} threads.",
+                stat.granules_dropped.load(),
+                stat.total_granules.load(),
+                stat.elapsed_us.load() / 1000,
+                num_threads);
+        }
+        else
+        {
+            description = "MERGED GRANULARITY " + std::to_string(index_and_condition.indices.at(0)->index.granularity);
+            
+            LOG_DEBUG(
+                log,
+                "Merged index has dropped {}/{} granules, it took {}ms across {} threads.",
+                stat.granules_dropped.load(),
+                stat.total_granules.load(),
+                stat.elapsed_us.load() / 1000,
+                num_threads);
+        }
 
-        std::string description = "MERGED GRANULARITY " + std::to_string(index_and_condition.indices.at(0)->index.granularity);
-
-        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-            .type = ReadFromMergeTree::IndexType::Skip,
-            .name = index_name,
-            .description = std::move(description),
-            .num_parts_after = stat.total_parts - stat.parts_dropped,
-            .num_granules_after = stat.total_granules - stat.granules_dropped});
+        index_stat.type = ReadFromMergeTree::IndexType::Skip;
+        index_stat.name = index_name;
+        index_stat.description = std::move(description);
+        index_stat.num_parts_after = stat.total_parts - stat.parts_dropped;
+        index_stat.num_granules_after = stat.total_granules - stat.granules_dropped;
+        
+        index_stats.emplace_back(std::move(index_stat));
     }
 
     return parts_with_ranges;
@@ -1776,13 +1829,23 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     VectorSimilarityIndexCache * vector_similarity_index_cache,
     LoggerPtr log)
 {
-    for (const auto & index_helper : indices)
+    // Skip file existence check for UnionIndex as it doesn't have its own files
+    // UnionIndex uses the files of its component indexes which will be checked when read
+    bool is_union_index = dynamic_cast<const MergeTreeIndexUnionCondition *>(condition.get()) != nullptr;
+    
+    if (!is_union_index)
     {
-        if (!part->getDataPartStorage().existsFile(index_helper->getFileName() + ".idx"))
+        for (const auto & index_helper : indices)
         {
-            LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
-            return ranges;
+            if (!part->getDataPartStorage().existsFile(index_helper->getFileName() + ".idx"))
+            {
+                LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
+                return ranges;
+            }
         }
+    }
+    else {
+
     }
 
     auto index_granularity = indices.front()->index.granularity;
@@ -1844,7 +1907,18 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
                 }
             }
 
-            if (!condition->mayBeTrueOnGranule(granules))
+            // Check if this is a UnionIndex to pass part name for tracking
+            bool passed = false;
+            if (auto * union_condition = dynamic_cast<const MergeTreeIndexUnionCondition *>(condition.get()))
+            {
+                passed = union_condition->mayBeTrueOnGranule(granules, part->name);
+            }
+            else
+            {
+                passed = condition->mayBeTrueOnGranule(granules);
+            }
+            
+            if (!passed)
                 continue;
 
             MarkRange data_range(

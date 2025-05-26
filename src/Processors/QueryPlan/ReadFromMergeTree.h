@@ -86,6 +86,17 @@ public:
         std::vector<std::string> used_keys = {};
         size_t num_parts_after;
         size_t num_granules_after;
+        
+        /// For union indexes, store information about individual indexes
+        struct UnionIndexInfo
+        {
+            std::string index_name;
+            size_t num_parts_after;
+            size_t num_granules_after;
+            size_t num_parts_total;
+            size_t num_granules_total;
+        };
+        std::vector<UnionIndexInfo> union_index_infos;
     };
 
     using IndexStats = std::vector<IndexStat>;
