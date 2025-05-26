@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -188,11 +189,18 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 /// The other approach is to do partial aggregation on data into aggregation states regardless of how it is split and
 /// then gather partial results and merge them finalizing aggregation states.
 ///
-/// This function only implements the first approach. It replaces AggregatingStep step with a subtree like this:
+/// In the first approach the AggregatingStep is replaced with a subtree like this:
 ///
 ///   GatherExchange
 ///     AggregatingStep
 ///       ScatterExchange by hash(aggregation_keys)
+///
+/// In the second approach the AggregatingStep is replaced with a subtree like this:
+///
+///   MergingAggregated (merge)
+///     GatherExchange
+///       Aggregating (partial)
+///         ScatterExchange (any)
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a aggregating step?
@@ -206,31 +214,110 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
     QueryPlan::Node * source = node.children[0];
 
     Names aggregation_keys = aggregating_step->getParams().keys;
-    /// Cannot partition if this is full aggregation
-    if (aggregation_keys.empty())
-        return;
 
-    const size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
+    enum AggregationStrategy
+    {
+        PartialAggregation, /// Do partial aggregation and then merge aggregation states
+        Shuffle,            /// Partition data by aggregation keys and do aggregation in disjoint buckets, then just unite the results
+    } strategy = PartialAggregation;
 
-    /// Add scatter exchange step above source
-    auto & exchange_scatter_node = nodes.emplace_back();
-    exchange_scatter_node.step = std::make_unique<ScatterExchangeStep>(source->step->getOutputHeader(), aggregation_keys, bucket_count);
-    exchange_scatter_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(aggregation_keys, ", ")));
-    exchange_scatter_node.children = {source};
+    /// TODO: choose Shuffle strategy if the aggregation result is too big and splitting it into disjoint buckets is profitable
+    /// Otherwise it is better to do partial aggregation, gather and merge.
+    /// Also, shuffling can only be done if aggregation keys are not empty.
+    if (optimization_settings.distributed_plan_force_shuffle_aggregation && !aggregation_keys.empty())
+        strategy = Shuffle;
 
-    /// Move aggregation step to a new node
-    auto & new_aggregation_node = nodes.emplace_back();
-    new_aggregation_node.step = std::move(node.step);
-    new_aggregation_node.children = {&exchange_scatter_node};
+    /// Fallback to Shuffle strategy for the cases when partial aggregation is not supported
+    const bool can_use_partial_aggregation = !aggregating_step->inOrder() && !aggregating_step->explicitSortingRequired();
+    if (!can_use_partial_aggregation)
+        strategy = Shuffle;
 
-    /// Add gather exchange step above aggregation
-    QueryPlan::Node gather_node;
-    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_aggregation_node.step->getOutputHeader());
-    gather_node.step = std::move(exchange_gather_step);
-    gather_node.children = {&new_aggregation_node};
+    if (strategy == PartialAggregation)
+    {
+        const size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
 
-    /// Replace aggregation node with gather node
-    node = std::move(gather_node);
+        /// Add any-scatter
+        auto & exchange_scatter_node = nodes.emplace_back();
+        exchange_scatter_node.step = std::make_unique<ScatterExchangeStep>(source->step->getOutputHeader(), Names{}, bucket_count);
+        exchange_scatter_node.step->setStepDescription("any");
+        exchange_scatter_node.children = {source};
+
+        /// Params will be used by both partial aggregation step and merge step
+        Aggregator::Params aggregator_params = aggregating_step->getParams();
+        GroupingSetsParamsList grouping_sets_params = aggregating_step->getGroupingSetsParamsList();
+
+        const bool should_produce_results_in_order_of_bucket_number = aggregating_step->shouldProduceResultsInBucketOrder();
+        const bool memory_bound_merging_of_aggregation_results_enabled = aggregating_step->usingMemoryBoundMerging();
+        const bool explicit_sorting_required_for_aggregation_in_order = aggregating_step->explicitSortingRequired();
+
+        /// Convert Aggregation step to partial aggregation
+        auto & partial_aggregation_node = nodes.emplace_back();
+        partial_aggregation_node.step = std::make_unique<AggregatingStep>(
+            source->step->getOutputHeader(),
+            aggregator_params,
+            grouping_sets_params,
+            /* final */ false, /// 'false' means partial aggregation
+            /* max_block_size */ aggregating_step->getMaxBlockSize(),
+            /* aggregation_in_order_max_block_size */ aggregating_step->getMaxBlockSizeForAggregationInOrder(),
+            /* merge_threads */ aggregating_step->getMergeThreads(),
+            /* temporary_data_merge_threads */ aggregating_step->getTemporaryDataMergeThreads(),
+            /* storage_has_evenly_distributed_read */ true,
+            /* group_by_use_nulls */ aggregating_step->isGroupByUseNulls(),
+            /* sort_description_for_merging */ SortDescription{},
+            /* group_by_sort_description */ SortDescription{},
+            should_produce_results_in_order_of_bucket_number,
+            memory_bound_merging_of_aggregation_results_enabled,
+            explicit_sorting_required_for_aggregation_in_order);
+        partial_aggregation_node.step->setStepDescription("partial");
+        partial_aggregation_node.children = {&exchange_scatter_node};
+
+        /// Add gather
+        auto & gather_node = nodes.emplace_back();
+        gather_node.step = std::make_unique<GatherExchangeStep>(partial_aggregation_node.step->getOutputHeader());
+        gather_node.children = {&partial_aggregation_node};
+
+        /// Replace original aggregation step with MergingAggregated step
+        aggregator_params.only_merge = true;    /// Merge partial aggregation results
+        QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
+            gather_node.step->getOutputHeader(),
+            aggregator_params,
+            grouping_sets_params,
+            /* final */ true,
+            /* memory_efficient_aggragation */ false,
+            aggregating_step->getTemporaryDataMergeThreads(),
+            should_produce_results_in_order_of_bucket_number,
+            aggregating_step->getMaxBlockSize(),
+            aggregating_step->getMaxBlockSizeForAggregationInOrder(),
+            memory_bound_merging_of_aggregation_results_enabled);
+
+        final_aggregation_step->setStepDescription("merge");
+        node.step = std::move(final_aggregation_step);
+        node.children = {&gather_node};
+    }
+    else if (strategy == Shuffle)
+    {
+        const size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
+
+        /// Add scatter exchange step above source
+        auto & exchange_scatter_node = nodes.emplace_back();
+        exchange_scatter_node.step = std::make_unique<ScatterExchangeStep>(source->step->getOutputHeader(), aggregation_keys, bucket_count);
+        exchange_scatter_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(aggregation_keys, ", ")));
+        exchange_scatter_node.children = {source};
+
+        /// Move aggregation step to a new node
+        auto & new_aggregation_node = nodes.emplace_back();
+        new_aggregation_node.step = std::move(node.step);
+        new_aggregation_node.children = {&exchange_scatter_node};
+
+        /// Add gather exchange step above aggregation
+        QueryPlan::Node gather_node;
+        QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_aggregation_node.step->getOutputHeader());
+        gather_node.step = std::move(exchange_gather_step);
+        gather_node.children = {&new_aggregation_node};
+
+        /// Replace aggregation node with gather node
+        node = std::move(gather_node);
+    }
 }
 
 void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
