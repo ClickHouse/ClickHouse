@@ -2603,7 +2603,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     if (remove_filter)
         actions.outputs.insert(actions.outputs.begin(), result_predicate);
 
-    return ActionsForFilterPushDown{std::move(actions), filter_pos,  remove_filter};
+    return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
 }
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
