@@ -1,7 +1,8 @@
 #include <Common/FunctionDocumentation.h>
+
 #include <Common/Exception.h>
+#include <boost/algorithm/string/trim.hpp>
 #include <unordered_map>
-#include <re2/re2.h>
 
 namespace DB
 {
@@ -13,18 +14,13 @@ namespace ErrorCodes
 
 VersionNumber VERSION_UNKNOWN = {0};
 
-std::string FunctionDocumentation::trimBlankLines(const std::string& str) const
-{
-    std::string result = str;
-
-    // Remove all leading whitespace and newlines
-    RE2::GlobalReplace(&result, R"(^[\s\n]+)", "");
-
-    // Remove all trailing whitespace and newlines
-    RE2::GlobalReplace(&result, R"([\s\n]+$)", "");
-
-    return result;
-}
+/// Documentation is often defined with raw strings, therefore need to trim leading and trailing whitespace + newlines.
+/// Example:
+///
+///     FunctionDocumentation::ReturnedValue returned_value = R"(
+/// Returns the difference between `x` and the nearest integer not greater than
+/// `x` divisible by `y`.
+/// )";
 
 std::string FunctionDocumentation::argumentsAsString() const
 {
@@ -34,6 +30,11 @@ std::string FunctionDocumentation::argumentsAsString() const
     return res;
 }
 
+std::string FunctionDocumentation::returnedValueAsString() const
+{
+    return boost::algorithm::trim_copy(returned_value);
+}
+
 std::string FunctionDocumentation::examplesAsString() const
 {
     std::string res;
@@ -41,10 +42,10 @@ std::string FunctionDocumentation::examplesAsString() const
     {
         res += "**" + name + "**" + "\n\n";
         res += "```sql title=""Query""\n";
-        res += trimBlankLines(query) + "\n";
+        res += boost::algorithm::trim_copy(query) + "\n";
         res += "```\n\n";
         res += "```response title=""Response""\n";
-        res += trimBlankLines(result) + "\n";
+        res += boost::algorithm::trim_copy(result) + "\n";
         res += "```";
         res += "\n\n";
     }
@@ -109,11 +110,6 @@ std::string FunctionDocumentation::categoryAsString() const
         return it->second;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
-}
-
-std::string FunctionDocumentation::returnedValueAsString() const
-{
-    return trimBlankLines(returned_value);
 }
 
 }
