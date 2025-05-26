@@ -48,6 +48,7 @@ auto adjustToPageSize(void * buf, size_t len, size_t page_size)
 
 bool madviseSupportsMadvPopulateWrite()
 {
+    /// Can't rely for detecton on madvise(MADV_POPULATE_WRITE) == EINVAL, since this will be returned in many other cases.
     VersionNumber linux_version(Poco::Environment::osVersion());
     VersionNumber supported_version(5, 14, 0);
     bool is_supported = linux_version >= supported_version;
