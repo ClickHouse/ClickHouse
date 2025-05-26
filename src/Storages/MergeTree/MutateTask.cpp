@@ -15,7 +15,6 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
@@ -1049,42 +1048,6 @@ void finalizeMutatedPart(
     new_data_part->default_codec = codec;
 }
 
-/// For alter table modify columns, check which option is set and which column is changed.
-static void getSecondaryIndicesOnColumnAlterModifyOptions(
-    MutationCommandsConstPtr commands,
-    MergeTreeSettingsPtr settings,
-    NameSet & alter_column_names,
-    bool & secondary_indices_on_columns_alter_modify_drop,
-    bool & secondary_indices_on_columns_alter_modify_rebuild)
-{
-    bool secondary_indices_on_columns_alter = false;
-    if (commands->size() == 1 && commands->front().ast)
-    {
-        if (auto * alter_cmd = commands->front().ast->as<ASTAlterCommand>();
-            alter_cmd && alter_cmd->type==ASTAlterCommand::MODIFY_COLUMN)
-        {
-            if (auto * column_declaration = alter_cmd->col_decl->as<ASTColumnDeclaration>())
-            {
-                alter_column_names.insert(column_declaration->name);
-                secondary_indices_on_columns_alter = true;
-            }
-            else
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cannot parse column declaration of alter command in mutation. It's a bug");
-            }
-        }
-    }
-
-    secondary_indices_on_columns_alter_modify_drop = secondary_indices_on_columns_alter &&
-        (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify]
-            == SecondaryIndicesOnColumnsAlterModify::DROP;
-
-    secondary_indices_on_columns_alter_modify_rebuild = secondary_indices_on_columns_alter &&
-        (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify]
-            == SecondaryIndicesOnColumnsAlterModify::REBUILD;
-}
-
 }
 
 struct MutationContext
@@ -1515,12 +1478,8 @@ private:
 
         bool secondary_indices_on_columns_alter_modify_drop = false;
         bool secondary_indices_on_columns_alter_modify_rebuild = false;
-        NameSet alter_column_names;
-
-        MutationHelpers::getSecondaryIndicesOnColumnAlterModifyOptions(
-            ctx->commands,
+        NameSet altered_columns = ctx->commands->getSecondaryIndicesOnColumnAlterModifyOptions(
             ctx->data->getSettings(),
-            alter_column_names,
             secondary_indices_on_columns_alter_modify_drop,
             secondary_indices_on_columns_alter_modify_rebuild);
 
@@ -1533,13 +1492,13 @@ private:
             if (secondary_indices_on_columns_alter_modify_drop &&
                 std::any_of(idx.column_names.begin(),
                             idx.column_names.end(),
-                            [&](String s) { return alter_column_names.contains(s); }))
+                            [&](const String & column) { return altered_columns.contains(column); }))
                 continue;
 
             if (secondary_indices_on_columns_alter_modify_rebuild &&
                 std::any_of(idx.column_names.begin(),
                             idx.column_names.end(),
-                            [&](String s) { return alter_column_names.contains(s); }))
+                            [&](const String & column) { return altered_columns.contains(column); }))
             {
                 skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx));
                 continue;
@@ -1961,7 +1920,7 @@ private:
         ctx->new_data_part->checksums = ctx->source_part->checksums;
 
         /// Remove dropped secondary indices from checksums, to avoid complain of broken parts.
-        if ((*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter_modify] ==
+        if ((*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify] ==
             SecondaryIndicesOnColumnsAlterModify::DROP)
         {
             NameSet secondary_indices_rebuild;
@@ -2565,12 +2524,8 @@ bool MutateTask::prepare()
     {
         bool secondary_indices_on_columns_alter_modify_drop = false;
         bool secondary_indices_on_columns_alter_modify_rebuild = false;
-        NameSet alter_column_names;
-
-        MutationHelpers::getSecondaryIndicesOnColumnAlterModifyOptions(
-            ctx->commands,
+        NameSet altered_columns = ctx->commands->getSecondaryIndicesOnColumnAlterModifyOptions(
             ctx->data->getSettings(),
-            alter_column_names,
             secondary_indices_on_columns_alter_modify_drop,
             secondary_indices_on_columns_alter_modify_rebuild);
 
@@ -2582,7 +2537,7 @@ bool MutateTask::prepare()
             ctx->context,
             ctx->materialized_indices,
             indices_to_skip,
-            alter_column_names,
+            altered_columns,
             secondary_indices_on_columns_alter_modify_drop,
             secondary_indices_on_columns_alter_modify_rebuild);
 

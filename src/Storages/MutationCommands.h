@@ -9,6 +9,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -95,6 +96,12 @@ public:
     /// to be executed without issues on the creation state.
     bool containBarrierCommand() const;
     NameSet getAllUpdatedColumns() const;
+
+    /// For alter table modify columns, check which option is set and which column is changed.
+    NameSet getSecondaryIndicesOnColumnAlterModifyOptions(
+        MergeTreeSettingsPtr settings,
+        bool & secondary_indices_on_columns_alter_modify_drop,
+        bool & secondary_indices_on_columns_alter_modify_rebuild);
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
