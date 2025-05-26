@@ -356,11 +356,15 @@ void StorageKafka::cleanConsumers()
                 continue;
             consumers_to_close.push_back(consumer->moveConsumer());
         }
-
-        consumers.clear();
     }
 
+    /// First close cppkafka::Consumer (it can use KafkaConsumer object via stat callback)
     consumers_to_close.clear();
+
+    {
+        std::unique_lock lock(mutex);
+        consumers.clear();
+    }
 }
 
 void StorageKafka::pushConsumer(KafkaConsumerPtr consumer)
