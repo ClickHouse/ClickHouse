@@ -48,9 +48,12 @@ auto adjustToPageSize(void * buf, size_t len, size_t page_size)
 
 bool madviseSupportsMadvPopulateWrite()
 {
-    VersionNumber supported(5, 14, 0);
     VersionNumber linux_version(Poco::Environment::osVersion());
-    return linux_version >= supported;
+    VersionNumber supported_version(5, 14, 0);
+    bool is_supported = linux_version >= supported_version;
+    if (!is_supported)
+        LOG_TRACE(getLogger("Allocator"), "Disabled page pre-faulting (kernel is too old).");
+    return is_supported;
 }
 
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
