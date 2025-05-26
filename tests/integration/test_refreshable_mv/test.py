@@ -4,7 +4,7 @@ from random import randint
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, QueryRuntimeException
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
 
@@ -354,8 +354,13 @@ def test_pause(started_cluster, cleanup):
     assert node2.query("select * from re.a") == "1\n"
     node2.query("system stop replicated view re.a")
     node1.restart_clickhouse() # just to guarantee that it notices the new znode
+    try:
+        node2.query("system wait view re.a")
+    except QueryRuntimeException as ex:
+        # If the node1.restart_clickhouse() interrupted a refresh, the error message (with substring
+        # "cancelled") is written to keeper, then thrown by "system wait view". That's normal.
+        assert "cancelled" in str(ex)
     node2.query(
-        "system wait view re.a;"
         "truncate table re.src;"
         "insert into re.src values (2);")
     time.sleep(3)
@@ -366,6 +371,10 @@ def test_pause(started_cluster, cleanup):
         "select * from re.a",
         "2\n",
     )
+    # Drop while paused.
+    node1.query("system stop replicated view re.a")
+    for node in nodes:
+        node.query("drop database re sync")
 
 backup_id_counter = 0
 
@@ -415,6 +424,13 @@ def do_test_backup(to_table):
 
     assert node1.query(tables_exist_query) == "2\n"
     assert node2.query(tables_exist_query) == "2\n"
+    if not to_table:
+        # Inner tables are not backed up, wait for first refresh.
+        node1.query(f'SYSTEM WAIT VIEW re.{target}')
+        node2.query(f'SYSTEM WAIT VIEW re.{target}')
+    else:
+        node1.query(f'SYSTEM SYNC REPLICA re.{target}')
+        node2.query(f'SYSTEM SYNC REPLICA re.{target}')
     assert node1.query(f'SELECT * FROM re.{target}') == '1\n'
     assert node2.query(f'SELECT * FROM re.{target}') == '1\n'
 
@@ -445,12 +461,7 @@ def test_adding_replica(started_cluster, cleanup):
     assert node2.query("select * from re.a order by all") == "0\n10\n"
 
     node1.query("system stop view re.a")
-    r = node2.query(
-        "system wait view re.a;"
-        "system refresh view re.a;"
-        "system wait view re.a;"
-        "select last_refresh_replica from system.view_refreshes")
-    assert r == "2\n"
+    node2.query_with_retry("select last_refresh_replica from system.view_refreshes", check_callback=lambda x: x == "2\n", sleep_time=1, retry_count=20)
 
 def test_replicated_db_startup_race(started_cluster, cleanup):
     for node in nodes:

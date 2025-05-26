@@ -111,7 +111,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const SettingsBool ignore_materialized_views_with_dropped_target_table;
     extern const SettingsBool distributed_foreground_insert;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_concurrency_control;
@@ -233,12 +233,16 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
     }
     catch (DB::Exception & exception)
     {
-        exception.addMessage("while pushing to view {}", storage.getNameForLogs());
-        return std::current_exception();
+        // we have to make a copy of exception here,
+        // because the original exception is multiplied by CopyTransform
+        // it should not be modified anywhere to avoid concurrant modification
+        auto patch = DB::Exception(exception);
+        patch.addMessage("while pushing to view {}", storage.getNameForLogs());
+        return std::make_exception_ptr(std::move(patch));
     }
     catch (...)
     {
-        return std::current_exception();
+        return ptr;
     }
 }
 
@@ -488,9 +492,9 @@ private:
         {
             std::rethrow_exception(e);
         }
-        catch (BeginingViewsTransform::ExternalException & e)
+        catch (BeginingViewsTransform::ExternalException & wrapped)
         {
-            return {true, e.origin_exception};
+            return {true, wrapped.origin_exception};
         }
         catch (...)
         {
@@ -690,8 +694,9 @@ private:
 };
 
 
-InsertDependenciesBuilder::InsertDependenciesBuilder(StoragePtr table, ASTPtr query, Block insert_header,
-    bool async_insert_, bool skip_destination_table_, bool allow_materialized_,
+InsertDependenciesBuilder::InsertDependenciesBuilder(
+    StoragePtr table, ASTPtr query, Block insert_header,
+    bool async_insert_, bool skip_destination_table_,
     ContextPtr context)
     : init_table_id(table->getStorageID())
     , init_storage(table)
@@ -700,7 +705,6 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(StoragePtr table, ASTPtr qu
     , init_context(context)
     , async_insert(async_insert_)
     , skip_destination_table(skip_destination_table_)
-    , allow_materialized(allow_materialized_)
     , views_error_registry(std::make_shared<ViewErrorsRegistry>())
     , logger(getLogger("InsertDependenciesBuilder"))
 {

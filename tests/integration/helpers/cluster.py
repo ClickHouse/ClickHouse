@@ -1,4 +1,5 @@
 import base64
+import concurrent
 import errno
 import http.client
 import logging
@@ -2479,7 +2480,20 @@ class ClickHouseCluster:
         run_rabbitmqctl(
             self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
         )
-        self.wait_rabbitmq_to_start()
+        self.wait_rabbitmq_to_start(timeout)
+
+    @contextmanager
+    def pause_rabbitmq(self, monitor=None, timeout=120):
+        if monitor is not None:
+            monitor.stop()
+        self.stop_rabbitmq_app(timeout)
+
+        try:
+            yield
+        finally:
+            self.start_rabbitmq_app(timeout)
+            if monitor is not None:
+                monitor.start(self)
 
     def reset_rabbitmq(self, timeout=120):
         self.stop_rabbitmq_app()
@@ -3407,14 +3421,37 @@ class ClickHouseCluster:
 
     # Faster than waiting for clean stop
     def kill_zookeeper_nodes(self, zk_nodes):
-        for n in zk_nodes:
-            logging.info("Killing zookeeper node: %s", n)
-            subprocess_check_call(self.base_zookeeper_cmd + ["kill", n])
+
+        def kill_keeper(node):
+            logging.info("Killing zookeeper node: %s", node)
+            subprocess_check_call(self.base_zookeeper_cmd + ["kill", node])
+            logging.info("Killed zookeeper node: %s", node)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(zk_nodes)
+        ) as executor:
+            futures = []
+            for n in zk_nodes:
+                futures += [executor.submit(kill_keeper, n)]
+
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
 
     def start_zookeeper_nodes(self, zk_nodes):
-        for n in zk_nodes:
-            logging.info("Starting zookeeper node: %s", n)
-            subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
+        def start_keeper(node):
+            logging.info("Starting zookeeper node: %s", node)
+            subprocess_check_call(self.base_zookeeper_cmd + ["start", node])
+            logging.info("Started zookeeper node: %s", node)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(zk_nodes)
+        ) as executor:
+            futures = []
+            for n in zk_nodes:
+                futures += [executor.submit(start_keeper, n)]
+
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
 
     def query_all_nodes(self, sql, *args, **kwargs):
         return {
@@ -4725,8 +4762,6 @@ class ClickHouseInstance:
         if self.with_installed_binary:
             # Ignore CPU overload in this case
             write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
-        else:
-            write_embedded_config("0_common_max_cpu_load.xml", users_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         use_distributed_plan = (

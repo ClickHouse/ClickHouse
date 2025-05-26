@@ -16,6 +16,7 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -296,15 +297,11 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
     while (!tasks.isFinished() && !yield)
     {
         /// First, find any processor to execute.
-        /// Just traverse graph and prepare any processor.
         while (!tasks.isFinished() && !context.hasTask())
             tasks.tryGetTask(context);
 
-        while (context.hasTask() && !yield)
+        while (!tasks.isFinished() && context.hasTask() && !yield)
         {
-            if (tasks.isFinished())
-                break;
-
             if (!context.executeTask())
                 cancel(ExecutionStatus::Exception);
 
