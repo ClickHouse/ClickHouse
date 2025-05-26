@@ -26,12 +26,18 @@ public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-    using OnWeightLossFunction = std::function<void(size_t)>;
+    using OnEvictionFunction = std::function<void(size_t, std::vector<MappedPtr>&)>;
 
     struct KeyMapped
     {
         Key key;
         MappedPtr mapped;
+    };
+
+    struct EvictionDetails
+    {
+        size_t total_weight_loss;
+        std::vector<MappedPtr> evicted_values; // vector to store evicted values on account of overflow
     };
 
     explicit ICachePolicy(CachePolicyUserQuotaPtr user_quotas_) : user_quotas(std::move(user_quotas_)) {}

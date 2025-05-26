@@ -20,17 +20,17 @@ public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
-    using typename Base::OnWeightLossFunction;
+    using typename Base::OnEvictionFunction;
 
     /** Initialize LRUCachePolicy with max_size_in_bytes and max_count.
      *  max_size_in_bytes == 0 means the cache accepts no entries.
       * max_count == 0 means no elements size restrictions.
       */
-    LRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, OnWeightLossFunction on_weight_loss_function_)
+    LRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, OnEvictionFunction on_eviction_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
         , max_count(max_count_)
-        , on_weight_loss_function(on_weight_loss_function_)
+        , on_eviction_function(on_eviction_function_)
     {
     }
 
@@ -192,12 +192,13 @@ private:
     size_t max_count;
 
     WeightFunction weight_function;
-    OnWeightLossFunction on_weight_loss_function;
+    OnEvictionFunction on_eviction_function;
 
     void removeOverflow()
     {
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
+        std::vector<MappedPtr> evicted_values; // vector to store evicted values on account of overflow
 
         while ((current_size_in_bytes > max_size_in_bytes || (max_count != 0 && queue_size > max_count)) && (queue_size > 0))
         {
@@ -211,13 +212,14 @@ private:
 
             current_size_in_bytes -= cell.size;
             current_weight_lost += cell.size;
+            evicted_values.push_back(cell.value); // Store the evicted value
 
             cells.erase(it);
             queue.pop_front();
             --queue_size;
         }
 
-        on_weight_loss_function(current_weight_lost);
+        on_eviction_function(current_weight_lost, evicted_values);
 
         if (current_size_in_bytes > (1ull << 63))
             std::terminate(); // Queue became inconsistent

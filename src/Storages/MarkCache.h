@@ -13,6 +13,7 @@ namespace ProfileEvents
     extern const Event MarkCacheHits;
     extern const Event MarkCacheMisses;
     extern const Event MarkCacheEvictedBytes;
+    extern const Event MarkCacheEvictedMarks;
 }
 
 namespace DB
@@ -58,10 +59,17 @@ public:
     }
 
 private:
-
-    void onRemoveOverflowWeightLoss(size_t weight_loss) override
+    /// Called when the cache is full, and we evict some cells as per the cache policy.
+    void onEviction(const EvictionDetails& details) override
     {
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, weight_loss);
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, details.total_weight_loss);
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks,
+            /// Sum up the total number of marks across all evicted cache entries
+            std::accumulate(details.evicted_values.begin(), details.evicted_values.end(), 0ULL,
+            [](size_t const sum, const MappedPtr& ptr)
+            {
+                return sum + std::static_pointer_cast<MarksInCompressedFile>(ptr)->getNumberOfMarks();
+            }));
     }
 };
 
