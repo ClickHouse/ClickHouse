@@ -622,6 +622,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 
     size_t keys_bytes = 0;
     size_t num_fixed_contiguous_keys = 0;
+    size_t num_string_keys = 0;
 
     key_sizes.resize(params.keys_size);
     for (size_t j = 0; j < params.keys_size; ++j)
@@ -635,18 +636,12 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 keys_bytes += key_sizes[j];
             }
         }
+
+        if (isString(types_removed_nullable[j]) || isFixedString(types_removed_nullable[j]))
+            ++num_string_keys;
     }
 
-    bool all_keys_are_numbers_or_strings = true;
-    for (size_t j = 0; j < params.keys_size; ++j)
-    {
-        if (!types_removed_nullable[j]->isValueRepresentedByNumber() && !isString(types_removed_nullable[j])
-            && !isFixedString(types_removed_nullable[j]))
-        {
-            all_keys_are_numbers_or_strings = false;
-            break;
-        }
-    }
+    bool all_keys_are_numbers_or_strings = num_fixed_contiguous_keys + num_string_keys == params.keys_size;
 
     if (has_nullable_key)
     {
@@ -788,6 +783,18 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_string;
         return AggregatedDataVariants::Type::key_string;
+    }
+
+    if (!has_low_cardinality && all_keys_are_numbers_or_strings && num_string_keys == 1 && num_fixed_contiguous_keys == 1)
+    {
+        if (keys_bytes == 1)
+            return AggregatedDataVariants::Type::string_with_key8;
+        if (keys_bytes == 2)
+            return AggregatedDataVariants::Type::string_with_key16;
+        if (keys_bytes == 4)
+            return AggregatedDataVariants::Type::string_with_key32;
+        if (keys_bytes == 8)
+            return AggregatedDataVariants::Type::string_with_key64;
     }
 
     if (params.keys_size > 1 && all_keys_are_numbers_or_strings)

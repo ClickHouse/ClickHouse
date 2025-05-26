@@ -3,6 +3,7 @@
 #include <base/StringRef.h>
 
 #include <Common/Arena.h>
+#include <Common/StringRefWithFixedKey.h>
 
 /**
   * In some aggregation scenarios, when adding a key to the hash table, we
@@ -65,6 +66,22 @@ inline void ALWAYS_INLINE keyHolderPersistKey(Key &&) {}
 template <typename Key>
 inline void ALWAYS_INLINE keyHolderDiscardKey(Key &&) {}
 
+namespace detail
+{
+    inline void persistStringRefInArena(StringRef & ref, DB::Arena & arena)
+    {
+        ref.data = arena.insert(ref.data, ref.size);
+    }
+
+    inline void rollbackStringRefInArena(StringRef & ref, DB::Arena & arena)
+    {
+        [[maybe_unused]] void * new_head = arena.rollback(ref.size);
+        chassert(new_head == ref.data);
+        ref.data = nullptr;
+        ref.size = 0;
+    }
+}
+
 namespace DB
 {
 
@@ -76,7 +93,6 @@ struct ArenaKeyHolder
 {
     StringRef key;
     Arena & pool;
-
 };
 
 }
@@ -94,7 +110,7 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolder & holder)
     // distinguishes empty keys by using cell version, not the value itself.
     // So, when an empty StringRef is inserted in ClearableHashSet we'll get here key of zero size.
     // assert(holder.key.size > 0);
-    holder.key.data = holder.pool.insert(holder.key.data, holder.key.size);
+    detail::persistStringRefInArena(holder.key, holder.pool);
 }
 
 inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaKeyHolder &)
@@ -127,9 +143,35 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::SerializedKeyHolder &)
 
 inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
 {
-    [[maybe_unused]] void * new_head = holder.pool.rollback(holder.key.size);
-    assert(new_head == holder.key.data);
-    holder.key.data = nullptr;
-    holder.key.size = 0;
+    detail::rollbackStringRefInArena(holder.key, holder.pool);
 }
 
+namespace DB
+{
+    template <typename TFixed, bool serialized>
+    struct StringWithFixedKeyHolder
+    {
+        StringRefWithFixedKey<TFixed> key;
+        Arena & pool;
+    };
+}
+
+template <typename TFixed, bool serialized>
+inline DB::StringRefWithFixedKey<TFixed> & ALWAYS_INLINE keyHolderGetKey(DB::StringWithFixedKeyHolder<TFixed, serialized> & holder)
+{
+    return holder.key;
+}
+
+template <typename TFixed, bool serialized>
+inline void ALWAYS_INLINE keyHolderPersistKey(DB::StringWithFixedKeyHolder<TFixed, serialized> & holder)
+{
+    if constexpr (!serialized)
+        detail::persistStringRefInArena(holder.key.ref, holder.pool);
+}
+
+template <typename TFixed, bool serialized>
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::StringWithFixedKeyHolder<TFixed, serialized> & holder)
+{
+    if constexpr (serialized)
+        detail::rollbackStringRefInArena(holder.key.ref, holder.pool);
+}
