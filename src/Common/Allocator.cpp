@@ -2,12 +2,14 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/GWPAsan.h>
+#include <Common/VersionNumber.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
 #include <base/errnoToString.h>
 #include <base/getPageSize.h>
 
+#include <Poco/Environment.h>
 #include <Poco/Logger.h>
 #include <sys/mman.h> /// MADV_POPULATE_WRITE
 
@@ -44,9 +46,20 @@ auto adjustToPageSize(void * buf, size_t len, size_t page_size)
 }
 #endif
 
+bool madviseSupportsMadvPopulateRead()
+{
+    VersionNumber supported(5, 14, 0);
+    VersionNumber linux_version(Poco::Environment::osVersion());
+    return linux_version >= supported;
+}
+
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
 {
 #if defined(MADV_POPULATE_WRITE)
+    static const bool supported_on_kernel = madviseSupportsMadvPopulateRead();
+    if (!supported_on_kernel)
+        return;
+
     if (len_ < POPULATE_THRESHOLD)
         return;
 
@@ -56,10 +69,10 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
 
     auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
     if (::madvise(buf, len, MADV_POPULATE_WRITE) < 0)
-        LOG_TRACE(
-            LogFrequencyLimiter(getLogger("Allocator"), 60),
-            "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)",
-            errnoToString(errno));
+    LOG_TRACE(
+        LogFrequencyLimiter(getLogger("Allocator"), 1),
+        "Attempt to populate pages failed: {}",
+        errnoToString(errno));
 #endif
 }
 
