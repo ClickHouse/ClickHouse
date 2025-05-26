@@ -8,10 +8,10 @@ DROP TABLE IF EXISTS tab;
 
 -- Creation only works with the (old) setting enabled.
 SET allow_experimental_inverted_index = 0;
-CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE inverted(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0; -- { serverError ILLEGAL_INDEX }
+CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE inverted(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k; -- { serverError ILLEGAL_INDEX }
 
 SET allow_experimental_inverted_index = 1;
-CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE inverted(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0;
+CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE inverted(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k;
 INSERT INTO tab VALUES (1, 'ab') (2, 'bc');
 
 -- Detach and attach should work.
@@ -40,10 +40,10 @@ DROP TABLE tab;
 
 -- Creation only works with the (old) setting enabled.
 SET allow_experimental_full_text_index = 0;
-CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE full_text(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0; -- { serverError ILLEGAL_INDEX }
+CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE full_text(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k; -- { serverError ILLEGAL_INDEX }
 
 SET allow_experimental_full_text_index = 1;
-CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE full_text(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k SETTINGS min_bytes_for_full_part_storage = 0;
+CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE full_text(tokenizer = 'ngram', ngram_size = 2)) ENGINE = MergeTree() ORDER BY k;
 INSERT INTO tab VALUES (1, 'ab') (2, 'bc');
 
 -- Detach and attach should work.
