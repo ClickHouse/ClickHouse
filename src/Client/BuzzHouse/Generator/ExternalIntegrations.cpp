@@ -115,6 +115,19 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                 te.clear_order();
             }
         }
+        if (te.has_order())
+        {
+            /// Swap ASC/DESC
+            for (int i = 0; i < te.order().exprs_size(); i++)
+            {
+                if (rg.nextSmallNumber() < 9)
+                {
+                    TableKeyExpr & tke = const_cast<TableKeyExpr&>(te.order().exprs(i));
+
+                    tke.set_asc_desc((!tke.has_asc_desc() || tke.asc_desc() == AscDesc::ASC) ? AscDesc::DESC : AscDesc::ASC);
+                }
+            }
+        }
     }
     else if (teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog && rg.nextSmallNumber() < 5)
     {
