@@ -408,7 +408,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
         else if (nopt < 86)
         {
             /// Decimal
-            std::uniform_int_distribution<uint32_t> precisions(1, 65);
+            std::uniform_int_distribution<uint32_t> precisions(0, 65);
             const uint32_t precision = precisions(rg.generator);
             std::uniform_int_distribution<uint32_t> scales(UINT32_C(0), std::min(UINT32_C(30), precision));
 
@@ -593,7 +593,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const boo
         else if (nopt < 91)
         {
             /// Numeric/Decimal
-            std::uniform_int_distribution<uint32_t> precisions(1, 38);
+            std::uniform_int_distribution<uint32_t> precisions(0, 38);
             const uint32_t precision = precisions(rg.generator);
             std::uniform_int_distribution<uint32_t> scales(0, precision);
 
@@ -708,8 +708,40 @@ bool SQLiteIntegration::performQuery(const String & query)
     return true;
 }
 
-String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool, SQLType * tp) const
+String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_deterministic, SQLType * tp) const
 {
+    if (!is_deterministic && rg.nextSmallNumber() < 4)
+    {
+        /// Use a random SQLite type
+        const uint32_t nopt = rg.nextMediumNumber();
+
+        if (nopt < 91)
+        {
+            static const std::vector<String> & baseTypes
+                = {"TEXT",    "CLOB", "STRING",   "NUMERIC", "DECIMAL",          "MONEY",  "BOOLEAN",
+                   "TIME",    "DATE", "DATETIME", "INT",     "INTEGER",          "BIGINT", "SMALLINT",
+                   "TINYINT", "REAL", "DOUBLE",   "FLOAT",   "DOUBLE PRECISION", "BLOB",   "BINARY",
+                   "BYTEA"};
+            return rg.pickRandomly(baseTypes);
+        }
+        else if (nopt < 96)
+        {
+            /// Decimal
+            std::uniform_int_distribution<uint32_t> precisions(0, 20);
+            const uint32_t precision = precisions(rg.generator);
+            std::uniform_int_distribution<uint32_t> scales(UINT32_C(0), precision);
+
+            return fmt::format("DECIMAL({},{})", precision, scales(rg.generator));
+        }
+        else
+        {
+            /// Character types
+            std::uniform_int_distribution<uint32_t> lengths(1, 65535);
+            static const std::vector<String> & baseTypes = {"CHARACTER", "VARCHAR", "NCHAR"};
+
+            return fmt::format("{}({})", rg.pickRandomly(baseTypes), lengths(rg.generator));
+        }
+    }
     return tp->SQLitetypeName(rg, false);
 }
 #else
