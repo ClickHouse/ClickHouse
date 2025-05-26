@@ -900,8 +900,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "partial_merge_join_rows_in_right_blocks",
           "query_plan_max_limit_for_lazy_materialization"})
     {
-        performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "65536"}, false)}});
-        serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
+        performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "'10M'"}, false)}});
+        serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false)}});
     }
     /// Number of bytes values
     for (const auto & entry :
@@ -941,15 +941,15 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "prefetch_buffer_size"})
     {
         performanceSettings.insert(
-            {{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "50000000"}, false)}});
-        serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
+            {{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "'10M'"}, false)}});
+        serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false)}});
     }
     /// Block size settings
     for (const auto & entry :
          {"input_format_parquet_max_block_size", "max_block_size", "max_compress_block_size", "min_compress_block_size"})
     {
-        performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "131072"}, false)}});
-        serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)}});
+        performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "'10M'"}, false)}});
+        serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "16384", "'10M'"}, false)}});
     }
     if (!fc.timezones.empty())
     {

@@ -17,11 +17,11 @@ static const auto compressSetting = CHSetting(
 
 static const auto trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
 
-static const auto bytesRangeSetting = CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false);
+static const auto bytesRangeSetting = CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false);
 
-static const auto highRangeSetting = CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false);
+static const auto highRangeSetting = CHSetting(highRange, {"0", "4", "8", "32", "64", "1024", "4096", "16384", "'10M'"}, false);
 
-static const auto rowsRangeSetting = CHSetting(rowsRange, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false);
+static const auto rowsRangeSetting = CHSetting(rowsRange, {"0", "4", "8", "32", "64", "4096", "16384", "'10M'"}, false);
 
 static const auto probRangeSetting = CHSetting(probRange, {"0", "0.1", "0.5", "0.99", "1.0"}, false);
 
