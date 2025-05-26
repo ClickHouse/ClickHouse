@@ -36,7 +36,7 @@ public:
     {
         auto new_min_block = new_part_info.min_block;
         auto new_max_block = new_part_info.max_block;
-        auto & parts = partitions[new_part_info.partition_id];
+        auto & parts = partitions[new_part_info.getPartitionId()];
 
         /// Find the first part with max_block >= `part_info.min_block`.
         auto first_it = parts.lower_bound(new_min_block);
@@ -99,7 +99,7 @@ public:
 
     bool isCoveredByAnotherPart(const MergeTreePartInfo & part_info) const
     {
-        auto partition_it = partitions.find(part_info.partition_id);
+        auto partition_it = partitions.find(part_info.getPartitionId());
         if (partition_it == partitions.end())
             return false;
 
@@ -290,11 +290,12 @@ void BackupCoordinationReplicatedTables::prepare() const
             for (const auto & [part_name, part_replicas] : table_info.replicas_by_part_name)
             {
                 auto part_info = MergeTreePartInfo::fromPartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+                [[maybe_unused]] const auto & partition_id = part_info.getPartitionId();
 
                 auto & min_data_versions_by_partition = table_info.min_data_versions_by_partition;
-                auto it2 = min_data_versions_by_partition.find(part_info.partition_id);
+                auto it2 = min_data_versions_by_partition.find(partition_id);
                 if (it2 == min_data_versions_by_partition.end())
-                    min_data_versions_by_partition[part_info.partition_id] = part_info.getDataVersion();
+                    min_data_versions_by_partition[partition_id] = part_info.getDataVersion();
                 else
                     it2->second = std::min(it2->second, part_info.getDataVersion());
 

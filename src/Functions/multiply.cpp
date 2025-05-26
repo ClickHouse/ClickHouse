@@ -55,7 +55,18 @@ using FunctionMultiply = BinaryArithmeticOverloadResolver<MultiplyImpl, NameMult
 
 REGISTER_FUNCTION(Multiply)
 {
-    factory.registerFunction<FunctionMultiply>();
+    FunctionDocumentation::Description description = "Calculates the product of two values `x` and `y`.";
+    FunctionDocumentation::Syntax syntax = "multiply(x, y)";
+    FunctionDocumentation::Argument argument1 = {"x", "factor"};
+    FunctionDocumentation::Argument argument2 = {"y", "factor"};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = "The product of x and y";
+    FunctionDocumentation::Examples examples = {{"Multiplying two numbers", "SELECT multiply(5,5)", "25"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+
+    factory.registerFunction<FunctionMultiply>(documentation);
 }
 
 }
