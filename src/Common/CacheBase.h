@@ -40,6 +40,7 @@ public:
     using Mapped = typename CachePolicy::Mapped;
     using MappedPtr = typename CachePolicy::MappedPtr;
     using KeyMapped = typename CachePolicy::KeyMapped;
+    using EvictionDetails = typename CachePolicy::EvictionDetails;
 
     static constexpr auto NO_MAX_COUNT = 0uz;
     static constexpr auto DEFAULT_SIZE_RATIO = 0.5l;
@@ -64,7 +65,10 @@ public:
         size_t max_count,
         double size_ratio)
     {
-        auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
+        auto on_eviction_function = [&](size_t weight_loss, std::vector<MappedPtr>& evicted_values) {
+            EvictionDetails details{weight_loss, std::move(evicted_values)};
+            onEviction(details);
+        };
 
         if (cache_policy_name.empty())
         {
@@ -75,12 +79,12 @@ public:
         if (cache_policy_name == "LRU")
         {
             using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<LRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_weight_loss_function);
+            cache_policy = std::make_unique<LRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_eviction_function);
         }
         else if (cache_policy_name == "SLRU")
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_weight_loss_function);
+            cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_eviction_function);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
@@ -336,7 +340,12 @@ private:
     InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
 
     /// Override this method if you want to track how much weight was lost in removeOverflow method.
+    /// Keep existing method for backward compatibility, prefer OnEviction() for new implementations.
     virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) {}
+
+    /// Override this method if you want to track eviction metrics in removeOverflow method.
+    /// To add more metrics, add them to EvictionDetails struct.
+    virtual void onEviction(const EvictionDetails&) {}
 };
 
 

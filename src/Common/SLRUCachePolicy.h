@@ -23,7 +23,7 @@ public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
-    using typename Base::OnWeightLossFunction;
+    using typename Base::OnEvictionFunction;
 
     /** Initialize SLRUCachePolicy with max_size_in_bytes and max_protected_size.
       * max_protected_size shows how many of the most frequently used entries will not be evicted after a sequential scan.
@@ -36,7 +36,7 @@ public:
         size_t max_size_in_bytes_,
         size_t max_count_,
         double size_ratio_,
-        OnWeightLossFunction on_weight_loss_function_)
+        OnEvictionFunction on_eviction_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
         , max_protected_size(calculateMaxProtectedSize(max_size_in_bytes_, size_ratio_))
@@ -44,7 +44,7 @@ public:
         , size_ratio(size_ratio_)
         , current_size_in_bytes_metric(size_in_bytes_metric_)
         , count_metric(count_metric_)
-        , on_weight_loss_function(on_weight_loss_function_)
+        , on_eviction_function(on_eviction_function_)
     {
     }
 
@@ -270,7 +270,7 @@ private:
     CurrentMetrics::Metric count_metric;
 
     WeightFunction weight_function;
-    OnWeightLossFunction on_weight_loss_function;
+    OnEvictionFunction on_eviction_function;
 
     static size_t calculateMaxProtectedSize(size_t max_size_in_bytes, double size_ratio)
     {
@@ -283,6 +283,7 @@ private:
         const size_t old_size = cells.size();
 
         size_t current_weight_lost = 0;
+        std::vector<MappedPtr> evicted_values; // vector to store evicted values on account of overflow
         size_t queue_size = queue.size();
 
         std::function<bool()> need_remove;
@@ -326,6 +327,7 @@ private:
             else
             {
                 current_weight_lost += cell.size;
+                evicted_values.push_back(cell.value); // Store the evicted value
                 cells.erase(it);
                 queue.pop_front();
             }
@@ -334,7 +336,9 @@ private:
         }
 
         if (!is_protected)
-            on_weight_loss_function(current_weight_lost);
+        {
+            on_eviction_function(current_weight_lost, evicted_values);
+        }
 
         if (current_size_in_bytes > (1ull << 63))
             std::terminate(); // Queue became inconsistent
