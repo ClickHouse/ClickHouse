@@ -9283,9 +9283,31 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
 {
     /// Inject artificial delay when taking storage snapshot.
     /// Useful for simulating concurrent mutations during snapshot acquisition.
-    auto merge_tree_storage_snapshot_sleep_ms = query_context->getSettingsRef()[Setting::merge_tree_storage_snapshot_sleep_ms];
-    if (merge_tree_storage_snapshot_sleep_ms > 0)
-        std::this_thread::sleep_for(std::chrono::milliseconds(merge_tree_storage_snapshot_sleep_ms));
+    /// E.g. tests/queries/0_stateless/03443_shared_storage_snapshots.sh
+    ///
+    /// This delay is applied only on the second and subsequent calls **per thread per query**.
+    /// It uses a `thread_local` variable to track the last seen query_id.
+    /// On the first call for a new query, the delay is skipped to avoid penalizing initial snapshot acquisition.
+    /// This simulates realistic timing gaps in multi-stage query execution without over-slowing tests.
+    ///
+    /// Note: This is a **best-effort** mechanism. The `query_id` may be reused or missing,
+    /// so the delay suppression is not strictly accurate in all scenarios.
+    static thread_local std::optional<std::string> last_query_id;
+    String current_query_id = query_context->getCurrentQueryId();
+    if (last_query_id && *last_query_id == current_query_id)
+    {
+        UInt64 merge_tree_storage_snapshot_sleep_ms = query_context->getSettingsRef()[Setting::merge_tree_storage_snapshot_sleep_ms];
+        if (merge_tree_storage_snapshot_sleep_ms > 0)
+        {
+            LOG_DEBUG(
+                log,
+                "Injecting {}ms artificial delay for repeated storage snapshot in query_id={}",
+                merge_tree_storage_snapshot_sleep_ms,
+                current_query_id);
+            std::this_thread::sleep_for(std::chrono::milliseconds(merge_tree_storage_snapshot_sleep_ms));
+        }
+    }
+    last_query_id = current_query_id;
 
     if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] || !query_context->hasQueryContext())
         return createStorageSnapshot(metadata_snapshot, query_context, false);
