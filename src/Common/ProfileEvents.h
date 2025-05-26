@@ -193,6 +193,10 @@ namespace ProfileEvents
     /// Get index just after last event identifier.
     Event end();
 
+    /// Check CPU overload. If should_throw parameter is set, the method will throw when the server is overloaded.
+    /// Otherwise, this method will return true if the server is overloaded.
+    bool checkCPUOverload(Int64 os_cpu_busy_time_threshold, double min_ratio, double max_ratio, bool should_throw);
+
     struct CountersIncrement
     {
         CountersIncrement() noexcept = default;

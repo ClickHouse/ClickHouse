@@ -75,8 +75,8 @@ Reloads all registered [executable user defined functions](/sql-reference/functi
 **Syntax**
 
 ```sql
-RELOAD FUNCTIONS [ON CLUSTER cluster_name]
-RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
+SYSTEM RELOAD FUNCTIONS [ON CLUSTER cluster_name]
+SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 ```
 
 ## RELOAD ASYNCHRONOUS METRICS {#reload-asynchronous-metrics}
@@ -84,7 +84,7 @@ RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 Re-calculates all [asynchronous metrics](../../operations/system-tables/asynchronous_metrics.md). Since asynchronous metrics are periodically updated based on setting [asynchronous_metrics_update_period_s](../../operations/server-configuration-parameters/settings.md), updating them manually using this statement is typically not necessary.
 
 ```sql
-RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
+SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 ```
 
 ## DROP DNS CACHE {#drop-dns-cache}
@@ -96,6 +96,10 @@ For more convenient (automatic) cache management, see disable_internal_dns_cache
 ## DROP MARK CACHE {#drop-mark-cache}
 
 Clears the mark cache.
+
+## DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
+
+Clears the iceberg metadata cache.
 
 ## DROP REPLICA {#drop-replica}
 
@@ -335,7 +339,7 @@ SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 
 ### SYSTEM UNFREEZE {#query_language-system-unfreeze}
 
-Clears freezed backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](/sql-reference/statements/alter/partition#unfreeze-partition)
+Clears a frozen backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](/sql-reference/statements/alter/partition#unfreeze-partition)
 
 ```sql
 SYSTEM UNFREEZE WITH NAME <backup_name>
@@ -576,9 +580,11 @@ SYSTEM REFRESH VIEW [db.]name
 
 Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
 
-### STOP VIEW, STOP VIEWS {#stop-view-stop-views}
+### STOP [REPLICATED] VIEW, STOP VIEWS {#stop-view-stop-views}
 
 Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.
+
+If the view is in a Replicated or Shared database, `STOP VIEW` only affects the current replica, while `STOP REPLICATED VIEW` affects all replicas.
 
 ```sql
 SYSTEM STOP VIEW [db.]name
@@ -587,9 +593,11 @@ SYSTEM STOP VIEW [db.]name
 SYSTEM STOP VIEWS
 ```
 
-### START VIEW, START VIEWS {#start-view-start-views}
+### START [REPLICATED] VIEW, START VIEWS {#start-view-start-views}
 
 Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
+
+If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`.
 
 ```sql
 SYSTEM START VIEW [db.]name
@@ -600,7 +608,7 @@ SYSTEM START VIEWS
 
 ### CANCEL VIEW {#cancel-view}
 
-If there's a refresh in progress for the given view, interrupt and cancel it. Otherwise do nothing.
+If there's a refresh in progress for the given view on the current replica, interrupt and cancel it. Otherwise do nothing.
 
 ```sql
 SYSTEM CANCEL VIEW [db.]name
@@ -611,6 +619,8 @@ SYSTEM CANCEL VIEW [db.]name
 Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
 
 Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
+
+If the view is in a Replicated or Shared database, and refresh is running on another replica, waits for that refresh to complete.
 
 ```sql
 SYSTEM WAIT VIEW [db.]name

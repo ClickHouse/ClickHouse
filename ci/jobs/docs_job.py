@@ -1,12 +1,13 @@
 import os
 
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from ci.praktika.utils import Utils
 
 if __name__ == "__main__":
 
     results = []
     stop_watch = Utils.Stopwatch()
+    temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
     testname = "Fetch latest ClickHouse/clickhouse-docs changes"
     results.append(
@@ -39,7 +40,7 @@ if __name__ == "__main__":
     results.append(
         Result.from_commands_run(
             name=testname,
-            command=[f"yarn run-markdown-linter"],
+            command=[f"yarn check-markdown"],
             workdir="/opt/clickhouse-docs",
         )
     )
@@ -57,7 +58,7 @@ if __name__ == "__main__":
     results.append(
         Result.from_commands_run(
             name=testname,
-            command=[f"yarn autogenerate-settings"],
+            command=[f"yarn autogenerate-settings -b {temp_dir}clickhouse"],
             workdir="/opt/clickhouse-docs",
         )
     )
@@ -76,7 +77,6 @@ if __name__ == "__main__":
         Result.from_commands_run(
             name=testname,
             command=[
-                "yarn build-api-doc",
                 "yarn build-swagger",
                 "export DOCUSAURUS_IGNORE_SSG_WARNINGS=true && yarn build-docs",
             ],
