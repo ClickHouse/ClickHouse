@@ -381,8 +381,73 @@ bool MySQLIntegration::performQuery(const String & query)
     return true;
 }
 
-String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool, SQLType * tp) const
+String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_deterministic, SQLType * tp) const
 {
+    if (!is_deterministic && rg.nextSmallNumber() < 4)
+    {
+        /// Use a random MySQL type
+        const uint32_t nopt = rg.nextMediumNumber();
+
+        if (nopt < 76)
+        {
+            static const std::vector<String> & baseTypes
+                = {"TINYINT",  "SMALLINT",   "MEDIUMINT",  "INT",        "BIGINT",          "FLOAT",        "DOUBLE",
+                   "TINYBLOB", "BLOB",       "MEDIUMBLOB", "LONGBLOB",   "TINYTEXT",        "TEXT",         "MEDIUMTEXT",
+                   "LONGTEXT", "DATE",       "TIME",       "DATETIME",   "TIMESTAMP",       "YEAR",         "GEOMETRY",
+                   "POINT",    "LINESTRING", "POLYGON",    "MULTIPOINT", "MULTILINESTRING", "MULTIPOLYGON", "GEOMETRYCOLLECTION",
+                   "JSON",     "BOOLEAN",    "BOOL"};
+            return rg.pickRandomly(baseTypes);
+        }
+        else if (nopt < 81)
+        {
+            /// Bit type
+            std::uniform_int_distribution<uint32_t> lengths(1, 64);
+
+            return fmt::format("BIT({})", lengths(rg.generator));
+        }
+        else if (nopt < 86)
+        {
+            /// Decimal
+            std::uniform_int_distribution<uint32_t> precisions(1, 65);
+            const uint32_t precision = precisions(rg.generator);
+            std::uniform_int_distribution<uint32_t> scales(UINT32_C(0), std::min(UINT32_C(30), precision));
+
+            return fmt::format("DECIMAL({},{})", precision, scales(rg.generator));
+        }
+        else if (nopt < 91)
+        {
+            /// Character types
+            std::uniform_int_distribution<uint32_t> lengths(1, 65535);
+            static const std::vector<String> & baseTypes = {"CHAR", "VARCHAR", "BINARY", "VARBINARY"};
+
+            return fmt::format("{}({})", rg.pickRandomly(baseTypes), lengths(rg.generator));
+        }
+        else if (nopt < 96)
+        {
+            /// Date/time with precision
+            std::uniform_int_distribution<uint32_t> precisions(0, 6);
+            static const std::vector<String> & baseTypes = {"TIME", "TIMESTAMP", "DATETIME"};
+
+            return fmt::format("{}({})", rg.pickRandomly(baseTypes), precisions(rg.generator));
+        }
+        else
+        {
+            /// Set/enum types
+            String desc;
+            std::uniform_int_distribution<uint32_t> number_values(1, 64);
+            const uint32_t nvalues = number_values(rg.generator);
+
+            for (uint32_t i = 0; i < nvalues; i++)
+            {
+                if (i > 0)
+                {
+                    desc += ", ";
+                }
+                desc += "'value_" + std::to_string(i + 1) + "'";
+            }
+            return fmt::format("{}({})", rg.nextBool() ? "ENUM" : "SET", desc);
+        }
+    }
     return tp->MySQLtypeName(rg, false);
 }
 #else
