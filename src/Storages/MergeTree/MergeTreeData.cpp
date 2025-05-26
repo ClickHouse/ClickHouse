@@ -7752,7 +7752,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         for (const auto & part : real_parts)
         {
             auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
-            LOG_DEBUG(log, "existing row count for part :{}, row count for part :{}", part->existing_rows_count.value(), part->rows_count);
             if ((*getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && (*getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts] && part->existing_rows_count.has_value())
                 insert(column, part->existing_rows_count.value());
             else
