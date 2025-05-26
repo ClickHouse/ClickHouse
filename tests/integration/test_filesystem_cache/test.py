@@ -506,7 +506,7 @@ def test_force_filesystem_cache_on_merges(cluster):
 def test_system_sync_filesystem_cache(cluster):
     node = cluster.instances["node"]
     node.query(
-        """
+        f"""
 DROP TABLE IF EXISTS test;
 SYSTEM DROP FILESYSTEM CACHE;
 
@@ -514,7 +514,7 @@ CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
             max_size = '10Gi',
-            path = f"test_system_sync_filesystem_cache_{uuid.uuid4()}",
+            path = "test_system_sync_filesystem_cache_{uuid.uuid4()}",
             cache_policy = 'lru',
             disk = hdd_blob),
         min_bytes_for_wide_part = 10485760;
