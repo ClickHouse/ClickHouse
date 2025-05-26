@@ -1,6 +1,7 @@
 #pragma once
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileCacheKey.h>
+#include <time.h>
 
 namespace DB
 {
