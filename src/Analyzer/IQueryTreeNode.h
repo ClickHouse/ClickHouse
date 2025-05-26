@@ -103,6 +103,8 @@ public:
     {
         bool compare_aliases = true;
         bool compare_types = true;
+        /// Do not compare the cte name or check the is_cte flag for the query node.
+        /// Calculate a hash as if is_cte is false and cte_name is empty.
         bool ignore_cte = false;
     };
 
