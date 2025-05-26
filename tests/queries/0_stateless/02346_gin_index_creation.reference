@@ -1,0 +1,13 @@
+Must not have no arguments.
+Test single tokenizer argument.
+-- tokenizer must be default, ngram or noop.
+Test ngram_size argument.
+-- ngram size must be between 2 and 8.
+Test max_rows_per_postings_list argument.
+-- max_rows_per_posting_list is set to unlimited rows.
+-- max_rows_per_posting_list should be at least 8192.
+Parameters are shuffled.
+Types are incorrect.
+Same argument appears >1 times.
+Must be created on single column.
+Must be created on String or FixedString or Array(String) or Array(FixedString) or LowCardinality(String) or LowCardinality(FixedString) columns.

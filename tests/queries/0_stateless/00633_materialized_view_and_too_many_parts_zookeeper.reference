@@ -1,6 +1,9 @@
 a	1
 b	1
 c	1
+default.a	QueryFinish
+default.b	Ex*WhileProcessing
+default.c	QueryFinish
 
 a	1
 a	2
