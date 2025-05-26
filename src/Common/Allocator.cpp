@@ -44,7 +44,6 @@ auto adjustToPageSize(void * buf, size_t len, size_t page_size)
     const size_t next_page_start = ((address_numeric + page_size - 1) / page_size) * page_size;
     return std::make_pair(reinterpret_cast<void *>(next_page_start), len - (next_page_start - address_numeric));
 }
-#endif
 
 bool madviseSupportsMadvPopulateWrite()
 {
@@ -56,6 +55,7 @@ bool madviseSupportsMadvPopulateWrite()
         LOG_TRACE(getLogger("Allocator"), "Disabled page pre-faulting (kernel is too old).");
     return is_supported;
 }
+#endif
 
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
 {
