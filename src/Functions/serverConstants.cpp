@@ -11,6 +11,7 @@
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ClickHouseRevision.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Environment.h>
 

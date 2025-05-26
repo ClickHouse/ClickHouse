@@ -55,6 +55,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
 
 #include <IO/WriteBufferFromOStream.h>
@@ -72,6 +73,8 @@ namespace ProfileEvents
 {
 extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
+extern const Event IndexBinarySearchAlgorithm;
+extern const Event IndexGenericExclusionSearchAlgorithm;
 }
 
 namespace DB
@@ -1474,6 +1477,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             }
         }
 
+        ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchAlgorithm);
         LOG_TRACE(
             log,
             "Used generic exclusion search {}over index for part {} with {} steps",
@@ -1487,6 +1491,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         /// we can use binary search algorithm to find the left and right endpoint key marks of such interval.
         /// The returned value is the minimum range of marks, containing all keys for which KeyCondition holds
 
+        ProfileEvents::increment(ProfileEvents::IndexBinarySearchAlgorithm);
         LOG_TRACE(log, "Running binary search on index range for part {} ({} marks)", part_name, marks_count);
 
         size_t steps = 0;
@@ -1733,11 +1738,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 else
                 {
                     bool result = false;
-                    const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition);
-                    if (!gin_filter_condition)
-                        result = condition->mayBeTrueOnGranule(granule);
-                    else
+                    if (const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition))
                         result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
+                    else
+                        result = condition->mayBeTrueOnGranule(granule);
 
                     if (!result)
                         continue;

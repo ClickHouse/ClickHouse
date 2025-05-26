@@ -4,8 +4,9 @@
 
 #include <base/getFQDNOrHostName.h>
 #include <Interpreters/Session.h>
+#include <Interpreters/Context.h>
 #include <boost/algorithm/string/replace.hpp>
-#include "Common/setThreadName.h"
+#include <Common/setThreadName.h>
 #include <Common/Exception.h>
 
 #include <iomanip>
@@ -25,6 +26,22 @@ namespace Setting
     extern const SettingsUInt64 max_insert_block_size;
 }
 
+
+ClientEmbedded::ClientEmbedded(
+    std::unique_ptr<Session> && session_,
+    int in_fd_,
+    int out_fd_,
+    int err_fd_,
+    std::istream & input_stream_,
+    std::ostream & output_stream_,
+    std::ostream & error_stream_)
+    : ClientBase(in_fd_, out_fd_, err_fd_, input_stream_, output_stream_, error_stream_), session(std::move(session_))
+{
+    global_context = session->makeSessionContext();
+    configuration = ConfigHelper::createEmpty();
+    layered_configuration = new Poco::Util::LayeredConfiguration();
+    layered_configuration->addWriteable(configuration, 0);
+}
 
 void ClientEmbedded::printHelpMessage(const OptionsDescription & options_description)
 {
