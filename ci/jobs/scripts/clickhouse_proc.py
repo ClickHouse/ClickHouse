@@ -81,7 +81,6 @@ class ClickHouseProc:
         )
         Shell.check(f"mkdir -p {self.log_dir}", verbose=True, strict=True)
 
-        Shell.check(f"chmod +x {temp_dir}/clickhouse", strict=True, verbose=True)
         Utils.set_env("CLICKHOUSE_CONFIG_DIR", self.ch_config_dir)
         Utils.set_env("CLICKHOUSE_CONFIG", self.config_file)
         Utils.set_env(

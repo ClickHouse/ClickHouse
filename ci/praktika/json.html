@@ -11,6 +11,7 @@
             --background-color: white;
             --text-color: #000;
             --tile-background: #f9f9f9;
+            --info-background: #e8e8e8;
             --footer-background: #f1f1f1;
             --footer-text-color: #000;
             --status-width: 300px;
@@ -51,7 +52,8 @@
         body.night-theme {
             --background-color: #1F1F1C;
             --text-color: #dedede;
-            --tile-background: #1F1F1C;
+            --tile-background: #1F1F1F;
+            --info-background: #3d3d3d;
             --header-background-color: #1F1F1C;
             --pending-bar-color: #595801;
             --skipped-bar-color: #575757;
@@ -174,6 +176,7 @@
             word-wrap: break-word;
             overflow-wrap: break-word;
             max-width: 100%; /* Prevent overflow */
+            background-color: var(--info-background);
         }
         #info-content {
             text-align: left;
@@ -1182,7 +1185,7 @@
                     row.dataset.status = value ? value.toLowerCase() : "";
                     if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0)) {
                         span.style.cursor = "pointer";
-                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.ext && result.ext.results_preview, result.links));
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
                     }
                     td.appendChild(span);
                     row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
@@ -1191,7 +1194,8 @@
 
                     if (
                         (nest_level === 1 && ["pending", "skipped", "running"].includes(statusValue)) ||
-                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0))
+                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0) ||
+                            nest_level === 0)
                     ) {
                         const span = document.createElement('span');
                         span.textContent = value;
@@ -1245,7 +1249,7 @@
     /**
      * Toggles an additional row below the clicked row to display the "info" text.
      */
-    function toggleInfoRow(row, infoText, previewData = [], links = []) {
+    function toggleInfoRow(row, infoText, sub_results = [], links = []) {
         if (!infoText && links.length === 0) return;
 
         let nextRow = row.nextElementSibling;
@@ -1270,47 +1274,15 @@
                 infoCell.appendChild(content);
             }
 
-            // Handle previewData recursively
-            if (previewData) {
-                const previewContainer = document.createElement('div');
-                previewContainer.classList.add('preview-container');
-
-                function renderPreview(data, indent = 0) {
-                    const container = document.createElement('div');
-                    container.style.marginLeft = `${indent * 20}px`;
-
-                    if (data.name && data.status) {
-                        const line = document.createElement('div');
-
-                        const nameSpan = document.createElement('span');
-                        nameSpan.textContent = `${data.name}: `;
-
-                        const statusSpan = document.createElement('span');
-                        statusSpan.textContent = data.status;
-                        statusSpan.className = getStatusClass(data.status); // ✅ apply status color class
-
-                        line.appendChild(nameSpan);
-                        line.appendChild(statusSpan);
-                        container.appendChild(line);
+            // Handle subResults
+            if (sub_results) {
+                console.log(sub_results);
+                if (Array.isArray(sub_results) && sub_results.length > 0) {
+                    const table = createResultsTable(sub_results, 0);
+                    if (table) {
+                        infoCell.appendChild(table); // Appends table correctly
                     }
-
-                    if (Array.isArray(data.results) && data.results.length > 0) {
-                        data.results.forEach(sub => {
-                            const child = renderPreview(sub, indent + 1);
-                            container.appendChild(child);
-                        });
-                    }
-
-                    return container;
                 }
-
-                // If previewData is an array of root results
-                const roots = Array.isArray(previewData) ? previewData : [previewData];
-                roots.forEach(result => {
-                    previewContainer.appendChild(renderPreview(result));
-                });
-
-                infoCell.appendChild(previewContainer);
             }
 
             // If there are links, create a list of links
