@@ -128,7 +128,6 @@ bitmapAnd
 bitmapAndCardinality
 bitmapAndnot
 bitmapAndnotCardinality
-bitmapBuild
 bitmapCardinality
 bitmapContains
 bitmapHasAll
@@ -137,10 +136,7 @@ bitmapMax
 bitmapMin
 bitmapOr
 bitmapOrCardinality
-bitmapSubsetInRange
-bitmapSubsetLimit
 bitmapToArray
-bitmapTransform
 bitmapXor
 bitmapXorCardinality
 bitmaskToArray
@@ -582,7 +578,6 @@ splitByString
 splitByWhitespace
 sqrt
 startsWith
-subBitmap
 subDate
 substring
 substringIndex
