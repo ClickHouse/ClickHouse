@@ -61,14 +61,13 @@ IMergeTreeReader::IMergeTreeReader(
 
     for (const auto & column : requested_columns)
     {
-        columns_to_read.emplace_back(getColumnInPart(column));
+        const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
         serializations.emplace_back(getSerializationInPart(column));
 
         if (column.isSubcolumn())
         {
-            auto name_in_storage = column.getNameInStorage();
-            auto type_in_storage = column.getTypeInStorage();
-            serializations_of_full_columns.emplace(name_in_storage, getSerializationInPart({name_in_storage, type_in_storage}));
+            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+            serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
         }
     }
 }
@@ -245,6 +244,12 @@ bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage
 
 String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
 {
+    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
+    return Nested::concatenateName(name_pair.first, name_pair.second);
+}
+
+std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const
+{
     auto name_in_storage = required_column.getNameInStorage();
     auto subcolumn_name = required_column.getSubcolumnName();
 
@@ -256,25 +261,41 @@ String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_co
     if (isSubcolumnOffsetsOfNested(name_in_storage, subcolumn_name))
         name_in_storage = Nested::splitName(name_in_storage).first;
 
-    return Nested::concatenateName(name_in_storage, subcolumn_name);
+    return {name_in_storage, subcolumn_name};
 }
 
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
 {
-    auto name_in_part = getColumnNameInPart(required_column);
+    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
+    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
     auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
-    if (column_in_part)
-        return *column_in_part;
 
-    return required_column;
+    if (!column_in_part)
+    {
+        /// If column is missing in part, return column with required type but with name that should be
+        /// in part according to renames to avoid ambiguity in case of transitive renames.
+        ///
+        /// Consider that we have column A in part and the following chain (not materialized in current part) of alters:
+        /// ADD COLUMN B, RENAME COLUMN A TO C, RENAME COLUMN B TO A.
+        /// If requested columns are A and C, we will read column A from part (as column C) and will
+        /// add missing column B (as column A) to fill with default values, because the first name of this column was B.
+        return NameAndTypePair{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
+    }
+
+    return *column_in_part;
 }
 
 SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair & required_column) const
 {
-    auto name_in_part = getColumnNameInPart(required_column);
+    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
+    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
     auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+
     if (!column_in_part)
-        return IDataType::getSerialization(required_column);
+    {
+        NameAndTypePair missed_column{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
+        return IDataType::getSerialization(missed_column);
+    }
 
     const auto & infos = data_part_info_for_read->getSerializationInfos();
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
