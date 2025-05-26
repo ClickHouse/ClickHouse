@@ -62,7 +62,7 @@ ColumnsDescription StorageSystemDDLWorkerQueue::getColumnsDescription()
         {"entry_version",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Version of the entry."},
         {"initiator_host",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Host that initiated the DDL operation."},
         {"initiator_port",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>()), "Port used by the initiator."},
-        {"cluster",             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Cluster name if determinedg."},
+        {"cluster",             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Cluster name if determined."},
         {"query",               std::make_shared<DataTypeString>(), "Query executed."},
         {"settings",            std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Settings used in the DDL operation."},
         {"query_create_time",   std::make_shared<DataTypeDateTime>(), "Query created time."},

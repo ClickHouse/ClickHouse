@@ -32,48 +32,46 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(scope="function", autouse=True)
-def maintain_test_table(request):
+def maintain_test_table(test_table):
     for i, node in enumerate([node1, node2]):
-        node.query("DROP TABLE IF EXISTS testdb.test_table SYNC")
+        node.query(f"DROP TABLE IF EXISTS testdb.{test_table} SYNC")
         node.query("DROP DATABASE IF EXISTS testdb")
 
         node.query("CREATE DATABASE testdb")
         node.query(
-            """CREATE TABLE testdb.test_table(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/test_table1', '{}') ORDER BY id;""".format(
-                i
-            )
+            f"CREATE TABLE testdb.{test_table}(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/{test_table}1', '{i}') ORDER BY id;"
         )
     for i, node in enumerate([node3, node4]):
-        node.query("DROP TABLE IF EXISTS testdb.test_table SYNC")
+        node.query(f"DROP TABLE IF EXISTS testdb.{test_table} SYNC")
         node.query("DROP DATABASE IF EXISTS testdb")
 
         node.query("CREATE DATABASE testdb")
         node.query(
-            """CREATE TABLE testdb.test_table(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/test_table2', '{}') ORDER BY id;""".format(
-                i
-            )
+            f"CREATE TABLE testdb.{test_table}(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/{test_table}2', '{i}') ORDER BY id;"
         )
-    yield
 
 
 def test_distributed_ddl_queue(started_cluster):
+    test_table = "test_table"
+    maintain_test_table(test_table)
     node1.query(
-        "INSERT INTO testdb.test_table SELECT number, toString(number) FROM numbers(100)"
+        f"INSERT INTO testdb.{test_table} SELECT number, toString(number) FROM numbers(100)"
     )
     node3.query(
-        "INSERT INTO testdb.test_table SELECT number, toString(number) FROM numbers(100)"
+        f"INSERT INTO testdb.{test_table} SELECT number, toString(number) FROM numbers(100)"
     )
-    node2.query("SYSTEM SYNC REPLICA testdb.test_table")
-    node4.query("SYSTEM SYNC REPLICA testdb.test_table")
+    node2.query(f"SYSTEM SYNC REPLICA testdb.{test_table}")
+    node4.query(f"SYSTEM SYNC REPLICA testdb.{test_table}")
 
     node1.query(
-        "ALTER TABLE testdb.test_table ON CLUSTER test_cluster ADD COLUMN somecolumn UInt8 AFTER val",
+        f"ALTER TABLE testdb.{test_table} ON CLUSTER test_cluster ADD COLUMN somecolumn UInt8 AFTER val",
         settings={"replication_alter_partitions_sync": "2"},
     )
     for node in nodes:
-        node.query("SYSTEM SYNC REPLICA testdb.test_table")
-        assert node.query("SELECT somecolumn FROM testdb.test_table LIMIT 1") == "0\n"
+        node.query(f"SYSTEM SYNC REPLICA testdb.{test_table}")
+        assert (
+            node.query(f"SELECT somecolumn FROM testdb.{test_table} LIMIT 1") == "0\n"
+        )
         assert (
             node.query(
                 "SELECT If((SELECT count(*) FROM system.distributed_ddl_queue  WHERE cluster='test_cluster' AND entry='query-0000000000') > 0, 'ok', 'fail')"
@@ -82,14 +80,16 @@ def test_distributed_ddl_queue(started_cluster):
         )
 
     node1.query(
-        "ALTER TABLE testdb.test_table ON CLUSTER test_cluster DROP COLUMN somecolumn",
+        f"ALTER TABLE testdb.{test_table} ON CLUSTER test_cluster DROP COLUMN somecolumn",
         settings={"replication_alter_partitions_sync": "2"},
     )
 
 
 def test_distributed_ddl_rubbish(started_cluster):
+    test_table = "test_table_rubbish"
+    maintain_test_table(test_table)
     node1.query(
-        "ALTER TABLE testdb.test_table ON CLUSTER test_cluster ADD COLUMN somenewcolumn UInt8 AFTER val",
+        f"ALTER TABLE testdb.{test_table} ON CLUSTER test_cluster ADD COLUMN somenewcolumn UInt8 AFTER val",
         settings={"replication_alter_partitions_sync": "2"},
     )
 
@@ -149,6 +149,6 @@ def test_distributed_ddl_rubbish(started_cluster):
     )
 
     node1.query(
-        "ALTER TABLE testdb.test_table ON CLUSTER test_cluster DROP COLUMN somenewcolumn",
+        f"ALTER TABLE testdb.{test_table} ON CLUSTER test_cluster DROP COLUMN somenewcolumn",
         settings={"replication_alter_partitions_sync": "2"},
     )
