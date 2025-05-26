@@ -187,7 +187,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                             {
                                 const CHSetting & chs = allSettings.at(sv.property());
 
-                                assert(!chs.changes_behavior);
+                                chassert(!chs.changes_behavior);
                                 if (!chs.oracle_values.empty() && rg.nextSmallNumber() < 8)
                                 {
                                     sv.set_value(rg.pickRandomly(chs.oracle_values));

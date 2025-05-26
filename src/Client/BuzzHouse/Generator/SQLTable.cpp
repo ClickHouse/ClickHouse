@@ -1857,7 +1857,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
 
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
-    assert(!next.cols.empty());
+    chassert(!next.cols.empty());
     addTableRelation(rg, false, "", next);
     this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
     this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
