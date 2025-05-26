@@ -46,7 +46,7 @@ auto adjustToPageSize(void * buf, size_t len, size_t page_size)
 }
 #endif
 
-bool madviseSupportsMadvPopulateRead()
+bool madviseSupportsMadvPopulateWrite()
 {
     VersionNumber supported(5, 14, 0);
     VersionNumber linux_version(Poco::Environment::osVersion());
@@ -56,7 +56,7 @@ bool madviseSupportsMadvPopulateRead()
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
 {
 #if defined(MADV_POPULATE_WRITE)
-    static const bool supported_on_kernel = madviseSupportsMadvPopulateRead();
+    static const bool supported_on_kernel = madviseSupportsMadvPopulateWrite();
     if (!supported_on_kernel)
         return;
 
