@@ -1121,14 +1121,14 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
     if (is_reading_completed)
         return response;
 
+    std::set<size_t> exclude_replicas;
     {
         std::lock_guard lock(mutex);
         if (is_reading_completed)
             return response;
 
         if (!pimpl)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Got read request from replica {} without ranges announcement", request.replica_num);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got read request from replica {} without ranges announcement", request.replica_num);
 
         const auto replica_num = request.replica_num;
         response = pimpl->handleRequest(std::move(request));
@@ -1142,12 +1142,20 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         else
         {
             if (isReadingCompleted())
+            {
                 is_reading_completed = true;
+                exclude_replicas = replicas_used;
+                // exclude itself from canceling
+                exclude_replicas.insert(replica_num);
+            }
         }
     }
 
     if (is_reading_completed && read_completed_callback.has_value())
-        (*read_completed_callback)(replicas_used);
+    {
+        chassert(!replicas_used.empty());
+        (*read_completed_callback)(exclude_replicas);
+    }
 
     return response;
 }
