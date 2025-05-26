@@ -1567,7 +1567,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         /// Set replicated or not replicated MergeTree engine in metadata and query
         if (create.attach_as_replicated.has_value())
+        {
+            if (database->isTableExist(create.getTable(), getContext()))
+                throw Exception(
+                    ErrorCodes::TABLE_ALREADY_EXISTS,
+                    "Table {}.{} already exists",
+                    backQuoteIfNeed(create.getDatabase()),
+                    backQuoteIfNeed(create.getTable()));
             convertMergeTreeTableIfPossible(create_query, database, create.attach_as_replicated.value());
+        }
 
         if (!create.is_dictionary && create_query.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
