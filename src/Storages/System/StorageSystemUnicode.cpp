@@ -1,15 +1,15 @@
-#include <cassert>
-#include <Storages/System/StorageSystemUnicode.h>
 #include "Columns/ColumnArray.h"
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnVector.h"
 #include "Columns/ColumnsNumber.h"
 #include "Columns/IColumn_fwd.h"
+#include "Common/assert_cast.h"
 #include "Core/NamesAndTypes.h"
 #include "DataTypes/DataTypeArray.h"
 #include "Interpreters/Context_fwd.h"
 #include "Storages/ColumnsDescription.h"
-#include "base/types.h"
+#include <Storages/System/StorageSystemUnicode.h>
+#include <base/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <unicode/errorcode.h>
@@ -23,7 +23,6 @@
 #include <unicode/utypes.h>
 #include <unicode/uversion.h>
 #include <unicode/ustring.h>
-#include "Common/assert_cast.h"
 
 namespace DB
 {
@@ -90,7 +89,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
     while (prop_index < prop_names.size())
     {
         const auto & [prop_name, prop] = prop_names[prop_index];
-        if (prop >= UCHAR_GENERAL_CATEGORY_MASK)
+        if (prop >= UCHAR_INT_LIMIT)
             break;
 
         names_and_types.emplace_back(String(prop_name), std::make_shared<DataTypeInt32>());
@@ -137,7 +136,6 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
         ++prop_index;
     }
 
-    // TODO: Excludes properties available through the UnicodeSet API and patterns
     return ColumnsDescription::fromNamesAndTypes(names_and_types);
 }
 
@@ -147,7 +145,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
     // Remove surrogate pairs
     all_unicode.remove(0xD800, 0xDFFF);
     // Remove non character code points
-    all_unicode.remove(0xFDD0, 0xFDEF); // 直接移除整个区间
+    all_unicode.remove(0xFDD0, 0xFDEF);
     // Remove non-character code points at the end of each Unicode plane
     for (UChar32 base = 0xFFFE; base <= 0x10FFFF; base += 0x10000)
     {
@@ -155,7 +153,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
     }
     icu::UnicodeSetIterator iter(all_unicode);
 
-    // common
+    // Common buffers/err_code used for ICU API calls
     UChar buffer[32];
     char char_buffer[80];
     UErrorCode err_code;
@@ -186,10 +184,10 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
         while (prop_index < prop_names.size())
         {
             const auto & [prop_name, prop] = prop_names[prop_index];
-            if (prop >= UCHAR_GENERAL_CATEGORY_MASK)
+            if (prop >= UCHAR_INT_LIMIT)
                 break;
 
-            // TODO: May not need int32_t, we can get max value to decide the column type
+            // TODO: Using int32 for now, not sure if int16 would be sufficient
             assert_cast<ColumnInt32 &>(*res_columns[index++]).insert(u_getIntPropertyValue(code, prop));
             ++prop_index;
         }
@@ -199,8 +197,10 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
             const auto & [prop_name, prop] = prop_names[prop_index];
             if (prop >= UCHAR_MASK_LIMIT)
                 break;
-            // TODO: Result is a mask, now we just use int32_t to store it
-            // U_GC_L_MASK, U_GC_M_MASK, U_GC_N_MASK, U_GC_P_MASK, U_GC_S_MASK ...
+            
+                // Only handle UCHAR_GENERAL_CATEGORY_MASK 
+            // Result is a mask,, U_GC_L_MASK, U_GC_M_MASK, U_GC_N_MASK, U_GC_P_MASK, U_GC_S_MASK ...
+            // Now we just use int32_t to store it
             assert_cast<ColumnInt32 &>(*res_columns[index++]).insert(u_getIntPropertyValue(code, prop));
             ++prop_index;
         }
@@ -219,7 +219,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
                 }
                 else
                 {
-                    // TODO: zero value or null or other value?
+                    // Not a numeric value, set to 0.0
                     assert_cast<ColumnFloat64 &>(*res_columns[index++]).insert(0.0);
                 }
             }
@@ -288,7 +288,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
             assert_cast<ColumnString &>(*res_columns[index++]).insert(ret);
             ++prop_index;
         }
-        // TODO: add OTHER_PROPERTIES: UCHAR_SCRIPT_EXTENSIONS UCHAR_IDENTIFIER_TYPE
+        
         while (prop_index < prop_names.size())
         {
             const auto & [prop_name, prop] = prop_names[prop_index];
