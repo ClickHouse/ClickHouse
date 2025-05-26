@@ -187,7 +187,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
             if (prop >= UCHAR_INT_LIMIT)
                 break;
 
-            // TODO: Using int32 for now, not sure if int16 would be sufficient
+            // TODO: Using Int32 for now, not sure if Int16 would be sufficient
             assert_cast<ColumnInt32 &>(*res_columns[index++]).insert(u_getIntPropertyValue(code, prop));
             ++prop_index;
         }
@@ -198,9 +198,9 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
             if (prop >= UCHAR_MASK_LIMIT)
                 break;
             
-                // Only handle UCHAR_GENERAL_CATEGORY_MASK 
+            // Only handle UCHAR_GENERAL_CATEGORY_MASK 
             // Result is a mask,, U_GC_L_MASK, U_GC_M_MASK, U_GC_N_MASK, U_GC_P_MASK, U_GC_S_MASK ...
-            // Now we just use int32_t to store it
+            // Now we just use Int32 to store it
             assert_cast<ColumnInt32 &>(*res_columns[index++]).insert(u_getIntPropertyValue(code, prop));
             ++prop_index;
         }
