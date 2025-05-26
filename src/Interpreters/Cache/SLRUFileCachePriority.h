@@ -66,6 +66,8 @@ public:
         EvictionCandidates & res,
         const CachePriorityGuard::Lock &) override;
 
+    void iterate(IterateFunc func, const CachePriorityGuard::Lock &) override;
+
     void shuffle(const CachePriorityGuard::Lock &) override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;

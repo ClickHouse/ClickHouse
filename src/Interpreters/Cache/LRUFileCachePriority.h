@@ -111,14 +111,7 @@ private:
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 
-    enum class IterationResult : uint8_t
-    {
-        BREAK,
-        CONTINUE,
-        REMOVE_AND_CONTINUE,
-    };
-    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
-    void iterate(IterateFunc && func, const CachePriorityGuard::Lock &);
+    void iterate(IterateFunc func, const CachePriorityGuard::Lock &) override;
 
     LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::Lock &);
     LRUIterator add(EntryPtr entry, const CachePriorityGuard::Lock &);

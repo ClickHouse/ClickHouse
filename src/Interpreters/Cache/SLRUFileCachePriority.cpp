@@ -138,6 +138,12 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
     return iterator;
 }
 
+void SLRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::Lock & lock)
+{
+    protected_queue.iterate(func, lock);
+    probationary_queue.iterate(func, lock);
+}
+
 bool SLRUFileCachePriority::collectCandidatesForEviction(
     size_t size,
     size_t elements,

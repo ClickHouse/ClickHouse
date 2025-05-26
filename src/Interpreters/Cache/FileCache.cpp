@@ -1583,7 +1583,7 @@ void FileCache::deactivateBackgroundOperations()
 std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const UserID & user_id)
 {
     assertInitialized();
-#ifndef NDEBUG
+#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
 #endif
 
@@ -1651,6 +1651,13 @@ void FileCache::assertCacheCorrectness()
             chassert(file_segment_metadata->file_segment->assertCorrectness());
         }
     }, getInternalUser().user_id);
+
+    main_priority->iterate([](LockedKey &, const FileSegmentMetadataPtr & file_segment_metadata)
+    {
+        chassert(file_segment_metadata->file_segment->assertCorrectness());
+        return IFileCachePriority::IterationResult::CONTINUE;
+    },
+    lockCache());
 }
 
 void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings)
@@ -1874,7 +1881,9 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         chassert(main_priority->getSizeLimit(lockCache()) == actual_settings[FileCacheSetting::max_size]);
         chassert(main_priority->getElementsLimit(lockCache()) == actual_settings[FileCacheSetting::max_elements]);
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
         assertCacheCorrectness();
+#endif
     }
 
     if (new_settings[FileCacheSetting::max_file_segment_size] != actual_settings[FileCacheSetting::max_file_segment_size])

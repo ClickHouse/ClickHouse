@@ -164,7 +164,7 @@ bool LRUFileCachePriority::LRUIterator::operator ==(const LRUIterator & other) c
     return cache_priority == other.cache_priority && iterator == other.iterator;
 }
 
-void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard::Lock & lock)
+void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::Lock & lock)
 {
     for (auto it = queue.begin(); it != queue.end();)
     {
