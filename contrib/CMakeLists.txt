@@ -122,7 +122,6 @@ add_contrib (aws-cmake
     aws-c-mqtt
     aws-c-s3
     aws-c-sdkutils
-    aws-s2n-tls
     aws-checksums
     aws-crt-cpp
     aws-cmake
@@ -250,6 +249,7 @@ add_contrib (sha3iuf-cmake SHA3IUF)
 
 add_contrib (nghttp2-cmake nghttp2)
 
+add_contrib (bech32)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
