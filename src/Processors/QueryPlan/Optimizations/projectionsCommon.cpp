@@ -209,6 +209,20 @@ bool QueryDAG::build(QueryPlan::Node & node)
 
             filter_node = &dag->addFunction(func_builder_and, std::move(filter_nodes), {});
         }
+        else
+        {
+            /// Add an alias node around existing filter node.
+            ///
+            /// This simplifies downstream handling: regardless of whether the filter node is newly constructed
+            /// or comes from the original query, we consistently wrap it so that it can be removed uniformly.
+            ///
+            /// We only remove nodes we added explicitly. Since original filter nodes may be reused elsewhere,
+            /// we avoid altering them directly.
+            ///
+            /// The alias name is prefixed with an underscore to minimize collision risk, as such names
+            /// are uncommon and not guaranteed to work in user queries.
+            filter_node = &dag->addAlias(*filter_node, "_projection_filter");
+        }
 
         auto & outputs = dag->getOutputs();
         outputs.insert(outputs.begin(), filter_node);

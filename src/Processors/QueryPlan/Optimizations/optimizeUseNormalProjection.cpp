@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -320,10 +321,13 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     if (query.dag && query.filter_node)
     {
         projection_query_info.prewhere_info = std::make_shared<PrewhereInfo>();
-        projection_query_info.prewhere_info->need_filter = true;
-        projection_query_info.prewhere_info->remove_prewhere_column = true;
-        projection_query_info.prewhere_info->prewhere_actions = std::move(*query.dag);
-        projection_query_info.prewhere_info->prewhere_column_name = query.filter_node->result_name;
+        query.dag = QueryPlanOptimizations::splitAndFillPrewhereInfo(
+            projection_query_info.prewhere_info,
+            true, /// Always remove since this filter node is generated for projection reading
+            std::move(*query.dag),
+            query.filter_node->result_name,
+            {query.filter_node},
+            {query.filter_node});
     }
 
     auto projection_reading = reader.readFromParts(
@@ -375,9 +379,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
     auto * next_node = &projection_reading_node;
 
-    /// If there's a DAG to execute but no filter node, run the DAG via an ExpressionStep.
-    /// If a filter exists, the DAG has already been handled as part of the PREWHERE step.
-    if (query.dag && !query.filter_node)
+    if (query.dag)
     {
         auto & expr_or_filter_node = nodes.emplace_back();
         expr_or_filter_node.step = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(*query.dag));
