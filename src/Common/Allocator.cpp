@@ -72,10 +72,10 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
 
     auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
     if (::madvise(buf, len, MADV_POPULATE_WRITE) < 0)
-    LOG_TRACE(
-        LogFrequencyLimiter(getLogger("Allocator"), 1),
-        "Attempt to populate pages failed: {}",
-        errnoToString(errno));
+        LOG_TRACE(
+            LogFrequencyLimiter(getLogger("Allocator"), 1),
+            "Attempt to populate pages failed: {}",
+            errnoToString(errno));
 #endif
 }
 
