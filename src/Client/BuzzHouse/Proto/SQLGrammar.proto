@@ -3487,10 +3487,30 @@ message DictionaryColumn {
     optional bool is_object_id = 6;
 }
 
+message DictionarySourceDetails {
+    enum DictionarySourceType {
+        CLICKHOUSE = 1;
+        MYSQL = 2;
+        POSTGRESQL = 3;
+        MONGODB = 4;
+        REDIS = 5;
+    }
+    enum RedisStorageType {
+        simple = 1;
+        hash_map = 2;
+    }
+    required DictionarySourceType source = 1;
+    optional ExprSchemaTable est = 2;
+    optional string host = 3;
+    optional string port = 4;
+    optional string user = 5;
+    optional string password = 6;
+    optional RedisStorageType redis_storage = 7;
+}
+
 message DictionarySource {
-    /// TODO Add other sources
     oneof dictionary_source_oneof {
-        ExprSchemaTable est = 1;
+        DictionarySourceDetails source = 1;
         bool null_src = 2;
     }
 }

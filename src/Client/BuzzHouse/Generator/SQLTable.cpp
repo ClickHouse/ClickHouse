@@ -1960,22 +1960,86 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
     if (dict_table && nopt < (dict_table + 1))
     {
+        DictionarySourceDetails * dsd = source->mutable_source();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(dictionary_table_lambda));
 
-        t.setName(source->mutable_est(), false);
+        if (t.isPostgreSQLEngine() && rg.nextSmallNumber() < 8)
+        {
+            ExprSchemaTable * est = dsd->mutable_est();
+            const ServerCredentials & sc = fc.postgresql_server.value();
+
+            est->mutable_database()->set_database(sc.database);
+            est->mutable_table()->set_table("t" + std::to_string(t.tname));
+            dsd->set_host(sc.hostname);
+            dsd->set_port(std::to_string(sc.port));
+            dsd->set_user(sc.user);
+            dsd->set_password(sc.password);
+            dsd->set_source(DictionarySourceDetails::POSTGRESQL);
+        }
+        else if (t.isMySQLEngine() && rg.nextSmallNumber() < 8)
+        {
+            ExprSchemaTable * est = dsd->mutable_est();
+            const ServerCredentials & sc = fc.mysql_server.value();
+
+            est->mutable_database()->set_database(sc.database);
+            est->mutable_table()->set_table("t" + std::to_string(t.tname));
+            dsd->set_host(sc.hostname);
+            dsd->set_port(std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+            dsd->set_user(sc.user);
+            dsd->set_password(sc.password);
+            dsd->set_source(DictionarySourceDetails::MYSQL);
+        }
+        else if (t.isMongoDBEngine() && rg.nextSmallNumber() < 8)
+        {
+            ExprSchemaTable * est = dsd->mutable_est();
+            const ServerCredentials & sc = fc.mongodb_server.value();
+
+            est->mutable_database()->set_database(sc.database);
+            est->mutable_table()->set_table("t" + std::to_string(t.tname));
+            dsd->set_host(sc.hostname);
+            dsd->set_port(std::to_string(sc.port));
+            dsd->set_user(sc.user);
+            dsd->set_password(sc.password);
+            dsd->set_source(DictionarySourceDetails::MONGODB);
+        }
+        else if (t.isRedisEngine() && rg.nextSmallNumber() < 8)
+        {
+            const ServerCredentials & sc = fc.redis_server.value();
+
+            dsd->set_host(sc.hostname);
+            dsd->set_port(std::to_string(sc.port));
+            dsd->set_user(sc.user);
+            dsd->set_password(sc.password);
+            if (rg.nextBool())
+            {
+                dsd->set_redis_storage(
+                    static_cast<DictionarySourceDetails_RedisStorageType>(
+                        (rg.nextRandomUInt32() % static_cast<uint32_t>(DictionarySourceDetails::RedisStorageType_MAX)) + 1));
+            }
+            dsd->set_source(DictionarySourceDetails::REDIS);
+        }
+        else
+        {
+            t.setName(dsd->mutable_est(), false);
+            dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
+        }
     }
     else if (dict_system_table && nopt < (dict_table + dict_system_table + 1))
     {
-        ExprSchemaTable * est = source->mutable_est();
+        DictionarySourceDetails * dsd = source->mutable_source();
+        ExprSchemaTable * est = dsd->mutable_est();
 
         est->mutable_database()->set_database("system");
         est->mutable_table()->set_table(rg.pickRandomly(systemTables));
+        dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
     }
     else if (dict_view && nopt < (dict_table + dict_system_table + dict_view + 1))
     {
+        DictionarySourceDetails * dsd = source->mutable_source();
         const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(dictionary_view_lambda));
 
-        v.setName(source->mutable_est(), false);
+        v.setName(dsd->mutable_est(), false);
+        dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
     }
     else if (null_src && nopt < (dict_table + dict_system_table + dict_view + null_src + 1))
     {

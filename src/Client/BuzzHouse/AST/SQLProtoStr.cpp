@@ -3620,16 +3620,86 @@ CONV_FN(DictionaryColumn, dc)
     }
 }
 
+CONV_FN(DictionarySourceDetails, dsd)
+{
+    bool has_something = false;
+
+    ret += DictionarySourceDetails_DictionarySourceType_Name(dsd.source());
+    ret += "(";
+    if (dsd.has_est())
+    {
+        const String & separator = dsd.source() == DictionarySourceDetails::MONGODB ? "' COLLECTION '" : "' TABLE '";
+
+        ret += "DB '";
+        FlatExprSchemaTableToString(ret, dsd.est(), separator);
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.has_host())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "HOST '";
+        ret += dsd.host();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.has_port())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "PORT '";
+        ret += dsd.port();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.has_user())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "USER '";
+        ret += dsd.user();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.has_password())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "PASSWORD '";
+        ret += dsd.password();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.source() == DictionarySourceDetails::REDIS && dsd.has_redis_storage())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "STORAGE_TYPE '";
+        ret += DictionarySourceDetails_RedisStorageType_Name(dsd.redis_storage());
+        ret += "'";
+    }
+    ret += ")";
+}
+
 CONV_FN(DictionarySource, ds)
 {
     ret += " SOURCE(";
     using DictionarySourceType = DictionarySource::DictionarySourceOneofCase;
     switch (ds.dictionary_source_oneof_case())
     {
-        case DictionarySourceType::kEst:
-            ret += "CLICKHOUSE(DB ";
-            FlatExprSchemaTableToString(ret, ds.est(), "' TABLE '");
-            ret += ")";
+        case DictionarySourceType::kSource:
+            DictionarySourceDetailsToString(ret, ds.source());
             break;
         default:
             ret += "NULL()";

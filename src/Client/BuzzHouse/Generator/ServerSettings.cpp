@@ -940,8 +940,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "preferred_max_column_in_block_size_bytes",
           "prefetch_buffer_size"})
     {
-        performanceSettings.insert(
-            {{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "'10M'"}, false)}});
+        performanceSettings.insert({{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "'10M'"}, false)}});
         serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false)}});
     }
     /// Block size settings
