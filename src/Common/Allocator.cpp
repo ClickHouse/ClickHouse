@@ -59,8 +59,8 @@ bool madviseSupportsMadvPopulateWrite()
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
 {
 #if defined(MADV_POPULATE_WRITE)
-    static const bool supported_on_kernel = madviseSupportsMadvPopulateWrite();
-    if (!supported_on_kernel)
+    static const bool is_supported_by_kernel = madviseSupportsMadvPopulateWrite();
+    if (!is_supported_by_kernel)
         return;
 
     if (len_ < POPULATE_THRESHOLD)
