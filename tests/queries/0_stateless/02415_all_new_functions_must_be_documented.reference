@@ -110,8 +110,6 @@ base58Encode
 basename
 bin
 bitAnd
-bitCount
-bitHammingDistance
 bitNot
 bitOr
 bitPositionsToArray
@@ -120,9 +118,6 @@ bitRotateRight
 bitShiftLeft
 bitShiftRight
 bitSlice
-bitTest
-bitTestAll
-bitTestAny
 bitXor
 bitmapAnd
 bitmapAndCardinality
