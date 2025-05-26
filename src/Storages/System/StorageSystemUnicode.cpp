@@ -58,7 +58,7 @@ std::vector<std::pair<const char *, UProperty>> getPropNames()
             break;
         }
         UProperty prop = static_cast<UProperty>(i);
-        const char* prop_name = u_getPropertyName(prop, U_LONG_PROPERTY_NAME);
+        const char * prop_name = u_getPropertyName(prop, U_LONG_PROPERTY_NAME);
         
         // TODO: maybe we can use short name as alias name?
 
