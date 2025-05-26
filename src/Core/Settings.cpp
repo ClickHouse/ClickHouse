@@ -6713,6 +6713,22 @@ Enable PRQL - an alternative to SQL.
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
+    DECLARE(String, low_cardinality_experimental_compression, "", R"(
+Allows to select compression type inside of dictionaries in LowCardinality.
+The compression is applied only if the nested type is String or Nullable(String).
+It's aimed to enhance LowCardinality performance in case of moderate or high number of unique strings.
+
+Possible values:
+
+- "" — The dictionaries are not compressed.
+- "fcblockdf" — The dictionaries are compressed using the Front Coding Block Difference to First algorithm.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, low_cardinality_compression_fc_block_parameter, 5, R"(
+Applies only if "low_cardinality_experimental_compression" = "fcblockdf".
+Sets number of values per compressed block in Front Coding. It's used to fine-tune performance of this compression.
+Values < 2 are senseless, 5 is the best overall option for default block size of 65000 rows.
+It's recommended to increase this value by 1 each time the block size increases by 10 times.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
 )", BETA) \

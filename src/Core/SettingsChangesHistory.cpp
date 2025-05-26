@@ -71,6 +71,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
             {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
+            {"low_cardinality_experimental_compression", "", "", "New setting to allow experimental compression inside of LowCardinality"},
+            {"low_cardinality_compression_fc_block_parameter", 0, 5, "New setting to set a parameter for experimental compression inside of LowCardinality"},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {

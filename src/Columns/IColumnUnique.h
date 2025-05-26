@@ -17,22 +17,47 @@ public:
     using ColumnUniquePtr = IColumn::template immutable_ptr<IColumnUnique>;
     using MutableColumnUniquePtr = IColumn::template mutable_ptr<IColumnUnique>;
 
+    /// Returns a column containing the dictionary mapping [(0 -> value0), (1 -> value1), ...]
+    /// as a column [value0, value1, ...]. This method can be very inefficient due to creation
+    /// of such a column (especially in cases of compressed dictionaries, see ColumnUniqueCompressed).
+    /// So this method should be avoided whenever possible. Use IColumnUnique interface methods instead.
     /// Column always contains Null if it's Nullable and empty string if it's String or Nullable(String).
     /// So, size may be greater than the number of inserted unique values.
-    virtual const ColumnPtr & getNestedColumn() const = 0;
+    virtual ColumnPtr getNestedColumn() const = 0;
     /// The same as getNestedColumn, but removes null map if nested column is nullable.
-    virtual const ColumnPtr & getNestedNotNullableColumn() const = 0;
+    virtual ColumnPtr getNestedNotNullableColumn() const = 0;
+
+
+    /// After inserts, for some implementations (see ColumnUniqueFCBlockDF) the order of values may change.
+    /// So, users of IColumnUnique (see LowCardinality) should change their indexes.
+    /// Usage: after any insert:
+    /// if (column_unique->haveIndexesChanged())
+    /// {
+    ///     auto old_to_new_mapping = detachChangedIndexes();
+    ///     ... /// apply this mapping
+    /// }
+    /// This function should return false between `detachChangedIndexes` calls and following inserts
+    virtual bool haveIndexesChanged() const = 0;
+
+    /// Returns a column containing the mapping between old and new indexes
+    /// Should be called only if haveIndexesChanged() is true. After such a call
+    /// haveIndexesChanged() should return false until next inserts
+    virtual MutableColumnPtr detachChangedIndexes() = 0;
+
+
+    /// May require reindexing
+    virtual void nestedToNullable() = 0;
+
+    /// May require reindexing
+    virtual void nestedRemoveNullable() = 0;
 
     virtual bool nestedColumnIsNullable() const = 0;
-    virtual void nestedToNullable() = 0;
-    virtual void nestedRemoveNullable() = 0;
+    virtual bool nestedCanBeInsideNullable() const = 0;
 
     /// Returns array with StringRefHash calculated for each row of getNestedNotNullableColumn() column.
     /// Returns nullptr if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
     /// Uses thread-safe cache.
     virtual const UInt64 * tryGetSavedHash() const = 0;
-
-    size_t size() const override { return getNestedNotNullableColumn()->size(); }
 
     /// Appends new value at the end of column (column's size is increased by 1).
     /// Is used to transform raw strings to Blocks (for example, inside input format parsers)
@@ -73,8 +98,10 @@ public:
     /// Returns dictionary hash which is SipHash is applied to each row of nested column.
     virtual UInt128 getHash() const = 0;
 
+    /// getName() of the nested type
+    virtual std::string getNestedName() const = 0;
+
     const char * getFamilyName() const override { return "Unique"; }
-    TypeIndex getDataType() const override { return getNestedColumn()->getDataType(); }
 
     void insert(const Field &) override
     {
@@ -203,6 +230,20 @@ public:
      * index in the dictionary, which can be used to operate with the indices column.
      */
     virtual std::optional<UInt64> getOrFindValueIndex(StringRef value) const = 0;
+
+class IncrementalHash
+{
+private:
+    UInt128 hash;
+    std::atomic<size_t> num_added_rows;
+
+    std::mutex mutex;
+public:
+    IncrementalHash() : num_added_rows(0) {}
+
+    UInt128 getHash(const ColumnPtr & column);
+};
+
 };
 
 using ColumnUniquePtr = IColumnUnique::ColumnUniquePtr;

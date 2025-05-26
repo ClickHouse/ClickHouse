@@ -6,7 +6,6 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
-
 namespace DB
 {
 
@@ -46,7 +45,7 @@ public:
         return Base::create(std::move(column_unique), std::move(indexes), is_shared);
     }
 
-    std::string getName() const override { return "LowCardinality(" + getDictionary().getNestedColumn()->getName() + ")"; }
+    std::string getName() const override { return "LowCardinality(" + getDictionary().getNestedName() + ")"; }
     const char * getFamilyName() const override { return "LowCardinality"; }
     TypeIndex getDataType() const override { return TypeIndex::LowCardinality; }
 
@@ -264,16 +263,16 @@ public:
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
-    bool isCollationSupported() const override { return getDictionary().getNestedColumn()->isCollationSupported(); }
+    bool isCollationSupported() const override { return getDictionary().isCollationSupported(); }
 
     /**
      * Checks if the dictionary column is Nullable(T).
      * So LC(Nullable(T)) would return true, LC(U) -- false.
      */
-    bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
-    bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
-    void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
-    void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
+    bool nestedIsNullable() const { return dictionary.getColumnUnique().nestedColumnIsNullable(); }
+    bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().nestedCanBeInsideNullable(); }
+    void nestedToNullable();
+    void nestedRemoveNullable();
     MutableColumnPtr cloneNullable() const;
 
     ColumnPtr cloneWithDefaultOnNull() const;
@@ -418,6 +417,7 @@ private:
 
     void compactInplace();
     void compactIfSharedDictionary();
+    void reindexIfNeeded();
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 
