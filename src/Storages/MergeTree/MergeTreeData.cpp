@@ -9299,11 +9299,7 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
         UInt64 merge_tree_storage_snapshot_sleep_ms = query_context->getSettingsRef()[Setting::merge_tree_storage_snapshot_sleep_ms];
         if (merge_tree_storage_snapshot_sleep_ms > 0)
         {
-            LOG_DEBUG(
-                log,
-                "Injecting {}ms artificial delay for repeated storage snapshot in query_id={}",
-                merge_tree_storage_snapshot_sleep_ms,
-                current_query_id);
+            LOG_DEBUG(log, "Injecting {}ms artificial delay for repeated storage snapshot", merge_tree_storage_snapshot_sleep_ms);
             std::this_thread::sleep_for(std::chrono::milliseconds(merge_tree_storage_snapshot_sleep_ms));
         }
     }
