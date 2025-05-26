@@ -76,6 +76,7 @@ namespace DB
         FileSegmentState state;
         uint64_t size;
         uint64_t downloaded_size;
+        time_t download_finished_time;
         uint64_t cache_hits;
         uint64_t references;
         bool is_unbound;
