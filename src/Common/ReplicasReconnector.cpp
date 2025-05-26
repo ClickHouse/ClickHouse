@@ -2,6 +2,7 @@
 #include <Core/ServerSettings.h>
 #include <Common/ReplicasReconnector.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
