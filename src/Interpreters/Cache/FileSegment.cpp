@@ -428,20 +428,24 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
 
-        if (downloaded_size == 0 && fs::exists(file_segment_path))
+        if (fs::exists(file_segment_path))
         {
-            fs::remove(file_segment_path);
-        }
-        else if (is_no_space_left_error)
-        {
-            const auto file_size = fs::file_size(file_segment_path);
+            if (downloaded_size == 0)
+            {
+                fs::remove(file_segment_path);
+            }
+            else if (is_no_space_left_error)
+            {
+                const auto file_size = fs::file_size(file_segment_path);
 
-            chassert(downloaded_size <= file_size);
-            chassert(reserved_size >= file_size);
-            chassert(file_size <= range().size());
+                LOG_TRACE(log, "Failed to write to file: no space left on device "
+                          "(file size: {}, downloaded size: {}, reserved size: {})",
+                          file_size, downloaded_size.load(), reserved_size.load());
 
-            if (downloaded_size != file_size)
-                downloaded_size = file_size;
+                chassert(downloaded_size <= file_size && file_size <= reserved_size);
+                if (downloaded_size != file_size)
+                    downloaded_size = file_size;
+            }
         }
 
         throw;
@@ -542,7 +546,7 @@ bool FileSegment::reserve(
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
-                size_to_reserve, range().toString(), downloaded_size);
+                size_to_reserve, range().toString(), downloaded_size.load());
         }
 
         chassert(reserved_size >= expected_downloaded_size);
@@ -922,7 +926,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
         const auto & entry = it->getEntry();
         if (download_state != State::DOWNLOADING && entry->size != reserved_size)
-            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size, reserved_size));
+            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size.load(), reserved_size.load()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -1117,9 +1121,12 @@ void FileSegment::increasePriority()
     if (it)
     {
         if (auto cache_lock = cache->tryLockCache())
-            hits_count = it->increasePriority(cache_lock);
+            it->increasePriority(cache_lock);
         else
             ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
+
+        /// Used only for system.filesystem_cache.
+        ++hits_count;
     }
 }
 

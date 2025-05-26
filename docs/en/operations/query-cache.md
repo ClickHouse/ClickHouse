@@ -1,7 +1,9 @@
 ---
-slug: /operations/query-cache
+description: 'Guide to using and configuring the query cache feature in ClickHouse'
+sidebar_label: 'Query Cache'
 sidebar_position: 65
-sidebar_label: Query Cache
+slug: /operations/query-cache
+title: 'Query Cache'
 ---
 
 # Query Cache
@@ -36,7 +38,12 @@ effort and avoids redundancy.
 In ClickHouse Cloud, you must use [query level settings](/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/operations/configuration-files) is currently not supported.
 :::
 
-Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the
+:::note
+[clickhouse-local](utilities/clickhouse-local.md) runs a single query at a time. Since query result caching does not make sense, the query
+result cache is disabled in clickhouse-local.
+:::
+
+Setting [use_query_cache](/operations/settings/settings#use_query_cache) can be used to control whether a specific query or all queries of the
 current session should utilize the query cache. For example, the first execution of query
 
 ```sql
@@ -54,8 +61,8 @@ the results of `SELECT`s to views created by `CREATE VIEW AS SELECT [...] SETTIN
 statement runs with `SETTINGS use_query_cache = true`.
 :::
 
-The way the cache is utilized can be configured in more detail using settings [enable_writes_to_query_cache](settings/settings.md#enable-writes-to-query-cache)
-and [enable_reads_from_query_cache](settings/settings.md#enable-reads-from-query-cache) (both `true` by default). The former setting
+The way the cache is utilized can be configured in more detail using settings [enable_writes_to_query_cache](/operations/settings/settings#enable_writes_to_query_cache)
+and [enable_reads_from_query_cache](/operations/settings/settings#enable_reads_from_query_cache) (both `true` by default). The former setting
 controls whether query results are stored in the cache, whereas the latter setting determines if the database should try to retrieve query
 results from the cache. For example, the following query will use the cache only passively, i.e. attempt to read from it but not store its
 result in it:
@@ -88,7 +95,7 @@ make the matching more natural, all query-level settings related to the query ca
 If the query was aborted due to an exception or user cancellation, no entry is written into the query cache.
 
 The size of the query cache in bytes, the maximum number of cache entries and the maximum size of individual cache entries (in bytes and in
-records) can be configured using different [server configuration options](server-configuration-parameters/settings.md#server_configuration_parameters_query-cache).
+records) can be configured using different [server configuration options](/operations/server-configuration-parameters/settings#query_cache).
 
 ```xml
 <query_cache>
@@ -102,11 +109,11 @@ records) can be configured using different [server configuration options](server
 It is also possible to limit the cache usage of individual users using [settings profiles](settings/settings-profiles.md) and [settings
 constraints](settings/constraints-on-settings.md). More specifically, you can restrict the maximum amount of memory (in bytes) a user may
 allocate in the query cache and the maximum number of stored query results. For that, first provide configurations
-[query_cache_max_size_in_bytes](settings/settings.md#query-cache-max-size-in-bytes) and
-[query_cache_max_entries](settings/settings.md#query-cache-max-entries) in a user profile in `users.xml`, then make both settings
+[query_cache_max_size_in_bytes](/operations/settings/settings#query_cache_max_size_in_bytes) and
+[query_cache_max_entries](/operations/settings/settings#query_cache_max_entries) in a user profile in `users.xml`, then make both settings
 readonly:
 
-``` xml
+```xml
 <profiles>
     <default>
         <!-- The maximum cache size in bytes for user/profile 'default' -->
@@ -127,28 +134,28 @@ readonly:
 ```
 
 To define how long a query must run at least such that its result can be cached, you can use setting
-[query_cache_min_query_duration](settings/settings.md#query-cache-min-query-duration). For example, the result of query
+[query_cache_min_query_duration](/operations/settings/settings#query_cache_min_query_duration). For example, the result of query
 
-``` sql
+```sql
 SELECT some_expensive_calculation(column_1, column_2)
 FROM table
 SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 ```
 
 is only cached if the query runs longer than 5 seconds. It is also possible to specify how often a query needs to run until its result is
-cached - for that use setting [query_cache_min_query_runs](settings/settings.md#query-cache-min-query-runs).
+cached - for that use setting [query_cache_min_query_runs](/operations/settings/settings#query_cache_min_query_runs).
 
 Entries in the query cache become stale after a certain time period (time-to-live). By default, this period is 60 seconds but a different
-value can be specified at session, profile or query level using setting [query_cache_ttl](settings/settings.md#query-cache-ttl). The query
+value can be specified at session, profile or query level using setting [query_cache_ttl](/operations/settings/settings#query_cache_ttl). The query
 cache evicts entries "lazily", i.e. when an entry becomes stale, it is not immediately removed from the cache. Instead, when a new entry
 is to be inserted into the query cache, the database checks whether the cache has enough free space for the new entry. If this is not the
 case, the database tries to remove all stale entries. If the cache still has not enough free space, the new entry is not inserted.
 
 Entries in the query cache are compressed by default. This reduces the overall memory consumption at the cost of slower writes into / reads
-from the query cache. To disable compression, use setting [query_cache_compress_entries](settings/settings.md#query-cache-compress-entries).
+from the query cache. To disable compression, use setting [query_cache_compress_entries](/operations/settings/settings#query_cache_compress_entries).
 
 Sometimes it is useful to keep multiple results for the same query cached. This can be achieved using setting
-[query_cache_tag](settings/settings.md#query-cache-tag) that acts as as a label (or namespace) for a query cache entries. The query cache
+[query_cache_tag](/operations/settings/settings#query_cache_tag) that acts as as a label (or namespace) for a query cache entries. The query cache
 considers results of the same query with different tags different.
 
 Example for creating three different query cache entries for the same query:
@@ -161,20 +168,21 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 
 To remove only entries with tag `tag` from the query cache, you can use statement `SYSTEM DROP QUERY CACHE TAG 'tag'`.
 
-ClickHouse reads table data in blocks of [max_block_size](settings/settings.md#setting-max_block_size) rows. Due to filtering, aggregation,
+ClickHouse reads table data in blocks of [max_block_size](/operations/settings/settings#max_block_size) rows. Due to filtering, aggregation,
 etc., result blocks are typically much smaller than 'max_block_size' but there are also cases where they are much bigger. Setting
-[query_cache_squash_partial_results](settings/settings.md#query-cache-squash-partial-results) (enabled by default) controls if result blocks
+[query_cache_squash_partial_results](/operations/settings/settings#query_cache_squash_partial_results) (enabled by default) controls if result blocks
 are squashed (if they are tiny) or split (if they are large) into blocks of 'max_block_size' size before insertion into the query result
 cache. This reduces performance of writes into the query cache but improves compression rate of cache entries and provides more natural
 block granularity when query results are later served from the query cache.
 
 As a result, the query cache stores for each query multiple (partial)
 result blocks. While this behavior is a good default, it can be suppressed using setting
-[query_cache_squash_partial_results](settings/settings.md#query-cache-squash-partial-results).
+[query_cache_squash_partial_results](/operations/settings/settings#query_cache_squash_partial_results).
 
 Also, results of queries with non-deterministic functions are not cached by default. Such functions include
-- functions for accessing dictionaries: [`dictGet()`](../sql-reference/functions/ext-dict-functions.md#dictGet) etc.
-- [user-defined functions](../sql-reference/statements/create/function.md),
+- functions for accessing dictionaries: [`dictGet()`](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull) etc.
+- [user-defined functions](../sql-reference/statements/create/function.md) without tag `<deterministic>true</deterministic>` in their XML
+  definition,
 - functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#now),
   [`today()`](../sql-reference/functions/date-time-functions.md#today),
   [`yesterday()`](../sql-reference/functions/date-time-functions.md#yesterday) etc.,
@@ -186,20 +194,20 @@ Also, results of queries with non-deterministic functions are not cached by defa
   [`runningDifference()`](../sql-reference/functions/other-functions.md#runningDifference),
   [`blockSize()`](../sql-reference/functions/other-functions.md#blockSize) etc.,
 - functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#currentUser),
-  [`queryID()`](../sql-reference/functions/other-functions.md#queryID),
+  [`queryID()`](/sql-reference/functions/other-functions#queryid),
   [`getMacro()`](../sql-reference/functions/other-functions.md#getMacro) etc.
 
 To force caching of results of queries with non-deterministic functions regardless, use setting
-[query_cache_nondeterministic_function_handling](settings/settings.md#query-cache-nondeterministic-function-handling).
+[query_cache_nondeterministic_function_handling](/operations/settings/settings#query_cache_nondeterministic_function_handling).
 
 Results of queries that involve system tables (e.g. [system.processes](system-tables/processes.md)` or
 [information_schema.tables](system-tables/information_schema.md)) are not cached by default. To force caching of results of queries with
-system tables regardless, use setting [query_cache_system_table_handling](settings/settings.md#query-cache-system-table-handling).
+system tables regardless, use setting [query_cache_system_table_handling](/operations/settings/settings#query_cache_system_table_handling).
 
 Finally, entries in the query cache are not shared between users due to security reasons. For example, user A must not be able to bypass a
 row policy on a table by running the same query as another user B for whom no such policy exists. However, if necessary, cache entries can
 be marked accessible by other users (i.e. shared) by supplying setting
-[query_cache_share_between_users](settings/settings.md#query-cache-share-between-users).
+[query_cache_share_between_users](/operations/settings/settings#query_cache_share_between_users).
 
 ## Related Content {#related-content}
 

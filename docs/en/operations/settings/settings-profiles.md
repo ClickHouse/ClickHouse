@@ -1,9 +1,9 @@
 ---
-slug: /operations/settings/settings-profiles
+description: 'A collection of settings grouped under the same name.'
+sidebar_label: 'Settings Profiles'
 sidebar_position: 61
-sidebar_label: Settings Profiles
-description: "A collection of settings grouped under the same name."
-title: "Settings Profiles"
+slug: /operations/settings/settings-profiles
+title: 'Settings Profiles'
 ---
 
 # Settings Profiles
@@ -11,7 +11,7 @@ title: "Settings Profiles"
 A settings profile is a collection of settings grouped under the same name.
 
 :::note
-ClickHouse also supports [SQL-driven workflow](../../guides/sre/user-management/index.md#access-control) for managing settings profiles. We recommend using it.
+ClickHouse also supports [SQL-driven workflow](/operations/access-rights#access-control-usage) for managing settings profiles. We recommend using it.
 :::
 
 The profile can have any name. You can specify the same profile for different users. The most important thing you can write in the settings profile is `readonly=1`, which ensures read-only access.
@@ -24,7 +24,7 @@ Example:
 
 Install the `web` profile.
 
-``` sql
+```sql
 SET profile = 'web'
 ```
 
@@ -32,7 +32,7 @@ Settings profiles are declared in the user config file. This is usually `users.x
 
 Example:
 
-``` xml
+```xml
 <!-- Settings profiles -->
 <profiles>
     <!-- Default settings -->

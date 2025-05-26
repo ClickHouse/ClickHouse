@@ -1,6 +1,7 @@
 #include <Analyzer/ConstantNode.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
@@ -54,58 +55,10 @@ String ConstantNode::getValueStringRepresentation() const
     return applyVisitor(FieldVisitorToString(), getValue());
 }
 
-bool ConstantNode::requiresCastCall(Field::Types::Which type, const DataTypePtr & field_type, const DataTypePtr & data_type)
-{
-    bool need_to_add_cast_function = false;
-    WhichDataType constant_value_type(data_type);
-
-    switch (type)
-    {
-        case Field::Types::String:
-        {
-            need_to_add_cast_function = !constant_value_type.isString();
-            break;
-        }
-        case Field::Types::UInt64:
-        case Field::Types::Int64:
-        case Field::Types::Float64:
-        {
-            WhichDataType constant_value_field_type(field_type);
-            need_to_add_cast_function = constant_value_field_type.idx != constant_value_type.idx;
-            break;
-        }
-        case Field::Types::Int128:
-        case Field::Types::UInt128:
-        case Field::Types::Int256:
-        case Field::Types::UInt256:
-        case Field::Types::Decimal32:
-        case Field::Types::Decimal64:
-        case Field::Types::Decimal128:
-        case Field::Types::Decimal256:
-        case Field::Types::AggregateFunctionState:
-        case Field::Types::Array:
-        case Field::Types::Tuple:
-        case Field::Types::Map:
-        case Field::Types::UUID:
-        case Field::Types::Bool:
-        case Field::Types::Object:
-        case Field::Types::IPv4:
-        case Field::Types::IPv6:
-        case Field::Types::Null:
-        case Field::Types::CustomType:
-        {
-            need_to_add_cast_function = true;
-            break;
-        }
-    }
-
-    return need_to_add_cast_function;
-}
-
 bool ConstantNode::requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type)
 {
     WhichDataType which_field_type(field_type);
-    if (which_field_type.isNullable() || which_field_type.isArray())
+    if (which_field_type.isNullable() || which_field_type.isArray() || which_field_type.isTuple())
         return true;
 
     return field_type->getTypeId() != data_type->getTypeId();
@@ -198,39 +151,32 @@ QueryTreeNodePtr ConstantNode::cloneImpl() const
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    const auto & constant_value_type = constant_value.getType();
-    auto constant_value_ast = std::make_shared<ASTLiteral>(getValue());
-
     if (!options.add_cast_for_constants)
-        return constant_value_ast;
+        return std::make_shared<ASTLiteral>(getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value.getType()));
+
+    const auto & constant_value_type = constant_value.getType();
 
     // Add cast if constant was created as a result of constant folding.
     // Constant folding may lead to type transformation and literal on shard
     // may have a different type.
-    if (source_expression != nullptr || requiresCastCall(constant_value_ast->value.getType(), applyVisitor(FieldToDataType(), constant_value_ast->value), getResultType()))
-    {
-        /** Value for DateTime64 is Decimal64, which is serialized as a string literal.
-          * If we serialize it as is, DateTime64 would be parsed from that string literal, which can be incorrect.
-          * For example, DateTime64 cannot be parsed from the short value, like '1', while it's a valid Decimal64 value.
-          * It could also lead to ambiguous parsing because we don't know if the string literal represents a date or a Decimal64 literal.
-          * For this reason, we use a string literal representing a date instead of a Decimal64 literal.
-          */
-        const auto & constant_value_end_type = removeNullable(constant_value_type); /// if Nullable
-        if (WhichDataType(constant_value_end_type->getTypeId()).isDateTime64())
-        {
-            const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(constant_value_end_type.get());
-            DecimalField<Decimal64> decimal_value;
-            if (constant_value_ast->value.tryGet<DecimalField<Decimal64>>(decimal_value))
-            {
-                WriteBufferFromOwnString ostr;
-                writeDateTimeText(decimal_value.getValue(), date_time_type->getScale(), ostr, date_time_type->getTimeZone());
-                constant_value_ast = std::make_shared<ASTLiteral>(ostr.str());
-            }
-        }
 
+    auto requires_cast = [this]()
+    {
+        const auto & [_, type] = getValueNameAndType();
+        return requiresCastCall(type, getResultType());
+    };
+
+    if (source_expression != nullptr || requires_cast())
+    {
+        /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
+        /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
+        /// Also for Dynamic and Object types we can loose types information, so we need to create a Field carefully.
+        auto constant_value_ast = std::make_shared<ASTLiteral>(getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value.getType()));
         auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value_type->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }
+
+    auto constant_value_ast = std::make_shared<ASTLiteral>(getValue());
 
     if (isBool(constant_value_type))
         constant_value_ast->custom_type = constant_value_type;

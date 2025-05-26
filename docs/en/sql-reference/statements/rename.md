@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/rename
+description: 'Documentation for RENAME Statement'
+sidebar_label: 'RENAME'
 sidebar_position: 48
-sidebar_label: RENAME
+slug: /sql-reference/statements/rename
+title: 'RENAME Statement'
 ---
 
 # RENAME Statement
@@ -34,7 +36,7 @@ If you rename multiple tables in one query, the operation is not atomic. It may 
 
 **Syntax**
 
-``` sql
+```sql
 RENAME TABLE [db1.]name1 TO [db2.]name2 [,...] [ON CLUSTER cluster]
 ```
 

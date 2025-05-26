@@ -211,9 +211,11 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     if (null_presence.has_nullable)
     {
-        /// Usually happens during analyzing. We should return non-const column to avoid wrong constant folding.
         if (input_rows_count == 0)
+        {
+            /// We are not sure if it is const column or not if has_nullable is true.
             return result_type->createColumn();
+        }
 
         bool all_columns_constant = true;
         bool all_numeric_types = true;
@@ -285,13 +287,18 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         {
             /// If short circuit is enabled, we only execute the function on rows with all arguments not null
 
+            /// Generate Filter
+            IColumn::Filter filter_mask(input_rows_count);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                filter_mask[i] = !result_null_map_data[i];
+
             /// Filter every column by mask
             for (auto & col : temporary_columns)
-                col.column = col.column->filter(result_null_map_data, rows_without_nulls);
+                col.column = col.column->filter(filter_mask, rows_without_nulls);
 
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, rows_without_nulls, dry_run);
             auto mutable_res = IColumn::mutate(std::move(res));
-            mutable_res->expand(result_null_map_data, false);
+            mutable_res->expand(filter_mask, false);
 
             auto new_res = wrapInNullable(std::move(mutable_res), std::move(result_null_map));
             return new_res;

@@ -22,6 +22,7 @@
 
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -43,6 +44,7 @@
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
+#include <Interpreters/Context.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -140,7 +142,7 @@ namespace Setting
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_analyze_depth;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
@@ -189,6 +191,10 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsString implicit_table_at_top_level;
 }
 
 namespace ServerSetting
@@ -351,6 +357,7 @@ ContextPtr getSubqueryContext(const ContextPtr & context)
     Settings subquery_settings = context->getSettingsCopy();
     subquery_settings[Setting::max_result_rows] = 0;
     subquery_settings[Setting::max_result_bytes] = 0;
+    subquery_settings[Setting::implicit_table_at_top_level] = "";
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
     subquery_settings[Setting::extremes] = false;
     subquery_context->setSettings(subquery_settings);
@@ -1825,7 +1832,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         for (const auto & key_name : key_names)
                             order_descr.emplace_back(key_name);
 
-                        SortingStep::Settings sort_settings(*context);
+                        SortingStep::Settings sort_settings(context->getSettingsRef());
 
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentHeader(),
@@ -2180,7 +2187,6 @@ static void executeMergeAggregatedImpl(
         final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
         settings[Setting::distributed_aggregation_memory_efficient] && is_remote_storage && !has_grouping_sets,
-        settings[Setting::max_threads],
         settings[Setting::aggregation_memory_efficient_merge_threads],
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::max_block_size],
@@ -2463,7 +2469,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         /// require reading some data (but much faster than reading columns).
         /// Set a special flag in query info so the storage will see it and optimize count in read() method.
         query_info.optimize_trivial_count = optimize_trivial_count;
-        return storage->totalRows(settings);
+        return storage->totalRows(context);
     }
 
     // It's possible to optimize count() given only partition predicates
@@ -2568,7 +2574,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
             required_columns.size(),
-            settings[Setting::max_columns_to_read]);
+            settings[Setting::max_columns_to_read].value);
 
     /// General limit for the number of threads.
     size_t max_threads_execute_query = settings[Setting::max_threads];
@@ -2648,8 +2654,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     else if (storage)
     {
         /// Table.
-        if (max_streams == 0)
-            max_streams = 1;
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
@@ -2663,6 +2667,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                     "Make sure that `max_streams * max_streams_to_max_threads_ratio` is in some reasonable boundaries, current value: {}",
                     streams_with_ratio);
         }
+
+        if (max_streams == 0)
+            max_streams = 1;
 
         auto & prewhere_info = analysis_result.prewhere_info;
 
@@ -3051,7 +3058,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         }
         if (need_sort)
         {
-            SortingStep::Settings sort_settings(*context);
+            SortingStep::Settings sort_settings(context->getSettingsRef());
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
@@ -3108,7 +3115,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         return;
     }
 
-    SortingStep::Settings sort_settings(*context);
+    SortingStep::Settings sort_settings(context->getSettingsRef());
 
     /// Merge the sorted blocks.
     auto sorting_step = std::make_unique<SortingStep>(
@@ -3338,10 +3345,15 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_p
 
     if (!subqueries.empty())
     {
+        const auto & settings = context->getSettingsRef();
+        SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+        auto prepared_sets_cache = context->getPreparedSetsCache();
+
         auto step = std::make_unique<DelayedCreatingSetsStep>(
                 query_plan.getCurrentHeader(),
                 std::move(subqueries),
-                context);
+                network_transfer_limits,
+                prepared_sets_cache);
 
         query_plan.addStep(std::move(step));
     }

@@ -1,8 +1,11 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/topkweighted
+description: 'Returns an array of the approximately most frequent values in the specified
+  column. The resulting array is sorted in descending order of approximate frequency
+  of values (not by the values themselves). Additionally, the weight of the value
+  is taken into account.'
 sidebar_position: 203
-title: "topKWeighted"
-description: "Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves). Additionally, the weight of the value is taken into account."
+slug: /sql-reference/aggregate-functions/reference/topkweighted
+title: 'topKWeighted'
 ---
 
 # topKWeighted
@@ -11,7 +14,7 @@ Returns an array of the approximately most frequent values in the specified colu
 
 **Syntax**
 
-``` sql
+```sql
 topKWeighted(N)(column, weight)
 topKWeighted(N, load_factor)(column, weight)
 topKWeighted(N, load_factor, 'counts')(column, weight)
@@ -36,14 +39,14 @@ Returns an array of the values with maximum approximate sum of weights.
 
 Query:
 
-``` sql
+```sql
 SELECT topKWeighted(2)(k, w) FROM
 VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10))
 ```
 
 Result:
 
-``` text
+```text
 ┌─topKWeighted(2)(k, w)──┐
 │ ['z','x']              │
 └────────────────────────┘
@@ -51,14 +54,14 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT topKWeighted(2, 10, 'counts')(k, w)
 FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10))
 ```
 
 Result:
 
-``` text
+```text
 ┌─topKWeighted(2, 10, 'counts')(k, w)─┐
 │ [('z',10,0),('x',5,0)]              │
 └─────────────────────────────────────┘

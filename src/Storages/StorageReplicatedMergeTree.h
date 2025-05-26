@@ -163,13 +163,12 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr context) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
-    UInt64 getNumberOnFlyDataMutations() const override;
-    UInt64 getNumberOnFlyMetadataMutations() const override;
+    MutationCounters getMutationCounters() const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -240,7 +239,7 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    void adjustCreateQueryForBackup(ASTPtr & create_query) const override;
+    void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const override;
 
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -360,7 +359,7 @@ public:
     std::optional<bool> hasMetadataInZooKeeper () { return has_metadata_in_zookeeper; }
 
     /// Get a sequential consistent view of current parts.
-    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
+    PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
     void addLastSentPart(const MergeTreePartInfo & info);
 

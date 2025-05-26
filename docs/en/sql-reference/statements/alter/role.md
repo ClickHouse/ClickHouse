@@ -1,15 +1,16 @@
 ---
-slug: /sql-reference/statements/alter/role
+description: 'Documentation for Role'
+sidebar_label: 'ROLE'
 sidebar_position: 46
-sidebar_label: ROLE
-title: "ALTER ROLE"
+slug: /sql-reference/statements/alter/role
+title: 'ALTER ROLE'
 ---
 
 Changes roles.
 
 Syntax:
 
-``` sql
+```sql
 ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]] 
     [ON CLUSTER cluster_name]
     [DROP ALL PROFILES]

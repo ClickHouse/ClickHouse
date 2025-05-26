@@ -1,10 +1,14 @@
 ---
-description: "System table containing information about threads that execute queries, for example, thread name, thread start time, duration of query processing."
+description: 'System table containing information about threads that execute queries,
+  for example, thread name, thread start time, duration of query processing.'
+keywords: ['system table', 'query_thread_log']
 slug: /operations/system-tables/query_thread_log
-title: "system.query_thread_log"
-keywords: ["system table", "query_thread_log"]
+title: 'system.query_thread_log'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.query_thread_log
 
 <SystemTableCloud/>
 
@@ -13,13 +17,13 @@ Contains information about threads that execute queries, for example, thread nam
 To start logging:
 
 1.  Configure parameters in the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) section.
-2.  Set [log_query_threads](../../operations/settings/settings.md#log-query-threads) to 1.
+2.  Set [log_query_threads](/operations/settings/settings#log_query_threads) to 1.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](/operations/system-tables/overview#system-tables-introduction) for more details.
 
-You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_thread_log` table.
+You can use the [log_queries_probability](/operations/settings/settings#log_queries_probability)) setting to reduce the number of queries, registered in the `query_thread_log` table.
 
 Columns:
 
@@ -29,29 +33,29 @@ Columns:
 - `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query with microseconds precision.
 - `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
 - `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
-- `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution.
-- `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read rows.
-- `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read bytes.
-- `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
-- `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
+- `query_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Duration of query execution.
+- `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of read rows.
+- `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of read bytes.
+- `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
+- `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
 - `memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The difference between the amount of allocated and freed memory in context of this thread.
 - `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this thread.
 - `thread_name` ([String](../../sql-reference/data-types/string.md)) — Name of the thread.
 - `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — OS thread ID.
-- `master_thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — OS initial ID of initial thread.
+- `master_thread_id` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — OS initial ID of initial thread.
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
-- `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Query type. Possible values:
+- `is_initial_query` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Query type. Possible values:
     - 1 — Query was initiated by the client.
     - 0 — Query was initiated by another query for distributed query execution.
 - `user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
 - `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that was used to make the query.
-- `port` ([UInt16](../../sql-reference/data-types/int-uint.md#uint-ranges)) — The client port that was used to make the query.
+- `port` ([UInt16](/sql-reference/data-types/int-uint#integer-ranges)) — The client port that was used to make the query.
 - `initial_user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who ran the initial query (for distributed query execution).
 - `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
 - `initial_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that the parent query was launched from.
-- `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md#uint-ranges)) — The client port that was used to make the parent query.
-- `interface` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Interface that the query was initiated from. Possible values:
+- `initial_port` ([UInt16](/sql-reference/data-types/int-uint#integer-ranges)) — The client port that was used to make the parent query.
+- `interface` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
 - `os_user` ([String](../../sql-reference/data-types/string.md)) — OS's username who runs [clickhouse-client](../../interfaces/cli.md).
@@ -61,7 +65,7 @@ Columns:
 - `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Major version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
 - `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Minor version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
 - `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the [clickhouse-client](../../interfaces/cli.md) or another TCP client version.
-- `http_method` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — HTTP method that initiated the query. Possible values:
+- `http_method` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — HTTP method that initiated the query. Possible values:
     - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method was used.
     - 2 — `POST` method was used.
@@ -72,11 +76,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
  SELECT * FROM system.query_thread_log LIMIT 1 \G
 ```
 
-``` text
+```text
 Row 1:
 ──────
 hostname:                      clickhouse.eu-central1.internal
@@ -122,5 +126,5 @@ ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'Compr
 
 **See Also**
 
-- [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
-- [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — This table contains information about each view executed during a query.
+- [system.query_log](/operations/system-tables/query_log) — Description of the `query_log` system table which contains common information about queries execution.
+- [system.query_views_log](/operations/system-tables/query_views_log) — This table contains information about each view executed during a query.

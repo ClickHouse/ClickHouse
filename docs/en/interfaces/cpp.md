@@ -1,7 +1,10 @@
 ---
-slug: /interfaces/cpp
+description: 'Documentation for the ClickHouse C++ client library and integration
+  with u-server framework'
+sidebar_label: 'C++ Client Library'
 sidebar_position: 24
-sidebar_label: C++ Client Library
+slug: /interfaces/cpp
+title: 'C++ Client Library'
 ---
 
 # C++ Client Library

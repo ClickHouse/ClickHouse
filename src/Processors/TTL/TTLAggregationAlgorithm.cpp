@@ -11,7 +11,7 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsUInt64 max_rows_to_group_by;
@@ -103,7 +103,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+            Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
             bool where_filter_passed = !where_column || where_column->getBool(i);
             bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
 
@@ -208,7 +208,7 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 {
     if (!aggregation_result.empty())
     {
-        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true, 1);
+        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true);
 
         for (auto & agg_block : aggregated_res)
         {

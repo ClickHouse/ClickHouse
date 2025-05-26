@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: stateful, no-parallel-replicas, no-s3-storage
+# Tags: stateful, no-parallel-replicas, no-object-storage
 # The row ordering is not guaranteed with parallel replicas and a limit
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

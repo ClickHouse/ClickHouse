@@ -70,14 +70,6 @@ std::ostream & operator << (std::ostream & ostr, const DateTimeToStringParamTest
 
 }
 
-TEST(DateTimeToStringTest, RFC1123)
-{
-    using namespace DB;
-    WriteBufferFromOwnString out;
-    writeDateTimeTextRFC1123(1111111111, out, DateLUT::instance("UTC"));
-    ASSERT_EQ(out.str(), "Fri, 18 Mar 2005 01:58:31 GMT");
-}
-
 template <typename ValueType, bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = false>
 class DateTimeToStringParamTestBase : public ::testing::TestWithParam<DateTimeToStringParamTestCase<ValueType>>
 {

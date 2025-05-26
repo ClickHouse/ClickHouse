@@ -60,7 +60,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t read_until_position_,
     bool restricted_seek_,
     std::optional<size_t> file_size_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
@@ -72,6 +72,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
 {
+    file_size = file_size_;
 }
 
 bool ReadBufferFromS3::nextImpl()
@@ -82,7 +83,7 @@ bool ReadBufferFromS3::nextImpl()
             return false;
 
         if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
 
     if (impl)
@@ -242,7 +243,7 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         log,
         "Caught exception while reading S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}, "
         "Attempt: {}/{}, Message: {}",
-        bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings[S3RequestSetting::max_single_read_retries],
+        bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings[S3RequestSetting::max_single_read_retries].value,
         getCurrentExceptionMessage(/* with_stacktrace = */ false));
 
 
@@ -280,7 +281,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
             ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
             "Seek is allowed only before first read attempt from the buffer (current offset: "
             "{}, new offset: {}, reading until position: {}, available: {})",
-            getPosition(), offset_, read_until_position, available());
+            getPosition(), offset_, read_until_position.load(), available());
     }
 
     if (whence != SEEK_SET)
@@ -398,7 +399,7 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
      * exact byte ranges to read are always passed here.
      */
     if (read_until_position && offset >= read_until_position)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
 
     auto read_result = sendRequest(attempt, offset, read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt);
 

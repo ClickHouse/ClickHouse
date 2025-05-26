@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/largestTriangleThreeBuckets
+description: 'Applies the Largest-Triangle-Three-Buckets algorithm to the input data.'
+sidebar_label: 'largestTriangleThreeBuckets'
 sidebar_position: 159
-sidebar_label: largestTriangleThreeBuckets
-title: "largestTriangleThreeBuckets"
-description: "Applies the Largest-Triangle-Three-Buckets algorithm to the input data."
+slug: /sql-reference/aggregate-functions/reference/largestTriangleThreeBuckets
+title: 'largestTriangleThreeBuckets'
 ---
 
 # largestTriangleThreeBuckets
@@ -15,7 +15,7 @@ the function will sort data by `x` and then apply the downsampling algorithm to 
 
 **Syntax**
 
-``` sql
+```sql
 largestTriangleThreeBuckets(n)(x, y)
 ```
 
@@ -40,7 +40,7 @@ NaNs are ignored in the provided series, meaning that any NaN values will be exc
 
 Input table:
 
-``` text
+```text
 ┌─────x───────┬───────y──────┐
 │ 1.000000000 │ 10.000000000 │
 │ 2.000000000 │ 20.000000000 │
@@ -57,13 +57,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT largestTriangleThreeBuckets(4)(x, y) FROM largestTriangleThreeBuckets_test;
 ```
 
 Result:
 
-``` text
+```text
 ┌────────largestTriangleThreeBuckets(4)(x, y)───────────┐
 │           [(1,10),(3,15),(9,55),(10,70)]              │
 └───────────────────────────────────────────────────────┘

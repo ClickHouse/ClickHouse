@@ -65,11 +65,11 @@ struct S3RequestSettingsImpl : public BaseSettings<S3RequestSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) S3RequestSettings##TYPE NAME = &S3RequestSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) S3RequestSettings##TYPE NAME = &S3RequestSettingsImpl ::NAME;
 
 namespace S3RequestSetting
 {
-REQUEST_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+REQUEST_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -241,7 +241,7 @@ void S3RequestSettings::validateUploadSettings()
                             ErrorCodes::INVALID_SETTING_VALUE,
                             "Setting upload_part_size_multiply_factor is too big ({}). "
                             "Multiplication to max_upload_part_size ({}) will cause integer overflow",
-                            impl->upload_part_size_multiply_factor, ReadableSize(impl->max_upload_part_size));
+                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size));
     }
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};

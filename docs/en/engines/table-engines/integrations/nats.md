@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/nats
+description: 'This engine allows integrating ClickHouse with NATS to publish or subscribe
+  to message subjects, and process new messages as they become available.'
+sidebar_label: 'NATS'
 sidebar_position: 140
-sidebar_label: NATS
-title: "NATS Engine"
-description: "his engine allows integrating ClickHouse with NATS to publish or subscribe to message subjects, and process new messages as they become available."
+slug: /engines/table-engines/integrations/nats
+title: 'NATS Engine'
 ---
 
 # NATS Engine {#redisstreams-engine}
@@ -17,7 +18,7 @@ This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -57,12 +58,12 @@ Optional parameters:
 - `nats_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
 - `nats_queue_group` – Name for queue group of NATS subscribers. Default is the table name.
-- `nats_max_reconnect` – Maximum amount of reconnection attempts per try to connect to NATS. Default: `5`.
+- `nats_max_reconnect` – Deprecated and has no effect, reconnect is performed permanently with nats_reconnect_wait timeout.
 - `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `5000`.
 - `nats_server_list` - Server list for connection. Can be specified to connect to NATS cluster.
 - `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* NATS messages that cannot be parsed (a message equals a row of data).
 - `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
-- `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
+- `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
 - `nats_username` - NATS username.
 - `nats_password` - NATS password.
 - `nats_token` - NATS auth token.
@@ -83,7 +84,7 @@ However, if table reads from multiple subjects, we need to specify which subject
 That is why whenever inserting into table with multiple subjects, setting `stream_like_engine_insert_queue` is needed.
 You can select one of the subjects the table reads from and publish your data there. For example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64
@@ -101,7 +102,7 @@ Also format settings can be added along with nats-related settings.
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64,
@@ -116,7 +117,7 @@ Example:
 The NATS server configuration can be added using the ClickHouse config file.
 More specifically you can add Redis password for NATS engine:
 
-``` xml
+```xml
 <nats>
     <user>click</user>
     <password>house</password>
@@ -137,7 +138,7 @@ One NATS table can have as many materialized views as you like, they do not read
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64
@@ -158,7 +159,7 @@ Example:
 
 To stop receiving streams data or to change the conversion logic, detach the materialized view:
 
-``` sql
+```sql
   DETACH TABLE consumer;
   ATTACH TABLE consumer;
 ```
@@ -183,4 +184,4 @@ NATS engine supports all [formats](../../../interfaces/formats.md) supported in 
 The number of rows in one NATS message depends on whether the format is row-based or block-based:
 
 - For row-based formats the number of rows in one NATS message can be controlled by setting `nats_max_rows_per_message`.
-- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
+- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/operations/settings/settings#max_block_size).

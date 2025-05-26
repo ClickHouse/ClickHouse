@@ -1,10 +1,14 @@
 ---
-description: "System table containing stack traces collected by the sampling query profiler."
+description: 'System table containing stack traces collected by the sampling query
+  profiler.'
+keywords: ['system table', 'trace_log']
 slug: /operations/system-tables/trace_log
-title: "system.trace_log"
-keywords: ["system table", "trace_log"]
+title: 'system.trace_log'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.trace_log
 
 <SystemTableCloud/>
 
@@ -46,11 +50,11 @@ The symbolization can be enabled or disabled in the `symbolize` under `trace_log
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.trace_log LIMIT 1 \G
 ```
 
-``` text
+```text
 Row 1:
 ──────
 hostname:                clickhouse.eu-central1.internal

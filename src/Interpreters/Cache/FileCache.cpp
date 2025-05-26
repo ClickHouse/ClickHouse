@@ -75,6 +75,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsUInt64 cache_hits_threshold;
     extern const FileCacheSettingsBool enable_filesystem_query_cache_limit;
+    extern const FileCacheSettingsBool allow_dynamic_cache_resize;
 }
 
 namespace
@@ -116,6 +117,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , load_metadata_threads(settings[FileCacheSetting::load_metadata_threads])
     , load_metadata_asynchronously(settings[FileCacheSetting::load_metadata_asynchronously])
     , write_cache_per_user_directory(settings[FileCacheSetting::write_cache_per_user_id_directory])
+    , allow_dynamic_cache_resize(settings[FileCacheSetting::allow_dynamic_cache_resize])
     , keep_current_size_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_size_ratio])
     , keep_current_elements_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_elements_ratio])
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
@@ -638,7 +640,7 @@ FileCache::getOrSet(
 
     assertInitialized();
 
-    FileSegment::Range initial_range(offset, offset + size - 1);
+    FileSegment::Range initial_range(offset, std::min(offset + size, file_size) - 1);
     /// result_range is initial range, which will be adjusted according to
     /// 1. aligned_offset, aligned_end_offset
     /// 2. max_file_segments_limit
@@ -756,17 +758,24 @@ FileCache::getOrSet(
 
         if (!file_segments.front()->range().contains(result_range.left))
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} to include {} "
-                            "(end offset: {}, aligned offset: {}, aligned end offset: {})",
-                            file_segments.front()->range().toString(), offset, result_range.right, aligned_offset, aligned_end_offset);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Expected {} to include {} "
+                "(end offset: {}, aligned offset: {}, aligned end offset: {})",
+                file_segments.front()->range().toString(), offset,
+                result_range.right, aligned_offset, aligned_end_offset);
         }
     }
 
+    /// Compare with initial_range and not result_range,
+    /// See comment in splitRange for explanation.
     chassert(file_segments_limit
-             ? file_segments.back()->range().left <= result_range.right
-             : file_segments.back()->range().contains(result_range.right),
-             fmt::format("Unexpected state. Back: {}, result range: {}, limit: {}",
-                         file_segments.back()->range().toString(), result_range.toString(), file_segments_limit));
+             ? file_segments.back()->range().left <= initial_range.right
+             : file_segments.back()->range().contains(initial_range.right),
+             fmt::format(
+                 "Unexpected state. Back: {}, result range: {}, "
+                 "limit: {}, initial offset: {}, initial size: {}, file size: {}",
+                 file_segments.back()->range().toString(), result_range.toString(),
+                 file_segments_limit, offset, size, file_size));
 
     chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
 
@@ -1018,6 +1027,22 @@ bool FileCache::tryReserve(
             /// Invalidate queue entries if some succeeded to be removed.
             eviction_candidates.finalize(query_context.get(), cache_lock);
             throw;
+        }
+
+        const auto & failed_candidates = eviction_candidates.getFailedCandidates();
+        if (failed_candidates.size() > 0)
+        {
+            /// Process this case the same as any other exception
+            /// from eviction_candidates.evict() above.
+            {
+                cache_lock.lock();
+                /// Invalidate queue entries if some succeeded to be removed.
+                eviction_candidates.finalize(query_context.get(), cache_lock);
+            }
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Failed to evict {} file segments (first error: {})",
+                failed_candidates.size(), failed_candidates.getFirstErrorMessage());
         }
 
         cache_lock.lock();
@@ -1588,6 +1613,11 @@ size_t FileCache::getUsedCacheSize() const
     return main_priority->getSizeApprox();
 }
 
+size_t FileCache::getMaxCacheSize() const
+{
+    return main_priority->getSizeLimitApprox();
+}
+
 size_t FileCache::getFileSegmentsNum() const
 {
     /// We use this method for metrics, so it is ok to get approximate result.
@@ -1616,8 +1646,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         && metadata.setBackgroundDownloadQueueSizeLimit(new_settings[FileCacheSetting::background_download_queue_size_limit]))
     {
         LOG_INFO(log, "Changed background_download_queue_size from {} to {}",
-                 actual_settings[FileCacheSetting::background_download_queue_size_limit],
-                 new_settings[FileCacheSetting::background_download_queue_size_limit]);
+                 actual_settings[FileCacheSetting::background_download_queue_size_limit].value,
+                 new_settings[FileCacheSetting::background_download_queue_size_limit].value);
 
         actual_settings[FileCacheSetting::background_download_queue_size_limit] = new_settings[FileCacheSetting::background_download_queue_size_limit];
     }
@@ -1638,8 +1668,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         if (updated)
         {
             LOG_INFO(log, "Changed background_download_threads from {} to {}",
-                    actual_settings[FileCacheSetting::background_download_threads],
-                    new_settings[FileCacheSetting::background_download_threads]);
+                    actual_settings[FileCacheSetting::background_download_threads].value,
+                    new_settings[FileCacheSetting::background_download_threads].value);
 
             actual_settings[FileCacheSetting::background_download_threads] = new_settings[FileCacheSetting::background_download_threads];
         }
@@ -1650,14 +1680,16 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         background_download_max_file_segment_size = new_settings[FileCacheSetting::background_download_max_file_segment_size];
 
         LOG_INFO(log, "Changed background_download_max_file_segment_size from {} to {}",
-                actual_settings[FileCacheSetting::background_download_max_file_segment_size],
-                new_settings[FileCacheSetting::background_download_max_file_segment_size]);
+                actual_settings[FileCacheSetting::background_download_max_file_segment_size].value,
+                new_settings[FileCacheSetting::background_download_max_file_segment_size].value);
 
         actual_settings[FileCacheSetting::background_download_max_file_segment_size] = new_settings[FileCacheSetting::background_download_max_file_segment_size];
     }
 
-    if (new_settings[FileCacheSetting::max_size] != actual_settings[FileCacheSetting::max_size]
-        || new_settings[FileCacheSetting::max_elements] != actual_settings[FileCacheSetting::max_elements])
+    const bool cache_size_changed = new_settings[FileCacheSetting::max_size] != actual_settings[FileCacheSetting::max_size]
+        || new_settings[FileCacheSetting::max_elements] != actual_settings[FileCacheSetting::max_elements];
+
+    if (allow_dynamic_cache_resize && cache_size_changed)
     {
         EvictionCandidates eviction_candidates;
         bool modified_size_limit = false;
@@ -1690,6 +1722,9 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                     main_priority->modifySizeLimits(
                         new_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_elements],
                         new_settings[FileCacheSetting::slru_size_ratio], cache_lock);
+
+                    actual_settings[FileCacheSetting::max_size] = new_settings[FileCacheSetting::max_size];
+                    actual_settings[FileCacheSetting::max_elements] = new_settings[FileCacheSetting::max_elements];
                 }
                 else
                 {
@@ -1704,8 +1739,10 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                     /// Modify cache size limits.
                     /// From this point cache eviction will follow them.
                     main_priority->modifySizeLimits(
-                        new_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_elements],
-                        new_settings[FileCacheSetting::slru_size_ratio], cache_lock);
+                        new_settings[FileCacheSetting::max_size],
+                        new_settings[FileCacheSetting::max_elements],
+                        new_settings[FileCacheSetting::slru_size_ratio],
+                        cache_lock);
 
                     cache_lock.unlock();
 
@@ -1727,6 +1764,67 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
                     /// Do actual eviction from filesystem.
                     eviction_candidates.evict();
+
+                    auto failed_candidates = eviction_candidates.getFailedCandidates();
+                    if (failed_candidates.total_cache_size)
+                    {
+                        actual_settings[FileCacheSetting::max_size] = std::min<size_t>(
+                            actual_settings[FileCacheSetting::max_size].value,
+                            new_settings[FileCacheSetting::max_size] + failed_candidates.total_cache_size);
+
+                        actual_settings[FileCacheSetting::max_elements] = std::min<size_t>(
+                            actual_settings[FileCacheSetting::max_elements].value,
+                            new_settings[FileCacheSetting::max_elements] + failed_candidates.total_cache_elements);
+
+                        cache_lock.lock();
+
+                        /// Increase the max size and max elements
+                        /// to the size and number of failed candidates.
+                        main_priority->modifySizeLimits(
+                            actual_settings[FileCacheSetting::max_size],
+                            actual_settings[FileCacheSetting::max_elements],
+                            new_settings[FileCacheSetting::slru_size_ratio],
+                            cache_lock);
+
+                        /// Add failed candidates back to queue.
+                        for (const auto & [key_metadata, key_candidates, _] : failed_candidates.failed_candidates_per_key)
+                        {
+                            chassert(!key_candidates.empty());
+
+                            auto locked_key = key_metadata->tryLock();
+                            if (!locked_key)
+                            {
+                                /// Key cannot be removed,
+                                /// because if we failed to remove something from it above,
+                                /// then we did not remove it from key metadata,
+                                /// so key lock must remain valid.
+                                chassert(false);
+                                continue;
+                            }
+
+                            for (const auto & candidate : key_candidates)
+                            {
+                                const auto & file_segment = candidate->file_segment;
+
+                                LOG_TRACE(log, "Adding back file segment after failed eviction: {}:{}",
+                                          file_segment->key(), file_segment->offset());
+
+                                auto queue_iterator = main_priority->add(
+                                    key_metadata,
+                                    file_segment->offset(),
+                                    file_segment->getDownloadedSize(),
+                                    getCommonUser(),
+                                    cache_lock,
+                                    false);
+                                file_segment->setQueueIterator(queue_iterator);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        actual_settings[FileCacheSetting::max_size] = new_settings[FileCacheSetting::max_size];
+                        actual_settings[FileCacheSetting::max_elements] = new_settings[FileCacheSetting::max_elements];
+                    }
                 }
 
                 modified_size_limit = true;
@@ -1736,14 +1834,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         if (modified_size_limit)
         {
             LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
-                    actual_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_size],
-                    actual_settings[FileCacheSetting::max_elements], new_settings[FileCacheSetting::max_elements]);
-
-            chassert(main_priority->getSizeApprox() <= new_settings[FileCacheSetting::max_size]);
-            chassert(main_priority->getElementsCountApprox() <= new_settings[FileCacheSetting::max_elements]);
-
-            actual_settings[FileCacheSetting::max_size] = new_settings[FileCacheSetting::max_size];
-            actual_settings[FileCacheSetting::max_elements] = new_settings[FileCacheSetting::max_elements];
+                    actual_settings[FileCacheSetting::max_size].value, new_settings[FileCacheSetting::max_size].value,
+                    actual_settings[FileCacheSetting::max_elements].value, new_settings[FileCacheSetting::max_elements].value);
         }
         else
         {
@@ -1752,9 +1844,22 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                 "`max_size` and `max_elements` settings will remain inconsistent with config.xml. "
                 "Next attempt to update them will happen on the next config reload. "
                 "You can trigger it with SYSTEM RELOAD CONFIG.",
-                actual_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_size],
-                actual_settings[FileCacheSetting::max_elements], new_settings[FileCacheSetting::max_elements]);
+                actual_settings[FileCacheSetting::max_size].value, new_settings[FileCacheSetting::max_size].value,
+                actual_settings[FileCacheSetting::max_elements].value, new_settings[FileCacheSetting::max_elements].value);
         }
+
+        chassert(main_priority->getSizeApprox() <= actual_settings[FileCacheSetting::max_size]);
+        chassert(main_priority->getElementsCountApprox() <= actual_settings[FileCacheSetting::max_elements]);
+
+        chassert(main_priority->getSizeLimit(lockCache()) == actual_settings[FileCacheSetting::max_size]);
+        chassert(main_priority->getElementsLimit(lockCache()) == actual_settings[FileCacheSetting::max_elements]);
+    }
+    else if (cache_size_changed)
+    {
+        LOG_WARNING(
+            log, "Filesystem cache size was modified, "
+            "but dynamic cache resize is disabled, therefore cache size will not be changed without server restart. "
+            "To enable dynamic cache resize, add `allow_dynamic_cache_resize` to cache configuration");
     }
 
     if (new_settings[FileCacheSetting::max_file_segment_size] != actual_settings[FileCacheSetting::max_file_segment_size])

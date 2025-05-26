@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/string-replace-functions
+description: 'Documentation for Functions for Replacing in Strings'
+sidebar_label: 'Replacing in Strings'
 sidebar_position: 150
-sidebar_label: Replacing in Strings
+slug: /sql-reference/functions/string-replace-functions
+title: 'Functions for Replacing in Strings'
 ---
 
 # Functions for Replacing in Strings
@@ -135,7 +137,7 @@ replaceRegexpOne(haystack, pattern, replacement)
 
 Converting ISO dates to American format:
 
-``` sql
+```sql
 SELECT DISTINCT
     EventDate,
     replaceRegexpOne(toString(EventDate), '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
@@ -146,7 +148,7 @@ FORMAT TabSeparated
 
 Result:
 
-``` text
+```text
 2014-03-17      03/17/2014
 2014-03-18      03/18/2014
 2014-03-19      03/19/2014
@@ -158,13 +160,13 @@ Result:
 
 Copying a string ten times:
 
-``` sql
+```sql
 SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
 
 Result:
 
-``` text
+```text
 ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -178,13 +180,13 @@ Alias: `REGEXP_REPLACE`.
 
 **Example**
 
-``` sql
+```sql
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 ```
 
 Result:
 
-``` text
+```text
 ┌─res────────────────────────┐
 │ HHeelllloo,,  WWoorrlldd!! │
 └────────────────────────────┘
@@ -192,13 +194,13 @@ Result:
 
 As an exception, if a regular expression worked on an empty substring, the replacement is not made more than once, e.g.:
 
-``` sql
+```sql
 SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ```
 
 Result:
 
-``` text
+```text
 ┌─res─────────────────┐
 │ here: Hello, World! │
 └─────────────────────┘
@@ -229,7 +231,7 @@ format(pattern, s0, s1, ...)
 
 **Example**
 
-``` sql
+```sql
 SELECT format('{1} {0} {1}', 'World', 'Hello')
 ```
 
@@ -241,7 +243,7 @@ SELECT format('{1} {0} {1}', 'World', 'Hello')
 
 With implicit numbers:
 
-``` sql
+```sql
 SELECT format('{} {}', 'Hello', 'World')
 ```
 
@@ -267,13 +269,13 @@ translate(s, from, to)
 
 **Example**
 
-``` sql
+```sql
 SELECT translate('Hello, World!', 'delor', 'DELOR') AS res
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────┐
 │ HELLO, WORLD! │
 └───────────────┘
@@ -281,13 +283,13 @@ Result:
 
 `from` and `to` arguments have different lengths:
 
-``` sql
+```sql
 SELECT translate('clickhouse', 'clickhouse', 'CLICK') AS res
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───┐
 │ CLICK │
 └───────┘
@@ -299,7 +301,7 @@ Like [translate](#translate) but assumes `s`, `from` and `to` are UTF-8 encoded 
 
 **Syntax**
 
-``` sql
+```sql
 translateUTF8(s, from, to)
 ```
 
@@ -317,11 +319,11 @@ translateUTF8(s, from, to)
 
 Query:
 
-``` sql
+```sql
 SELECT translateUTF8('Münchener Straße', 'üß', 'us') AS res;
 ```
 
-``` response
+```response
 ┌─res──────────────┐
 │ Munchener Strase │
 └──────────────────┘
@@ -333,7 +335,7 @@ The `printf` function formats the given string with the values (strings, integer
 
 **Syntax**
 
-``` sql
+```sql
 printf(format, arg1, arg2, ...)
 ```
 
@@ -341,12 +343,12 @@ printf(format, arg1, arg2, ...)
 
 Query:
 
-``` sql
+```sql
 select printf('%%%s %s %d', 'Hello', 'World', 2024);
 ```
 
 
-``` response
+```response
 ┌─printf('%%%s %s %d', 'Hello', 'World', 2024)─┐
 │ %Hello World 2024                            │
 └──────────────────────────────────────────────┘

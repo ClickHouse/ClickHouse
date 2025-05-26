@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/covarpop
+description: 'Calculates the population covariance'
 sidebar_position: 121
-title: "covarPop"
-description: "Calculates the population covariance"
+slug: /sql-reference/aggregate-functions/reference/covarpop
+title: 'covarPop'
 ---
 
 # covarPop

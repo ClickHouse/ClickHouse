@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/special/url
+description: 'Queries data to/from a remote HTTP/HTTPS server. This engine is similar
+  to the File engine.'
+sidebar_label: 'URL'
 sidebar_position: 80
-sidebar_label:  URL
-title: "URL Table Engine"
-description: "Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the File engine."
+slug: /engines/table-engines/special/url
+title: 'URL Table Engine'
 ---
 
 # URL Table Engine
@@ -14,7 +15,7 @@ Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
 - The `URL` parameter must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server that uses HTTP or HTTPS. This does not require any additional headers for getting a response from the server.
 
-- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](../../../interfaces/formats.md#formats).
+- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/interfaces/formats#formats-overview).
 
     If this argument is not specified, ClickHouse detects the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
 
@@ -44,13 +45,13 @@ For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` c
 respectively. For processing `POST` requests, the remote server must support
 [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) setting.
+You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/operations/settings/settings#max_http_get_redirects) setting.
 
 ## Example {#example}
 
 **1.** Create a `url_engine_table` table on the server :
 
-``` sql
+```sql
 CREATE TABLE url_engine_table (word String, value UInt64)
 ENGINE=URL('http://127.0.0.1:12345/', CSV)
 ```
@@ -58,7 +59,7 @@ ENGINE=URL('http://127.0.0.1:12345/', CSV)
 **2.** Create a basic HTTP server using the standard Python 3 tools and
 start it:
 
-``` python3
+```python3
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 class CSVHTTPServer(BaseHTTPRequestHandler):
@@ -74,17 +75,17 @@ if __name__ == "__main__":
     HTTPServer(server_address, CSVHTTPServer).serve_forever()
 ```
 
-``` bash
+```bash
 $ python3 server.py
 ```
 
 **3.** Request data:
 
-``` sql
+```sql
 SELECT * FROM url_engine_table
 ```
 
-``` text
+```text
 ┌─word──┬─value─┐
 │ Hello │     1 │
 │ World │     2 │

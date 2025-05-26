@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/select/
+description: 'Documentation for SELECT Query'
+sidebar_label: 'SELECT'
 sidebar_position: 32
-sidebar_label: SELECT
+slug: /sql-reference/statements/select/
+title: 'SELECT Query'
 ---
 
 # SELECT Query
@@ -10,7 +12,7 @@ sidebar_label: SELECT
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 [WITH expr_list(subquery)]
 SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
@@ -45,7 +47,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
 - [WHERE clause](../../../sql-reference/statements/select/where.md)
 - [WINDOW clause](../../../sql-reference/window-functions/index.md)
-- [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
+- [GROUP BY clause](/sql-reference/statements/select/group-by)
 - [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 - [HAVING clause](../../../sql-reference/statements/select/having.md)
 - [QUALIFY clause](../../../sql-reference/statements/select/qualify.md)
@@ -59,7 +61,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 
 ## SELECT Clause {#select-clause}
 
-[Expressions](../../../sql-reference/syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](../../../sql-reference/statements/select/group-by.md) aggregation.
+[Expressions](/sql-reference/syntax#expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](/sql-reference/statements/select/group-by) aggregation.
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
@@ -68,23 +70,23 @@ If you want to include all columns in the result, use the asterisk (`*`) symbol.
 
 Dynamic column selection (also known as a COLUMNS expression) allows you to match some columns in a result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression.
 
-``` sql
+```sql
 COLUMNS('regexp')
 ```
 
 For example, consider the table:
 
-``` sql
+```sql
 CREATE TABLE default.col_names (aa Int8, ab Int8, bc Int8) ENGINE = TinyLog
 ```
 
 The following query selects data from all the columns containing the `a` symbol in their name.
 
-``` sql
+```sql
 SELECT COLUMNS('a') FROM col_names
 ```
 
-``` text
+```text
 ┌─aa─┬─ab─┐
 │  1 │  1 │
 └────┴────┘
@@ -96,11 +98,11 @@ You can use multiple `COLUMNS` expressions in a query and apply functions to the
 
 For example:
 
-``` sql
+```sql
 SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
 ```
 
-``` text
+```text
 ┌─aa─┬─ab─┬─bc─┬─toTypeName(bc)─┐
 │  1 │  1 │  1 │ Int8           │
 └────┴────┴────┴────────────────┘
@@ -110,11 +112,11 @@ Each column returned by the `COLUMNS` expression is passed to the function as a 
 
 For example:
 
-``` sql
+```sql
 SELECT COLUMNS('a') + COLUMNS('c') FROM col_names
 ```
 
-``` text
+```text
 Received exception from server (version 19.14.1):
 Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus does not match: passed 3, should be 2.
 ```
@@ -149,7 +151,7 @@ Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. How
 
 You can use synonyms (`AS` aliases) in any part of a query.
 
-The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses can support positional arguments. To enable this, switch on the [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) setting. Then, for example, `ORDER BY 1,2` will be sorting rows in the table on the first and then the second column.
+The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses can support positional arguments. To enable this, switch on the [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments) setting. Then, for example, `ORDER BY 1,2` will be sorting rows in the table on the first and then the second column.
 
 ## Implementation Details {#implementation-details}
 
@@ -205,7 +207,7 @@ Specifies the names of one or more columns to exclude from the result. All match
 
 **Syntax:**
 
-``` sql
+```sql
 SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
 ```
 
@@ -224,13 +226,13 @@ SELECT * EXCEPT (i) from columns_transformers;
 
 ### REPLACE {#replace}
 
-Specifies one or more [expression aliases](../../../sql-reference/syntax.md#syntax-expression_aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`.
+Specifies one or more [expression aliases](/sql-reference/syntax#expression-aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`.
 
 This modifier does not change the names or order of columns. However, it can change the value and the value type.
 
 **Syntax:**
 
-``` sql
+```sql
 SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
 ```
 

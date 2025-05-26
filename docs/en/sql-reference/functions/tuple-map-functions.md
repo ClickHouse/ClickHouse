@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/functions/tuple-map-functions
+description: 'Documentation for Tuple Map Functions'
+sidebar_label: 'Maps'
 sidebar_position: 120
-sidebar_label: Maps
-title: Map Functions
+slug: /sql-reference/functions/tuple-map-functions
+title: 'Map Functions'
 ---
 
 ## map {#map}
@@ -34,7 +35,7 @@ SELECT map('key1', number, 'key2', number * 2) FROM numbers(3);
 
 Result:
 
-``` text
+```text
 ┌─map('key1', number, 'key2', multiply(number, 2))─┐
 │ {'key1':0,'key2':0}                              │
 │ {'key1':1,'key2':2}                              │
@@ -151,7 +152,7 @@ SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') a
 
 Result:
 
-``` Result:
+```Result:
 ┌─kv──────────────────────────────────────────────────────────────────────┐
 │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -165,7 +166,7 @@ SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:bra
 
 Result:
 
-``` text
+```text
 ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -179,7 +180,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 
 Result:
 
-``` text
+```text
 ┌─kv─────────────────────┐
 │ {'age':'a\\x0A\\n\\0'} │
 └────────────────────────┘
@@ -248,11 +249,11 @@ mapAdd(arg1, arg2 [, ...])
 
 **Arguments**
 
-Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promoted to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](../data-types/int-uint.md#uint-ranges) or [Float64](../data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
+Arguments are [maps](../data-types/map.md) or [tuples](/sql-reference/data-types/tuple) of two [arrays](/sql-reference/data-types/array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promoted to the one type ([Int64](/sql-reference/data-types/int-uint#integer-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges) or [Float64](/sql-reference/data-types/float)). The common promoted type is used as a type for the result array.
 
 **Returned value**
 
-- Depending on the arguments returns one [map](../data-types/map.md) or [tuple](../data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
+- Depending on the arguments returns one [map](../data-types/map.md) or [tuple](/sql-reference/data-types/tuple), where the first array contains the sorted keys and the second array contains values.
 
 **Example**
 
@@ -296,11 +297,11 @@ mapSubtract(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 
 **Arguments**
 
-Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](../data-types/int-uint.md#uint-ranges) or [Float64](../data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
+Arguments are [maps](../data-types/map.md) or [tuples](/sql-reference/data-types/tuple) of two [arrays](/sql-reference/data-types/array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](/sql-reference/data-types/int-uint#integer-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges) or [Float64](/sql-reference/data-types/float)). The common promoted type is used as a type for the result array.
 
 **Returned value**
 
-- Depending on the arguments returns one [map](../data-types/map.md) or [tuple](../data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
+- Depending on the arguments returns one [map](../data-types/map.md) or [tuple](/sql-reference/data-types/tuple), where the first array contains the sorted keys and the second array contains values.
 
 **Example**
 
@@ -351,7 +352,7 @@ For array arguments the number of elements in `keys` and `values` must be the sa
 
 **Arguments**
 
-Arguments are [Maps](../data-types/map.md) or two [Arrays](../data-types/array.md#data-type-array), where the first and second array contains keys and values for the each key.
+Arguments are [Maps](../data-types/map.md) or two [Arrays](/sql-reference/data-types/array), where the first and second array contains keys and values for the each key.
 
 Mapped arrays:
 
@@ -359,13 +360,13 @@ Mapped arrays:
 
 or
 
-- `keys` — Array of keys. [Array](../data-types/array.md#data-type-array)([Int](../data-types/int-uint.md#uint-ranges)).
-- `values` — Array of values. [Array](../data-types/array.md#data-type-array)([Int](../data-types/int-uint.md#uint-ranges)).
-- `max` — Maximum key value. Optional. [Int8, Int16, Int32, Int64, Int128, Int256](../data-types/int-uint.md#int-ranges).
+- `keys` — Array of keys. [Array](/sql-reference/data-types/array)([Int](/sql-reference/data-types/int-uint#integer-ranges)).
+- `values` — Array of values. [Array](/sql-reference/data-types/array)([Int](/sql-reference/data-types/int-uint#integer-ranges)).
+- `max` — Maximum key value. Optional. [Int8, Int16, Int32, Int64, Int128, Int256](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Returned value**
 
-- Depending on the arguments a [Map](../data-types/map.md) or a [Tuple](../data-types/tuple.md#tuplet1-t2) of two [Arrays](../data-types/array.md#data-type-array): keys in sorted order, and values the corresponding keys.
+- Depending on the arguments a [Map](../data-types/map.md) or a [Tuple](/sql-reference/data-types/tuple) of two [Arrays](/sql-reference/data-types/array): keys in sorted order, and values the corresponding keys.
 
 **Example**
 
@@ -397,53 +398,13 @@ Result:
 └──────────────────────────────┴───────────────────────────────────┘
 ```
 
-## mapContains {#mapcontains}
-
-Returns if a given key is contained in a given map.
-
-**Syntax**
-
-```sql
-mapContains(map, key)
-```
-
-**Arguments**
-
-- `map` — Map. [Map](../data-types/map.md).
-- `key` — Key. Type must match the key type of `map`.
-
-**Returned value**
-
-- `1` if `map` contains `key`, `0` if not. [UInt8](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
-
-INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
-
-SELECT mapContains(a, 'name') FROM tab;
-
-```
-
-Result:
-
-```text
-┌─mapContains(a, 'name')─┐
-│                      1 │
-│                      0 │
-└────────────────────────┘
-```
 
 ## mapKeys {#mapkeys}
 
 Returns the keys of a given map.
 
-This function can be optimized by enabling setting [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns).
-With enabled setting, the function only reads the [keys](../data-types/map.md#map-subcolumns) subcolumn instead the whole map.
+This function can be optimized by enabling setting [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns).
+With enabled setting, the function only reads the [keys](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn instead the whole map.
 The query `SELECT mapKeys(m) FROM table` is transformed to `SELECT m.keys FROM table`.
 
 **Syntax**
@@ -481,27 +442,26 @@ Result:
 └───────────────────────┘
 ```
 
-## mapValues {#mapvalues}
+## mapContains {#mapcontains}
 
-Returns the values of a given map.
-
-This function can be optimized by enabling setting [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns).
-With enabled setting, the function only reads the [values](../data-types/map.md#map-subcolumns) subcolumn instead the whole map.
-The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FROM table`.
+Returns if a given key is contained in a given map.
 
 **Syntax**
 
 ```sql
-mapValues(map)
+mapContains(map, key)
 ```
+
+Alias: `mapContainsKey(map, key)`
 
 **Arguments**
 
 - `map` — Map. [Map](../data-types/map.md).
+- `key` — Key. Type must match the key type of `map`.
 
 **Returned value**
 
-- Array containing all the values from `map`. [Array](../data-types/array.md).
+- `1` if `map` contains `key`, `0` if not. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -512,17 +472,19 @@ CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
 
 INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
 
-SELECT mapValues(a) FROM tab;
+SELECT mapContains(a, 'name') FROM tab;
+
 ```
 
 Result:
 
 ```text
-┌─mapValues(a)─────┐
-│ ['eleven','11']  │
-│ ['twelve','6.0'] │
-└──────────────────┘
+┌─mapContains(a, 'name')─┐
+│                      1 │
+│                      0 │
+└────────────────────────┘
 ```
+
 
 ## mapContainsKeyLike {#mapcontainskeylike}
 
@@ -601,6 +563,170 @@ Result:
 └────────────────────────────┘
 ```
 
+
+## mapValues {#mapvalues}
+
+Returns the values of a given map.
+
+This function can be optimized by enabling setting [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns).
+With enabled setting, the function only reads the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn instead the whole map.
+The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FROM table`.
+
+**Syntax**
+
+```sql
+mapValues(map)
+```
+
+**Arguments**
+
+- `map` — Map. [Map](../data-types/map.md).
+
+**Returned value**
+
+- Array containing all the values from `map`. [Array](../data-types/array.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
+
+INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapValues(a) FROM tab;
+```
+
+Result:
+
+```text
+┌─mapValues(a)─────┐
+│ ['eleven','11']  │
+│ ['twelve','6.0'] │
+└──────────────────┘
+```
+
+## mapContainsValue {#mapcontainsvalue}
+
+Returns if a given key is contained in a given map.
+
+**Syntax**
+
+```sql
+mapContainsValue(map, value)
+```
+
+Alias: `mapContainsValue(map, value)`
+
+**Arguments**
+
+- `map` — Map. [Map](../data-types/map.md).
+- `value` — Value. Type must match the value type of `map`.
+
+**Returned value**
+
+- `1` if `map` contains `value`, `0` if not. [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
+
+INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapContainsValue(a, '11') FROM tab;
+
+```
+
+Result:
+
+```text
+┌─mapContainsValue(a, '11')─┐
+│                         1 │
+│                         0 │
+└───────────────────────────┘
+```
+
+## mapContainsValueLike {#mapcontainsvaluelike}
+
+**Syntax**
+
+```sql
+mapContainsValueLike(map, pattern)
+```
+
+**Arguments**
+- `map` — Map. [Map](../data-types/map.md).
+- `pattern`  - String pattern to match.
+
+**Returned value**
+
+- `1` if `map` contains `value` like specified pattern, `0` if not.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
+
+INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
+
+SELECT mapContainsValueLike(a, 'a%') FROM tab;
+```
+
+Result:
+
+```text
+┌─mapContainsV⋯ke(a, 'a%')─┐
+│                        1 │
+│                        0 │
+└──────────────────────────┘
+```
+
+## mapExtractValueLike {#mapextractvaluelike}
+
+Give a map with string values and a LIKE pattern, this function returns a map with elements where the value matches the pattern.
+
+**Syntax**
+
+```sql
+mapExtractValueLike(map, pattern)
+```
+
+**Arguments**
+
+- `map` — Map. [Map](../data-types/map.md).
+- `pattern`  - String pattern to match.
+
+**Returned value**
+
+- A map containing elements the value matching the specified pattern. If no elements match the pattern, an empty map is returned.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
+
+INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
+
+SELECT mapExtractValueLike(a, 'a%') FROM tab;
+```
+
+Result:
+
+```text
+┌─mapExtractValueLike(a, 'a%')─┐
+│ {'abc':'abc'}                │
+│ {}                           │
+└──────────────────────────────┘
+```
+
 ## mapApply {#mapapply}
 
 Applies a function to each element of a map.
@@ -613,7 +739,7 @@ mapApply(func, map)
 
 **Arguments**
 
-- `func` — [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` — [Lambda function](/sql-reference/functions/overview#higher-order-functions).
 - `map` — [Map](../data-types/map.md).
 
 **Returned value**
@@ -655,7 +781,7 @@ mapFilter(func, map)
 
 **Arguments**
 
-- `func`  - [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func`  - [Lambda function](/sql-reference/functions/overview#higher-order-functions).
 - `map` — [Map](../data-types/map.md).
 
 **Returned value**
@@ -772,7 +898,7 @@ Result:
 Returns 1 if at least one key-value pair in `map` exists for which `func(key, value)` returns something other than 0. Otherwise, it returns 0.
 
 :::note
-`mapExists` is a [higher-order function](/docs/sql-reference/functions/overview#higher-order-functions).
+`mapExists` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
 You can pass a lambda function to it as the first argument.
 :::
 
@@ -786,7 +912,7 @@ SELECT mapExists((k, v) -> (v = 1), map('k1', 1, 'k2', 2)) AS res
 
 Result:
 
-```
+```response
 ┌─res─┐
 │   1 │
 └─────┘
@@ -797,7 +923,7 @@ Result:
 Returns 1 if `func(key, value)` returns something other than 0 for all key-value pairs in `map`. Otherwise, it returns 0.
 
 :::note
-Note that the `mapAll` is a [higher-order function](/docs/sql-reference/functions/overview#higher-order-functions).
+Note that the `mapAll` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
 You can pass a lambda function to it as the first argument.
 :::
 
@@ -811,7 +937,7 @@ SELECT mapAll((k, v) -> (v = 1), map('k1', 1, 'k2', 2)) AS res
 
 Result:
 
-```
+```response
 ┌─res─┐
 │   0 │
 └─────┘
@@ -824,27 +950,27 @@ If the `func` function is specified, the sorting order is determined by the resu
 
 **Examples**
 
-``` sql
+```sql
 SELECT mapSort(map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-``` text
+```text
 ┌─map──────────────────────────┐
 │ {'key1':3,'key2':2,'key3':1} │
 └──────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT mapSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-``` text
+```text
 ┌─map──────────────────────────┐
 │ {'key3':1,'key2':2,'key1':3} │
 └──────────────────────────────┘
 ```
 
-For more details see the [reference](../../sql-reference/functions/array-functions.md#array_functions-sort) for `arraySort` function. 
+For more details see the [reference](/sql-reference/functions/array-functions#sort) for `arraySort` function. 
 
 ## mapPartialSort {#mappartialsort}
 
@@ -858,7 +984,7 @@ mapPartialSort([func,] limit, map)
 ```
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions).
 - `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
 - `map` – Map to sort. [Map](../data-types/map.md).
 
@@ -868,11 +994,11 @@ mapPartialSort([func,] limit, map)
 
 **Example**
 
-``` sql
+```sql
 SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2));
 ```
 
-``` text
+```text
 ┌─mapPartialSort(lambda(tuple(k, v), v), 2, map('k1', 3, 'k2', 1, 'k3', 2))─┐
 │ {'k2':1,'k3':2,'k1':3}                                                    │
 └───────────────────────────────────────────────────────────────────────────┘
@@ -885,27 +1011,27 @@ If the `func` function is specified, the sorting order is determined by the resu
 
 **Examples**
 
-``` sql
+```sql
 SELECT mapReverseSort(map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-``` text
+```text
 ┌─map──────────────────────────┐
 │ {'key3':1,'key2':2,'key1':3} │
 └──────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT mapReverseSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-``` text
+```text
 ┌─map──────────────────────────┐
 │ {'key1':3,'key2':2,'key3':1} │
 └──────────────────────────────┘
 ```
 
-For more details see function [arrayReverseSort](../../sql-reference/functions/array-functions.md#array_functions-reverse-sort).
+For more details see function [arrayReverseSort](/sql-reference/functions/array-functions#arrayreversesort).
 
 ## mapPartialReverseSort {#mappartialreversesort}
 
@@ -919,7 +1045,7 @@ mapPartialReverseSort([func,] limit, map)
 ```
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions).
 - `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
 - `map` – Map to sort. [Map](../data-types/map.md).
 
@@ -929,11 +1055,11 @@ mapPartialReverseSort([func,] limit, map)
 
 **Example**
 
-``` sql
+```sql
 SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2));
 ```
 
-``` text
+```text
 ┌─mapPartialReverseSort(lambda(tuple(k, v), v), 2, map('k1', 3, 'k2', 1, 'k3', 2))─┐
 │ {'k1':3,'k3':2,'k2':1}                                                           │
 └──────────────────────────────────────────────────────────────────────────────────┘

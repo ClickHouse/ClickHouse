@@ -1,7 +1,10 @@
 ---
-slug: /interfaces/third-party/integrations
+description: 'Documentation on integrating ClickHouse with various third-party systems
+  and tools'
+sidebar_label: 'Integrations'
 sidebar_position: 27
-sidebar_label: Integrations
+slug: /interfaces/third-party/integrations
+title: 'Integration Libraries from Third-party Developers'
 ---
 
 # Integration Libraries from Third-party Developers
@@ -50,7 +53,7 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
         - [graphouse](https://github.com/ClickHouse/graphouse)
         - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
         - [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        - [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
+        - [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](/engines/table-engines/mergetree-family/graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
     - [Grafana](https://grafana.com/)
         - [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     - [Prometheus](https://prometheus.io/)

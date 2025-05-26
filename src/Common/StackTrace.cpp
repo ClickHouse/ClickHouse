@@ -56,6 +56,11 @@ bool shouldShowAddress(const void * addr)
 }
 }
 
+StackTrace::StackTrace()
+{
+    tryCapture();
+}
+
 void StackTrace::setShowAddresses(bool show)
 {
     show_addresses.store(show, std::memory_order_relaxed);
@@ -364,7 +369,10 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
         /// Skip excessive stack frames that we have created while finding stack trace.
         for (size_t i = 0; i < size; ++i)
         {
-            if (frame_pointers[i] == caller_address)
+            if (frame_pointers[i] == caller_address ||
+                /// This compensates for a hack in libunwind, see the "+ 1" in
+                /// UnwindCursor<A, R>::stepThroughSigReturn.
+                frame_pointers[i] == reinterpret_cast<void *>(reinterpret_cast<char *>(caller_address) + 1))
             {
                 offset = i;
                 break;
