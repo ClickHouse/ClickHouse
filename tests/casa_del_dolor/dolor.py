@@ -60,6 +60,8 @@ parser.add_argument("--with-postgresql", type = bool, default = False, help = 'W
 parser.add_argument("--with-mysql", type = bool, default = False, help = 'With MySQL integration')
 parser.add_argument("--with-minio", type = bool, default = True, help = 'With MinIO integration')
 parser.add_argument("--with-sqlite", type = bool, default = False, help = 'With SQLite integration')
+parser.add_argument("--with-mongodb", type = bool, default = False, help = 'With MongoDB integration')
+parser.add_argument("--with-redis", type = bool, default = False, help = 'With Redis integration')
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
@@ -105,6 +107,8 @@ for i in range(0, len(args.replica_values)):
                                         with_minio = args.with_minio,
                                         with_postgres = args.with_postgresql,
                                         with_mysql8 = args.with_mysql,
+                                        with_mongodb = args.with_mongodb,
+                                        with_redis = args.with_redis,
                                         main_configs = [server_settings] if server_settings is not None else [],
                                         user_configs = [args.user_config] if args.user_config is not None else [],
                                         macros={"replica": args.replica_values[i], "shard": args.shard_values[i]}))

@@ -7,7 +7,7 @@ import tempfile
 
 from integration.helpers.client import CommandRequest
 from integration.helpers.cluster import ClickHouseInstance
-from integration.helpers.config_cluster import minio_secret_key, pg_pass, mysql_pass
+from integration.helpers.config_cluster import minio_secret_key, pg_pass, mysql_pass, mongo_pass
 
 class Generator():
     def __init__(self, binary : pathlib.Path, config : pathlib.Path):
@@ -61,6 +61,21 @@ class BuzzHouseGenerator(Generator):
         if args.with_sqlite:
             buzz_config['sqlite'] = {
                 "query_log_file": "/tmp/sqlite.sql"
+            }
+        if args.with_mongodb:
+            buzz_config['mongodb'] = {
+                "query_log_file": "/tmp/mongodb.doc",
+                "database": "test",
+                "hostname": cluster.mongo_host,
+                "port": cluster.mongo_port,
+                "user": "root",
+                "password": mongo_pass
+            }
+        if args.with_redis:
+            buzz_config['redis'] = {
+                "hostname": cluster.redis_host,
+                "port": cluster.redis_port,
+                "password": "clickhouse"
             }
 
         with open(self.temp.name, "w") as file2:
