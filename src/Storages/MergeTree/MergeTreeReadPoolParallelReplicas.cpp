@@ -37,7 +37,7 @@ size_t chooseSegmentSize(
     /// it would be a huge waste of cache space.
     constexpr std::array<size_t, 3> borders{128, 1024, 16384};
 
-    LOG_DEBUG(
+    LOG_TRACE(
         log,
         "mark_segment_size={}, min_marks_per_task*threads={}, sum_marks/number_of_replicas^2={}",
         mark_segment_size,
@@ -62,7 +62,7 @@ size_t chooseSegmentSize(
     {
         if (mark_segment_size >= border)
         {
-            LOG_DEBUG(log, "Chosen segment size: {}", border);
+            LOG_TRACE(log, "Chosen segment size: {}", border);
             return border;
         }
     }

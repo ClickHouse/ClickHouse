@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3238 
+personal_ws-1.1 en 3283 
 AArch
 ACLs
 ALTERs
@@ -33,7 +33,6 @@ Approximative
 ArrayJoin
 ArrowCompression
 ArrowStream
-aspell
 AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
@@ -83,6 +82,7 @@ BackupsIOThreads
 BackupsIOThreadsActive
 BackupsThreads
 BackupsThreadsActive
+Bech
 BestEffort
 BestEffortOrNull
 BestEffortOrZero
@@ -130,7 +130,6 @@ CMPLNT
 CMake
 CMakeLists
 CODECS
-codespell
 CORS
 COVID
 CPUFrequencyMHz
@@ -154,6 +153,7 @@ CapContains
 CapUnion
 CapnProto
 CapnProtoEnumComparingMode
+CardSecondary
 CatBoost
 CellAreaM
 CellAreaRads
@@ -169,6 +169,7 @@ CityHash
 Clangd
 ClickBench
 ClickCat
+ClickHaskell
 ClickHouse
 ClickHouse's
 ClickHouseClient
@@ -334,6 +335,7 @@ FilesystemMainPathTotalINodes
 FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
+FixedStrings
 FlameGraph
 Flink
 ForEach
@@ -597,6 +599,7 @@ MSan
 MVCC
 MacBook
 MacOS
+Mainnet
 MapState
 MarkCacheBytes
 MarkCacheFiles
@@ -661,7 +664,6 @@ Multiqueries
 Multithreading
 Multiword
 MurmurHash
-mypy
 MySQLConnection
 MySQLDataTypesSupport
 MySQLDump
@@ -985,6 +987,7 @@ Schemas
 Schwartzian
 SeasClick
 SeekTable
+SegWit
 SelfManaged
 Sematext
 SendExternalTables
@@ -1089,6 +1092,7 @@ TemporaryFilesForJoin
 TemporaryFilesForSort
 TemporaryFilesUnknown
 Testflows
+Testnet
 Tgz
 Theil's
 Theils
@@ -1254,6 +1258,7 @@ aggthrow
 aiochclient
 alloc
 allocator
+allowlist
 alphaTokens
 amplab
 analysisOfVariance
@@ -1352,6 +1357,7 @@ arrayZipUnaligned
 ascii
 asin
 asinh
+aspell
 assumeNotNull
 async
 asynch
@@ -1386,6 +1392,7 @@ backupview
 balancer
 basename
 bcrypt
+bech
 benchmarked
 benchmarking
 bfloat
@@ -1430,6 +1437,7 @@ bitmaskToArray
 bitmaskToList
 bitov
 blake
+blobpath
 blockNumber
 blockSerializedSize
 blockSize
@@ -1532,6 +1540,7 @@ codec
 codecs
 codepoint
 codepoints
+codespell
 collapsingmergetree
 combinator
 combinators
@@ -1688,6 +1697,7 @@ denormalize
 denormalized
 denormalizing
 denormals
+denylist
 dequeued
 dequeues
 dereference
@@ -1728,6 +1738,7 @@ distinctdynamictypes
 distinctjsonpaths
 distro
 divideDecimal
+divideOrNull
 dmesg
 doesnt
 domainRFC
@@ -1846,7 +1857,6 @@ formatter
 formatters
 fqdn
 frac
-freezed
 frictionless
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1887,8 +1897,10 @@ geospatial
 getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
+getMergeTreeSetting
 getOSKernelVersion
 getServerPort
+getServerSetting
 getSetting
 getSettingOrDefault
 getSizeOfEnumType
@@ -1954,6 +1966,7 @@ grpc
 grpcio
 gtest
 gtid
+gunzip
 gzip
 gzipped
 hadoop
@@ -2003,6 +2016,7 @@ http
 https
 hudi
 hudiCluster
+hyperparameter
 hyperscan
 hypot
 hyvor
@@ -2036,6 +2050,7 @@ inodes
 instantiation
 instantiations
 intDiv
+intDivOrNull
 intDivOrZero
 intExp
 intHash
@@ -2201,9 +2216,13 @@ mapAll
 mapApply
 mapConcat
 mapContains
+mapContainsKey
 mapContainsKeyLike
+mapContainsValue
+mapContainsValueLike
 mapExists
 mapExtractKeyLike
+mapExtractValueLike
 mapFilter
 mapFromArrays
 mapKeys
@@ -2233,6 +2252,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreeProjection
 mergeable
 mergetree
 messageID
@@ -2261,6 +2281,7 @@ mmap
 mmapped
 modularization
 moduli
+moduloOrNull
 moduloOrZero
 mongoc
 mongocxx
@@ -2316,6 +2337,7 @@ musqldump
 mutex
 mydb
 myfilter
+mypy
 mysql
 mysqldump
 mysqljs
@@ -2330,8 +2352,10 @@ namespace
 namespaces
 natively
 nats
+ncat
 ness
 nestjs
+netcat
 netloc
 newjson
 ngram
@@ -2473,6 +2497,8 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
+positiveModuloOrNull
+postfilter
 postfix
 postfixes
 postgres
@@ -2490,6 +2516,7 @@ prefetched
 prefetches
 prefetching
 prefetchsize
+prefilter
 preflight
 preimage
 preloaded
@@ -2828,6 +2855,8 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringBytesEntropy
+stringBytesUniq
 stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
@@ -3033,6 +3062,7 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
+toTimeWithFixedDate
 toTimeZone
 toType
 toTypeName

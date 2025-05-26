@@ -85,7 +85,7 @@ def load_catalog_impl(started_cluster):
         **{
             "uri": BASE_URL_LOCAL_RAW,
             "type": "rest",
-            "s3.endpoint": f"http://localhost:9002",
+            "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": "minio",
             "s3.secret-access-key": "ClickHouse_Minio_P@ssw0rd",
         },
@@ -138,22 +138,9 @@ CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_s
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
-
-
-def print_objects():
-    minio_client = Minio(
-        f"localhost:9002",
-        access_key="minio",
-        secret_key=minio_secret_key,
-        secure=False,
-        http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
-    )
-
-    objects = list(minio_client.list_objects("warehouse", "", recursive=True))
-    names = [x.object_name for x in objects]
-    names.sort()
-    for name in names:
-        print(f"Found object: {name}")
+    show_result = node.query(f"SHOW DATABASE {name}")
+    assert minio_secret_key not in show_result
+    assert "HIDDEN" in show_result
 
 
 @pytest.fixture(scope="module")

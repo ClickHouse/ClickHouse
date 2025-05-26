@@ -87,7 +87,7 @@ extern template class CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, Page
 ///
 /// Implementation should be careful to always use MemoryTrackerBlockerInThread for all operations
 /// that lock the mutex or allocate memory. Otherwise we'll can deadlock when MemoryTracker calls
-/// autoResize().
+/// autoResize.
 class PageCache
 {
 private:
@@ -106,7 +106,14 @@ public:
     using Mapped = typename Base::Mapped;
     using MappedPtr = typename Base::MappedPtr;
 
-    PageCache(size_t default_block_size_, size_t default_lookahead_blocks_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_, size_t num_shards);
+    PageCache(
+        std::chrono::milliseconds history_window_,
+        const String & cache_policy,
+        double size_ratio,
+        size_t min_size_in_bytes_,
+        size_t max_size_in_bytes_,
+        double free_memory_ratio_,
+        size_t num_shards);
 
     /// Get or insert a chunk for the given key.
     ///
@@ -116,10 +123,7 @@ public:
 
     bool contains(const PageCacheKey & key, bool inject_eviction) const;
 
-    void autoResize(size_t memory_usage, size_t memory_limit);
-
-    size_t defaultBlockSize() const { return default_block_size; }
-    size_t defaultLookaheadBlocks() const { return default_lookahead_blocks; }
+    void autoResize(Int64 memory_usage, size_t memory_limit);
 
     void clear();
     size_t sizeInBytes() const;
@@ -127,9 +131,6 @@ public:
     size_t maxSizeInBytes() const;
 
 private:
-    size_t default_block_size;
-    size_t default_lookahead_blocks;
-
     /// Cache size is automatically adjusted by background thread, within this range,
     /// targeting cache size (total_memory_limit * (1 - free_memory_ratio) - memory_used_excluding_cache).
     size_t min_size_in_bytes = 0;

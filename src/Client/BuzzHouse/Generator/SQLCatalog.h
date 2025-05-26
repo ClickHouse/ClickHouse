@@ -270,6 +270,8 @@ public:
             || isBufferEngine() || isDistributedEngine();
     }
 
+    bool supportsOptimize() const { return isMergeTreeFamily() || isBufferEngine() || isDistributedEngine(); }
+
     bool hasSignColumn() const
     {
         return teng >= TableEngineValues::CollapsingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
