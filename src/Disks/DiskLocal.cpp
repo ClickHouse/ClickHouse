@@ -26,7 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
-
+#include <Poco/DirectoryIterator.h>
 
 namespace CurrentMetrics
 {
@@ -214,7 +214,21 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
     }
 
     LOG_TRACE(logger, "Could not reserve {} on local disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
-
+    if (name == "test1")
+    {
+        try
+        {
+            Poco::DirectoryIterator end;
+            for (Poco::DirectoryIterator it(disk_path); it != end; ++it)
+            {
+                LOG_INFO(logger, "Reserve failed in disk_path {}: {}", disk_path, it.name());
+            }
+        }
+        catch (const std::exception & e)
+        {
+            LOG_WARNING(logger, "Reserve failed  Failed to list {}: {}", disk_path, e.what());
+        }
+    }
 
     return {};
 }
@@ -544,7 +558,7 @@ DiskLocal::DiskLocal(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     : DiskLocal(name_, path_, keep_free_space_bytes_, config, config_prefix)
 {
-    auto local_disk_check_period_ms = config.getUInt("local_disk_check_period_ms", 0);
+    auto local_disk_check_period_ms = config.getUInt("local_disk_check_period_ms", 60000);
     if (local_disk_check_period_ms > 0)
         disk_checker = std::make_unique<DiskLocalCheckThread>(this, context, local_disk_check_period_ms);
 }
@@ -553,7 +567,7 @@ DiskLocal::DiskLocal(const String & name_, const String & path_)
     : IDisk(name_)
     , disk_path(path_)
     , keep_free_space_bytes(0)
-    , logger(getLogger("DiskLocal"))
+    , logger(getLogger(fmt::format("DiskLocal({})", name_)))
     , data_source_description(getLocalDataSourceDescription(disk_path))
 {
 }
@@ -612,6 +626,27 @@ try
         if (magic_number && *magic_number == disk_checker_magic_number)
             return true;
     }
+    return false;
+}
+catch (const std::exception & e)
+{
+    LOG_WARNING(logger, "Cannot achieve read over the disk directory: {}, exception: {}", disk_path, e.what());
+    if (disk_path == "/var/lib/clickhouse/path1/")
+    {
+        try
+        {
+            Poco::DirectoryIterator end;
+            for (Poco::DirectoryIterator it(disk_path); it != end; ++it)
+            {
+                LOG_INFO(logger, "Disk Local can read Found file in path {}: {}", disk_path, it.name());
+            }
+        }
+        catch (const std::exception & e)
+        {
+            LOG_WARNING(logger, "Disk Local can read Failed to list {}: {}", disk_path, e.what());
+        }
+    }
+
     return false;
 }
 catch (...)
@@ -704,7 +739,10 @@ void DiskLocal::setup()
                 /// The checker file is incorrect. Mark the magic number to uninitialized and try to generate a new checker file.
                 disk_checker_magic_number = -1;
             }
+            LOG_INFO(logger, "Disk checker path {} exists on disk {}, magic number is {}", disk_checker_path, name, disk_checker_magic_number);
         }
+        else
+            LOG_INFO(logger, "Disk checker path {} didn't exists on disk {}", disk_checker_path, name);
     }
     catch (...)
     {
@@ -715,6 +753,7 @@ void DiskLocal::setup()
     /// Try to create a new checker file. The disk status can be either broken or readonly.
     if (disk_checker_magic_number == -1)
     {
+
         try
         {
             pcg32_fast rng(randomSeed());
@@ -725,6 +764,7 @@ void DiskLocal::setup()
                 buf->finalize();
             }
             disk_checker_magic_number = magic_number;
+            LOG_INFO(logger, "Created new checker file {} on disk {} with magic number {}", disk_checker_path, name, disk_checker_magic_number);
         }
         catch (...)
         {

@@ -12,7 +12,11 @@ import string
 import subprocess
 import sys
 from typing import Any
-
+import threading
+import time
+from datetime import datetime
+import re
+import glob
 from integration_test_images import get_docker_env
 
 
@@ -172,7 +176,6 @@ def check_iptables_legacy() -> None:
         print(f"Error: '{iptables_path}' not found")
         sys.exit(1)
 
-
 def docker_kill_handler_handler(signum: Any, frame: Any) -> None:
     _, _ = signum, frame
     subprocess.check_call(
@@ -181,6 +184,52 @@ def docker_kill_handler_handler(signum: Any, frame: Any) -> None:
     )
     raise KeyboardInterrupt("Killed by Ctrl+C")
 
+LOG_PREFIX = "[Test from ChangWu]"
+
+def get_hostname():
+    try:
+        return subprocess.check_output("hostname", shell=True).decode().strip()
+    except Exception:
+        return "unknown-host"
+
+def get_ip():
+    try:
+        ip = subprocess.check_output("hostname -I", shell=True).decode().strip().split()[0]
+        return ip
+    except Exception:
+        return "unknown-ip"
+
+def current_time():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+def log(msg):
+    print(f"{LOG_PREFIX} [{current_time()}] {msg}", flush=True)
+
+def monitor_directory(path, interval=1):
+    log(f"Started monitoring: {path}")
+    prev_snapshot = {}
+    while True:
+        current_snapshot = {}
+        for root, _, files in os.walk(path):
+            for name in files:
+                file_path = os.path.join(root, name)
+                try:
+                    current_snapshot[file_path] = os.stat(file_path).st_mtime
+                except FileNotFoundError:
+                    continue
+
+        for path_now, mtime in current_snapshot.items():
+            if path_now not in prev_snapshot:
+                log(f"Created: {path_now}")
+            elif prev_snapshot[path_now] != mtime:
+                log(f"Modified: {path_now}")
+
+        for path_old in prev_snapshot:
+            if path_old not in current_snapshot:
+                log(f"Deleted: {path_old}")
+
+        prev_snapshot = current_snapshot
+        time.sleep(interval)
 
 signal.signal(signal.SIGINT, docker_kill_handler_handler)
 
@@ -501,4 +550,17 @@ if __name__ == "__main__":
         subprocess.check_call(cmd_pre_pull, shell=True)
 
     print(("Running pytest container as: '" + cmd + "'."))
+
+    print(f"Running pytest container as: '{cmd}'.")
+
+    log(f"Monitoring started on host: {get_hostname()}, IP: {get_ip()}")
+
+    base_path_template = "/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/tests/integration/test_disks_app_func/_instances-0-gw{idx}/disks_app_test/database"
+
+    for i in range(5):
+        path = base_path_template.format(idx=i)
+        # Just start monitoring thread regardless of whether the path exists now
+        thread = threading.Thread(target=monitor_directory, args=(path, 1), daemon=True)
+        thread.start()
+
     subprocess.check_call(cmd, shell=True, bufsize=0)

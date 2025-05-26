@@ -57,8 +57,8 @@ void BackgroundSchedulePoolTaskInfo::deactivate()
 
     deactivated = true;
     scheduled = false;
-
-    if (delayed)
+    /// Only necessary to cancel the task before the pool is being destroyed
+    if (delayed && !pool_shutdown)
         pool.cancelDelayedTask(*this, lock_schedule);
 }
 
@@ -213,7 +213,11 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
         {
             std::lock_guard lock_tasks(tasks_mutex);
             std::lock_guard lock_delayed_tasks(delayed_tasks_mutex);
-
+            // Notify all delayed tasks that the owning BackgroundSchedulePool is being destroyed.
+            // This prevents any further use of the pool (e.g., cancelDelayedTask) from within
+            // BackgroundSchedulePoolTaskInfo::deactivate(), avoiding use-after-free errors.
+            for (auto & task : delayed_tasks)
+                task.second->pool_shutdown = true;
             shutdown = true;
         }
 
