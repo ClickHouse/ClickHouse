@@ -149,14 +149,13 @@ private:
  */
 class SchemaVisitor
 {
-    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
+    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_global_read_schema>;
     using KernelStringSliceIterator = KernelPointerWrapper<ffi::StringSliceIterator, ffi::free_string_slice_data>;
 public:
     static void visitTableSchema(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
-        KernelSharedSchema schema(ffi::logical_schema(snapshot));
         auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
+        [[maybe_unused]] size_t result = ffi::visit_snapshot_schema(snapshot, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
@@ -171,10 +170,10 @@ public:
     }
 
     static void visitPartitionColumns(
-        ffi::SharedSnapshot * snapshot,
+        ffi::SharedGlobalScanState * scan_state,
         SchemaVisitorData & data)
     {
-        KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(snapshot));
+        KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(scan_state));
         while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
     }
 
@@ -482,10 +481,10 @@ DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedGlobalScanState * sca
     return data.getSchemaResult().names_and_types;
 }
 
-DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
+DB::Names getPartitionColumnsFromSnapshot(ffi::SharedGlobalScanState * scan_state)
 {
     SchemaVisitorData data;
-    SchemaVisitor::visitPartitionColumns(snapshot, data);
+    SchemaVisitor::visitPartitionColumns(scan_state, data);
     return data.getPartitionColumns();
 }
 

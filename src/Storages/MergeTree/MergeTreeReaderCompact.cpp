@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -36,7 +35,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         mark_ranges_,
         settings_,
         avg_value_size_hints_)
-    , columns_substreams(data_part_info_for_read_->getColumnsSubstreams())
     , marks_loader(std::make_shared<MergeTreeMarksLoader>(
         data_part_info_for_read_,
         mark_cache,
@@ -47,11 +45,9 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings.read_settings,
         settings_.read_settings.load_marks_asynchronously
             ? &data_part_info_for_read_->getContext()->getLoadMarksThreadpool() : nullptr,
-        data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams
-            ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size()))
+        data_part_info_for_read_->getColumns().size()))
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
-    , have_substream_marks(data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams)
 {
     marks_loader->startAsyncLoad();
 }
@@ -130,6 +126,8 @@ void MergeTreeReaderCompact::findPositionForMissedNested(size_t pos)
     if (!column_for_offsets)
         return;
 
+    column_positions[pos] = data_part_info_for_read->getColumnPosition(column_for_offsets->column.name);
+
     if (is_offsets_subcolumn)
     {
         /// Read offsets from antoher array from the same Nested column.
@@ -137,12 +135,9 @@ void MergeTreeReaderCompact::findPositionForMissedNested(size_t pos)
     }
     else
     {
-        columns_for_offsets[pos] = column_for_offsets;
+        columns_for_offsets[pos] = std::move(column_for_offsets);
         partially_read_columns.insert(column.name);
     }
-
-    column_positions[pos] = data_part_info_for_read->getColumnPosition(column_for_offsets->column.name);
-    serializations_of_full_columns[column.getNameInStorage()] = column_for_offsets->serialization;
 }
 
 static ColumnPtr getFullColumnFromCache(std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns, const String & column_name)
@@ -162,26 +157,17 @@ void MergeTreeReaderCompact::readData(
     ColumnPtr & column,
     size_t rows_to_read,
     size_t rows_offset,
-    size_t from_mark,
     MergeTreeReaderStream & stream,
-    ISerialization::SubstreamsCache & columns_cache,
+    ISerialization::SubstreamsCache & cache,
     std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns)
 {
     const auto & name_and_type = columns_to_read[column_idx];
     const auto [name, type] = name_and_type;
 
-    bool seek_to_substream_mark = name_and_type.isSubcolumn() && have_substream_marks;
     auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
     {
         if (needSkipStream(column_idx, substream_path))
             return nullptr;
-
-        if (seek_to_substream_mark)
-        {
-            auto stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], stream_name);
-            stream.seekToMarkAndColumn(from_mark, substream_position);
-        }
 
         return stream.getDataBuffer();
     };
@@ -193,16 +179,15 @@ void MergeTreeReaderCompact::readData(
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
-        deserialize_settings.use_specialized_prefixes_substreams = true;
 
-        auto it = columns_cache.find(name);
-        if (it != columns_cache.end() && it->second != nullptr)
+        auto it = cache.find(name);
+        if (it != cache.end() && it->second != nullptr)
         {
             column = it->second;
             return;
         }
 
-        if (name_and_type.isSubcolumn() && !have_substream_marks)
+        if (name_and_type.isSubcolumn())
         {
             const auto & type_in_storage = name_and_type.getTypeInStorage();
             const auto & name_in_storage = name_and_type.getNameInStorage();
@@ -233,7 +218,7 @@ void MergeTreeReaderCompact::readData(
             serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], nullptr);
         }
 
-        columns_cache[name] = column;
+        cache[name] = column;
 
         size_t read_rows_in_column = column->size() - column_size_before_reading;
         if (read_rows_in_column != rows_to_read)
@@ -248,7 +233,7 @@ void MergeTreeReaderCompact::readData(
     }
 }
 
-void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache)
+void MergeTreeReaderCompact::readPrefix(size_t column_idx, MergeTreeReaderStream & stream)
 {
     if (columns_for_offsets[column_idx])
     {
@@ -260,42 +245,34 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
         };
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
-        readPrefix(columns_for_offsets[column_idx]->column, columns_for_offsets[column_idx]->serialization, state, buffer_getter, cache);
+        readPrefix(columns_for_offsets[column_idx]->column, columns_for_offsets[column_idx]->serialization, state, buffer_getter);
     }
 
-    const auto & column = columns_to_read[column_idx];
-    auto name_in_storage = column.getNameInStorage();
-
-    bool seek_to_substream_mark = column.isSubcolumn() && have_substream_marks;
     auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
     {
         if (needSkipStream(column_idx, substream_path))
             return nullptr;
 
-        if (seek_to_substream_mark)
-        {
-            auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], stream_name);
-            stream.seekToMarkAndColumn(from_mark, substream_position);
-        }
-
         return stream.getDataBuffer();
     };
 
-    if (column.isSubcolumn() && !have_substream_marks)
+    const auto & column = columns_to_read[column_idx];
+    auto name_in_storage = column.getNameInStorage();
+
+    if (column.isSubcolumn())
     {
         if (deserialize_binary_bulk_state_map_for_subcolumns.contains(name_in_storage))
             return;
 
         const auto & serialization = serializations_of_full_columns.at(name_in_storage);
         auto & state = deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage];
-        readPrefix(column, serialization, state, buffer_getter, nullptr);
+        readPrefix(column, serialization, state, buffer_getter);
     }
     else
     {
         const auto & serialization = serializations[column_idx];
-        auto & state = deserialize_binary_bulk_state_map[column.name];
-        readPrefix(column, serialization, state, buffer_getter, seek_to_substream_mark ? cache : nullptr);
+        auto & state = deserialize_binary_bulk_state_map[name_in_storage];
+        readPrefix(column, serialization, state, buffer_getter);
     }
 }
 
@@ -303,17 +280,15 @@ void MergeTreeReaderCompact::readPrefix(
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization,
     ISerialization::DeserializeBinaryBulkStatePtr & state,
-    const InputStreamGetter & buffer_getter,
-    ISerialization::SubstreamsDeserializeStatesCache * cache)
+    const InputStreamGetter & buffer_getter)
 {
     try
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.object_and_dynamic_read_statistics = true;
-        deserialize_settings.use_specialized_prefixes_substreams = true;
 
-        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state, cache);
+        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state, nullptr);
     }
     catch (Exception & e)
     {

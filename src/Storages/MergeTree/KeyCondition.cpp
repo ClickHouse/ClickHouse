@@ -58,6 +58,7 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int BAD_TYPE_OF_FIELD;
 }
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
@@ -65,7 +66,7 @@ extern const int LOGICAL_ERROR;
 /// - (1) the pattern has a wildcard
 /// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
 /// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
-std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
+String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
 {
     String fixed_prefix;
     fixed_prefix.reserve(like_pattern.size());
@@ -78,39 +79,27 @@ std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like
         {
             case '%':
             case '_':
-            {
-                bool is_perfect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
                 if (requires_perfect_prefix)
                 {
-                    if (is_perfect_prefix)
-                        return {fixed_prefix, true};
-                    else
-                        return {"", false};
+                    bool is_prefect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
+                    return is_prefect_prefix ? fixed_prefix : "";
                 }
-                else
-                {
-                    return {fixed_prefix, is_perfect_prefix};
-                }
-            }
+            return fixed_prefix;
             case '\\':
-            {
                 ++pos;
-                if (pos == end)
-                    break;
-                [[fallthrough]];
-            }
+            if (pos == end)
+                break;
+            [[fallthrough]];
             default:
-            {
                 fixed_prefix += *pos;
-            }
         }
 
         ++pos;
     }
     /// If we can reach this code, it means there was no wildcard found in the pattern, so it is not a perfect prefix
     if (requires_perfect_prefix)
-        return {"", false};
-    return {fixed_prefix, false};
+        return "";
+    return fixed_prefix;
 }
 
 /// for "^prefix..." string it returns "prefix"
@@ -372,12 +361,9 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
                 if (prefix.empty())
                     return false;
-
-                if (!is_perfect)
-                    out.relaxed = true;
 
                 String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
@@ -396,11 +382,9 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
                 if (prefix.empty())
                     return false;
-
-                chassert(is_perfect);
 
                 String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
@@ -457,7 +441,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 out.range = !right_bound.empty()
                     ? Range(prefix, true, right_bound, false)
                     : Range::createLeftBounded(prefix, true);
-                out.relaxed = true;
 
                 return true;
             }
@@ -494,6 +477,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         }
 };
 
+static const std::set<std::string_view> always_relaxed_atom_functions = {"match"};
 static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
     = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE, KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON};
 
@@ -1773,8 +1757,6 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
-    "toTime",
-    "toTime64",
     "toDateTime",
     "toDateTime64",
     "parseDateTimeBestEffort",
@@ -1981,6 +1963,19 @@ KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_, con
 {
 }
 
+static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
+{
+    try
+    {
+        src_value = convertFieldToType(src_value, *desired_type, src_type.get());
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Key expression contains comparison between inconvertible types: "
+            "{} and {} inside {}", desired_type->getName(), src_type->getName(), node_column_name);
+    }
+}
+
 
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
@@ -2075,6 +2070,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             boost::geometry::correct(out.polygon->data);
             return atom_it->second(out, const_value);
         };
+
+        if (always_relaxed_atom_functions.contains(func_name))
+            relaxed = true;
 
         bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
         if (num_args == 1)
@@ -2240,12 +2238,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                     if (!const_type->equals(*common_type))
                     {
-                        // Replace direct call that throws exception with try version
-                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
-                        if (converted.isNull())
-                            return false;
-
-                        const_value = converted;
+                        castValueToType(common_type, const_value, const_type, node.getColumnName());
 
                         // Need to set is_constant_transformed unless we're doing exact conversion
                         if (!key_expr_type_not_null->equals(*common_type))
@@ -2296,10 +2289,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
-        bool valid_atom = atom_it->second(out, const_value);
-        if (valid_atom && out.relaxed)
-            relaxed = true;
-        return valid_atom;
+        return atom_it->second(out, const_value);
     }
     if (node.tryGetConstant(const_value, const_type))
     {
@@ -2892,41 +2882,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 // This allows to use a more efficient lookup with no extra reads.
 bool KeyCondition::matchesExactContinuousRange() const
 {
-    const Field field{};
-    auto is_always_monotonic_chain = [&field](const std::vector<FunctionBasePtr> & chain)
-    {
-        for (const auto & func : chain)
-        {
-            if (!func || !func->hasInformationAboutMonotonicity())
-                return false;
-
-            const auto & types = func->getArgumentTypes();
-            if (types.empty() || !types.front())
-                return false;
-
-            const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
-            if (!monotonicity.is_always_monotonic)
-                return false;
-        }
-
-        return true;
-    };
-
-    for (const auto & elem : rpn)
-    {
-        if (!elem.monotonic_functions_chain.empty() && !is_always_monotonic_chain(elem.monotonic_functions_chain))
-            return false;
-
-        if (elem.set_index)
-        {
-            if (elem.function != RPNElement::Function::FUNCTION_IN_SET || elem.set_index->size() != 1)
-                return false;
-
-            for (const auto & mapping : elem.set_index->getIndexesMapping())
-                if (!mapping.functions.empty() && !is_always_monotonic_chain(mapping.functions))
-                    return false;
-        }
-    }
+    // Not implemented yet.
+    if (hasMonotonicFunctionsChain())
+        return false;
 
     enum Constraint
     {
@@ -2964,11 +2922,6 @@ bool KeyCondition::matchesExactContinuousRange() const
         }
 
         if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
-        {
-            continue;
-        }
-
-        if (element.function == RPNElement::Function::ALWAYS_TRUE)
         {
             continue;
         }

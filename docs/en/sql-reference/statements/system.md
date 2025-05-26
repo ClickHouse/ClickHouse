@@ -75,8 +75,8 @@ Reloads all registered [executable user defined functions](/sql-reference/functi
 **Syntax**
 
 ```sql
-SYSTEM RELOAD FUNCTIONS [ON CLUSTER cluster_name]
-SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
+RELOAD FUNCTIONS [ON CLUSTER cluster_name]
+RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 ```
 
 ## RELOAD ASYNCHRONOUS METRICS {#reload-asynchronous-metrics}
@@ -84,7 +84,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 Re-calculates all [asynchronous metrics](../../operations/system-tables/asynchronous_metrics.md). Since asynchronous metrics are periodically updated based on setting [asynchronous_metrics_update_period_s](../../operations/server-configuration-parameters/settings.md), updating them manually using this statement is typically not necessary.
 
 ```sql
-SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
+RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 ```
 
 ## DROP DNS CACHE {#drop-dns-cache}
@@ -339,7 +339,7 @@ SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 
 ### SYSTEM UNFREEZE {#query_language-system-unfreeze}
 
-Clears a frozen backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](/sql-reference/statements/alter/partition#unfreeze-partition)
+Clears freezed backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](/sql-reference/statements/alter/partition#unfreeze-partition)
 
 ```sql
 SYSTEM UNFREEZE WITH NAME <backup_name>

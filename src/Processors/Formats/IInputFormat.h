@@ -2,6 +2,7 @@
 
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
+#include <Interpreters/Context.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Storages/MergeTree/KeyCondition.h>

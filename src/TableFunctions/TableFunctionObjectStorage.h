@@ -113,12 +113,6 @@ struct DeltaLakeAzureDefinition
     static constexpr auto storage_type_name = "Azure";
 };
 
-struct DeltaLakeLocalDefinition // New definition for local Delta Lake
-{
-    static constexpr auto name = "deltaLakeLocal";
-    static constexpr auto storage_type_name = "Local";
-};
-
 struct HudiDefinition
 {
     static constexpr auto name = "hudi";
@@ -225,8 +219,6 @@ using TableFunctionDeltaLakeS3 = TableFunctionObjectStorage<DeltaLakeS3Definitio
 #if USE_AZURE_BLOB_STORAGE
 using TableFunctionDeltaLakeAzure = TableFunctionObjectStorage<DeltaLakeAzureDefinition, StorageAzureDeltaLakeConfiguration>;
 #endif
-// New alias for local Delta Lake table function
-using TableFunctionDeltaLakeLocal = TableFunctionObjectStorage<DeltaLakeLocalDefinition, StorageLocalDeltaLakeConfiguration>;
 #endif
 #if USE_AWS_S3
 using TableFunctionHudi = TableFunctionObjectStorage<HudiDefinition, StorageS3HudiConfiguration>;
