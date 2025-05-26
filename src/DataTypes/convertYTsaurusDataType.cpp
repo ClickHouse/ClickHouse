@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <iostream>
 namespace DB
 {
 
@@ -29,7 +30,7 @@ namespace ErrorCodes
 
 
 /// https://ytsaurus.tech/docs/ru/user-guide/storage/data-types#schema_primitive
-DataTypePtr converYTSimpleType(const String & data_type)
+DataTypePtr convertYTSimpleType(const String & data_type, bool type_v3)
 {
     DataTypePtr data_type_ptr;
     if (data_type == "int64")
@@ -72,7 +73,7 @@ DataTypePtr converYTSimpleType(const String & data_type)
     {
         data_type_ptr = std::make_shared<DataTypeFloat64>();
     }
-    else if (data_type == "boolean")
+    else if ((data_type == "boolean" && !type_v3) || (data_type == "bool" && type_v3))
     {
         data_type_ptr = std::make_shared<DataTypeUInt8>();
     }
@@ -82,11 +83,11 @@ DataTypePtr converYTSimpleType(const String & data_type)
     }
     else if (data_type == "utf8")
     {
-        // ?
+        data_type_ptr = std::make_shared<DataTypeString>();
     }
-    else if (data_type == "json")
+    else if ((data_type == "json" && !type_v3) || (data_type == "yson" && type_v3))
     {
-        // data_type_ptr = std::make_shared<DataTypeObject>();
+        data_type_ptr = std::make_shared<DataTypeObject>(DB::DataTypeObject::SchemaFormat::JSON);
     }
     else if (data_type == "uuid")
     {
@@ -94,15 +95,15 @@ DataTypePtr converYTSimpleType(const String & data_type)
     }
     else if (data_type == "date32")
     {
-        data_type_ptr = std::make_shared<DataTypeDate32>();
+        data_type_ptr = std::make_shared<DataTypeDate>();
     }
     else if (data_type == "datetime64")
     {
-        data_type_ptr = std::make_shared<DataTypeDateTime64>(0); // In seconds
+        data_type_ptr = std::make_shared<DataTypeDateTime>(); // In seconds
     }
     else if (data_type == "timestamp64")
     {
-        data_type_ptr = std::make_shared<DataTypeTime64>(6); // In microseconds
+        data_type_ptr = std::make_shared<DataTypeDateTime64>(6); // In microseconds
     }
     else if (data_type == "interval64")
     {
@@ -118,7 +119,7 @@ DataTypePtr converYTSimpleType(const String & data_type)
     }
     else if (data_type == "timestamp")
     {
-        data_type_ptr = std::make_shared<DataTypeTime64>(6); // In microseconds
+        data_type_ptr = std::make_shared<DataTypeDateTime64>(6); // In microseconds
     }
     else if (data_type == "interval")
     {
@@ -126,7 +127,8 @@ DataTypePtr converYTSimpleType(const String & data_type)
     }
     else if (data_type == "any")
     {
-
+        // Not simple type, need to parse type_v3
+        return nullptr;
     }
     else if (data_type == "null")
     {
@@ -144,7 +146,7 @@ DataTypePtr convertYTItemType(const Poco::Dynamic::Var & item)
 {
     if (item.isString())
     {
-        return converYTSimpleType(item.extract<String>());
+        return convertYTSimpleType(item.extract<String>(), false);
     }
     return convertYTTypeV3(item.extract<Poco::JSON::Object::Ptr>());
 }
@@ -152,8 +154,18 @@ DataTypePtr convertYTItemType(const Poco::Dynamic::Var & item)
 DataTypePtr convertYTDecimal(const Poco::JSON::Object::Ptr & json)
 {
     DataTypePtr data_type_ptr;
-    auto precision = json->getValue<size_t>("precision");
-    auto scale = json->getValue<size_t>("scale");
+    if (!json->has("precision") || !json->has("scale"))
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'decimal' type from YT('precision' or 'scale' is not exist)");
+    }
+    auto precision_var = json->get("precision");
+    auto scale_var = json->get("scale");
+    if (!precision_var.isInteger() || !scale_var.isInteger())
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'decimal' type from YT('precision' or 'scale' is not integer)");
+    }
+    auto precision = precision_var.extract<size_t>();
+    auto scale = scale_var.extract<size_t>();
     if (precision <=  DataTypeDecimalBase<Decimal32>::maxPrecision())
         data_type_ptr = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
     else if (precision <= DataTypeDecimalBase<Decimal64>::maxPrecision())
@@ -227,7 +239,12 @@ DataTypePtr convertYTTypeV3(const Poco::JSON::Object::Ptr & json)
     {
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "Coudn't parse the YT json schema('type_name' was not found)");
     }
-    auto data_type = json->getValue<std::string>("type_name");
+    auto data_type_var = json->get("type_name");
+    if (!data_type_var.isString())
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Coudn't parse the YT json schema('type_name' is not string)");
+    }
+    auto data_type = data_type_var.extract<std::string>();
     DataTypePtr data_type_ptr;
     if (data_type == "decimal")
     {
@@ -269,7 +286,7 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
     DataTypePtr data_type_ptr;
     if (json->has("type"))
     {
-        data_type_ptr = converYTSimpleType(json->getValue<String>("type"));
+        data_type_ptr = convertYTSimpleType(json->getValue<String>("type"), false);
         if (data_type_ptr)
         {
             if (!json->has("required"))
@@ -291,6 +308,17 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Coudn't parse the YT schema json('type_v3' was not found)");
     }
-    return convertYTTypeV3(json->getObject("type_v3"));
+    auto value = json->get("type_v3");
+    if (value.isString())
+    {
+        return convertYTSimpleType(value.extract<String>(), true);
+    }
+    try {
+        return convertYTTypeV3(value.extract<Poco::JSON::Object::Ptr>());
+    }
+    catch (const std::exception & e)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse type_v3 from YT metadata: {}", e.what());
+    }
 }
 }

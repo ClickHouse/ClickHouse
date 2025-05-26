@@ -7,7 +7,7 @@
 namespace DB
 {
 DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json);
-DataTypePtr convertYTSimpleType(const String & data_type);
+DataTypePtr convertYTSimpleType(const String & data_type, bool type_v3);
 DataTypePtr convertYTTypeV3(const Poco::JSON::Object::Ptr & json);
 
 DataTypePtr convertYTItemType(const Poco::Dynamic::Var & item);
