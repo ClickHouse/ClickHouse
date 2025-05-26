@@ -231,3 +231,42 @@ def test_hiding_credentials(started_cluster):
     assert f"{YT_DEFAULT_TOKEN}" in engine_full
 
     instance.query(f"DROP TABLE {table_name};")
+
+
+def test_yt_simple_table_engine(started_cluster):
+    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    yt.create_table("//tmp/table", '{"a":"10","b":"20"}\n{"a":"20","b":"40"}')
+
+    instance.query(
+        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('http://incorrect_enpoint|{YT_URI}', '//tmp/table', '{YT_DEFAULT_TOKEN}') SETTINGS http_max_tries = 10, http_retry_max_backoff_ms=2000"
+    )
+
+    assert (
+        instance.query(
+            "SELECT * FROM yt_test SETTINGS http_max_tries = 10, http_retry_max_backoff_ms=2000"
+        )
+        == "10\t20\n20\t40\n"
+    )
+    assert (
+        instance.query(
+            "SELECT a,b FROM yt_test SETTINGS http_max_tries = 10, http_retry_max_backoff_ms=2000"
+        )
+        == "10\t20\n20\t40\n"
+    )
+    assert (
+        instance.query(
+            "SELECT a FROM yt_test SETTINGS http_max_tries = 10, http_retry_max_backoff_ms=2000"
+        )
+        == "10\n20\n"
+    )
+
+    assert (
+        instance.query(
+            "SELECT * FROM yt_test WHERE a > 15 SETTINGS http_max_tries = 10, http_retry_max_backoff_ms=2000"
+        )
+        == "20\t40\n"
+    )
+
+    instance.query("DROP TABLE yt_test SYNC")
+
+    yt.remove_table("//tmp/table")

@@ -3,10 +3,14 @@
 #include "DictionarySourceFactory.h"
 #if USE_YTSAURUS
 #include "YTsaurusDictionarySource.h"
+#include <Interpreters/Context.h>
 #include <Processors/Sources/YTsaurusSource.h>
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Core/Settings.h>
+#include <Common/parseRemoteDescription.h>
+
+#include <boost/algorithm/string/split.hpp>
 
 #endif
 
@@ -34,13 +38,14 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 {
     #if USE_YTSAURUS
     auto create_dictionary_source = [](
+        const String& /*name*/,
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
         Block & sample_block,
         ContextPtr context,
         const std::string & /* default_database */,
-        bool /* created_from_ddl */)
+        bool /* created_from_ddl */) -> DictionarySourcePtr
     {
         if (!context->getSettingsRef()[Setting::allow_experimental_ytsaurus_dictionary_source])
             throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Dictionary source YTsaurus is experimental. "
@@ -49,7 +54,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
         const auto config_prefix = root_config_prefix + ".ytsaurus";
         auto configuration = std::make_shared<YTsaurusStorageConfiguration>();
 
-        configuration->http_proxy_url = config.getString(config_prefix + ".http_proxy_url");
+        boost::split(configuration->http_proxy_urls, config.getString(config_prefix + ".http_proxy_urls"), [](char c) { return c == '|'; });
         configuration->cypress_path = config.getString(config_prefix + ".cypress_path");
         configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
 
@@ -58,6 +63,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 
     #else
     auto create_dictionary_source = [](
+        const String& /*name*/,
         const DictionaryStructure & /* dict_struct */,
         const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /* root_config_prefix */,
@@ -87,7 +93,7 @@ YTsarususDictionarySource::YTsarususDictionarySource(
     , dict_struct{dict_struct_}
     , configuration{configuration_}
     , sample_block{sample_block_}
-    , client(new YTsaurusClient(context, {.http_proxy_url = configuration->http_proxy_url, .oauth_token = configuration->oauth_token}))
+    , client(new YTsaurusClient(context, {.http_proxy_urls = configuration->http_proxy_urls, .oauth_token = configuration->oauth_token}))
 {
 }
 

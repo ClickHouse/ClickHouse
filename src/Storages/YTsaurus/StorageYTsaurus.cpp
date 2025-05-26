@@ -2,6 +2,7 @@
 
 #if USE_YTSAURUS
 
+#include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/YTsaurus/StorageYTsaurus.h>
@@ -12,6 +13,8 @@
 #include <Core/YTsaurus/YTsaurusClient.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <QueryPipeline/Pipe.h>
+
+#include <boost/algorithm/string/split.hpp>
 
 namespace DB
 {
@@ -35,7 +38,8 @@ StorageYTsaurus::StorageYTsaurus(
     const ConstraintsDescription & constraints_,
     const String & comment)
     : IStorage{table_id_}
-    , configuration{std::move(configuration_)}
+    , cypress_path(std::move(configuration_.cypress_path))
+    , client_connection_info{.http_proxy_urls = std::move(configuration_.http_proxy_urls), .oauth_token = std::move(configuration_.oauth_token)}
     , log(getLogger(" (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -63,10 +67,8 @@ Pipe StorageYTsaurus::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    YTsaurusClient::ConnectionInfo connection_info{.http_proxy_url = configuration.http_proxy_url, .oauth_token = configuration.oauth_token};
-    YTsaurusClientPtr client = std::make_unique<YTsaurusClient>(context, connection_info);
-
-    auto ptr = YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration.cypress_path}, sample_block, max_block_size);
+    YTsaurusClientPtr client(new YTsaurusClient(context, client_connection_info));
+    auto ptr = YTsaurusSourceFactory::createSource(client, {.cypress_path = cypress_path}, sample_block, max_block_size);
 
     return Pipe(ptr);
 }
@@ -78,7 +80,7 @@ YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args,
         engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
     if (engine_args.size() == 3)
     {
-        configuration.http_proxy_url = checkAndGetLiteralArgument<String>(engine_args[0], "http_proxy_url");
+        boost::split(configuration.http_proxy_urls, checkAndGetLiteralArgument<String>(engine_args[0], "http_proxy_urls"), [](char c) { return c == '|'; });
         configuration.cypress_path = checkAndGetLiteralArgument<String>(engine_args[1], "cypress_path");
         configuration.oauth_token = checkAndGetLiteralArgument<String>(engine_args[2], "oauth_token");
     }

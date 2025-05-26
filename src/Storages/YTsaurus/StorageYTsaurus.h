@@ -4,16 +4,16 @@
 
 #if USE_YTSAURUS
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
-
+#include <Core/YTsaurus/YTsaurusClient.h>
 
 namespace DB
 {
 
 struct YTsaurusStorageConfiguration
 {
-    String http_proxy_url;
+    std::vector<String> http_proxy_urls;
     String cypress_path;
     String oauth_token;
 };
@@ -47,7 +47,9 @@ public:
         size_t num_streams) override;
 
 private:
-    const YTsaurusStorageConfiguration configuration;
+    const String cypress_path;
+    YTsaurusClient::ConnectionInfo client_connection_info;
+
     LoggerPtr log;
 };
 

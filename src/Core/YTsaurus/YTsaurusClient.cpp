@@ -27,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
 namespace Setting
@@ -104,35 +105,50 @@ DB::ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const 
 
 DB::ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const YTsaurusQueryPtr query, ReadWriteBufferFromHTTP::OutStreamCallback out_callback)
 {
-    Poco::URI uri(connection_info.http_proxy_url.c_str());
-    uri.setPath(fmt::format("/api/{}/{}", connection_info.api_version, query->getQueryName()));
-
-    for (const auto & query_param : query->getQueryParameters())
+    for (size_t num_try = 0; num_try < connection_info.http_proxy_urls.size(); ++num_try)
     {
-        uri.addQueryParameter(query_param.name, query_param.value);
+        size_t url_index = (recently_used_url_index + num_try) % connection_info.http_proxy_urls.size();
+        try
+        {
+            Poco::URI uri(connection_info.http_proxy_urls[url_index].c_str());
+            uri.setPath(fmt::format("/api/{}/{}", connection_info.api_version, query->getQueryName()));
+
+            for (const auto & query_param : query->getQueryParameters())
+            {
+                uri.addQueryParameter(query_param.name, query_param.value);
+            }
+
+            DB::HTTPHeaderEntries http_headers{
+                /// Always use json format for input and output.
+                {"Accept", "application/json"},
+                {"Content-Type", "application/json"},
+                {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
+            };
+
+            LOG_TRACE(log, "URI {} , query type {}", uri.toString(), query->getQueryName());
+            Poco::Net::HTTPBasicCredentials creds;
+            auto buf = DB::BuilderRWBufferFromHTTP(uri)
+                        .withConnectionGroup(DB::HTTPConnectionGroupType::STORAGE)
+                        .withMethod(query->getHTTPMethod())
+                        .withSettings(context->getReadSettings())
+                        .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+                        .withHostFilter(&context->getRemoteHostFilter())
+                        .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
+                        .withOutCallback(out_callback)
+                        .withHeaders(http_headers)
+                        .withDelayInit(false)
+                        .create(creds);
+
+            recently_used_url_index = url_index;
+            return DB::ReadBufferPtr(std::move(buf));
+        }
+        catch (Exception & e)
+        {
+            LOG_WARNING(log, "Error while creating connection with {}, will try to use another http proxy if there are any. Exception: {}",
+                connection_info.http_proxy_urls[url_index], e.displayText());
+        }
     }
-
-    DB::HTTPHeaderEntries http_headers{
-        /// Always use json format for input and output.
-        {"Accept", "application/json"},
-        {"Content-Type", "application/json"},
-        {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
-    };
-
-    LOG_TRACE(log, "URI {} , query type {}", uri.toString(), query->getQueryName());
-    Poco::Net::HTTPBasicCredentials creds;
-    auto buf = DB::BuilderRWBufferFromHTTP(uri)
-                .withConnectionGroup(DB::HTTPConnectionGroupType::STORAGE)
-                .withMethod(query->getHTTPMethod())
-                .withSettings(context->getReadSettings())
-                .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-                .withHostFilter(&context->getRemoteHostFilter())
-                .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
-                .withOutCallback(out_callback)
-                .withHeaders(http_headers)
-                .create(creds);
-
-    return DB::ReadBufferPtr(std::move(buf));
+    throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "All connection tries with ytsaurus http proxies are failed.");
 }
 
 }

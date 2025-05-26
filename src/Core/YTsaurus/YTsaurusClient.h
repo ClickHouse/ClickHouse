@@ -10,7 +10,7 @@
 #include <IO/ReadBuffer.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Parser.h>
@@ -37,9 +37,12 @@ enum class YTsaurusNodeType : uint8_t
 class YTsaurusClient : private boost::noncopyable
 {
 public:
+
+    static const uint16_t HTTP_PROXY_DEFAULT_PORT = 80;
+
     struct ConnectionInfo
     {
-        String http_proxy_url;
+        std::vector<String> http_proxy_urls;
         String oauth_token;
         String api_version = "v3";
     };
@@ -65,6 +68,7 @@ private:
 
     ConnectionInfo connection_info;
     LoggerPtr log;
+    size_t recently_used_url_index = 0;
 };
 
 using YTsaurusClientPtr = std::shared_ptr<YTsaurusClient>;

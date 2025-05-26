@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_YTSAURUS
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/ISource.h>
 #include <Core/YTsaurus/YTsaurusClient.h>
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>

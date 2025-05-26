@@ -46,7 +46,7 @@ def test_yt_dictionary_id(started_cluster, dynamic_table, layout):
         dynamic=dynamic_table,
     )
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_url '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT({layout}()) LIFETIME(MIN 0 MAX 1000)"
+        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT({layout}()) LIFETIME(MIN 0 MAX 1000)"
     )
     assert (
         instance.query("SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(3)")
@@ -78,7 +78,7 @@ def test_yt_dictionary_complex_key(started_cluster, dynamic_table, layout):
     )
 
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id1 Int32, id2 Int32, value Int32) PRIMARY KEY id1, id2 SOURCE(YTSAURUS(http_proxy_url '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT({layout}()) LIFETIME(MIN 0 MAX 1000)"
+        f"CREATE DICTIONARY yt_dict(id1 Int32, id2 Int32, value Int32) PRIMARY KEY id1, id2 SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT({layout}()) LIFETIME(MIN 0 MAX 1000)"
     )
     assert (
         instance.query(
@@ -111,7 +111,7 @@ def test_yt_dictionary_cache_id(started_cluster, dynamic_table):
         dynamic=dynamic_table,
     )
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_url '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT(CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
+        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT(CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
     )
     if dynamic_table:
         assert (
@@ -150,7 +150,7 @@ def test_yt_dictionary_cache_complex_key(started_cluster, dynamic_table):
     )
 
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id1 Int32, id2 Int32, value Int32) PRIMARY KEY id1, id2 SOURCE(YTSAURUS(http_proxy_url '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
+        f"CREATE DICTIONARY yt_dict(id1 Int32, id2 Int32, value Int32) PRIMARY KEY id1, id2 SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
     )
     if dynamic_table:
         assert (
@@ -167,6 +167,36 @@ def test_yt_dictionary_cache_complex_key(started_cluster, dynamic_table):
         instance.query_and_get_error(
             "SELECT dictGet('yt_dict', 'value', (2, 2))"
         ) == "40\n"
+
+    instance.query("DROP DICTIONARY yt_dict")
+    yt.remove_table(path)
+
+
+def test_yt_dictionary_multiple_enpoints(started_cluster):
+    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id":1,"value":20}{"id":2,"value":40}{"id":3,"value":30}',
+        schema={"id": "int32", "value": "int32"},
+        dynamic=False,
+    )
+    instance.query(
+        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls 'http://incorrect_endpoint|{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1000);"
+    )
+    assert (
+        instance.query(
+            "SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(3) SETTINGS http_max_tries = 10, http_retry_max_backoff_ms=2000"
+        )
+        == "20\n40\n30\n"
+    )
+    assert (
+        instance.query(
+            "SELECT dictGet('yt_dict', 'value', 2) SETTINGS http_max_tries = 10, http_retry_max_backoff_ms=2000"
+        )
+        == "40\n"
+    )
 
     instance.query("DROP DICTIONARY yt_dict")
     yt.remove_table(path)
