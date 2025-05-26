@@ -21,7 +21,6 @@
 #include <Core/Field.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <base/types.h>
-#include <thrift/protocol/TEnum.h>
 #include <algorithm>
 
 namespace DB
