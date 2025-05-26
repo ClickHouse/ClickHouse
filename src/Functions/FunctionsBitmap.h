@@ -862,6 +862,14 @@ public:
                             "First argument for function {} must be a bitmap but it has type {}",
                             getName(), arguments[0]->getName());
 
+        WhichDataType first_aggregate_argument(bitmap_type0->getArgumentsDataTypes()[0]);
+        if (!first_aggregate_argument.isNativeInt() && !first_aggregate_argument.isNativeUInt())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a bitmap of an integer but it is a bitmap of {}",
+                getName(),
+                bitmap_type0->getArgumentsDataTypes()[0]->getName());
+
         WhichDataType which(arguments[1].get());
         if (!which.isNativeInt() && !which.isNativeUInt())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
