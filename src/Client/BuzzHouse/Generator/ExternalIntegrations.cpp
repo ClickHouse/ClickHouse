@@ -185,6 +185,15 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
             }
         }
     }
+    if (newt.has_cluster() && rg.nextSmallNumber() < 4)
+    {
+        newt.clear_cluster();
+    }
+    else if (!fc.clusters.empty() && rg.nextSmallNumber() < 4)
+    {
+        newt.clear_cluster();
+        newt.mutable_cluster()->set_cluster(rg.pickRandomly(fc.clusters));
+    }
 }
 
 bool ClickHouseIntegratedDatabase::performCreatePeerTable(

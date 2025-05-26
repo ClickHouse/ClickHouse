@@ -1864,6 +1864,11 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     generateEngineDetails(rg, next, !added_pkey, te);
     this->entries.clear();
     this->levels.clear();
+
+    if (next.cluster.has_value())
+    {
+        ct->mutable_cluster()->set_cluster(next.cluster.value());
+    }
     if (next.hasDatabasePeer())
     {
         flatTableColumnPath(0, next.cols, [](const SQLColumn &) { return true; });
@@ -1890,10 +1895,6 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
             generateNextTTL(rg, next, te, te->mutable_ttl_expr());
         }
         entries.clear();
-    }
-    if (next.cluster.has_value())
-    {
-        ct->mutable_cluster()->set_cluster(next.cluster.value());
     }
 
     this->enforce_final = prev_enforce_final;
