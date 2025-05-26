@@ -762,7 +762,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
         {
-
+            {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
@@ -790,7 +790,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_postpone_time_for_failed_replicated_tasks_ms", 0, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},
             {"default_compression_codec", "", "", "New setting"},
             {"refresh_parts_interval", 0, 0, "A new setting"},
-            {"max_merge_delayed_streams_for_parallel_write", 1000, 40, "New setting"},
+            {"max_merge_delayed_streams_for_parallel_write", 40, 40, "New setting"},
             {"allow_summing_columns_in_partition_or_order_key", true, false, "New setting to allow summing of partition or sorting key columns"},
             /// Release closed. Please use 25.5
         });
