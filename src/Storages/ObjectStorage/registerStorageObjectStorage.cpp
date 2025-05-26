@@ -311,7 +311,8 @@ void registerStorageDeltaLake(StorageFactory & factory)
         "DeltaLakeLocal",
         [&](const StorageFactory::Arguments & args)
         {
-            auto configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>();
+            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            auto configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {

@@ -236,7 +236,7 @@ using TableFunctionDeltaLakeS3 = TableFunctionObjectStorage<DeltaLakeS3Definitio
 using TableFunctionDeltaLakeAzure = TableFunctionObjectStorage<DeltaLakeAzureDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 // New alias for local Delta Lake table function
-using TableFunctionDeltaLakeLocal = TableFunctionObjectStorage<DeltaLakeLocalDefinition, StorageLocalDeltaLakeConfiguration>;
+using TableFunctionDeltaLakeLocal = TableFunctionObjectStorage<DeltaLakeLocalDefinition, StorageLocalDeltaLakeConfiguration, true>;
 #endif
 #if USE_AWS_S3
 using TableFunctionHudi = TableFunctionObjectStorage<HudiDefinition, StorageS3HudiConfiguration, true>;
