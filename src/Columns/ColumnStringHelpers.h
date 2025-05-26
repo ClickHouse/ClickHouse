@@ -72,12 +72,9 @@ public:
                         "Too large string for FixedString column");
 
             // Pad with zeroes on the right to maintain FixedString invariant.
-            if (buffer.count() % col.getN() != 0 || buffer.count() == prev_row_buffer_size)
-            {
-                const auto excess_bytes = buffer.count() % col.getN();
-                const auto fill_bytes = col.getN() - excess_bytes;
-                writeChar(0, fill_bytes, buffer);
-            }
+            const auto excess_bytes = buffer.count() % col.getN();
+            const auto fill_bytes = col.getN() - excess_bytes;
+            writeChar(0, fill_bytes, buffer);
         }
         else
         {

@@ -1,4 +1,3 @@
-import ast
 import logging
 import os
 import time
@@ -79,7 +78,7 @@ FILES_OVERHEAD_PER_PART_WIDE = (
     + FILES_OVERHEAD_METADATA_VERSION
 )
 FILES_OVERHEAD_PER_PART_COMPACT = (
-    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION + 1
+    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION
 )
 
 
@@ -89,7 +88,6 @@ def create_table(node, table_name, **additional_settings):
         "old_parts_lifetime": 0,
         "index_granularity": 512,
         "temporary_directories_lifetime": 1,
-        "write_marks_for_substreams_in_compact_parts": 1,
     }
     settings.update(additional_settings)
 
@@ -1065,21 +1063,3 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
     assert int(result) > 0.8 * memory
 
     check_no_objects_after_drop(cluster, node_name=node_name)
-
-
-@pytest.mark.parametrize("node_name", ["node"])
-def test_metadata_path_works_correctly(cluster, node_name):
-    node = cluster.instances[node_name]
-    table = "s3_test_metadata_path"
-    create_table(node, table)
-
-    response = node.query(f"SELECT data_paths FROM system.tables WHERE name='{table}'")
-    data_paths = ast.literal_eval(response)
-    assert len(data_paths) >= 1, list
-
-    # Verifies that trailing slash is added correctly: https://github.com/ClickHouse/ClickHouse/issues/80647
-    found = False
-    for path in data_paths:
-        found = found or "/custom_path/" in path
-    assert found, data_paths
-    node.query(f"DROP TABLE IF EXISTS {table}")

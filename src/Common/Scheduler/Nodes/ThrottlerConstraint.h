@@ -91,20 +91,18 @@ public:
     {
         // Dequeue request from the child
         auto [request, child_now_active] = child->dequeueRequest();
+        if (!request)
+            return {nullptr, false};
 
-        // Deactivate if necessary
+        // We don't do `request->addConstraint(this)` because `finishRequest()` is no-op
+
+        updateBucket(request->cost);
+
         child_active = child_now_active;
         if (!active())
             busy_periods++;
-
-        if (request)
-        {
-            // We don't do `request->addConstraint(this)` because `finishRequest()` is no-op
-            updateBucket(request->cost);
-            incrementDequeued(request->cost);
-            return {request, active()};
-        }
-        return {nullptr, false};
+        incrementDequeued(request->cost);
+        return {request, active()};
     }
 
     void finishRequest(ResourceRequest *) override

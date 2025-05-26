@@ -9,8 +9,6 @@
 namespace DB
 {
 
-struct PartitionCommand;
-
 class MetadataStorageFromStaticFilesWebServer final : public IMetadataStorage
 {
 private:
@@ -58,7 +56,6 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 };
 
 class MetadataStorageFromStaticFilesWebServerTransaction final : public IMetadataTransaction

@@ -11,21 +11,17 @@ title: 'mergeTreeIndex'
 
 Represents the contents of index and marks files of MergeTree tables. It can be used for introspection.
 
-## Syntax {#syntax}
-
-```sql
+``` sql
 mergeTreeIndex(database, table, [with_marks = true])
 ```
 
-## Arguments {#arguments}
+**Arguments**
 
-| Argument     | Description                                       |
-|--------------|---------------------------------------------------|
-| `database`   | The database name to read index and marks from.   |
-| `table`      | The table name to read index and marks from.      |
-| `with_marks` | Whether include columns with marks to the result. |
+- `database`- The database name to read index and marks from.
+- `table`- The table name to read index and marks from.
+- `with_marks` - Whether include columns with marks to the result.
 
-## Returned value {#returned_value}
+**Returned Value**
 
 A table object with columns with values of primary index of source table, columns with values of marks (if enabled) for all possible files in data parts of source table and virtual columns:
 
