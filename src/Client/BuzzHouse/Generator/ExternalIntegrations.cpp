@@ -122,7 +122,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
             {
                 if (rg.nextSmallNumber() < 9)
                 {
-                    TableKeyExpr & tke = const_cast<TableKeyExpr&>(te.order().exprs(i));
+                    TableKeyExpr & tke = const_cast<TableKeyExpr &>(te.order().exprs(i));
 
                     tke.set_asc_desc((!tke.has_asc_desc() || tke.asc_desc() == AscDesc::ASC) ? AscDesc::DESC : AscDesc::ASC);
                 }
@@ -404,11 +404,51 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
         if (nopt < 76)
         {
             static const std::vector<String> & baseTypes
-                = {"TINYINT",  "SMALLINT",   "MEDIUMINT",  "INT",        "BIGINT",          "FLOAT",        "DOUBLE",
-                   "TINYBLOB", "BLOB",       "MEDIUMBLOB", "LONGBLOB",   "TINYTEXT",        "TEXT",         "MEDIUMTEXT",
-                   "LONGTEXT", "DATE",       "TIME",       "DATETIME",   "TIMESTAMP",       "YEAR",         "GEOMETRY",
-                   "POINT",    "LINESTRING", "POLYGON",    "MULTIPOINT", "MULTILINESTRING", "MULTIPOLYGON", "GEOMETRYCOLLECTION",
-                   "JSON",     "BOOLEAN",    "BOOL"};
+                = {"TINYINT",
+                   "SMALLINT",
+                   "MEDIUMINT",
+                   "INT",
+                   "INTEGER",
+                   "BIGINT",
+                   "TINYINT UNSIGNED",
+                   "SMALLINT UNSIGNED",
+                   "MEDIUMINT UNSIGNED",
+                   "INT UNSIGNED",
+                   "INTEGER UNSIGNED",
+                   "BIGINT UNSIGNED",
+                   "SERIAL",
+                   "FLOAT",
+                   "REAL",
+                   "DOUBLE",
+                   "DOUBLE PRECISION",
+                   "FIXED",
+                   "DEC",
+                   "DECIMAL",
+                   "NUMERIC",
+                   "TINYBLOB",
+                   "BLOB",
+                   "MEDIUMBLOB",
+                   "LONGBLOB",
+                   "TINYTEXT",
+                   "TEXT",
+                   "MEDIUMTEXT",
+                   "LONGTEXT",
+                   "DATE",
+                   "TIME",
+                   "DATETIME",
+                   "TIMESTAMP",
+                   "YEAR",
+                   "GEOMETRY",
+                   "POINT",
+                   "LINESTRING",
+                   "POLYGON",
+                   "MULTIPOINT",
+                   "MULTILINESTRING",
+                   "MULTIPOLYGON",
+                   "GEOMETRYCOLLECTION",
+                   "JSON",
+                   "BOOL",
+                   "BOOLEAN"};
             return rg.pickRandomly(baseTypes);
         }
         else if (nopt < 81)
@@ -420,12 +460,13 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
         }
         else if (nopt < 86)
         {
-            /// Decimal
+            /// Decimal/Numeric
             std::uniform_int_distribution<uint32_t> precisions(0, 65);
             const uint32_t precision = precisions(rg.generator);
             std::uniform_int_distribution<uint32_t> scales(UINT32_C(0), std::min(UINT32_C(30), precision));
+            static const std::vector<String> & baseTypes = {"FIXED", "DEC", "DECIMAL", "NUMERIC"};
 
-            return fmt::format("DECIMAL({},{})", precision, scales(rg.generator));
+            return fmt::format("{}({},{})", rg.pickRandomly(baseTypes), precision, scales(rg.generator));
         }
         else if (nopt < 91)
         {
