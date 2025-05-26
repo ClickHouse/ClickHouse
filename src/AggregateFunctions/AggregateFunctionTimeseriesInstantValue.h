@@ -38,7 +38,7 @@ struct AggregateFunctionTimeseriesInstantValueTraits
 
     static String getName()
     {
-        return is_rate_ ? "timeSeriesIrateToGrid" : "timeSeriesIdeltaToGrid";
+        return is_rate_ ? "timeSeriesInstantRateToGrid" : "timeSeriesInstantDeltaToGrid";
     }
 
     using Bucket = typename AggregateFunctionLast2Samples<TimestampType, ValueType>::Data;

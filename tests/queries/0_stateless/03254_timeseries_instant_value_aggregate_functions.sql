@@ -28,9 +28,9 @@ SELECT metric_id, arrayJoin(arrayZip(grid, irate_values, irate_values_scale_3, i
 FROM (
     SELECT
         metric_id,
-        timeSeriesIrateToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as irate_values,
-        timeSeriesIrateToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1::Array(DateTime64(3, 'UTC')), samples.2) as irate_values_scale_3,
-        timeSeriesIdeltaToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as idelta_values,
+        timeSeriesInstantRateToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as irate_values,
+        timeSeriesInstantRateToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1::Array(DateTime64(3, 'UTC')), samples.2) as irate_values_scale_3,
+        timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as idelta_values,
         timeSeriesRateToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as rate_values,
         timeSeriesRateToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1::Array(DateTime64(5, 'UTC')), samples.2) as rate_values_scale_5,
         timeSeriesDeltaToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as delta_values
@@ -68,8 +68,8 @@ SELECT metric_id, arrayJoin(arrayZip(grid, irate_values, idelta_values, rate_val
 FROM (
     SELECT
         metric_id,
-        timeSeriesIrateToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as irate_values,
-        timeSeriesIdeltaToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as idelta_values,
+        timeSeriesInstantRateToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as irate_values,
+        timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as idelta_values,
         timeSeriesRateToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as rate_values,
         timeSeriesDeltaToGrid(start_ts, end_ts, step_sec, window_sec)(samples.1, samples.2) as delta_values
     FROM clusterAllReplicas('test_shard_localhost', currentDatabase(), t_resampled_timeseries_64)
@@ -93,5 +93,5 @@ WITH [
 SELECT * FROM (
     SELECT 'delta' as name, timeSeriesDeltaToGrid(1600000010, 1600000320, 10, 300)(data.1, data.2)
     UNION ALL
-    SELECT 'idelta' as name, timeSeriesIdeltaToGrid(1600000010, 1600000320, 10, 300)(data.1, data.2)
+    SELECT 'idelta' as name, timeSeriesInstantDeltaToGrid(1600000010, 1600000320, 10, 300)(data.1, data.2)
 ) ORDER BY name;

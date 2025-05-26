@@ -44,9 +44,9 @@ WITH
     1734955380 AS start, 1734955680 AS end, 15 AS step,
     range(start, end + 1, step) as grid
 SELECT
-    arrayZip(grid, timeSeriesIrateToGrid(start, end, step, 30)(timestamp, value)) as irate_30s, -- previous timestamp is within the window
-    arrayZip(grid, timeSeriesIrateToGrid(start, end, step, 19)(timestamp, value)) as irate_19s, -- previous timestamp is still within the window
-    arrayZip(grid, timeSeriesIrateToGrid(start, end, step, 18)(timestamp, value)) as irate_18s -- previous timestamp is outside the window
+    arrayZip(grid, timeSeriesInstantRateToGrid(start, end, step, 30)(timestamp, value)) as irate_30s, -- previous timestamp is within the window
+    arrayZip(grid, timeSeriesInstantRateToGrid(start, end, step, 19)(timestamp, value)) as irate_19s, -- previous timestamp is still within the window
+    arrayZip(grid, timeSeriesInstantRateToGrid(start, end, step, 18)(timestamp, value)) as irate_18s -- previous timestamp is outside the window
 FROM ts_raw_data FORMAT Vertical;
 
 

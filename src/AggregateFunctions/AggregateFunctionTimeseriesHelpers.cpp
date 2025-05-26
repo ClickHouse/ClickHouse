@@ -197,9 +197,9 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
     factory.registerFunction("timeSeriesDeltaToGrid",
         createAggregateFunctionTimeseries<false, AggregateFunctionTimeseriesExtrapolatedValueTraits, AggregateFunctionTimeseriesExtrapolatedValue>);
 
-    factory.registerFunction("timeSeriesIrateToGrid",
+    factory.registerFunction("timeSeriesInstantRateToGrid",
         createAggregateFunctionTimeseries<true, AggregateFunctionTimeseriesInstantValueTraits, AggregateFunctionTimeseriesInstantValue>);
-    factory.registerFunction("timeSeriesIdeltaToGrid",
+    factory.registerFunction("timeSeriesInstantDeltaToGrid",
         createAggregateFunctionTimeseries<false, AggregateFunctionTimeseriesInstantValueTraits, AggregateFunctionTimeseriesInstantValue>);
 
     factory.registerFunction("timeSeriesResampleToGridWithStaleness",
