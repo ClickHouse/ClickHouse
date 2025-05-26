@@ -8,11 +8,11 @@ CREATE TABLE tab
 (
     id UInt32,
     str String,
-    INDEX idx str TYPE gin(tokenizer = 'default')
+    INDEX idx str TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
+SETTINGS min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
 
 INSERT INTO tab VALUES (0, 'a');
 SELECT * FROM tab WHERE str == 'b' AND 1.0;

@@ -9,12 +9,12 @@ CREATE TABLE tab
 (
     id UInt64,
     doc String,
-    INDEX text_idx doc TYPE gin(tokenizer = 'default')
+    INDEX text_idx doc TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
+         min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
 
 ALTER TABLE tab DROP INDEX text_idx;
 
