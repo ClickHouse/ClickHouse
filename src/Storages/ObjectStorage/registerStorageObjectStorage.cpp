@@ -7,10 +7,10 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Databases/LoadingStrictnessLevel.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -307,7 +307,19 @@ void registerStorageDeltaLake(StorageFactory & factory)
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         });
 #    endif
-    UNUSED(factory);
+    factory.registerStorage(
+        "DeltaLakeLocal",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>();
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::FILE,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        });
 }
 #endif
 
