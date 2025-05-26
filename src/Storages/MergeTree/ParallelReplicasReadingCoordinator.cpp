@@ -1146,7 +1146,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         }
     }
 
-    if (is_reading_completed && *read_completed_callback)
+    if (is_reading_completed && read_completed_callback.has_value())
         (*read_completed_callback)(replicas_used);
 
     return response;
