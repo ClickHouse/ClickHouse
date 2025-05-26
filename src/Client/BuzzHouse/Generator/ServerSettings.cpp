@@ -53,7 +53,8 @@ std::unordered_map<String, CHSetting> hotSettings
              "'auto'",
              "'full_sorting_merge'",
              "'prefer_partial_merge'"},
-            false)}};
+            false)},
+       {"query_plan_optimize_lazy_materialization", CHSetting(trueOrFalse, {"0", "1"}, false)}};
 
 std::unordered_map<String, CHSetting> performanceSettings
     = {{"allow_aggregate_partitions_independently", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -151,7 +152,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_lift_up_union", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_merge_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_merge_filters", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"query_plan_optimize_lazy_materialization", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_optimize_prewhere", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_push_down_limit", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_read_in_order", CHSetting(trueOrFalse, {"0", "1"}, false)},
