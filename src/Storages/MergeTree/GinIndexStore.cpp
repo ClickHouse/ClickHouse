@@ -15,7 +15,6 @@
 #include <IO/WriteHelpers.h>
 #include <vector>
 #include <unordered_map>
-#include <numeric>
 #include <algorithm>
 
 namespace DB
@@ -25,7 +24,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_FORMAT_VERSION;
-    extern const int NOT_IMPLEMENTED;
 };
 
 GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit)
