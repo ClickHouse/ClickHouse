@@ -173,7 +173,6 @@ class StorageObjectStorage::Configuration
 {
 public:
     Configuration() = default;
-    Configuration(const Configuration & other);
     virtual ~Configuration() = default;
 
     using Path = std::string;
@@ -225,7 +224,6 @@ public:
     virtual void validateNamespace(const String & /* name */) const {}
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
-    virtual ConfigurationPtr clone() = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
     virtual bool isDataLakeConfiguration() const { return false; }
@@ -268,16 +266,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
-    String format = "auto";
-    String compression_method = "auto";
-    String structure = "auto";
-
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
+
+    String format = "auto";
+    String compression_method = "auto";
+    String structure = "auto";
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
