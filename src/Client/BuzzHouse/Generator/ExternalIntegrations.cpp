@@ -23,6 +23,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
     std::shared_ptr<SQLDatabase> db,
     const uint32_t tname,
     const bool can_shuffle,
+    const bool is_deterministic,
     std::vector<ColumnPathChain> & entries)
 {
     const String str_tname = getTableName(db, tname);
@@ -44,7 +45,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
                 "{}{} {} {}NULL",
                 first ? "" : ", ",
                 entry.getBottomName(),
-                columnTypeAsString(rg, tp),
+                columnTypeAsString(rg, is_deterministic, tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
             chassert(entry.path.size() == 1);
             first = false;
@@ -245,7 +246,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
     }
     else if (res)
     {
-        res &= performIntegration(rg, is_clickhouse_integration ? t.db : nullptr, t.tname, false, entries);
+        res &= performIntegration(rg, is_clickhouse_integration ? t.db : nullptr, t.tname, false, t.is_deterministic, entries);
     }
     return res;
 }
@@ -380,7 +381,7 @@ bool MySQLIntegration::performQuery(const String & query)
     return true;
 }
 
-String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) const
+String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool, SQLType * tp) const
 {
     return tp->MySQLtypeName(rg, false);
 }
@@ -498,8 +499,69 @@ bool PostgreSQLIntegration::performQuery(const String & query)
     }
 }
 
-String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) const
+String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_deterministic, SQLType * tp) const
 {
+    if (!is_deterministic && rg.nextSmallNumber() < 4)
+    {
+        /// Use a random PostgreSQL type
+        String baseType;
+        const uint32_t nopt = rg.nextMediumNumber();
+
+        if (nopt < 81)
+        {
+            static const std::vector<String> & baseTypes
+                = {"SMALLINT",  "INTEGER",   "BIGINT",   "NUMERIC", "DECIMAL", "REAL",    "DOUBLE PRECISION", "SMALLSERIAL", "SERIAL",
+                   "BIGSERIAL", "MONEY",     "TEXT",     "BPCHAR",  "BYTEA",   "TIME",    "TIMESTAMP",        "DATE",        "BOOLEAN",
+                   "POINT",     "LINE",      "LSEG",     "BOX",     "PATH",    "POLYGON", "CIRCLE",           "CIDR",        "INET",
+                   "MACADDR",   "MACADDR8",  "UUID",     "XML",     "JSON",    "JSONB",   "int4range",        "int8range",   "numrange",
+                   "tsrange",   "tstzrange", "daterange"};
+            baseType = rg.pickRandomly(baseTypes);
+        }
+        else if (nopt < 86)
+        {
+            /// Character types
+            std::uniform_int_distribution<uint32_t> lengths(1, 255);
+            static const std::vector<String> & prefixes = {"", "VAR", "BP"};
+
+            baseType = fmt::format("{}CHAR({})", rg.pickRandomly(prefixes), lengths(rg.generator));
+        }
+        else if (nopt < 91)
+        {
+            /// Numeric/Decimal
+            std::uniform_int_distribution<uint32_t> precisions(1, 38);
+            const uint32_t precision = precisions(rg.generator);
+            std::uniform_int_distribution<uint32_t> scales(0, precision);
+
+            baseType = fmt::format("{}({},{})", rg.nextBool() ? "NUMERIC" : "DECIMAL", precision, scales(rg.generator));
+        }
+        else if (nopt < 96)
+        {
+            /// Bit types
+            std::uniform_int_distribution<uint32_t> lengths(1, 64);
+
+            baseType = fmt::format("BIT{}({})", rg.nextBool() ? " VARYING" : "", lengths(rg.generator));
+        }
+        else
+        {
+            /// Time(stamp) with timezone
+            std::uniform_int_distribution<uint32_t> lengths(0, 6);
+
+            baseType
+                = fmt::format("TIME{}({}){}", rg.nextBool() ? "STAMP" : "", lengths(rg.generator), rg.nextBool() ? " WITH TIME ZONE" : "");
+        }
+
+        if (rg.nextSmallNumber() < 3)
+        {
+            /// Generate array type
+            const uint32_t ndimensions = rg.nextMediumNumber() < 81 ? 1 : (rg.nextMediumNumber() % 4) + 1;
+
+            for (uint32_t i = 0; i < ndimensions; i++)
+            {
+                baseType += "[]";
+            }
+        }
+        return baseType;
+    }
     return tp->PostgreSQLtypeName(rg, false);
 }
 
@@ -581,7 +643,7 @@ bool SQLiteIntegration::performQuery(const String & query)
     return true;
 }
 
-String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) const
+String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool, SQLType * tp) const
 {
     return tp->SQLitetypeName(rg, false);
 }
@@ -602,7 +664,7 @@ void RedisIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, c
 }
 
 bool RedisIntegration::performIntegration(
-    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t, const bool, std::vector<ColumnPathChain> &)
+    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t, const bool, const bool, std::vector<ColumnPathChain> &)
 {
     return true;
 }
@@ -1084,6 +1146,7 @@ bool MongoDBIntegration::performIntegration(
     std::shared_ptr<SQLDatabase>,
     const uint32_t tname,
     const bool can_shuffle,
+    const bool,
     std::vector<ColumnPathChain> & entries)
 {
     try
@@ -1293,7 +1356,7 @@ void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore *
 }
 
 bool MinIOIntegration::performIntegration(
-    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t tname, const bool, std::vector<ColumnPathChain> &)
+    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t tname, const bool, const bool, std::vector<ColumnPathChain> &)
 {
     return sendRequest(sc.database + "/file" + std::to_string(tname));
 }
@@ -1340,27 +1403,27 @@ void ExternalIntegrations::createExternalDatabaseTable(
     switch (dc)
     {
         case IntegrationCall::MySQL:
-            next_calls_succeeded.emplace_back(mysql->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(mysql->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             mysql->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::PostgreSQL:
-            next_calls_succeeded.emplace_back(postresql->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(postresql->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             postresql->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::SQLite:
-            next_calls_succeeded.emplace_back(sqlite->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(sqlite->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             sqlite->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::MongoDB:
-            next_calls_succeeded.emplace_back(mongodb->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(mongodb->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             mongodb->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::Redis:
-            next_calls_succeeded.emplace_back(redis->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(redis->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             redis->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::MinIO:
-            next_calls_succeeded.emplace_back(minio->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(minio->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             minio->setEngineDetails(rg, b, tname, te);
             break;
     }
