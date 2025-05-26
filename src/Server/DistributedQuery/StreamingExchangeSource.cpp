@@ -167,7 +167,7 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
     readVarUInt(num_columns, *packet_in);
 
     std::optional<Chunk> result;
-    if (num_rows != 0)
+    if (num_columns != 0)
     {
         auto compressed_buf = std::make_unique<CompressedReadBuffer>(*packet_in);
         auto reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS);
@@ -183,15 +183,20 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
         }
         rows_read += num_rows;
 
-        LOG_TEST(log, "Received chunk with {} rows from exchange stream {}", num_rows, stream_name);
+        LOG_TEST(log, "Received chunk with {} rows and {} columns from exchange stream {}", num_rows, num_columns, stream_name);
     }
-    else if (num_columns != 0)
+    else if (num_rows == 0)
     {
-        /// Empty chunk with non-zero number of columns
-        LOG_TEST(log, "Received empty chunk with {} columns from exchange stream {}", num_columns, stream_name);
+        LOG_TEST(log, "Received empty chunk from exchange stream {}", stream_name);
         result = Chunk(output.getHeader().cloneEmptyColumns(), 0);
     }
     else
+    {
+        LOG_TEST(log, "Received chunk with {} rows and no columns from exchange stream {}", num_rows, stream_name);
+        result = Chunk(Columns{}, num_rows);
+    }
+
+    if (num_rows == 0 && num_columns == 0)
     {
         /// Empty chunk with no columns means end of stream.
         finished_reading = true;

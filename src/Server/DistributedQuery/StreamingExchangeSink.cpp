@@ -167,10 +167,17 @@ void StreamingExchangeSink::work()
         has_input = false;
         if (input_is_finished)
         {
+            /// Send empty final chunk
             assert(!current_chunk);
             final_chunk_added = true;
+            consume(std::move(current_chunk));
         }
-        consume(std::move(current_chunk));
+        else if (current_chunk)
+        {
+            /// It the chunk is not the final, send it only if it is not empty
+            consume(std::move(current_chunk));
+        }
+
         return;
     }
 
@@ -227,7 +234,7 @@ void StreamingExchangeSink::consume(Chunk chunk)
     writeVarUInt(chunk.getNumRows(), *out);
     writeVarUInt(chunk.getNumColumns(), *out);
 
-    if (chunk.getNumRows() > 0)
+    if (chunk.getNumColumns() > 0)
     {
         auto compressed_buf = std::make_unique<CompressedWriteBuffer>(*out);
         auto writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS, input.getHeader());
