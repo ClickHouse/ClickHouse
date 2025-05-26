@@ -104,7 +104,7 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
     return res;
 }
 
-static std::optional<ActionsDAG> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
+static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
     checkChildrenSize(child_node, child_idx + 1);
@@ -135,6 +135,8 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     auto * filter = assert_cast<FilterStep *>(parent.get());
     auto & expression = filter->getExpression();
     const auto & filter_column_name = filter->getFilterColumnName();
+    // std::cerr << "addNewFilterStepOrThrow filter \n" << expression.dumpDAG() << std::endl;
+    // std::cerr << "split filter \n" << split_filter.dumpDAG() << std::endl;
 
     const auto * filter_node = expression.tryFindInOutputs(filter_column_name);
     if (update_parent_filter && !filter_node && !filter->removesFilterColumn())
@@ -161,8 +163,11 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
             std::rotate(split_filter.getOutputs().begin(), split_filter.getOutputs().begin() + 1, split_filter.getOutputs().begin() + pos + 1);
     }
 
+    // std::cerr << "split filter2 \n" << split_filter.dumpDAG() << std::endl;
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter), std::move(split_filter_column_name), can_remove_filter);
+
+    // std::cerr << "split filter header " << node.step->getOutputHeader().dumpStructure() << std::endl;
 
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
 
@@ -191,7 +196,7 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, bool step_changes_the_number_
                     bool can_remove_filter = true, size_t child_idx = 0)
 {
     if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, child_idx))
-        return addNewFilterStepOrThrow(parent_node, nodes, std::move(*split_filter), can_remove_filter, child_idx);
+        return addNewFilterStepOrThrow(parent_node, nodes, std::move(split_filter->dag), can_remove_filter && split_filter->remove_filter, child_idx);
     return 0;
 }
 
