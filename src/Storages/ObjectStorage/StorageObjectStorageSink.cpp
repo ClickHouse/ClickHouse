@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -56,7 +57,9 @@ void StorageObjectStorageSink::consume(Chunk & chunk)
 
 void StorageObjectStorageSink::onFinish()
 {
-    chassert(!isCancelled());
+    if (isCancelled())
+        return;
+
     finalizeBuffers();
     releaseBuffers();
 }

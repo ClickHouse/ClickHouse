@@ -101,6 +101,8 @@ function configure
     mkdir db ||:
     cp -av --dereference "$repo_dir"/programs/server/config* db
     cp -av --dereference "$repo_dir"/programs/server/user* db
+    # for log export
+    cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml db/users.d/
     # TODO figure out which ones are needed
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml db/config.d
     cp -av --dereference "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
@@ -286,7 +288,7 @@ EOF
     # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
     # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
     # a reasonable time.
-    timeout -s TERM --kill-after=5m --preserve-status 30m clickhouse-client \
+    timeout --verbose --signal TERM --kill-after=5m --preserve-status 30m clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
@@ -379,8 +381,11 @@ EOF
     elif [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log > description.txt
+        if rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log > description.txt
         then
+            # Save the stack trace of the server to the description file and preserve in raw text output.
+            rg --text '\s<Fatal>\s' server.log >> description.txt || :
+        else
             echo "Lost connection to server. See the logs." > description.txt
         fi
 
