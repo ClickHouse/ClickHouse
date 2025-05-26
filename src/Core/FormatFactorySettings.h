@@ -428,6 +428,34 @@ Result:
 
 Enabled by default.
 )", 0) \
+DECLARE(Bool, input_format_json_infer_array_of_dynamic_from_array_of_different_types, true, R"(
+If enabled, during schema inference ClickHouse will use Array(Dynamic) type for JSON arrays with values of different data types.
+
+Example:
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
+DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
+```
+
+```
+┌─name─┬─type───────────┐
+│ a    │ Array(Dynamic) │
+└──────┴────────────────┘
+```
+
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
+DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
+```
+
+```
+┌─name─┬─type─────────────────────────────────────────────────────────────┐
+│ a    │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │
+└──────┴──────────────────────────────────────────────────────────────────┘
+```
+
+Enabled by default.
+)", 0) \
     DECLARE(Bool, input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects, false, R"(
 Use String type instead of an exception in case of ambiguous paths in JSON objects during named tuples inference
 )", 0) \

@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
             {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
+            {"input_format_json_infer_array_of_dynamic_from_array_of_different_types", false, true, "Infer Array(Dynamic) for JSON arrays with different values types by default"},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
