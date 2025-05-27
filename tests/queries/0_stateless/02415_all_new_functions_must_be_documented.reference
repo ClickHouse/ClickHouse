@@ -156,7 +156,6 @@ cbrt
 ceil
 char
 cityHash64
-clamp
 coalesce
 concat
 concatAssumeInjective
@@ -276,7 +275,6 @@ greatCircleAngle
 greatCircleDistance
 greater
 greaterOrEquals
-greatest
 has
 hasColumnInTable
 hasSubsequence
@@ -292,7 +290,6 @@ hopStart
 hostName
 hypot
 identity
-if
 ifNull
 ignore
 ilike
@@ -326,7 +323,6 @@ joinGetOrNull
 jumpConsistentHash
 kafkaMurmurHash
 kostikConsistentHash
-least
 left
 leftPad
 leftPadUTF8
@@ -365,7 +361,6 @@ monthName
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
-multiIf
 multiMatchAllIndices
 multiMatchAny
 multiMatchAnyIndex
