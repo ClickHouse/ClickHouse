@@ -11,7 +11,7 @@
             --background-color: white;
             --text-color: #000;
             --tile-background: #f9f9f9;
-            --info-background: #e8e8e8;
+            --info-background: #e4e4e4;
             --footer-background: #f1f1f1;
             --footer-text-color: #000;
             --status-width: 300px;
@@ -53,7 +53,7 @@
             --background-color: #1F1F1C;
             --text-color: #dedede;
             --tile-background: #1F1F1F;
-            --info-background: #3d3d3d;
+            --info-background: #575757;
             --header-background-color: #1F1F1C;
             --pending-bar-color: #595801;
             --skipped-bar-color: #575757;
@@ -298,10 +298,6 @@
             padding: 8px;
             border: 1px solid var(--table-border-color);
             text-align: left;
-        }
-
-        th {
-            background-color: var(--header-background-color);
         }
 
         .status-success {
@@ -1176,14 +1172,14 @@
             columns.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
-
+                    
                 if (column === 'status') {
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
                     row.dataset.status = value ? value.toLowerCase() : "";
-                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0)) {
+                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0)) {
                         span.style.cursor = "pointer";
                         span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
                     }
@@ -1243,6 +1239,12 @@
             });
 
             tbody.appendChild(row);
+
+            // unfold all for preview mode (nest_level = 0 in this case)
+            if (nest_level === 0) {
+                toggleInfoRow(row, result.info, result.results, result.links);
+            }
+
         });
     }
 
@@ -1250,8 +1252,6 @@
      * Toggles an additional row below the clicked row to display the "info" text.
      */
     function toggleInfoRow(row, infoText, sub_results = [], links = []) {
-        if (!infoText && links.length === 0) return;
-
         let nextRow = row.nextElementSibling;
 
         // Check if the next row is already an "info" row
@@ -1276,7 +1276,6 @@
 
             // Handle subResults
             if (sub_results) {
-                console.log(sub_results);
                 if (Array.isArray(sub_results) && sub_results.length > 0) {
                     const table = createResultsTable(sub_results, 0);
                     if (table) {
@@ -1578,6 +1577,8 @@
             } catch (error) {
                 console.error('Error fetching statistics:', error);
             }
+        } else {
+            console.log('statistics updated at:', new Date(persistentStorage.updatedAt).toISOString());
         }
     }
 

@@ -113,12 +113,19 @@ class Result(MetaClasses.Serializable):
                 infos += info
         if results and not status:
             for result in results:
-                if result.status in (Result.Status.SUCCESS, Result.Status.SKIPPED):
+                if result.status in (
+                    Result.Status.SUCCESS,
+                    Result.Status.SKIPPED,
+                    Result.StatusExtended.OK,
+                ):
                     continue
                 elif result.status == Result.Status.ERROR:
                     result_status = Result.Status.ERROR
                     break
-                elif result.status == Result.Status.FAILED:
+                elif result.status in (
+                    Result.Status.FAILED,
+                    Result.StatusExtended.FAIL,
+                ):
                     result_status = Result.Status.FAILED
                 else:
                     Utils.raise_with_error(
@@ -216,32 +223,13 @@ class Result(MetaClasses.Serializable):
         return self
 
     def _add_job_summary_to_info(self):
-        subresult_with_tests = self
-        with_test_in_run_command = False
-
-        # Use a specific sub-result if configured
-        job_config = _Environment.get().JOB_CONFIG or {}
-        result_name_for_cidb = job_config.get("result_name_for_cidb", "")
-        if result_name_for_cidb:
-            for r in self.results:
-                if r.name == result_name_for_cidb:
-                    subresult_with_tests = r
-                    with_test_in_run_command = True
-                    if subresult_with_tests.info:
-                        self.set_info(subresult_with_tests.info)
-                    break
-
         # If no failures, nothing more to do
         if self.is_ok():
             return self
 
-        # Collect failed test case names
-        failed = [r.name for r in subresult_with_tests.results if not r.is_ok()]
-
         # Suggest local command to rerun
         command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-        if with_test_in_run_command and failed:
-            command_info += f" --test {failed[0]}"
+        command_info += f" [ --test TEST_NAME (if supported by the job)]"
         self.set_info(command_info)
 
         return self
@@ -330,6 +318,12 @@ class Result(MetaClasses.Serializable):
         self._update_status()
         return self
 
+    def extend_sub_results(self, results: List["Result"]):
+        assert isinstance(results, list) and len(results) > 0, "BUG?"
+        self.results += results
+        self._update_status()
+        return self
+
     def _update_status(self):
         was_pending = False
         was_running = False
@@ -344,7 +338,7 @@ class Result(MetaClasses.Serializable):
                 has_running = True
             if result_.status in (self.Status.PENDING,):
                 has_pending = True
-            if result_.status in (self.Status.ERROR, self.Status.FAILED):
+            if result_.status in (self.Status.ERROR, self.Status.FAILED, self.StatusExtended.FAIL):
                 has_failed = True
         if has_running:
             self.status = self.Status.RUNNING
@@ -448,7 +442,7 @@ class Result(MetaClasses.Serializable):
             fail_fast = False
             command = [command]
 
-        print(f"> Starting execution for [{name}]")
+        print(f"> Start execution for [{name}]")
         res = True  # Track success/failure status
         error_infos = []
         with ContextManager.cd(workdir):
@@ -460,7 +454,7 @@ class Result(MetaClasses.Serializable):
                     # If command is a Python function, call it with provided arguments
                     if with_info or with_info_on_failure:
                         buffer = io.StringIO()
-                        with redirect_stdout(buffer):
+                        with Utils.Tee(stdout=buffer):
                             result = command_(*command_args, **command_kwargs)
                     else:
                         result = command_(*command_args, **command_kwargs)
@@ -525,9 +519,7 @@ class Result(MetaClasses.Serializable):
                 info_lines = (
                     info_lines[:10]
                     + [
-                        "~~~~~~~~~~~~~~~~~~~~~",
-                        "~~~~~ truncated ~~~~~",
-                        "~~~~~~~~~~~~~~~~~~~~~",
+                        f"~~~~~ truncated {len(info_lines) - 20} lines ~~~~~",
                     ]
                     + info_lines[-10:]
                 )
@@ -577,7 +569,7 @@ class _ResultS3:
         if clean:
             S3.delete(s3_path)
         # gzip is supported by most browsers
-        archive_file = Utils.compress_file_gz(result_file_path)
+        archive_file = Utils.compress_gz(result_file_path)
         if archive_file:
             assert archive_file.endswith(".gz")
             content_encoding = "gzip"

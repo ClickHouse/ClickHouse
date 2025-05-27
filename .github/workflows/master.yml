@@ -1383,6 +1383,44 @@ jobs:
             python3 -m praktika run 'Compatibility check (aarch64)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
+  stateless_tests_amd_asan_distributed_plan_1_2:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgMS8yKQ==') }}
+    name: "Stateless tests (amd_asan, distributed plan, 1/2)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, 1/2)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, 1/2)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+          fi
+
   stateless_tests_amd_binary:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_binary]
@@ -2905,7 +2943,7 @@ jobs:
 
   stateless_tests_amd_coverage_1_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd_and_merge, stateless_tests_amd_asan_distributed_plan_1_2, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDEvNik=') }}
     name: "Stateless tests (amd_coverage, 1/6)"
     outputs:
@@ -2943,7 +2981,7 @@ jobs:
 
   stateless_tests_amd_coverage_2_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd_and_merge, stateless_tests_amd_asan_distributed_plan_1_2, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDIvNik=') }}
     name: "Stateless tests (amd_coverage, 2/6)"
     outputs:
@@ -2981,7 +3019,7 @@ jobs:
 
   stateless_tests_amd_coverage_3_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd_and_merge, stateless_tests_amd_asan_distributed_plan_1_2, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDMvNik=') }}
     name: "Stateless tests (amd_coverage, 3/6)"
     outputs:
@@ -3019,7 +3057,7 @@ jobs:
 
   stateless_tests_amd_coverage_4_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd_and_merge, stateless_tests_amd_asan_distributed_plan_1_2, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDQvNik=') }}
     name: "Stateless tests (amd_coverage, 4/6)"
     outputs:
@@ -3057,7 +3095,7 @@ jobs:
 
   stateless_tests_amd_coverage_5_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd_and_merge, stateless_tests_amd_asan_distributed_plan_1_2, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDUvNik=') }}
     name: "Stateless tests (amd_coverage, 5/6)"
     outputs:
@@ -3095,7 +3133,7 @@ jobs:
 
   stateless_tests_amd_coverage_6_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd_and_merge, stateless_tests_amd_asan_distributed_plan_1_2, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDYvNik=') }}
     name: "Stateless tests (amd_coverage, 6/6)"
     outputs:

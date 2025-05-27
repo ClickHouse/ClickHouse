@@ -17,6 +17,8 @@ class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
     START = "start"
     TEST = "test"
+    CHECK_ERRORS = "check_errors"
+    COLLECT_LOGS = "collect_logs"
 
 
 def parse_args():
@@ -79,10 +81,11 @@ def run_tests(
         extra_args += " --shard"
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
+    # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     command = f"clickhouse-test --testname --check-zookeeper-session --hung-check \
-                --capture-client-stacktrace --queries ./tests/queries --test-runs 1 --hung-check \
+                --capture-client-stacktrace --queries ./tests/queries --test-runs 1 \
                 {'--no-parallel' if no_parallel else ''}  {'--no-sequential' if no_sequiential else ''} \
-                --jobs {nproc} --report-logs-stats {extra_args} \
+                --jobs {nproc} {extra_args} \
                 --queries ./tests/queries -- '{test}' | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
@@ -93,8 +96,9 @@ def run_tests(
 def run_specific_tests(tests, runs=1):
     test_output_file = f"{temp_dir}/test_result.txt"
     nproc = int(Utils.cpu_count() / 2)
+        # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
-        --capture-client-stacktrace --queries ./tests/queries --report-logs-stats --test-runs {runs} \
+        --capture-client-stacktrace --queries ./tests/queries --test-runs {runs} \
         --jobs {nproc} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
@@ -133,6 +137,7 @@ def main():
     is_bugfix_validation = False
     is_s3_storage = False
     is_database_replicated = False
+    is_shared_catalog = False
     runner_options = ""
     info = Info()
 
@@ -160,6 +165,8 @@ def main():
             is_s3_storage = True
         if "DatabaseReplicated" in to:
             is_database_replicated = True
+        if "SharedCatalog" in to:
+            is_shared_catalog = True
 
     # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
     if not info.is_local_run:
@@ -174,8 +181,6 @@ def main():
 
     stages = list(JobStages)
 
-    logs_to_attach = []
-
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
     if stage:
         assert stage in JobStages, f"--param must be one of [{list(JobStages)}]"
@@ -188,7 +193,11 @@ def main():
     results = []
 
     Utils.add_to_PATH(f"{ch_path}:tests")
-    CH = ClickHouseProc()
+    CH = ClickHouseProc(
+        is_db_replicated=is_database_replicated, is_shared_catalog=is_shared_catalog
+    )
+
+    CH.clean_logs()
 
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
 
@@ -215,6 +224,7 @@ def main():
             f"cp programs/server/config.xml programs/server/users.xml /etc/clickhouse-server/",
             f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client {config_installs_args}",
             f"clickhouse-server --version",
+            f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server/config.d/*.xml",
         ]
 
         if is_flaky_check:
@@ -260,24 +270,29 @@ def main():
                 "aws s3 ls s3://test --endpoint-url http://localhost:11111/",
                 verbose=True,
             )
-            res = res and CH.start(replicated=is_database_replicated)
+            res = res and CH.start()
             res = res and CH.wait_ready()
-            if not Info().is_local_run:
-                if not CH.start_log_exports(stop_watch.start_time):
-                    info.add_workflow_report_message(
-                        "WARNING: Failed to start log export"
-                    )
-                    print("Failed to start log export")
             if res:
-                print("ch started")
-            res = (
-                res
-                and CH.prepare_stateful_data(
-                    with_s3_storage=is_s3_storage,
-                    is_db_replicated=is_database_replicated,
+                if "asan" not in info.job_name:
+                    print("Attaching gdb")
+                    res = res and CH.attach_gdb()
+                else:
+                    print("Skipping gdb attachment for asan build")
+            if res:
+                if not Info().is_local_run:
+                    if not CH.start_log_exports(stop_watch.start_time):
+                        info.add_workflow_report_message(
+                            "WARNING: Failed to start log export"
+                        )
+                        print("Failed to start log export")
+            if res:
+                res = (
+                    CH.prepare_stateful_data(
+                        with_s3_storage=is_s3_storage,
+                        is_db_replicated=is_database_replicated,
+                    )
+                    and CH.insert_system_zookeeper_config()
                 )
-                and CH.insert_system_zookeeper_config()
-            )
             if res:
                 print("stateful data prepared")
             return res
@@ -316,8 +331,8 @@ def main():
                 run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1)
             else:
                 print("WARNING: No tests to run")
-        CH.stop_log_exports()
-        CH.terminate()
+        if not info.is_local_run:
+            CH.stop_log_exports()
         results.append(FTResultsProcessor(wd=temp_dir).run())
 
         # invert result status for bugfix validation
@@ -334,30 +349,61 @@ def main():
                 results[-1].set_success()
 
         results[-1].set_timing(stopwatch=stop_watch_)
+        job_info = ""
+        if results[-1].info:
+            job_info = results[-1].info
+            results[-1].info = ""
+
         res = results[-1].is_ok()
 
+    CH.terminate()
+
+    if JobStages.CHECK_ERRORS in stages:
+        print("Check fatal errors")
+        sw_ = Utils.Stopwatch()
+        results.append(
+            Result.create_from(
+                name="Check errors",
+                results=CH.check_fatal_messeges_in_logs(),
+                stopwatch=sw_,
+            )
+        )
+        # fatal failures found in logs represented as normal test cases
+        test_result = results[-2]
+        test_result.extend_sub_results(results[-1].results)
+
+    if JobStages.COLLECT_LOGS in stages and not info.is_local_run:
+        print("Collect logs")
+
+        def collect_logs():
+            CH.prepare_logs(all=not res)
+
+        results.append(
+            Result.from_commands_run(
+                name="Collect logs",
+                command=collect_logs,
+            )
+        )
+        results[-1].results = CH.extra_tests_results
+
     # TODO: collect logs
-    # blob_storage_log.tsv.zst
+    #     clickhouse_coverage.tar.zst
+    #     ./mc admin config reset clickminio logger_webhook:ch_server_webhook
+    # ./mc admin config reset clickminio audit_webhook:ch_audit_webhook
+    # clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE" ||:
+    # clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_audit_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow" ||:
+    # clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow" ||:
+
     # dmesg.log
-    # error_log.tsv.zst
-    # latency_log.tsv.zst
-    # metric_log.tsv.zst
     # minio_audit_logs.jsonl.zst
     # minio_server_logs.jsonl.zst
     # part_log.tsv.zst
     # query_log.tsv.zst
     # query_metric_log.tsv.zst
-    # trace_log.tsv.zst
-    # transactions_info_log.tsv.zst
-    # zookeeper_log.tsv.zst
-    # and CH.flush_system_logs()
-
-    attachments = CH.get_logs_archives_server()
-    if not res:
-        attachments += CH.get_logs_archives_if_status_failure()
+    # collect_core_dumps
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=attachments
+        results=results, stopwatch=stop_watch, files=CH.logs, info=job_info
     ).complete_job()
 
 

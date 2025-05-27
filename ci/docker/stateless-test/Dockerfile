@@ -133,3 +133,5 @@ ENV PYTHONPATH=".:./ci"
 # A directory for cache
 RUN mkdir /dev/shm/clickhouse
 
+COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
+ENV PATH="/opt/gdb/bin:${PATH}"
