@@ -13,6 +13,7 @@
 #include <Interpreters/Set.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 
 
 namespace DB
@@ -105,7 +106,7 @@ public:
             if (in_second_argument->as<TableNode>())
                 subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
 
-            auto ast = in_second_argument->toAST();
+            auto ast = queryNodeToDistributedSelectQuery(in_second_argument);
             sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
         }
         else
