@@ -69,7 +69,6 @@ ASTPtr ListNode::toASTImpl(const ConvertToASTOptions & options) const
         // Named window should be wrapped in ASTWindowListElement with name.
         if (children_ast->as<ASTWindowDefinition>())
         {
-            ASTList
             auto window_list_node = std::make_shared<ASTWindowListElement>();
             window_list_node->name = children[i]->getAlias();
             window_list_node->children.push_back(children_ast);
