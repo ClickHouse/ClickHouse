@@ -22,7 +22,7 @@ SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase(
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query = 'SELECT count() FROM lwd_test_1;' AND type = 'QueryFinish';
 
 SELECT read_rows < (
-    SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query ilike '%SELECT count() FROM lwd_test;%' AND type = 'QueryFinish'
+    SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query ilike '%SELECT count() FROM lwd_test;%' AND type = 'QueryFinish' LIMIT 1
 ) FROM system.query_log WHERE current_database = currentDatabase() AND query ilike '%SELECT count() FROM lwd_test_1;%' AND type = 'QueryFinish';
 
 DROP TABLE IF EXISTS lwd_test;
