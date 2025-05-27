@@ -26,7 +26,7 @@ CREATE TABLE src_dynamic_squash_performance_1
 (
     d Dynamic
 )
-ENGINE = Memory;
+ENGINE = Memory() SETTINGS max_rows_to_keep=1;
     </create_query>
 
     <create_query>
@@ -34,7 +34,7 @@ CREATE TABLE src_dynamic_squash_performance_2
 (
     d Dynamic(max_types=6)
 )
-ENGINE = Memory;
+ENGINE = Memory() SETTINGS max_rows_to_keep=1;
     </create_query>
 
     <fill_query>
