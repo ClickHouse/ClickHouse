@@ -120,8 +120,11 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     size_limits = SizeLimits(settings[QueryPlanSerializationSetting::max_rows_to_sort], settings[QueryPlanSerializationSetting::max_bytes_to_sort], settings[QueryPlanSerializationSetting::sort_overflow_mode]);
     max_bytes_before_remerge = settings[QueryPlanSerializationSetting::max_bytes_before_remerge_sort];
     remerge_lowered_memory_bytes_ratio = settings[QueryPlanSerializationSetting::remerge_sort_lowered_memory_bytes_ratio];
+
+    max_bytes_ratio_before_external_sort = settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort];
     max_bytes_in_block_before_external_sort = settings[QueryPlanSerializationSetting::max_bytes_before_external_sort];
     max_bytes_in_query_before_external_sort = getMaxBytesInQueryBeforeExternalSort(settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort]);
+
     min_free_disk_space = settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
