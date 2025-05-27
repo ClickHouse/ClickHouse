@@ -16,7 +16,6 @@ namespace BuzzHouse
 
 static const std::unordered_map<OutFormat, InFormat> outIn{
     {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-    {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream}, //It's giving different results
     {OutFormat::OUT_Avro, InFormat::IN_Avro},
     {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
     {OutFormat::OUT_CSV, InFormat::IN_CSV},
