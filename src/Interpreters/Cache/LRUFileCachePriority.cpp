@@ -209,7 +209,7 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
             continue;
         }
 
-        if (metadata->size() != entry.getSize())
+        if (metadata->size() != entry.getFilledSize())
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -512,7 +512,11 @@ void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CachePr
     /// because if `use_read_cache_size = 1`, the actual size update could be different from `size` as a result of file size alignment.
     size_t prev_size = entry->getSize();
     entry->increaseSize(size);
-    cache_priority->updateSize(entry->getSize() - prev_size);
+    size_t diff = entry->getSize() - prev_size;
+    if (diff > 0)
+    { // Could be false for aligned cache size
+        cache_priority->updateSize(diff);
+    }
     cache_priority->check(lock);
 }
 
@@ -532,7 +536,10 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
     chassert(prev_size >= size);
     entry->decreaseSize(size);
     size_t diff_size = prev_size - entry->getSize();
-    cache_priority->updateSize(-diff_size);
+    if (diff_size != 0)
+    { // Could be false for aligned cache size
+        cache_priority->updateSize(-diff_size);
+    }
 }
 
 size_t LRUFileCachePriority::LRUIterator::increasePriority(const CachePriorityGuard::Lock & lock)
