@@ -671,6 +671,17 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
                     this->width++;
                     generated_params++;
                     break;
+                case SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_Resample:
+                    this->generateExpression(rg, func_call->add_params());
+                    this->width++;
+                    this->generateExpression(rg, func_call->add_params());
+                    this->width++;
+                    this->generateExpression(rg, func_call->add_params());
+                    this->width++;
+                    this->generateExpression(rg, func_call->add_args()->mutable_expr());
+                    this->width++;
+                    generated_params+=4;
+                    break;
                 default:
                     break;
             }

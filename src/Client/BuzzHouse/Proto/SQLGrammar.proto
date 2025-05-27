@@ -1995,13 +1995,14 @@ message SQLFuncCall {
         Distinct = 5;
         OrDefault = 6;
         OrNull = 7;
-        ArgMin = 8;
-        ArgMax = 9;
+        Resample = 8;
+        ArgMin = 9;
+        ArgMax = 10;
         /// Not deterministic maybe?
-        SimpleState = 10;
-        State = 11;
-        Merge = 12;
-        MergeState = 13;
+        SimpleState = 11;
+        State = 12;
+        Merge = 13;
+        MergeState = 14;
     }
     required SQLFuncName func = 1;
     repeated AggregateCombinator combinators = 2;
