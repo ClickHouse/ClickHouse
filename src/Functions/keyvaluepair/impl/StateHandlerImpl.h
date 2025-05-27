@@ -120,8 +120,9 @@ public:
                     return {next_pos, State::READING_QUOTED_KEY};
                 }
 
-                // todo arthur
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quoting character found in key. This should not happen.");
+                // The quoting character should not be added to the search symbols list in case strategy = Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT
+                // See `NeedleFactory`
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to handle unexpected quoting character. This is a bug");
             }
 
             pos = next_pos;
@@ -269,8 +270,9 @@ public:
                     return {next_pos, State::READING_QUOTED_VALUE};
                 }
 
-                // todo arthur
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quoting character found in value. This should not happen.");
+                // The quoting character should not be added to the search symbols list in case strategy = Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT
+                // See `NeedleFactory`
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to handle unexpected quoting character. This is a bug");
             }
 
             pos = next_pos;
