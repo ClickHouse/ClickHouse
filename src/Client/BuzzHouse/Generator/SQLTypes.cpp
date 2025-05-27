@@ -654,20 +654,17 @@ String DynamicType::typeName(const bool) const
 
 String DynamicType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String DynamicType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String DynamicType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 SQLType * DynamicType::typeDeepCopy() const
@@ -856,20 +853,17 @@ String GeoType::typeName(const bool) const
 
 String GeoType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String GeoType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String GeoType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 SQLType * GeoType::typeDeepCopy() const
@@ -889,8 +883,7 @@ String ArrayType::typeName(const bool escape) const
 
 String ArrayType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT []";
 }
 
 String ArrayType::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) const
@@ -926,8 +919,7 @@ String ArrayType::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) co
 
 String ArrayType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 SQLType * ArrayType::typeDeepCopy() const
@@ -965,20 +957,17 @@ String MapType::typeName(const bool escape) const
 
 String MapType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String MapType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String MapType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 SQLType * MapType::typeDeepCopy() const
@@ -1039,20 +1028,17 @@ String TupleType::typeName(const bool escape) const
 
 String TupleType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String TupleType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String TupleType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 SQLType * TupleType::typeDeepCopy() const
@@ -1106,20 +1092,17 @@ String VariantType::typeName(const bool escape) const
 
 String VariantType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String VariantType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String VariantType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 SQLType * VariantType::typeDeepCopy() const
@@ -1171,26 +1154,22 @@ String NestedType::typeName(const bool escape) const
 
 String NestedType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String NestedType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String NestedType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 String NestedType::appendRandomRawValue(RandomGenerator &, StatementGenerator &) const
 {
-    chassert(0);
-    return "";
+    return "TEXT";
 }
 
 SQLType * NestedType::typeDeepCopy() const
