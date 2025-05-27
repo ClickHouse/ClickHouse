@@ -98,7 +98,6 @@ arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayLastIndex
-arrayRandomSample
 arrayStringConcat
 asinh
 assumeNotNull
@@ -362,7 +361,6 @@ minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
 moduloOrNull
-moduloOrZero
 monthName
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
@@ -744,12 +742,6 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
-toTime64
-toTime64OrNull
-toTime64OrZero
-toTimeOrNull
-toTimeOrZero
-toTimeWithFixedDate
 toTimezone
 toTypeName
 toUInt128

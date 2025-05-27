@@ -1012,11 +1012,6 @@ Possible values:
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
 )", 0) \
-    DECLARE(Bool, use_legacy_to_time, false, R"(
-When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
-Otherwise, uses a new toTime function, that converts different type of data into the Time type.
-The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
-)", IMPORTANT) \
     DECLARE(Bool, function_locate_has_mysql_compatible_argument_order, true, R"(
 Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md/#locate).
 
@@ -2021,7 +2016,7 @@ DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
 )", 0) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
-Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms
+Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
  )", 0) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
@@ -5267,7 +5262,7 @@ Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters de
 Allow to merge filter into JOIN condition and convert CROSS JOIN to INNER.
 )", 0) \
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
-Allow to convert JOIN to subquery with IN if output columns tied to only left table
+Allow to convert JOIN to subquery with IN if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
