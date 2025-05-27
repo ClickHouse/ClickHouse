@@ -99,25 +99,22 @@ these are replaced with the corresponding array value.
 └─────┴───────────┴─────────┘
         )"},
         {"arrayJoin affects all sections of the query", R"(
-The `arrayJoin` function affects all sections of the query, including the `WHERE` section. Notice the result 2, even though the subquery returned 1 row.
+-- The arrayJoin function affects all sections of the query, including the WHERE section. Notice the result 2, even though the subquery returned 1 row.
 
-```sql
 SELECT sum(1) AS impressions
 FROM
 (
     SELECT ['Istanbul', 'Berlin', 'Bobruisk'] AS cities
 )
 WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
-```
         )", R"(
 ┌─impressions─┐
 │           2 │
 └─────────────┘
         )"},
         {"Using multiple arrayJoin functions", R"(
-A query can use multiple `arrayJoin` functions. In this case, the transformation is performed multiple times and the rows are multiplied.
+- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 
-```sql
 SELECT
     sum(1) AS impressions,
     arrayJoin(cities) AS city,
@@ -131,7 +128,6 @@ FROM
 GROUP BY
     2,
     3
-```
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
 │           2 │ Istanbul │ Chrome  │
@@ -144,11 +140,9 @@ GROUP BY
         )"
         },
         {"Unexpected results due to optimizations", R"(
-/*
-Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
-For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
-e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
-*/
+-- Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
+-- For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
+- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
 
 SELECT
     arrayJoin(dice) as first_throw,
@@ -199,11 +193,8 @@ FROM (
         )"
         },
         {"Using the ARRAY JOIN syntax", R"(
-
-/*
-Note the ARRAY JOIN syntax in the `SELECT` query below, which provides broader possibilities.
-ARRAY JOIN allows you to convert multiple arrays with the same number of elements at a time.
-*/
+-- Note the ARRAY JOIN syntax in the `SELECT` query below, which provides broader possibilities.
+-- ARRAY JOIN allows you to convert multiple arrays with the same number of elements at a time.
 
 SELECT
     sum(1) AS impressions,
