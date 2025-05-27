@@ -874,7 +874,7 @@ void LocalServer::processConfig()
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
 
     /// Initialize a dummy query result cache.
-    global_context->setQueryResultCache(0, 0, 0, 0);
+    global_context->setQueryResultCache(0, 0, 0, 0, 0, 0, 0, 0, {});
 
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);

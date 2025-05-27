@@ -21,16 +21,18 @@ public:
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
     using typename Base::OnWeightLossFunction;
+    using OnEvictFunction = std::function<void(MappedPtr)>;
 
     /** Initialize LRUCachePolicy with max_size_in_bytes and max_count.
      *  max_size_in_bytes == 0 means the cache accepts no entries.
       * max_count == 0 means no elements size restrictions.
       */
-    LRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, OnWeightLossFunction on_weight_loss_function_)
+    LRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, OnWeightLossFunction on_weight_loss_function_, OnEvictFunction on_evict_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
         , max_count(max_count_)
         , on_weight_loss_function(on_weight_loss_function_)
+        , on_evict_function(on_evict_function_)
     {
     }
 
@@ -193,6 +195,7 @@ private:
 
     WeightFunction weight_function;
     OnWeightLossFunction on_weight_loss_function;
+    OnEvictFunction on_evict_function;
 
     void removeOverflow()
     {
@@ -211,6 +214,8 @@ private:
 
             current_size_in_bytes -= cell.size;
             current_weight_lost += cell.size;
+
+            on_evict_function(cell.value);
 
             cells.erase(it);
             queue.pop_front();

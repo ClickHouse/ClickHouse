@@ -1208,7 +1208,7 @@ public:
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void clearMMappedFileCache() const;
 
-    void setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
+    void setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, size_t disk_cache_max_size_in_bytes, size_t disk_cache_max_entries, size_t disk_cache_max_entry_size_in_bytes, size_t disk_cache_max_entry_size_in_rows, bool persist_cache);
     void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryResultCache> getQueryResultCache() const;
     void clearQueryResultCache(const std::optional<String> & tag) const;

@@ -53,6 +53,7 @@ public:
     explicit CacheBase(std::string_view cache_policy_name, size_t max_size_in_bytes, size_t max_count, double size_ratio)
     {
         auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
+        auto on_evict_function = [](MappedPtr){};
 
         if (cache_policy_name.empty())
         {
@@ -63,7 +64,7 @@ public:
         if (cache_policy_name == "LRU")
         {
             using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<LRUPolicy>(max_size_in_bytes, max_count, on_weight_loss_function);
+            cache_policy = std::make_unique<LRUPolicy>(max_size_in_bytes, max_count, on_weight_loss_function, on_evict_function);
         }
         else if (cache_policy_name == "SLRU")
         {
