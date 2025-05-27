@@ -324,13 +324,6 @@ void StorageKafka::shutdown(bool)
         consumers.clear();
         LOG_TRACE(log, "Consumers closed. Took {} ms.", watch.elapsedMilliseconds());
     }
-
-    {
-        LOG_TRACE(log, "Waiting for final cleanup");
-        Stopwatch watch;
-        rd_kafka_wait_destroyed(KAFKA_CLEANUP_TIMEOUT_MS);
-        LOG_TRACE(log, "Final cleanup finished in {} ms (timeout {} ms).", watch.elapsedMilliseconds(), KAFKA_CLEANUP_TIMEOUT_MS);
-    }
 }
 
 

@@ -264,6 +264,8 @@ DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
+DictionaryMaxUpdateDelay
+DictionaryTotalFailedUpdates
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
@@ -3062,7 +3064,6 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
-toTimeWithFixedDate
 toTimeZone
 toType
 toTypeName

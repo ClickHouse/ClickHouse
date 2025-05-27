@@ -1,0 +1,103 @@
+Expression ((Project names + Projection))
+  Filter
+    ReadFromMergeTree (p1)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          json.a
+        Condition: (json.a in [1, 1])
+        Parts: 1/1
+        Granules: 2/100
+{"a":1,"b":"str","c":[{"d":"1"}]}
+Expression ((Project names + Projection))
+  Filter
+    ReadFromMergeTree (p2)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          t.a
+        Condition: (t.a in [1, 1])
+        Parts: 1/1
+        Granules: 2/100
+(1,1)
+Expression ((Project names + Projection))
+  Filter
+    ReadFromMergeTree (p3)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          json.c.:`Array(JSON)`.d.:`Int64`
+        Condition: (json.c.:`Array(JSON)`.d.:`Int64` in [[1], [1]])
+        Parts: 1/1
+        Granules: 2/100
+{"a":1,"b":"str","c":[{"d":"1"}]}
+Expression ((Project names + Projection))
+  Filter
+    ReadFromMergeTree (p1)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          json.a
+        Condition: (json.a in [1, 1])
+        Parts: 1/1
+        Granules: 3/200
+{"a":1,"b":"str","c":[{"d":"1"}]}
+{"a":1,"b":"str","c":[{"d":"1"}]}
+Expression ((Project names + Projection))
+  Filter
+    ReadFromMergeTree (p2)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          t.a
+        Condition: (t.a in [1, 1])
+        Parts: 1/1
+        Granules: 3/200
+(1,1)
+(1,1)
+Expression ((Project names + Projection))
+  Filter
+    ReadFromMergeTree (p3)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          json.c.:`Array(JSON)`.d.:`Int64`
+        Condition: (json.c.:`Array(JSON)`.d.:`Int64` in [[1], [1]])
+        Parts: 1/1
+        Granules: 3/200
+{"a":1,"b":"str","c":[{"d":"1"}]}
+{"a":1,"b":"str","c":[{"d":"1"}]}
+------------------------------------------------------------------
+Expression ((Project names + Projection))
+  Filter
+    ReadFromMergeTree (p1)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          json.a
+        Condition: (json.a in [1, 1])
+        Parts: 1/1
+        Granules: 2/100
+{"a":1,"b":"str","c":[{"d":"1"}]}
+Expression ((Project names + Projection))
+  Filter
+    ReadFromMergeTree (p2)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          t.a
+        Condition: (t.a in [1, 1])
+        Parts: 1/1
+        Granules: 2/100
+(1,1)
+Expression ((Project names + Projection))
+  Filter
+    ReadFromMergeTree (p3)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          json.c.:`Array(JSON)`.d.:`Int64`
+        Condition: (json.c.:`Array(JSON)`.d.:`Int64` in [[1], [1]])
+        Parts: 1/1
+        Granules: 2/100
+{"a":1,"b":"str","c":[{"d":"1"}]}
