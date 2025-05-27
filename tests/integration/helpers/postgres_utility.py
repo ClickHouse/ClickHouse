@@ -1,8 +1,10 @@
+import os.path
 import time
 
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from helpers.config_cluster import pg_pass
+from helpers.cluster import HELPERS_DIR
 
 postgres_table_template = """
     CREATE TABLE IF NOT EXISTS "{}" (
@@ -37,6 +39,7 @@ def get_postgres_conn(
     auto_commit=True,
     database_name="postgres_database",
     replication=False,
+    mtls=False,
 ):
     if database == True:
         conn_string = f"host={ip} port={port} dbname='{database_name}' user='postgres' password='{pg_pass}'"
@@ -47,6 +50,12 @@ def get_postgres_conn(
 
     if replication:
         conn_string += " replication='database'"
+
+    if mtls:
+        conn_string += " sslmode=require"
+        conn_string += " sslrootcert=" + os.path.join(HELPERS_DIR, "postgres_cert", "ca.pem")
+        conn_string += " sslcert=" + os.path.join(HELPERS_DIR, "postgres_cert", "client-cert.pem")
+        conn_string += " sslkey=" + os.path.join(HELPERS_DIR, "postgres_cert", "client-key.pem")
 
     conn = psycopg2.connect(conn_string)
     if auto_commit:

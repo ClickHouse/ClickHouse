@@ -56,6 +56,11 @@ public:
         String username = "default";
         String password;
         String database;
+
+        String sslcert;
+        String sslkey;
+        String sslrootcert;
+
         String table;
         String schema;
         String on_conflict;

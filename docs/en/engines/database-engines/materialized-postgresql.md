@@ -33,7 +33,7 @@ SET allow_experimental_database_materialized_postgresql=1
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SETTINGS ...]
+ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password' ['ssl_cert', 'ssl_key', 'ssl_root_cert']) [SETTINGS ...]
 ```
 
 **Engine Parameters**
@@ -42,6 +42,11 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 - `database` — PostgreSQL database name.
 - `user` — PostgreSQL user.
 - `password` — User password.
+
+Optional parameters:
+- `ssl_cert` — Certificate to use for mTLS authentication
+- `ssl_key` — Key to use for mTLS authentication
+- `ssl_root_cert` — Root certificate to use for mTLS authentication
 
 ## Example of Use {#example-of-use}
 

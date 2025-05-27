@@ -647,8 +647,12 @@ class ClickHouseCluster:
         self.postgres4_host = "postgres4"
         self.postgres4_ip = None
         self.postgres4_conn = None
+        self.postgres_mtls_host = "postgres1-mtls"
+        self.postgres_mtls_ip = None
+        self.postgres_mtls_conn = None
         self.postgres_port = 5432
         self.postgres_dir = p.abspath(p.join(self.instances_dir, "postgres"))
+        self.postgres_mtls_logs_dir = os.path.join(self.postgres_dir, "postgres1-mtls")
         self.postgres_logs_dir = os.path.join(self.postgres_dir, "postgres1")
         self.postgres2_logs_dir = os.path.join(self.postgres_dir, "postgres2")
         self.postgres3_logs_dir = os.path.join(self.postgres_dir, "postgres3")
@@ -1175,6 +1179,7 @@ class ClickHouseCluster:
         )
         env_variables["POSTGRES_PORT"] = str(self.postgres_port)
         env_variables["POSTGRES_DIR"] = self.postgres_logs_dir
+        env_variables["POSTGRES_MTLS_DIR"] = self.postgres_mtls_logs_dir
         env_variables["POSTGRES_LOGS_FS"] = "bind"
 
         self.with_postgres = True
@@ -2097,7 +2102,7 @@ class ClickHouseCluster:
         logging.debug("get_instance_ip instance_name={}".format(instance_name))
         docker_id = self.get_instance_docker_id(instance_name)
         # for cont in self.docker_client.containers.list():
-        # logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
+        #  logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
         handle = self.docker_client.containers.get(docker_id)
         return list(handle.attrs["NetworkSettings"]["Networks"].values())[0][
             "IPAddress"
@@ -2353,6 +2358,7 @@ class ClickHouseCluster:
 
     def wait_postgres_to_start(self, timeout=260):
         self.postgres_ip = self.get_instance_ip(self.postgres_host)
+        self.postgres_mtls_ip = self.get_instance_ip(self.postgres_mtls_host)
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -2366,9 +2372,31 @@ class ClickHouseCluster:
                 self.postgres_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres_conn.autocommit = True
                 logging.debug("Postgres Started")
-                return
+                break
             except Exception as ex:
                 logging.debug("Can't connect to Postgres " + str(ex))
+                time.sleep(0.5)
+
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                self.postgres_mtls_conn = psycopg2.connect(
+                    host=self.postgres_mtls_ip,
+                    port=self.postgres_port,
+                    database=pg_db,
+                    user=pg_user,
+                    password=pg_pass,
+                    sslmode="require",
+                    sslrootcert=os.path.join(HELPERS_DIR, "postgres_cert", "ca.pem"),
+                    sslcert=os.path.join(HELPERS_DIR, "postgres_cert", "client-cert.pem"),
+                    sslkey=os.path.join(HELPERS_DIR, "postgres_cert", "client-key.pem"),
+                )
+                self.postgres_mtls_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgres_mtls_conn.autocommit = True
+                logging.debug("Postgres mTLS instance started")
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to mTLS Postgres " + str(ex))
                 time.sleep(0.5)
 
         raise Exception("Cannot wait Postgres container")
@@ -3004,6 +3032,8 @@ class ClickHouseCluster:
                     shutil.rmtree(self.postgres_dir)
                 os.makedirs(self.postgres_logs_dir)
                 os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                os.makedirs(self.postgres_mtls_logs_dir)
+                os.chmod(self.postgres_mtls_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
                 self.up_called = True
