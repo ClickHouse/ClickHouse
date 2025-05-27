@@ -582,7 +582,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 if (ParserKeyword{Keyword::PROTOBUF}.ignore(pos, expected))
                     res->schema_cache_format = toStringView(Keyword::PROTOBUF);
-
+                else if (ParserKeyword{Keyword::FILES}.ignore(pos, expected))
+                    res->schema_cache_format = toStringView(Keyword::FILES);
                 else
                     return false;
             }
