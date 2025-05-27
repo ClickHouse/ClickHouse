@@ -142,7 +142,15 @@ ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
         window_definition->frame_end_offset = window_definition->children.back();
     }
 
-    return window_definition;
+    // If it has alias then it is named window and should be wrapped in list node.
+    if (!hasAlias())
+        return window_definition;
+
+    auto window_list_node = std::make_shared<ASTWindowListElement>();
+    window_list_node->name = getAlias();
+    window_list_node->children.push_back(window_definition);
+    window_list_node->definition = window_list_node->children.back();
+    return window_list_node;
 }
 
 }
