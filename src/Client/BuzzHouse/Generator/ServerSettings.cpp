@@ -220,7 +220,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"alter_sync", CHSetting(zeroOneTwo, {}, false)},
     {"analyze_index_with_space_filling_curves", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"analyzer_compatibility_join_using_top_level_identifier", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"apply_deleted_mask", CHSetting(trueOrFalse, {}, false)},
+    /// {"apply_deleted_mask", CHSetting(trueOrFalse, {}, false)}, gives issue with dump table oracle
     {"apply_mutations_on_fly", CHSetting(trueOrFalse, {}, false)},
     {"any_join_distinct_right_table_keys", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"asterisk_include_alias_columns", CHSetting(trueOrFalse, {}, false)},
