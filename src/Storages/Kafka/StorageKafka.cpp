@@ -328,7 +328,7 @@ void StorageKafka::shutdown(bool)
 void StorageKafka::cleanConsumers()
 {
     /// We need to clear the cppkafka::Consumer separately from KafkaConsumer, since cppkafka::Consumer holds a weak_ptr to the KafkaConsumer (for logging callback)
-    /// So if we will remove cppkafka::Consumer from KafkaConsumer destructor, then due to librdkafka will call the logging again from destructor, it will lead to a deadlock
+    /// So if we will remove cppkafka::Consumer from KafkaConsumer destructor, then if librdkafka will call the logging from destructor, it will lead to a deadlock.
     std::vector<ConsumerPtr> consumers_to_close;
 
     {
