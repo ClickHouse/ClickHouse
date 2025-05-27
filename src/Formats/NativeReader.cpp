@@ -233,9 +233,8 @@ Block NativeReader::read()
         {
             /// Index allows to do more checks.
             if (index_column_it->name != column.name)
-                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong name: corrupted index or data");
-            if (index_column_it->type != type_name)
-                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong type: corrupted index or data");
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to a column with a wrong name ({} instead of {}): corrupted index or data", index_column_it->name, column.name);
+            /// Note: we can't compare data types as strings, compatible data types may differ in parameters.
         }
 
         /// If no rows, nothing to read.
