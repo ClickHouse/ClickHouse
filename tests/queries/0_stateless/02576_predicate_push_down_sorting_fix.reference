@@ -20,10 +20,10 @@ Positions: 2
     Positions: 0 2
       Filter ((( + (Before ORDER BY + (Projection + Change column names to column identifiers))))[split])
       Header: number UInt64
-      Filter column: _filter_0 (removed)
+      Filter column: _filter_ignore(2_UInt8)_0 (removed)
       Actions: COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 0
                FUNCTION ignore(2_UInt8 :: 0) -> ignore(2_UInt8) UInt8 : 1
-               ALIAS ignore(2_UInt8) :: 1 -> _filter_0 UInt8 : 0
+               ALIAS ignore(2_UInt8) :: 1 -> _filter_ignore(2_UInt8)_0 UInt8 : 0
       Positions: 0
         ReadFromSystemNumbers
         Header: number UInt64
