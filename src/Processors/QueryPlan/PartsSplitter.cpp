@@ -948,7 +948,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         return skip_and_return_all_part_ranges();
     }
 
-    Values selected_highest_value;
+    PartsRangesIterator selected_upper_bound;
     std::vector<std::set<size_t>> part_selected_ranges(ranges_in_data_parts.size(), std::set<size_t>());
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
@@ -966,8 +966,8 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
                     PartsRangesIterator::EventType::RangeStart, true});
 
             const auto & range_end_value = index_access.getValue(part_index, range.end);
-            if (selected_highest_value.empty() || (compareValues(range_end_value, selected_highest_value, false) > 0))
-                selected_highest_value = range_end_value;
+            if (selected_upper_bound.value.empty() || (compareValues(range_end_value, selected_upper_bound.value, false) > 0))
+                selected_upper_bound = {range_end_value, false, range, part_index, PartsRangesIterator::EventType::RangeStart, true};
 
             for (auto i = range.begin; i < range.end; ++i)
                part_selected_ranges[part_index].insert(i);
@@ -980,9 +980,6 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     ::sort(selected_ranges.begin(), selected_ranges.end());
 
     const PartsRangesIterator selected_lower_bound = selected_ranges[0];
-    /// highest value is important, range & part can be any
-    const PartsRangesIterator selected_upper_bound{selected_highest_value, false, MarkRange{0, 1}, 0,
-                                                        PartsRangesIterator::EventType::RangeStart, true};
 
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
@@ -995,44 +992,25 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
             continue; /// early exit, intersection infeasible in this part
         }
 
-        std::vector<PartsRangesIterator> part_candidate_ranges;
-        for (size_t range_begin = 0; range_begin < index_granularity->getMarksCountWithoutFinal(); range_begin++)
-        {
-            const bool value_is_defined_at_end_mark = ((range_begin + 1) < index_granularity->getMarksCount());
-            if (!value_is_defined_at_end_mark)
-            {
-                return skip_and_return_all_part_ranges();
-            }
+        auto candidates_start = index_access.findLeftmostMarkGreaterThanValueInRange(part_index, selected_lower_bound.value, MarkRange{0, index_granularity->getMarksCountWithoutFinal() + 1}, false);
+        if (!candidates_start)
+            continue; /// no intersection possible in this part
+        if (candidates_start.value() > 0)
+            candidates_start = candidates_start.value() - 1;
 
+        auto candidates_end = index_access.findLeftmostMarkGreaterThanValueInRange(part_index, selected_upper_bound.value, MarkRange{0, index_granularity->getMarksCountWithoutFinal() + 1}, false);
+        if (!candidates_end)
+            candidates_end = index_granularity->getMarksCountWithoutFinal();
+
+        for (auto range_begin = candidates_start.value(); range_begin <= candidates_end.value(); range_begin++)
+        {
             if (part_selected_ranges[part_index].find(range_begin) != part_selected_ranges[part_index].end())
                 continue;
             MarkRange rejected_range(range_begin, range_begin + 1);
-            part_candidate_ranges.push_back(
+            rejected_ranges.push_back(
                 {index_access.getValue(part_index, rejected_range.begin), false, rejected_range, part_index,
                     PartsRangesIterator::EventType::RangeStart, false});
         }
-        /// add the key of the final mark for setting the right upper bound of the part
-        MarkRange final_range(index_granularity->getMarksCountWithoutFinal(), index_granularity->getMarksCountWithoutFinal() + 1);
-        part_candidate_ranges.push_back(
-            {index_access.getValue(part_index, final_range.begin), false, final_range, part_index,
-                PartsRangesIterator::EventType::RangeStart, false});
-
-        /// Optimization - We don't add all ranges of the part, but only the ranges inside the feasible
-        /// intersection boundary.
-        auto candidates_start = std::upper_bound(part_candidate_ranges.begin(), part_candidate_ranges.end(),
-                                                 selected_lower_bound);
-        if (unlikely(candidates_start == part_candidate_ranges.end()))
-            continue; /// no intersection possible in this part
-        auto candidates_end = std::upper_bound(part_candidate_ranges.begin(), part_candidate_ranges.end(),
-                                               selected_upper_bound);
-        if (unlikely(candidates_end == part_candidate_ranges.begin()))
-            continue; /// no intersection possible in this part
-
-        if (candidates_start != part_candidate_ranges.begin())
-            candidates_start--;
-        if (candidates_end != part_candidate_ranges.end())
-            candidates_end++; /// std::move() needs 1 past the end
-        std::move(candidates_start, candidates_end, std::back_inserter(rejected_ranges));
     }
 
     ::sort(rejected_ranges.begin(), rejected_ranges.end());
