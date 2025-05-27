@@ -171,8 +171,6 @@ private:
     const size_t cleanup_interval_min_ms, cleanup_interval_max_ms;
     const size_t keeper_multiread_batch_size;
     size_t buckets_num;
-
-    std::mutex update_registry_mutex;
     std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;
 
     LoggerPtr log;
