@@ -27,22 +27,18 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 **Engine Parameters**
 
-- `host:port` — MongoDB server address.
-
-- `database` — Remote database name.
-
-- `collection` — Remote collection name.
-
-- `user` — MongoDB user.
-
-- `password` — User password.
-
-- `options` — MongoDB connection string options (optional parameter).
-
-- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
+| Parameter    | Description                                                                                                                                 |
+|-------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| `host:port`   | MongoDB server address.                                                                                                                     |
+| `database`    | Remote database name.                                                                                                                       |
+| `collection`  | Remote collection name.                                                                                                                     |
+| `user`        | MongoDB user.                                                                                                                               |
+| `password`    | User password.                                                                                                                              |
+| `options`     | Optional. MongoDB connection string [options](https://www.mongodb.com/docs/manual/reference/connection-string-options/#connection-options). |
+| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.                                      |
 
 :::tip
-If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
+If you are using the MongoDB Atlas cloud offering, the connection URL can be obtained from the 'Atlas SQL' option.
 Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future releases.
 :::
 
@@ -54,12 +50,11 @@ ENGINE = MongoDB(uri, collection[, oid_columns]);
 
 **Engine Parameters**
 
-- `uri` — MongoDB server's connection URI.
-
-- `collection` — Remote collection name.
-
-- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
-
+| Parameter    | Description                                                                                 |
+|-------------|---------------------------------------------------------------------------------------------|
+| `uri`         | MongoDB server's connection URI.                                                            |
+| `collection`  | Remote collection name.                                                                     |
+| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default. |
 
 ## Types mappings {#types-mappings}
 
@@ -162,12 +157,13 @@ This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
 
 Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix) dataset loaded
 
-Create a table in ClickHouse which allows to read data from MongoDB collection:
+Create a table in ClickHouse which allows to read data from MongoDB collection.
+Either by using a connection URI:
 
 ```sql
 CREATE TABLE sample_mflix_table
 (
-    _id String,
+    id String,
     title String,
     plot String,
     genres Array(String),
@@ -179,10 +175,35 @@ CREATE TABLE sample_mflix_table
 ) ENGINE = MongoDB('mongodb://<USERNAME>:<PASSWORD>@atlas-sql-6634be87cefd3876070caf96-98lxs.a.query.mongodb.net/sample_mflix?ssl=true&authSource=admin', 'movies');
 ```
 
-Query:
+Or by specifying connection parameters:
 
 ```sql
-SELECT count() FROM sample_mflix_table
+CREATE TABLE sample_mflix_table
+(
+    id String,
+    title String,
+    plot String,
+    genres Array(String),
+    directors Array(String),
+    writers Array(String),
+    released Date,
+    imdb String,
+    year String,
+) ENGINE = MongoDB
+(
+    'atlas-sql-6634be87cefd3876070caf96-98lxs.a.query.mongodb.net'
+    'sample_mflix',
+    'movies',
+    '<USERNAME>',
+    '<PASSWORD>',
+    'authSource=admin&ssl=true&retryWrites=true'
+);
+```
+
+You can now query the table:
+
+```sql
+SELECT count() FROM sample_mflix_table;
 ```
 
 ```text
@@ -220,25 +241,3 @@ genres:    ['Action','Adventure','Comedy']
 directors: ['Robert Zemeckis']
 released:  1989-11-22
 ```
-
-```sql
--- Find top 3 movies based on Cormac McCarthy's books
-SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) as rating
-FROM sample_mflix_table
-WHERE arrayExists(x -> x like 'Cormac McCarthy%', writers)
-ORDER BY rating DESC
-LIMIT 3;
-```
-
-```text
-   ┌─title──────────────────┬─rating─┐
-1. │ No Country for Old Men │    8.1 │
-2. │ The Sunset Limited     │    7.4 │
-3. │ The Road               │    7.3 │
-   └────────────────────────┴────────┘
-```
-
-## Troubleshooting {#troubleshooting}
-You can see the generated MongoDB query in DEBUG level logs.
-
-Implementation details can be found in [mongocxx](https://github.com/mongodb/mongo-cxx-driver) and [mongoc](https://github.com/mongodb/mongo-c-driver) documentations.
