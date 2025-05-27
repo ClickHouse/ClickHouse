@@ -507,9 +507,9 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
         /// --- Workaround for Bug 56173.
+        auto settings = query_context->getSettingsCopy();
         if (!settings[Setting::allow_experimental_analyzer])
         {
-            auto settings = query_context->getSettingsCopy();
             settings[Setting::prefer_column_name_to_alias] = true;
             query_context->setSettings(settings);
         }
