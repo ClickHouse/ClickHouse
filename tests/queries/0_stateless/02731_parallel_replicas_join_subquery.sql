@@ -220,7 +220,8 @@ SYSTEM FLUSH LOGS query_log;
 
 -- There should be 7 queries. The main query as received by the initiator, the 3 equal queries to execute the subquery
 -- in the inner join and the 3 queries executing the whole query (but replacing the subquery with a temp table)
-SELECT is_initial_query, count() as c, replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
+-- BUT after introduction of cancelling queries as soon as snapshot is read - number of queries can vary, so only queries are checked
+SELECT is_initial_query, replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
       event_date >= yesterday()
@@ -236,4 +237,4 @@ WHERE
             AND query LIKE '-- Parallel full query%'
       )
 GROUP BY is_initial_query, query
-ORDER BY is_initial_query, c, query;
+ORDER BY is_initial_query, query;
