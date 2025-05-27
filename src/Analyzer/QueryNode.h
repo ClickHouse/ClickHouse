@@ -645,7 +645,11 @@ public:
 
     ColumnNodePtrWithHashSet getCorrelatedColumnsSet() const;
 
-    void addCorrelatedColumn(ColumnNodePtr correlated_column);
+    void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
+
+    /// Returns result type of projection expression if query is correlated
+    /// or throws an exception otherwise.
+    DataTypePtr getResultType() const override;
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -660,9 +664,9 @@ public:
     }
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
-    void updateTreeHashImpl(HashState &, CompareOptions) const override;
+    void updateTreeHashImpl(HashState &, CompareOptions options) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

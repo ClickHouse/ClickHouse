@@ -130,7 +130,7 @@ namespace Setting
     extern const SettingsBool log_query_settings;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -632,7 +632,7 @@ void logQueryFinishImpl(
 
     }
 
-    if (query_span)
+    if (query_span && query_span->isTraceEnabled())
     {
         query_span->addAttribute("db.statement", elem.query);
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);

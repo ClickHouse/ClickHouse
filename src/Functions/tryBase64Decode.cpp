@@ -5,6 +5,16 @@
 
 namespace DB
 {
+namespace
+{
+struct NameBase64Decode
+{
+static constexpr auto name = "tryBase64Decode";
+};
+
+using Base64DecodeImpl = BaseXXDecode<Base64DecodeTraits<Base64Variant::Normal>, NameBase64Decode, BaseXXDecodeErrorHandling::ReturnEmptyString>;
+using FunctionBase64Decode = FunctionBaseXXConversion<Base64DecodeImpl>;
+}
 REGISTER_FUNCTION(TryBase64Decode)
 {
     FunctionDocumentation::Description description = R"(Decodes a String or FixedString from base64, like base64Decode but returns an empty string in case of an error.)";
@@ -12,9 +22,10 @@ REGISTER_FUNCTION(TryBase64Decode)
     FunctionDocumentation::Arguments arguments = {{"encoded", "String column or constant. If the string is not a valid Base64-encoded value, returns an empty string."}};
     FunctionDocumentation::ReturnedValue returned_value = "A string containing the decoded value of the argument.";
     FunctionDocumentation::Examples examples = {{"valid", "SELECT tryBase64Decode('Y2xpY2tob3VzZQ==')", "clickhouse"}, {"invalid", "SELECT tryBase64Decode('invalid')", ""}};
+    FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
 
-    factory.registerFunction<FunctionBase64Conversion<TryBase64Decode<Base64Variant::Normal>>>({description, syntax, arguments, returned_value, examples, category});
+    factory.registerFunction<FunctionBase64Decode>({description, syntax, arguments, returned_value, examples, introduced_in, category});
 }
 }
 

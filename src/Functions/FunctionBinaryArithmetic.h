@@ -45,7 +45,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <base/TypeList.h>
 #include <base/TypeLists.h>

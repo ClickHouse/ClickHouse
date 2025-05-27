@@ -10,16 +10,7 @@ so you need to install `rustup component add rust-src` for the specific version.
 cargo generate-lockfile
 ```
 
-* Generate the local registry:
-
-Note that we use both commands to vendor both registry and crates. No idea why both are necessary.
-
-  * First we need to install the tool if you don't already have it:
-```bash
-cargo install --version 0.2.7 cargo-local-registry
-```
-
-  * Now add the local packages:
+* Generate the vendor dir:
 
 ```bash
 export CH_TOP_DIR=$(git rev-parse --show-toplevel)
@@ -31,33 +22,16 @@ export DELTA_LAKE_DIR="$CH_TOP_DIR"/contrib/delta-kernel-rs
 rm -rf "$CH_TOP_DIR"/contrib/rust_vendor/*
 
 cd "$CH_TOP_DIR"/rust/workspace
-cargo local-registry --git --sync Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
+cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
 # Now handle delta-lake
 cd "$DELTA_LAKE_DIR"
-cargo local-registry --no-delete --git --sync "$DELTA_LAKE_DIR/Cargo.lock" "$CH_TOP_DIR"/contrib/rust_vendor
+cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
 # Standard library deps
-cp "$RUSTC_ROOT"/lib/rustlib/src/rust/library/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/
-cargo local-registry --no-delete --git --sync "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
-cp "$RUSTC_ROOT"/lib/rustlib/src/rust/library/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/
-cargo local-registry --no-delete --git --sync "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
+cargo vendor --no-delete --locked --versioned-dirs --manifest-path "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
+cargo vendor --no-delete --locked --versioned-dirs --manifest-path "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
-# Now we vendor the modules themselves
-cd "$CH_TOP_DIR"/rust/workspace
-cargo vendor --no-delete --locked "$CH_TOP_DIR"/contrib/rust_vendor
-cd "$DELTA_LAKE_DIR"
-cargo vendor --no-delete --locked "$CH_TOP_DIR"/contrib/rust_vendor
-cd "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/
-cargo vendor --no-delete "$CH_TOP_DIR"/contrib/rust_vendor
-cd "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/
-cargo vendor --no-delete "$CH_TOP_DIR"/contrib/rust_vendor
-
-# Remove windows only dependencies (which are really heavy and we don't want in the repo)
-rm -rf "$CH_TOP_DIR"/contrib/rust_vendor/winapi* "$CH_TOP_DIR"/contrib/rust_vendor/windows*
-
-# Cleanup the lock files we copied
-rm "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/Cargo.lock
 cd "$CH_TOP_DIR"/rust/workspace
 ```
 
