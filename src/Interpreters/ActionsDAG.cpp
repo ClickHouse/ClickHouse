@@ -2558,7 +2558,6 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
         result_predicate = &actions.addFunction(func_builder_and, std::move(args), {});
     }
 
-    //actions.outputs.push_back(result_predicate);
     size_t filter_pos = 0;
     bool has_input_name_collision = false;
 
@@ -2576,11 +2575,13 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
         }
 
         /// We should not add result_predicate into the outputs for the second time.
+        /// If the predicate is an input, do not remove it.
         if (input == result_predicate)
         {
             remove_filter = false;
             filter_pos = actions.outputs.size();
         }
+        /// Predicate name has a collision with another node. Need to rename it.
         else if (input->result_name == result_predicate->result_name)
             has_input_name_collision = true;
 
@@ -2589,9 +2590,9 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
 
     if (has_input_name_collision)
     {
-        for (size_t idx = 0;;++idx)
+        for (size_t idx = 0;; ++idx)
         {
-            std::string rename = fmt::format("_filter_{}", idx);
+            std::string rename = fmt::format("_filter_{}_{}", result_predicate->result_name, idx);
             if (required_inputs.contains(rename))
                 continue;
 

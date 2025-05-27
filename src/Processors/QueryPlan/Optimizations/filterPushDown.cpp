@@ -37,17 +37,6 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
-// static bool filterColumnIsNotAmongAggregatesArguments(const AggregateDescriptions & aggregates, const std::string & filter_column_name)
-// {
-//     for (const auto & aggregate : aggregates)
-//     {
-//         const auto & argument_names = aggregate.argument_names;
-//         if (std::find(argument_names.begin(), argument_names.end(), filter_column_name) != argument_names.end())
-//             return false;
-//     }
-//     return true;
-// }
-
 /// Assert that `node->children` has at least `child_num` elements
 static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
 {
@@ -137,8 +126,6 @@ static size_t addNewFilterStepOrThrow(
     auto * filter = assert_cast<FilterStep *>(parent.get());
     auto & expression = filter->getExpression();
     const auto & filter_column_name = filter->getFilterColumnName();
-    // std::cerr << "addNewFilterStepOrThrow filter \n" << expression.dumpDAG() << std::endl;
-    // std::cerr << "split filter \n" << split_filter.dumpDAG() << std::endl;
 
     const auto * filter_node = expression.tryFindInOutputs(filter_column_name);
     if (update_parent_filter && !filter_node && !filter->removesFilterColumn())
@@ -156,20 +143,8 @@ static size_t addNewFilterStepOrThrow(
 
     /// New filter column is the first one.
     String split_filter_column_name = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;
-
-    // If no new columns added, filter just used one of the input columns as-is and moved it to the front, move it back to keep aggregation key in order.
-    // if (const auto & input = node.children.at(0)->step->getOutputHeader(); split_filter.getOutputs().size() == input.columns())
-    // {
-    //     auto pos = input.getPositionByName(split_filter_column_name);
-    //     if (pos != 0)
-    //         std::rotate(split_filter.getOutputs().begin(), split_filter.getOutputs().begin() + 1, split_filter.getOutputs().begin() + pos + 1);
-    // }
-
-    // std::cerr << "split filter2 \n" << split_filter.dumpDAG() << std::endl;
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter.dag), std::move(split_filter_column_name), split_filter.remove_filter);
-
-    // std::cerr << "split filter header " << node.step->getOutputHeader().dumpStructure() << std::endl;
 
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
 
@@ -193,9 +168,12 @@ static size_t addNewFilterStepOrThrow(
     return 3;
 }
 
-static size_t
-tryAddNewFilterStep(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, QueryPlan::Nodes & nodes, const Names & allowed_inputs,
-                    [[maybe_unused]] bool can_remove_filter = true, size_t child_idx = 0)
+static size_t tryAddNewFilterStep(
+    QueryPlan::Node * parent_node,
+    bool step_changes_the_number_of_rows,
+    QueryPlan::Nodes & nodes,
+    const Names & allowed_inputs,
+    size_t child_idx = 0)
 {
     if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, child_idx))
         return addNewFilterStepOrThrow(parent_node, nodes, std::move(*split_filter), child_idx);
@@ -541,14 +519,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty())
             return 0;
 
-        // const bool filter_column_is_not_among_aggregation_keys
-        //     = std::find(keys.begin(), keys.end(), filter->getFilterColumnName()) == keys.end();
-
-        // /// When we only merging aggregated data, we do not need aggregation arguments.
-        // bool filter_is_not_among_aggregates_arguments = merging_aggregated || filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
-        const bool can_remove_filter = true; //filter_column_is_not_among_aggregation_keys && filter_is_not_among_aggregates_arguments;
-
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, can_remove_filter))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
             return updated_steps;
     }
 
@@ -650,34 +621,24 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    if (auto * sorting = typeid_cast<SortingStep *>(child.get()))
+    if (typeid_cast<SortingStep *>(child.get()))
     {
-        const auto & sort_description = sorting->getSortDescription();
-        auto sort_description_it = std::find_if(sort_description.begin(), sort_description.end(), [&](auto & sort_column_description)
-        {
-            return sort_column_description.column_name == filter->getFilterColumnName();
-        });
-        bool can_remove_filter = sort_description_it == sort_description.end();
-
         Names allowed_inputs = child->getOutputHeader().getNames();
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, allowed_inputs, can_remove_filter))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, allowed_inputs))
             return updated_steps;
     }
 
     if (typeid_cast<CustomMetricLogViewStep *>(child.get()))
     {
         Names allowed_inputs = {"event_date", "event_time", "hostname"};
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, allowed_inputs, true))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, allowed_inputs))
             return updated_steps;
     }
 
-    if (const auto * join_filter_set_step = typeid_cast<CreateSetAndFilterOnTheFlyStep *>(child.get()))
+    if (typeid_cast<CreateSetAndFilterOnTheFlyStep *>(child.get()))
     {
-        const auto & filter_column_name = assert_cast<const FilterStep *>(parent_node->step.get())->getFilterColumnName();
-        bool can_remove_filter = !join_filter_set_step->isColumnPartOfSetKey(filter_column_name);
-
         Names allowed_inputs = child->getOutputHeader().getNames();
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, allowed_inputs, can_remove_filter))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, allowed_inputs))
             return updated_steps;
     }
 
