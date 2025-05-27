@@ -40,6 +40,22 @@ public:
 
     using StatisticsPtr = std::shared_ptr<const Statistics>;
 
+    struct ComparatorBase;
+
+    using ComparatorAscendingUnstable = ComparatorAscendingUnstableImpl<ComparatorBase>;
+    using ComparatorAscendingStable = ComparatorAscendingStableImpl<ComparatorBase>;
+    using ComparatorDescendingUnstable = ComparatorDescendingUnstableImpl<ComparatorBase>;
+    using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
+    using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
+
+    struct ComparatorCollationBase;
+
+    using ComparatorCollationAscendingUnstable = ComparatorAscendingUnstableImpl<ComparatorCollationBase>;
+    using ComparatorCollationAscendingStable = ComparatorAscendingStableImpl<ComparatorCollationBase>;
+    using ComparatorCollationDescendingUnstable = ComparatorDescendingUnstableImpl<ComparatorCollationBase>;
+    using ComparatorCollationDescendingStable = ComparatorDescendingStableImpl<ComparatorCollationBase>;
+    using ComparatorCollationEqual = ComparatorEqualImpl<ComparatorCollationBase>;
+
 private:
     friend class COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
 
@@ -142,11 +158,11 @@ public:
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
-    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override;
-    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
+    void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                        size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                           size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
 
-    /// Values of ColumnObject are not comparable for less and greater functions.
-    /// But we still support equal comparison.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int nan_direction_hint) const override;
 #else

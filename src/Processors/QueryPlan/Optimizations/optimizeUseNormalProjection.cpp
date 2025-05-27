@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -181,7 +182,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     const auto & parts_with_ranges = ordinary_reading_select_result->parts_with_ranges;
 
-    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
+    PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
 
     auto logger = getLogger("optimizeUseNormalProjections");
 
