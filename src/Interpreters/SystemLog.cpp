@@ -20,7 +20,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/InstrumentationProfilingLog.h>
+#include <Interpreters/XRayInstrumentationProfilingLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/LatencyLog.h>

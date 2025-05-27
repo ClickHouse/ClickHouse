@@ -1,6 +1,7 @@
-#include <Storages/System/SystemStorageInstrumentation.h>
+#include <Storages/System/SystemStorageXRayInstrumentation.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Access/User.h>
@@ -8,14 +9,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/XRayInstrumentationManager.h>
 #include <DataTypes/DataTypeDynamic.h>
-#include "Columns/ColumnDynamic.h"
 
 #if USE_XRAY
 
 namespace DB
 {
 
-ColumnsDescription SystemStorageInstrumentation::getColumnsDescription()
+ColumnsDescription SystemStorageXRayInstrumentation::getColumnsDescription()
 {
     return ColumnsDescription
     {
@@ -28,7 +28,7 @@ ColumnsDescription SystemStorageInstrumentation::getColumnsDescription()
 }
 
 
-void SystemStorageInstrumentation::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void SystemStorageXRayInstrumentation::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto functions_to_instrument = XRayInstrumentationManager::instance().getInstrumentedFunctions();
 

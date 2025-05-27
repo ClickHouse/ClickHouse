@@ -13,7 +13,7 @@
 namespace DB
 {
 
-struct InstrumentationProfilingLogElement
+struct XRayInstrumentationProfilingLogElement
 {
     String function_name;
     UInt64 tid{};
@@ -23,26 +23,23 @@ struct InstrumentationProfilingLogElement
     String query_id;
     Int32 function_id{};
 
-    static std::string name() { return "InstrumentationProfilingLog"; }
+    static std::string name() { return "XRayInstrumentationProfilingLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
 };
 
-class InstrumentationProfilingLog : public SystemLog<InstrumentationProfilingLogElement>
+class XRayInstrumentationProfilingLog : public SystemLog<XRayInstrumentationProfilingLogElement>
 {
-    using SystemLog<InstrumentationProfilingLogElement>::SystemLog;
+    using SystemLog<XRayInstrumentationProfilingLogElement>::SystemLog;
 public:
-    InstrumentationProfilingLog(ContextPtr context_,
+    XRayInstrumentationProfilingLog(ContextPtr context_,
         const SystemLogSettings & settings_,
-        std::shared_ptr<SystemLogQueue<InstrumentationProfilingLogElement>> queue_ = nullptr)
-        : SystemLog<InstrumentationProfilingLogElement>(context_, settings_, queue_),
-        symbolize(settings_.symbolize_traces)
+        std::shared_ptr<SystemLogQueue<XRayInstrumentationProfilingLogElement>> queue_ = nullptr)
+        : SystemLog<XRayInstrumentationProfilingLogElement>(context_, settings_, queue_)
     {
     }
-
-    bool symbolize;
 };
 
 }

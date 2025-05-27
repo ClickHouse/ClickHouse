@@ -7,8 +7,8 @@ namespace DB
 {
 class Context;
 
-// Implements `instrumentation` system table, which allows you to get information about functions instrumented by XRay.
-class SystemStorageInstrumentation final : public IStorageSystemOneBlock
+/// Implements `instrumentation` system table, which allows you to get information about functions instrumented by XRay.
+class SystemStorageXRayInstrumentation final : public IStorageSystemOneBlock
 {
 public:
     std::string getName() const override { return "SystemStorageInstrumentation"; }

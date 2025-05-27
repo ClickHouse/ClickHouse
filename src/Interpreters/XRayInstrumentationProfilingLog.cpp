@@ -1,4 +1,4 @@
-#include <Interpreters/InstrumentationProfilingLog.h>
+#include <Interpreters/XRayInstrumentationProfilingLog.h>
 
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
@@ -13,7 +13,7 @@
 namespace DB
 {
 
-ColumnsDescription InstrumentationProfilingLogElement::getColumnsDescription()
+ColumnsDescription XRayInstrumentationProfilingLogElement::getColumnsDescription()
 {
     return ColumnsDescription
     {
@@ -29,7 +29,7 @@ ColumnsDescription InstrumentationProfilingLogElement::getColumnsDescription()
     };
 }
 
-void InstrumentationProfilingLogElement::appendToBlock(MutableColumns & columns) const
+void XRayInstrumentationProfilingLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
     columns[i++]->insert(getFQDNOrHostName());
