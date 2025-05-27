@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -20,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -57,7 +60,7 @@ public:
     void setGinFilterParameters(GinFilterParameters params)
     {
         if (parameters.has_value())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set multiple filter parameters for '{}' function", getName());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}': cannot set multiple filter parameters for", getName());
         parameters = std::move(params);
     }
 

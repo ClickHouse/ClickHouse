@@ -30,7 +30,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_INDEX;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
@@ -262,11 +261,15 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         {
             rpn_stack.emplace_back(true, true);
         }
-        else if (element.function == RPNElement::FUNCTION_SEARCH_ANY) {
-            rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store, GinSearchMode::ANY), true);
+        else if (element.function == RPNElement::FUNCTION_SEARCH_ANY)
+        {
+            rpn_stack.emplace_back(
+                granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store, GinSearchMode::ANY), true);
         }
-        else if (element.function == RPNElement::FUNCTION_SEARCH_ALL) {
-            rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store, GinSearchMode::ALL), true);
+        else if (element.function == RPNElement::FUNCTION_SEARCH_ALL)
+        {
+            rpn_stack.emplace_back(
+                granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store, GinSearchMode::ALL), true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS
