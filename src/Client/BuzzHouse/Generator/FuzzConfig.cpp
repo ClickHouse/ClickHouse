@@ -135,7 +135,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"time_to_run", [&](const JSONObjectType & value) { time_to_run = static_cast<uint32_t>(value.getUInt64()); }},
         {"fuzz_floating_points", [&](const JSONObjectType & value) { fuzz_floating_points = value.getBool(); }},
         {"test_with_fill", [&](const JSONObjectType & value) { test_with_fill = value.getBool(); }},
-        {"dump_table_oracle_compare_content", [&](const JSONObjectType & value) { dump_table_oracle_compare_content = value.getBool(); }},
+        {"use_dump_table_oracle", [&](const JSONObjectType & value) { use_dump_table_oracle = static_cast<uint32_t>(value.getUInt64()); }},
         {"compare_success_results", [&](const JSONObjectType & value) { compare_success_results = value.getBool(); }},
         {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
         {"compare_explains", [&](const JSONObjectType & value) { compare_explains = value.getBool(); }},

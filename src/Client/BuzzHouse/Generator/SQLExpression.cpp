@@ -680,7 +680,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
                     this->width++;
                     this->generateExpression(rg, func_call->add_args()->mutable_expr());
                     this->width++;
-                    generated_params+=4;
+                    generated_params += 4;
                     break;
                 default:
                     break;

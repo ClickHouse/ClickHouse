@@ -644,8 +644,9 @@ bool Client::buzzHouse()
             {
                 const uint32_t correctness_oracle = 30;
                 const uint32_t settings_oracle = 30;
-                const uint32_t dump_oracle
-                    = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
+                const uint32_t dump_oracle = 30
+                    * static_cast<uint32_t>(fuzz_config->use_dump_table_oracle > 0
+                                            && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
                 const uint32_t peer_oracle
                     = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t run_query = 910;
@@ -712,7 +713,7 @@ bool Client::buzzHouse()
                 {
                     /// Test in and out formats
                     /// When testing content, we have to export and import to the same table
-                    const bool test_content = fuzz_config->dump_table_oracle_compare_content && rg.nextBool()
+                    const bool test_content = fuzz_config->use_dump_table_oracle > 1 && rg.nextBool()
                         && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content);
                     const auto & t1 = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
                         test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
