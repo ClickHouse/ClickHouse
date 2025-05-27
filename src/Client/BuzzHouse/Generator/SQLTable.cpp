@@ -1302,13 +1302,13 @@ void StatementGenerator::addTableColumn(
     auto & to_add = staged ? t.staged_cols : t.cols;
 
     uint32_t col_tp_mask = fc.type_mask;
-    if (t.isMySQLEngine() || t.hasMySQLPeer())
+    if ((t.isMySQLEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasMySQLPeer())
     {
         col_tp_mask &= ~(
             allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo
             | set_no_decimal_limit);
     }
-    if (t.isPostgreSQLEngine() || t.hasPostgreSQLPeer())
+    if ((t.isPostgreSQLEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasPostgreSQLPeer())
     {
         col_tp_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_map | allow_tuple | allow_variant | allow_nested
@@ -1319,7 +1319,7 @@ void StatementGenerator::addTableColumn(
             col_tp_mask &= ~(set_any_datetime_precision);
         }
     }
-    if (t.isSQLiteEngine() || t.hasSQLitePeer())
+    if ((t.isSQLiteEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasSQLitePeer())
     {
         col_tp_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant
@@ -1331,7 +1331,7 @@ void StatementGenerator::addTableColumn(
             col_tp_mask &= ~(allow_bool | allow_decimals);
         }
     }
-    if (t.isMongoDBEngine())
+    if ((t.isMongoDBEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)))
     {
         col_tp_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
     }
