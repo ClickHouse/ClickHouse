@@ -9,6 +9,8 @@
         <console>true</console>
     </logger>
 
+    <!-- Excessive use of memory and CPU -->
+    <query_log remove="remove"/>
     <text_log remove="remove"/>
     <crash_log remove="remove"/>
     <query_views_log remove="remove"/>
