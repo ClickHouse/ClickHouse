@@ -1745,19 +1745,26 @@ bool hasTableExpressionInJoinTree(const QueryTreeNodePtr & join_tree_node, const
         if (node_to_process == table_expression)
             return true;
 
-        if (node_to_process->getNodeType() == QueryTreeNodeType::JOIN)
+        auto node_type = node_to_process->getNodeType();
+
+        if (node_type == QueryTreeNodeType::JOIN)
         {
             const auto & join_node = node_to_process->as<JoinNode &>();
             nodes_to_process.push_back(join_node.getLeftTableExpression());
             nodes_to_process.push_back(join_node.getRightTableExpression());
         }
-
-        if (node_to_process->getNodeType() == QueryTreeNodeType::CROSS_JOIN)
+        else if (node_type == QueryTreeNodeType::CROSS_JOIN)
         {
             const auto & join_node = node_to_process->as<CrossJoinNode &>();
             for (const auto & expr : join_node.getTableExpressions())
                 nodes_to_process.push_back(expr);
         }
+        else if (node_type == QueryTreeNodeType::ARRAY_JOIN)
+        {
+            const auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
+            nodes_to_process.push_back(array_join_node.getTableExpression());
+        }
+
     }
     return false;
 }
@@ -2204,6 +2211,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             table_expression,
             table_expression_columns,
             scope);
+
+        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, table_expression, scope);
 
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }
@@ -3583,7 +3592,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
 
-            auto hash = function_arguments[1]->getTreeHash();
+            auto hash = function_arguments[1]->getTreeHash({ .ignore_cte = true });
             auto ast = function_arguments[1]->toAST();
             auto future_set = std::make_shared<FutureSetFromTuple>(hash, std::move(ast), std::move(result_block), settings[Setting::transform_null_in], size_limits_for_set);
 
@@ -5204,6 +5213,58 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     }
 }
 
+static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & table_expression)
+{
+    NameSet existing_columns;
+    switch (table_expression->getNodeType())
+    {
+        case QueryTreeNodeType::TABLE: {
+            const auto * table_node = table_expression->as<TableNode>();
+            chassert(table_node);
+
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+            for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
+                existing_columns.insert(column.name);
+
+            return existing_columns;
+        }
+        case QueryTreeNodeType::TABLE_FUNCTION: {
+            const auto * table_function_node = table_expression->as<TableFunctionNode>();
+            chassert(table_function_node);
+
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+            for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
+                existing_columns.insert(column.name);
+
+            return existing_columns;
+        }
+        case QueryTreeNodeType::QUERY: {
+            const auto * query_node = table_expression->as<QueryNode>();
+            chassert(query_node);
+
+            for (const auto & column : query_node->getProjectionColumns())
+                existing_columns.insert(column.name);
+
+            return existing_columns;
+        }
+        case QueryTreeNodeType::UNION: {
+            const auto * union_node = table_expression->as<UnionNode>();
+            chassert(union_node);
+
+            for (const auto & column : union_node->computeProjectionColumns())
+                existing_columns.insert(column.name);
+
+            return existing_columns;
+        }
+        default:
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
+                table_expression->getNodeTypeName(),
+                table_expression->formatASTForErrorMessage());
+    }
+}
+
 /// Resolve join node in scope
 void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
@@ -5288,11 +5349,15 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         const auto & resolved_nodes = left_subquery->getProjection().getNodes();
                         if (resolved_nodes.size() == 1)
                         {
+                            /// Added column should not conflict with existing column names
+                            NameSet existing_columns = getColumnsFromTableExpression(left_table_expression);
+
+                            NameAndTypePair column_name_type(identifier_full_name_, resolved_nodes.front()->getResultType());
+                            while (existing_columns.contains(column_name_type.name))
+                                column_name_type.name = "_" + column_name_type.name;
+
                             /// Create ColumnNode with expression from parent projection
-                            return std::make_shared<ColumnNode>(
-                                NameAndTypePair{identifier_full_name_, resolved_nodes.front()->getResultType()},
-                                resolved_nodes.front(),
-                                left_table_expression);
+                            return std::make_shared<ColumnNode>(std::move(column_name_type), resolved_nodes.front(), left_table_expression);
                         }
                     }
                 }
@@ -5326,7 +5391,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             {
                 String extra_message;
                 const QueryNode * query_node = scope.scope_node ? scope.scope_node->as<QueryNode>() : nullptr;
-                if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && query_node)
+                if (!settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && query_node)
                 {
                     for (const auto & projection_node : query_node->getProjection().getNodes())
                     {
