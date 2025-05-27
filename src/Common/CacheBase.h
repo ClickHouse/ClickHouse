@@ -65,7 +65,8 @@ public:
         size_t max_count,
         double size_ratio)
     {
-        auto on_eviction_function = [&](size_t weight_loss, std::vector<MappedPtr>& evicted_values) {
+        auto on_eviction_function = [&](size_t weight_loss, std::vector<MappedPtr>& evicted_values)
+        {
             EvictionDetails details{weight_loss, std::move(evicted_values)};
             onEviction(details);
         };
