@@ -75,3 +75,57 @@ FROM numbers(2);
 -- Common type consistency
 SELECT 'a' IN (5, number, 'a')  
 FROM numbers(2);
+
+SELECT
+    NULL IN (
+      258,
+      CAST('string' AS Nullable(String)),
+      CAST(number   AS Nullable(UInt64))
+    )
+FROM numbers(1)
+SETTINGS transform_null_in = 1;
+
+SELECT
+    NULL IN (
+      258,
+      CAST('string' AS Nullable(String)),
+      CAST(number   AS Nullable(UInt64))
+    )
+FROM numbers(1)
+SETTINGS transform_null_in = 0;
+
+SELECT
+    NULL IN (
+      258,
+      CAST('string' AS Nullable(String)),
+      CAST(number   AS Nullable(UInt64)),
+      NULL
+    )
+FROM numbers(1)
+SETTINGS transform_null_in = 1;
+
+SELECT
+    NULL IN (
+      258,
+      CAST('string' AS Nullable(String)),
+      CAST(number   AS Nullable(UInt64)),
+      NULL
+    )
+FROM numbers(1)
+SETTINGS transform_null_in = 0;
+
+SELECT NULL IN [1, number]
+FROM numbers(1)
+SETTINGS transform_null_in = 1;
+
+SELECT NULL IN [1, number]
+FROM numbers(1)
+SETTINGS transform_null_in = 0;
+
+SELECT 1 IN [1, toNullable(number)]
+FROM numbers(2)
+SETTINGS transform_null_in = 1;
+
+SELECT 1 IN [1, toNullable(number)]
+FROM numbers(2)
+SETTINGS transform_null_in = 0;

@@ -168,8 +168,6 @@ private:
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
 
-    std::pair<QueryTreeNodePtr, ProjectionNames> makeNullSafeHas(QueryTreeNodePtr array_arg, QueryTreeNodePtr element_arg, const ProjectionNames & params_proj, const ProjectionNames & args_proj, IdentifierResolveScope & scope);
-
     static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node);
 
     /// Resolve identifier functions
