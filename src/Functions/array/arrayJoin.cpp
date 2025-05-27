@@ -144,11 +144,12 @@ GROUP BY
         )"
         },
         {"Unexpected results due to optimizations", R"(
-Using multiple `arrayJoin` with the same expression may not produce the expected result due to optimizations.
+/*
+Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
 For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
-e.g. `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`
+e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
+*/
 
-```sql
 SELECT
     arrayJoin(dice) as first_throw,
     /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
@@ -156,7 +157,6 @@ SELECT
 FROM (
     SELECT [1, 2, 3, 4, 5, 6] as dice
 );
-```
         )", R"(
 ┌─first_throw─┬─second_throw─┐
 │           1 │            1 │
@@ -199,10 +199,12 @@ FROM (
         )"
         },
         {"Using the ARRAY JOIN syntax", R"(
-Note the [`ARRAY JOIN`](../statements/select/array-join.md) syntax in the `SELECT` query below, which provides broader possibilities.
-`ARRAY JOIN` allows you to convert multiple arrays with the same number of elements at a time.
 
-```sql
+/*
+Note the ARRAY JOIN syntax in the `SELECT` query below, which provides broader possibilities.
+ARRAY JOIN allows you to convert multiple arrays with the same number of elements at a time.
+*/
+
 SELECT
     sum(1) AS impressions,
     city,
@@ -219,7 +221,6 @@ ARRAY JOIN
 GROUP BY
     2,
     3
-```
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │
@@ -229,9 +230,8 @@ GROUP BY
         )"
         },
         {"Using Tuple", R"(
-You can also use [Tuple](../data-types/tuple.md):
+-- You can also use Tuple
 
-```sql
 SELECT
     sum(1) AS impressions,
     (arrayJoin(arrayZip(cities, browsers)) AS t).1 AS city,
@@ -245,7 +245,6 @@ FROM
 GROUP BY
     2,
     3
-```
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │
