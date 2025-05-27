@@ -163,6 +163,9 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
 
 }
 
+
+/// AzureSettingsByEndpoint contains a map of AzureBlobStorage endpoints and their settings, used in Context level
+/// When any endpoint is used, the settings are looked up in this map and applied
 class AzureSettingsByEndpoint
 {
 public:

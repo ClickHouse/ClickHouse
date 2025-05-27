@@ -127,6 +127,7 @@ struct RestoreSettings
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
 
+    /// Whether native copy is allowed for AzureBlobStorage
     bool allow_azure_native_copy = true;
 
     /// Whether base backup from S3 should inherit credentials from the RESTORE query.

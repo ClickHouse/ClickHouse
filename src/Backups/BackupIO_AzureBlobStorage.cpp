@@ -26,7 +26,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
+/// This function compares the authorization methods used to access AzureBlobStorage
+/// It takes 2 variables of variant type as input and checks if they are the same type and value
 static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, AzureBlobStorage::AuthMethod auth_method_b)
 {
     const auto * conn_string_a = std::get_if<AzureBlobStorage::ConnectionString>(&auth_method_a);

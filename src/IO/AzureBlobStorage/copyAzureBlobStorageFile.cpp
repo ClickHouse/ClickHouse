@@ -360,7 +360,7 @@ void copyAzureBlobStorageFile(
 
     if (settings->use_native_copy && same_credentials)
     {
-        LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_container_for_logging, src_blob);
+        LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_blob, src_container_for_logging);
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
         if (dest_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
@@ -406,7 +406,7 @@ void copyAzureBlobStorageFile(
     }
     else
     {
-        LOG_TRACE(log, "Reading from Container: {}, Blob: {}", src_container_for_logging, src_blob);
+        LOG_TRACE(log, "Copying Blob: {} from Container: {} native copy is disabled {}", src_blob, src_container_for_logging, same_credentials ? "" : " because of different credentials");
         auto create_read_buffer = [&]
         {
             return std::make_unique<ReadBufferFromAzureBlobStorage>(
