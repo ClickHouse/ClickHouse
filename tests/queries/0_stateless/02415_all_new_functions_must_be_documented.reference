@@ -136,7 +136,6 @@ bitmapMax
 bitmapMin
 bitmapOr
 bitmapOrCardinality
-bitmapToArray
 bitmapXor
 bitmapXorCardinality
 bitmaskToArray
