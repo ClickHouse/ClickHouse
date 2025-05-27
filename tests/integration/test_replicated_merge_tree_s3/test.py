@@ -135,7 +135,7 @@ def drop_table(cluster):
 def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_part):
     create_table(
         cluster,
-        additional_settings={"min_rows_for_wide_part": min_rows_for_wide_part},
+        additional_settings={"min_rows_for_wide_part": min_rows_for_wide_part, "write_marks_for_substreams_in_compact_parts": 1},
     )
 
     insert(cluster, node_idxs=[1, 2, 3], verify=True)
