@@ -27,7 +27,6 @@ static const std::unordered_map<OutFormat, InFormat> outIn{
     {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
     {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
     {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
-    {OutFormat::OUT_Native, InFormat::IN_Native},
     {OutFormat::OUT_ORC, InFormat::IN_ORC},
     {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
     {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
