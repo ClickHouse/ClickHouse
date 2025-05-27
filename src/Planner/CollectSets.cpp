@@ -106,7 +106,8 @@ public:
             if (in_second_argument->as<TableNode>())
                 subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
 
-            auto ast = queryNodeToDistributedSelectQuery(subquery_to_execute);
+            auto ast = in_second_argument->toAST();
+            removeCTEs(ast);
             sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
         }
         else

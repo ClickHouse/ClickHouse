@@ -47,6 +47,9 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
 /// Convert query node to ASTSelectQuery for distributed processing
 ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
 
+/// Remove CTEs information from query.
+void removeCTEs(ASTPtr & ast);
+
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
 

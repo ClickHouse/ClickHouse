@@ -188,7 +188,7 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
     return result_ast;
 }
 
-static void removeCTEs(ASTPtr & ast)
+void removeCTEs(ASTPtr & ast)
 {
     std::stack<IAST *> stack;
     stack.push(ast.get());
