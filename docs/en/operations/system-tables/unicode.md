@@ -12,6 +12,7 @@ Columns
 
 - `code_point` ([String](../../sql-reference/data-types/string.md)) — The UTF-8 representation of the code point.
 - `code_point_value` ([Int32](../../sql-reference/data-types/int-uint.md)) — The numeric value of the code point.
+- `notation` ([String](../../sql-reference/data-types/string.md)) — The Unicode notation of the code point.
 - Binary Properties ([UInt8](../../sql-reference/data-types/int-uint.md)) - The binary properties of the code point.
     - `Alphabetic`, `ASCII_Hex_Digit`, `Case_Ignorable`...
 - Enumerated Properties ([Int32](../../sql-reference/data-types/int-uint.md)) - The enumerated properties of the code point.
@@ -33,6 +34,7 @@ Row 1:
 ──────
 code_point:                      a
 code_point_value:                97
+notation:                        U+0061
 Alphabetic:                      1
 ASCII_Hex_Digit:                 1
 Bidi_Control:                    0
@@ -155,10 +157,10 @@ Script_Extensions:               [25]
 ```
 
 ```sql
-SELECT code_point, code_point_value FROM system.unicode WHERE code_point = '😂';
+SELECT code_point, code_point_value, notation FROM system.unicode WHERE code_point = '😂';
 ```
 ```text
-   ┌─code_point─┬─code_point_value─┐
-1. │ 😂          │           128514 │
-   └────────────┴──────────────────┘
+   ┌─code_point─┬─code_point_value─┬─notation─┐
+1. │ 😂          │           128514 │ U+1F602  │
+   └────────────┴──────────────────┴──────────┘
 ```

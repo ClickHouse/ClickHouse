@@ -6,6 +6,7 @@
 #include "Common/assert_cast.h"
 #include "Core/NamesAndTypes.h"
 #include "DataTypes/DataTypeArray.h"
+#include <fmt/format.h>
 #include "Interpreters/Context_fwd.h"
 #include "Storages/ColumnsDescription.h"
 #include <Storages/System/StorageSystemUnicode.h>
@@ -59,7 +60,7 @@ std::vector<std::pair<const char *, UProperty>> getPropNames()
         }
         UProperty prop = static_cast<UProperty>(i);
         const char * prop_name = u_getPropertyName(prop, U_LONG_PROPERTY_NAME);
-        
+
         // TODO: maybe we can use short name as alias name?
 
         if (prop_name)
@@ -77,6 +78,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
     auto prop_names = getPropNames();
     names_and_types.emplace_back("code_point", std::make_shared<DataTypeString>());
     names_and_types.emplace_back("code_point_value", std::make_shared<DataTypeInt32>());
+    names_and_types.emplace_back("notation", std::make_shared<DataTypeString>());
     size_t prop_index = 0;
     while (prop_index < prop_names.size())
     {
@@ -108,7 +110,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
         const auto & [prop_name, prop] = prop_names[prop_index];
         if (prop >= UCHAR_DOUBLE_LIMIT)
             break;
-        
+
         names_and_types.emplace_back(String(prop_name), std::make_shared<DataTypeFloat64>());
         ++prop_index;
     }
@@ -132,7 +134,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
         }
 
         // NOT handle UCHAR_IDENTIFIER_TYPE
-        
+
         ++prop_index;
     }
 
@@ -163,14 +165,14 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
     {
         UChar32 code = iter.getCodepoint();
         int index = 0;
-        
+
         icu::UnicodeString u_value(code);
         String value;
         u_value.toUTF8String(value);
         assert_cast<ColumnString &>(*res_columns[index++]).insert(value);
-
         assert_cast<ColumnInt32 &>(*res_columns[index++]).insert(code);
-
+        // Unicode string notation
+        assert_cast<ColumnString &>(*res_columns[index++]).insert(fmt::format("U+{:04X}", code));
         size_t prop_index = 0;
         while (prop_index < prop_names.size())
         {
@@ -284,11 +286,11 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
                 icu::UnicodeString str(tl);
                 str.toUTF8String(ret);
             }
-            
+
             assert_cast<ColumnString &>(*res_columns[index++]).insert(ret);
             ++prop_index;
         }
-        
+
         while (prop_index < prop_names.size())
         {
             const auto & [prop_name, prop] = prop_names[prop_index];
