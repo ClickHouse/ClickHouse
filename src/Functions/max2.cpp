@@ -29,7 +29,7 @@ REGISTER_FUNCTION(Max2)
     FunctionDocumentation::Argument argument2 = {"y", "Second value"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
     FunctionDocumentation::ReturnedValue returned_value = "Returns the bigger value of `x` and `y`";
-    FunctionDocumentation::Examples examples = {{"", "SELECT max2(-1, 2)", "2"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT max2(-1, 2)", "2"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
