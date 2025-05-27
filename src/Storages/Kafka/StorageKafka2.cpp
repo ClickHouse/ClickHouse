@@ -431,9 +431,28 @@ void StorageKafka2::shutdown(bool)
     shutdown_called = true;
     activating_task->deactivate();
     partialShutdown();
-    LOG_TRACE(log, "Closing consumers");
+
+    {
+        LOG_TRACE(log, "Closing {} consumers", consumers.size());
+        Stopwatch watch;
+        cleanConsumers();
+        LOG_TRACE(log, "Consumers closed in {} ms.", watch.elapsedMilliseconds());
+    }
+}
+
+void StorageKafka2::cleanConsumers()
+{
+    /// We need to clear the cppkafka::Consumer separately from KafkaConsumer2, since cppkafka::Consumer holds a weak_ptr to the KafkaConsumer2 (for logging callback)
+    /// So if we will remove cppkafka::Consumer from KafkaConsumer2 destructor, then if librdkafka will call the logging from destructor, it will lead to a deadlock.
+    std::vector<ConsumerPtr> consumers_to_close;
+
+    for (const auto & consumer : consumers)
+        consumers_to_close.push_back(consumer.consumer->moveConsumer());
+
+    /// First close cppkafka::Consumer (it can use KafkaConsumer object via stat callback)
+    consumers_to_close.clear();
+
     consumers.clear();
-    LOG_TRACE(log, "Consumers closed");
 }
 
 void StorageKafka2::drop()

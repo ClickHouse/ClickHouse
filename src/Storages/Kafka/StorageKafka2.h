@@ -73,6 +73,7 @@ public:
 
     void startup() override;
     void shutdown(bool is_drop) override;
+    void cleanConsumers();
 
     void drop() override;
 

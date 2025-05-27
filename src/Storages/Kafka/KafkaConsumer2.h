@@ -111,6 +111,8 @@ public:
 
     void subscribeIfNotSubscribedYet();
 
+    ConsumerPtr && moveConsumer() { return std::move(consumer); }
+
 private:
     using Messages = std::vector<cppkafka::Message>;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};
