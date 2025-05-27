@@ -17,7 +17,7 @@ struct BlockInfo
 {
     /** is_overflows:
       * After running GROUP BY ... WITH TOTALS with the max_rows_to_group_by and group_by_overflow_mode = 'any' settings,
-      *  a row is inserted in the separate block with aggregated values that have not passed max_rows_to_group_by.
+      * a row is inserted in the separate block with aggregated values that have not passed max_rows_to_group_by.
       * If it is such a block, then is_overflows is set to true for it.
       */
 
@@ -25,6 +25,11 @@ struct BlockInfo
       * When using the two-level aggregation method, data with different key groups are scattered across different buckets.
       * In this case, the bucket number is indicated here. It is used to optimize the merge for distributed aggregation.
       * Otherwise -1.
+      */
+
+    /** out_of_order_buckets:
+      * List of id-s of buckets delayed by `ConvertingAggregatedToChunksTransform` on the current node.
+      * Please refer to the comment in `ConvertingAggregatedToChunksTransform` for more details.
       */
 
 #define APPLY_FOR_BLOCK_INFO_FIELDS(M)                                                                                \

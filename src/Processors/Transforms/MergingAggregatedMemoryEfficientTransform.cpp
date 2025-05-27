@@ -68,7 +68,8 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
     {
         for (const auto & [bucket, inputs_delayed_that_bucket] : out_of_order_buckets)
         {
-            /// The bucket is no longer delayed for all inputs. Either we received it from all sources (where it was not empty),
+            /// The bucket is no longer delayed by any of the inputs.
+            /// Either we received it from all sources (where it was not empty),
             /// or we received buckets with higher id-s and no delayed bucket information.
             if (inputs_delayed_that_bucket == 0 && std::ranges::min(last_bucket_number) >= bucket)
             {
@@ -82,6 +83,7 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
 
         for (; next_bucket_to_push < current_bucket; ++next_bucket_to_push)
         {
+            /// If bucket is delayed by any of the inputs, we cannot push it. The loop above will take care of it at some point.
             if (out_of_order_buckets.contains(next_bucket_to_push))
                 continue;
 

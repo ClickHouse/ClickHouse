@@ -8,7 +8,7 @@ node0 = cluster.add_instance(
     main_configs=["configs/clusters.xml"],
     with_zookeeper=True,
     image="clickhouse/clickhouse-server",
-    tag="23.11",  # earlier versions lead to "Not found column sum(a) in block." exception 🤷
+    tag="23.11",  # earlier versions lead to "Not found column XXX in block." exception 🤷
     with_installed_binary=True,
 )
 node1 = cluster.add_instance("node1", with_zookeeper=True, use_old_analyzer=True)
@@ -25,7 +25,7 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_distributed_aggregation(start_cluster):
+def test_distributed_aggregation_with_out_of_order_buckets(start_cluster):
     for node in start_cluster.instances.values():
         node.query(
             """
