@@ -1,5 +1,5 @@
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
@@ -11,7 +11,7 @@ Expression ((Project names + Projection))
         Search algorithm: binary search
 {"a":1,"b":"str","c":[{"d":"1"}]}
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
@@ -23,7 +23,7 @@ Expression ((Project names + Projection))
         Search algorithm: binary search
 (1,1)
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey
@@ -35,7 +35,7 @@ Expression ((Project names + Projection))
         Search algorithm: binary search
 {"a":1,"b":"str","c":[{"d":"1"}]}
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
@@ -48,7 +48,7 @@ Expression ((Project names + Projection))
 {"a":1,"b":"str","c":[{"d":"1"}]}
 {"a":1,"b":"str","c":[{"d":"1"}]}
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
@@ -61,7 +61,7 @@ Expression ((Project names + Projection))
 (1,1)
 (1,1)
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey
@@ -75,7 +75,7 @@ Expression ((Project names + Projection))
 {"a":1,"b":"str","c":[{"d":"1"}]}
 ------------------------------------------------------------------
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
@@ -87,7 +87,7 @@ Expression ((Project names + Projection))
         Search algorithm: binary search
 {"a":1,"b":"str","c":[{"d":"1"}]}
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
@@ -99,7 +99,7 @@ Expression ((Project names + Projection))
         Search algorithm: binary search
 (1,1)
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey
