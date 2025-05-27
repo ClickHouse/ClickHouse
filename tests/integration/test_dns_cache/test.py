@@ -260,13 +260,21 @@ def test_user_access_ip_change(cluster_ready, node_name):
         user="root",
     )
 
-    assert (
-        node3.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
-        == "0\n"
+
+    assert_eq_with_retry(
+        node3,
+        f"SELECT * FROM remote('{node_name}', 'system', 'one')",
+        "0",
+        retry_count=10,
+        sleep_time=10,
     )
-    assert (
-        node4.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
-        == "0\n"
+
+    assert_eq_with_retry(
+        node4,
+        f"SELECT * FROM remote('{node_name}', 'system', 'one')",
+        "0",
+        retry_count=10,
+        sleep_time=10,
     )
 
     node.set_hosts(
@@ -291,6 +299,7 @@ def test_user_access_ip_change(cluster_ready, node_name):
         with pytest.raises(QueryRuntimeException):
             node3.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
     else:
+        # The server restart took more time than expected, so it's probable that the DNS cache has already been reloaded
         logging.warning("Spent too much time on restart, skip short-update test")
 
     with pytest.raises(QueryRuntimeException):
