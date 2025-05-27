@@ -831,7 +831,6 @@ struct ConvertThroughParsing
         "ConvertThroughParsing is only applicable for String or FixedString data types");
 
     static constexpr bool to_datetime = std::is_same_v<ToDataType, DataTypeDateTime>;
-    static constexpr bool to_time = std::is_same_v<ToDataType, DataTypeTime>;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
     static bool isAllRead(ReadBuffer & in)
