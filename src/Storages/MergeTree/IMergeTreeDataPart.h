@@ -137,6 +137,8 @@ public:
 
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
+    void setMetadataVersion(int32_t metadata_version_) noexcept { metadata_version = metadata_version_; }
+    void writeMetadataVersion(ContextPtr local_context, int32_t metadata_version, bool sync);
 
     const NamesAndTypesList & getColumns() const { return columns; }
     const ColumnsDescription & getColumnsDescription() const { return columns_description; }
@@ -164,7 +166,7 @@ public:
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
-    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
+    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version = true);
 
     void loadRowsCountFileForUnexpectedPart();
 
@@ -651,7 +653,7 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    void removeIfNeeded() noexcept;
+    void removeIfNeeded();
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
@@ -701,7 +703,7 @@ private:
 
 
     /// Reads columns names and types from columns.txt
-    void loadColumns(bool require);
+    void loadColumns(bool require, bool load_metadata_version);
 
     /// Reads columns substreams from columns_substreams.txt (only in Compact parts).
     void loadColumnsSubstreams();

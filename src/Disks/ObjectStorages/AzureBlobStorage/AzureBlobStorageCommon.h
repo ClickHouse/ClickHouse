@@ -53,6 +53,7 @@ struct RequestSettings
     size_t sdk_retry_max_backoff_ms = 1000;
     bool use_native_copy = false;
     bool check_objects_after_upload = false;
+    bool read_only = false;
 
 #if USE_AZURE_BLOB_STORAGE
     using CurlOptions = Azure::Core::Http::CurlTransportOptions;
