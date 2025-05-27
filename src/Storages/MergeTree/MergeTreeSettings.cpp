@@ -1824,17 +1824,17 @@ namespace ErrorCodes
     )", 0) \
     /** Secondary Index settings. */ \
     DECLARE(SecondaryIndicesOnColumnsAlterModify, secondary_indices_on_columns_alter_modify, SecondaryIndicesOnColumnsAlterModify::THROW, R"(
-    The setting will be only applicable to ALTER modify column.
-    The value throw will prevent doing ALTERs of columns covered by secondary indices.
-    The value drop will drop the dependent secondary indices.
-    The value rebuild acts like dropping and then doing MATERIALIZE INDEX.
-    The value ignore is intended for professional usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
+    Specifies what happens if ALTER MODIFY is run for a column with a secondary index.
+    `throw` returns an error (the ALTER MODIFY statement is not run).
+    `drop` removes existing secondary indexes.
+    `rebuild` drops and materializes existing secondary indexes.
+    `ignore` is intended for professional usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
 
     Possible values:
-    - `ignore`
     - `throw`
     - `drop`
     - `rebuild`
+    - `ignore`
     )", 0) \
     /** Default compression codec settings. */ \
     DECLARE(String, default_compression_codec, "", R"(

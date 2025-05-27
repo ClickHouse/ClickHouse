@@ -348,10 +348,10 @@ DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
 enum class SecondaryIndicesOnColumnsAlterModify : uint8_t
 {
-    IGNORE,
     THROW,
     DROP,
     REBUILD,
+    IGNORE,
 };
 
 DECLARE_SETTING_ENUM(SecondaryIndicesOnColumnsAlterModify)
