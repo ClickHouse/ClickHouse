@@ -25,7 +25,8 @@ VersionNumber VERSION_UNKNOWN = {0};
 std::string FunctionDocumentation::argumentsAsString() const
 {
     std::string res;
-    if (!(arguments.size() == 1 && arguments[0].name.empty())) {
+    if (!(arguments.size() == 1 && arguments[0].name.empty()))
+    {
         for (const auto & [name, desc] : arguments)
             res += "- `" + name + "` — " + desc + "\n";
     }
