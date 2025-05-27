@@ -1257,10 +1257,6 @@
             return { data: jsonData, lastModifiedTime: newLastModifiedTime, eTag: newETag, updated: true };
         } catch (error) {
             console.error('Error loading Results:', error);
-            if (infoElement) {
-                infoElement.textContent = 'Error loading data';
-                infoElement.style.display = 'block';
-            }
             return { data: null, lastModifiedTime: null, eTag: null, updated: true };
         }
     }

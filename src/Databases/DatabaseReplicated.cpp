@@ -113,7 +113,7 @@ static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
 static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
 
-zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
+ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
     return getContext()->getZooKeeper();
 }
@@ -1993,14 +1993,13 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
 
         StoragePtr storage;
         if (create.uuid != UUIDHelpers::Nil)
-        {
             storage = DatabaseCatalog::instance().tryGetByUUID(create.uuid).second;
-            if (storage)
-                storage->adjustCreateQueryForBackup(create_table_query);
-        }
 
-        /// `storage` is allowed to be null here. In this case it means that this storage exists on other replicas
-        /// but it has not been created on this replica yet.
+        /// Pointer `storage` is allowed to be null here (that means that this storage exists on other replicas
+        /// but it has not been created on this replica yet).
+
+        /// There is no need to call `storage->applyMetadataChangesToCreateQueryForBackup()` here
+        /// because a consistent metadata snapshot contains table definitions with already applied metadata changes.
 
         res.emplace_back(create_table_query, storage);
     }

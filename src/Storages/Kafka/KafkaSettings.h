@@ -12,7 +12,6 @@ class ASTStorage;
 struct KafkaSettingsImpl;
 
 const auto KAFKA_RESCHEDULE_MS = 500;
-const auto KAFKA_CLEANUP_TIMEOUT_MS = 3000;
 // once per minute leave do reschedule (we can't lock threads in pool forever)
 const auto KAFKA_MAX_THREAD_WORK_DURATION_MS = 60000;
 // 10min

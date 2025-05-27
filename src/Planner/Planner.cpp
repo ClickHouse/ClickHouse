@@ -115,7 +115,7 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsUInt64 max_bytes_in_distinct;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 max_subquery_depth;
     extern const SettingsUInt64 max_rows_in_distinct;

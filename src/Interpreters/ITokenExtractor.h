@@ -5,6 +5,7 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/GinFilter.h>
 
+
 namespace DB
 {
 
@@ -24,6 +25,9 @@ struct ITokenExtractor
         return nextInString(data, length, pos, token_start, token_length);
     }
 
+    /// Slow implementation for tokenizers which don't support inplace tokenization.
+    virtual std::vector<String> getTokens(const char * data, size_t length) const;
+
     /// Special implementation for creating bloom filter for LIKE function.
     /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
     virtual bool nextInStringLike(const char * data, size_t length, size_t * pos, String & out) const = 0;
@@ -38,8 +42,8 @@ struct ITokenExtractor
         const char * data,
         size_t length,
         BloomFilter & bloom_filter,
-        bool is_prefix [[maybe_unused]],
-        bool is_suffix [[maybe_unused]]) const
+        bool /*is_prefix*/,
+        bool /*is_suffix*/) const
     {
         stringToBloomFilter(data, length, bloom_filter);
     }
@@ -61,8 +65,8 @@ struct ITokenExtractor
         const char * data,
         size_t length,
         GinFilter & gin_filter,
-        bool is_prefix [[maybe_unused]],
-        bool is_suffix [[maybe_unused]]) const
+        bool /*is_prefix*/,
+        bool /*is_suffix*/) const
     {
         stringToGinFilter(data, length, gin_filter);
     }
@@ -153,6 +157,9 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
     explicit NgramTokenExtractor(size_t n_) : n(n_) {}
 
     static const char * getName() { return "ngrambf_v1"; }
+    static const char * getExternalName() { return "ngram"; }
+
+    std::vector<String> getTokens(const char * data, size_t length) const override;
 
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
@@ -169,6 +176,9 @@ private:
 struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtractor>
 {
     static const char * getName() { return "tokenbf_v1"; }
+    static const char * getExternalName() { return "default"; }
+
+    std::vector<String> getTokens(const char * data, size_t length) const override;
 
     bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
@@ -179,8 +189,19 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
 
     void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
+};
 
+/// Parser doing "no operation". Returns the entire input as a single token.
+struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtractor>
+{
+    static const char * getName() { return "noop"; }
+    static const char * getExternalName() { return getName(); }
 
+    std::vector<String> getTokens(const char * data, size_t length) const override;
+
+    bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
+
+    bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
 };
 
 }

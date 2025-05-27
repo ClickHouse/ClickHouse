@@ -398,46 +398,6 @@ Result:
 └──────────────────────────────┴───────────────────────────────────┘
 ```
 
-## mapContains {#mapcontains}
-
-Returns if a given key is contained in a given map.
-
-**Syntax**
-
-```sql
-mapContains(map, key)
-```
-
-**Arguments**
-
-- `map` — Map. [Map](../data-types/map.md).
-- `key` — Key. Type must match the key type of `map`.
-
-**Returned value**
-
-- `1` if `map` contains `key`, `0` if not. [UInt8](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
-
-INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
-
-SELECT mapContains(a, 'name') FROM tab;
-
-```
-
-Result:
-
-```text
-┌─mapContains(a, 'name')─┐
-│                      1 │
-│                      0 │
-└────────────────────────┘
-```
 
 ## mapKeys {#mapkeys}
 
@@ -482,27 +442,26 @@ Result:
 └───────────────────────┘
 ```
 
-## mapValues {#mapvalues}
+## mapContains {#mapcontains}
 
-Returns the values of a given map.
-
-This function can be optimized by enabling setting [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns).
-With enabled setting, the function only reads the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn instead the whole map.
-The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FROM table`.
+Returns if a given key is contained in a given map.
 
 **Syntax**
 
 ```sql
-mapValues(map)
+mapContains(map, key)
 ```
+
+Alias: `mapContainsKey(map, key)`
 
 **Arguments**
 
 - `map` — Map. [Map](../data-types/map.md).
+- `key` — Key. Type must match the key type of `map`.
 
 **Returned value**
 
-- Array containing all the values from `map`. [Array](../data-types/array.md).
+- `1` if `map` contains `key`, `0` if not. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -513,17 +472,19 @@ CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
 
 INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
 
-SELECT mapValues(a) FROM tab;
+SELECT mapContains(a, 'name') FROM tab;
+
 ```
 
 Result:
 
 ```text
-┌─mapValues(a)─────┐
-│ ['eleven','11']  │
-│ ['twelve','6.0'] │
-└──────────────────┘
+┌─mapContains(a, 'name')─┐
+│                      1 │
+│                      0 │
+└────────────────────────┘
 ```
+
 
 ## mapContainsKeyLike {#mapcontainskeylike}
 
@@ -600,6 +561,170 @@ Result:
 │ {'abc':'abc'}              │
 │ {}                         │
 └────────────────────────────┘
+```
+
+
+## mapValues {#mapvalues}
+
+Returns the values of a given map.
+
+This function can be optimized by enabling setting [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns).
+With enabled setting, the function only reads the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn instead the whole map.
+The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FROM table`.
+
+**Syntax**
+
+```sql
+mapValues(map)
+```
+
+**Arguments**
+
+- `map` — Map. [Map](../data-types/map.md).
+
+**Returned value**
+
+- Array containing all the values from `map`. [Array](../data-types/array.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
+
+INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapValues(a) FROM tab;
+```
+
+Result:
+
+```text
+┌─mapValues(a)─────┐
+│ ['eleven','11']  │
+│ ['twelve','6.0'] │
+└──────────────────┘
+```
+
+## mapContainsValue {#mapcontainsvalue}
+
+Returns if a given key is contained in a given map.
+
+**Syntax**
+
+```sql
+mapContainsValue(map, value)
+```
+
+Alias: `mapContainsValue(map, value)`
+
+**Arguments**
+
+- `map` — Map. [Map](../data-types/map.md).
+- `value` — Value. Type must match the value type of `map`.
+
+**Returned value**
+
+- `1` if `map` contains `value`, `0` if not. [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
+
+INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapContainsValue(a, '11') FROM tab;
+
+```
+
+Result:
+
+```text
+┌─mapContainsValue(a, '11')─┐
+│                         1 │
+│                         0 │
+└───────────────────────────┘
+```
+
+## mapContainsValueLike {#mapcontainsvaluelike}
+
+**Syntax**
+
+```sql
+mapContainsValueLike(map, pattern)
+```
+
+**Arguments**
+- `map` — Map. [Map](../data-types/map.md).
+- `pattern`  - String pattern to match.
+
+**Returned value**
+
+- `1` if `map` contains `value` like specified pattern, `0` if not.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
+
+INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
+
+SELECT mapContainsValueLike(a, 'a%') FROM tab;
+```
+
+Result:
+
+```text
+┌─mapContainsV⋯ke(a, 'a%')─┐
+│                        1 │
+│                        0 │
+└──────────────────────────┘
+```
+
+## mapExtractValueLike {#mapextractvaluelike}
+
+Give a map with string values and a LIKE pattern, this function returns a map with elements where the value matches the pattern.
+
+**Syntax**
+
+```sql
+mapExtractValueLike(map, pattern)
+```
+
+**Arguments**
+
+- `map` — Map. [Map](../data-types/map.md).
+- `pattern`  - String pattern to match.
+
+**Returned value**
+
+- A map containing elements the value matching the specified pattern. If no elements match the pattern, an empty map is returned.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
+
+INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
+
+SELECT mapExtractValueLike(a, 'a%') FROM tab;
+```
+
+Result:
+
+```text
+┌─mapExtractValueLike(a, 'a%')─┐
+│ {'abc':'abc'}                │
+│ {}                           │
+└──────────────────────────────┘
 ```
 
 ## mapApply {#mapapply}
@@ -939,3 +1064,12 @@ SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2));
 │ {'k1':3,'k3':2,'k2':1}                                                           │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
+
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

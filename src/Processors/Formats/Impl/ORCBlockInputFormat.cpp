@@ -13,6 +13,7 @@
 #    include "ArrowColumnToCHColumn.h"
 #    include "ArrowFieldIndexUtil.h"
 #    include "NativeORCBlockInputFormat.h"
+#    include <Interpreters/Context.h>
 
 namespace DB
 {

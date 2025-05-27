@@ -19,6 +19,9 @@ class Pipe;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
+
 struct MergeTreeDataSelectSamplingData
 {
     bool use_sampling = false;

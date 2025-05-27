@@ -144,9 +144,6 @@ ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
 if [[ $(is_fast_build) == 1 ]]; then
     ln -sf $SRC_PATH/users.d/limits_fast.yaml $DEST_SERVER_PATH/users.d/
 fi
-if check_clickhouse_version 25.4; then
-    ln -sf $SRC_PATH/users.d/max_cpu_load.xml $DEST_SERVER_PATH/users.d/
-fi
 
 if [[ -n "$USE_OLD_ANALYZER" ]] && [[ "$USE_OLD_ANALYZER" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
@@ -258,6 +255,7 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     fi
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/storage_conf_03517.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
 fi

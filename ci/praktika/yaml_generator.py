@@ -112,6 +112,14 @@ jobs:
         default: {DEFAULT_VALUE}\
 """
 
+        TEMPLATE_OPTIONS_INPUT = """
+      {NAME}:
+        description: {DESCRIPTION}
+        type: choice
+        options: {OPTIONS}
+        default: {DEFAULT_VALUE}\
+"""
+
         TEMPLATE_SECRET_CONFIG = """\
       {SECRET_NAME}:
         required: true
@@ -378,12 +386,22 @@ class PullRequestPushYamlGen:
         # for dispatch workflows only
         dispatch_inputs = ""
         for input_item in self.workflow_config.dispatch_inputs:
-            dispatch_inputs += YamlGenerator.Templates.TEMPLATE_INPUT.format(
-                NAME=input_item.name,
-                DESCRIPTION=input_item.description,
-                IS_REQUIRED="true" if input_item.is_required else "false",
-                DEFAULT_VALUE=input_item.default_value or "''",
-            )
+            if not input_item.options:
+                dispatch_inputs += YamlGenerator.Templates.TEMPLATE_INPUT.format(
+                    NAME=input_item.name,
+                    DESCRIPTION=input_item.description,
+                    IS_REQUIRED="true" if input_item.is_required else "false",
+                    DEFAULT_VALUE=input_item.default_value or "''",
+                )
+            else:
+                dispatch_inputs += (
+                    YamlGenerator.Templates.TEMPLATE_OPTIONS_INPUT.format(
+                        NAME=input_item.name,
+                        DESCRIPTION=input_item.description,
+                        OPTIONS=input_item.options,
+                        DEFAULT_VALUE=input_item.default_value or "''",
+                    )
+                )
 
         if self.workflow_config.event in (
             Workflow.Event.PULL_REQUEST,

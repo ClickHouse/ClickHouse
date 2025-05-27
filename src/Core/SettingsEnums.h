@@ -396,4 +396,21 @@ enum class DatabaseDataLakeCatalogType : uint8_t
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
 
+enum class VectorSearchFilterStrategy : uint8_t
+{
+    AUTO,
+    PREFILTER,
+    POSTFILTER,
+};
+
+DECLARE_SETTING_ENUM(VectorSearchFilterStrategy)
+
+enum class GeoToH3ArgumentOrder : uint8_t
+{
+    LAT_LON,
+    LON_LAT,
+};
+
+DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
+
 }

@@ -74,6 +74,5 @@ template class SerializationDecimalBase<Decimal64>;
 template class SerializationDecimalBase<Decimal128>;
 template class SerializationDecimalBase<Decimal256>;
 template class SerializationDecimalBase<DateTime64>;
-template class SerializationDecimalBase<Time64>;
 
 }

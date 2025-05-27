@@ -1,6 +1,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -109,11 +110,16 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     }
 
     if (!like.empty())
+    {
         ostr << (settings.hilite ? hilite_keyword : "")
-                      << (not_like ? " NOT" : "")
-                      << (case_insensitive_like ? " ILIKE " : " LIKE")
-                      << (settings.hilite ? hilite_none : "")
-                      << DB::quote << like;
+            << (not_like ? " NOT" : "")
+            << (case_insensitive_like ? " ILIKE " : " LIKE")
+            << (settings.hilite ? hilite_none : "");
+        if (settings.hilite)
+            highlightStringWithMetacharacters(quoteString(like), ostr, "%_");
+        else
+            ostr << quoteString(like);
+    }
 
     formatOnCluster(ostr, settings);
 

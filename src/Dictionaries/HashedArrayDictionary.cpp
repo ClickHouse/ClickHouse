@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>

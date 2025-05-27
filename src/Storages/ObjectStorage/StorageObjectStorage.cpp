@@ -7,6 +7,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Interpreters/Context.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -433,13 +434,11 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (configuration->withPartitionWildcard())
     {
-        ASTPtr partition_by_ast = nullptr;
+        ASTPtr partition_by_ast = partition_by;
         if (auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
         {
             if (insert_query->partition_by)
                 partition_by_ast = insert_query->partition_by;
-            else
-                partition_by_ast = partition_by;
         }
 
         if (partition_by_ast)
@@ -457,8 +456,9 @@ SinkToStoragePtr StorageObjectStorage::write(
     configuration->setPaths(paths);
 
     return std::make_shared<StorageObjectStorageSink>(
+        paths.back(),
         object_storage,
-        configuration->clone(),
+        configuration,
         format_settings,
         sample_block,
         local_context);
@@ -649,13 +649,6 @@ const StorageObjectStorageSettings & StorageObjectStorage::Configuration::getSet
 void StorageObjectStorage::Configuration::check(ContextPtr) const
 {
     FormatFactory::instance().checkFormatName(format);
-}
-
-StorageObjectStorage::Configuration::Configuration(const Configuration & other)
-{
-    format = other.format;
-    compression_method = other.compression_method;
-    structure = other.structure;
 }
 
 bool StorageObjectStorage::Configuration::withPartitionWildcard() const

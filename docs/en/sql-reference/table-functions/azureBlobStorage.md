@@ -15,28 +15,30 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 Provides a table-like interface to select/insert files in [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs). This table function is similar to the [s3 function](../../sql-reference/table-functions/s3.md).
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 azureBlobStorage(- connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
 ```
 
-**Arguments**
+## Arguments {#arguments}
 
-- `connection_string|storage_account_url` — connection_string includes account name & key ([Create connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)) or you could also provide the storage account url here and account name & account key as separate parameters (see parameters account_name & account_key)
-- `container_name` - Container name
-- `blobpath` - file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
-- `account_name` - if storage_account_url is used, then account name can be specified here
-- `account_key` - if storage_account_url is used, then account key can be specified here
-- `format` — The [format](/sql-reference/formats) of the file.
-- `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
-- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
+| Argument                                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|--------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `connection_string`\| `storage_account_url` | connection_string includes account name & key ([Create connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)) or you could also provide the storage account url here and account name & account key as separate parameters (see parameters account_name & account_key)|
+| `container_name`                           | Container name                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `blobpath`                                 | file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.                                                                                                                                                                                                                                                                                                                                   |
+| `account_name`                             | if storage_account_url is used, then account name can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `account_key`                              | if storage_account_url is used, then account key can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `format`                                   | The [format](/sql-reference/formats) of the file.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `compression`                              | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).                                                                                                                                                                                                                                                                                                                        | 
+| `structure`                                | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                              |
 
-**Returned value**
+## Returned value {#returned_value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
-**Examples**
+## Examples {#examples}
 
 Similar to the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Below we assume Azurite is available at the hostname `azurite1`.
 
@@ -82,10 +84,6 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
-**See Also**
-
-- [AzureBlobStorage Table Engine](engines/table-engines/integrations/azureBlobStorage.md)
-
 ## Hive-style partitioning {#hive-style-partitioning}
 
 When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
@@ -129,3 +127,6 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 
 1 row in set. Elapsed: 0.153 sec.
 ```
+
+## Related {#related}
+- [AzureBlobStorage Table Engine](engines/table-engines/integrations/azureBlobStorage.md)

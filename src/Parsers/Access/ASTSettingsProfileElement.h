@@ -17,6 +17,7 @@ public:
     std::optional<Field> value;
     std::optional<Field> min_value;
     std::optional<Field> max_value;
+    std::vector<Field> disallowed_values;
     std::optional<SettingConstraintWritability> writability;
     bool id_mode = false;  /// If true then `parent_profile` keeps UUID, not a name.
     bool use_inherit_keyword = false;  /// If true then this element is a part of ASTCreateSettingsProfileQuery.

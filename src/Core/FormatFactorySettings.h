@@ -173,7 +173,7 @@ Avoid reordering rows when reading from Parquet files. Usually makes it much slo
     DECLARE(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_bloom_filter_push_down, false, R"(
+    DECLARE(Bool, input_format_parquet_bloom_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
