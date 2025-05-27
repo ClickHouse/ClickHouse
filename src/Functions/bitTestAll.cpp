@@ -23,12 +23,7 @@ REGISTER_FUNCTION(BitTestAll)
 Returns result of the [logical conjunction](https://en.wikipedia.org/wiki/Logical_conjunction) (AND operator) of all bits at the given positions.
 Counts right-to-left, starting at 0.
 
-The conjunction for bit-wise operations:
-
-- `0 AND 0` = `0`
-- `0 AND 1` = `0`
-- `1 AND 0` = `0`
-- `1 AND 1` = `1`
+The logical AND between two bits is true if and only if both input bits are true.
     )";
     FunctionDocumentation::Syntax syntax = "bitTestAll(a, index1[, index2, ... , indexN])";
     FunctionDocumentation::Arguments arguments = {

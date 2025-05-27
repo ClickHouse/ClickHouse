@@ -20,15 +20,10 @@ using FunctionBitTestAny = FunctionBitTestMany<BitTestAnyImpl, NameBitTestAny>;
 REGISTER_FUNCTION(BitTestAny)
 {
     FunctionDocumentation::Description description = R"(
-Returns result of the [logical disjunction](https://en.wikipedia.org/wiki/Logical_disjunction) (OR operator) of all bits at the given positions.
+Returns result of the [logical disjunction](https://en.wikipedia.org/wiki/Logical_disjunction) (OR operator) of all bits at the given positions in a number.
 Counts right-to-left, starting at 0.
 
-The disjunction for bit-wise operations:
-
-- `0 OR 0` = `0`
-- `0 OR 1` = `1`
-- `1 OR 0` = `1`
-- `1 OR 1` = `1`
+The logical OR between two bits is true if at least one of the input bits is true.
     )";
     FunctionDocumentation::Syntax syntax = "bitTestAny(a, index1[, index2, ... , indexN])";
     FunctionDocumentation::Arguments arguments = {
