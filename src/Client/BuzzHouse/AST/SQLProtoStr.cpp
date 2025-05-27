@@ -3630,9 +3630,8 @@ CONV_FN(DictionarySourceDetails, dsd)
     {
         const String & separator = dsd.source() == DictionarySourceDetails::MONGODB ? "' COLLECTION '" : "' TABLE '";
 
-        ret += "DB '";
+        ret += "DB ";
         FlatExprSchemaTableToString(ret, dsd.est(), separator);
-        ret += "'";
         has_something = true;
     }
     if (dsd.has_host())
