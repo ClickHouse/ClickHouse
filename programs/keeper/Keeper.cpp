@@ -500,9 +500,11 @@ try
         const auto & config = config_getter();
         auto http_context = httpContext();
         Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
-        Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-        http_params->setTimeout(http_context->getReceiveTimeout());
-        http_params->setKeepAliveTimeout(keep_alive_timeout);
+        Poco::Net::HTTPServerParams::Ptr http1_params = new Poco::Net::HTTPServerParams;
+        http1_params->setTimeout(http_context->getReceiveTimeout());
+        http1_params->setKeepAliveTimeout(keep_alive_timeout);
+
+        HTTP2ServerParams::Ptr http2_params = HTTP2ServerParams::fromConfig(config);
 
         /// Prometheus (if defined and not setup yet with http_port)
         port_name = "prometheus.port";
@@ -525,7 +527,8 @@ try
                         createKeeperPrometheusHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"),
                         server_pool,
                         socket,
-                        http_params));
+                        http1_params,
+                        http2_params));
             });
 
         /// HTTP control endpoints
@@ -547,8 +550,12 @@ try
                 port_name,
                 "HTTP Control: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    std::move(my_http_context), createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params)
-                    );
+                    std::move(my_http_context),
+                    createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"),
+                    server_pool,
+                    socket,
+                    http1_params,  // my_http_params?
+                    http2_params));
         });
     }
 
