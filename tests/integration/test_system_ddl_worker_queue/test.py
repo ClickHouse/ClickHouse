@@ -32,14 +32,18 @@ def started_cluster():
         cluster.shutdown()
 
 
-def maintain_test_table(test_table):
+def maintain_test_table(test_table, request):
+    current_step = request.node.name.split("[")[1].split("-")[
+        0
+    ]  # to guarantee ZK path uniqueness
+
     for i, node in enumerate([node1, node2]):
         node.query(f"DROP TABLE IF EXISTS testdb.{test_table} SYNC")
         node.query("DROP DATABASE IF EXISTS testdb")
 
         node.query("CREATE DATABASE testdb")
         node.query(
-            f"CREATE TABLE testdb.{test_table}(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/{test_table}1', '{i}') ORDER BY id;"
+            f"CREATE TABLE testdb.{test_table}(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/{test_table}1-{current_step}', '{i}') ORDER BY id;"
         )
     for i, node in enumerate([node3, node4]):
         node.query(f"DROP TABLE IF EXISTS testdb.{test_table} SYNC")
@@ -47,13 +51,13 @@ def maintain_test_table(test_table):
 
         node.query("CREATE DATABASE testdb")
         node.query(
-            f"CREATE TABLE testdb.{test_table}(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/{test_table}2', '{i}') ORDER BY id;"
+            f"CREATE TABLE testdb.{test_table}(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/{test_table}2-{current_step}', '{i}') ORDER BY id;"
         )
 
 
-def test_distributed_ddl_queue(started_cluster):
+def test_distributed_ddl_queue(started_cluster, request):
     test_table = "test_table"
-    maintain_test_table(test_table)
+    maintain_test_table(test_table, request)
     node1.query(
         f"INSERT INTO testdb.{test_table} SELECT number, toString(number) FROM numbers(100)"
     )
@@ -85,9 +89,9 @@ def test_distributed_ddl_queue(started_cluster):
     )
 
 
-def test_distributed_ddl_rubbish(started_cluster):
+def test_distributed_ddl_rubbish(started_cluster, request):
     test_table = "test_table_rubbish"
-    maintain_test_table(test_table)
+    maintain_test_table(test_table, request)
     node1.query(
         f"ALTER TABLE testdb.{test_table} ON CLUSTER test_cluster ADD COLUMN somenewcolumn UInt8 AFTER val",
         settings={"replication_alter_partitions_sync": "2"},
