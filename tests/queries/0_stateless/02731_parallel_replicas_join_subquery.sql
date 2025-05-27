@@ -83,7 +83,8 @@ SELECT '=============== QUERIES EXECUTED BY PARALLEL INNER QUERY ALONE =========
 
 SYSTEM FLUSH LOGS query_log;
 -- There should be 4 queries. The main query as received by the initiator and the 3 equal queries sent to each replica
-SELECT is_initial_query, count() as c, replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
+-- BUT after introduction of cancelling queries as soon as snapshot is read - number of queries can vary, so only presence of queries is checked
+SELECT is_initial_query, replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
       event_date >= yesterday()
@@ -99,7 +100,7 @@ WHERE
             AND query LIKE '-- Parallel inner query alone%'
       )
 GROUP BY is_initial_query, query
-ORDER BY is_initial_query, c, query;
+ORDER BY is_initial_query, query;
 
 ---- Query with JOIN
 
@@ -220,7 +221,7 @@ SYSTEM FLUSH LOGS query_log;
 
 -- There should be 7 queries. The main query as received by the initiator, the 3 equal queries to execute the subquery
 -- in the inner join and the 3 queries executing the whole query (but replacing the subquery with a temp table)
--- BUT after introduction of cancelling queries as soon as snapshot is read - number of queries can vary, so only queries are checked
+-- BUT after introduction of cancelling queries as soon as snapshot is read - number of queries can vary, so only presence of queries is checked
 SELECT is_initial_query, replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
