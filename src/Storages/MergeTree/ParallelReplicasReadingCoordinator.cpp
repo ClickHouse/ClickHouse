@@ -171,7 +171,7 @@ public:
     Stats stats;
     const size_t replicas_count{0};
     size_t unavailable_replicas_count{0};
-    size_t sent_initial_requests{0};
+    size_t received_initial_requests{0};
     ProgressCallback progress_callback;
 
     explicit ImplInterface(size_t replicas_count_)
@@ -189,7 +189,7 @@ public:
 
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
     {
-        if (++sent_initial_requests > replicas_count)
+        if (++received_initial_requests > replicas_count)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Initiator received more initial requests than there are replicas: replica_num={}", announcement.replica_num);
 
@@ -303,7 +303,7 @@ private:
     /// The second and all subsequent announcements needed only to understand if we can schedule reading from the given part to the given replica.
     void initializeReadingState(InitialAllRangesAnnouncement announcement);
 
-    void setProgressCallback();
+    void updateQueryProgress();
 
     enum class ScanMode : uint8_t
     {
@@ -416,9 +416,6 @@ void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
     ++unavailable_replicas_count;
     stats[replica_number].is_unavailable = true;
 
-    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
-        setProgressCallback();
-
     for (const auto & segment : distribution_by_hash_queue[replica_number])
     {
         if (segment.ranges.empty())
@@ -430,7 +427,7 @@ void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
     distribution_by_hash_queue[replica_number].clear();
 }
 
-void DefaultCoordinator::setProgressCallback()
+void DefaultCoordinator::updateQueryProgress()
 {
     // Update progress with total rows
     if (progress_callback)
@@ -453,22 +450,24 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
 
     const auto replica_num = announcement.replica_num;
 
-    initializeReadingState(std::move(announcement));
-
     if (replica_num >= stats.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
 
-    ++stats[replica_num].number_of_requests;
-
     if (replica_status[replica_num].is_announcement_received)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate announcement received for replica number {}", replica_num);
+
+    initializeReadingState(std::move(announcement));
+
+    ++stats[replica_num].number_of_requests;
+
     replica_status[replica_num].is_announcement_received = true;
 
-    LOG_TRACE(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
+    LOG_TRACE(log, "Received initial requests: {} Replicas count: {}", received_initial_requests, replicas_count);
 
-    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
-        setProgressCallback();
+    /// Update total rows to read as soon as snapshot is initialized
+    if (received_initial_requests == 1)
+        updateQueryProgress();
 
     /// Sift the queue to move out all invisible segments
     for (auto segment_it = distribution_by_hash_queue[replica_num].begin(); segment_it != distribution_by_hash_queue[replica_num].end();)
@@ -1216,6 +1215,7 @@ ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator() = defa
 
 void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)
 {
+    std::lock_guard lock(mutex);
     // store callback since pimpl can be not instantiated yet
     progress_callback = std::move(callback);
     if (pimpl)
