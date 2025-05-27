@@ -194,10 +194,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         if (res.getType() == RemoteQueryExecutor::ReadResult::Type::ParallelReplicasToken)
         {
             is_async_state = false;
-
-            if (res.read_completed)
-                return {};
-
             return Chunk();
         }
 
