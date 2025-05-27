@@ -22,7 +22,7 @@ class NeedleFactory
 public:
     SearchSymbols getWaitKeyNeedles(const Configuration & extractor_configuration)
     {
-        const auto & [key_value_delimiter, quoting_character, pair_delimiters]
+        const auto & [key_value_delimiter, quoting_character, pair_delimiters, _]
             = extractor_configuration;
 
         std::vector<char> needles;
@@ -41,13 +41,17 @@ public:
 
     SearchSymbols getReadKeyNeedles(const Configuration & extractor_configuration)
     {
-        const auto & [key_value_delimiter, quoting_character, pair_delimiters]
+        const auto & [key_value_delimiter, quoting_character, pair_delimiters, unexpected_quoting_character_strategy]
             = extractor_configuration;
 
         std::vector<char> needles;
 
         needles.push_back(key_value_delimiter);
-        needles.push_back(quoting_character);
+
+        if (unexpected_quoting_character_strategy != Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT)
+        {
+            needles.push_back(quoting_character);
+        }
 
         std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
 
@@ -61,12 +65,15 @@ public:
 
     SearchSymbols getReadValueNeedles(const Configuration & extractor_configuration)
     {
-        const auto & [key_value_delimiter, quoting_character, pair_delimiters]
+        const auto & [key_value_delimiter, quoting_character, pair_delimiters, unexpected_quoting_character_strategy]
             = extractor_configuration;
 
         std::vector<char> needles;
 
-        needles.push_back(quoting_character);
+        if (unexpected_quoting_character_strategy != Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT)
+        {
+            needles.push_back(quoting_character);
+        }
 
         std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
 

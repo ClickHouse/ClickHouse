@@ -104,9 +104,24 @@ public:
 
                 return {next_pos, State::WAITING_VALUE};
             }
-            else if (isPairDelimiter(*p) || isQuotingCharacter(*p))
+            else if (isPairDelimiter(*p))
             {
                 return {next_pos, State::WAITING_KEY};
+            }
+            else if (isQuotingCharacter(*p))
+            {
+                if (configuration.unexpected_quoting_character_strategy == Configuration::UnexpectedQuotingCharacterStrategy::INVALID)
+                {
+                    return {next_pos, State::WAITING_KEY};
+                }
+
+                if (configuration.unexpected_quoting_character_strategy == Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE)
+                {
+                    return {next_pos, State::READING_QUOTED_KEY};
+                }
+
+                // todo arthur
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quoting character found in key. This should not happen.");
             }
 
             pos = next_pos;
@@ -241,6 +256,21 @@ public:
                 pair_writer.appendValue(file.data() + pos, file.data() + character_position);
 
                 return {next_pos, State::FLUSH_PAIR};
+            }
+            else if (isQuotingCharacter(*p))
+            {
+                if (configuration.unexpected_quoting_character_strategy == Configuration::UnexpectedQuotingCharacterStrategy::INVALID)
+                {
+                    return {next_pos, State::WAITING_KEY};
+                }
+
+                if (configuration.unexpected_quoting_character_strategy == Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE)
+                {
+                    return {next_pos, State::READING_QUOTED_VALUE};
+                }
+
+                // todo arthur
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quoting character found in value. This should not happen.");
             }
 
             pos = next_pos;
