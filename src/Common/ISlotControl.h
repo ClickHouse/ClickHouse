@@ -46,6 +46,25 @@ public:
 
 using AcquiredSlotPtr = std::shared_ptr<IAcquiredSlot>;
 
+/// Lease provides a slot for a limited time duration.
+/// Specialization of IAcquiredSlot that supports preemption.
+class ISlotLease : public IAcquiredSlot
+{
+public:
+    /// This method is for CPU consumption only.
+    /// It should be called from a thread that started using the slot.
+    /// Required for obtainting CPU time for the thread, because ctor is called in another thread.
+    virtual void startConsumption() = 0;
+
+    /// Renew the slot. This method should be called periodically.
+    /// Call may block while waiting for the slot to be reacquired in case of preemption.
+    /// Returns true if the slot is still acquired.
+    /// Returns false if the slot is released and holder should stop using it (e.g. thread should be stopped).
+    virtual bool renew() = 0;
+};
+
+using SlotLeasePtr = std::shared_ptr<ISlotLease>;
+
 /// Request for allocation of slots from ISlotControl.
 /// Allows for more slots to be acquired and the whole request to be canceled.
 class ISlotAllocation : public std::enable_shared_from_this<ISlotAllocation>, boost::noncopyable
