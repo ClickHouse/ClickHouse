@@ -162,13 +162,15 @@ Replaces at most N bits in a bitmap. The old and new value of the i-th replaced 
 The result depends on the array ordering if `from_array` and `to_array`.
     )";
     FunctionDocumentation::Syntax syntax_bitmapTransform = "bitmapTransform(bitmap, from_array, to_array)";
-    FunctionDocumentation::Arguments arguments_bitmapTransform = {
+    FunctionDocumentation::Arguments arguments_bitmapTransform =
+    {
         {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
         {"from_array", "Array of original values to be replaced. [`Array(T)`](/sql-reference/data-types/array)."},
         {"to_array", "Array of new values to replace with. [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_bitmapTransform = "Returns a bitmap with elements transformed according to the given mapping. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction).";
-    FunctionDocumentation::Examples examples_bitmapTransform = {{"Usage example", "SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 40])) AS res;",
+    FunctionDocumentation::Examples examples_bitmapTransform =
+        {{"Usage example", "SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 40])) AS res;",
         R"(
 ┌─res───────────┐
 │ [1,3,5,20,40] │
