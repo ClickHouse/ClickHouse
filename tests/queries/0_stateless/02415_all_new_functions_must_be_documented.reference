@@ -205,7 +205,6 @@ encodeURLComponent
 encodeURLFormComponent
 encodeXMLComponent
 endsWith
-equals
 erf
 erfc
 errorCodeToName
@@ -274,8 +273,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greater
-greaterOrEquals
 greatest
 has
 hasColumnInTable
@@ -332,8 +329,6 @@ leftPad
 leftPadUTF8
 leftUTF8
 lengthUTF8
-less
-lessOrEquals
 lgamma
 like
 log
@@ -417,7 +412,6 @@ normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
 not
-notEquals
 notILike
 notIn
 notInIgnoreSet
