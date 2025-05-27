@@ -13,7 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # When the analyzer is the new default, the test and the workaround can be deleted.
 ${MYSQL_CLIENT} --execute "select a + b as b, count() from (select 1 as a, 1 as b) group by a + b";
 
-${MYSQL_CLIENT} <<<"
+${MYSQL_CLIENT} --execute "
     SET allow_experimental_analyzer = 1;
     SELECT a + b AS b, count() FROM (SELECT 1 AS a, 1 AS b) GROUP BY a + b SETTINGS prefer_column_name_to_alias = 0;
 "  2>&1 | grep -c "NOT_AN_AGGREGATE"
