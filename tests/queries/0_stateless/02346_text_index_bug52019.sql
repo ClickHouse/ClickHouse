@@ -1,4 +1,4 @@
--- Test for Bug 52019: Undefined behavior with GIN indexes
+-- Test for Bug 52019: Undefined behavior with text indexes
 
 SET allow_experimental_full_text_index = 1;
 SET enable_analyzer = 1;
@@ -8,11 +8,11 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (
     id UInt64,
     str Map(String, String),
-    INDEX idx mapKeys(str) TYPE gin(tokenizer = 'ngram', ngram_size = 2) GRANULARITY 1)
+    INDEX idx mapKeys(str) TYPE text(tokenizer = 'ngram', ngram_size = 2) GRANULARITY 1)
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
-         min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
+         min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
 
 INSERT INTO tab (id) VALUES (0);
 
