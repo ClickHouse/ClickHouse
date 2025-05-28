@@ -3145,10 +3145,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (!left_is_null)
                     {
                         common_type = in_first_argument->getResultType();
-                        if (!common_type)
-                            throw Exception(
-                                ErrorCodes::NO_COMMON_TYPE,
-                                "Left argument has no type for tuple IN");
                     }
                     else
                     {
