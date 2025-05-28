@@ -1,3 +1,5 @@
+SET enable_analyzer=1;
+
 SELECT * FROM view(
     SELECT row_number() OVER w
     FROM numbers(3)
