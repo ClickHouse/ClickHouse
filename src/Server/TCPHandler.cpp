@@ -1116,7 +1116,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     Chunk result_chunk = Squashing::squash(squashing.flush());
     if (!result_chunk)
     {
-        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader(), state.query_context);
+        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader().cloneWithoutColumns(), state.query_context);
     }
 
     auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());

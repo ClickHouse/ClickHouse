@@ -410,16 +410,14 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
     return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context));
 }
 
-AsynchronousInsertQueue::PushResult
-AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context)
+AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context)
 {
     query = query->clone();
     preprocessInsertQuery(query, query_context);
     return pushDataChunk(std::move(query), std::move(block), std::move(query_context));
 }
 
-AsynchronousInsertQueue::PushResult
-AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context)
+AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context)
 {
     const auto & settings = query_context->getSettingsRef();
     validateSettings(settings, log);
