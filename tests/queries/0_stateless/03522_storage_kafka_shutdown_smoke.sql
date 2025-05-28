@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, disabled
 -- Tag no-fasttest -- requires Kafka
+-- Tag disabled -- data race in cJSON (librdkafka vs aws-c-common) - https://github.com/ClickHouse/ClickHouse/issues/80866
 
 -- Regression test for proper StorageKafka shutdown
 -- https://github.com/ClickHouse/ClickHouse/issues/80674
