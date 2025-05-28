@@ -1421,24 +1421,26 @@ class ClickHouseCluster:
         return self.base_minio_cmd
 
     def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_glue_catalog = True
         self.base_cmd.extend(
             [
                 "--file",
                 p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
             ]
         )
-        self.base_iceberg_catalog_cmd = self.compose_cmd(
+        self.base_glue_catalog_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
         )
-        return self.base_iceberg_catalog_cmd
+        return self.base_glue_catalog_cmd
 
 
     def setup_hms_catalog_cmd(
          self, instance, env_variables, docker_compose_yml_dir
      ):
+         self.with_hms_catalog = True
          self.base_cmd.extend(
              [
                  "--file",
@@ -1460,6 +1462,7 @@ class ClickHouseCluster:
     def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
+        self.with_iceberg_catalog = True
         self.base_cmd.extend(
             [
                 "--file",
@@ -2482,7 +2485,20 @@ class ClickHouseCluster:
         run_rabbitmqctl(
             self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
         )
-        self.wait_rabbitmq_to_start()
+        self.wait_rabbitmq_to_start(timeout)
+
+    @contextmanager
+    def pause_rabbitmq(self, monitor=None, timeout=120):
+        if monitor is not None:
+            monitor.stop()
+        self.stop_rabbitmq_app(timeout)
+
+        try:
+            yield
+        finally:
+            self.start_rabbitmq_app(timeout)
+            if monitor is not None:
+                monitor.start(self)
 
     def reset_rabbitmq(self, timeout=120):
         self.stop_rabbitmq_app()
@@ -2592,6 +2608,34 @@ class ClickHouseCluster:
             except Exception as ex:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
+
+
+    def wait_custom_minio_to_start(self, buckets, host, port, timeout=180):
+        ip = self.get_instance_ip(host)
+        minio_client = Minio(
+            f"{ip}:{port}",
+            access_key=minio_access_key,
+            secret_key=minio_secret_key,
+            secure=False,
+            http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
+        )
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                minio_client.list_buckets()
+
+                logging.debug("Connected to Minio.")
+
+                if all(minio_client.bucket_exists(bucket) for bucket in buckets):
+                    return
+
+                time.sleep(1)
+            except Exception as ex:
+                logging.debug("Can't connect to Minio: %s", str(ex))
+                time.sleep(1)
+
+
+        raise Exception("Can't wait Minio to start")
 
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
@@ -3127,6 +3171,24 @@ class ClickHouseCluster:
                 self.up_called = True
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
+
+            if self.with_glue_catalog and self.base_glue_catalog_cmd:
+                logging.info("Trying to connect to Minio for glue catalog...")
+                subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
+                self.up_called = True
+                self.wait_custom_minio_to_start(['warehouse-glue'], 'minio', 9000)
+
+            if self.with_hms_catalog and self.base_iceberg_hms_cmd:
+                logging.info("Trying to connect to Minio for hms catalog...")
+                subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
+                self.up_called = True
+                self.wait_custom_minio_to_start(['warehouse-hms'], 'minio', 9000)
+
+            if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
+                logging.info("Trying to connect to Minio for Iceberg catalog...")
+                subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
+                self.up_called = True
+                self.wait_custom_minio_to_start(['warehouse-rest'], 'minio', 9000)
 
             if self.with_azurite and self.base_azurite_cmd:
                 azurite_start_cmd = self.base_azurite_cmd + common_opts

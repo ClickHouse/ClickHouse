@@ -60,7 +60,7 @@ public:
 
     virtual void setEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) { }
 
-    virtual bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, std::vector<ColumnPathChain> &)
+    virtual bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, bool, std::vector<ColumnPathChain> &)
     {
         return false;
     }
@@ -82,13 +82,14 @@ public:
 
     virtual String getTableName(std::shared_ptr<SQLDatabase>, uint32_t) { return String(); }
 
-    virtual String columnTypeAsString(RandomGenerator &, SQLType *) const { return String(); }
+    virtual String columnTypeAsString(RandomGenerator &, bool, SQLType *) const { return String(); }
 
     bool performIntegration(
         RandomGenerator & rg,
         std::shared_ptr<SQLDatabase> db,
         uint32_t tname,
         bool can_shuffle,
+        bool is_deterministic,
         std::vector<ColumnPathChain> & entries) override;
 
     bool dropPeerTableOnRemote(const SQLTable & t);
@@ -109,6 +110,9 @@ public:
     bool performQueryOnServerOrRemote(PeerTableDatabase pt, const String & query);
 
     ~ClickHouseIntegratedDatabase() override = default;
+
+private:
+    void swapTableDefinitions(RandomGenerator & rg, CreateTable & newt);
 };
 
 class MySQLIntegration : public ClickHouseIntegratedDatabase
@@ -142,7 +146,7 @@ public:
 
     bool performQuery(const String & query) override;
 
-    String columnTypeAsString(RandomGenerator & rg, SQLType * tp) const override;
+    String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 #else
 public:
     MySQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
@@ -180,7 +184,7 @@ public:
 
     String truncateStatement() override;
 
-    String columnTypeAsString(RandomGenerator & rg, SQLType * tp) const override;
+    String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 
     bool performQuery(const String & query) override;
 #else
@@ -222,7 +226,7 @@ public:
 
     String truncateStatement() override;
 
-    String columnTypeAsString(RandomGenerator & rg, SQLType * tp) const override;
+    String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 
     bool performQuery(const String & query) override;
 #else
@@ -249,7 +253,7 @@ public:
 
     void setEngineDetails(RandomGenerator & rg, const SQLBase &, const String &, TableEngine * te) override;
 
-    bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, bool, std::vector<ColumnPathChain> &) override;
 
     ~RedisIntegration() override = default;
 };
@@ -288,6 +292,7 @@ public:
         std::shared_ptr<SQLDatabase>,
         uint32_t tname,
         bool can_shuffle,
+        bool is_deterministic,
         std::vector<ColumnPathChain> & entries) override;
 
     ~MongoDBIntegration() override = default;
@@ -321,7 +326,8 @@ public:
 
     void setBackupDetails(const String & filename, BackupRestore * br);
 
-    bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t tname, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(
+        RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t tname, bool, bool, std::vector<ColumnPathChain> &) override;
 
     ~MinIOIntegration() override = default;
 };
