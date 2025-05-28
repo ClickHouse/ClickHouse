@@ -10,6 +10,8 @@
 #include <boost/range/algorithm/lower_bound.hpp>
 #include <boost/range/algorithm/stable_sort.hpp>
 #include <boost/smart_ptr/make_shared.hpp>
+#include <Poco/Net/IPAddress.h>
+#include <Poco/Net/SocketDefs.h>
 
 
 namespace DB
@@ -27,6 +29,28 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
     quota_id = quota_id_;
     roles = &quota->to_roles;
     rebuildAllIntervals();
+}
+
+Poco::Net::IPAddress QuotaCache::QuotaInfo::getMaskedIP(Poco::Net::IPAddress & ipAddr) const 
+{
+    Poco::Net::IPAddress mask;
+    if (ipAddr.family() == Poco::Net::AddressFamily::IPv4) 
+    {
+        mask = Poco::Net::IPAddress(quota->prefix_bits, Poco::Net::AddressFamily::IPv4);
+        ipAddr.mask(mask);
+    } else if (ipAddr.family() == Poco::Net::AddressFamily::IPv6) {
+        // mask method is not currently supported for IPv6.
+        mask = Poco::Net::IPAddress(quota->prefix_bits, Poco::Net::AddressFamily::IPv6);
+        std::array<unsigned char, 16> masked_addr;
+        const unsigned char* raw_ip = static_cast<const unsigned char*>(ipAddr.addr());
+        const unsigned char* raw_mask = static_cast<const unsigned char*>(mask.addr());
+
+        for (int i = 0; i < 16; ++i) {
+            masked_addr[i] = raw_ip[i] & raw_mask[i];
+        }
+        return Poco::Net::IPAddress(masked_addr.data(), 16);
+    }
+    return ipAddr;
 }
 
 
@@ -118,7 +142,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
             auto quota_type_i = static_cast<size_t>(quota_type);
             if (limits.max[quota_type_i])
                 interval.max[quota_type_i] = *limits.max[quota_type_i];
-            interval.used[quota_type_i] = 0;
+            interval.used[quota_type_i] = 0; // TODO: The interval added above already sets the interval.used for every type to 0. This line is possibly not needed.
         }
     }
 

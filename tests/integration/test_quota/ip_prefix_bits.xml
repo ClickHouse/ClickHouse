@@ -1,0 +1,21 @@
+<clickhouse>
+   <quotas>
+        <ipQuota>
+            <keyed_by_ip>48</keyed_by_ip>  
+            <interval>
+                <randomize>true</randomize>
+                <duration>3600</duration>
+                <read_rows>4000</read_rows>
+                <result_rows>4000</result_rows>
+                <read_bytes>400000</read_bytes>
+                <result_bytes>400000</result_bytes>
+                <execution_time>60</execution_time>
+                <failed_sequential_authentications>3</failed_sequential_authentications>
+            </interval>
+            <interval2>
+                <duration>2629746</duration>
+                <execution_time>1800</execution_time>
+            </interval2>
+        </ipQuota>
+    </quotas>
+</clickhouse>
