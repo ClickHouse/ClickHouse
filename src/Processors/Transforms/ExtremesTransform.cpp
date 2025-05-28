@@ -116,7 +116,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
             };
             if (isNullORNaN(min_value) || (!isNullORNaN(cur_min_value) && cur_min_value < min_value))
                 min_value = cur_min_value;
-            if (isNullORNaN(max_value) || (!isNullORNaN(cur_max_value) && cur_max_value < max_value))
+            if (isNullORNaN(max_value) || (!isNullORNaN(cur_max_value) && cur_max_value > max_value))
                 max_value = cur_max_value;
 
             MutableColumnPtr new_extremes = extremes_columns[i]->cloneEmpty();
