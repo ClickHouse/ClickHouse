@@ -267,14 +267,11 @@ std::pair<MutableDataPartStoragePtr, bool> MergeTreeZeroCopyPartsMover::clonePar
         zero_copy_part->is_temp = false;    /// Do not remove it in dtor
         return { zero_copy_part->getDataPartStoragePtr(), true };
     }
-    else
-    {
-        LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
-        return { part->getDataPartStorage().clonePart(
-            path_to_clone, part->getDataPartStorage().getPartDirectory(),
-            disk, read_settings, write_settings, log, cancellation_hook),
-            false };
-    }
+    LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
+    return { part->getDataPartStorage().clonePart(
+        path_to_clone, part->getDataPartStorage().getPartDirectory(),
+        disk, read_settings, write_settings, log, cancellation_hook),
+        false };
 }
 
 MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const
