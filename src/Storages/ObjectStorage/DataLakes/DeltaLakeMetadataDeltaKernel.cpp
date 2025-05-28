@@ -63,7 +63,7 @@ DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const ContextPtr & context,
     bool supports_subset_of_columns,
     const NamesAndTypesList & file_columns,
-    const NamesAndTypesList & columns_to_read_from_file_path) //todo arthur
+    const NamesAndTypesList & columns_to_read_from_file_path)
 {
     auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns, file_columns, columns_to_read_from_file_path);
     info.format_header.clear();

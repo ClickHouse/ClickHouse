@@ -151,13 +151,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
 
     std::unique_ptr<IObjectIterator> iterator;
-    // todo arthur
-    if (configuration->isPathWithGlobs())
+    const auto reading_path = configuration->getReadingPath();
+    if (reading_path.withGlobs())
     {
-        auto path = configuration->getPath();
-        if (hasExactlyOneBracketsExpansion(path))
+        if (hasExactlyOneBracketsExpansion(reading_path.path))
         {
-            auto paths = expandSelectionGlob(configuration->getPath());
+            auto paths = expandSelectionGlob(reading_path.path);
             iterator = std::make_unique<KeysIterator>(
                 paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
                 query_settings.ignore_non_existent_file, skip_object_metadata, file_progress_callback);
@@ -183,7 +182,16 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
         if (filter_dag)
         {
-            auto keys = configuration->getPaths();
+            const auto configuration_paths = configuration->getPaths();
+
+            std::vector<std::string> keys;
+            keys.reserve(configuration_paths.size());
+
+            for (const auto & path: configuration_paths)
+            {
+                keys.emplace_back(path.path);
+            }
+
             paths.reserve(keys.size());
             for (const auto & key : keys)
                 paths.push_back(fs::path(configuration->getNamespace()) / key);
@@ -195,7 +203,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         }
         else
         {
-            paths = configuration->getPaths();
+            const auto configuration_paths = configuration->getPaths();
+            paths.reserve(configuration_paths.size());
+            for (const auto & path: configuration_paths)
+            {
+                paths.emplace_back(path.path);
+            }
         }
 
         iterator = std::make_unique<KeysIterator>(
@@ -252,8 +265,10 @@ Chunk StorageObjectStorageSource::generate()
             const auto & filename = object_info->getFileName();
             std::string full_path = object_info->getPath();
 
-            if (!full_path.starts_with(configuration->getPath()))
-                full_path = fs::path(configuration->getPath()) / object_info->getPath();
+            const auto reading_path = configuration->getReadingPath().path;
+
+            if (!full_path.starts_with(reading_path))
+                full_path = fs::path(reading_path) / object_info->getPath();
 
             chassert(object_info->metadata);
 
@@ -728,20 +743,21 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , local_context(context_)
     , file_progress_callback(file_progress_callback_)
 {
-    if (configuration->isPathWithGlobs())
+    const auto reading_path = configuration->getReadingPath();
+    if (reading_path.withGlobs())
     {
-        const auto key_with_globs = configuration_->getPath();
-        const auto key_prefix = configuration->getPathWithoutGlobs();
+        const auto key_with_globs = reading_path;
+        const auto key_prefix = reading_path.getWithoutGlobs();
 
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
 
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
+        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
         if (!matcher->ok())
         {
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs, matcher->error());
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs.path, matcher->error());
         }
 
-        recursive = key_with_globs == "/**";
+        recursive = key_with_globs.path == "/**";
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
@@ -753,7 +769,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Using glob iterator with path without globs is not allowed (used path: {})",
-            configuration->getPath());
+            reading_path.path);
     }
 }
 
@@ -778,7 +794,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
     {
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
                         "Can not match any files with path {}",
-                        configuration->getPath());
+                        configuration->getReadingPath().path);
     }
     first_iteration = false;
     return object_info;

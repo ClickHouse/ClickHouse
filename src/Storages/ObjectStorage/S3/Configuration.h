@@ -76,7 +76,7 @@ public:
     const S3::S3AuthSettings & getAuthSettings() const { return auth_settings; }
 
     Path getPath() const override { return url.key; }
-    void setPath(const Path & path) override { url.key = path; }
+    void setPath(const Path & path) override { url.key = path.path; }
 
     const Paths & getPaths() const override { return keys; }
     void setPaths(const Paths & paths) override { keys = paths; }
@@ -106,7 +106,7 @@ private:
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
     S3::URI url;
-    std::vector<String> keys;
+    Paths keys;
 
     S3::S3AuthSettings auth_settings;
     S3::S3RequestSettings request_settings;

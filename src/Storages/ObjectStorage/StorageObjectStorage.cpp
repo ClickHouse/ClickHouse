@@ -1,3 +1,4 @@
+#include <boost/iostreams/get.hpp>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -80,8 +81,10 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         {} // file_progress_callback
     );
 
-    if (!configuration->isArchive() && !configuration->isPathWithGlobs() && !local_distributed_processing)
-        return configuration->getPath();
+    const auto path = configuration->getRawPath();
+
+    if (!configuration->isArchive() && !path.withGlobs() && !local_distributed_processing)
+        return path.path;
 
     if (auto file = file_iterator->next(0))
         return file->getPath();
@@ -151,7 +154,7 @@ StorageObjectStorage::StorageObjectStorage(
     if (!failed_init
         && sample_path.empty()
         && context->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->withPartitionWildcard()
+        && !configuration->getRawPath().withPartitionWildcard()
         && !configuration->partition_strategy)
     {
         if (do_lazy_init)
@@ -210,7 +213,7 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    // todo arthur in theory, I wouldn't need to check for empty
+    // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
     if (!columns.empty())
     {
         if (file_columns.empty())
@@ -259,12 +262,13 @@ void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage
 
 void StorageObjectStorage::Configuration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
+
     partition_strategy = PartitionStrategyFactory::get(
         partition_by,
         columns.getOrdinary(),
         context,
         format,
-        withGlobs(),
+        getPath().withGlobs(),
         partition_strategy_name,
         partition_columns_in_data_file);
 }
@@ -508,18 +512,20 @@ SinkToStoragePtr StorageObjectStorage::write(
     const auto sample_block = metadata_snapshot->getSampleBlock();
     const auto & settings = configuration->getQuerySettings(local_context);
 
+    const auto path = configuration->getRawPath();
+
     if (configuration->isArchive())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Write into archive is not supported",
-                        configuration->getPath());
+                        path.path);
     }
 
-    if (configuration->withGlobsIgnorePartitionWildcard())
+    if (path.withGlobsIgnorePartitionWildcard())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
-                        configuration->getPath());
+                        configuration->getRawPath().path);
     }
 
     if (!configuration->supportsWrites())
@@ -530,16 +536,15 @@ SinkToStoragePtr StorageObjectStorage::write(
         return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
     }
 
-    // todo arthur this looks wrong, should probably be a clone. In case of collision, will alter reading path
     auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front(), paths.size()))
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
     {
-        paths.push_back(*new_key);
+        paths.push_back({*new_key});
     }
     configuration->setPaths(paths);
 
     return std::make_shared<StorageObjectStorageSink>(
-        paths.back(),
+        paths.back().path,
         object_storage,
         configuration,
         format_settings,
@@ -553,25 +558,28 @@ void StorageObjectStorage::truncate(
     ContextPtr /* context */,
     TableExclusiveLockHolder & /* table_holder */)
 {
+    // this method assumes all data was written using clickhouse and clickhouse was not restarted if I am reading this correctly.
+    // this is bad imo.
+    const auto path = configuration->getRawPath();
+
     if (configuration->isArchive())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Table cannot be truncated",
-                        configuration->getPath());
+                        path.path);
     }
 
-    // todo arthur
-    if (configuration->withGlobs())
+    if (path.withGlobs())
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,
             "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
-            getName(), configuration->getPath());
+            getName(), path.path);
     }
 
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
-        objects.emplace_back(key);
+        objects.emplace_back(key.path);
 
     object_storage->removeObjectsIfExist(objects);
 }
@@ -592,7 +600,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         {}/* predicate */,
         {},
         {}/* virtual_columns */,
-        {}, /* hive_columns */ // todo arthur why empty
+        {}, /* hive_columns */
         &read_keys);
 
     return std::make_unique<ReadBufferIterator>(
@@ -705,6 +713,8 @@ void StorageObjectStorage::Configuration::initialize(
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
 
+    const auto raw_path = configuration_to_initialize.getRawPath();
+
     if (configuration_to_initialize.isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Expression can not have wildcards inside {} name", configuration_to_initialize.getNamespaceType());
@@ -719,7 +729,7 @@ void StorageObjectStorage::Configuration::initialize(
         {
             configuration_to_initialize.format
                 = FormatFactory::instance()
-                      .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : configuration_to_initialize.getPath())
+                      .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : raw_path.path)
                       .value_or("auto");
         }
     }
@@ -740,34 +750,70 @@ void StorageObjectStorage::Configuration::check(ContextPtr) const
     FormatFactory::instance().checkFormatName(format);
 }
 
-bool StorageObjectStorage::Configuration::withPartitionWildcard() const
+StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getRawPath() const
 {
-    static const String PARTITION_ID_WILDCARD = "{_partition_id}";
-    return getPath().find(PARTITION_ID_WILDCARD) != String::npos
-        || getNamespace().find(PARTITION_ID_WILDCARD) != String::npos;
+    return getPath();
 }
 
-bool StorageObjectStorage::Configuration::withGlobsIgnorePartitionWildcard() const
+StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getReadingPath() const
+{
+    auto raw_path = getRawPath();
+
+    if (!partition_strategy)
+    {
+        return raw_path;
+    }
+
+    return Path {partition_strategy->getReadingPath(raw_path.path)};
+}
+
+StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getWritingPath(const std::string & partition_id) const
+{
+    auto raw_path = getRawPath();
+
+    if (!partition_strategy)
+    {
+        return raw_path;
+    }
+
+    return Path {partition_strategy->getWritingPath(raw_path.path, partition_id)};
+}
+
+bool StorageObjectStorage::Configuration::Path::withPartitionWildcard() const
+{
+    static const String PARTITION_ID_WILDCARD = "{_partition_id}";
+    return path.find(PARTITION_ID_WILDCARD) != String::npos;
+}
+
+bool StorageObjectStorage::Configuration::Path::withGlobsIgnorePartitionWildcard() const
 {
     if (!withPartitionWildcard())
         return withGlobs();
-    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
+    return PartitionedSink::replaceWildcards(path, "").find_first_of("*?{") != std::string::npos;
 }
 
-bool StorageObjectStorage::Configuration::isPathWithGlobs() const
+bool StorageObjectStorage::Configuration::Path::withGlobs() const
 {
-    return getPath().find_first_of("*?{") != std::string::npos;
+    return path.find_first_of("*?{") != std::string::npos;
+}
+
+std::string StorageObjectStorage::Configuration::Path::getWithoutGlobs() const
+{
+    if (allow_partial_prefix)
+    {
+        return path.substr(0, path.find_first_of("*?{"));
+    }
+
+    auto first_glob_pos = path.find_first_of("*?{");
+    auto end_of_path_without_globs = path.substr(0, first_glob_pos).rfind('/');
+    if (end_of_path_without_globs == std::string::npos || end_of_path_without_globs == 0)
+        return "/";
+    return path.substr(0, end_of_path_without_globs);
 }
 
 bool StorageObjectStorage::Configuration::isNamespaceWithGlobs() const
 {
     return getNamespace().find_first_of("*?{") != std::string::npos;
-}
-
-    // todo arthur
-std::string StorageObjectStorage::Configuration::getPathWithoutGlobs() const
-{
-    return getPath().substr(0, getPath().find_first_of("*?{"));
 }
 
 bool StorageObjectStorage::Configuration::isPathInArchiveWithGlobs() const
@@ -777,7 +823,7 @@ bool StorageObjectStorage::Configuration::isPathInArchiveWithGlobs() const
 
 std::string StorageObjectStorage::Configuration::getPathInArchive() const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getPath());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getRawPath().path);
 }
 
 void StorageObjectStorage::Configuration::assertInitialized() const

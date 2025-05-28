@@ -91,7 +91,7 @@ std::string StorageS3Configuration::getPathInArchive() const
     if (url.archive_pattern.has_value())
         return url.archive_pattern.value();
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not an archive", getPath());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not an archive", getRawPath().path);
 }
 
 void StorageS3Configuration::check(ContextPtr context) const

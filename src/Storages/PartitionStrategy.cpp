@@ -112,6 +112,11 @@ struct HivePartitionStrategyFactory
         bool globbed_path,
         bool partition_columns_in_data_file)
     {
+        if (!partition_by)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy hive can not be used without a PARTITION BY expression");
+        }
+
         if (globbed_path)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with a globbed path", "hive");
@@ -139,6 +144,11 @@ struct WildcardPartitionStrategyFactory
         ContextPtr context,
         bool partition_columns_in_data_file)
     {
+        if (!partition_by)
+        {
+            return nullptr;
+        }
+
         if (!partition_columns_in_data_file)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with partition_columns_in_data_file=0", "wildcard");
@@ -159,11 +169,6 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partitio
                                                                  const std::string & partition_strategy,
                                                                  bool partition_columns_in_data_file)
 {
-    if (!partition_by)
-    {
-        return nullptr;
-    }
-
     if (partition_strategy == "hive")
     {
         return HivePartitionStrategyFactory::get(

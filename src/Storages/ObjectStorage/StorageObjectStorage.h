@@ -175,7 +175,23 @@ public:
     Configuration() = default;
     virtual ~Configuration() = default;
 
-    using Path = std::string;
+    struct Path
+    {
+        Path() = default;
+        Path(const std::string & path_) : path(path_) {}
+        Path(const std::string & path_, bool allow_partial_prefix_) : path(path_), allow_partial_prefix(allow_partial_prefix_) {}
+
+        std::string path;
+
+        bool withPartitionWildcard() const;
+        bool withGlobsIgnorePartitionWildcard() const;
+        bool withGlobs() const;
+        std::string getWithoutGlobs() const;
+
+    private:
+        bool allow_partial_prefix = true;
+    };
+
     using Paths = std::vector<Path>;
 
     static void initialize(
@@ -194,10 +210,16 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual std::string getNamespaceType() const { return "namespace"; }
 
-    virtual Path getFullPath() const { return ""; }
+    Path getRawPath() const;
+    Path getReadingPath() const;
+    Path getWritingPath(const std::string & partition_id = "") const;
+    virtual Path getFullPath() const { return {}; }
     virtual Path getPath() const = 0;
     virtual void setPath(const Path & path) = 0;
 
+    // todo add docs: this is very bad code
+    // todo understand the keys iterator thing, but I can imagine why that shit was written
+    // it apparently is a list of paths that were used during write so the writer does not lose track of the counter..
     virtual const Paths & getPaths() const = 0;
     virtual void setPaths(const Paths & paths) = 0;
 
@@ -210,13 +232,7 @@ public:
     virtual void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
 
-    bool withPartitionWildcard() const;
-    bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }
-    bool withGlobsIgnorePartitionWildcard() const;
-    bool isPathWithGlobs() const;
     bool isNamespaceWithGlobs() const;
-    virtual std::string getPathWithoutGlobs() const;
-
     virtual bool isArchive() const { return false; }
     bool isPathInArchiveWithGlobs() const;
     virtual std::string getPathInArchive() const;

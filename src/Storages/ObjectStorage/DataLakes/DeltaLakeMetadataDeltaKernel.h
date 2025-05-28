@@ -41,6 +41,7 @@ public:
     bool supportsUpdate() const override { return true; }
 
     bool update(const ContextPtr & context) override;
+
     NamesAndTypesList getTableSchema() const override;
 
     DB::ReadFromFormatInfo prepareReadingFromFormat(

@@ -68,11 +68,6 @@ CREATE TABLE t_03363_s3_sink (year UInt16, country String, counter UInt8)
 ENGINE = S3(s3_conn, filename = 't_03363_parquet', format = Parquet, partition_strategy='abc')
 PARTITION BY (year, country); -- {serverError BAD_ARGUMENTS};
 
--- auto partitioning style without partition_id wildcard
-CREATE TABLE t_03363_s3_sink (year UInt16, country String, counter UInt8)
-ENGINE = S3(s3_conn, filename = 't_03363_parquet', format = Parquet)
-PARTITION BY (year, country); -- {serverError BAD_ARGUMENTS};
-
 -- hive partition strategy can't be used without partition by clause
 CREATE TABLE t_03363_s3_err (year UInt16, country String, counter UInt8)
 ENGINE = S3(s3_conn, filename = 't_03363_parquet', partition_strategy='hive', format=Parquet); -- {serverError BAD_ARGUMENTS}

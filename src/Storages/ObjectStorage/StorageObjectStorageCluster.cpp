@@ -45,7 +45,7 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
         {}, // predicate
         {},
         {}, // virtual_columns
-        {}, /* hive_columns */ //todo arthur
+        {}, /* hive_columns */
         nullptr, // read_keys
         {} // file_progress_callback
     );
@@ -99,7 +99,6 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         else if (context_->getSettingsRef()[Setting::use_hive_partitioning])
         {
             hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, {}, context_);
-            // todo arthur perhaps an assertion that `input_columns` contain all columns found in `hive_partition_columns_to_read_from_file_path`?
         }
     }
 

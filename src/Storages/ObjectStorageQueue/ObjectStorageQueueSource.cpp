@@ -102,16 +102,18 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     if (configuration->isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
 
-    if (!configuration->isPathWithGlobs())
+    const auto reading_path = configuration->getReadingPath();
+
+    if (!reading_path.withGlobs())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Using glob iterator with path without globs is not allowed (used path: {})",
-            configuration->getPath());
+            reading_path.path);
     }
 
-    const auto globbed_key = configuration_->getPath();
-    object_storage_iterator = object_storage->iterate(configuration->getPathWithoutGlobs(), list_objects_batch_size_);
+    const auto globbed_key = configuration_->getPath().path;
+    object_storage_iterator = object_storage->iterate(reading_path.getWithoutGlobs(), list_objects_batch_size_);
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
     if (!matcher->ok())
