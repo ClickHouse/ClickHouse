@@ -258,6 +258,26 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
 
                 auto & result_stream = compressed_streams[stream_name];
+                auto compression_codec = compressed_codecs[stream_name];
+                if (compression_codec->isVectorCodec())
+                {
+                    std::vector<size_t> dimensions;
+
+                    Field sample_field;
+                    block.getColumnOrSubcolumnByName(name_and_type->name).column->get(0, sample_field);
+
+                    for (size_t j = 0; j < substream_path.size() - 1; ++j)
+                    {
+                        if (sample_field.getType() != Field::Types::Array)
+                        {
+                            continue;
+                        }
+                        dimensions.push_back(sample_field.safeGet<Array>().size());
+                        sample_field = sample_field.safeGet<Array>().front();
+                    }
+                    compression_codec->setDimensions(dimensions);
+                }
+
                 /// Write one compressed block per column in granule for more optimal reading.
                 if (prev_stream && prev_stream != result_stream)
                 {
