@@ -1,5 +1,4 @@
 #include <Analyzer/ListNode.h>
-#include "Parsers/ASTWindowDefinition.h"
 
 #include <Common/SipHash.h>
 
@@ -63,21 +62,7 @@ ASTPtr ListNode::toASTImpl(const ConvertToASTOptions & options) const
     expression_list_ast->children.resize(children_size);
 
     for (size_t i = 0; i < children_size; ++i)
-    {
-        auto children_ast = children[i]->toAST(options);
-
-        // Named window should be wrapped in ASTWindowListElement with name.
-        if (children_ast->as<ASTWindowDefinition>())
-        {
-            auto window_list_node = std::make_shared<ASTWindowListElement>();
-            window_list_node->name = children[i]->getAlias();
-            window_list_node->children.push_back(children_ast);
-            window_list_node->definition = window_list_node->children.back();
-            children_ast = window_list_node;
-        }
-
-        expression_list_ast->children[i] = children_ast;
-    }
+        expression_list_ast->children[i] = children[i]->toAST(options);
 
     return expression_list_ast;
 }
