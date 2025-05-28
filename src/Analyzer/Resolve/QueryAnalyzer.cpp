@@ -3140,13 +3140,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 else if (candidate_name == "tuple")
                 {
                     /// Infer a common type among the tuple elements
-                    DataTypePtr common_type;
                     auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
-                    if (!left_is_null)
-                    {
-                        common_type = in_first_argument->getResultType();
-                    }
-                    else
+                    if (left_is_null)
                     {
                         std::vector<QueryTreeNodePtr> null_checks;
                         for (auto & elem : tuple_args)
@@ -3194,8 +3189,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         node = new_node;
                         return {proj};
                     }
-                    if (!common_type)
-                        throw Exception(ErrorCodes::NO_COMMON_TYPE, "Could not find a common type for all types in the tuple at the right part of the IN statement");
+
+                    DataTypePtr common_type = in_first_argument->getResultType();
 
                     /// Create a new array node
                     auto array_function_node = std::make_shared<FunctionNode>("array");
