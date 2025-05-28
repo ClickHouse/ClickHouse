@@ -45,14 +45,6 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
 
-
-    Optimization::ExtraSettings extra_settings = {
-        optimization_settings.max_limit_for_vector_search_queries,
-        optimization_settings.vector_search_filter_strategy,
-        optimization_settings.use_index_for_in_with_subqueries_max_values,
-        optimization_settings.network_transfer_limits,
-    };
-
     while (!stack.empty())
     {
         auto & frame = stack.top();
@@ -99,6 +91,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
 
             /// Try to apply optimization.
+            Optimization::ExtraSettings extra_settings= { optimization_settings.max_limit_for_ann_queries };
             auto update_depth = optimization.apply(frame.node, nodes, extra_settings);
             if (update_depth)
                 ++total_applied_optimizations;
@@ -242,11 +235,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
-        if (optimization_settings.optimize_lazy_materialization)
-        {
-            optimizeLazyMaterialization(root, stack, nodes, optimization_settings.max_limit_for_lazy_materialization);
-        }
-
         stack.pop_back();
     }
 
@@ -263,12 +251,9 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
-
-    if (optimization_settings.query_plan_join_shard_by_pk_ranges)
-        optimizeJoinByShards(root);
 }
 
-void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});
@@ -287,7 +272,7 @@ void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_sett
             continue;
         }
 
-        addPlansForSets(optimization_settings, plan, *frame.node, nodes);
+        addPlansForSets(plan, *frame.node, nodes);
 
         stack.pop_back();
     }

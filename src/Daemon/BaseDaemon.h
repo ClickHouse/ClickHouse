@@ -134,6 +134,8 @@ protected:
     void setupWatchdog();
 
     void waitForTerminationRequest() override;
+    /// thread safe
+    virtual void onInterruptSignals(int signal_id);
 
     template <class Daemon>
     static std::optional<std::reference_wrapper<Daemon>> tryGetInstance();

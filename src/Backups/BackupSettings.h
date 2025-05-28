@@ -42,8 +42,9 @@ struct BackupSettings
     /// Whether the BACKUP will omit similar files (within one backup only).
     bool deduplicate_files = true;
 
-    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
-    bool allow_s3_native_copy = true;
+    /// Whether S3 native copy is allowed.
+    /// If not set, then S3 native copy will be allowed only if the source and destination credentials are the same.
+    std::optional<bool> allow_s3_native_copy;
 
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_azure_native_copy = true;

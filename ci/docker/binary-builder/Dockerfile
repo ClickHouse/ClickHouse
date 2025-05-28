@@ -1,11 +1,11 @@
 # docker build -t clickhouse/binary-builder .
-ARG FROM_TAG
+ARG FROM_TAG=latest
 FROM clickhouse/fasttest:$FROM_TAG
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:4670e95dde3de689f103 /cctools /cctools
+COPY --from=clickhouse/cctools:d9e3596e706b /cctools /cctools
 
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN apt-get update \
@@ -28,22 +28,9 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
 ENV RUSTUP_HOME=/rust/rustup
 ENV CARGO_HOME=/rust/cargo
 ENV PATH="/rust/cargo/bin:${PATH}"
-ENV RUSTUP_VERSION=1.28.1
-
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then \
-        RUSTUP_ARCH="x86_64-unknown-linux-gnu"; \
-    elif [ "$ARCH" = "aarch64" ]; then \
-        RUSTUP_ARCH="aarch64-unknown-linux-gnu"; \
-    else \
-        echo "Unsupported architecture: $ARCH"; exit 1; \
-    fi && \
-    curl -fsSL -o rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${RUSTUP_ARCH}/rustup-init" && \
-    chmod +x rustup-init && \
-    ./rustup-init -y && \
-    rm rustup-init && \
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     chmod 777 -R /rust && \
-    rustup toolchain install nightly-2024-12-01 --no-self-update && \
+    rustup toolchain install nightly-2024-12-01 && \
     rustup default nightly-2024-12-01 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \
@@ -84,15 +71,19 @@ RUN arch=${TARGETARCH:-amd64} \
 ENV PATH="$PATH:/usr/local/go/bin"
 ENV GOPATH=/workdir/go
 ENV GOCACHE=/workdir/
+RUN mkdir /workdir && chmod 777 /workdir
 
-# toolchain and SDK for Darwin
-RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz \
-  && mkdir -p /build/cmake/toolchain/darwin-x86_64 \
-  && tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1 \
-  && ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64 \
-  && rm /MacOSX11.0.sdk.tar.xz
+# Download toolchain and SDK for Darwin
+RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
 
-ARG CLANG_TIDY_SHA1=35edad32a0bfb3dafada7201afe28036624906ed
+## toolchain and SDK for Darwin
+#RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz \
+#  && mkdir -p /build/cmake/toolchain/darwin-x86_64 \
+#  && tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1 \
+#  && ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64 \
+#  && rm /MacOSX11.0.sdk.tar.xz
+
+ARG CLANG_TIDY_SHA1=c191254ea00d47ade11d7170ef82fe038c213774
 RUN curl -Lo /usr/bin/clang-tidy-cache \
-        "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/src/ctcache/clang_tidy_cache.py" \
+        "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/clang-tidy-cache" \
     && chmod +x /usr/bin/clang-tidy-cache

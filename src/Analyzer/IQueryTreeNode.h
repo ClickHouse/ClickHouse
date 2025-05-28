@@ -7,7 +7,9 @@
 
 #include <Common/TypePromotion.h>
 
-#include <city.h>
+#include <DataTypes/IDataType.h>
+
+#include <Parsers/IAST_fwd.h>
 
 class SipHash;
 
@@ -16,14 +18,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int UNSUPPORTED_METHOD;
+    extern const int UNSUPPORTED_METHOD;
 }
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class WriteBuffer;
 
@@ -47,7 +43,7 @@ enum class QueryTreeNodeType : uint8_t
     ARRAY_JOIN,
     CROSS_JOIN,
     JOIN,
-    UNION,
+    UNION
 };
 
 /// Convert query tree node type to string
@@ -91,12 +87,12 @@ public:
       */
     virtual DataTypePtr getResultType() const
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query tree node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
     virtual void convertToNullable()
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query tree node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query node", getNodeTypeName());
     }
 
     struct CompareOptions

@@ -500,13 +500,12 @@ struct DeltaLakeMetadataImpl
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
             format_settings.date_time_overflow_behavior,
-            format_settings.parquet.allow_geoparquet_parser,
             /* case_insensitive_column_matching */false);
 
         std::shared_ptr<arrow::Table> table;
         THROW_ARROW_NOT_OK(reader->ReadTable(&table));
 
-        Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows(), reader->parquet_reader()->metadata()->key_value_metadata());
+        Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows());
         auto res_block = header.cloneWithColumns(chunk.detachColumns());
         res_block = Nested::flatten(res_block);
 
@@ -601,7 +600,6 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, Configura
     data_files = result.data_files;
     schema = result.schema;
     partition_columns = result.partition_columns;
-    object_storage = object_storage_;
 
     LOG_TRACE(impl.log, "Found {} data files, {} partition files, schema: {}",
              data_files.size(), partition_columns.size(), schema.toString());
@@ -712,14 +710,6 @@ Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_ty
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type for {}", check_type->getColumnType());
-}
-
-ObjectIterator DeltaLakeMetadata::iterate(
-    const ActionsDAG * filter_dag,
-    FileProgressCallback callback,
-    size_t /* list_batch_size */) const
-{
-    return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
 }
 
 }

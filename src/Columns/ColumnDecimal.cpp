@@ -533,6 +533,5 @@ template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
 template class ColumnDecimal<Decimal256>;
 template class ColumnDecimal<DateTime64>;
-template class ColumnDecimal<Time64>;
 
 }

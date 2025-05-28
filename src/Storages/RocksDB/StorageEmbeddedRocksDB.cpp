@@ -15,7 +15,6 @@
 
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsInterpreter.h>
 
@@ -824,9 +823,9 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
     return Chunk(std::move(columns), num_rows);
 }
 
-std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context) const
+std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & query_settings) const
 {
-    if (!query_context->getSettingsRef()[Setting::optimize_trivial_approximate_count_query])
+    if (!query_settings[Setting::optimize_trivial_approximate_count_query])
         return {};
     std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
@@ -837,7 +836,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
     return estimated_rows;
 }
 
-std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
+std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(const Settings & /*settings*/) const
 {
     std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
