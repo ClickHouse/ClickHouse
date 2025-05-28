@@ -746,7 +746,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     const auto reading_path = configuration->getReadingPath();
     if (reading_path.withGlobs())
     {
-        const auto key_with_globs = reading_path;
+        const auto & key_with_globs = reading_path;
         const auto key_prefix = reading_path.getWithoutGlobs();
 
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
