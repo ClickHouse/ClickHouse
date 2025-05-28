@@ -45,9 +45,10 @@ private:
 
     MergeTreeData::DataPart::Checksums sendPartFromDisk(
         const MergeTreeData::DataPartPtr & part,
+        const HTMLForm & params,
         WriteBuffer & out,
+        HTTPServerResponse & response,
         int client_protocol_version,
-        bool from_remote_disk,
         bool send_projections);
 
     bool checkRemoteFsMetadataCapabilities(

@@ -190,15 +190,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             writeBinary(projections.size(), out);
         }
 
-        if (checkRemoteFsMetadataCapabilities(params, response, part, client_protocol_version))
-        {
-            sendPartFromDisk(part, out, client_protocol_version, true, send_projections);
-        }
-        else
-        {
-            sendPartFromDisk(part, out, client_protocol_version, false, send_projections);
-            data.addLastSentPart(part->info);
-        }
+        sendPartFromDisk(part, params, out, response, client_protocol_version, send_projections);
     }
     catch (...)
     {
@@ -248,11 +240,14 @@ bool Service::checkRemoteFsMetadataCapabilities(
 
 MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     const MergeTreeData::DataPartPtr & part,
+    const HTMLForm & params,
     WriteBuffer & out,
+    HTTPServerResponse & response,
     int client_protocol_version,
-    bool from_remote_disk,
     bool send_projections)
 {
+    bool from_remote_disk = checkRemoteFsMetadataCapabilities(params, response, part, client_protocol_version);
+
     NameSet files_to_replicate;
     auto file_names_without_checksums = part->getFileNamesWithoutChecksums();
 
@@ -297,7 +292,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         if (send_projections)
         {
             writeStringBinary(name, out);
-            MergeTreeData::DataPart::Checksums projection_checksum = sendPartFromDisk(projection, out, client_protocol_version, from_remote_disk, false);
+            MergeTreeData::DataPart::Checksums projection_checksum = sendPartFromDisk(projection, params, out, response, client_protocol_version, false);
             data_checksums.addFile(name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
         }
         else if (part->checksums.has(name + ".proj"))
@@ -347,8 +342,12 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
     }
 
-    if (!from_remote_disk && isFullPartStorage(part->getDataPartStorage()))
-        part->checksums.checkEqual(data_checksums, false, part->name);
+    if (!from_remote_disk)
+    {
+        if (isFullPartStorage(part->getDataPartStorage()))
+            part->checksums.checkEqual(data_checksums, false, part->name);
+        data.addLastSentPart(part->info);
+    }
 
     return data_checksums;
 }
