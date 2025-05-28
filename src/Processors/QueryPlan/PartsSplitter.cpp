@@ -949,7 +949,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     }
 
     PartsRangesIterator selected_upper_bound;
-    std::vector<std::set<size_t>> part_selected_ranges(ranges_in_data_parts.size(), std::set<size_t>());
+    std::vector<std::vector<size_t>> part_selected_ranges(ranges_in_data_parts.size(), std::vector<size_t>());
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
@@ -970,7 +970,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
                 selected_upper_bound = {range_end_value, false, range, part_index, PartsRangesIterator::EventType::RangeStart, true};
 
             for (auto i = range.begin; i < range.end; ++i)
-               part_selected_ranges[part_index].insert(i);
+               part_selected_ranges[part_index].push_back(i);
         }
     }
 
@@ -1004,7 +1004,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
 
         for (auto range_begin = candidates_start.value(); range_begin <= candidates_end.value(); range_begin++)
         {
-            if (part_selected_ranges[part_index].find(range_begin) != part_selected_ranges[part_index].end())
+            if (std::binary_search(part_selected_ranges[part_index].begin(), part_selected_ranges[part_index].end(), range_begin))
                 continue;
             MarkRange rejected_range(range_begin, range_begin + 1);
             rejected_ranges.push_back(
