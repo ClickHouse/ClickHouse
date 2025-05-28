@@ -2077,6 +2077,7 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
+isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2262,6 +2263,7 @@ metacharacters
 metasymbols
 metrica
 metroHash
+mergeTreePartInfo
 mfedotov
 mflix
 minMap

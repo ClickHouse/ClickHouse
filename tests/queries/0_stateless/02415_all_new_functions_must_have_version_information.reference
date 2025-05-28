@@ -127,16 +127,6 @@ base58Decode
 base58Encode
 basename
 bin
-bitAnd
-bitNot
-bitOr
-bitPositionsToArray
-bitRotateLeft
-bitRotateRight
-bitShiftLeft
-bitShiftRight
-bitSlice
-bitXor
 bitmapAnd
 bitmapAndCardinality
 bitmapAndnot
