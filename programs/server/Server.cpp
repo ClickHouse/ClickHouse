@@ -24,7 +24,6 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
 #include <base/Numa.h>
-#include <base/sleep.h>
 #include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryWorker.h>
@@ -2496,32 +2495,18 @@ try
 
     if (has_zookeeper && global_context->getMacros()->getMacroMap().contains("replica"))
     {
-        for (int attempt = 1; ; ++attempt)
-        {
-            try
+        ZooKeeperRetriesControl zk_retry(
+            "Retrying to read replicated DDL stop flag",
+            getLogger(log->name()), /// Pass log as LoggerPtr
+            ZooKeeperRetriesInfo(5, 1000, 2000, nullptr));
+
+         zk_retry.retryLoop([&]()
             {
                 auto zookeeper = global_context->getZooKeeper();
                 String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
                 stop_flag_path = global_context->getMacros()->expand(stop_flag_path);
                 found_stop_flag = zookeeper->exists(stop_flag_path);
-                break;
-            }
-            catch (const Coordination::Exception & e)
-            {
-                tryLogCurrentException(log);
-                if (isHardwareError(e.code) && attempt <= 5)
-                {
-                    UInt64 retry_delay_milliseconds = 1000;
-                    LOG_DEBUG(log, "Retrying to read replicated DDL stop flag from Kepeer, attempt: {}, delay: {} ms",
-                        attempt, retry_delay_milliseconds);
-                    sleepForMilliseconds(retry_delay_milliseconds);
-                    continue;
-                }
-
-                LOG_ERROR(log, "Failed to read replicated DDL stop flag from Kepeer, after {} attempts", attempt);
-                throw;
-            }
-        }
+            });
     }
 
     if (found_stop_flag)
