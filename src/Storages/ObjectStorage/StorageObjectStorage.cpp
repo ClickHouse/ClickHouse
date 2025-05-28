@@ -145,12 +145,12 @@ StorageObjectStorage::StorageObjectStorage(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     configuration->check(context);
 
-    // todo arthur thing about below if statement
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
     if (!failed_init
         && sample_path.empty()
         && context->getSettingsRef()[Setting::use_hive_partitioning]
+        && !configuration->withPartitionWildcard()
         && !configuration->partition_strategy)
     {
         if (do_lazy_init)
@@ -167,11 +167,16 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    if (columns_in_table_or_function_definition.empty())
+    if (configuration->partition_strategy && configuration->partition_strategy_name == "hive")
     {
-        if (context->getSettingsRef()[Setting::use_hive_partitioning])
+        hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+    }
+    else if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, format_settings, context);
+
+        if (columns_in_table_or_function_definition.empty())
         {
-            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, format_settings, context);
             for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
             {
                 if (!columns.has(name))
@@ -179,21 +184,6 @@ StorageObjectStorage::StorageObjectStorage(
                     columns.add({name, type});
                 }
             }
-            file_columns = columns;
-        }
-    }
-    else
-    {
-        if (configuration->partition_strategy)
-        {
-            hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
-        }
-        else if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        {
-            // todo arthur if it is insert or create table, we shouldn't do this, it makes no sense.
-
-            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, format_settings, context);
-            // todo arthur perhaps an assertion that `input_columns` contain all columns found in `hive_partition_columns_to_read_from_file_path`?
         }
     }
 
@@ -268,32 +258,6 @@ void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage
 
 void StorageObjectStorage::Configuration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
-    // todo arthur move this inside the factory
-    if (partition_strategy_name == "hive")
-    {
-        if (!partition_by)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used without a PARTITION BY expression", partition_strategy_name);
-        }
-
-        if (withGlobs())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with a globbed path", partition_strategy_name);
-        }
-    }
-    else
-    {
-        if (!partition_columns_in_data_file)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with partition_columns_in_data_file=0", partition_strategy_name);
-        }
-    }
-
-    if (!partition_by)
-    {
-        return;
-    }
-
     partition_strategy = PartitionStrategyFactory::get(
         partition_by,
         columns.getOrdinary(),
