@@ -32,6 +32,8 @@ struct GinFilterParameters
     String tokenizer;
     UInt64 max_rows_per_postings_list;
     std::optional<UInt64> ngram_size;
+
+    bool operator<=>(const GinFilterParameters& other) const = default;
 };
 
 struct GinSegmentWithRowIdRange

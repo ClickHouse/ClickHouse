@@ -59,8 +59,11 @@ public:
 
     void setGinFilterParameters(GinFilterParameters params)
     {
-        if (parameters.has_value())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}': cannot set multiple filter parameters for", getName());
+        /// Index parameters can be set multiple times.
+        /// This happens exactly in a case that same searchAny/searchAll query is used again.
+        /// This is fine because the parameters would be same.
+        if (parameters.has_value() && params != parameters.value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}': Different index parameters are set.", getName());
         parameters = std::move(params);
     }
 
