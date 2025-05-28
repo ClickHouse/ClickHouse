@@ -385,6 +385,18 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
             *read_buf,
             {.read_no_more = query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
 
+        if (const auto * insert_query = query->as<ASTInsertQuery>())
+        {
+            size_t expected_data_size = 0;
+            if (insert_query->data)
+                expected_data_size += insert_query->end - insert_query->data;
+            if (insert_query->tail)
+                expected_data_size += insert_query->tail->buffer().size();
+
+            expected_data_size = std::min(expected_data_size, size_t{query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
+            bytes.reserve(expected_data_size);
+        }
+
         {
             WriteBufferFromString write_buf(bytes);
             copyData(limit_buf, write_buf);
