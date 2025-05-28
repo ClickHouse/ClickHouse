@@ -62,6 +62,8 @@ parser.add_argument("--with-minio", type = bool, default = True, help = 'With Mi
 parser.add_argument("--with-sqlite", type = bool, default = False, help = 'With SQLite integration')
 parser.add_argument("--with-mongodb", type = bool, default = False, help = 'With MongoDB integration')
 parser.add_argument("--with-redis", type = bool, default = False, help = 'With Redis integration')
+parser.add_argument("--mem-limit", type = str, default = '', help = 'Set a memory limit, e.g. \'1g\'')
+parser.add_argument("--storage-limit", type = str, default = '', help = 'Set a storage limit, e.g. \'1g\'')
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
@@ -109,6 +111,8 @@ for i in range(0, len(args.replica_values)):
                                         with_mysql8 = args.with_mysql,
                                         with_mongo = args.with_mongodb,
                                         with_redis = args.with_redis,
+                                        mem_limit = None if args.mem_limit == '' else args.mem_limit,
+                                        storage_opt = None if args.storage_limit == '' else args.storage_limit,
                                         main_configs = [server_settings] if server_settings is not None else [],
                                         user_configs = [args.user_config] if args.user_config is not None else [],
                                         macros={"replica": args.replica_values[i], "shard": args.shard_values[i]}))

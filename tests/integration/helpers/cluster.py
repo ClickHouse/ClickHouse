@@ -1681,7 +1681,8 @@ class ClickHouseCluster:
         randomize_settings=True,
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
-        with_dolor=False
+        with_dolor=False,
+        storage_opt=None
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1804,6 +1805,7 @@ class ClickHouseCluster:
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
             with_dolor=with_dolor,
+            storage_opt=storage_opt,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -3529,6 +3531,7 @@ services:
         entrypoint: {entrypoint_cmd}
         tmpfs: {tmpfs}
         {mem_limit}
+        {storage_opt}
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -3626,6 +3629,7 @@ class ClickHouseInstance:
         randomize_settings=True,
         use_docker_init_flag=False,
         with_dolor=False,
+        storage_opt=None,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -3639,6 +3643,10 @@ class ClickHouseInstance:
             self.mem_limit = "mem_limit : " + mem_limit
         else:
             self.mem_limit = ""
+        if storage_opt is not None:
+            self.storage_opt = "storage_opt:\n  size: " + storage_opt
+        else:
+            self.storage_opt = ""
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         )
@@ -5089,6 +5097,7 @@ class ClickHouseInstance:
                     net_aliases=net_aliases,
                     net_alias1=net_alias1,
                     init_flag="true" if self.docker_init_flag else "false",
+                    storage_opt=self.storage_opt,
                 )
             )
 
