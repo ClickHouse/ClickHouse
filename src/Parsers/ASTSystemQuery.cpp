@@ -463,6 +463,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_S3_CLIENT_CACHE:
         case Type::DROP_ICEBERG_METADATA_CACHE:
         case Type::RESET_COVERAGE:
+        case Type::ENABLE_MEMORY_ACCESS_COVERAGE:
+        case Type::DISABLE_MEMORY_ACCESS_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:
         case Type::JEMALLOC_ENABLE_PROFILE:
