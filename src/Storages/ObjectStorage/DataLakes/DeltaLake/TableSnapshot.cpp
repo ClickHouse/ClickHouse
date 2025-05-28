@@ -8,6 +8,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
+
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
@@ -16,25 +17,17 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
+#include <Common/escapeForFileName.h>
+
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
+
 #include "getSchemaFromSnapshot.h"
 #include "PartitionPruner.h"
 #include "KernelUtils.h"
+#include "ExpressionVisitor.h"
 #include <fmt/ranges.h>
 
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/SetSerialization.h>
-#include <IO/WriteHelpers.h>
-#include <Common/escapeForFileName.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/LocalDate.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTExpressionList.h>
 
 namespace fs = std::filesystem;
 
@@ -76,447 +69,6 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
 namespace DeltaLake
 {
 
-struct ExpressionVisitorData
-{
-    /// At this moment ExpressionVisitor is used only for partition columns,
-    /// where only identifier expressions are allowed (only PARTITION BY col_name, ...),
-    /// therefore we leave several visitor function as not implemented
-    /// (see throwNotImplemented in createVisitor() below).
-    /// They will be implemented once we start using statistics feature from delta-kernel.
-
-    explicit ExpressionVisitorData(const DB::NamesAndTypesList & schema_) : schema(schema_) {}
-
-    size_t list_counter = 0;
-    std::unordered_map<size_t, std::unique_ptr<DB::ASTs>> type_lists;
-    DB::ActionsDAG dag;
-    const DB::NamesAndTypesList & schema;
-
-    void addToList(size_t id, DB::ASTPtr value)
-    {
-        auto it = type_lists.find(id);
-        if (it == type_lists.end())
-        {
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "List with id {} does not exist", id);
-        }
-        it->second->push_back(value);
-    }
-    void addLiteral(size_t id, DB::Field value, DB::DataTypePtr type)
-    {
-        auto it = type_lists.find(id);
-        if (it == type_lists.end())
-        {
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "List with id {} does not exist", id);
-        }
-        auto column = type->createColumnConst(1, value);
-        dag.addColumn(DB::ColumnWithTypeAndName(column, type, "const_" + DB::toString(it->second->size())));
-    }
-    void addColumn(size_t id, const std::string & name)
-    {
-        auto it = type_lists.find(id);
-        if (it == type_lists.end())
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "List with id {} does not exist", id);
-        }
-        auto col = schema.tryGetByName(name);
-        if (!col.has_value())
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No column {} in schema", name);
-
-        auto column = col->type->createColumnConstWithDefaultValue(1);
-        dag.addInput(DB::ColumnWithTypeAndName(column, col->type, col->name));
-    }
-
-    DB::Field getValue(size_t idx)
-    {
-        if (type_lists.empty())
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Type list is empty");
-
-        if (!type_lists[0])
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Type list zero level value is Null");
-
-        if (type_lists[0]->size() != 1)
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Unexpected size of type list zero level value: {}", type_lists[0]->size());
-        }
-
-        const auto * expression_list = (*type_lists[0])[0]->as<DB::ASTExpressionList>();
-        if (!expression_list)
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Not an expression list at zero level of type list");
-        }
-
-        if (expression_list->children.size() <= idx)
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Index {} out of bounds of type list (type list size: {})",
-                idx, expression_list->children.size());
-        }
-
-        const auto * literal = expression_list->children[idx]->as<DB::ASTLiteral>();
-        if (!literal)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Value at position {} is not a literal", idx);
-
-        DB::WriteBufferFromOwnString wb;
-        DB::SerializedSetsRegistry r;
-        dag.serialize(wb, r);
-        LOG_TEST(getLogger("KSSENII"), "KSSENII DAG: {}", wb.str());
-
-        const auto & nodes = dag.getNodes();
-        if (nodes.size() <= idx)
-        {
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Index out of bounds: {} vs {}", idx, nodes.size());
-        }
-        auto it = nodes.begin();
-        std::advance(it, idx); // Move iterator n positions forward
-        DB::Field value;
-        if (!it->column)
-        {
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Column is null");
-        }
-        it->column->get(0, value);
-        return value;
-        //return literal->value;
-    }
-
-    std::exception_ptr visitor_exception;
-    LoggerPtr log = getLogger("DeltaLakeExpressionVisitor");
-};
-
-class ExpressionVisitor
-{
-public:
-    static void visit(const ffi::Expression * expression, ExpressionVisitorData & data)
-    {
-        auto visitor = createVisitor(data);
-        [[maybe_unused]] uintptr_t result = ffi::visit_expression_ref(expression, &visitor);
-        chassert(result == 0, "Unexpected result: " + DB::toString(result));
-
-        if (data.visitor_exception)
-            std::rethrow_exception(data.visitor_exception);
-    }
-
-private:
-    enum NotImplementedMethod
-    {
-        AND,
-        OR,
-        LT,
-        LE,
-        GT,
-        GE,
-        EQ,
-        NE,
-        DISTINCT,
-        IN,
-        NOT_IN,
-        ADD,
-        MINUS,
-        MULTIPLY,
-        DIVIDE,
-        NOT,
-        IS_NULL,
-    };
-    static ffi::EngineExpressionVisitor createVisitor(ExpressionVisitorData & data)
-    {
-        ffi::EngineExpressionVisitor visitor;
-        visitor.data = &data;
-        visitor.make_field_list = &makeFieldList;
-
-        visitor.visit_literal_bool = &visitSimpleLiteral<bool, DB::DataTypeUInt8>;
-        visitor.visit_literal_byte = &visitSimpleLiteral<int8_t, DB::DataTypeInt8>;
-        visitor.visit_literal_short = &visitSimpleLiteral<int16_t, DB::DataTypeInt16>;
-        visitor.visit_literal_int = &visitSimpleLiteral<int32_t, DB::DataTypeInt32>;
-        visitor.visit_literal_long = &visitSimpleLiteral<int64_t, DB::DataTypeInt64>;
-        visitor.visit_literal_float = &visitSimpleLiteral<float, DB::DataTypeFloat32>;
-        visitor.visit_literal_double = &visitSimpleLiteral<double, DB::DataTypeFloat64>;
-
-        visitor.visit_literal_string = &visitStringLiteral;
-        visitor.visit_literal_decimal = &visitDecimalLiteral;
-
-        visitor.visit_literal_timestamp = &visitTimestampLiteral;
-        visitor.visit_literal_timestamp_ntz = &visitTimestampNtzLiteral;
-        visitor.visit_literal_date = &visitDateLiteral;
-        visitor.visit_literal_binary = &visitBinaryLiteral;
-        visitor.visit_literal_null = &visitNullLiteral;
-        visitor.visit_literal_array = &visitArrayLiteral;
-        visitor.visit_literal_struct = &visitStructLiteral;
-
-        visitor.visit_column = &visitColumnExpression;
-        visitor.visit_struct_expr = &visitStructExpression;
-
-        visitor.visit_and = &throwNotImplemented<AND>;
-        visitor.visit_or = &throwNotImplemented<OR>;
-        visitor.visit_lt = &throwNotImplemented<LT>;
-        visitor.visit_le = &throwNotImplemented<LE>;
-        visitor.visit_gt = &throwNotImplemented<GT>;
-        visitor.visit_ge = &throwNotImplemented<GE>;
-        visitor.visit_eq = &throwNotImplemented<EQ>;
-        visitor.visit_ne = &throwNotImplemented<NE>;
-        visitor.visit_distinct = &throwNotImplemented<DISTINCT>;
-        visitor.visit_in = &throwNotImplemented<IN>;
-        visitor.visit_not_in = &throwNotImplemented<NOT_IN>;
-        visitor.visit_add = &throwNotImplemented<ADD>;
-        visitor.visit_minus = &throwNotImplemented<MINUS>;
-        visitor.visit_multiply = &throwNotImplemented<MULTIPLY>;
-        visitor.visit_divide = &throwNotImplemented<DIVIDE>;
-        visitor.visit_not = &throwNotImplemented<NOT>;
-        visitor.visit_is_null = &throwNotImplemented<IS_NULL>;
-
-        return visitor;
-    }
-
-    static uintptr_t makeFieldList(void * data, uintptr_t capacity_hint)
-    {
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        size_t id = state->list_counter++;
-
-        auto list = std::make_unique<DB::ASTs>();
-        if (capacity_hint > 0)
-            list->reserve(capacity_hint);
-
-        state->type_lists.emplace(id, std::move(list));
-        return id;
-    }
-
-    template <typename Func>
-    static void visitorImpl(ExpressionVisitorData & data, Func func)
-    {
-        try
-        {
-            func();
-        }
-        catch (...)
-        {
-            /// We cannot allow to throw exceptions from visitor functions,
-            /// otherwise delta-kernel will panic and call terminate.
-            data.visitor_exception = std::current_exception();
-        }
-    }
-
-    template <NotImplementedMethod method>
-    static void throwNotImplemented(
-        void * data,
-        uintptr_t sibling_list_id,
-        uintptr_t child_list_id)
-    {
-        UNUSED(sibling_list_id);
-        UNUSED(child_list_id);
-
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Method {} not implemented", magic_enum::enum_name(method));
-        });
-    }
-
-    static void visitColumnExpression(void * data, uintptr_t sibling_list_id, ffi::KernelStringSlice name)
-    {
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            const auto name_str = KernelUtils::fromDeltaString(name);
-            LOG_TEST(state->log, "Column expression list id: {}, name: {}", sibling_list_id, name_str);
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTIdentifier>(name_str));
-            state->addColumn(sibling_list_id, name_str);
-        });
-    }
-
-    static void visitStructExpression(
-        void * data,
-        uintptr_t sibling_list_id,
-        uintptr_t child_list_id)
-    {
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            auto it = state->type_lists.find(sibling_list_id);
-            if (it == state->type_lists.end())
-            {
-                throw DB::Exception(
-                    DB::ErrorCodes::LOGICAL_ERROR,
-                    "List with id {} does not exist", sibling_list_id);
-            }
-            auto child_it = state->type_lists.find(child_list_id);
-            if (child_it == state->type_lists.end())
-            {
-                throw DB::Exception(
-                    DB::ErrorCodes::LOGICAL_ERROR,
-                    "Child list with id {} does not exist", sibling_list_id);
-            }
-
-            LOG_TEST(state->log, "Struct expression list id: {}, child list id: {}", sibling_list_id, child_list_id);
-
-            auto list = std::make_shared<DB::ASTExpressionList>();
-            list->children = std::move(*child_it->second);
-            state->type_lists.erase(child_it);
-            state->addToList(sibling_list_id, list);
-        });
-    }
-
-    template <typename T, typename DataType>
-    static void visitSimpleLiteral(void * data, uintptr_t sibling_list_id, T value)
-    {
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            LOG_TEST(state->log, "Expression list id: {}, value: {}", sibling_list_id, value);
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTLiteral>(value));
-            state->addLiteral(sibling_list_id, value, std::make_shared<DataType>());
-        });
-    }
-
-    static void visitStringLiteral(void * data, uintptr_t sibling_list_id, ffi::KernelStringSlice value)
-    {
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            auto value_str = KernelUtils::fromDeltaString(value);
-            visitSimpleLiteral<std::string, DB::DataTypeString>(data, sibling_list_id, value_str);
-        });
-    }
-
-    static void visitDecimalLiteral(
-        void * data,
-        uintptr_t sibling_list_id,
-        int64_t value_ms,
-        uint64_t value_ls,
-        uint8_t precision,
-        uint8_t scale)
-    {
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            /// From delta-kernel-rs:
-            /// "The 128bit integer
-            /// is split into the most significant 64 bits in `value_ms`, and the least significant 64
-            /// bits in `value_ls`"
-            /// Also in clickhouse decimal is in little endian, so we switch the order for Decimal128.
-
-            DB::Field value;
-            if (precision <= DB::DecimalUtils::max_precision<DB::Decimal32>)
-            {
-                value = DB::DecimalField<DB::Decimal32>(value_ls, scale);
-                state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDecimal32>(precision, scale));
-            }
-            else if (precision <= DB::DecimalUtils::max_precision<DB::Decimal64>)
-            {
-                value = DB::DecimalField<DB::Decimal64>(value_ls, scale);
-                state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDecimal64>(precision, scale));
-            }
-            else if (precision <= DB::DecimalUtils::max_precision<DB::Decimal128>)
-            {
-                Int128 combined_value = (static_cast<DB::Int128>(value_ls) << 64) | value_ms;
-                value = DB::DecimalField<DB::Decimal128>(combined_value, scale);
-                state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDecimal128>(precision, scale));
-            }
-
-            LOG_TEST(state->log, "Expression Decimal element: {}", value);
-
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTLiteral>(value));
-        });
-    }
-
-    static void visitDateLiteral(void * data, uintptr_t sibling_list_id, int32_t value)
-    {
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            const ExtendedDayNum daynum{value};
-            LOG_TEST(state->log, "Expression Date element: {} (value: {})", DateLUT::instance().dateToString(daynum), value);
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTLiteral>(daynum.toUnderType()));
-            state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDate32>());
-        });
-    }
-
-    static void visitTimestampLiteral(void * data, uintptr_t sibling_list_id, int64_t value)
-    {
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            const auto datetime_value = DB::DecimalField<DB::Decimal64>(value, 6);
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTLiteral>(datetime_value));
-            state->addLiteral(sibling_list_id, datetime_value, std::make_shared<DB::DataTypeDateTime64>(6));
-        });
-    }
-
-    static void visitTimestampNtzLiteral(void * data, uintptr_t sibling_list_id, int64_t value)
-    {
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            const auto datetime_value = DB::DecimalField<DB::Decimal64>(value, 6);
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTLiteral>(datetime_value));
-        });
-    }
-
-    static void visitBinaryLiteral(
-        void * data, uintptr_t sibling_list_id, const uint8_t * buffer, uintptr_t len)
-    {
-        UNUSED(sibling_list_id);
-        UNUSED(buffer);
-        UNUSED(len);
-
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Method visitBinaryLiteral not implemented");
-        });
-    }
-
-    static void visitNullLiteral(void * data, uintptr_t sibling_list_id)
-    {
-        UNUSED(sibling_list_id);
-
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Method visitNullLiteral not implemented");
-        });
-    }
-
-    static void visitArrayLiteral(void * data, uintptr_t sibling_list_id, uintptr_t child_id)
-    {
-        UNUSED(sibling_list_id);
-        UNUSED(child_id);
-
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Method visitArrayLiteral not implemented");
-        });
-    }
-
-    static void visitStructLiteral(
-        void * data, uintptr_t sibling_list_id, uintptr_t child_field_list_value, uintptr_t child_value_list_id)
-    {
-        UNUSED(sibling_list_id);
-        UNUSED(child_field_list_value);
-        UNUSED(child_value_list_id);
-
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Method visitStructLiteral not implemented");
-        });
-    }
-};
-
 class TableSnapshot::Iterator final : public DB::IObjectIterator
 {
 public:
@@ -525,9 +77,9 @@ public:
         const KernelSnapshot & snapshot_,
         KernelScan & scan_,
         const std::string & data_prefix_,
-        const DB::NamesAndTypesList & schema_,
+        const DB::NamesAndTypesList & table_schema_,
+        const DB::NamesAndTypesList & read_schema_,
         const DB::Names & partition_columns_,
-        const DB::NameToNameMap & physical_names_map_,
         DB::ObjectStoragePtr object_storage_,
         const DB::ActionsDAG * filter_dag_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
@@ -537,9 +89,9 @@ public:
         , snapshot(snapshot_)
         , scan(scan_)
         , data_prefix(data_prefix_)
-        , schema(schema_)
+        , table_schema(table_schema_)
+        , read_schema(read_schema_)
         , partition_columns(partition_columns_)
-        , physical_names_map(physical_names_map_)
         , object_storage(object_storage_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
@@ -552,7 +104,21 @@ public:
         })
     {
         if (filter_dag_)
-            pruner.emplace(*filter_dag_, schema_, partition_columns_, DB::Context::getGlobalContextInstance());
+            pruner.emplace(*filter_dag_, table_schema_, partition_columns_, DB::Context::getGlobalContextInstance());
+
+        partition_column_positions.reserve(partition_columns.size());
+        for (const auto & partition_column : partition_columns)
+        {
+            auto name_and_type = table_schema.tryGetByName(partition_column);
+            if (!name_and_type.has_value())
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::LOGICAL_ERROR,
+                    "Cannot find parititon column {} in schema",
+                    partition_column);
+            }
+            partition_column_positions.push_back(table_schema.getPosByName(partition_column));
+        }
     }
 
     ~Iterator() override
@@ -711,24 +277,18 @@ public:
         /// but instead in data files paths directory names.
         /// So we extract these values here and put into `partitions_info`.
         DB::ObjectInfoWithPartitionColumns::PartitionColumnsInfo partitions_info;
-        if (transform)
+        if (transform && !context->partition_columns.empty())
         {
-            ExpressionVisitorData data(context->schema);
-            ExpressionVisitor::visit(transform, data);
-            for (const auto & partition_column : context->partition_columns)
+            const auto result = visitExpression(transform, context->read_schema);
+            auto values = result->getPartitionValues(context->partition_column_positions);
+            chassert(values.size() == context->partition_column_positions.size());
+            for (size_t i = 0; i < values.size(); ++i)
             {
-                auto name_and_type = context->schema.tryGetByName(partition_column);
-                if (!name_and_type.has_value())
-                {
-                    throw DB::Exception(
-                        DB::ErrorCodes::LOGICAL_ERROR,
-                        "Cannot find parititon column {} in schema",
-                        partition_column);
-                }
-
-                const auto pos = context->schema.getPosByName(partition_column);
-                const auto value = data.getValue(pos);
-                partitions_info.emplace_back(name_and_type.value(), value);
+                auto name = context->partition_columns[i];
+                auto name_and_type = context->table_schema.tryGetByName(name);
+                chassert(name_and_type);
+                chassert(name == name_and_type->name);
+                partitions_info.emplace_back(name_and_type.value(), std::move(values[i]));
             }
         }
 
@@ -761,13 +321,17 @@ private:
     std::optional<PartitionPruner> pruner;
 
     const std::string data_prefix;
-    [[maybe_unused]] const DB::NamesAndTypesList & schema;
-    [[maybe_unused]] const DB::Names & partition_columns;
-    [[maybe_unused]] const DB::NameToNameMap & physical_names_map;
+    const DB::NamesAndTypesList & table_schema;
+    const DB::NamesAndTypesList & read_schema;
+    const DB::Names & partition_columns;
     const DB::ObjectStoragePtr object_storage;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
     const LoggerPtr log;
+
+    /// Positions of partition columns in table schema.
+    std::vector<size_t> partition_column_positions;
+
     std::exception_ptr scan_exception;
 
     /// Whether scanDataFunc should stop scanning.
@@ -864,8 +428,8 @@ DB::ObjectIterator TableSnapshot::iterate(
         scan,
         helper->getDataPath(),
         getTableSchema(),
+        getReadSchema(),
         getPartitionColumns(),
-        getPhysicalNamesMap(),
         object_storage,
         filter_dag,
         callback,
