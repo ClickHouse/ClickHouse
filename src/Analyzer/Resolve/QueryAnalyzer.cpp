@@ -1,8 +1,6 @@
-#include <utility>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Common/FieldVisitorToString.h>
-#include "DataTypes/DataTypeNothing.h"
-#include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeNothing.h>
 
 #include <Columns/ColumnNullable.h>
 
