@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/CurrentMetrics.h>

@@ -344,10 +344,23 @@ class Result(MetaClasses.Serializable):
         return self
 
     @classmethod
-    def create_new(cls, name, status, links=None, info="", results=None):
+    def generate_pending(cls, name, results=None):
         return Result(
             name=name,
-            status=status,
+            status=Result.Status.PENDING,
+            start_time=None,
+            duration=None,
+            results=results or [],
+            files=[],
+            links=[],
+            info="",
+        )
+
+    @classmethod
+    def generate_skipped(cls, name, links=None, info="", results=None):
+        return Result(
+            name=name,
+            status=Result.Status.SKIPPED,
             start_time=None,
             duration=None,
             results=results or [],
@@ -386,12 +399,10 @@ class Result(MetaClasses.Serializable):
         command,
         with_log=False,
         with_info=False,
-        with_info_on_failure=True,
         fail_fast=True,
         workdir=None,
         command_args=None,
         command_kwargs=None,
-        retries=1,
     ):
         """
         Executes shell commands or Python callables, optionally logging output, and handles errors.
@@ -401,7 +412,6 @@ class Result(MetaClasses.Serializable):
         :param workdir: Optional working directory.
         :param with_log: Boolean flag to log output to a file.
         :param with_info: Fill in Result.info from command output
-        :param with_info_on_failure: Fill in Result.info from command output on failure only
         :param fail_fast: Boolean flag to stop execution if one command fails.
         :param command_args: Positional arguments for the callable command.
         :param command_kwargs: Keyword arguments for the callable command.
@@ -416,7 +426,7 @@ class Result(MetaClasses.Serializable):
         # Set log file path if logging is enabled
         if with_log:
             log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
-        elif with_info or with_info_on_failure:
+        elif with_info:
             log_file = f"/tmp/praktika_{Utils.normalize_string(name)}.log"
         else:
             log_file = None
@@ -432,31 +442,24 @@ class Result(MetaClasses.Serializable):
         with ContextManager.cd(workdir):
             for command_ in command:
                 if callable(command_):
-                    assert (
-                        retries == 1
-                    ), "FIXME: retry not supported for python callables"
                     # If command is a Python function, call it with provided arguments
-                    if with_info or with_info_on_failure:
+                    if with_info:
                         buffer = io.StringIO()
                         with redirect_stdout(buffer):
                             result = command_(*command_args, **command_kwargs)
+                        error_infos = buffer.getvalue()
                     else:
                         result = command_(*command_args, **command_kwargs)
-                    res = result if isinstance(result, bool) else not bool(result)
-                    if (with_info_on_failure and not res) or with_info:
-                        if isinstance(result, bool):
-                            error_infos = buffer.getvalue().splitlines()
-                        else:
-                            error_infos = str(result).splitlines()
+                    if isinstance(result, bool):
+                        res = result
+                    elif result:
+                        error_infos.append(str(result))
+                        res = False
                 else:
                     # Run shell command in a specified directory with logging and verbosity
-                    exit_code = Shell.run(
-                        command_, verbose=True, log_file=log_file, retries=retries
-                    )
-                    if with_info or (with_info_on_failure and exit_code != 0):
-                        with open(
-                            log_file, "r", encoding="utf-8", errors="ignore"
-                        ) as f:
+                    exit_code = Shell.run(command_, verbose=True, log_file=log_file)
+                    if with_info:
+                        with open(log_file, "r") as f:
                             error_infos.append(f.read().strip())
                     res = exit_code == 0
 
@@ -466,17 +469,11 @@ class Result(MetaClasses.Serializable):
                     break
 
         # Create and return the result object with status and log file (if any)
-        MAX_LINES_IN_INFO = 100
         return Result.create_from(
             name=name,
             status=res,
             stopwatch=stop_watch_,
-            info=(
-                error_infos
-                if len(error_infos) < MAX_LINES_IN_INFO
-                else [f" ~~~ truncated {len(error_infos)-MAX_LINES_IN_INFO} lines ~~~"]
-                + error_infos[-MAX_LINES_IN_INFO:]
-            ),
+            info=error_infos,
             files=[log_file] if with_log else None,
         )
 
@@ -514,10 +511,10 @@ class Result(MetaClasses.Serializable):
 
 class ResultInfo:
     SETUP_ENV_JOB_FAILED = (
-        "Failed to set up job env, it is praktika bug or misconfiguration"
+        "Failed to set up job env, it's praktika bug or misconfiguration"
     )
     PRE_JOB_FAILED = (
-        "Failed to do a job pre-run step, it is praktika bug or misconfiguration"
+        "Failed to do a job pre-run step, it's praktika bug or misconfiguration"
     )
     KILLED = "Job killed or terminated, no Result provided"
     NOT_FOUND_IMPOSSIBLE = (
@@ -541,26 +538,10 @@ class _ResultS3:
     def copy_result_to_s3(cls, result, clean=False):
         result.dump()
         env = _Environment.get()
-        result_file_path = result.file_name()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
+        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
         if clean:
             S3.delete(s3_path)
-        # gzip is supported by most browsers
-        archive_file = Utils.compress_file_gz(result_file_path)
-        if archive_file:
-            assert archive_file.endswith(".gz")
-            content_encoding = "gzip"
-        else:
-            content_encoding = ""
-            archive_file = result_file_path
-
-        url = S3.copy_file_to_s3(
-            s3_path=s3_path,
-            local_path=archive_file,
-            text=True,
-            content_encoding=content_encoding,
-            with_rename=True,
-        )
+        url = S3.copy_file_to_s3(s3_path=s3_path, local_path=result.file_name())
         return url
 
     @classmethod
@@ -575,21 +556,20 @@ class _ResultS3:
         env = _Environment.get()
         file_name = Path(local_path).name
         local_dir = Path(local_path).parent
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
-        latest_result_file = Shell.get_output(
-            f"aws s3 ls {s3_path}/{file_name}_ | awk '{{print $4}}' | sort -r | head -n 1",
-            strict=True,
-            verbose=True,
+        file_name_pattern = f"{file_name}_*"
+        for file_path in local_dir.glob(file_name_pattern):
+            file_path.unlink()
+        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
+        S3.copy_file_from_s3_matching_pattern(
+            s3_path=s3_path, local_path=local_dir, include=file_name_pattern
         )
-        version = int(latest_result_file.split("_")[-1])
-        S3.copy_file_from_s3(
-            s3_path=f"{s3_path}/{latest_result_file}", local_path=local_dir
-        )
-        Shell.check(
-            f"cp {local_dir}/{latest_result_file} {local_path}",
-            strict=True,
-            verbose=True,
-        )
+        result_files = []
+        for file_path in local_dir.glob(file_name_pattern):
+            result_files.append(file_path)
+        assert result_files, "No result files found"
+        result_files.sort()
+        version = int(result_files[-1].name.split("_")[-1])
+        Shell.check(f"cp {result_files[-1]} {local_path}", strict=True, verbose=True)
         return version
 
     @classmethod
@@ -718,7 +698,6 @@ class _ResultS3:
             # when multiple concurrent jobs attempt to update the workflow report
             time.sleep(random.uniform(0, 2))
 
-        print(f"Workflow status changed: [{prev_status}] -> [{new_status}]")
         if prev_status != new_status:
             return new_status
         else:

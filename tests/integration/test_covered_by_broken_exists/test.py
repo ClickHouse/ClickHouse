@@ -1,9 +1,10 @@
+import logging
 import time
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import wait_condition
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", stay_alive=True, with_zookeeper=True)
@@ -93,24 +94,14 @@ def test_make_clone_covered_by_broken_detached_dir_exists(started_cluster):
 
     instance.restart_clickhouse(kill=True)
 
-    # Sometimes,though rare, there seems to be a slight delay on ci and the parts don't become
-    # available immediately after restarting the server. In this case, the test fails. So, sleep
-    # for a second and then try to assert with retries to ensure that the test is not flaky.
-    time.sleep(1)
-
-    def assert_detached_parts():  # check that the broken parts are not in system.parts
-        return [
-            "broken-on-start_all_0_1_1",
-            "broken-on-start_all_0_2_2",
-            "broken-on-start_all_0_3_3",
-            "covered-by-broken_all_0_0_0",
-            "covered-by-broken_all_1_1_0",
-            "covered-by-broken_all_2_2_0",
-            "covered-by-broken_all_3_3_0",
-        ] == sorted(
-            instance.exec_in_container(["ls", data_path + "detached/"])
-            .strip()
-            .split("\n")
-        )
-
-    wait_condition(assert_detached_parts, lambda x: x, max_attempts=10, delay=0.2)
+    assert [
+        "broken-on-start_all_0_1_1",
+        "broken-on-start_all_0_2_2",
+        "broken-on-start_all_0_3_3",
+        "covered-by-broken_all_0_0_0",
+        "covered-by-broken_all_1_1_0",
+        "covered-by-broken_all_2_2_0",
+        "covered-by-broken_all_3_3_0",
+    ] == sorted(
+        instance.exec_in_container(["ls", data_path + "detached/"]).strip().split("\n")
+    )
