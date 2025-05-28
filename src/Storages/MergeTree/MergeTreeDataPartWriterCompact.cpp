@@ -97,6 +97,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec);
 
         compressed_streams.emplace(stream_name, stream);
+        compressed_codecs.emplace(stream_name, compression_codec);
     };
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;

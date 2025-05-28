@@ -120,3 +120,80 @@ WHERE
 AND
     c2.key = c1.key - 1
 LIMIT 10;
+
+SELECT 'TEST 1D ARRAY';
+
+DROP TABLE IF EXISTS codecArrayTest;
+
+CREATE TABLE codecArrayTest (
+    key        UInt64,
+    name       String,
+    ref_valueF64 Array(Float64),
+    ref_valueF32 Array(Float32),
+    valueF64   Array(Float64) CODEC(SZ3('ALGO_INTERP', 'REL', 0.01)),
+    valueF32   Array(Float32) CODEC(SZ3('ALGO_INTERP', 'REL', 0.01))
+) ENGINE = MergeTree ORDER BY key;
+
+-- best case - all elements equal
+INSERT INTO codecArrayTest
+SELECT 
+    number AS key,
+    'constant array' AS name,
+    arrayResize([e()], 10) AS v64,
+    arrayResize([toFloat32(e())], 10) AS v32,
+    v64, v32
+FROM system.numbers LIMIT 10;
+
+-- good case - slightly growing values
+INSERT INTO codecArrayTest
+SELECT 
+    number + 100 AS key,
+    'log(1..10)' AS name,
+    arrayMap(i -> log(number + i + 1), range(100)) AS v64,
+    arrayMap(i -> toFloat32(log(number + i + 1)), range(100)) AS v32,
+    v64, v32
+FROM system.numbers LIMIT 100;
+
+-- bad case - rapidly growing values
+INSERT INTO codecArrayTest
+SELECT 
+    number + 200 AS key,
+    'i*sqrt(i)' AS name,
+    arrayMap(i -> i * sqrt(i), range(100)) AS v64,
+    arrayMap(i -> toFloat32(i * sqrt(i)), range(100)) AS v32,
+    v64, v32
+FROM system.numbers LIMIT 100;
+
+-- worst case - pseudo-random
+INSERT INTO codecArrayTest
+SELECT 
+    number + 300 AS key,
+    'sin(i*i*i)*i' AS name,
+    arrayMap(i -> sin(i * i * i) * i, range(100)) AS v64,
+    arrayMap(i -> toFloat32(sin(i * i * i) * i), range(100)) AS v32,
+    v64, v32
+FROM system.numbers LIMIT 100;
+
+-- Comparing F64: sum of absolute errors / sum of original
+SELECT 'F64: summed relative error';
+SELECT 
+    name,
+    sum(arrayReduce('max', arrayMap((r, v) -> abs(r - v), ref_valueF64, valueF64))) AS abs_error,
+    sum(arrayReduce('max', arrayMap(r -> abs(r), ref_valueF64))) AS abs_total,
+    abs_error / abs_total AS rel_error
+FROM codecArrayTest
+GROUP BY name
+HAVING rel_error > 0.02;
+
+-- Comparing F32: sum of absolute errors / sum of original
+SELECT 'F32: summed relative error';
+SELECT 
+    name,
+    sum(arrayReduce('max', arrayMap((r, v) -> abs(r - v), ref_valueF32, valueF32))) AS abs_error,
+    sum(arrayReduce('max', arrayMap(r -> abs(r), ref_valueF32))) AS abs_total,
+    abs_error / abs_total AS rel_error
+FROM codecArrayTest
+GROUP BY name
+HAVING rel_error > 0.02;
+
+DROP TABLE codecArrayTest;

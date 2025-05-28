@@ -2,3 +2,6 @@ F64
 F32
 F64
 F32
+TEST 1D ARRAY
+F64: summed relative error
+F32: summed relative error
