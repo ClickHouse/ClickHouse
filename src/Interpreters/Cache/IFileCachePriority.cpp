@@ -49,19 +49,24 @@ IFileCachePriority::Entry::Entry(const Entry & other)
 {
 }
 
-size_t IFileCachePriority::Entry::getSize() const
+size_t IFileCachePriority::Entry::getSize(bool not_aligned) const
 {
-    if (use_real_disk_size)
+    if (not_aligned)
+    {
+        return size.load();
+    }
+    if (useRealDiskSize())
     {
         return aligned_size.load();
     }
     return size.load();
 }
 
-size_t IFileCachePriority::Entry::getFilledSize() const
+bool IFileCachePriority::Entry::useRealDiskSize() const
 {
-    return size.load();
+    return use_real_disk_size;
 }
+
 
 void IFileCachePriority::Entry::setSize(size_t size_)
 {

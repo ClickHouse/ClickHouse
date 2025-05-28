@@ -55,15 +55,11 @@ FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
     }
 }
 
-size_t FileSegmentMetadata::size() const
+size_t FileSegmentMetadata::size(bool aligned) const
 {
-    return file_segment->getReservedSize();
+    return file_segment->getSize(aligned);
 }
 
-size_t FileSegmentMetadata::getEntrySize() const
-{
-    return file_segment->getEntrySize();
-}
 
 KeyMetadata::KeyMetadata(
     const Key & key_,
@@ -1115,6 +1111,11 @@ std::string LockedKey::toString() const
     return result;
 }
 
+
+bool LockedKey::useRealDiskSize() const
+{
+    return key_metadata->useRealDiskSize();
+}
 
 std::vector<FileSegment::Info> LockedKey::sync()
 {
