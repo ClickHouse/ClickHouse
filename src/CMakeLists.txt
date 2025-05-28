@@ -70,6 +70,7 @@ add_subdirectory (Coordination)
 add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
+add_subdirectory (Models)
 
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     # Files inherited via extract_into_parent_list that would be marked to remove heavy symbols otherwise
@@ -251,6 +252,7 @@ add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProx
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
+add_object_library(clickhouse_models Models)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
@@ -678,6 +680,14 @@ endif ()
 
 if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
+endif()
+
+if (TARGET ch_contrib::lightgbm)
+    dbms_target_link_libraries(PUBLIC ch_contrib::lightgbm)
+endif()
+
+if (TARGET ch_contrib::xgboost)
+    dbms_target_link_libraries(PUBLIC ch_contrib::xgboost)
 endif()
 
 if (ENABLE_BUZZHOUSE)
