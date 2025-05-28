@@ -927,7 +927,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "min_bytes_to_use_direct_io",
           "min_bytes_to_use_mmap_io",
           "min_chunk_bytes_for_parallel_parsing",
-          "min_external_sort_block_bytes",
           "min_external_table_block_size_bytes",
           "min_insert_block_size_bytes",
           "min_insert_block_size_bytes_for_materialized_views",
