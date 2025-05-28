@@ -697,7 +697,6 @@ bool QueryOracle::findTablesWithPeersAndReplace(
 
                 if (gen.tables.find(tname) != gen.tables.end())
                 {
-
                     const SQLTable & t = gen.tables.at(tname);
 
                     if (t.hasDatabasePeer())
