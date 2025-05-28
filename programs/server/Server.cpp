@@ -2491,28 +2491,7 @@ try
         throw;
     }
 
-    bool found_stop_flag = false;
-
-    if (has_zookeeper && global_context->getMacros()->getMacroMap().contains("replica"))
-    {
-        ZooKeeperRetriesControl zk_retry(
-            "Read replicated DDL stop flag",
-            getLogger(log->name()), /// Pass log as LoggerPtr
-            ZooKeeperRetriesInfo(5, 1000, 2000, nullptr));
-
-         zk_retry.retryLoop([&]()
-            {
-                auto zookeeper = global_context->getZooKeeper();
-                String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
-                stop_flag_path = global_context->getMacros()->expand(stop_flag_path);
-                found_stop_flag = zookeeper->exists(stop_flag_path);
-            });
-    }
-
-    if (found_stop_flag)
-        LOG_INFO(log, "Found a stop flag for replicated DDL queries. They will be disabled");
-    else
-        DatabaseCatalog::instance().startReplicatedDDLQueries();
+    DatabaseCatalog::instance().startReplicatedDDLQueries();
 
     LOG_DEBUG(log, "Loaded metadata.");
 
