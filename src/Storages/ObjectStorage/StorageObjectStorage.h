@@ -180,7 +180,7 @@ public:
     struct Path
     {
         Path() = default;
-        Path(const std::string & path_) : path(path_) {}
+        Path(const std::string & path_) : path(path_) {} /// NOLINT(google-explicit-constructor)
         Path(const std::string & path_, bool allow_partial_prefix_) : path(path_), allow_partial_prefix(allow_partial_prefix_) {}
 
         std::string path;
