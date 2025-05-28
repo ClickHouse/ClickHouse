@@ -5714,11 +5714,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             window_node_typed.setParentWindowName({});
         }
 
-        auto [_, inserted] = scope.window_name_to_window_node.emplace(window_node_typed.getAlias(), window_node);
+        auto window_name = window_node_typed.getAlias();
+        window_node_typed.removeAlias();
+        auto [_, inserted] = scope.window_name_to_window_node.emplace(window_name, window_node);
         if (!inserted)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Window '{}' is already defined. In scope {}",
-                window_node_typed.getAlias(),
+                window_name,
                 scope.scope_node->formatASTForErrorMessage());
     }
 
