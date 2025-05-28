@@ -174,8 +174,16 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         progress_watch.restart();
 
         /// Send all common headers before our special progress headers.
-        startSendHeaders();
-        writeHeaderProgress();
+        try
+        {
+            startSendHeaders();
+            writeHeaderProgress();
+        }
+        catch (const Poco::Exception &)
+        {
+            tryLogCurrentException(getLogger("WriteBufferFromHTTPServerResponse"), "Error sending progress headers");
+            send_progress = false;
+        }
     }
 }
 
