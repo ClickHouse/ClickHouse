@@ -1,5 +1,4 @@
 #include <memory>
-#include <SZ3/utils/Config.hpp>
 #include "Common/Exception.h"
 #include "DataTypes/DataTypeArray.h"
 #include "base/types.h"
@@ -22,7 +21,7 @@
 #    include <Parsers/IAST.h>
 #    include <Common/CurrentThread.h>
 #    include <Common/SipHash.h>
-
+#    include <SZ3/utils/Config.hpp>
 #    include <SZ3/api/sz.hpp>
 
 namespace DB
