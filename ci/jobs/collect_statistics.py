@@ -139,7 +139,9 @@ if __name__ == "__main__":
         return True
 
     results.append(
-        Result.from_commands_run(name="Get all job names", command=get_all_job_names)
+        Result.from_commands_run(
+            name="Get all job names", command=get_all_job_names, with_info=True
+        )
     )
     if not results[-1].is_ok():
         sys.exit()

@@ -8,10 +8,11 @@ ExpressionTransform × 10
         (ReadFromPreparedSource)
         SourceFromSingleChunk 0 → 1
 (Expression)
-ExpressionTransform
+ExpressionTransform × 10
   (MergingAggregated)
-  MergingAggregatedTransform
-    (Expression)
-    ExpressionTransform
-      (ReadFromPreparedSource)
-      SourceFromSingleChunk 0 → 1
+  Resize 1 → 10
+    MergingAggregatedTransform
+      (Expression)
+      ExpressionTransform
+        (ReadFromPreparedSource)
+        SourceFromSingleChunk 0 → 1

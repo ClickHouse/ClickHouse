@@ -23,7 +23,7 @@ private:
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
 
-    bool findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
+    void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
     void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, uint32_t ncols, SelectStatementCore * ssc) const;
     void
     insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool remote, TableOrFunction * tof) const;
@@ -52,14 +52,14 @@ public:
     /// Dump and read table oracle
     void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
-    void dumpOracleIntermediateStep(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool use_optimize, SQLQuery & sq3);
+    void generateClearQuery(const SQLTable & t, SQLQuery & sq3);
     void
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
 
     /// Run query with different settings oracle
-    bool generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
+    void generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
     void generateOracleSelectQuery(RandomGenerator & rg, PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2);
-    void generateSecondSetting(RandomGenerator & rg, StatementGenerator & gen, bool use_settings, const SQLQuery & sq1, SQLQuery & sq3);
+    void generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3);
 
     /// Replace query with peer tables
     void truncatePeerTables(const StatementGenerator & gen);
