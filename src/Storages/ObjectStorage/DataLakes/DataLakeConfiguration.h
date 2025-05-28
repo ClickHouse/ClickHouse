@@ -45,18 +45,9 @@ class DataLakeConfiguration : public BaseStorageConfiguration, public std::enabl
 {
 public:
     using Configuration = StorageObjectStorage::Configuration;
-
-    DataLakeConfiguration() = default;
-
-    DataLakeConfiguration(const DataLakeConfiguration & other)
-        : BaseStorageConfiguration(other)
-        , current_metadata(other.current_metadata->clone()) {}
-
     bool isDataLakeConfiguration() const override { return true; }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
-
-    StorageObjectStorage::ConfigurationPtr clone() override { return std::make_shared<DataLakeConfiguration<BaseStorageConfiguration, DataLakeMetadata>>(*this); }
 
     void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {

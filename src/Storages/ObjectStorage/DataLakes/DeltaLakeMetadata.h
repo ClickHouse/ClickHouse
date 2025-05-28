@@ -45,22 +45,9 @@ public:
 
     DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
-    DeltaLakeMetadata(const DeltaLakeMetadata & other)
-    {
-        object_storage = other.object_storage;
-        data_files = other.data_files;
-        schema = other.schema;
-        partition_columns = other.partition_columns;
-    }
-
     NamesAndTypesList getTableSchema() const override { return schema; }
 
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
-
-    std::unique_ptr<IDataLakeMetadata> clone() override
-    {
-        return std::make_unique<DeltaLakeMetadata>(*this);
-    }
 
     bool operator==(const IDataLakeMetadata & other) const override
     {

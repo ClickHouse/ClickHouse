@@ -19,10 +19,6 @@ public:
 
     HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
-    HudiMetadata(const HudiMetadata & other)
-        : WithContext(other.getContext()), object_storage(other.object_storage), configuration(other.configuration), data_files(other.data_files)
-    {}
-
     NamesAndTypesList getTableSchema() const override { return {}; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
@@ -39,11 +35,6 @@ public:
         ContextPtr local_context)
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
-    }
-
-    std::unique_ptr<IDataLakeMetadata> clone() override
-    {
-        return std::make_unique<HudiMetadata>(*this);
     }
 
 protected:
