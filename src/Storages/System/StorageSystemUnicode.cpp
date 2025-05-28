@@ -199,7 +199,6 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
             const auto & [prop_name, prop] = prop_names[prop_index];
             if (prop >= UCHAR_MASK_LIMIT)
                 break;
-            
             // Only handle UCHAR_GENERAL_CATEGORY_MASK 
             // Result is a mask,, U_GC_L_MASK, U_GC_M_MASK, U_GC_N_MASK, U_GC_P_MASK, U_GC_S_MASK ...
             // Now we just use Int32 to store it
