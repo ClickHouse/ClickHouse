@@ -2535,6 +2535,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         if (identifier_node)
         {
             node = parent_window_node->clone();
+            node->removeAlias();
             result_projection_name = parent_window_name;
         }
         else
@@ -5714,13 +5715,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             window_node_typed.setParentWindowName({});
         }
 
-        auto window_name = window_node_typed.getAlias();
-        window_node_typed.removeAlias();
-        auto [_, inserted] = scope.window_name_to_window_node.emplace(window_name, window_node);
+        auto [_, inserted] = scope.window_name_to_window_node.emplace(window_node_typed.getAlias(), window_node);
         if (!inserted)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Window '{}' is already defined. In scope {}",
-                window_name,
+                window_node_typed.getAlias(),
                 scope.scope_node->formatASTForErrorMessage());
     }
 
