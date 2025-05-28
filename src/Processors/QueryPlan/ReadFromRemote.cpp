@@ -450,13 +450,10 @@ static void addFilters(
         return;
 
     auto table_expressions = extractTableExpressions(query_node->getJoinTree());
-    // std::cerr << query_tree->dumpTree() << std::endl;
+    /// Case with JOIN is not supported so far.
     if (table_expressions.size() != 1)
-    {
-        // std::cerr << "=========== " << table_expressions.size() << std::endl;
         return;
-    }
-    // std::cerr << "=========== " << table_expressions.front()->dumpTree() << std::endl;
+
     const auto * table_node = table_expressions.front()->as<TableNode>();
     if (!table_node)
         return;
@@ -465,14 +462,6 @@ static void addFilters(
         DatabaseAndTableWithAlias(table_node->toASTIdentifier()),
         table_node->getStorageSnapshot()->getColumns(GetColumnsOptions::Kind::Ordinary));
     table_with_columns.table.alias = table_node->getAlias();
-
-    // JoinedTables joined_tables(context, getSelectQuery(query_ast), false, false);
-    // joined_tables.resolveTables();
-    // const auto & tables_with_columns = joined_tables.tablesWithColumns();
-
-    /// Case with JOIN is not supported so far.
-    // if (tables_with_columns.size() != 1)
-    //     return;
 
     bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
