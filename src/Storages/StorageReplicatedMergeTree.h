@@ -464,7 +464,7 @@ private:
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;
 
-    DataPartsExchange::FetcherPtr fetcher;
+    DataPartsExchange::Fetcher fetcher;
 
     /// When activated, replica is initialized and startup() method could exit
     Poco::Event startup_event;

@@ -401,6 +401,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , merger_mutator(*this)
     , merge_strategy_picker(*this)
     , queue(*this, merge_strategy_picker)
+    , fetcher(*this)
     , cleanup_thread(*this)
     , async_block_ids_cache(*this)
     , part_check_thread(*this)
@@ -409,7 +410,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_fetches_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_fetches_network_bandwidth], getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
 {
-    fetcher = DataPartsExchange::DataPartsExchangeFactory::getFetcher(*this);
     parts_mover = MergeTreePartsMoverFactory::get(this);
 
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
@@ -3076,10 +3076,10 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                                 "Interserver schemas are different '{}' != '{}', can't fetch part from {}",
                                 interserver_scheme, address.scheme, address.host);
 
-            auto [fetched_part, lock] = fetcher->fetchSelectedPart(
+            auto [fetched_part, lock] = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), part_desc->found_new_part_name, zookeeper_info.zookeeper_name, source_replica_path,
                 address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
-                interserver_scheme, replicated_fetches_throttler, /*to_detached=*/false, TMP_PREFIX + "fetch_", /*tagger_ptr=*/nullptr, /*dest_disk=*/nullptr);
+                interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX + "fetch_");
             part_desc->res_part = fetched_part;
             part_temp_directory_lock = std::move(lock);
 
@@ -3198,11 +3198,11 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Interserver schemes are different: '{}' != '{}', can't fetch part from {}",
                                 interserver_scheme, address.scheme, address.host);
 
-            auto [fetched_part, lock]  = fetcher->fetchSelectedPart(
+            auto [fetched_part, lock]  = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), entry.new_part_name, zookeeper_info.zookeeper_name, source_replica_path,
                 address.host, address.replication_port,
                 timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme,
-                replicated_fetches_throttler, /*to_detached=*/false, /*tmp_prefix_=*/"", /*tagger_ptr=*/nullptr, /*dest_disk=*/nullptr);
+                replicated_fetches_throttler, true);
             part_temp_directory_lock = std::move(lock);
             return fetched_part;
         };
@@ -3960,7 +3960,7 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
 
 bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const
 {
-    if (fetcher->blocker.isCancelled())
+    if (fetcher.blocker.isCancelled())
     {
         disable_reason = fmt::format("Not executing fetch of part {} because replicated fetches are cancelled now.", entry.new_part_name);
         return false;
@@ -5220,9 +5220,7 @@ bool StorageReplicatedMergeTree::fetchPart(
                 throw Exception(ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH, "Interserver schemes are different: "
                     "'{}' != '{}', can't fetch part from {}", interserver_scheme, address.scheme, address.host);
 
-            /// TODO zero-copy: Maybe remove fetcher from class and use like this everywhere
-            auto fetcher_ptr = DataPartsExchange::DataPartsExchangeFactory::getFetcher(*this, try_fetch_shared);
-            auto [fetched_part, lock] =  fetcher_ptr->fetchSelectedPart(
+            auto [fetched_part, lock] =  fetcher.fetchSelectedPart(
                 metadata_snapshot,
                 getContext(),
                 part_name,
@@ -5236,9 +5234,9 @@ bool StorageReplicatedMergeTree::fetchPart(
                 interserver_scheme,
                 replicated_fetches_throttler,
                 to_detached,
-                /*tmp_prefix_=*/"",
+                "",
                 &tagger_ptr,
-                /*dest_disk=*/nullptr);
+                try_fetch_shared);
             part_directory_lock = std::move(lock);
             return fetched_part;
         };
@@ -5407,11 +5405,11 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
             throw Exception(ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH, "Interserver schemes are different: "
                 "'{}' != '{}', can't fetch part from {}", interserver_scheme, address.scheme, address.host);
 
-        auto [fetched_part, lock] = fetcher->fetchSelectedPart(
+        auto [fetched_part, lock] = fetcher.fetchSelectedPart(
             metadata_snapshot, getContext(), part_name, zookeeper_info.zookeeper_name, source_replica_path,
             address.host, address.replication_port,
             timeouts, credentials->getUser(), credentials->getPassword(),
-            interserver_scheme, replicated_fetches_throttler, false, "", nullptr,
+            interserver_scheme, replicated_fetches_throttler, false, "", nullptr, true,
             replaced_disk);
         part_temp_directory_lock = std::move(lock);
         return fetched_part;
@@ -5480,7 +5478,7 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
     try
     {
         auto zookeeper = getZooKeeper();
-        InterserverIOEndpointPtr data_parts_exchange_ptr = DataPartsExchange::DataPartsExchangeFactory::getService(*this);
+        InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
         [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
         assert(prev_ptr == nullptr);
 
@@ -5587,7 +5585,7 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
     {
         auto settings_ptr = getSettings();
         /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
-        fetcher->blocker.cancelForever();
+        fetcher.blocker.cancelForever();
         merger_mutator.merges_blocker.cancelForever();
         parts_mover->moves_blocker.cancelForever();
         stopBeingLeader();
@@ -5634,7 +5632,7 @@ void StorageReplicatedMergeTree::partialShutdown()
 
     /// Stop queue processing
     {
-        auto fetch_lock = fetcher->blocker.cancel();
+        auto fetch_lock = fetcher.blocker.cancel();
         auto merge_lock = merger_mutator.merges_blocker.cancel();
         auto move_lock = parts_mover->moves_blocker.cancel();
         background_operations_assignee.finish();
@@ -9147,7 +9145,7 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
         return merger_mutator.ttl_merges_blocker.cancel();
 
     if (action_type == ActionLocks::PartsFetch)
-        return fetcher->blocker.cancel();
+        return fetcher.blocker.cancel();
 
     if (action_type == ActionLocks::PartsSend)
     {

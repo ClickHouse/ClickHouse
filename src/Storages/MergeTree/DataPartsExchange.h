@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -48,6 +49,16 @@ private:
         int client_protocol_version,
         bool from_remote_disk,
         bool send_projections);
+
+    bool checkRemoteFsMetadataCapabilities(
+        const HTMLForm & params,
+        HTTPServerResponse & response,
+        MergeTreeData::DataPartPtr part,
+        int client_protocol_version);
+
+    /// Ephemeral zero-copy lock may be lost for PreActive parts
+    /// do not expose PreActive parts for zero-copy
+    void waitZeroCopyPreActivePart(MergeTreeData::DataPartPtr part);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
@@ -103,23 +114,53 @@ private:
         bool to_detached,
         const String & tmp_prefix_,
         DiskPtr disk,
-        bool to_remote_disk,
         ReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,
         size_t projections,
         ThrottlerPtr throttler,
         bool sync);
 
-    MergeTreeData::MutableDataPartPtr downloadPartToDiskRemoteMeta(
-       const String & part_name,
-       const String & replica_path,
-       bool to_detached,
-       const String & tmp_prefix_,
-       DiskPtr disk,
-       ReadWriteBufferFromHTTP & in,
-       size_t projections,
-       MergeTreeData::DataPart::Checksums & checksums,
-       ThrottlerPtr throttler);
+    MergeTreeData::MutableDataPartPtr downloadPartToDiskImpl(
+        const String & part_name,
+        const String & replica_path,
+        bool to_detached,
+        const String & tmp_prefix,
+        MergeTreeData::DataPart::Checksums & data_checksums,
+        DiskPtr disk,
+        ReadWriteBufferFromHTTP & in,
+        OutputBufferGetter output_buffer_getter,
+        size_t projections,
+        ThrottlerPtr throttler,
+        bool sync,
+        std::function<void (DataPartStorageOnDiskBase &)> clear_storage_if_exists);
+
+    Strings getZeroCopyDiskCapability(const String & part_name, Poco::URI & uri, DiskPtr disk, bool try_zero_copy);
+
+    MergeTreeData::MutableDataPartPtr tryFetchZeroCopy(
+        const Strings & capability,
+        const String & remote_fs_metadata,
+        const String & part_name,
+        const String & replica_path,
+        bool to_detached,
+        const String & tmp_prefix,
+        DiskPtr disk,
+        ReadWriteBufferFromHTTP & in,
+        size_t projections,
+        ThrottlerPtr throttler,
+        int server_protocol_version,
+        bool sync);
+
+    MergeTreeData::MutableDataPartPtr downloadPartToRemoteDisk(
+        const String & part_name,
+        const String & replica_path,
+        bool to_detached,
+        const String & tmp_prefix_,
+        DiskPtr disk,
+        ReadWriteBufferFromHTTP & in,
+        OutputBufferGetter output_buffer_getter,
+        size_t projections,
+        ThrottlerPtr throttler,
+        bool sync);
 
     StorageReplicatedMergeTree & data;
     LoggerPtr log;
