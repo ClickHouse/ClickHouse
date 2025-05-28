@@ -563,7 +563,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepairConnectionPoolsF
     size_t max_replicas_to_use = settings[Setting::max_parallel_replicas];
     if (max_replicas_to_use > shard.getAllNodeCount())
     {
-        LOG_TRACE(
+        LOG_INFO(
             logger,
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",

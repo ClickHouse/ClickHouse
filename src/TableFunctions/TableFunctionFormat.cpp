@@ -217,7 +217,7 @@ Result:
 )", ""
         },
     },
-    .category = FunctionDocumentation::Category::TableFunction
+    .category{""}
 };
 
 }

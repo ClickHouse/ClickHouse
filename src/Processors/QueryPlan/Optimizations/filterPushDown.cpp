@@ -152,14 +152,6 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     /// New filter column is the first one.
     String split_filter_column_name = split_filter.getOutputs().front()->result_name;
 
-    // If no new columns added, filter just used one of the input columns as-is and moved it to the front, move it back to keep aggregation key in order.
-    if (const auto & input = node.children.at(0)->step->getOutputHeader(); split_filter.getOutputs().size() == input.columns())
-    {
-        auto pos = input.getPositionByName(split_filter_column_name);
-        if (pos != 0)
-            std::rotate(split_filter.getOutputs().begin(), split_filter.getOutputs().begin() + 1, split_filter.getOutputs().begin() + pos + 1);
-    }
-
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter), std::move(split_filter_column_name), can_remove_filter);
 
@@ -386,8 +378,33 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     size_t updated_steps = 0;
 
+    /// For the logical join step, we need to merge pre-join actions to filter dag.
+    /// TODO: this should be refactored and replaced with optimizations which
+    /// 1. push filter/expression into JOIN (as post-filter)
+    /// 2. move filter within JOIN step, potentially changing JoinKind
+    /// 3. push filter/expression out of JOIN (from pre-filter)
+    auto fix_predicate_for_join_logical_step = [&](ActionsDAG filter_dag, const ActionsDAG & side_dag)
+    {
+        filter_dag = ActionsDAG::merge(side_dag.clone(), std::move(filter_dag));
+        auto & outputs = filter_dag.getOutputs();
+        outputs.resize(1);
+        outputs.insert(outputs.end(), filter_dag.getInputs().begin(), filter_dag.getInputs().end());
+        filter_dag.removeUnusedActions();
+        return filter_dag;
+    };
+
     if (join_filter_push_down_actions.left_stream_filter_to_push_down)
     {
+        if (logical_join)
+        {
+
+            join_filter_push_down_actions.left_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
+                std::move(*join_filter_push_down_actions.left_stream_filter_to_push_down),
+                *logical_join->getExpressionActions().left_pre_join_actions
+            );
+            join_filter_push_down_actions.left_stream_filter_removes_filter = true;
+        }
+
         const auto & result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(parent_node,
             nodes,
@@ -403,6 +420,16 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     if (join_filter_push_down_actions.right_stream_filter_to_push_down && allow_push_down_to_right)
     {
+        if (logical_join)
+        {
+
+            join_filter_push_down_actions.right_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
+                std::move(*join_filter_push_down_actions.right_stream_filter_to_push_down),
+                *logical_join->getExpressionActions().right_pre_join_actions
+            );
+            join_filter_push_down_actions.right_stream_filter_removes_filter = true;
+        }
+
         const auto & result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(parent_node,
             nodes,

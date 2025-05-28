@@ -877,11 +877,10 @@ void ClientBase::initClientContext()
     client_context->setQueryParameters(query_parameters);
 }
 
-bool ClientBase::isFileDescriptorSuitableForInput(int fd)
+bool ClientBase::isRegularFile(int fd)
 {
     struct stat file_stat;
-    return fstat(fd, &file_stat) == 0
-        && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode));
+    return fstat(fd, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
 }
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
@@ -901,7 +900,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         default_output_format = "Vertical";
         is_default_format = false;
     }
-    else if (isFileDescriptorSuitableForInput(stdout_fd))
+    else if (isRegularFile(stdout_fd))
     {
         std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(stdout_fd);
         if (format_from_file_name)
@@ -937,7 +936,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         if (format_from_file_name)
             default_input_format = *format_from_file_name;
         else
-            default_input_format = "auto";
+            default_input_format = "TSV";
     }
     else
     {
@@ -945,7 +944,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         if (format_from_file_name)
             default_input_format = *format_from_file_name;
         else
-            default_input_format = "auto";
+            default_input_format = "TSV";
 
         std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdin_fd);
         if (file_name)

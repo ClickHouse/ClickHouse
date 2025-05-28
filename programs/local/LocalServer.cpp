@@ -37,6 +37,7 @@
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -418,19 +419,12 @@ void LocalServer::cleanup()
 }
 
 
-std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
+std::string LocalServer::getInitialCreateTableQuery()
 {
-    /// The input data can be specified explicitly with any of the `file`, `structure`, `input-format` command line arguments,
-    /// or it can be implicitly specified in stdin - then the structure and format is autodetected.
-    /// But if queries were not specified in the command line, they might me in stdin, and this means that stdin is not input data.
-
-    if (!getClientConfiguration().has("table-structure")
-        && !getClientConfiguration().has("table-file")
-        && !getClientConfiguration().has("table-data-format")
-        && (queries.empty() || !isFileDescriptorSuitableForInput(stdin_fd))) /// In we know that there is data in stdin, we can auto-detect the format.
+    if (!getClientConfiguration().has("table-structure") && !getClientConfiguration().has("table-file") && !getClientConfiguration().has("table-data-format") && (!isRegularFile(STDIN_FILENO) || queries.empty()))
         return {};
 
-    auto table_name = getClientConfiguration().getString("table-name", "table");
+    auto table_name = backQuoteIfNeed(getClientConfiguration().getString("table-name", "table"));
     auto table_structure = getClientConfiguration().getString("table-structure", "auto");
 
     String table_file;
@@ -449,24 +443,15 @@ std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
         table_file = quoteString(file_name);
     }
 
-    String data_format;
-
-    if (default_input_format == "auto" && getClientConfiguration().has("table-structure"))
-        data_format = "TabSeparated";   /// Compatibility with older versions when format inference was not available.
-    else
-        data_format = backQuoteIfNeed(default_input_format);
+    String data_format = backQuoteIfNeed(default_input_format);
 
     if (table_structure == "auto")
         table_structure = "";
     else
         table_structure = "(" + table_structure + ")";
 
-    return
-    {
-        table_name,
-        fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
-            backQuote(table_name), table_structure, data_format, table_file, compression)
-    };
+    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
+                       table_name, table_structure, data_format, table_file, compression);
 }
 
 
@@ -564,6 +549,7 @@ void LocalServer::connect()
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
+    UseSSL use_ssl;
     thread_status.emplace();
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
@@ -642,13 +628,10 @@ try
         std::cerr << std::endl;
     }
 
-    auto [table_name, initial_query] = getInitialCreateTableQuery();
-    if (!table_name.empty())
-        client_context->setSetting("implicit_table_at_top_level", table_name);
-
     connect();
 
-    if (!table_name.empty())
+    String initial_query = getInitialCreateTableQuery();
+    if (!initial_query.empty())
         processQueryText(initial_query);
 
 #if USE_FUZZING_MODE
@@ -887,7 +870,7 @@ void LocalServer::processConfig()
 #endif
 
     /// NOTE: it is important to apply any overrides before
-    /// `setDefaultProfiles` calls since it will copy current context (i.e.
+    /// setDefaultProfiles() calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
     adjustSettings();
     applySettingsOverridesForLocal(global_context);
@@ -915,13 +898,9 @@ void LocalServer::processConfig()
 
     if (getClientConfiguration().has("path"))
     {
+        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-
-        /// Attaching "automatic" tables in the system database is done after attaching the system database.
-        /// Consequently, it depends on whether we load it from the path.
-        /// If it is loaded from a user-specified path, we load it as usual. If not, we create it as a memory (ephemeral) database.
-        bool attached_system_database = false;
 
         String path = global_context->getPath();
 
@@ -937,9 +916,6 @@ void LocalServer::processConfig()
             {
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
-
-                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false);
-                attached_system_database = true;
             }
 
             if (!getClientConfiguration().has("only-system-tables"))
@@ -954,9 +930,6 @@ void LocalServer::processConfig()
 
             LOG_DEBUG(log, "Loaded metadata.");
         }
-
-        if (!attached_system_database)
-            attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {

@@ -115,7 +115,6 @@ namespace Setting
     extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_experimental_correlated_subqueries;
-    extern const SettingsString implicit_table_at_top_level;
 }
 
 
@@ -584,7 +583,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         Settings subquery_settings = context->getSettingsCopy();
         subquery_settings[Setting::max_result_rows] = 1;
         subquery_settings[Setting::extremes] = false;
-        subquery_settings[Setting::implicit_table_at_top_level] = "";
         /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
         /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
         subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
@@ -608,35 +606,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             replaceStorageInQueryTree(query_tree, subquery_context, storage);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
 
-        auto wrap_with_nullable_or_tuple = [](Block & block)
-        {
-            block = materializeBlock(block);
-            if (block.columns() == 1)
-            {
-                auto & column = block.getByPosition(0);
-                /// Here we wrap type to nullable if we can.
-                /// It is needed cause if subquery return no rows, it's result will be Null.
-                /// In case of many columns, do not check it cause tuple can't be nullable.
-                if (!column.type->isNullable() && column.type->canBeInsideNullable())
-                {
-                    column.type = makeNullable(column.type);
-                    column.column = makeNullable(column.column);
-                }
-            } else
-            {
-                /** Make unique column names for tuple.
-                *
-                * Example: SELECT (SELECT 2 AS x, x)
-                */
-                makeUniqueColumnNamesInBlock(block);
-                block = Block({{
-                        ColumnTuple::create(block.getColumns()),
-                        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
-                        "tuple"
-                    }});
-            }
-        };
-
         if (only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
@@ -650,8 +619,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     column.column = std::move(mut_col);
                 }
             }
-
-            wrap_with_nullable_or_tuple(scalar_block);
         }
         else
         {
@@ -701,8 +668,36 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 if (tmp_block.rows() != 0)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-                wrap_with_nullable_or_tuple(block);
-                scalar_block = std::move(block);
+                block = materializeBlock(block);
+                size_t columns = block.columns();
+
+                if (columns == 1)
+                {
+                    auto & column = block.getByPosition(0);
+                    /// Here we wrap type to nullable if we can.
+                    /// It is needed cause if subquery return no rows, it's result will be Null.
+                    /// In case of many columns, do not check it cause tuple can't be nullable.
+                    if (!column.type->isNullable() && column.type->canBeInsideNullable())
+                    {
+                        column.type = makeNullable(column.type);
+                        column.column = makeNullable(column.column);
+                    }
+
+                    scalar_block = block;
+                }
+                else
+                {
+                    /** Make unique column names for tuple.
+                      *
+                      * Example: SELECT (SELECT 2 AS x, x)
+                      */
+                    makeUniqueColumnNamesInBlock(block);
+
+                    scalar_block.insert({
+                        ColumnTuple::create(block.getColumns()),
+                        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
+                        "tuple"});
+                }
             }
 
             logProcessorProfile(context, io.pipeline.getProcessors());
@@ -1407,16 +1402,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     return resolve_result;
 }
 
-static void correctColumnExpressionType(ColumnNode & column_node, const ContextPtr & context)
-{
-    if (!column_node.hasExpression())
-        return;
-    auto & column_expression = column_node.getExpression();
-    if (column_node.getColumnType()->equals(*column_expression->getResultType()))
-        return;
-    column_expression = buildCastFunction(column_expression, column_node.getColumnType(), context, true);
-}
-
 /** Resolve identifier in scope.
   *
   * If identifier was resolved resolve identified lookup status will be updated.
@@ -1528,10 +1513,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
                 if (auto * column_node = typeid_cast<ColumnNode *>(node))
                     if (column_node->hasExpression())
-                    {
                         resolveExpressionNode(column_node->getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-                        correctColumnExpressionType(*column_node, scope.context);
-                    }
             }
         }
     }
@@ -1816,7 +1798,6 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                     node_to_projection_name.emplace(matched_column_node, it->second);
 
                 matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
-                correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                 if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
             }
@@ -2132,7 +2113,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
                     matched_column_node = matched_column_node->clone();
                     matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
-                    correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                     if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                         scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
 
@@ -3881,10 +3861,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         {
             auto & column_node = node->as<ColumnNode &>();
             if (column_node.hasExpression())
-            {
                 resolveExpressionNode(column_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-                correctColumnExpressionType(column_node, scope.context);
-            }
 
             if (result_projection_names.empty())
                 result_projection_names.push_back(column_node.getColumnName());
