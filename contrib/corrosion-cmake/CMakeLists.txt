@@ -100,6 +100,10 @@ elseif(CMAKE_SYSROOT)
     list(APPEND RUSTFLAGS "-C" "link-arg=${CMAKE_SYSROOT}")
 endif()
 
+if (TOOLCHAIN_PATH)
+    list(APPEND RUSTFLAGS "-C" "link-arg=--gcc-toolchain=${TOOLCHAIN_PATH}")
+endif()
+
 set(RUST_CARGO_BUILD_STD "")
 # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
 if (SANITIZE STREQUAL "memory")
