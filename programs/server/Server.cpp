@@ -2496,7 +2496,7 @@ try
     if (has_zookeeper && global_context->getMacros()->getMacroMap().contains("replica"))
     {
         ZooKeeperRetriesControl zk_retry(
-            "Retrying to read replicated DDL stop flag",
+            "Read replicated DDL stop flag",
             getLogger(log->name()), /// Pass log as LoggerPtr
             ZooKeeperRetriesInfo(5, 1000, 2000, nullptr));
 
