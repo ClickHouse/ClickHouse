@@ -1278,7 +1278,8 @@ async function restoreFromHistory(state) {
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 }
 
-let query_area = document.getElementById('query');
+const query_area = document.getElementById('query');
+const run = document.getElementById('run');
 
 window.onpopstate = function(event) {
     if (!event.state) return;
@@ -1289,27 +1290,101 @@ if (window.location.hash) {
     query_area.value = window.atob(window.location.hash.substr(1));
 }
 
+function parseQueries(str)
+{
+    const queries = [];
+    let start = 0;
+    let cursor = 0;
+    let escaped = false;
+    let string = false;
+    while (cursor <= str.length) {
+        if (str[cursor] === "\\" && !escaped) {
+            escaped = true;
+            cursor++;
+            continue;
+        } else { escaped = false; }
+        if (!escaped && str[cursor] === "'") string = !string;
+
+        // Detect end of query.
+        if (!string && (str[cursor] === ';' || str[cursor] === undefined)) {
+            const q = str.slice(start, cursor).trim();
+            if (q !== ';' && q !== '') queries.push({ value: q, pos: { start, end: cursor } });
+            cursor++;
+            start = cursor;
+        }
+
+        // Skip comments.
+        if (str[cursor] === '-' && str[cursor+1] === '-') {
+            while (str[cursor] !== '\n' && str[cursor] !== undefined) { cursor++; }
+            cursor++;
+        }
+
+        cursor++;
+    }
+
+    return queries;
+}
+
+function extractQuery(query_area)
+{
+    if (query_area.selectionStart === query_area.selectionEnd) {
+        const queries = parseQueries(query_area.value);
+        for (const q of queries.reverse()) {
+            if (q.pos.start <= query_area.selectionStart) return q;
+        }
+    }
+
+    return {
+        value: query_area.value.slice(query_area.selectionStart, query_area.selectionEnd),
+        pos: { start: query_area.selectionStart, end: query_area.selectionEnd },
+        userSelected: true,
+    };
+}
+
 let in_flight = false;
+let in_animation = false;
+
+function runBtnInnerText()
+{
+    if (in_flight || in_animation) return "Cancel";
+    if (query_area.selectionStart === query_area.selectionEnd) return "Run";
+    return "Run selection";
+}
+
 async function post()
 {
     ++request_num;
-    let query = query_area.value;
+    const query = extractQuery(query_area);
+    let promise = Promise.resolve();
+    if (!query.userSelected) {
+        in_animation = true;
+        const initialStart = query_area.selectionStart
+        const initialEnd = query_area.selectionEnd
+        query_area.selectionStart = query.pos.start
+        query_area.selectionEnd = query.pos.end
+        promise = new Promise((resolve) => setTimeout(() => {
+          query_area.selectionStart = initialStart;
+          query_area.selectionEnd = initialEnd;
+          in_animation = false;
+          resolve();
+        }, 300))
+    }
+
     in_flight = true;
-    let run = document.getElementById('run');
-    run.innerText = 'Stop';
-    await postImpl(request_num, query);
+    run.innerText = runBtnInnerText();
+    await Promise.all([postImpl(request_num, query.value), promise]);
     run.blur();
-    run.innerText = 'Run';
     in_flight = false;
+    run.innerText = runBtnInnerText();
 }
 
 async function cancel()
 {
     controller.abort();
-    document.getElementById('run').innerText = 'Run';
+    run.innerText = runBtnInnerText();
 }
 
-document.getElementById('run').onclick = function(e)
+run.onclick = function(e)
 {
     if (in_flight) {
         cancel();
@@ -1336,7 +1411,13 @@ let user_prefers_tab_navigation = false;
     };
 });
 
+query_area.onselectionchange = (e) => { run.innerText = runBtnInnerText() }
 query_area.onkeydown = (e) => {
+    if (in_animation) {
+        e.preventDefault()
+        return false;
+    }
+
     if (e.key == 'Tab' && !event.shiftKey && !user_prefers_tab_navigation) {
         document.execCommand('insertText', false, '    ');
         e.preventDefault();
