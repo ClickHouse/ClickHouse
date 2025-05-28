@@ -40,6 +40,8 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     size_t size() const;
 
+    size_t getEntrySize() const;
+
     bool isEvictingOrRemoved(const CachePriorityGuard::Lock & lock) const
     {
         auto iterator = getQueueIterator();
