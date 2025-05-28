@@ -36,7 +36,7 @@ public:
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
         ConfigurationObserverPtr configuration_,
-        const DB::ContextPtr & context_,
+        const ContextPtr & context_,
         Int32 metadata_version_,
         Int32 format_version_,
         const Poco::JSON::Object::Ptr & metadata_object,

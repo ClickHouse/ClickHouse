@@ -279,7 +279,7 @@ public:
                 size,
                 getName(),
                 TOP_K_MAX_SIZE);
-        set.resize(size);
+        set.resize(std::min(size + 1, size_t(reserved)));
         for (size_t i = 0; i < size; ++i)
         {
             auto ref = readStringBinaryInto(*arena, buf);

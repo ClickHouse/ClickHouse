@@ -10,6 +10,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Formats/FormatSettings.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <memory>
 namespace DB
@@ -171,7 +173,6 @@ class StorageObjectStorage::Configuration
 {
 public:
     Configuration() = default;
-    Configuration(const Configuration & other);
     virtual ~Configuration() = default;
 
     using Path = std::string;
@@ -224,7 +225,6 @@ public:
     virtual void validateNamespace(const String & /* name */) const {}
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
-    virtual ConfigurationPtr clone() = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
     virtual bool isDataLakeConfiguration() const { return false; }
@@ -269,6 +269,12 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+    void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
+
+    const StorageObjectStorageSettings & getSettingsRef() const;
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
@@ -278,12 +284,6 @@ public:
      */
     bool partition_columns_in_data_file = true;
     std::shared_ptr<PartitionStrategy> partition_strategy;
-
-    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
-
-    void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
-
-    const StorageObjectStorageSettings & getSettingsRef() const;
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;

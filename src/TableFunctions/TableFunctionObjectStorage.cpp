@@ -6,13 +6,13 @@
 #include <Access/Common/AccessFlags.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/registerTableFunctions.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
 #include <TableFunctions/TableFunctionObjectStorageCluster.h>
+#include <TableFunctions/registerTableFunctions.h>
 
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
@@ -26,6 +26,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 
 namespace DB
@@ -389,6 +390,13 @@ void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
             .category = FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 #endif
+    // Register the new local Delta Lake table function
+    factory.registerFunction<TableFunctionDeltaLakeLocal>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the DeltaLake table stored locally.)",
+            .examples{{"deltaLakeLocal", "SELECT * FROM deltaLakeLocal(path)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
 }
 #endif
 

@@ -33,8 +33,11 @@ public:
         SizeLimits size_limits;
         size_t max_bytes_before_remerge = 0;
         float remerge_lowered_memory_bytes_ratio = 0;
-        size_t min_external_sort_block_bytes = 0;
-        size_t max_bytes_before_external_sort = 0;
+
+        double max_bytes_ratio_before_external_sort = 0.;
+        size_t max_bytes_in_block_before_external_sort = 0;
+        size_t max_bytes_in_query_before_external_sort = 0;
+
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
