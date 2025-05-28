@@ -34,11 +34,13 @@ public:
     bool isTableExist(const String & name, ContextPtr context) const override;
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
+    /// skip_not_loaded flag ignores all non-iceberg tables
     DatabaseTablesIteratorPtr getTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
         bool skip_not_loaded) const override;
 
+    /// skip_not_loaded flag ignores all non-iceberg tables
     DatabaseTablesIteratorPtr getLightweightTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
@@ -76,7 +78,7 @@ private:
     std::string getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const;
 
 
-    StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool lightweight) const;
+    StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg) const;
 };
 
 }

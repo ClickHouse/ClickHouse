@@ -53,28 +53,33 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
     auto add_history_record = [&](const DatabaseTablesIteratorPtr & it, StorageObjectStorage * object_storage)
     {
         if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
-        {
             return;
-        }
 
-        auto * current_metadata = object_storage->getExternalMetadata();
-
-        if (current_metadata && dynamic_cast<IcebergMetadata *>(current_metadata))
+        /// Unfortunately this try/catch is unavoidable. Iceberg tables can be broken in arbitrary way, it's impossible
+        /// to handle properly all posible errors which we can get when attempting to read metadata of iceberg table
+        try
         {
-            auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(current_metadata);
-            IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory();
-
-            for (auto & iceberg_history_item : iceberg_history_items)
+            if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context)); iceberg_metadata)
             {
-                size_t column_index = 0;
-                res_columns[column_index++]->insert(it->databaseName());
-                res_columns[column_index++]->insert(it->name());
-                res_columns[column_index++]->insert(iceberg_history_item.made_current_at);
-                res_columns[column_index++]->insert(iceberg_history_item.snapshot_id);
-                res_columns[column_index++]->insert(iceberg_history_item.parent_id);
-                res_columns[column_index++]->insert(iceberg_history_item.is_current_ancestor);
+                IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory();
+
+                for (auto & iceberg_history_item : iceberg_history_items)
+                {
+                    size_t column_index = 0;
+                    res_columns[column_index++]->insert(it->databaseName());
+                    res_columns[column_index++]->insert(it->name());
+                    res_columns[column_index++]->insert(iceberg_history_item.made_current_at);
+                    res_columns[column_index++]->insert(iceberg_history_item.snapshot_id);
+                    res_columns[column_index++]->insert(iceberg_history_item.parent_id);
+                    res_columns[column_index++]->insert(iceberg_history_item.is_current_ancestor);
+                }
             }
         }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("SystemIcebergHistory"), fmt::format("Ignoring broken table {}", object_storage->getStorageID().getFullTableName()));
+        }
+
     };
 
     const bool show_tables_granted = access->isGranted(AccessType::SHOW_TABLES);
@@ -82,9 +87,10 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
     if (show_tables_granted)
     {
         auto databases = DatabaseCatalog::instance().getDatabases();
-        for (const auto &db: databases)
+        for (const auto & db: databases)
         {
-            for (auto iterator = db.second->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
+            /// with last flag we are filtering out all non iceberg table
+            for (auto iterator = db.second->getTablesIterator(context, {}, true); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();
 
@@ -93,7 +99,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
                     // Table was dropped while acquiring the lock, skipping table
                     continue;
 
-                if (auto *object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))
+                if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))
                 {
                     add_history_record(iterator, object_storage_table);
                 }
