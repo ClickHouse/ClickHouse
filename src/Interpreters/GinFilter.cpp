@@ -164,8 +164,9 @@ template <GinSearchMode search_mode>
             /// Definitely no match in ALL search mode when any of terms does not exists in FST.
             return false;
         else if constexpr (search_mode == GinSearchMode::ANY)
-            /// Definitely no match when there is a single term in ANY search mode and the term does not exists in FST.
-            return postings_cache.size() == 1 ? false : true;
+            if (postings_cache.size() == 1)
+                /// Definitely no match when there is a single term in ANY search mode and the term does not exists in FST.
+                return false;
     }
 
     /// Check for each row ID ranges
