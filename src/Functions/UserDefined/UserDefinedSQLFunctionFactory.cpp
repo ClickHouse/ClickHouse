@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int FUNCTION_ALREADY_EXISTS;
     extern const int CANNOT_DROP_FUNCTION;
     extern const int CANNOT_CREATE_RECURSIVE_FUNCTION;
-    extern const int UNSUPPORTED_METHOD;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -54,17 +54,17 @@ namespace
         ASTFunction * lambda_function = function->as<ASTFunction>();
 
         if (!lambda_function)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected function, got: {}", function->formatForErrorMessage());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function, got: {}", function->formatForErrorMessage());
 
         auto & lambda_function_expression_list = lambda_function->arguments->children;
 
         if (lambda_function_expression_list.size() != 2)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have arguments and body");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have arguments and body");
 
         const ASTFunction * tuple_function_arguments = lambda_function_expression_list[0]->as<ASTFunction>();
 
-        if (!tuple_function_arguments || !tuple_function_arguments->arguments)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid arguments");
+        if (!tuple_function_arguments || !tuple_function_arguments->arguments || tuple_function_arguments->name != "tuple")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have valid arguments");
 
         std::unordered_set<String> arguments;
 
@@ -73,17 +73,17 @@ namespace
             const auto * argument_identifier = argument->as<ASTIdentifier>();
 
             if (!argument_identifier)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda argument must be identifier");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda argument must be identifier");
 
             const auto & argument_name = argument_identifier->name();
             auto [_, inserted] = arguments.insert(argument_name);
             if (!inserted)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Identifier {} already used as function parameter", argument_name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identifier {} already used as function parameter", argument_name);
         }
 
         ASTPtr function_body = lambda_function_expression_list[1];
         if (!function_body)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid function body");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have valid function body");
 
         validateSQLFunctionRecursiveness(*function_body, name);
     }
@@ -118,7 +118,11 @@ UserDefinedSQLFunctionFactory & UserDefinedSQLFunctionFactory::instance()
     return result;
 }
 
-static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query, bool throw_if_exists)
+UserDefinedSQLFunctionFactory::UserDefinedSQLFunctionFactory()
+    : global_context(Context::getGlobalContextInstance())
+{}
+
+void UserDefinedSQLFunctionFactory::checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", function_name);

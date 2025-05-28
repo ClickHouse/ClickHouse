@@ -1,12 +1,8 @@
 #pragma once
 
-#include <unordered_map>
-#include <mutex>
-
 #include <Common/NamePrompter.h>
-
 #include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -48,7 +44,13 @@ public:
     void restore(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
 private:
-    ContextPtr global_context = Context::getGlobalContextInstance();
+    /// Checks that a specified function can be registered, throws an exception if not.
+    static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query);
+    static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name);
+
+    ContextPtr global_context;
+
+    UserDefinedSQLFunctionFactory();
 };
 
 ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context);

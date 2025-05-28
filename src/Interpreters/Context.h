@@ -845,6 +845,10 @@ public:
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
 
     void addQueryAccessInfo(
+        const StorageID & table_id,
+        const Names & column_names);
+
+    void addQueryAccessInfo(
         const String & quoted_database_name,
         const String & full_quoted_table_name,
         const Names & column_names);
@@ -1039,6 +1043,10 @@ public:
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
     void setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn);
+
+    double getMinOSCPUWaitTimeRatioToDropConnection() const;
+    double getMaxOSCPUWaitTimeRatioToDropConnection() const;
+    void setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop_connection, double max_os_cpu_wait_time_ratio_to_drop_connection);
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;

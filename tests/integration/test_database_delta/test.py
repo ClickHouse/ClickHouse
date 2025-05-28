@@ -233,3 +233,61 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
 
     if use_delta_kernel == "1":
         assert node1.contains_in_log(f"DeltaLakeMetadata: Initializing snapshot")
+
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_timestamp_ntz(started_cluster, use_delta_kernel):
+    node1 = started_cluster.instances["node1"]
+    node1.query("drop database if exists ntz_schema")
+
+    schema_name = f"schema_with_timetstamp_ntz_{use_delta_kernel}"
+    execute_spark_query(
+        node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True
+    )
+    table_name = f"table_with_timestamp_{use_delta_kernel}"
+    schema = "event_date DATE, event_time TIMESTAMP, event_time_ntz TIMESTAMP_NTZ"
+    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/ntz_schema/{table_name}'"
+    execute_spark_query(node1, create_query, ignore_exit_code=True)
+    execute_spark_query(
+        node1,
+        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')",
+        ignore_exit_code=True,
+    )
+
+    node1.query(
+        f"""
+drop database if exists ntz_schema;
+create database ntz_schema
+engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
+        """,
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    ntz_tables = list(
+        sorted(
+            node1.query(
+                f"SHOW TABLES FROM ntz_schema LIKE '{schema_name}%'",
+                settings={"use_hive_partitioning": "0"},
+            )
+            .strip()
+            .split("\n")
+        )
+    )
+
+    assert len(ntz_tables) == 1
+
+    ntz_data = (
+        node1.query(
+            f"SELECT * FROM ntz_schema.`{schema_name}.{table_name}`", settings={"allow_experimental_delta_kernel_rs": use_delta_kernel}
+        )
+        .strip()
+        .split("\t")
+    )
+    print(ntz_data)
+    assert ntz_data[0] == "2024-10-01"
+    if use_delta_kernel == "1":
+        assert ntz_data[1] == "2024-10-01 00:12:00.000" #FIXME
+        assert ntz_data[2] == "2024-10-01 00:12:00.000" #FIXME
+    else:
+        assert ntz_data[1] == "2024-10-01 00:12:00.000000"
+        assert ntz_data[2] == "2024-10-01 00:12:00.000000"
