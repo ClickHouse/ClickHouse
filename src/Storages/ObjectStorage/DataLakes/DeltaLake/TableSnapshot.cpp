@@ -76,112 +76,69 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
 namespace DeltaLake
 {
 
-struct ExpressionVisitorData
+/// ExpressionVisitorData holds a state of ExpressionVisitor.
+class ExpressionVisitorData
 {
-    /// At this moment ExpressionVisitor is used only for partition columns,
-    /// where only identifier expressions are allowed (only PARTITION BY col_name, ...),
-    /// therefore we leave several visitor function as not implemented
-    /// (see throwNotImplemented in createVisitor() below).
-    /// They will be implemented once we start using statistics feature from delta-kernel.
-
-    explicit ExpressionVisitorData(const DB::NamesAndTypesList & schema_) : schema(schema_) {}
-
+private:
+    /// A counter for expression tree nodes' ids.
     size_t list_counter = 0;
-    std::unordered_map<size_t, std::unique_ptr<DB::ASTs>> type_lists;
+    /// Const literal counter for const column names.
+    size_t literal_counter = 0;
+    /// A result parsed expression.
     DB::ActionsDAG dag;
+    /// Result expression schema.
     const DB::NamesAndTypesList & schema;
 
-    void addToList(size_t id, DB::ASTPtr value)
-    {
-        auto it = type_lists.find(id);
-        if (it == type_lists.end())
-        {
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "List with id {} does not exist", id);
-        }
-        it->second->push_back(value);
-    }
+public:
+    explicit ExpressionVisitorData(const DB::NamesAndTypesList & schema_) : schema(schema_) {}
+
+    size_t nextListID() { return list_counter++; }
+
     void addLiteral(size_t id, DB::Field value, DB::DataTypePtr type)
     {
-        auto it = type_lists.find(id);
-        if (it == type_lists.end())
+        if (id != 1)
         {
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "List with id {} does not exist", id);
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR,
+                "Nested expressions are not supported, list id: {}", id);
         }
+
         auto column = type->createColumnConst(1, value);
-        dag.addColumn(DB::ColumnWithTypeAndName(column, type, "const_" + DB::toString(it->second->size())));
+        dag.addColumn(DB::ColumnWithTypeAndName(column, type, "const_" + DB::toString(literal_counter++)));
     }
+
     void addColumn(size_t id, const std::string & name)
     {
-        auto it = type_lists.find(id);
-        if (it == type_lists.end())
+        if (id != 1)
         {
             throw DB::Exception(
                 DB::ErrorCodes::LOGICAL_ERROR,
-                "List with id {} does not exist", id);
+                "Nested expressions are not supported, list id: {}", id);
         }
-        auto col = schema.tryGetByName(name);
-        if (!col.has_value())
+
+        auto name_and_type = schema.tryGetByName(name);
+        if (!name_and_type.has_value())
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No column {} in schema", name);
 
-        auto column = col->type->createColumnConstWithDefaultValue(1);
-        dag.addInput(DB::ColumnWithTypeAndName(column, col->type, col->name));
+        auto column = name_and_type->type->createColumnConstWithDefaultValue(1);
+        dag.addInput(DB::ColumnWithTypeAndName(column, name_and_type->type, name_and_type->name));
     }
 
-    DB::Field getValue(size_t idx)
+    DB::Field getValue(size_t idx) const
     {
-        if (type_lists.empty())
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Type list is empty");
-
-        if (!type_lists[0])
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Type list zero level value is Null");
-
-        if (type_lists[0]->size() != 1)
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Unexpected size of type list zero level value: {}", type_lists[0]->size());
-        }
-
-        const auto * expression_list = (*type_lists[0])[0]->as<DB::ASTExpressionList>();
-        if (!expression_list)
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Not an expression list at zero level of type list");
-        }
-
-        if (expression_list->children.size() <= idx)
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Index {} out of bounds of type list (type list size: {})",
-                idx, expression_list->children.size());
-        }
-
-        const auto * literal = expression_list->children[idx]->as<DB::ASTLiteral>();
-        if (!literal)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Value at position {} is not a literal", idx);
-
-        DB::WriteBufferFromOwnString wb;
-        DB::SerializedSetsRegistry r;
-        dag.serialize(wb, r);
-        LOG_TEST(getLogger("KSSENII"), "KSSENII DAG: {}", wb.str());
-
         const auto & nodes = dag.getNodes();
         if (nodes.size() <= idx)
-        {
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Index out of bounds: {} vs {}", idx, nodes.size());
-        }
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Index out of bounds, expected {} < {}", idx, nodes.size());
+
         auto it = nodes.begin();
-        std::advance(it, idx); // Move iterator n positions forward
-        DB::Field value;
+        std::advance(it, idx);
+
         if (!it->column)
-        {
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Column is null");
-        }
+
+        DB::Field value;
         it->column->get(0, value);
         return value;
-        //return literal->value;
     }
 
     std::exception_ptr visitor_exception;
@@ -202,6 +159,11 @@ public:
     }
 
 private:
+    /// At this moment ExpressionVisitor is used only for partition columns,
+    /// where only identifier expressions are allowed (only PARTITION BY col_name, ...),
+    /// therefore we leave several visitor function as not implemented
+    /// (see throwNotImplemented in createVisitor() below).
+    /// They will be implemented once we start using statistics feature from delta-kernel.
     enum NotImplementedMethod
     {
         AND,
@@ -271,17 +233,10 @@ private:
         return visitor;
     }
 
-    static uintptr_t makeFieldList(void * data, uintptr_t capacity_hint)
+    static uintptr_t makeFieldList(void * data, uintptr_t /* capacity_hint */)
     {
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        size_t id = state->list_counter++;
-
-        auto list = std::make_unique<DB::ASTs>();
-        if (capacity_hint > 0)
-            list->reserve(capacity_hint);
-
-        state->type_lists.emplace(id, std::move(list));
-        return id;
+        return state->nextListID();
     }
 
     template <typename Func>
@@ -324,7 +279,6 @@ private:
         {
             const auto name_str = KernelUtils::fromDeltaString(name);
             LOG_TEST(state->log, "Column expression list id: {}, name: {}", sibling_list_id, name_str);
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTIdentifier>(name_str));
             state->addColumn(sibling_list_id, name_str);
         });
     }
@@ -337,27 +291,10 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            auto it = state->type_lists.find(sibling_list_id);
-            if (it == state->type_lists.end())
-            {
-                throw DB::Exception(
-                    DB::ErrorCodes::LOGICAL_ERROR,
-                    "List with id {} does not exist", sibling_list_id);
-            }
-            auto child_it = state->type_lists.find(child_list_id);
-            if (child_it == state->type_lists.end())
-            {
-                throw DB::Exception(
-                    DB::ErrorCodes::LOGICAL_ERROR,
-                    "Child list with id {} does not exist", sibling_list_id);
-            }
-
             LOG_TEST(state->log, "Struct expression list id: {}, child list id: {}", sibling_list_id, child_list_id);
 
-            auto list = std::make_shared<DB::ASTExpressionList>();
-            list->children = std::move(*child_it->second);
-            state->type_lists.erase(child_it);
-            state->addToList(sibling_list_id, list);
+            if (sibling_list_id != 0 && child_list_id != 0)
+                throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Struct expression is supported only at root level, current: {}", sibling_list_id);
         });
     }
 
@@ -368,7 +305,6 @@ private:
         visitorImpl(*state, [&]()
         {
             LOG_TEST(state->log, "Expression list id: {}, value: {}", sibling_list_id, value);
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTLiteral>(value));
             state->addLiteral(sibling_list_id, value, std::make_shared<DataType>());
         });
     }
@@ -419,8 +355,6 @@ private:
             }
 
             LOG_TEST(state->log, "Expression Decimal element: {}", value);
-
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTLiteral>(value));
         });
     }
 
@@ -431,7 +365,6 @@ private:
         {
             const ExtendedDayNum daynum{value};
             LOG_TEST(state->log, "Expression Date element: {} (value: {})", DateLUT::instance().dateToString(daynum), value);
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTLiteral>(daynum.toUnderType()));
             state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDate32>());
         });
     }
@@ -442,7 +375,6 @@ private:
         visitorImpl(*state, [&]()
         {
             const auto datetime_value = DB::DecimalField<DB::Decimal64>(value, 6);
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTLiteral>(datetime_value));
             state->addLiteral(sibling_list_id, datetime_value, std::make_shared<DB::DataTypeDateTime64>(6));
         });
     }
@@ -453,7 +385,7 @@ private:
         visitorImpl(*state, [&]()
         {
             const auto datetime_value = DB::DecimalField<DB::Decimal64>(value, 6);
-            state->addToList(sibling_list_id, std::make_shared<DB::ASTLiteral>(datetime_value));
+            state->addLiteral(sibling_list_id, datetime_value, std::make_shared<DB::DataTypeDateTime64>(6));
         });
     }
 
