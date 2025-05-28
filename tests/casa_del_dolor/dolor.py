@@ -107,7 +107,7 @@ for i in range(0, len(args.replica_values)):
                                         with_minio = args.with_minio,
                                         with_postgres = args.with_postgresql,
                                         with_mysql8 = args.with_mysql,
-                                        with_mongodb = args.with_mongodb,
+                                        with_mongo = args.with_mongodb,
                                         with_redis = args.with_redis,
                                         main_configs = [server_settings] if server_settings is not None else [],
                                         user_configs = [args.user_config] if args.user_config is not None else [],
