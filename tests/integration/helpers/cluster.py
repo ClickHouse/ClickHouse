@@ -549,7 +549,6 @@ class ClickHouseCluster:
         self.spark_session = None
         self.with_iceberg_catalog = False
         self.with_glue_catalog = False
-        self.with_hms_catalog = False
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -1436,29 +1435,6 @@ class ClickHouseCluster:
         )
         return self.base_glue_catalog_cmd
 
-
-    def setup_hms_catalog_cmd(
-         self, instance, env_variables, docker_compose_yml_dir
-     ):
-         self.with_hms_catalog = True
-         self.base_cmd.extend(
-             [
-                 "--file",
-                 p.join(
-                     docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"
-                 ),
-             ]
-         )
-
-         self.base_iceberg_hms_cmd = self.compose_cmd(
-             "--env-file",
-             instance.env_file,
-             "--file",
-             p.join(docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"),
-         )
-         return self.base_iceberg_hms_cmd
-
-
     def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1648,7 +1624,6 @@ class ClickHouseCluster:
         with_prometheus=False,
         with_iceberg_catalog=False,
         with_glue_catalog=False,
-        with_hms_catalog=False,
         handle_prometheus_remote_write=False,
         handle_prometheus_remote_read=False,
         use_old_analyzer=None,
@@ -1772,7 +1747,6 @@ class ClickHouseCluster:
             with_ldap=with_ldap,
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
-            with_hms_catalog=with_hms_catalog,
             use_old_analyzer=use_old_analyzer,
             use_distributed_plan=use_distributed_plan,
             server_bin_path=self.server_bin_path,
@@ -1967,13 +1941,6 @@ class ClickHouseCluster:
         if with_glue_catalog and not self.with_glue_catalog:
             cmds.append(
                 self.setup_glue_catalog_cmd(
-                    instance, env_variables, docker_compose_yml_dir
-                )
-            )
-
-        if with_hms_catalog and not self.with_hms_catalog:
-            cmds.append(
-                self.setup_hms_catalog_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -3163,12 +3130,6 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_custom_minio_to_start(['warehouse-glue'], 'minio', 9000)
 
-            if self.with_hms_catalog and self.base_iceberg_hms_cmd:
-                logging.info("Trying to connect to Minio for hms catalog...")
-                subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
-                self.up_called = True
-                self.wait_custom_minio_to_start(['warehouse-hms'], 'minio', 9000)
-
             if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
                 logging.info("Trying to connect to Minio for Iceberg catalog...")
                 subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
@@ -3580,7 +3541,6 @@ class ClickHouseInstance:
         with_ldap,
         with_iceberg_catalog,
         with_glue_catalog,
-        with_hms_catalog,
         use_old_analyzer,
         use_distributed_plan,
         server_bin_path,
