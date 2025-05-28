@@ -128,15 +128,16 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
             siphash.update(current_role);
     }
 
-    auto changes = settings.changes();
-    for (const auto & change : changes)
+    setting_changes = settings.changes();
+    for (auto it = setting_changes.begin(); it != setting_changes.end(); ++it)
     {
-        if (settings_to_skip.contains(change.name))
-            continue;
-
-        setting_changes.emplace_back(change.name, change.value);
-        siphash.update(change.name);
-        applyVisitor(FieldVisitorHash(siphash), change.value);
+        if (settings_to_skip.contains(it->name))
+            it = setting_changes.erase(it);
+        else
+        {
+            siphash.update(it->name);
+            applyVisitor(FieldVisitorHash(siphash), it->value);
+        }
     }
 
     hash = siphash.get128();
