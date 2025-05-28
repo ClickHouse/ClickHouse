@@ -1,7 +1,5 @@
 ---
-alias:
-- TSVRaw
-- Raw
+alias: ['TSVRaw', 'Raw']
 description: 'Documentation for the TabSeparatedRaw format'
 input_format: true
 keywords: ['TabSeparatedRaw']

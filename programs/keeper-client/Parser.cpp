@@ -1,6 +1,9 @@
 #include "Parser.h"
 #include "KeeperClient.h"
 
+#include <Parsers/CommonParsers.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
+
 
 namespace DB
 {

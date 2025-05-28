@@ -21,10 +21,12 @@ using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredict
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
-using VirtualFields = std::unordered_map<String, Field>;
 
 class DeserializationPrefixesCache;
 using DeserializationPrefixesCachePtr = std::shared_ptr<DeserializationPrefixesCache>;
+
+class MergedPartOffsets;
+using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 
 enum class MergeTreeReadType : uint8_t
 {
@@ -66,8 +68,12 @@ struct MergeTreeReadTaskInfo
     DataPartPtr parent_part;
     /// For `part_index` virtual column
     size_t part_index_in_query;
+    /// For `part_starting_offset` virtual column
+    size_t part_starting_offset_in_query;
     /// Alter converversionss that should be applied on-fly for part.
     AlterConversionsPtr alter_conversions;
+    /// `_part_offset` mapping used to merge projections with `_part_offset`.
+    MergedPartOffsetsPtr merged_part_offsets;
     /// Prewhere steps that should be applied to execute on-fly mutations for part.
     PrewhereExprSteps mutation_steps;
     /// Column names to read during PREWHERE and WHERE
@@ -96,7 +102,7 @@ public:
         MarkCache * mark_cache = nullptr;
         MergeTreeReaderSettings reader_settings{};
         StorageSnapshotPtr storage_snapshot{};
-        IMergeTreeReader::ValueSizeMap value_size_map{};
+        ValueSizeMap value_size_map{};
         ReadBufferFromFileBase::ProfileCallback profile_callback{};
     };
 
@@ -140,7 +146,7 @@ public:
     const MergeTreeReadersChain & getReadersChain() const { return readers_chain; }
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
 
-    void addPrewhereUnmatchedMarks(MarkRanges & mark_ranges_);
+    void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
 
     Readers releaseReaders() { return std::move(readers); }
@@ -164,7 +170,7 @@ private:
     /// Ranges to read from data_part
     MarkRanges mark_ranges;
 
-    /// There is no mark matching a row of data under the prewhere condition.
+    /// Tracks which mark ranges are not matched by PREWHERE (needed for query condition cache)
     MarkRanges prewhere_unmatched_marks;
 
     BlockSizeParams block_size_params;

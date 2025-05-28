@@ -34,7 +34,7 @@ SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
 
 Result:
 
-``` text
+```text
 ┌─number─┬─plus(multiply(2, number), 1)─┐
 │      0 │                            1 │
 │      1 │                            3 │
@@ -51,7 +51,7 @@ SELECT number, parity_str(number) FROM numbers(3);
 
 Result:
 
-``` text
+```text
 ┌─number─┬─if(modulo(number, 2), 'odd', 'even')─┐
 │      0 │ even                                 │
 │      1 │ odd                                  │

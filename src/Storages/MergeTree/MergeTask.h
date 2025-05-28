@@ -44,6 +44,9 @@ class MergeTask;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
 class RowsSourcesTemporaryFile;
 
+class MergedPartOffsets;
+using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
+
 /**
  * Overview of the merge algorithm
  *
@@ -84,6 +87,7 @@ public:
         MergeTreeData::MergingParams merging_params_,
         bool need_prefix,
         IMergeTreeDataPart * parent_part_,
+        MergedPartOffsetsPtr merged_part_offsets_,
         String suffix_,
         MergeTreeTransactionPtr txn,
         MergeTreeData * data_,
@@ -108,6 +112,7 @@ public:
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
             global_ctx->cleanup = std::move(cleanup_);
             global_ctx->parent_part = std::move(parent_part_);
+            global_ctx->merged_part_offsets = std::move(merged_part_offsets_);
             global_ctx->data = std::move(data_);
             global_ctx->mutator = std::move(mutator_);
             global_ctx->merges_blocker = std::move(merges_blocker_);
@@ -181,6 +186,7 @@ private:
         std::vector<AlterConversionsPtr> alter_conversions;
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
+        MergedPartOffsetsPtr merged_part_offsets;
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};

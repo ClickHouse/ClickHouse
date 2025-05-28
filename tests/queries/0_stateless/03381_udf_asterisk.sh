@@ -13,6 +13,7 @@ $CLICKHOUSE_CLIENT -q "
 
 $CLICKHOUSE_CLIENT -q "
   CREATE FUNCTION $FUNCTION_NAME AS (x) -> (x AS c0);
+  CREATE FUNCTION ${FUNCTION_NAME}_col AS () -> COLUMNS('');
   CREATE TABLE t (t0 UInt64, t1 UInt64) ENGINE=MergeTree() ORDER BY t0;
 "
 
@@ -21,6 +22,7 @@ $CLICKHOUSE_CLIENT -q "CREATE VIEW x AS (SELECT $FUNCTION_NAME(t.*) FROM t); -- 
 $CLICKHOUSE_CLIENT -q "CREATE VIEW x AS (SELECT $FUNCTION_NAME(COLUMNS(''))); -- { serverError BAD_ARGUMENTS }"
 $CLICKHOUSE_CLIENT -q "CREATE VIEW x AS (SELECT $FUNCTION_NAME(COLUMNS('t.*'))); -- { serverError BAD_ARGUMENTS }"
 $CLICKHOUSE_CLIENT -q "CREATE VIEW x AS (SELECT $FUNCTION_NAME(COLUMNS('t.t*')) FROM t); -- { serverError BAD_ARGUMENTS }"
+$CLICKHOUSE_CLIENT -q "CREATE VIEW x AS (SELECT ${FUNCTION_NAME}_col() AS c0); -- { serverError BAD_ARGUMENTS }"
 
 # Using UDF normally should work (but it didn't with the old analyzer).
 # Feel free to delete it in the future if this changes

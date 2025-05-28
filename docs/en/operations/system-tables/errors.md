@@ -28,7 +28,7 @@ Counters for some errors may increase during successful query execution. It's no
 
 **Example**
 
-``` sql
+```sql
 SELECT name, code, value
 FROM system.errors
 WHERE value > 0
@@ -40,7 +40,7 @@ LIMIT 1
 └──────────────────┴──────┴───────┘
 ```
 
-``` sql
+```sql
 WITH arrayMap(x -> demangle(addressToSymbol(x)), last_error_trace) AS all
 SELECT name, arrayStringConcat(all, '\n') AS res
 FROM system.errors

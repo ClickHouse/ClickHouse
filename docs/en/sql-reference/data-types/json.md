@@ -56,8 +56,8 @@ To be able to create an ordered `MergeTree` family table, the sorting key has to
 ```sql
 CREATE TABLE logs
 (
-	timestamp DateTime,
-	message JSON
+    timestamp DateTime,
+    message JSON
 )
 ENGINE = MergeTree
 ORDER BY timestamp

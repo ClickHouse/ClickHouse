@@ -3,7 +3,6 @@
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 
-#include <algorithm>
 
 namespace DB
 {

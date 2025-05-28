@@ -27,14 +27,12 @@ def started_cluster():
                 "configs/dictionaries/dictionary_clickhouse_cache.xml",
                 "configs/dictionaries/dictionary_clickhouse_flat.xml",
             ],
+            # Disable with_remote_database_disk to reduce diversion between the public and private repo.
+            # So we do not handle the test differently in the private repo
+            with_remote_database_disk=False,
         )
         cluster.start()
 
-        instance = cluster.instances["ch1"]
-        instance.query("CREATE DATABASE dictionaries ENGINE = Dictionary")
-        instance.query(
-            "CREATE TABLE dictionary_source (id UInt64, value UInt8) ENGINE = Memory"
-        )
         yield cluster
 
     finally:
@@ -44,6 +42,14 @@ def started_cluster():
 
 def test_SYSTEM_RELOAD_DICTIONARY(started_cluster):
     instance = cluster.instances["ch1"]
+
+    instance.query("DROP DATABASE IF EXISTS dictionaries SYNC")
+    instance.query("DROP TABLE IF EXISTS dictionary_source SYNC")
+
+    instance.query("CREATE DATABASE dictionaries ENGINE = Dictionary")
+    instance.query(
+        "CREATE TABLE dictionary_source (id UInt64, value UInt8) ENGINE = Memory"
+    )
 
     instance.query("SYSTEM RELOAD DICTIONARIES")
     assert TSV(
@@ -89,9 +95,14 @@ def test_SYSTEM_RELOAD_DICTIONARY(started_cluster):
         )
     ) == TSV("0\t1\n")
 
+    instance.query("DROP DATABASE IF EXISTS dictionaries SYNC")
+    instance.query("DROP TABLE IF EXISTS dictionary_source SYNC")
+
 
 def test_DROP_DNS_CACHE(started_cluster):
     instance = cluster.instances["ch1"]
+
+    instance.query("DROP TABLE IF EXISTS distributed_lost_host SYNC")
 
     instance.exec_in_container(
         ["bash", "-c", "echo 127.0.0.1 localhost > /etc/hosts"],
@@ -141,6 +152,8 @@ def test_DROP_DNS_CACHE(started_cluster):
             "SELECT DISTINCT host_name, host_address FROM system.clusters WHERE cluster='lost_host_cluster'"
         )
     ) == TSV("lost_host\t127.0.0.1\n")
+
+    instance.query("DROP TABLE IF EXISTS distributed_lost_host SYNC")
 
 
 def test_RELOAD_CONFIG_AND_MACROS(started_cluster):

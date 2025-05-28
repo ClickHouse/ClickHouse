@@ -90,6 +90,7 @@ FROM VALUES(
 `VALUES` can also be used with single values rather than tuples. For example:
 
 ```sql title="Query"
+SELECT *
 FROM VALUES(
     'person String',
     'Noah',
@@ -140,20 +141,6 @@ FROM VALUES(
     ('Mason', 'Venice'),
     ('Isabella', 'Prague')
 )
-
--- single values
-FROM VALUES(
-    'Noah',
-    'Emma',
-    'Liam',
-    'Olivia',
-    'Ilya',
-    'Sophia',
-    'Jackson',
-    'Alexey',
-    'Mason',
-    'Isabella'
-)
 ```
 
 ```response title="Response"
@@ -169,7 +156,26 @@ FROM VALUES(
  9. │ Mason    │ Venice    │
 10. │ Isabella │ Prague    │
     └──────────┴───────────┘
-    
+```   
+
+```sql
+-- single values
+SELECT *
+FROM VALUES(
+    'Noah',
+    'Emma',
+    'Liam',
+    'Olivia',
+    'Ilya',
+    'Sophia',
+    'Jackson',
+    'Alexey',
+    'Mason',
+    'Isabella'
+)
+```
+
+```response title="Response"
     ┌─c1───────┐
  1. │ Noah     │
  2. │ Emma     │

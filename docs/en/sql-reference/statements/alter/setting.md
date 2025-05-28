@@ -13,7 +13,7 @@ If a setting with the specified name does not exist, then the query raises an ex
 
 **Syntax**
 
-``` sql
+```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
 ```
 

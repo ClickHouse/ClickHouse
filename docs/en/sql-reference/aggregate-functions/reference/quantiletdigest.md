@@ -18,7 +18,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 **Syntax**
 
-``` sql
+```sql
 quantileTDigest(level)(expr)
 ```
 
@@ -43,13 +43,13 @@ Type:
 
 Query:
 
-``` sql
+```sql
 SELECT quantileTDigest(number) FROM numbers(10)
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileTDigest(number)─┐
 │                     4.5 │
 └─────────────────────────┘

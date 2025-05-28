@@ -11,7 +11,7 @@ Returns a string of select SVG element tags from Geo data.
 
 **Syntax**
 
-``` sql
+```sql
 Svg(geometry,[style])
 ```
 

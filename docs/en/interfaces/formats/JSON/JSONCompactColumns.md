@@ -24,9 +24,9 @@ The `JSONCompactColumns` output format buffers all data in memory to output it a
 
 ```json
 [
-	[42, 43, 44],
-	["hello", "hello", "hello"],
-	[[0,1], [0,1,2], [0,1,2,3]]
+    [42, 43, 44],
+    ["hello", "hello", "hello"],
+    [[0,1], [0,1,2], [0,1,2,3]]
 ]
 ```
 

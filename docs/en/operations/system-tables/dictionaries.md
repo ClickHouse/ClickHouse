@@ -40,6 +40,7 @@ Columns:
 - `lifetime_max` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Maximum [lifetime](/sql-reference/dictionaries#refreshing-dictionary-data-using-lifetime) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
 - `loading_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time for loading the dictionary.
 - `last_successful_update_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with dictionary sources and investigate the causes.
+- `error_count` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) - Number of errors since last successful loading. Helps to monitor some troubles with dictionary sources and investigate the causes.
 - `loading_duration` ([Float32](../../sql-reference/data-types/float.md)) — Duration of a dictionary loading.
 - `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
 - `comment` ([String](../../sql-reference/data-types/string.md)) — Text of the comment to dictionary.
@@ -48,7 +49,7 @@ Columns:
 
 Configure the dictionary:
 
-``` sql
+```sql
 CREATE DICTIONARY dictionary_with_comment
 (
     id UInt64,
@@ -63,11 +64,11 @@ COMMENT 'The temporary dictionary';
 
 Make sure that the dictionary is loaded.
 
-``` sql
+```sql
 SELECT * FROM system.dictionaries LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 database:                    default

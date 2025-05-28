@@ -13,7 +13,7 @@ The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data tha
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -37,10 +37,6 @@ The table structure can differ from the original MySQL table structure:
 - Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
 - Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
 - The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
-
-:::note
-The MySQL Table Engine is currently not available on the ClickHouse builds for MacOS ([issue](https://github.com/ClickHouse/ClickHouse/issues/21191))
-:::
 
 **Engine Parameters**
 
@@ -70,7 +66,7 @@ CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) EN
 
 Create table in MySQL:
 
-``` text
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -93,7 +89,7 @@ mysql> select * from test;
 
 Create table in ClickHouse using plain arguments:
 
-``` sql
+```sql
 CREATE TABLE mysql_table
 (
     `float_nullable` Nullable(Float32),
@@ -121,11 +117,11 @@ ENGINE = MySQL(creds, table='test')
 
 Retrieving data from MySQL table:
 
-``` sql
+```sql
 SELECT * FROM mysql_table
 ```
 
-``` text
+```text
 ┌─float_nullable─┬─int_id─┐
 │           ᴺᵁᴸᴸ │      1 │
 └────────────────┴────────┘

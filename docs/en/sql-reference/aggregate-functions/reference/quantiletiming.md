@@ -16,7 +16,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 **Syntax**
 
-``` sql
+```sql
 quantileTiming(level)(expr)
 ```
 
@@ -58,7 +58,7 @@ If no values are passed to the function (when using `quantileTimingIf`), [NaN](/
 
 Input table:
 
-``` text
+```text
 ┌─response_time─┐
 │            72 │
 │           112 │
@@ -74,13 +74,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT quantileTiming(response_time) FROM t
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileTiming(response_time)─┐
 │                           126 │
 └───────────────────────────────┘

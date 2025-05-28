@@ -7,7 +7,7 @@ title: 'TabSeparatedWithNamesAndTypes'
 
 | Input | Output | Alias                                          |
 |-------|--------|------------------------------------------------|
-| 	✔    | 	✔     | `TSVWithNamesAndTypes`, `RawWithNamesAndTypes` |
+|     ✔    |     ✔     | `TSVWithNamesAndTypes`, `RawWithNamesAndTypes` |
 
 ## Description {#description}
 

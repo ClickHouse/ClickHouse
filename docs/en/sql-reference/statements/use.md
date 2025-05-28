@@ -8,7 +8,7 @@ title: 'USE Statement'
 
 # USE Statement
 
-``` sql
+```sql
 USE db
 ```
 

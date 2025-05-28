@@ -10,6 +10,7 @@ import pytest
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import (
     PostgresManager,
     assert_nested_table_is_created,
@@ -382,7 +383,7 @@ def test_failed_load_from_snapshot(started_cluster):
     assert "Could not convert string to i" in instance.query_and_get_error(
         f"""
         SET allow_experimental_materialized_postgresql_table=1;
-        CREATE TABLE {table} (a Int32, b Int32) ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', 'mysecretpassword') ORDER BY a
+        CREATE TABLE {table} (a Int32, b Int32) ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY a
         """
     )
 
@@ -568,7 +569,7 @@ def test_dependent_loading(started_cluster):
         f"""
         SET allow_experimental_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
-        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', 'mysecretpassword') ORDER BY key
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
     )
 

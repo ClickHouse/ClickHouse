@@ -26,11 +26,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.query_metric_log LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 query_id:                                                        97c8ba04-b6d4-4bd7-b13e-6201c5c6e49d

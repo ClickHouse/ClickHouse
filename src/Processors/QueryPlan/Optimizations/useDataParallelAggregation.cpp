@@ -12,6 +12,13 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+
+extern const int LOGICAL_ERROR;
+
+}
+
 namespace
 {
 
@@ -68,6 +75,8 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
         case ActionsDAG::ActionType::INPUT:
             irreducible.insert(node);
             break;
+        case ActionsDAG::ActionType::PLACEHOLDER:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "PLACEHOLDER action node must be removed before query plan optimization");
     }
 }
 
@@ -120,6 +129,8 @@ bool allOutputsDependsOnlyOnAllowedNodes(
                 break;
             case ActionsDAG::ActionType::INPUT:
                 break;
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "PLACEHOLDER action node must be removed before query plan optimization");
         }
     }
     visited[node] = res;

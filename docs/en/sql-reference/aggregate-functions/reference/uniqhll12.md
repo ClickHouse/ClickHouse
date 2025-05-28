@@ -10,7 +10,7 @@ title: 'uniqHLL12'
 
 Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
 
-``` sql
+```sql
 uniqHLL12(x[, ...])
 ```
 

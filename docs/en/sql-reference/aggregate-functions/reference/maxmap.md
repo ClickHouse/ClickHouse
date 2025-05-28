@@ -40,14 +40,14 @@ Alias: `maxMappedArrays`
 
 Query:
 
-``` sql
+```sql
 SELECT maxMap(a, b)
 FROM values('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], [3, 1]))
 ```
 
 Result:
 
-``` text
+```text
 ┌─maxMap(a, b)───────────┐
 │ [['x','y','z'],[2,3,1]]│
 └────────────────────────┘

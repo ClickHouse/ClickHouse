@@ -12,7 +12,7 @@ Changes the internal representation of other data types to be dictionary-encoded
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 LowCardinality(data_type)
 ```
 
@@ -32,7 +32,7 @@ Consider using `LowCardinality` instead of [Enum](../../sql-reference/data-types
 
 Create a table with a `LowCardinality`-column:
 
-``` sql
+```sql
 CREATE TABLE lc_t
 (
     `id` UInt16,

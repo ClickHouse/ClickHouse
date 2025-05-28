@@ -17,11 +17,12 @@
 #include <Interpreters/Context.h>
 
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -91,10 +92,12 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
     if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
-        && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
+        && !typeid_cast<const DataTypeDate *>(result_column.type.get())
+        && !typeid_cast<const DataTypeDateTime64 *>(result_column.type.get())
+        && !typeid_cast<const DataTypeDate32 *>(result_column.type.get()))
     {
         throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                        "TTL expression result column should have DateTime or Date type, but has {}",
+                        "TTL expression result column should have Date, Date32, DateTime or DateTime64 type, but has {}",
                         result_column.type->getName());
     }
 }
@@ -176,7 +179,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
 {
     ExpressionAndSets result;
-    auto ttl_string = queryToString(ast);
+    auto ttl_string = ast->formatWithSecretsOneLine();
     auto context_copy = Context::createCopy(context);
     /// FIXME All code here will work with old analyzer, however for TTL
     /// with subqueries it's possible that new analyzer will be enabled in ::read method

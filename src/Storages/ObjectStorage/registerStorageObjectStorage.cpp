@@ -7,10 +7,11 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Databases/LoadingStrictnessLevel.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -266,8 +267,48 @@ void registerStorageDeltaLake(StorageFactory & factory)
             .source_access_type = AccessType::S3,
             .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
+    factory.registerStorage(
+        "DeltaLakeS3",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>();
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::S3,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        });
 #    endif
-    UNUSED(factory);
+#    if USE_AZURE_BLOB_STORAGE
+    factory.registerStorage(
+        "DeltaLakeAzure",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>();
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::AZURE,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        });
+#    endif
+    factory.registerStorage(
+        "DeltaLakeLocal",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>();
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::FILE,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        });
 }
 #endif
 

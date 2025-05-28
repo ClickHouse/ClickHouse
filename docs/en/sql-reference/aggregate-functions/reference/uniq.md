@@ -9,7 +9,7 @@ title: 'uniq'
 
 Calculates the approximate number of different values of the argument.
 
-``` sql
+```sql
 uniq(x[, ...])
 ```
 

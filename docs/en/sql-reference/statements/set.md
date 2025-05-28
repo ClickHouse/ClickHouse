@@ -8,7 +8,7 @@ title: 'SET Statement'
 
 # SET Statement
 
-``` sql
+```sql
 SET param = value
 ```
 
@@ -16,7 +16,7 @@ Assigns `value` to the `param` [setting](/operations/settings/overview) for the 
 
 You can also set all the values from the specified settings profile in a single query.
 
-``` sql
+```sql
 SET profile = 'profile-name-from-the-settings-file'
 ```
 

@@ -10,7 +10,7 @@ title: 'CREATE DATABASE'
 
 Creates a new database.
 
-``` sql
+```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [COMMENT 'Comment']
 ```
 
@@ -39,7 +39,7 @@ The comment is supported for all database engines.
 
 **Syntax**
 
-``` sql
+```sql
 CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
 ```
 
@@ -47,7 +47,7 @@ CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
 
 Query:
 
-``` sql
+```sql
 CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
 SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 ```

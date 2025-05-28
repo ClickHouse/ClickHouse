@@ -16,7 +16,7 @@ Buffers the data to write in RAM, periodically flushing it to another table. Dur
 A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/guides/best-practices/asyncinserts.md).
 :::
 
-``` sql
+```sql
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes [,flush_time [,flush_rows [,flush_bytes]]])
 ```
 
@@ -66,7 +66,7 @@ The conditions for flushing the data are calculated separately for each of the `
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 1, 10, 100, 10000, 1000000, 10000000, 100000000)
 ```
 

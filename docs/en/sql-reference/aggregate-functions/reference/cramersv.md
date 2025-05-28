@@ -18,7 +18,7 @@ For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](./cramer
 
 **Syntax**
 
-``` sql
+```sql
 cramersV(column1, column2)
 ```
 
@@ -39,7 +39,7 @@ The following two columns being compared below have no association with each oth
 
 Query:
 
-``` sql
+```sql
 SELECT
     cramersV(a, b)
 FROM

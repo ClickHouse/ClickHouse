@@ -61,11 +61,11 @@ The `system.part_log` table is created after the first inserting data to the `Me
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.part_log LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 hostname:                      clickhouse.eu-central1.internal

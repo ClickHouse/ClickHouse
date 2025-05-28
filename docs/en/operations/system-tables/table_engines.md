@@ -23,13 +23,13 @@ This table contains the following columns (the column type is shown in brackets)
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.table_engines
 WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 ```
 
-``` text
+```text
 ┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┬─supports_parallel_insert─┐
 │ MergeTree                     │                 1 │                         1 │                   1 │            1 │                    0 │                      0 │                        1 │
 │ Kafka                         │                 1 │                         0 │                   0 │            0 │                    0 │                      0 │                        0 │

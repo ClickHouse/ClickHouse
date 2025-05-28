@@ -13,11 +13,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.contributors LIMIT 10
 ```
 
-``` text
+```text
 ┌─name─────────────┐
 │ Olga Khvostikova │
 │ Max Vetrov       │
@@ -34,11 +34,11 @@ SELECT * FROM system.contributors LIMIT 10
 
 To find out yourself in the table, use a query:
 
-``` sql
+```sql
 SELECT * FROM system.contributors WHERE name = 'Olga Khvostikova'
 ```
 
-``` text
+```text
 ┌─name─────────────┐
 │ Olga Khvostikova │
 └──────────────────┘

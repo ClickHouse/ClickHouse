@@ -27,7 +27,7 @@ Functions:
 
 Input table:
 
-``` text
+```text
 ┌─val─┐
 │   1 │
 │   1 │
@@ -38,13 +38,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT medianDeterministic(val, 1) FROM t;
 ```
 
 Result:
 
-``` text
+```text
 ┌─medianDeterministic(val, 1)─┐
 │                         1.5 │
 └─────────────────────────────┘

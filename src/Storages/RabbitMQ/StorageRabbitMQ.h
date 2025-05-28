@@ -8,6 +8,7 @@
 #include <atomic>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
+#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -32,9 +33,9 @@ public:
 
     ~StorageRabbitMQ() override;
 
-    std::string getName() const override { return "RabbitMQ"; }
+    std::string getName() const override { return RabbitMQ::TABLE_ENGINE_NAME; }
 
-    bool noPushingToViews() const override { return true; }
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
