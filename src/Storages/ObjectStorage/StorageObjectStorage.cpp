@@ -522,20 +522,6 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
     std::string & sample_path,
     const ContextPtr & context)
 {
-    if (configuration->isDataLakeConfiguration())
-    {
-        if (configuration->hasExternalDynamicMetadata())
-            configuration->updateAndGetCurrentSchema(object_storage, context);
-        else
-            configuration->update(object_storage, context);
-
-        auto table_structure = configuration->tryGetTableStructureFromMetadata();
-        if (table_structure)
-        {
-            return table_structure.value();
-        }
-    }
-
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
     auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);

@@ -54,11 +54,31 @@ void resolveSchemaAndFormat(
 {
     if (columns.empty())
     {
-        if (format == "auto")
-            std::tie(columns, format) =
-                StorageObjectStorage::resolveSchemaAndFormatFromData(object_storage, configuration, format_settings, sample_path, context);
-        else
-            columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
+        if (configuration->isDataLakeConfiguration())
+        {
+            if (configuration->hasExternalDynamicMetadata())
+                configuration->updateAndGetCurrentSchema(object_storage, context);
+            else
+                configuration->update(object_storage, context);
+
+            auto table_structure = configuration->tryGetTableStructureFromMetadata();
+            if (table_structure)
+                columns = table_structure.value();
+        }
+
+        if (columns.empty())
+        {
+            if (format == "auto")
+            {
+                std::tie(columns, format) = StorageObjectStorage::resolveSchemaAndFormatFromData(
+                    object_storage, configuration, format_settings, sample_path, context);
+            }
+            else
+            {
+                chassert(!format.empty());
+                columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
+            }
+        }
     }
     else if (format == "auto")
     {

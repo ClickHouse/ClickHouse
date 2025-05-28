@@ -139,7 +139,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (distributed_processing)
     {
-        auto distributed_iterator = std::make_unique<ReadTaskIterator>(local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
+        auto distributed_iterator = std::make_unique<ReadTaskIterator>(
+            local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
 
         if (is_archive)
             return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(distributed_iterator), local_context, nullptr);
@@ -267,16 +268,21 @@ Chunk StorageObjectStorageSource::generate()
                  .etag = &(object_info->metadata->etag)},
                 read_context);
 
+            LOG_TEST(getLogger("KSSENII"), "PARTITION VALUE 1");
             if (chunk_size && chunk.hasColumns())
             {
+                LOG_TEST(getLogger("KSSENII"), "PARTITION VALUE 2");
                 const auto * object_with_partition_columns_info = dynamic_cast<const ObjectInfoWithPartitionColumns *>(object_info.get());
                 if (object_with_partition_columns_info)
                 {
+                    LOG_TEST(getLogger("KSSENII"), "PARTITION VALUE 3");
                     for (const auto & [name_and_type, value] : object_with_partition_columns_info->partitions_info)
                     {
+                        LOG_TEST(getLogger("KSSENII"), "PARTITION VALUE 4");
                         if (!read_from_format_info.source_header.has(name_and_type.name))
                             continue;
 
+                        LOG_TEST(getLogger("KSSENII"), "PARTITION VALUE 5");
                         const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
                         auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
 
