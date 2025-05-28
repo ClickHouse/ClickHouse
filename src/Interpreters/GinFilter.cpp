@@ -100,7 +100,7 @@ bool hasEmptyPostingsList(const GinPostingsCache & postings_cache)
 }
 
 /// Helper method to check if all terms in postings list cache has intersection with given row ID range
-[[nodiscard]] bool matchAllInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
+bool matchAllInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
 {
     /// Check for each term
     GinIndexPostingsList range_bitset{};
@@ -132,7 +132,7 @@ bool hasEmptyPostingsList(const GinPostingsCache & postings_cache)
 }
 
 /// Helper method to check if any term in postings list cache has intersection with given row ID range
-[[nodiscard]] bool matchAnyInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
+bool matchAnyInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
 {
     /// Check for each term
     GinIndexPostingsList postings_bitset{0};
@@ -156,7 +156,7 @@ bool hasEmptyPostingsList(const GinPostingsCache & postings_cache)
 
 
 template <GinSearchMode search_mode>
-[[nodiscard]] bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const GinPostingsCache & postings_cache)
+bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const GinPostingsCache & postings_cache)
 {
     if (hasEmptyPostingsList(postings_cache))
     {
