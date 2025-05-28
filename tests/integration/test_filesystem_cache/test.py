@@ -2,6 +2,7 @@ import logging
 import os
 import random
 import time
+import uuid
 
 import pytest
 
@@ -917,3 +918,50 @@ SELECT * FROM test;
     node.replace_config(
         "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", default_config
     )
+
+
+def test_max_size_ratio(cluster):
+    node = cluster.instances["node"]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test SYNC;
+        CREATE TABLE test (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'test_max_size_ratio',
+            path = 'test_max_size_ratio/',
+            max_size_ratio_to_total_space=0.7,
+            disk = 'hdd_blob');
+        """
+    )
+    assert node.contains_in_log("Using max_size as ratio 0.7 to total disk space")
+
+
+def test_finished_download_time(cluster):
+    node = cluster.instances["node"]
+    name = f"test_finished_download_time_{uuid.uuid4()}"
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS test SYNC;
+        CREATE TABLE test (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = '{name}',
+            path = '{name}/',
+            max_size = '100Mi',
+            disk = 'hdd_blob');
+        """
+    )
+    node.query("INSERT INTO test SELECT number, toString(number) FROM numbers(100)")
+    node.query("SELECT * FROM test FORMAT Null")
+    time.sleep(2)
+    elapsed_time = node.query(
+        f"SELECT now() - finished_download_time FROM system.filesystem_cache WHERE cache_name = '{name}' and state = 'DOWNLOADED' ORDER BY finished_download_time DESC LIMIT 1"
+    )
+    assert len(elapsed_time) > 0
+    assert int(elapsed_time) > 1
+    assert int(elapsed_time) < 5

@@ -19,6 +19,9 @@ class Pipe;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
+
 struct MergeTreeDataSelectSamplingData
 {
     bool use_sampling = false;
@@ -113,7 +116,7 @@ public:
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
 
     ReadFromMergeTree(
-        MergeTreeData::DataPartsVector parts_,
+        RangesInDataParts parts_,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
         Names all_column_names_,
         const MergeTreeData & data_,
@@ -170,13 +173,14 @@ public:
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
         std::optional<KeyCondition> part_offset_condition;
+        std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         std::optional<std::unordered_set<String>> part_values;
     };
 
     static AnalysisResultPtr selectRangesToRead(
-        MergeTreeData::DataPartsVector parts,
+        RangesInDataParts parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const StorageMetadataPtr & metadata_snapshot,
@@ -190,7 +194,7 @@ public:
         std::optional<Indexes> & indexes,
         bool find_exact_ranges);
 
-    AnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts, bool find_exact_ranges = false) const;
+    AnalysisResultPtr selectRangesToRead(RangesInDataParts parts, bool find_exact_ranges = false) const;
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
@@ -214,7 +218,7 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
-    const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
+    const RangesInDataParts & getParts() const { return prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
@@ -229,7 +233,7 @@ public:
 private:
     MergeTreeReaderSettings reader_settings;
 
-    MergeTreeData::DataPartsVector prepared_parts;
+    RangesInDataParts prepared_parts;
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
 
     Names all_column_names;
