@@ -239,9 +239,12 @@ Block InterpreterInsertQuery::getSampleBlock(
     for (size_t i = 0; i < names.size(); i++)
     {
         const auto & current_name = names[i];
-        if (inserted_names.find(current_name) != inserted_names.end())
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} in table {} specified more than once", current_name, table->getStorageID().getNameForLogs());
-        inserted_names.insert(current_name);
+        if (!inserted_names.insert(current_name).second)
+            throw Exception(
+                ErrorCodes::DUPLICATE_COLUMN,
+                "Column {} in table {} specified more than once",
+                current_name,
+                table->getStorageID().getNameForLogs());
 
         const ColumnWithTypeAndName * insertable_col = table_sample_insertable.findByName(current_name);
         if (!insertable_col)
@@ -257,33 +260,30 @@ Block InterpreterInsertQuery::getSampleBlock(
         if (allow_virtuals)
             table_sample_virtuals = table->getVirtualsHeader();
 
+        /// Columns are not ordinary or ephemeral
         for (auto pos : missing_positions)
         {
             const auto & current_name = names[pos];
-            /// Column is not ordinary or ephemeral
-            if (!table_sample_insertable.has(current_name))
+
+            if (table_sample_physical.has(current_name))
             {
                 /// Column is materialized
-                if (table_sample_physical.has(current_name))
-                {
-                    if (!allow_materialized)
-                        throw Exception(
-                            ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column", current_name);
-                    res[pos] = table_sample_physical.getByName(current_name);
-                }
-                else if (table_sample_virtuals.has(current_name))
-                {
-                    res[pos] = table_sample_virtuals.getByName(current_name);
-                }
-                else
-                {
-                    /// The table does not have a column with that name
-                    throw Exception(
-                        ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                        "No such column {} in table {}",
-                        current_name,
-                        table->getStorageID().getNameForLogs());
-                }
+                if (!allow_materialized)
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column", current_name);
+                res[pos] = table_sample_physical.getByName(current_name);
+            }
+            else if (table_sample_virtuals.has(current_name))
+            {
+                res[pos] = table_sample_virtuals.getByName(current_name);
+            }
+            else
+            {
+                /// The table does not have a column with that name
+                throw Exception(
+                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                    "No such column {} in table {}",
+                    current_name,
+                    table->getStorageID().getNameForLogs());
             }
         }
     }
