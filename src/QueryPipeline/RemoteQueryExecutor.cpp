@@ -637,11 +637,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 {
     switch (packet.type)
     {
-        case Protocol::Server::MergeTreeReadTaskRequest: {
+        case Protocol::Server::MergeTreeReadTaskRequest:
             chassert(packet.request.has_value());
-            const bool read_completed = processMergeTreeReadTaskRequest(packet.request.value());
-            return ReadResult(ReadResult::Type::ParallelReplicasToken, read_completed);
-        }
+            processMergeTreeReadTaskRequest(packet.request.value());
+            return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::MergeTreeAllRangesAnnouncement:
             chassert(packet.announcement.has_value());
@@ -761,7 +760,7 @@ void RemoteQueryExecutor::processReadTaskRequest()
     connections->sendReadTaskResponse(response);
 }
 
-bool RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest request)
+void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
@@ -769,8 +768,6 @@ bool RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest re
     ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsReceived);
     auto response = extension->parallel_reading_coordinator->handleRequest(std::move(request));
     connections->sendMergeTreeReadTaskResponse(response);
-
-    return response.finish && extension->parallel_reading_coordinator->isReadingCompleted();
 }
 
 void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement)
@@ -1030,11 +1027,6 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 #endif
 
     return false;
-}
-
-bool RemoteQueryExecutor::isReadingCompleted() const
-{
-    return extension && extension->parallel_reading_coordinator && extension->parallel_reading_coordinator->isReadingCompleted();
 }
 
 }
