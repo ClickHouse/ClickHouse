@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Common/HashTable/HashMap.h"
+#include "Common/HashTable/StringHashMap.h"
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashing/HashMethod.h>
@@ -8,6 +10,7 @@
 #include <Common/CacheBase.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/StringRefWithFixedKey.h>
 #include <Interpreters/AggregationCommon.h>
 #include <base/unaligned.h>
 
@@ -28,6 +31,8 @@ namespace ErrorCodes
 
 namespace ColumnsHashing
 {
+
+using AggregateDataPtr = char *;
 
 /// Cache stores dictionaries and saved_hash per dictionary key.
 class LowCardinalityDictionaryCache : public HashMethodContext
@@ -406,6 +411,102 @@ struct HashMethodSerialized
         return SerializedKeyHolder{
             serializeKeysToPoolContiguous(row, keys_size, key_columns, pool),
             pool};
+    }
+};
+
+template <typename Value, typename Mapped, typename TFixed, bool one_number, bool one_string>
+struct HashMethodStringsWithFixedKeys
+    : public columns_hashing_impl::HashMethodBase<HashMethodStringsWithFixedKeys<Value, Mapped, TFixed, one_number, one_string>, Value, Mapped, false>
+{
+    static constexpr bool has_cheap_key_calculation = false;
+
+    using Self = HashMethodStringsWithFixedKeys<Value, Mapped, TFixed, one_number, one_string>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+
+    using NumberValue = HashMap<TFixed, AggregateDataPtr>::value_type;
+    using NumberMethod = std::conditional_t<one_number, HashMethodOneNumber<NumberValue, Mapped, TFixed>, HashMethodKeysFixed<NumberValue, TFixed, Mapped>>;
+
+    using StringValue = std::conditional_t<one_string, StringHashMap<AggregateDataPtr>::value_type, HashMapWithSavedHash<StringRef, AggregateDataPtr>::value_type>;
+    using StringMethod = std::conditional_t<one_string, HashMethodString<StringValue, Mapped, true, false>, HashMethodSerialized<StringValue, Mapped, false, true>>;
+    using KeyHolder = StringWithFixedKeyHolder<TFixed, !one_string>;
+
+    std::optional<NumberMethod> number_method;
+    std::optional<StringMethod> string_method;
+
+    HashMethodStringsWithFixedKeys(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, const HashMethodContextPtr & context)
+    {
+        Sizes number_sizes;
+        ColumnRawPtrs number_columns;
+        ColumnRawPtrs string_columns;
+
+        for (size_t i = 0; i < key_columns.size(); ++i)
+        {
+            if (key_sizes[i] == 0)
+            {
+                string_columns.push_back(key_columns[i]);
+            }
+            else
+            {
+                number_columns.push_back(key_columns[i]);
+                number_sizes.push_back(key_sizes[i]);
+            }
+        }
+
+        number_method.emplace(number_columns, number_sizes, context);
+        string_method.emplace(string_columns, Sizes{}, context);
+    }
+
+    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        if constexpr (!one_number)
+        {
+            Sizes number_sizes;
+            std::vector<IColumn *> number_columns;
+            std::vector<IColumn *> string_columns;
+
+            for (size_t i = 0; i < key_sizes.size(); ++i)
+            {
+                if (key_sizes[i] == 0)
+                {
+                    string_columns.push_back(key_columns[i]);
+                }
+                else
+                {
+                    number_sizes.push_back(key_sizes[i]);
+                    number_columns.push_back(key_columns[i]);
+                }
+            }
+
+            auto new_sizes = NumberMethod::shuffleKeyColumns(number_columns, number_sizes);
+            if (!new_sizes)
+                return {};
+
+            std::vector<IColumn *> new_columns = number_columns;
+
+            for (auto * column : string_columns)
+            {
+                new_sizes->push_back(0);
+                new_columns.push_back(column);
+            }
+
+            key_columns.swap(new_columns);
+            return new_sizes;
+        }
+
+        return {};
+    }
+
+    ALWAYS_INLINE KeyHolder getKeyHolder(size_t row, Arena & pool) const
+    {
+        StringRefWithFixedKey<TFixed> key;
+        key.fixed = number_method->getKeyHolder(row, pool);
+
+        auto string_holder = string_method->getKeyHolder(row, pool);
+        key.ref = keyHolderGetKey(string_holder);
+
+        return {std::move(key), pool};
     }
 };
 
