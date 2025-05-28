@@ -466,6 +466,10 @@ bool ConcurrentHashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJ
     /// If it'a a all right join with inequal conditions, we need to mark each row
     if (table_join_->getMixedJoinExpression() && isRightOrFull(table_join_->kind()))
         return true;
+    /// For ANY RIGHT or FULL join, we need to track which rows were matched
+    /// so we can output the non-matched ones
+    if (isRightOrFull(table_join_->kind()))
+        return true;
     return false;
 }
 
@@ -483,27 +487,21 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
             "Invalid join type for non-joined blocks: kind={}, strictness={}",
             table_join->kind(), table_join->strictness());
 
-    /// Collect non-joined streams from each slot
-    std::vector<IBlocksStreamPtr> streams;
-    streams.reserve(slots);
-    for (const auto & hash_join : hash_joins)
-    {
-        std::lock_guard lock(hash_join->mutex);
-        bool had_non_joined = hash_join->data->hasNonJoinedRows()
-                            || hash_join->has_non_joined_rows.load(std::memory_order_relaxed);
-        if (!had_non_joined)
-            continue;
-        if (auto s = hash_join->data->getNonJoinedBlocks(
-                left_sample_block, result_sample_block, max_block_size))
-            streams.push_back(std::move(s));
-    }
-
-    if (streams.empty())
+    /// For RIGHT/FULL joins in ConcurrentHashJoin, each slot has a complete copy
+    /// of the right-side data. To avoid outputting duplicate non-joined rows,
+    /// we only get non-joined blocks from the first slot.
+    /// This works because:
+    /// 1. Each slot has all right-side data (unlike left-side which is partitioned)
+    /// 2. The shared used_flags should track which rows were joined by ANY slot
+    /// 3. We only need one slot to output the non-joined rows
+    
+    if (hash_joins.empty())
         return {};
-    if (streams.size() == 1)
-        return streams[0];
-
-    return std::make_shared<ConcatNotJoinedStreams>(std::move(streams));
+        
+    // Use only the first slot for non-joined blocks
+    std::lock_guard lock(hash_joins[0]->mutex);
+    return hash_joins[0]->data->getNonJoinedBlocks(
+        left_sample_block, result_sample_block, max_block_size);
 }
 
 template <typename HashTable>

@@ -177,7 +177,7 @@ HashJoin::HashJoin(
 
     // Initialize used_flags: use shared instance if provided, else create a new one.
     if (shared_used_flags_)
-        used_flags = std::move(shared_used_flags_);
+        used_flags = shared_used_flags_;
     else
         used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
 
@@ -1185,7 +1185,7 @@ bool HashJoin::hasNonJoinedRows() const
         return has_non_joined_rows.load(std::memory_order_acquire);
 
     // Only valid for RIGHT JOIN
-    if (!isRight(kind))
+    if (!isRightOrFull(kind))
         return false;
 
     // Only necessary if we need to track which rows were used
