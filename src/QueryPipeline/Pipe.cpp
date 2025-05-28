@@ -775,7 +775,7 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
         addSplitResizeTransform(num_streams, min_outstreams_per_resize_after_split, strict);
         return;
     }
-    else if (strict && num_streams == numOutputPorts())
+    if (strict && num_streams == numOutputPorts())
         return;
 
     ProcessorPtr resize;
