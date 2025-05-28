@@ -88,17 +88,6 @@ age
 alphaTokens
 and
 appendTrailingCharIfAbsent
-arrayConcat
-arrayCount
-arrayCumSum
-arrayCumSumNonNegative
-arrayDifference
-arrayDotProduct
-arrayEnumerateDense
-arrayEnumerateDenseRanked
-arrayEnumerateUniq
-arrayLastIndex
-arrayStringConcat
 asinh
 assumeNotNull
 atan
@@ -268,7 +257,6 @@ greatCircleDistance
 greater
 greaterOrEquals
 greatest
-has
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -531,7 +519,6 @@ replaceOne
 replaceRegexpAll
 replaceRegexpOne
 replicate
-reverse
 reverseUTF8
 revision
 right

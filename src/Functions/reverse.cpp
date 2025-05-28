@@ -112,7 +112,21 @@ private:
 
 REGISTER_FUNCTION(Reverse)
 {
-    factory.registerFunction<ReverseOverloadResolver>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = "Reverses the order of the elements in the input array or the characters in the input string.";
+    FunctionDocumentation::Syntax syntax = "reverse(arr | str)";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr | str", "The source array or string. [`Array(T)`](/sql-reference/data-types/array), [`String`](/sql-reference/data-types/string)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array or string with the order of elements or characters reversed.";
+    FunctionDocumentation::Examples examples = {
+        {"Reverse array", "SELECT reverse([1, 2, 3, 4]);", "[4, 3, 2, 1]"},
+        {"Reverse string", "SELECT reverse('abcd');", "'dcba'"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = FunctionDocumentation::VERSION_UNKNOWN;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<ReverseOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }
