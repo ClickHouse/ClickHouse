@@ -109,6 +109,7 @@ base58Decode
 base58Encode
 basename
 bin
+bitPositionsToArray
 bitmapAnd
 bitmapAndCardinality
 bitmapAndnot
