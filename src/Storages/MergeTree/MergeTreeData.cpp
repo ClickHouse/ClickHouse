@@ -5473,7 +5473,14 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, C
     /// Remove metadata version file and take it from table.
     /// Currently we cannot attach parts with different schema, so
     /// we can assume that it's equal to table's current schema.
-    part->writeMetadataVersion(local_context, metadata_version, sync);
+    part->removeMetadataVersion();
+    {
+        auto out_metadata = part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, local_context->getWriteSettings());
+        writeText(metadata_version, *out_metadata);
+        out_metadata->finalize();
+        if (sync)
+            out_metadata->sync();
+    }
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
@@ -8127,7 +8134,7 @@ bool MergeTreeData::canUseAdaptiveGranularity() const
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 {
-    return fs::path(disk->getPath()) / relative_data_path;
+    return disk->getPath() + relative_data_path;
 }
 
 

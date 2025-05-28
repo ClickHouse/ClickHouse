@@ -771,13 +771,7 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
-        auto & request = *requests[0];
-        impl->finalize(fmt::format(
-            "Operation timeout on {} of {} requests. First ({}): {}",
-            Coordination::OpNum::Multi,
-            requests.size(),
-            demangle(typeid(request).name()),
-            request.getPath()));
+        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Multi, requests[0]->getPath()));
         return {Coordination::Error::ZOPERATIONTIMEOUT, ""};
     }
 

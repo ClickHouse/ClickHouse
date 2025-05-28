@@ -27,13 +27,14 @@ std::string FunctionDocumentation::examplesAsString() const
     std::string res;
     for (const auto & [name, query, result] : examples)
     {
-        res += "**" + name + "**" + "\n\n";
-        res += "```sql title=""Query""\n";
+        res += name + ":\n\n";
+        res += "```sql\n";
         res += query + "\n";
         res += "```\n\n";
-        res += "```response title=""Response""\n";
+        res += "Result:\n\n";
+        res += "```text\n";
         res += result + "\n";
-        res += "```";
+        res += "```\n";
     }
     return res;
 }

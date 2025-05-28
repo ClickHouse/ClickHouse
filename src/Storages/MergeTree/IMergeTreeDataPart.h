@@ -137,8 +137,6 @@ public:
 
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
-    void setMetadataVersion(int32_t metadata_version_) noexcept { metadata_version = metadata_version_; }
-    void writeMetadataVersion(ContextPtr local_context, int32_t metadata_version, bool sync);
 
     const NamesAndTypesList & getColumns() const { return columns; }
     const ColumnsDescription & getColumnsDescription() const { return columns_description; }
@@ -166,7 +164,7 @@ public:
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
-    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version = true);
+    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
 
     void loadRowsCountFileForUnexpectedPart();
 
@@ -703,7 +701,7 @@ private:
 
 
     /// Reads columns names and types from columns.txt
-    void loadColumns(bool require, bool load_metadata_version);
+    void loadColumns(bool require);
 
     /// Reads columns substreams from columns_substreams.txt (only in Compact parts).
     void loadColumnsSubstreams();

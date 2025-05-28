@@ -18,18 +18,18 @@ from delta import *
 from deltalake.writer import write_deltalake
 from minio.deleteobjects import DeleteObject
 from pyspark.sql.functions import (
-    col,
     current_timestamp,
     monotonically_increasing_id,
     row_number,
+    col,
 )
 from pyspark.sql.types import (
     ArrayType,
     BooleanType,
     DateType,
     IntegerType,
-    LongType,
     ShortType,
+    LongType,
     StringType,
     StructField,
     StructType,
@@ -39,12 +39,9 @@ from pyspark.sql.window import Window
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import minio_access_key, minio_secret_key
-from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import (
     AzureUploader,
-    LocalUploader,
     S3Uploader,
     get_file_contents,
     list_s3_objects,
@@ -52,6 +49,9 @@ from helpers.s3_tools import (
     upload_directory,
 )
 from helpers.test_tools import TSV
+from helpers.mock_servers import start_mock_servers
+from helpers.config_cluster import minio_access_key
+from helpers.config_cluster import minio_secret_key
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__, with_spark=True)
@@ -140,10 +140,6 @@ def started_cluster():
         cluster.default_azure_uploader = AzureUploader(
             cluster.blob_service_client, cluster.azure_container_name
         )
-
-        # Only support local delta tables on the first node for now
-        # extend this if testing on other nodes becomes necessary
-        cluster.local_uploader = LocalUploader(cluster.instances["node1"])
 
         cluster.spark_session = get_spark()
 
@@ -266,37 +262,6 @@ def create_delta_table(
                     SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
                     + allow_dynamic_metadata_for_datalakes_suffix
                 )
-    elif storage_type == "local":
-        # For local storage, we need to use the absolute path
-        user_files_path = os.path.join(
-            SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
-        )
-        table_path = os.path.join(user_files_path, table_name)
-        if run_on_cluster:
-            assert table_function
-            instance.query(
-                f"""
-                deltalakeLocalCluster('cluster_simple', '{table_path}', {format})
-                SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-                """
-            )
-        else:
-            if table_function:
-                instance.query(
-                    f"""
-                    deltalakeLocal('{table_path}', {format})
-                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-                    """
-                )
-            else:
-                instance.query(
-                    f"""
-                    DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name}
-                    ENGINE=DeltaLakeLocal('{table_path}', {format})
-                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-                    """
-                )
     else:
         raise Exception(f"Unknown delta lake storage type: {storage_type}")
 
@@ -311,10 +276,6 @@ def default_upload_directory(
         )
     elif storage_type == "azure":
         return started_cluster.default_azure_uploader.upload_directory(
-            local_path, remote_path, **kwargs
-        )
-    elif storage_type == "local":
-        return started_cluster.local_uploader.upload_directory(
             local_path, remote_path, **kwargs
         )
     else:
@@ -341,8 +302,7 @@ def create_initial_data_file(
 
 
 @pytest.mark.parametrize(
-    "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
+    "use_delta_kernel, storage_type", [("1", "s3"), ("0", "s3"), ("0", "azure")]
 )
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
@@ -354,20 +314,12 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         started_cluster, instance, inserted_data, TABLE_NAME
     )
 
-    # For local storage, we need to use the absolute path
-    user_files_path = os.path.join(
-        SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
-    )
-    table_path = os.path.join(user_files_path, TABLE_NAME)
-
-    # We need to exclude the leading slash for local storage protocol file://
-    delta_path = table_path if storage_type == "local" else f"/{TABLE_NAME}"
-    write_delta_from_file(spark, parquet_data_path, delta_path)
+    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
 
     files = default_upload_directory(
         started_cluster,
         storage_type,
-        delta_path,
+        f"/{TABLE_NAME}",
         "",
     )
 
@@ -388,28 +340,17 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
 
 
 @pytest.mark.parametrize(
-    "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
+    "use_delta_kernel, storage_type", [("1", "s3"), ("0", "s3"), ("0", "azure")]
 )
 def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-
     TABLE_NAME = randomize_table_name("test_partition_by")
-
-    # For local storage, we need to use the absolute path
-    user_files_path = os.path.join(
-        SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
-    )
-    table_path = os.path.join(user_files_path, TABLE_NAME)
-
-    # We need to exclude the leading slash for local storage protocol file://
-    delta_path = table_path if storage_type == "local" else f"/{TABLE_NAME}"
 
     write_delta_from_df(
         spark,
         generate_data(spark, 0, 10),
-        delta_path,
+        f"/{TABLE_NAME}",
         mode="overwrite",
         partition_by="a",
     )
@@ -417,7 +358,7 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     files = default_upload_directory(
         started_cluster,
         storage_type,
-        delta_path,
+        f"/{TABLE_NAME}",
         "",
     )
 
@@ -434,8 +375,7 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
 
 
 @pytest.mark.parametrize(
-    "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
+    "use_delta_kernel, storage_type", [("1", "s3"), ("0", "s3"), ("0", "azure")]
 )
 def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
@@ -444,32 +384,24 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_checkpoint")
 
-    # For local storage, we need to use the absolute path
-    user_files_path = os.path.join(
-        SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
-    )
-    table_path = os.path.join(user_files_path, TABLE_NAME)
-    # We need to exclude the leading slash for local storage protocol file://
-    delta_path = table_path if storage_type == "local" else f"/{TABLE_NAME}"
-
     write_delta_from_df(
         spark,
         generate_data(spark, 0, 1),
-        delta_path,
+        f"/{TABLE_NAME}",
         mode="overwrite",
     )
     for i in range(1, 25):
         write_delta_from_df(
             spark,
             generate_data(spark, i, i + 1),
-            delta_path,
+            f"/{TABLE_NAME}",
             mode="append",
         )
 
     files = default_upload_directory(
         started_cluster,
         storage_type,
-        delta_path,
+        f"/{TABLE_NAME}",
         "",
     )
     # 25 data files
@@ -500,12 +432,12 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
         == 25
     )
 
-    table = DeltaTable.forPath(spark, delta_path)
+    table = DeltaTable.forPath(spark, f"/{TABLE_NAME}")
     table.delete("a < 10")
     files = default_upload_directory(
         started_cluster,
         storage_type,
-        delta_path,
+        f"/{TABLE_NAME}",
         "",
     )
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 15
@@ -514,7 +446,7 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
         write_delta_from_df(
             spark,
             generate_data(spark, i, i + 1),
-            delta_path,
+            f"/{TABLE_NAME}",
             mode="append",
         )
     # + 1 metadata files (for delete)
@@ -525,7 +457,7 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
     files = default_upload_directory(
         started_cluster,
         storage_type,
-        delta_path,
+        f"/{TABLE_NAME}",
         "",
     )
     assert len(files) == 53 + 1 + 5 * 2 + 1 + 1
@@ -1486,7 +1418,7 @@ def test_rename_and_add_column(started_cluster, column_mapping):
         "first_name", "age"
     )
 
-    if column_mapping == "":
+    if column_mapping is "":
         df.write.format("delta").partitionBy("age").save(path)
     else:
         df.write.format("delta").partitionBy("age").option(

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: race, no-parallel
-# no-parallel because we run many concurrent mutations, which may break other tests by delaying their
-# mutations for a long time.
+# Tags: race
+
+# This test is disabled because it triggers internal assert in Thread Sanitizer.
+# Thread Sanitizer does not support for more than 64 mutexes to be locked in a single thread.
+# https://github.com/google/sanitizers/issues/950
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
