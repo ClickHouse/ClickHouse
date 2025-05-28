@@ -198,6 +198,7 @@ if (ENABLE_CLICKHOUSE_KEEPER)
     if (NOT BUILD_STANDALONE_KEEPER)
         add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLIT_DEBUG_SYMBOLS_DIR})
     endif()
 
     # otherwise we don't build keeper
@@ -230,7 +231,7 @@ endif ()
 if (SPLIT_DEBUG_SYMBOLS)
     clickhouse_split_debug_symbols(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR} BINARY_PATH clickhouse)
 else()
-    clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR})
+    clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR})
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
 
