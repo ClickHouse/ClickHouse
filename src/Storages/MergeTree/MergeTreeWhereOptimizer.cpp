@@ -60,6 +60,22 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
     return min_position;
 }
 
+static NameSet getTableColumns(const StorageMetadataPtr & metadata_snapshot, const Names & queried_columns)
+{
+    const auto & columns_description = metadata_snapshot->getColumns();
+    NameSet table_columns(std::from_range_t{},
+          metadata_snapshot->getColumns().getAllPhysical() | std::views::transform([](const auto & col) { return col.name; }));
+
+    /// Add also requested subcolumns to known table columns.
+    for (const auto & column : queried_columns)
+    {
+        if (columns_description.hasSubcolumn(column))
+            table_columns.insert(column);
+    }
+
+    return table_columns;
+}
+
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
@@ -68,9 +84,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const std::optional<NameSet> & supported_columns_,
     LoggerPtr log_)
     : estimator(estimator_)
-    , table_columns(
-          std::from_range_t{},
-          metadata_snapshot->getColumns().getAllPhysical() | std::views::transform([](const auto & col) { return col.name; }))
+    , table_columns(getTableColumns(metadata_snapshot, queried_columns_))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(
@@ -546,11 +560,6 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
 
         /// disallow arrayJoin expressions to be moved to PREWHERE for now
         if (function_name == "arrayJoin")
-            return true;
-
-        /// disallow GLOBAL IN, GLOBAL NOT IN
-        /// TODO why?
-        if (function_name == "globalIn" || function_name == "globalNotIn")
             return true;
 
         size_t arguments_size = function_node.getArgumentsSize();

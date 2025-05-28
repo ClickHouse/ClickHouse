@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
 }
 
 namespace ErrorCodes
@@ -434,15 +435,19 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
             return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), cur_header);
         });
 
-        String live_view_id = live_view.getStorageID().hasUUID() ? toString(live_view.getStorageID().uuid) : live_view.getStorageID().getFullNameNotQuoted();
-        builder.addSimpleTransform([&](const Block & stream_header)
+        bool disable_deduplication_for_children = !local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
+        if (!disable_deduplication_for_children)
         {
-            return std::make_shared<DeduplicationToken::SetViewIDTransform>(live_view_id, stream_header);
-        });
-        builder.addSimpleTransform([&](const Block & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
-        });
+            String live_view_id = live_view.getStorageID().hasUUID() ? toString(live_view.getStorageID().uuid) : live_view.getStorageID().getFullNameNotQuoted();
+            builder.addSimpleTransform([&](const Block & stream_header)
+            {
+                return std::make_shared<DeduplicationToken::SetViewIDTransform>(live_view_id, stream_header);
+            });
+            builder.addSimpleTransform([&](const Block & stream_header)
+            {
+                return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
+            });
+        }
 
         builder.addSimpleTransform([&](const Block & cur_header)
         {
