@@ -67,37 +67,30 @@ namespace ErrorCodes
 
 size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
 {
-    std::optional<size_t> threshold;
-    if (max_bytes_before_external_sort != 0)
-        threshold = max_bytes_before_external_sort;
+    if (max_bytes_ratio_before_external_sort == 0.)
+        return 0;
 
-    if (max_bytes_ratio_before_external_sort != 0.)
+    double ratio = max_bytes_ratio_before_external_sort;
+    if (ratio < 0 || ratio >= 1.)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
+
+    auto available_system_memory = getMostStrictAvailableSystemMemory();
+    if (available_system_memory.has_value())
     {
-        double ratio = max_bytes_ratio_before_external_sort;
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
+        size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
 
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
-            if (threshold)
-                threshold = std::min(threshold.value(), ratio_in_bytes);
-            else
-                threshold = ratio_in_bytes;
+        LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {}, available system memory: {})",
+            formatReadableSizeWithBinarySuffix(ratio_in_bytes),
+            ratio,
+            formatReadableSizeWithBinarySuffix(*available_system_memory));
 
-            LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_WARNING(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
-        }
+        return ratio_in_bytes;
     }
-
-    return threshold.value_or(0);
+    else
+    {
+        LOG_WARNING(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
+        return 0;
+    }
 }
 
 SortingStep::Settings::Settings(const DB::Settings & settings)
