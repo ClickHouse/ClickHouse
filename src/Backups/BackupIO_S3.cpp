@@ -2,6 +2,7 @@
 
 #if USE_AWS_S3
 #include <Core/Settings.h>
+#include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>

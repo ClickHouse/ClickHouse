@@ -7,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/types.h>
 
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>

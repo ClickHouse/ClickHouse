@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Common/DateLUTImpl.h>
+#include <base/types.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Columns/ColumnString.h>

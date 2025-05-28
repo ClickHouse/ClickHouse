@@ -19,7 +19,6 @@ workflow = Workflow.Config(
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_jobs,
-        *JobConfigs.tidy_arm_build_jobs,
         *[
             job.set_dependency(
                 [
@@ -54,21 +53,23 @@ workflow = Workflow.Config(
         *JobConfigs.upgrade_test_jobs,
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
-        *JobConfigs.performance_comparison_with_master_head_jobs,
+        *JobConfigs.performance_comparison_amd_jobs,
+        *JobConfigs.performance_comparison_arm_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
+        ArtifactConfigs.fast_test,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
+        *ArtifactConfigs.performance_packages,
         *ArtifactConfigs.performance_reports,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,
-    enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,
@@ -79,7 +80,6 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[

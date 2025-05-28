@@ -6,11 +6,10 @@
 
 #include <Interpreters/ActionsDAG.h>
 
-#include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerContext.h>
-#include <Planner/PlannerCorrelatedSubqueries.h>
-#include <Planner/PlannerQueryProcessingInfo.h>
+#include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerWindowFunctions.h>
+#include <Planner/PlannerQueryProcessingInfo.h>
 
 namespace DB
 {
@@ -26,7 +25,6 @@ struct ProjectionAnalysisResult
 struct FilterAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr filter_actions;
-    CorrelatedSubtrees correlated_subtrees;
     std::string filter_column_name;
     bool remove_filter_column = false;
 };

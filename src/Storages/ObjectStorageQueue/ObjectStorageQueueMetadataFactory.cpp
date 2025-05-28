@@ -39,7 +39,7 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
     return it->second.metadata;
 }
 
-void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path, const StorageID & storage_id, bool remove_metadata_if_no_registered)
+void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path, const StorageID & storage_id)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -53,8 +53,8 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
     {
         const auto registry_size = it->second.metadata->unregister(
             storage_id,
-            /* active */ false,
-            remove_metadata_if_no_registered);
+            /* active */false,
+            /* remove_all_metadata_if_no_registered */true);
 
         LOG_TRACE(log, "Remaining registry size: {}", registry_size);
     }
@@ -63,7 +63,7 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    if (*it->second.ref_count == 0)
+    if (!it->second.ref_count)
         metadata_by_path.erase(it);
 }
 

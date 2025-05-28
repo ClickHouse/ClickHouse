@@ -13,13 +13,6 @@ namespace DB
 /// match the predicate and which marks may match the predicate. This allows to skip the scan if the
 /// same predicate is evaluated on the same data again. Note that this doesn't work the other way
 /// round: we can't tell if _all_ rows in the mark match the predicate.
-///
-/// Note: The cache may store more than the minimal number of matching marks.
-/// For example, assume a very selective predicate that matches just a single row in a single mark.
-/// One would expect that the cache records just the single mark as potentially matching:
-///     000000010000000000000000000
-/// But it is equally correct for the cache to store this: (it is just less efficient for pruning)
-///     000001111111110000000000000
 class QueryConditionCache
 {
 public:
@@ -34,10 +27,6 @@ private:
         const UUID table_id;
         const String part_name;
         const size_t condition_hash;
-
-        /// -- Additional members, conceptually not part of the key. Only included for pretty-printing
-        ///    in system.query_condition_cache:
-        const String condition;
 
         bool operator==(const Key & other) const;
     };
@@ -78,7 +67,7 @@ public:
 
     /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
     void write(
-        const UUID & table_id, const String & part_name, size_t condition_hash, const String & condition,
+        const UUID & table_id, const String & part_name, size_t condition_hash,
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
@@ -95,8 +84,6 @@ public:
 private:
     Cache cache;
     LoggerPtr logger = getLogger("QueryConditionCache");
-
-    friend class StorageSystemQueryConditionCache;
 };
 
 using QueryConditionCachePtr = std::shared_ptr<QueryConditionCache>;

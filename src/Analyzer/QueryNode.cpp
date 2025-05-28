@@ -8,8 +8,6 @@
 
 #include <Core/NamesAndTypes.h>
 
-#include <DataTypes/IDataType.h>
-
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -22,7 +20,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
@@ -47,7 +44,6 @@ QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_change
     children[window_child_index] = std::make_shared<ListNode>();
     children[order_by_child_index] = std::make_shared<ListNode>();
     children[limit_by_child_index] = std::make_shared<ListNode>();
-    children[correlated_columns_list_index] = std::make_shared<ListNode>();
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_)
@@ -110,31 +106,6 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     }
 }
 
-ColumnNodePtrWithHashSet QueryNode::getCorrelatedColumnsSet() const
-{
-    ColumnNodePtrWithHashSet result;
-
-    const auto & correlated_columns = getCorrelatedColumns().getNodes();
-    result.reserve(correlated_columns.size());
-
-    for (const auto & column : correlated_columns)
-    {
-        result.insert(std::static_pointer_cast<ColumnNode>(column));
-    }
-    return result;
-}
-
-void QueryNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
-{
-    auto & correlated_columns = getCorrelatedColumns().getNodes();
-    for (const auto & column : correlated_columns)
-    {
-        if (column->isEqual(*correlated_column))
-            return;
-    }
-    correlated_columns.push_back(correlated_column);
-}
-
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "QUERY id: " << format_state.getNodeId(this);
@@ -179,12 +150,6 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
-
-    if (isCorrelated())
-    {
-        buffer << ", is_correlated: 1\n" << std::string(indent + 2, ' ') << "CORRELATED COLUMNS\n";
-        getCorrelatedColumns().dumpTreeImpl(buffer, format_state, indent + 4);
-    }
 
     if (hasWith())
     {

@@ -2,6 +2,8 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
@@ -9,12 +11,14 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
 
 #if defined(OS_LINUX)
 #include <sys/prctl.h>
 #endif
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <iostream>
