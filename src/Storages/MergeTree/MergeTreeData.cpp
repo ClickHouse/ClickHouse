@@ -546,8 +546,6 @@ MergeTreeData::MergeTreeData(
         else
             background_moves_assignee.trigger();
     };
-
-    parts_mover = MergeTreePartsMoverFactory::get(this);
 }
 
 VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMetadata & metadata)

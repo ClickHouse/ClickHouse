@@ -395,8 +395,7 @@ void MergeTreeZeroCopyPartsMover::preparePartToSwap(TemporaryClonedPart & cloned
 
 MergeTreePartsMoverPtr MergeTreePartsMoverFactory::get(MergeTreeData * data)
 {
-    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(data) != nullptr;
-    if (replicated && (*data->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+    if ((*data->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
         return std::make_shared<MergeTreeZeroCopyPartsMover>(data);
     return std::make_shared<MergeTreePartsMover>(data);
 }
