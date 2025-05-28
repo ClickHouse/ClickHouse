@@ -57,7 +57,7 @@ static String trimAndEscape(std::string_view name, size_t max_length = 128)
     return escapeForFileName(std::string(name));
 }
 
-UInt256 caclculateHash(std::string_view data)
+UInt256 caclculateHash(std::string_view data [[maybe_unused]])
 {
 #if USE_SSL
     UInt256 hash;
