@@ -58,6 +58,7 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int BAD_TYPE_OF_FIELD;
 }
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
@@ -1979,6 +1980,19 @@ KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_, con
 {
 }
 
+static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
+{
+    try
+    {
+        src_value = convertFieldToType(src_value, *desired_type, src_type.get());
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Key expression contains comparison between inconvertible types: "
+            "{} and {} inside {}", desired_type->getName(), src_type->getName(), node_column_name);
+    }
+}
+
 
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
@@ -2238,12 +2252,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                     if (!const_type->equals(*common_type))
                     {
-                        // Replace direct call that throws exception with try version
-                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
-                        if (converted.isNull())
-                            return false;
-
-                        const_value = converted;
+                        castValueToType(common_type, const_value, const_type, node.getColumnName());
 
                         // Need to set is_constant_transformed unless we're doing exact conversion
                         if (!key_expr_type_not_null->equals(*common_type))
@@ -2890,41 +2899,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 // This allows to use a more efficient lookup with no extra reads.
 bool KeyCondition::matchesExactContinuousRange() const
 {
-    const Field field{};
-    auto is_always_monotonic_chain = [&field](const std::vector<FunctionBasePtr> & chain)
-    {
-        for (const auto & func : chain)
-        {
-            if (!func || !func->hasInformationAboutMonotonicity())
-                return false;
-
-            const auto & types = func->getArgumentTypes();
-            if (types.empty() || !types.front())
-                return false;
-
-            const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
-            if (!monotonicity.is_always_monotonic)
-                return false;
-        }
-
-        return true;
-    };
-
-    for (const auto & elem : rpn)
-    {
-        if (!elem.monotonic_functions_chain.empty() && !is_always_monotonic_chain(elem.monotonic_functions_chain))
-            return false;
-
-        if (elem.set_index)
-        {
-            if (elem.function != RPNElement::Function::FUNCTION_IN_SET || elem.set_index->size() != 1)
-                return false;
-
-            for (const auto & mapping : elem.set_index->getIndexesMapping())
-                if (!mapping.functions.empty() && !is_always_monotonic_chain(mapping.functions))
-                    return false;
-        }
-    }
+    // Not implemented yet.
+    if (hasMonotonicFunctionsChain())
+        return false;
 
     enum Constraint
     {
@@ -2962,11 +2939,6 @@ bool KeyCondition::matchesExactContinuousRange() const
         }
 
         if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
-        {
-            continue;
-        }
-
-        if (element.function == RPNElement::Function::ALWAYS_TRUE)
         {
             continue;
         }

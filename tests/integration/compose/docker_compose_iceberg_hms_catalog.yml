@@ -1,6 +1,6 @@
 services:
   spark-iceberg:
-    image: tabulario/spark-iceberg:3.5.5_1.8.1
+    image: tabulario/spark-iceberg
     build: spark/
     depends_on:
       hive:
@@ -17,7 +17,7 @@ services:
       - 10001:10001
 
   hive:
-    build: ./../../integration/test_database_hms/hms_extensions/
+    build: ./../../hms_extensions/
     restart: unless-stopped
     depends_on:
       minio:
@@ -26,7 +26,7 @@ services:
       - "9083:9083"
     environment:
       SERVICE_NAME: "metastore"
-      SERVICE_OPTS: "-Dmetastore.warehouse.dir=s3a://warehouse-hms/data/"
+      SERVICE_OPTS: "-Dmetastore.warehouse.dir=s3a://warehouse/data/"
     healthcheck:
       test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9083"]
       interval: 2s
@@ -34,37 +34,34 @@ services:
       retries: 15
       start_period: 45s
 
-  # TODO: can we simply use with_minio=True instead?
   minio:
-    image: minio/minio:RELEASE.2024-07-31T05-46-26Z
+    image: minio/minio
     environment:
       - MINIO_ROOT_USER=minio
-      - MINIO_ROOT_PASSWORD=ClickHouse_Minio_P@ssw0rd
+      - MINIO_ROOT_PASSWORD=minio123
       - MINIO_DOMAIN=minio
     networks:
       default:
         aliases:
           - warehouse.minio
     ports:
-      - 9001
-      - 9000
+        - 9001:9001
+        - 9002:9000
     command: ["server", "/data", "--console-address", ":9001"]
 
-  # TODO: move this code to cluster.py
   mc:
     depends_on:
       - minio
-    # Stick to version with "mc config"
-    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    image: minio/mc
     environment:
       - AWS_ACCESS_KEY_ID=minio
-      - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
+      - AWS_SECRET_ACCESS_KEY=minio123
       - AWS_REGION=us-east-1
     entrypoint: >
       /bin/sh -c "
-      until (/usr/bin/mc config host add minio http://minio:9000 minio ClickHouse_Minio_P@ssw0rd) do echo '...waiting...' && sleep 1; done;
-      /usr/bin/mc rm -r --force minio/warehouse-hms;
-      /usr/bin/mc mb minio/warehouse-hms --ignore-existing;
-      /usr/bin/mc policy set public minio/warehouse-hms;
+      until (/usr/bin/mc config host add minio http://minio:9000 minio minio123) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc rm -r --force minio/warehouse;
+      /usr/bin/mc mb minio/warehouse --ignore-existing;
+      /usr/bin/mc policy set public minio/warehouse;
       tail -f /dev/null
       "

@@ -201,8 +201,8 @@ Calculates the remainder when dividing `x` by `y`. Similar to function
 `modulo` except that `positiveModulo` always return non-negative number.
     )";
     FunctionDocumentation::Syntax syntax = "positiveModulo(x, y)";
-    FunctionDocumentation::Argument argument1 = {"x", "The dividend. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."};
-    FunctionDocumentation::Argument argument2 = {"y", "The divisor (modulus). [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."};
+    FunctionDocumentation::Argument argument1 = {"x", "The dividend"};
+    FunctionDocumentation::Argument argument2 = {"y", "The divisor (modulus)"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
     FunctionDocumentation::ReturnedValue returned_value = R"(
 Returns the difference between `x` and the nearest integer not greater than

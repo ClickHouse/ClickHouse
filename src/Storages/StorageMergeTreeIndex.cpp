@@ -20,7 +20,6 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
