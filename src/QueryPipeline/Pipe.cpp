@@ -769,8 +769,9 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
     /// Benefits:
     /// 1. Mitigates lock contention.
     /// 2. Maintains ResizeProcessor's benefit of balancing data flow among multiple streams.
-    chassert(min_outstreams_per_resize_after_split != 0);
-    if (output_ports.size() > 1 && num_streams / min_outstreams_per_resize_after_split > 1)
+    ///
+    /// Disable this optimization when min_outstreams_per_resize_after_split is 0
+    if (output_ports.size() > 1 && min_outstreams_per_resize_after_split != 0 && num_streams / min_outstreams_per_resize_after_split > 1)
     {
         addSplitResizeTransform(num_streams, min_outstreams_per_resize_after_split, strict);
         return;

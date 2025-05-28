@@ -90,7 +90,7 @@ public:
     void addChains(std::vector<Chain> chains);
 
     /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
-    void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = std::numeric_limits<UInt64>::max());
+    void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 
