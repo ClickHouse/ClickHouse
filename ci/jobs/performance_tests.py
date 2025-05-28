@@ -165,12 +165,12 @@ class CHServer:
                 --profile-seconds 10 \
                 {test_file}",
             verbose=True,
+            strip=False,
         )
         duration = sw.duration
         if res != 0:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
-            err = Shell.get_output(f"echo \"{err}\" | grep '{test_name}\t'")
         with open(f"{results_path}/{test_name}-raw.tsv", "w") as f:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:

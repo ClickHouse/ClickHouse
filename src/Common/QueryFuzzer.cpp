@@ -719,7 +719,7 @@ DataTypePtr QueryFuzzer::getRandomType()
            TypeIndex::FixedString, TypeIndex::Enum8,          TypeIndex::Enum16,   TypeIndex::Decimal32,  TypeIndex::Decimal64,
            TypeIndex::Decimal128,  TypeIndex::Decimal256,     TypeIndex::UUID,     TypeIndex::Array,      TypeIndex::Tuple,
            TypeIndex::Nullable,    TypeIndex::LowCardinality, TypeIndex::Map,      TypeIndex::IPv4,       TypeIndex::IPv6,
-           TypeIndex::Variant,     TypeIndex::Dynamic};
+           TypeIndex::Variant,     TypeIndex::Dynamic /*,        TypeIndex::Time,     TypeIndex::Time64*/};
     const auto type_id = pickRandomly(fuzz_rand, random_types);
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)
@@ -1090,8 +1090,7 @@ struct ScopedIncrement
 void QueryFuzzer::checkIterationLimit()
 {
     if (++iteration_count > iteration_limit)
-        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-            "AST complexity limit exceeded while fuzzing ({})", iteration_count);
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "AST complexity limit exceeded while fuzzing ({})", iteration_count);
 }
 
 static const Strings comparison_comparators

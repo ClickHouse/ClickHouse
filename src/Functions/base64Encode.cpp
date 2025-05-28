@@ -5,6 +5,16 @@
 
 namespace DB
 {
+namespace
+{
+struct NameBase64Encode
+{
+static constexpr auto name = "base64Encode";
+};
+
+using Base64EncodeImpl = BaseXXEncode<Base64EncodeTraits<Base64Variant::Normal>, NameBase64Encode>;
+using FunctionBase64Encode = FunctionBaseXXConversion<Base64EncodeImpl>;
+}
 
 REGISTER_FUNCTION(Base64Encode)
 {
@@ -16,7 +26,7 @@ REGISTER_FUNCTION(Base64Encode)
     FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
 
-    factory.registerFunction<FunctionBase64Conversion<Base64Encode<Base64Variant::Normal>>>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionBase64Encode>({description, syntax, arguments, returned_value, examples, introduced_in, category});
 
     /// MySQL compatibility alias.
     factory.registerAlias("TO_BASE64", "base64Encode", FunctionFactory::Case::Insensitive);

@@ -173,7 +173,7 @@ Avoid reordering rows when reading from Parquet files. Usually makes it much slo
     DECLARE(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_bloom_filter_push_down, false, R"(
+    DECLARE(Bool, input_format_parquet_bloom_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
@@ -586,6 +586,8 @@ Possible values:
 - `'best_effort'` — Enables extended parsing.
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
 
 - `'basic'` — Use basic parser.
 
@@ -1316,6 +1318,10 @@ Set the quoting style for identifiers in SHOW CREATE query
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
 )", 0) \
+    DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
+Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types
+)", 0) \
+
 
 // End of FORMAT_FACTORY_SETTINGS
 
