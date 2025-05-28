@@ -10,10 +10,12 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <memory>
+
 namespace DB
 {
 class ReadBufferIterator;
@@ -198,8 +200,7 @@ public:
         Configuration & configuration_to_initialize,
         ASTs & engine_args,
         ContextPtr local_context,
-        bool with_table_structure,
-        StorageObjectStorageSettingsPtr settings);
+        bool with_table_structure);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -290,6 +291,10 @@ public:
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
     const StorageObjectStorageSettings & getSettingsRef() const;
+    virtual const DataLakeStorageSettings & getDataLakeSettings() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
+    }
 
     String format = "auto";
     String compression_method = "auto";
@@ -308,8 +313,6 @@ protected:
     void assertInitialized() const;
 
     bool initialized = false;
-
-    StorageObjectStorageSettingsPtr storage_settings;
 };
 
 }

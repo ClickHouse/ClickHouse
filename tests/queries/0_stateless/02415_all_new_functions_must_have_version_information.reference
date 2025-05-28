@@ -104,17 +104,6 @@ age
 alphaTokens
 and
 appendTrailingCharIfAbsent
-arrayConcat
-arrayCount
-arrayCumSum
-arrayCumSumNonNegative
-arrayDifference
-arrayDotProduct
-arrayEnumerateDense
-arrayEnumerateDenseRanked
-arrayEnumerateUniq
-arrayLastIndex
-arrayStringConcat
 ascii
 asin
 asinh
@@ -380,7 +369,6 @@ greatCircleDistance
 greater
 greaterOrEquals
 greatest
-has
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
