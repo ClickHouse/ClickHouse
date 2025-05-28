@@ -114,27 +114,30 @@ public:
     String backed_db;
     String backed_disk;
 
-    static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
-
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
 
     bool isReplicatedOrSharedDatabase() const { return deng == DatabaseEngineValues::DReplicated || deng == DatabaseEngineValues::DShared; }
 
-    const std::optional<String> & getCluster() const { return cluster; }
+    bool isBackupDatabase() const { return deng == DatabaseEngineValues::DBackup; }
+
+    std::optional<String> getCluster() const { return cluster; }
 
     bool isAttached() const { return attached == DetachStatus::ATTACHED; }
 
-    bool isDettached() const { return attached != DetachStatus::ATTACHED; }
-
-    void setName(Database * db) const { SQLDatabase::setName(db, dname); }
-
-    void finishDatabaseSpecification(DatabaseEngine * dspec) const
+    void finishDatabaseSpecification(DatabaseEngine * dspec)
     {
         if (isReplicatedDatabase())
         {
             dspec->add_params()->set_svalue("/test/db" + std::to_string(zoo_path_counter));
             dspec->add_params()->set_svalue("s1");
             dspec->add_params()->set_svalue("r1");
+        }
+        else if (isBackupDatabase())
+        {
+            dspec->add_params()->mutable_database()->set_database(backed_db);
+            BackupDisk * bd = dspec->add_params()->mutable_disk();
+            bd->set_disk(backed_disk);
+            bd->mutable_database()->set_database("d" + std::to_string(dname));
         }
     }
 };
@@ -152,8 +155,6 @@ public:
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     String file_comp;
     InOutFormat file_format;
-
-    static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
 
     bool isMergeTreeFamily() const
     {
@@ -205,15 +206,11 @@ public:
 
     bool isDistributedEngine() const { return teng == TableEngineValues::Distributed; }
 
-    bool isDictionaryEngine() const { return teng == TableEngineValues::Dictionary; }
-
-    bool isGenerateRandomEngine() const { return teng == TableEngineValues::GenerateRandom; }
-
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
             || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine()
-            || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine();
+            || isDistributedEngine();
     }
 
     bool isAnotherRelationalDatabaseEngine() const { return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine(); }
@@ -228,11 +225,9 @@ public:
 
     bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::ClickHouse; }
 
-    const std::optional<String> & getCluster() const { return cluster; }
+    std::optional<String> getCluster() const { return cluster; }
 
     bool isAttached() const { return (!db || db->isAttached()) && attached == DetachStatus::ATTACHED; }
-
-    bool isDettached() const { return (db && db->attached != DetachStatus::ATTACHED) || attached != DetachStatus::ATTACHED; }
 };
 
 struct SQLTable : SQLBase
@@ -258,10 +253,8 @@ public:
     bool supportsFinal() const
     {
         return (teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
-            || isBufferEngine() || isDistributedEngine();
+            || this->isBufferEngine();
     }
-
-    bool supportsOptimize() const { return isMergeTreeFamily() || isBufferEngine() || isDistributedEngine(); }
 
     bool hasSignColumn() const
     {
@@ -269,23 +262,6 @@ public:
     }
 
     bool hasVersionColumn() const { return teng == TableEngineValues::VersionedCollapsingMergeTree; }
-
-    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
-    {
-        if (database || setdbname)
-        {
-            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(name));
-    }
-
-    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLTable::setName(est, setdbname, db, tname); }
-
-    void setName(TableEngine * te) const
-    {
-        te->add_params()->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
-        te->add_params()->mutable_table()->set_table("t" + std::to_string(tname));
-    }
 };
 
 struct SQLView : SQLBase
@@ -294,50 +270,6 @@ public:
     bool is_materialized = false, is_refreshable = false, has_with_cols = false;
     uint32_t staged_ncols = 0;
     std::unordered_set<uint32_t> cols;
-
-    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
-    {
-        if (database || setdbname)
-        {
-            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
-        }
-        est->mutable_table()->set_table("v" + std::to_string(name));
-    }
-
-    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLView::setName(est, setdbname, db, tname); }
-
-    void setName(TableEngine * te) const
-    {
-        te->add_params()->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
-        te->add_params()->mutable_table()->set_table("v" + std::to_string(tname));
-    }
-
-    bool supportsFinal() const { return !this->is_materialized; }
-};
-
-struct SQLDictionary : SQLBase
-{
-public:
-    std::unordered_map<uint32_t, SQLColumn> cols;
-
-    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
-    {
-        if (database || setdbname)
-        {
-            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
-        }
-        est->mutable_table()->set_table("d" + std::to_string(name));
-    }
-
-    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLDictionary::setName(est, setdbname, db, tname); }
-
-    void setName(TableEngine * te) const
-    {
-        te->add_params()->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
-        te->add_params()->mutable_table()->set_table("d" + std::to_string(tname));
-    }
-
-    bool supportsFinal() const { return false; }
 };
 
 struct SQLFunction
@@ -347,9 +279,7 @@ public:
     uint32_t fname = 0, nargs = 0;
     std::optional<String> cluster;
 
-    const std::optional<String> & getCluster() const { return cluster; }
-
-    void setName(Function * f) const { f->set_function("f" + std::to_string(fname)); }
+    std::optional<String> getCluster() const { return cluster; }
 };
 
 struct ColumnPathChainEntry

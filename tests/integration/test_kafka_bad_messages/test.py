@@ -1,5 +1,15 @@
-from helpers.kafka.common_direct import *
-import helpers.kafka.common as k
+import logging
+import time
+
+import pytest
+from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
+from kafka.admin import NewTopic
+
+from helpers.cluster import ClickHouseCluster, is_arm
+
+if is_arm():
+    pytestmark = pytest.mark.skip
+
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -7,6 +17,100 @@ instance = cluster.add_instance(
     main_configs=["configs/kafka.xml"],
     with_kafka=True,
 )
+
+
+def kafka_create_topic(
+    admin_client,
+    topic_name,
+    num_partitions=1,
+    replication_factor=1,
+    max_retries=50,
+    config=None,
+):
+    logging.debug(
+        f"Kafka create topic={topic_name}, num_partitions={num_partitions}, replication_factor={replication_factor}"
+    )
+    topics_list = [
+        NewTopic(
+            name=topic_name,
+            num_partitions=num_partitions,
+            replication_factor=replication_factor,
+            topic_configs=config,
+        )
+    ]
+    retries = 0
+    while True:
+        try:
+            admin_client.create_topics(new_topics=topics_list, validate_only=False)
+            logging.debug("Admin client succeed")
+            return
+        except Exception as e:
+            retries += 1
+            time.sleep(0.5)
+            if retries < max_retries:
+                logging.warning(f"Failed to create topic {e}")
+            else:
+                raise
+
+
+def kafka_delete_topic(admin_client, topic, max_retries=50):
+    result = admin_client.delete_topics([topic])
+    for topic, e in result.topic_error_codes:
+        if e == 0:
+            logging.debug(f"Topic {topic} deleted")
+        else:
+            logging.error(f"Failed to delete topic {topic}: {e}")
+
+    retries = 0
+    while True:
+        topics_listed = admin_client.list_topics()
+        logging.debug(f"TOPICS LISTED: {topics_listed}")
+        if topic not in topics_listed:
+            return
+        else:
+            retries += 1
+            time.sleep(0.5)
+            if retries > max_retries:
+                raise Exception(f"Failed to delete topics {topic}, {result}")
+
+
+def get_kafka_producer(port, serializer, retries):
+    errors = []
+    for _ in range(retries):
+        try:
+            producer = KafkaProducer(
+                bootstrap_servers="localhost:{}".format(port),
+                value_serializer=serializer,
+            )
+            logging.debug("Kafka Connection establised: localhost:{}".format(port))
+            return producer
+        except Exception as e:
+            errors += [str(e)]
+            time.sleep(1)
+
+    raise Exception("Connection not establised, {}".format(errors))
+
+
+def producer_serializer(x):
+    return x.encode() if isinstance(x, str) else x
+
+
+def kafka_produce(
+    kafka_cluster, topic, messages, timestamp=None, retries=15, partition=None
+):
+    logging.debug(
+        "kafka_produce server:{}:{} topic:{}".format(
+            "localhost", kafka_cluster.kafka_port, topic
+        )
+    )
+    producer = get_kafka_producer(
+        kafka_cluster.kafka_port, producer_serializer, retries
+    )
+    for message in messages:
+        producer.send(
+            topic=topic, value=message, timestamp_ms=timestamp, partition=partition
+        )
+        producer.flush()
 
 
 @pytest.fixture(scope="module")
@@ -49,7 +153,7 @@ def test_bad_messages_parsing_stream(kafka_cluster):
     ]:
         print(format_name)
 
-        k.kafka_create_topic(admin_client, f"{format_name}_err")
+        kafka_create_topic(admin_client, f"{format_name}_err")
 
         instance.query(
             f"""
@@ -62,7 +166,6 @@ def test_bad_messages_parsing_stream(kafka_cluster):
                          kafka_topic_list = '{format_name}_err',
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
-                         kafka_flush_interval_ms=1000,
                          kafka_handle_error_mode='stream';
 
             CREATE MATERIALIZED VIEW view Engine=Log AS
@@ -71,7 +174,7 @@ def test_bad_messages_parsing_stream(kafka_cluster):
         )
 
         messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
-        k.kafka_produce(kafka_cluster, f"{format_name}_err", messages)
+        kafka_produce(kafka_cluster, f"{format_name}_err", messages)
 
         attempt = 0
         rows = 0
@@ -83,7 +186,7 @@ def test_bad_messages_parsing_stream(kafka_cluster):
 
         assert rows == len(messages)
 
-        k.kafka_delete_topic(admin_client, f"{format_name}_err")
+        kafka_delete_topic(admin_client, f"{format_name}_err")
 
     protobuf_schema = """
 syntax = "proto3";
@@ -109,7 +212,6 @@ message Message {
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
                          kafka_handle_error_mode='stream',
-                         kafka_flush_interval_ms=1000,
                          kafka_schema='schema_test_errors:Message';
 
             CREATE MATERIALIZED VIEW view Engine=Log AS
@@ -119,10 +221,10 @@ message Message {
 
         print(format_name)
 
-        k.kafka_create_topic(admin_client, f"{format_name}_err")
+        kafka_create_topic(admin_client, f"{format_name}_err")
 
         messages = ["qwertyuiop", "poiuytrewq", "zxcvbnm"]
-        k.kafka_produce(kafka_cluster, f"{format_name}_err", messages)
+        kafka_produce(kafka_cluster, f"{format_name}_err", messages)
 
         attempt = 0
         rows = 0
@@ -134,7 +236,7 @@ message Message {
 
         assert rows == len(messages)
 
-        k.kafka_delete_topic(admin_client, f"{format_name}_err")
+        kafka_delete_topic(admin_client, f"{format_name}_err")
 
     capn_proto_schema = """
 @0xd9dd7b35452d1c4f;
@@ -159,7 +261,6 @@ struct Message
                          kafka_group_name = 'CapnProto',
                          kafka_format = 'CapnProto',
                          kafka_handle_error_mode='stream',
-                         kafka_flush_interval_ms=1000,
                          kafka_schema='schema_test_errors:Message';
 
             CREATE MATERIALIZED VIEW view Engine=Log AS
@@ -169,10 +270,10 @@ struct Message
 
     print("CapnProto")
 
-    k.kafka_create_topic(admin_client, "CapnProto_err")
+    kafka_create_topic(admin_client, "CapnProto_err")
 
     messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
-    k.kafka_produce(kafka_cluster, "CapnProto_err", messages)
+    kafka_produce(kafka_cluster, "CapnProto_err", messages)
 
     attempt = 0
     rows = 0
@@ -184,7 +285,7 @@ struct Message
 
     assert rows == len(messages)
 
-    k.kafka_delete_topic(admin_client, "CapnProto_err")
+    kafka_delete_topic(admin_client, "CapnProto_err")
 
 
 def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
@@ -198,7 +299,7 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
     ]:
         print(format_name)
 
-        k.kafka_create_topic(admin_client, f"{format_name}_parsing_err")
+        kafka_create_topic(admin_client, f"{format_name}_parsing_err")
 
         instance.query(
             f"""
@@ -212,7 +313,6 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
                          kafka_topic_list = '{format_name}_parsing_err',
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
-                         kafka_flush_interval_ms=1000,
                          kafka_num_consumers = 1;
 
             CREATE MATERIALIZED VIEW view_{format_name} Engine=Log AS
@@ -220,7 +320,7 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
         """
         )
 
-        k.kafka_produce(
+        kafka_produce(
             kafka_cluster,
             f"{format_name}_parsing_err",
             ["qwertyuiop", "asdfghjkl", "zxcvbnm"],
@@ -245,7 +345,7 @@ Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: wh
         "Avro",
         "JSONEachRow",
     ]:
-        k.kafka_delete_topic(admin_client, f"{format_name}_parsing_err")
+        kafka_delete_topic(admin_client, f"{format_name}_parsing_err")
 
 
 def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
@@ -253,7 +353,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
-    k.kafka_create_topic(admin_client, "tomv")
+    kafka_create_topic(admin_client, "tomv")
 
     instance.query(
         f"""
@@ -267,7 +367,6 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
                      kafka_topic_list = 'tomv',
                      kafka_group_name = 'tomv',
                      kafka_format = 'JSONEachRow',
-                     kafka_flush_interval_ms=1000,
                      kafka_num_consumers = 1;
 
         CREATE TABLE kafka_materialized(`key` UInt64, `value` UInt64) ENGINE = Log;
@@ -279,7 +378,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
     """
     )
 
-    k.kafka_produce(kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}'])
+    kafka_produce(kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}'])
 
     expected_result = """Code: 6. DB::Exception: Cannot parse string \\'aaa\\' as UInt64: syntax error at begin of string. Note: there are toUInt64OrZero and to|1|1|1|default|kafka1
 """
@@ -294,7 +393,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
 
     assert result_system_kafka_consumers.replace("\t", "|") == expected_result
 
-    k.kafka_delete_topic(admin_client, "tomv")
+    kafka_delete_topic(admin_client, "tomv")
 
 
 if __name__ == "__main__":

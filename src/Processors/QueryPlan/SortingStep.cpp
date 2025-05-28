@@ -30,7 +30,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_sort;
     extern const SettingsDouble max_bytes_ratio_before_external_sort;
     extern const SettingsUInt64 max_bytes_before_remerge_sort;
@@ -67,30 +67,37 @@ namespace ErrorCodes
 
 size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
 {
-    if (max_bytes_ratio_before_external_sort == 0.)
-        return 0;
+    std::optional<size_t> threshold;
+    if (max_bytes_before_external_sort != 0)
+        threshold = max_bytes_before_external_sort;
 
-    double ratio = max_bytes_ratio_before_external_sort;
-    if (ratio < 0 || ratio >= 1.)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
-
-    auto available_system_memory = getMostStrictAvailableSystemMemory();
-    if (available_system_memory.has_value())
+    if (max_bytes_ratio_before_external_sort != 0.)
     {
-        size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
+        double ratio = max_bytes_ratio_before_external_sort;
+        if (ratio < 0 || ratio >= 1.)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
 
-        LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {}, available system memory: {})",
-            formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-            ratio,
-            formatReadableSizeWithBinarySuffix(*available_system_memory));
+        auto available_system_memory = getMostStrictAvailableSystemMemory();
+        if (available_system_memory.has_value())
+        {
+            size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
+            if (threshold)
+                threshold = std::min(threshold.value(), ratio_in_bytes);
+            else
+                threshold = ratio_in_bytes;
 
-        return ratio_in_bytes;
+            LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {}, available system memory: {})",
+                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
+                ratio,
+                formatReadableSizeWithBinarySuffix(*available_system_memory));
+        }
+        else
+        {
+            LOG_WARNING(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
+        }
     }
-    else
-    {
-        LOG_WARNING(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
-        return 0;
-    }
+
+    return threshold.value_or(0);
 }
 
 SortingStep::Settings::Settings(const DB::Settings & settings)
@@ -463,15 +470,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
-        if (need_finish_sorting)
-            finishSorting(pipeline, prefix_description, result_description, limit);
-
-        return;
-    }
-
-    if (type == Type::PartitionedFinishSorting)
-    {
-        bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 

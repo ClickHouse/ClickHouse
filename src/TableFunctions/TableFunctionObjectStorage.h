@@ -101,24 +101,6 @@ struct DeltaLakeDefinition
     static constexpr auto storage_type_name = "S3";
 };
 
-struct DeltaLakeS3Definition
-{
-    static constexpr auto name = "deltaLakeS3";
-    static constexpr auto storage_type_name = "S3";
-};
-
-struct DeltaLakeAzureDefinition
-{
-    static constexpr auto name = "deltaLakeAzure";
-    static constexpr auto storage_type_name = "Azure";
-};
-
-struct DeltaLakeLocalDefinition // New definition for local Delta Lake
-{
-    static constexpr auto name = "deltaLakeLocal";
-    static constexpr auto storage_type_name = "Local";
-};
-
 struct HudiDefinition
 {
     static constexpr auto name = "hudi";
@@ -217,18 +199,10 @@ using TableFunctionIcebergHDFS = TableFunctionObjectStorage<IcebergHDFSDefinitio
 #    endif
 using TableFunctionIcebergLocal = TableFunctionObjectStorage<IcebergLocalDefinition, StorageLocalIcebergConfiguration>;
 #endif
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
 #if USE_AWS_S3
+#    if USE_PARQUET && USE_DELTA_KERNEL_RS
 using TableFunctionDeltaLake = TableFunctionObjectStorage<DeltaLakeDefinition, StorageS3DeltaLakeConfiguration>;
-using TableFunctionDeltaLakeS3 = TableFunctionObjectStorage<DeltaLakeS3Definition, StorageS3DeltaLakeConfiguration>;
-#endif
-#if USE_AZURE_BLOB_STORAGE
-using TableFunctionDeltaLakeAzure = TableFunctionObjectStorage<DeltaLakeAzureDefinition, StorageAzureDeltaLakeConfiguration>;
-#endif
-// New alias for local Delta Lake table function
-using TableFunctionDeltaLakeLocal = TableFunctionObjectStorage<DeltaLakeLocalDefinition, StorageLocalDeltaLakeConfiguration>;
-#endif
-#if USE_AWS_S3
+#    endif
 using TableFunctionHudi = TableFunctionObjectStorage<HudiDefinition, StorageS3HudiConfiguration>;
 #endif
 }

@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include <Core/Defines.h>
 #include <base/int8_to_string.h>
 
 
@@ -51,7 +52,6 @@ using FunctionBitTest = BinaryArithmeticOverloadResolver<BitTestImpl, NameBitTes
 
 REGISTER_FUNCTION(BitTest)
 {
-
     factory.registerFunction<FunctionBitTest>();
 }
 

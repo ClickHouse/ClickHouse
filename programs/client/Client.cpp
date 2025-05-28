@@ -19,9 +19,9 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
@@ -72,7 +72,7 @@ Client::Client()
 
 Client::~Client() = default;
 
-void Client::processError(std::string_view query) const
+void Client::processError(const String & query) const
 {
     if (server_exception)
     {
@@ -339,6 +339,7 @@ void Client::initialize(Poco::Util::Application & self)
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
+    UseSSL use_ssl;
     auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 
@@ -354,6 +355,7 @@ try
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
@@ -660,7 +662,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
     output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n";
-    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parameterized queries.\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
 

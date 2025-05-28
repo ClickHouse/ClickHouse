@@ -49,39 +49,37 @@ SET allow_experimental_full_text_index = true;
 
 An full-text index can be defined on a string column using the following syntax
 
-```sql
+``` sql
 CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|noop' [, ngram_size = N] [, max_rows_per_postings_list = M]) GRANULARITY 1
+    INDEX inv_idx(str) TYPE full_text(0) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY key
 ```
 
-where `tokenizer` specifies the tokenizer:
+:::note
+In earlier versions of ClickHouse, the corresponding index type name was `inverted`.
+:::
 
-- `default` set the tokenizer to "tokens('default')", i.e. split strings along non-alphanumeric characters.
-- `ngram` set the tokenizer to "tokens('ngram')". i.e. splits strings to equal size terms.
-- `noop` set the tokenizer to "tokens('noop')", i.e. every value itself is a term.
+where `N` specifies the tokenizer:
 
-The ngram size can be specified via the `ngram_size` parameter. This is an optional parameter. The following variants exist:
+- `full_text(0)` (or shorter: `full_text()`) set the tokenizer to "tokens", i.e. split strings along spaces,
+- `full_text(N)` with `N` between 2 and 8 sets the tokenizer to "ngrams(N)"
 
-- `ngram_size = N`: with `N` between 2 and 8 sets the tokenizer to "tokens('ngram', N)".
-- If not specified: Use a default ngram size which is 3.
+The maximum rows per postings list can be specified as the second parameter. This parameter can be used to control postings list sizes to avoid generating huge postings list files. The following variants exist:
 
-The maximum rows per postings list can be specified via an optional `max_rows_per_postings_list`. This parameter can be used to control postings list sizes to avoid generating huge postings list files. The following variants exist:
-
-- `max_rows_per_postings_list = 0`: No limitation of maximum rows per postings list.
-- `max_rows_per_postings_list = M`: with `M` should be at least 8192.
-- If not specified: Use a default maximum rows which is 64K.
+- `full_text(ngrams, max_rows_per_postings_list)`: Use given max_rows_per_postings_list (assuming it is not 0)
+- `full_text(ngrams, 0)`: No limitation of maximum rows per postings list
+- `full_text(ngrams)`: Use a default maximum rows which is 64K.
 
 Being a type of skipping index, full-text indexes can be dropped or added to a column after table creation:
 
-```sql
+``` sql
 ALTER TABLE tab DROP INDEX inv_idx;
-ALTER TABLE tab ADD INDEX inv_idx(s) TYPE text(tokenizer = 'default');
+ALTER TABLE tab ADD INDEX inv_idx(s) TYPE full_text(2);
 ```
 
 To use the index, no special functions or syntax are required. Typical string search predicates automatically leverage the index. As
@@ -179,7 +177,7 @@ We will use `ALTER TABLE` and add an full-text index on the lowercase of the `co
 
 ```sql
 ALTER TABLE hackernews
-     ADD INDEX comment_lowercase(lower(comment)) TYPE text;
+     ADD INDEX comment_lowercase(lower(comment)) TYPE full_text;
 
 ALTER TABLE hackernews MATERIALIZE INDEX comment_lowercase;
 ```
