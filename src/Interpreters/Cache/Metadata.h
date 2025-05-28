@@ -38,9 +38,8 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     bool releasable() const { return isSharedPtrUnique(file_segment); }
 
-    size_t size() const;
+    size_t size(bool aligned = false) const;
 
-    size_t getEntrySize() const;
 
     bool isEvictingOrRemoved(const CachePriorityGuard::Lock & lock) const
     {
@@ -357,6 +356,8 @@ struct LockedKey : private boost::noncopyable
     std::vector<FileSegment::Info> sync();
 
     std::string toString() const;
+
+    bool useRealDiskSize() const;
 
 private:
     KeyMetadata::iterator removeFileSegmentImpl(

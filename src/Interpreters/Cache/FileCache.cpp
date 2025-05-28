@@ -1114,7 +1114,7 @@ bool FileCache::tryReserve(
     }
 
     file_segment.reserved_size += size;
-    chassert(file_segment.reserved_size == queue_iterator->getEntry()->getFilledSize());
+    chassert(file_segment.reserved_size == queue_iterator->getEntry()->getSize(true));
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
