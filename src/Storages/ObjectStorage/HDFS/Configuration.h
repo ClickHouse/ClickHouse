@@ -48,7 +48,8 @@ public:
     void setPath(const Path & path_) override { path = {path_.path, false}; }
 
     const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override {
+    void setPaths(const Paths & paths_) override
+    {
         paths.clear();
         for (const auto & p : paths_)
         {
