@@ -137,7 +137,6 @@ bitmapAnd
 bitmapAndCardinality
 bitmapAndnot
 bitmapAndnotCardinality
-bitmapBuild
 bitmapCardinality
 bitmapContains
 bitmapHasAll
@@ -146,10 +145,6 @@ bitmapMax
 bitmapMin
 bitmapOr
 bitmapOrCardinality
-bitmapSubsetInRange
-bitmapSubsetLimit
-bitmapToArray
-bitmapTransform
 bitmapXor
 bitmapXorCardinality
 bitmaskToArray
@@ -746,7 +741,6 @@ stringJaccardIndex
 stringJaccardIndexUTF8
 structureToCapnProtoSchema
 structureToProtobufSchema
-subBitmap
 subDate
 substring
 substringIndex
