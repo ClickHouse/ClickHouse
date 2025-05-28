@@ -1784,18 +1784,11 @@ namespace ErrorCodes
     The maximum number of merge tree projections.
     )", 0) \
     DECLARE(LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW, R"(
-    By default, lightweight delete `DELETE` does not work for tables with
-    projections. This is because rows in a projection may be affected by a
-    `DELETE` operation. So the default value would be `throw`. However, this
-    option can change the behavior. With the value either `drop` or `rebuild`,
-    deletes will work with projections. `drop` would delete the projection so it
-    might be fast in the current query as projection gets deleted but slow in
-    future queries as no projection attached. `rebuild` would rebuild the
-    projection which might affect the performance of the current query, but
-    might speedup for future queries. A good thing is that these options would
-    only work in the part level, which means projections in the part that don't
-    get touched would stay intact instead of triggering any action like
-    drop or rebuild.
+    Specifies what happens if lightweight delete `DELETE` is run for tables with
+    projections. It only takes effects on the parts touched.
+    `throw` returns an error (the DELETE statement is not run).
+    `drop` removes existing projections of the parts.
+    `rebuild` drops and builds new projections of the parts.
 
     Possible values:
     - `throw`
@@ -1803,19 +1796,20 @@ namespace ErrorCodes
     - `rebuild`
     )", 0) \
     DECLARE(DeduplicateMergeProjectionMode, deduplicate_merge_projection_mode, DeduplicateMergeProjectionMode::THROW, R"(
-    Whether to allow create projection for the table with non-classic MergeTree,
-    that is not (Replicated, Shared) MergeTree. Ignore option is purely for
-    compatibility which might result in incorrect answer. Otherwise, if allowed,
-    what is the action when merge projections, either drop or rebuild. So classic
-    MergeTree would ignore this setting. It also controls `OPTIMIZE DEDUPLICATE`
-    as well, but has effect on all MergeTree family members. Similar to the
-    option `lightweight_mutation_projection_mode`, it is also part level.
+    Specifies what happens when merge projections in non-classic MergeTree, that
+    is not (Replicated, Shared) MergeTree. It also controls `OPTIMIZE DEDUPLICATE`,
+    but has effect on all MergeTree family members. It only takes effects on the
+    parts touched.
+    `throw` returns an error (the DELETE statement is not run).
+    `drop` removes existing projections of the parts.
+    `rebuild` drops and builds new projections of the parts.
+    `ignore` is for compatibility which might result in incorrect answer.
 
     Possible values:
-    - `ignore`
     - `throw`
     - `drop`
     - `rebuild`
+    - `ignore`
     )", 0) \
     /** Part loading settings. */           \
     DECLARE(Bool, columns_and_secondary_indices_sizes_lazy_calculation, true, R"(

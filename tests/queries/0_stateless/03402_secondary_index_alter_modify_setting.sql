@@ -7,8 +7,8 @@ CREATE TABLE test_compact
     a int,
     b int,
     c int,
-    INDEX idx_minmax b TYPE minmax GRANULARITY 1,
-    INDEX idx_set c TYPE set(100) GRANULARITY 1
+    INDEX idx_minmax b TYPE minmax,
+    INDEX idx_set c TYPE set(100),
 )
 ENGINE = MergeTree
 ORDER BY a
@@ -18,6 +18,7 @@ compress_marks = 1;
 INSERT INTO test_compact VALUES(1, 1, 1);
 
 -- default
+SELECT 'Check setting default of compact:';
 ALTER TABLE test_compact MODIFY COLUMN b String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- throw
@@ -30,18 +31,18 @@ ALTER TABLE test_compact MODIFY SETTING secondary_indices_on_columns_alter_modif
 
 ALTER TABLE test_compact MODIFY COLUMN b String;
 
-SELECT secondary_indices_marks_bytes
-FROM system.parts
-WHERE table = 'test_compact' AND active = 1 AND database = currentDatabase();
+SELECT marks_bytes == 0
+FROM system.data_skipping_indices
+WHERE table = 'test_compact' AND database = currentDatabase() AND name = 'idx_minmax';
 
 -- rebuild
 ALTER TABLE test_compact MODIFY SETTING secondary_indices_on_columns_alter_modify = 'rebuild';
 
 ALTER TABLE test_compact MODIFY COLUMN b int;
 
-SELECT secondary_indices_marks_bytes
-FROM system.parts
-WHERE table = 'test_compact' AND active = 1 AND database = currentDatabase();
+SELECT marks_bytes > 0
+FROM system.data_skipping_indices
+WHERE table = 'test_compact' AND database = currentDatabase() AND name = 'idx_minmax';
 
 -- ignore
 ALTER TABLE test_compact MODIFY SETTING secondary_indices_on_columns_alter_modify = 'ignore';
@@ -58,8 +59,8 @@ CREATE TABLE test_wide
     a int,
     b int,
     c int,
-    INDEX idx_minmax b TYPE minmax GRANULARITY 1,
-    INDEX idx_set c TYPE set(100) GRANULARITY 1
+    INDEX idx_minmax b TYPE minmax,
+    INDEX idx_set c TYPE set(100),
 )
 ENGINE = MergeTree
 ORDER BY a
@@ -69,6 +70,7 @@ compress_marks = 1;
 INSERT INTO test_wide VALUES(1, 1, 1);
 
 -- default
+SELECT 'Check setting default of wide:';
 ALTER TABLE test_wide MODIFY COLUMN b String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- throw
@@ -81,18 +83,18 @@ ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter_modify =
 
 ALTER TABLE test_wide MODIFY COLUMN b String;
 
-SELECT secondary_indices_marks_bytes
-FROM system.parts
-WHERE table = 'test_wide' AND active = 1 AND database = currentDatabase();
+SELECT marks_bytes == 0
+FROM system.data_skipping_indices
+WHERE table = 'test_wide' AND database = currentDatabase() AND name = 'idx_minmax';
 
 -- rebuild
 ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter_modify = 'rebuild';
 
 ALTER TABLE test_wide MODIFY COLUMN b int;
 
-SELECT secondary_indices_marks_bytes
-FROM system.parts
-WHERE table = 'test_wide' AND active = 1 AND database = currentDatabase();
+SELECT marks_bytes > 0
+FROM system.data_skipping_indices
+WHERE table = 'test_wide' AND database = currentDatabase() AND name = 'idx_minmax';
 
 -- ignore
 ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter_modify = 'ignore';
