@@ -168,8 +168,9 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     if (index_type && index_type->arguments)
     {
-        bool is_gin_index = index_type->name == "gin" || index_type->name == "inverted" || index_type->name == "full_text";
-        if (is_gin_index && parseGinIndexArgumentsFromAST(index_type->arguments, result.arguments))
+        bool is_text_index = index_type->name == "text";
+        bool is_legacy_text_index = index_type->name == "gin" || index_type->name == "inverted" || index_type->name == "full_text";
+        if ((is_text_index || is_legacy_text_index) && parseGinIndexArgumentsFromAST(index_type->arguments, result.arguments))
             return result;
 
         for (size_t i = 0; i < index_type->arguments->children.size(); ++i)

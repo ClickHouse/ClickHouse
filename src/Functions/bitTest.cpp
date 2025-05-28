@@ -51,6 +51,7 @@ using FunctionBitTest = BinaryArithmeticOverloadResolver<BitTestImpl, NameBitTes
 
 REGISTER_FUNCTION(BitTest)
 {
+
     factory.registerFunction<FunctionBitTest>();
 }
 
