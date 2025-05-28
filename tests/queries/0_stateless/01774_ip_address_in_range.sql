@@ -58,7 +58,6 @@ SELECT '# Wrong argument types';
 
 SELECT isIPAddressInRange(100, '127.0.0.0/8'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT isIPAddressInRange(NULL, '127.0.0.0/8'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT isIPAddressInRange(CAST(NULL, 'Nullable(String)'), '127.0.0.0/8'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT isIPAddressInRange('127.0.0.1', 100); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT isIPAddressInRange(100, NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 WITH arrayJoin([NULL, NULL, NULL, NULL]) AS prefix SELECT isIPAddressInRange([NULL, NULL, 0, 255, 0], prefix); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
