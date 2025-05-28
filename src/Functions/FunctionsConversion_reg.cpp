@@ -26,7 +26,7 @@ Example:
 )",
         .examples{
             {"typical", "SELECT toBFloat16(12.3::Float32);", "12.3125"}},
-        .category = FunctionDocumentation::Category::TypeConversion});
+        .category{"Type Conversion"}});
 
     factory.registerFunction<detail::FunctionToFloat32>();
     factory.registerFunction<detail::FunctionToFloat64>();
@@ -44,8 +44,6 @@ Example:
     factory.registerFunction("DATE", &detail::FunctionToDate::create, {}, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<detail::FunctionToDate32>();
-    factory.registerFunction<detail::FunctionToTime>();
-    factory.registerFunction<detail::FunctionToTime64>();
     factory.registerFunction<detail::FunctionToDateTime>();
     factory.registerFunction<detail::FunctionToDateTime32>();
     factory.registerFunction<detail::FunctionToDateTime64>();
@@ -91,14 +89,12 @@ Example of a loss of precision:
             {"invalid1", "SELECT toBFloat16OrZero('abc');", "0"},
             {"invalid2", "SELECT toBFloat16OrZero(' 1');", "0"},
             {"precision", "SELECT toBFloat16OrZero('12.3456789');", "12.375"}},
-        .category = FunctionDocumentation::Category::TypeConversion});
+        .category{"Type Conversion"}});
 
     factory.registerFunction<detail::FunctionToFloat32OrZero>();
     factory.registerFunction<detail::FunctionToFloat64OrZero>();
     factory.registerFunction<detail::FunctionToDateOrZero>();
     factory.registerFunction<detail::FunctionToDate32OrZero>();
-    factory.registerFunction<detail::FunctionToTimeOrZero>();
-    factory.registerFunction<detail::FunctionToTime64OrZero>();
     factory.registerFunction<detail::FunctionToDateTimeOrZero>();
     factory.registerFunction<detail::FunctionToDateTime64OrZero>();
 
@@ -146,14 +142,12 @@ Example of a loss of precision:
         {"invalid1", "SELECT toBFloat16OrNull('abc');", "NULL"},
         {"invalid2", "SELECT toBFloat16OrNull(' 1');", "NULL"},
         {"precision", "SELECT toBFloat16OrNull('12.3456789');", "12.375"}},
-    .category = FunctionDocumentation::Category::TypeConversion});
+    .category{"Type Conversion"}});
 
     factory.registerFunction<detail::FunctionToFloat32OrNull>();
     factory.registerFunction<detail::FunctionToFloat64OrNull>();
     factory.registerFunction<detail::FunctionToDateOrNull>();
     factory.registerFunction<detail::FunctionToDate32OrNull>();
-    factory.registerFunction<detail::FunctionToTimeOrNull>();
-    factory.registerFunction<detail::FunctionToTime64OrNull>();
     factory.registerFunction<detail::FunctionToDateTimeOrNull>();
     factory.registerFunction<detail::FunctionToDateTime64OrNull>();
 

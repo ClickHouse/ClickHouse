@@ -5,8 +5,6 @@ profiles:
         # the INSERTs will be retried anyway
         send_timeout: 15
         receive_timeout: 15
-        # Disable async INSERT, since the batches should be big enough
-        async_insert: 0
 users:
     ci_logs_sender:
         profile: ci_logs_sender

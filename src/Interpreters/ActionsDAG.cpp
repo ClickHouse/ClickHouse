@@ -455,17 +455,6 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addPlaceholder(std::string name, DataTypePtr type)
-{
-    Node node;
-    node.type = ActionType::PLACEHOLDER;
-    node.result_type = std::move(type);
-    node.result_name = std::move(name);
-    node.column = node.result_type->createColumn();
-
-    return addNode(std::move(node));
-}
-
 const ActionsDAG::Node & ActionsDAG::findInOutputs(const std::string & name) const
 {
     if (const auto * node = tryFindInOutputs(name))
@@ -864,11 +853,6 @@ static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Nod
         {
             break;
         }
-
-        case ActionsDAG::ActionType::PLACEHOLDER:
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to execute PLACEHOLDER action");
-        }
     }
 
     return res_column;
@@ -976,16 +960,6 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                         continue;
 
                     stack.pop();
-
-                    if (node->type == ActionsDAG::ActionType::PLACEHOLDER)
-                    {
-                        /// Maybe move to executeActionForPartialResult
-                        node_to_column[node] = ColumnWithTypeAndName(
-                            node->column->cloneResized(input_rows_count),
-                            node->result_type,
-                            node->result_name);
-                        continue;
-                    }
 
                     ColumnsWithTypeAndName arguments(node->children.size());
                     bool has_all_arguments = true;
@@ -1462,10 +1436,6 @@ std::string ActionsDAG::dumpDAG() const
             case ActionsDAG::ActionType::INPUT:
                 out << "INPUT ";
                 break;
-
-            case ActionsDAG::ActionType::PLACEHOLDER:
-                out << "PLACEHOLDER ";
-                break;
         }
 
         out << "(";
@@ -1498,16 +1468,7 @@ std::string ActionsDAG::dumpDAG() const
     return out.str();
 }
 
-bool ActionsDAG::hasCorrelatedColumns() const noexcept
-{
-    for (const auto & node : nodes)
-        if (node.type == ActionType::PLACEHOLDER)
-            return true;
-
-    return false;
-}
-
-bool ActionsDAG::hasArrayJoin() const noexcept
+bool ActionsDAG::hasArrayJoin() const
 {
     for (const auto & node : nodes)
         if (node.type == ActionType::ARRAY_JOIN)
@@ -1525,7 +1486,7 @@ bool ActionsDAG::hasStatefulFunctions() const
     return false;
 }
 
-bool ActionsDAG::trivial() const noexcept
+bool ActionsDAG::trivial() const
 {
     for (const auto & node : nodes)
         if (node.type == ActionType::FUNCTION || node.type == ActionType::ARRAY_JOIN)
@@ -1548,19 +1509,6 @@ bool ActionsDAG::hasNonDeterministic() const
         if (!node.isDeterministic())
             return true;
     return false;
-}
-
-void ActionsDAG::decorrelate() noexcept
-{
-    for (auto & node : nodes)
-    {
-        if (node.type == ActionType::PLACEHOLDER)
-        {
-            node.type = ActionType::INPUT;
-            node.column = nullptr;
-            inputs.emplace_back(&node);
-        }
-    }
 }
 
 void ActionsDAG::addMaterializingOutputActions(bool materialize_sparse)
@@ -3182,12 +3130,6 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
                     result_name,
                     node->result_type,
                     all_const);
-                break;
-            }
-            case ActionsDAG::ActionType::PLACEHOLDER:
-            {
-                /// TODO: check if it's correct
-                result_node = &result_dag.addPlaceholder(node->result_name, node->result_type);
                 break;
             }
         }

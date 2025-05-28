@@ -41,8 +41,6 @@ private:
     const std::string replacement_string;
     const std::string regexp_string;
 
-    const bool throw_on_match;
-
     const RE2 regexp;
     const std::string_view replacement;
 
@@ -54,16 +52,10 @@ public:
     //* TODO: option with hyperscan? https://software.intel.com/en-us/articles/why-and-how-to-replace-pcre-with-hyperscan
     // re2::set should also work quite fast, but it doesn't return the match position, only which regexp was matched
 
-    MaskingRule(
-        const std::string & name_,
-        const std::string & regexp_string_,
-        const std::string & replacement_string_,
-        bool throw_on_match_
-    )
+    MaskingRule(const std::string & name_, const std::string & regexp_string_, const std::string & replacement_string_)
         : name(name_)
         , replacement_string(replacement_string_)
         , regexp_string(regexp_string_)
-        , throw_on_match(throw_on_match_)
         , regexp(regexp_string, RE2::Quiet)
         , replacement(replacement_string)
     {
@@ -77,12 +69,6 @@ public:
     uint64_t apply(std::string & data) const
     {
         auto m = RE2::GlobalReplace(&data, regexp, replacement);
-
-        if (throw_on_match && m > 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "The rule {} was triggered on the log line {}",
-                            name, data);
-
 #ifndef NDEBUG
         matches_count += m;
 #endif
@@ -154,11 +140,10 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
             }
 
             auto replace = config.getString(rule_config_prefix + ".replace", "******");
-            auto throw_on_match = config.getBool(rule_config_prefix + ".throw_on_match", false);
 
             try
             {
-                addMaskingRule(rule_name, regexp, replace, throw_on_match);
+                addMaskingRule(rule_name, regexp, replace);
             }
             catch (DB::Exception & e)
             {
@@ -178,12 +163,9 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 }
 
 void SensitiveDataMasker::addMaskingRule(
-    const std::string & name,
-    const std::string & regexp_string,
-    const std::string & replacement_string,
-    bool throw_on_match)
+    const std::string & name, const std::string & regexp_string, const std::string & replacement_string)
 {
-    all_masking_rules.push_back(std::make_unique<MaskingRule>(name, regexp_string, replacement_string, throw_on_match));
+    all_masking_rules.push_back(std::make_unique<MaskingRule>(name, regexp_string, replacement_string));
 }
 
 
@@ -216,9 +198,9 @@ size_t SensitiveDataMasker::rulesCount() const
 }
 
 
-std::string wipeSensitiveDataAndCutToLength(std::string str, size_t max_length)
+std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_length)
 {
-    std::string res = std::move(str);
+    std::string res = str;
 
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);

@@ -5,10 +5,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/quoteString.h>
 #include <base/errnoToString.h>
-
 #include <unzip.h>
-#include <zip.h>
-#include <mz.h>
 
 
 namespace DB
