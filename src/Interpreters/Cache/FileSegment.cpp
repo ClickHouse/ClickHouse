@@ -731,6 +731,13 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     return desired_size - downloaded_size;
 }
 
+size_t FileSegment::getEntrySize() const
+{
+    auto locked_key_metadata = key_metadata.lock();
+    chassert(locked_key_metadata);
+    return locked_key_metadata->alignFileSize(reserved_size.load());
+}
+
 void FileSegment::complete(bool allow_background_download)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);

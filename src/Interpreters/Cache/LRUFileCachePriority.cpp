@@ -215,8 +215,19 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
                 ErrorCodes::LOGICAL_ERROR,
                 "Mismatch of file segment size in file segment metadata "
                 "and priority queue: {} != {} ({})",
-                entry.getSize(), metadata->size(), metadata->file_segment->getInfoForLog());
+                entry.getFilledSize(), metadata->size(), metadata->file_segment->getInfoForLog());
         }
+
+        if (metadata->getEntrySize() != entry.getSize())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mismatch of entry file segment size in file segment metadata "
+                "and priority queue: {} != {} ({})",
+                entry.getSize(), metadata->getEntrySize(), metadata->file_segment->getInfoForLog()
+            );
+        }
+
 
         auto result = func(*locked_key, metadata);
         switch (result)
@@ -373,12 +384,12 @@ void LRUFileCachePriority::iterateForEviction(
         if (segment_metadata->releasable())
         {
             res.add(segment_metadata, locked_key, lock);
-            stat.update(segment_metadata->size(), file_segment->getKind(), true);
+            stat.update(segment_metadata->getEntrySize(), file_segment->getKind(), true);
         }
         else
         {
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
-            stat.update(segment_metadata->size(), file_segment->getKind(), false);
+            stat.update(segment_metadata->getEntrySize(), file_segment->getKind(), false);
         }
 
         return IterationResult::CONTINUE;

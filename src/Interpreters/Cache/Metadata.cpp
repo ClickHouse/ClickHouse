@@ -62,6 +62,11 @@ size_t FileSegmentMetadata::size() const
     return file_segment->getReservedSize();
 }
 
+size_t FileSegmentMetadata::getEntrySize() const
+{
+    return file_segment->getEntrySize();
+}
+
 KeyMetadata::KeyMetadata(
     const Key & key_,
     const UserInfo & user_,
