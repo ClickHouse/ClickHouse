@@ -596,7 +596,6 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     auto log = getLogger("IcebergMetadata");
 
-    Poco::JSON::Object::Ptr object = nullptr;
     IcebergMetadataFilesCachePtr cache_ptr = nullptr;
     if (local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache])
         cache_ptr = local_context->getIcebergMetadataFilesCache();
@@ -612,16 +611,19 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
         String json_str;
         readJSONObjectPossiblyInvalid(json_str, *buf);
-
-        Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-        Poco::Dynamic::Var json = parser.parse(json_str);
-        return std::make_pair(json.extract<Poco::JSON::Object::Ptr>(), json_str.size());
+        return json_str;
     };
 
+    String metadata_json_str;
     if (cache_ptr)
-        object = cache_ptr->getOrSetTableMetadata(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
+        metadata_json_str = cache_ptr->getOrSetTableMetadata(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
     else
-        object = create_fn().first;
+        metadata_json_str = create_fn();
+
+    /// For some reason base/base/JSON.h can not parse this json file
+    Poco::JSON::Parser parser;
+    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
+    Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
 
     IcebergSchemaProcessor schema_processor;
 
