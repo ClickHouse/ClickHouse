@@ -87,14 +87,8 @@ void GlobalSubqueriesMatcher::Data::addExternalStorage(ASTPtr & ast, const Names
     }
 
     String alias = subquery_or_table_name->tryGetAlias();
-    String external_table_name;
-    if (alias.empty())
-    {
-        auto hash = subquery_or_table_name->getTreeHash(/*ignore_aliases=*/ true);
-        external_table_name = fmt::format("_data_{}", toString(hash));
-    }
-    else
-        external_table_name = alias;
+    auto hash = subquery_or_table_name->getTreeHash(/*ignore_aliases=*/ true);
+    auto external_table_name = fmt::format("_data_{}", toString(hash));
 
     /** We replace the subquery with the name of the temporary table.
         * It is in this form, the request will go to the remote server.
