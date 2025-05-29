@@ -12,7 +12,8 @@ public:
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ObjectStoragePtr object_storage)>;
+        ObjectStoragePtr object_storage,
+        bool requires_object_storage)>;
 
     static MetadataStorageFactory & instance();
 
@@ -23,7 +24,8 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         ObjectStoragePtr object_storage,
-        const std::string & compatibility_type_hint) const;
+        const std::string & compatibility_type_hint,
+        bool requires_object_storage) const;
 
     static std::string getMetadataType(
         const Poco::Util::AbstractConfiguration & config,
