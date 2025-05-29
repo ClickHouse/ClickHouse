@@ -117,7 +117,7 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t
     if (extension)
         return;
 
-    extension = storage->getTaskIteratorExtension(predicate, context, number_of_replicas);
+    extension = storage->getTaskIteratorExtension(predicate, context, cluster);
 }
 
 /// The code executes on initiator
@@ -196,7 +196,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     if (current_settings[Setting::max_parallel_replicas] > 1)
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
 
-    createExtension(nullptr, max_replicas_to_use);
+    createExtension(nullptr);
 
     for (const auto & shard_info : cluster->getShardsInfo())
     {

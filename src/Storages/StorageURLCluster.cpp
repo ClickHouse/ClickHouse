@@ -129,7 +129,10 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
     );
 }
 
-RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context, size_t) const
+RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
+    const ActionsDAG::Node * predicate,
+    const ContextPtr & context,
+    ClusterPtr) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
         uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), hive_partition_columns_to_read_from_file_path, context);
