@@ -378,7 +378,10 @@ void filterPartsUsingProjection(
         for (const auto & stat : projection_result_ptr->index_stats)
         {
             if (stat.type == ReadFromMergeTree::IndexType::PrimaryKey)
+            {
                 stats.condition = stat.condition;
+                stats.search_algorithm = stat.search_algorithm;
+            }
         }
         stats.selected_parts = projection_result_ptr->selected_parts;
         stats.selected_marks = projection_result_ptr->selected_marks;

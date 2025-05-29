@@ -2626,6 +2626,22 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Virtual row conversions", virtual_row_conversion->toTree());
 }
 
+namespace
+{
+    std::string_view searchAlgorithmToString(const MarkRanges::SearchAlgorithm search_algorithm)
+    {
+        switch (search_algorithm)
+        {
+        case MarkRanges::SearchAlgorithm::BinarySearch:
+            return "binary search";
+        case MarkRanges::SearchAlgorithm::GenericExclusionSearch:
+            return "generic exclusion search";
+        default:
+            return "";
+        }
+    };
+}
+
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
     const auto & result = getAnalysisResult();
@@ -2675,17 +2691,9 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
                 format_settings.out << '/' << index_stats[i - 1].num_granules_after;
             format_settings.out << '\n';
 
-            auto search_algorithm_to_string = [](const MarkRanges::SearchAlgorithm search_algorithm) -> String {
-                switch (search_algorithm)
-                {
-                    case MarkRanges::SearchAlgorithm::BinarySearch: return "binary search";
-                    case MarkRanges::SearchAlgorithm::GenericExclusionSearch: return "generic exclusion search";
-                    default: return "";
-                }
-            };
-            const auto search_algorithm = search_algorithm_to_string(stat.search_algorithm);
+            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
             if (!search_algorithm.empty())
-                format_settings.out << prefix << indent << indent << "Search algorithm: " << search_algorithm << "\n";
+                format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
         }
     }
 }
@@ -2732,6 +2740,10 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
             if (!stat.condition.empty())
                 index_map->add("Condition", stat.condition);
 
+            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+            if (!search_algorithm.empty())
+                index_map->add("Search Algorithm", search_algorithm);
+
             if (i)
                 index_map->add("Initial Parts", index_stats[i - 1].num_parts_after);
             index_map->add("Selected Parts", stat.num_parts_after);
@@ -2768,6 +2780,10 @@ void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) co
             if (!stat.condition.empty())
                 format_settings.out << prefix << indent << indent << "Condition: " << stat.condition << '\n';
 
+            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+            if (!search_algorithm.empty())
+                format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
+
             format_settings.out << prefix << indent << indent << "Parts: " << stat.selected_parts;
             format_settings.out << '\n';
 
@@ -2780,7 +2796,7 @@ void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) co
             format_settings.out << prefix << indent << indent << "Rows: " << stat.selected_rows;
             format_settings.out << '\n';
 
-            format_settings.out << prefix << indent << indent << "Filtered parts: " << stat.filtered_parts;
+            format_settings.out << prefix << indent << indent << "Filtered Parts: " << stat.filtered_parts;
             format_settings.out << '\n';
         }
     }
@@ -2804,6 +2820,10 @@ void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
 
             if (!stat.condition.empty())
                 projection_map->add("Condition", stat.condition);
+
+            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+            if (!search_algorithm.empty())
+                projection_map->add("Search Algorithm", search_algorithm);
 
             projection_map->add("Selected Parts", stat.selected_parts);
             projection_map->add("Selected Marks", stat.selected_marks);
