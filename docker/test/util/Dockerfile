@@ -8,12 +8,15 @@ ARG LLVM_APT_VERSION="1:19.1.4"
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=19
 
+# We need ca-certificates first to be able to update all repos. This is why it's run twice
+RUN apt-get update \
+    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
+
 RUN apt-get update \
     && apt-get install \
         sudo \
         apt-transport-https \
         apt-utils \
-        ca-certificates \
         curl \
         dnsutils \
         gnupg \
