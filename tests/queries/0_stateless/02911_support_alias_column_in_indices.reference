@@ -3,7 +3,7 @@ Expression ((Projection + Before ORDER BY))
     ReadFromMergeTree (02911_support_alias_column_in_indices.test1)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           c
         Condition: (plus(c, 1) in [11, +Inf))
         Parts: 1/2
@@ -19,7 +19,7 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (02911_support_alias_column_in_indices.test1)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           c
         Condition: (plus(c, 1) in [11, +Inf))
         Parts: 1/2
@@ -35,7 +35,7 @@ Expression ((Projection + Before ORDER BY))
     ReadFromMergeTree (02911_support_alias_column_in_indices.test2)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           c
         Condition: (plus(plus(c, 1), 1) in [16, +Inf))
         Parts: 1/2
@@ -51,7 +51,7 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (02911_support_alias_column_in_indices.test2)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           c
         Condition: (plus(plus(c, 1), 1) in [16, +Inf))
         Parts: 1/2

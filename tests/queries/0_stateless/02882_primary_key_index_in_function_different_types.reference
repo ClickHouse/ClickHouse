@@ -4,7 +4,7 @@ CreatingSets
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 1-element set), (id in (-Inf, 10]))
@@ -17,7 +17,7 @@ CreatingSets
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 1-element set), (id in (-Inf, 10]))
@@ -30,7 +30,7 @@ CreatingSets
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 5-element set), (id in (-Inf, 10]))
@@ -43,7 +43,7 @@ CreatingSets
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 5-element set), (id in (-Inf, 10]))
@@ -56,7 +56,7 @@ CreatingSets
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 1-element set), (id in (-Inf, 10]))
@@ -69,7 +69,7 @@ CreatingSets
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 1-element set), (id in (-Inf, 10]))
@@ -82,7 +82,7 @@ CreatingSets
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 5-element set), (id in (-Inf, 10]))
@@ -95,7 +95,7 @@ CreatingSets
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 5-element set), (id in (-Inf, 10]))
