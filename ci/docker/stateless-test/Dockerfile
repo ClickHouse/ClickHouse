@@ -22,6 +22,10 @@ RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-
 # imagemagick - for perf tests
 # parallel - for perf tests
 
+# We need ca-certificates first to be able to update all repos. This is why it's run twice
+RUN apt-get update \
+    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
+
 # golang version 1.13 on Ubuntu 20 is enough for tests
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
