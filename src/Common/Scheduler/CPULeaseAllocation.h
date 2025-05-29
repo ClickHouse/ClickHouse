@@ -14,6 +14,7 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <chrono>
 
 namespace DB
 {
@@ -75,7 +76,26 @@ private:
     };
 
 public:
-    CPULeaseAllocation(SlotCount max_threads_, ResourceLink cpu_link_);
+    struct Settings
+    {
+        static constexpr ResourceCost default_quantum_ns = 10'000'000;
+        static constexpr ResourceCost default_report_ns = default_quantum_ns / 10;
+        static constexpr std::chrono::milliseconds default_preemption_timeout = std::chrono::milliseconds(1000);
+
+        /// Estimated cost for requests, consumption limit without renewal
+        ResourceCost quantum_ns = default_quantum_ns;
+
+        /// Mimimum CPU consumption to report
+        ResourceCost report_ns = default_report_ns;
+
+        /// Timeout after which preempted thread should exit
+        std::chrono::milliseconds preemption_timeout = default_preemption_timeout;
+    };
+
+    CPULeaseAllocation(
+        SlotCount max_threads_,
+        ResourceLink cpu_link_,
+        Settings settings);
     ~CPULeaseAllocation() override;
 
     /// Take one already granted slot if available. Never blocks or waits for slots.
@@ -112,17 +132,16 @@ private:
     void release(Lease & lease);
 
     /// Configuration
-    static const ResourceCost quantum = 10'000'000; /// Estimated cost for requests, consumption limit without renewal
-    static const ResourceCost report_quantum = quantum / 10; // Mimimum CPU consumption to report
     const SlotCount max_threads; /// Max number of threads (and allocated slots)
     const ResourceLink cpu_link; /// Resource link to use for resource requests
+    const Settings settings;
 
     /// Protects all the fields below
     mutable std::mutex mutex;
 
     /// Concurrency control (for interaction with consuming threads)
-    ResourceCost consumed = 0; /// Real consumption accumulated from renew() calls
-    ResourceCost requested = 0; /// Consumption requested from the scheduler (requested <= consumed + quantum)
+    ResourceCost consumed_ns = 0; /// Real consumption accumulated from renew() calls
+    ResourceCost requested_ns = 0; /// Consumption requested from the scheduler (requested <= consumed + quantum)
     Int64 granted = 0; /// Allocated slots left to acquire (might be negative if acquired more than allocated)
     boost::dynamic_bitset<> acquired_threads; /// Acquired threads bitmask (0=released|not-acquired; 1=preempted|running)
     boost::dynamic_bitset<> preempted_threads; /// Preempted threads bitmask (0=running|released|not-acquired; 1=preempted)

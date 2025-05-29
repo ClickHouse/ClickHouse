@@ -50,9 +50,10 @@ bool CPULeaseAllocation::Lease::renew()
     return parent->renew(*this);
 }
 
-CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink cpu_link_)
+CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink cpu_link_, Settings settings_ = {})
     : max_threads(max_threads_)
     , cpu_link(cpu_link_)
+    , settings(std::move(settings_))
     , wake_threads(max_threads)
     , requests(max_threads) // NOTE: it should not be reallocated after initialization because we use raw pointers and iterators
     , head(requests.begin())
@@ -165,7 +166,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
     UInt64 thread_time_ns = clock_gettime_ns(CLOCK_THREAD_CPUTIME_ID);
     chassert(thread_time_ns >= lease.last_report_ns); // This is guaranteed on Linux for thread clock
     ResourceCost delta_ns = thread_time_ns - lease.last_report_ns;
-    if (delta_ns < report_quantum)
+    if (delta_ns < settings.report_ns)
         return true; // Not enough time passed to report
     lease.last_report_ns = thread_time_ns;
 
@@ -178,7 +179,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
     // Consume-in-credit model:
     // We allow to consume allocated + requested resource to avoid frequent preemptions of the last thread
     // But when pending resource request would not cover already consumed resource, we do preemption for downscaling
-    if (consumed > requested)
+    if (consumed_ns > requested_ns)
     {
         // Check if preemption is needed
         // NOTE: Bit manipulations on boost::dynamic_bitset lead to allocations and there is no find_last() so we do iteration
@@ -219,8 +220,8 @@ bool CPULeaseAllocation::renew(Lease & lease)
 
 void CPULeaseAllocation::consume(std::unique_lock<std::mutex> & lock, ResourceCost delta_ns)
 {
-    consumed += delta_ns;
-    if (cur_slots > 0 && consumed >= tail->max_consumed)
+    consumed_ns += delta_ns;
+    if (cur_slots > 0 && consumed_ns >= tail->max_consumed)
     {
         tail->finish();
         tail++;
@@ -237,10 +238,10 @@ void CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
     if (cur_slots == max_threads || shutdown)
         return;
 
-    ResourceCost cost = quantum + std::max<ResourceCost>(0, consumed - requested);
+    ResourceCost cost = settings.quantum_ns + std::max<ResourceCost>(0, consumed_ns - requested_ns);
     head->reset(cost);
-    requested += cost;
-    head->max_consumed = requested; // Lease expires if we consume what we requested
+    requested_ns += cost;
+    head->max_consumed = requested_ns; // Lease expires if we consume what we requested
 
     // We do not use enqueueRequestUsingBudget() because it redistributes resource between requests in the queue (which might be from different queries).
     // Instead we do budgeting for every query independently for better fairness
