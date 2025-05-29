@@ -298,7 +298,7 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
 
         bool use_zero_error_bound = !column_type || WhichDataType(column_type).isUInt64();
 
-        if (!arguments || arguments->children.size() == 0)
+        if (!arguments || arguments->children.empty())
         {
             static constexpr SZ3::ALGO default_algorithm = SZ3::ALGO_INTERP_LORENZO;
             static constexpr SZ3::EB default_error_bound_mode = SZ3::EB_REL;
