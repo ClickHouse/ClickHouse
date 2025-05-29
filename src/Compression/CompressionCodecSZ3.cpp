@@ -91,7 +91,7 @@ void CompressionCodecSZ3::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecSZ3::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    return uncompressed_size + 3 * sizeof(UInt8) + sizeof(Float64) + 4 * sizeof(UInt64);
+    return uncompressed_size + sizeof(UInt8);
 }
 
 UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -149,25 +149,6 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     memcpy(dest + offset, &float_size, sizeof(UInt8));
     offset += sizeof(UInt8);
 
-    memcpy(dest + offset, &algorithm, sizeof(UInt8));
-    offset += sizeof(UInt8);
-
-    memcpy(dest + offset, &error_bound_mode, sizeof(UInt8));
-    offset += sizeof(UInt8);
-
-    memcpy(dest + offset, &error_value, sizeof(error_value));
-    offset += sizeof(error_value);
-
-    UInt64 num_dims = result_dimensions.size();
-    memcpy(dest + offset, &num_dims, sizeof(UInt64));
-    offset += sizeof(UInt64);
-
-    for (UInt64 dim : result_dimensions)
-    {
-        memcpy(dest + offset, &dim, sizeof(UInt64));
-        offset += sizeof(UInt64);
-    }
-
     memcpy(dest + offset, compressed, compressed_size);
     delete[] compressed;
     return static_cast<UInt32>(offset + compressed_size);
@@ -184,73 +165,28 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
     --source_size;
     ++source;
 
-    auto decoded_algorithm = static_cast<SZ3::ALGO>(*source);
-    --source_size;
-    ++source;
-
-    auto decoded_error_bound_mode = static_cast<SZ3::EB>(*source);
-    --source_size;
-    ++source;
-
-    Float64 decoded_error_value;
-    memcpy(&decoded_error_value, source, sizeof(UInt64));
-    source_size -= sizeof(decoded_error_value);
-    source += sizeof(decoded_error_value);
-
-    UInt64 dims_count;
-    memcpy(&dims_count, source, sizeof(UInt64));
-    source_size -= sizeof(UInt64);
-    source += sizeof(UInt64);
-
-    std::vector<UInt64> decoded_dims;
-    decoded_dims.reserve(dims_count);
-    for (size_t i = 0; i < dims_count; ++i)
-    {
-        UInt64 cur_dim;
-        memcpy(&cur_dim, source, sizeof(UInt64));
-        source_size -= sizeof(UInt64);
-        source += sizeof(UInt64);
-        decoded_dims.push_back(cur_dim);
-    }
-
     SZ3::Config config;
-    config.setDims(decoded_dims.begin(), decoded_dims.end());
-
-    config.cmprAlgo = decoded_algorithm;
-    config.errorBoundMode = decoded_error_bound_mode;
-
-    switch (decoded_error_bound_mode)
+    try
     {
-        case SZ3::EB_REL:
-            config.relErrorBound = decoded_error_value;
-            break;
-        case SZ3::EB_ABS:
-            config.absErrorBound = decoded_error_value;
-            break;
-        case SZ3::EB_PSNR:
-            config.psnrErrorBound = decoded_error_value;
-            break;
-        case SZ3::EB_L2NORM:
-            config.l2normErrorBound = decoded_error_value;
-            break;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid error bound mode");
+        switch (width)
+        {
+            case 4: {
+                float * dest_typed = reinterpret_cast<float *>(dest);
+                SZ_decompress<float>(config, const_cast<char *>(source), source_size, dest_typed);
+                break;
+            }
+            case 8: {
+                double * dest_typed = reinterpret_cast<double *>(dest);
+                SZ_decompress<double>(config, const_cast<char *>(source), source_size, dest_typed);
+                break;
+            }
+            default:
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected float width in SZ3 compressed data");
+        }
     }
-
-    switch (width)
+    catch (...)
     {
-        case 4: {
-            float * dest_typed = reinterpret_cast<float *>(dest);
-            SZ_decompress<float>(config, const_cast<char *>(source), source_size, dest_typed);
-            break;
-        }
-        case 8: {
-            double * dest_typed = reinterpret_cast<double *>(dest);
-            SZ_decompress<double>(config, const_cast<char *>(source), source_size, dest_typed);
-            break;
-        }
-        default:
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected float width in SZ3 compressed data");
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid data to decompress with SZ3 codec");
     }
 }
 
