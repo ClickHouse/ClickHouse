@@ -100,8 +100,7 @@ public:
     /// For alter table modify columns, check which option is set and which column is changed.
     NameSet getSecondaryIndicesOnColumnAlterModifyOptions(
         MergeTreeSettingsPtr settings,
-        bool & secondary_indices_on_columns_alter_modify_drop,
-        bool & secondary_indices_on_columns_alter_modify_rebuild);
+        SecondaryIndicesOnColumnsAlterModify & secondary_indices_alter_mode);
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

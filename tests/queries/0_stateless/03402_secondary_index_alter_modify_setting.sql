@@ -12,19 +12,27 @@ CREATE TABLE test_compact
 )
 ENGINE = MergeTree
 ORDER BY a
-SETTINGS min_bytes_for_wide_part = 999999999,
-compress_marks = 1;
+SETTINGS min_bytes_for_wide_part = 999999999;
 
 INSERT INTO test_compact VALUES(1, 1, 1);
 
 -- default
-SELECT 'Check setting default of compact:';
+SELECT 'Check default setting with compact:';
 ALTER TABLE test_compact MODIFY COLUMN b String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- throw
 ALTER TABLE test_compact MODIFY SETTING secondary_indices_on_columns_alter_modify = 'throw';
 
+SELECT 'Check throw setting with compact:';
 ALTER TABLE test_compact MODIFY COLUMN b String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+SELECT 'Check throw setting of change default with compact:';
+-- should be changable even in the throw mode
+ALTER TABLE test_compact MODIFY COLUMN b DEFAULT '123';
+
+-- throw has no effect on alter table update
+ALTER TABLE test_compact UPDATE b = 2 WHERE b = 1 SETTINGS mutations_sync = 2;
+SELECT b from test_compact;
 
 -- drop
 ALTER TABLE test_compact MODIFY SETTING secondary_indices_on_columns_alter_modify = 'drop';
@@ -64,19 +72,27 @@ CREATE TABLE test_wide
 )
 ENGINE = MergeTree
 ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0,
-compress_marks = 1;
+SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO test_wide VALUES(1, 1, 1);
 
 -- default
-SELECT 'Check setting default of wide:';
+SELECT 'Check default setting with wide:';
 ALTER TABLE test_wide MODIFY COLUMN b String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- throw
 ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter_modify = 'throw';
 
+SELECT 'Check throw setting with wide:';
 ALTER TABLE test_wide MODIFY COLUMN b String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+SELECT 'Check throw setting of change default with wide:';
+-- should be changable even in the throw mode
+ALTER TABLE test_wide MODIFY COLUMN b DEFAULT '123';
+
+-- throw has no effect on alter table update
+ALTER TABLE test_wide UPDATE b = 2 WHERE b = 1 SETTINGS mutations_sync = 2;
+SELECT b from test_wide;
 
 -- drop
 ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter_modify = 'drop';

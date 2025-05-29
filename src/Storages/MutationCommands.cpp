@@ -283,8 +283,7 @@ NameSet MutationCommands::getAllUpdatedColumns() const
 
 NameSet MutationCommands::getSecondaryIndicesOnColumnAlterModifyOptions(
     MergeTreeSettingsPtr settings,
-    bool & secondary_indices_on_columns_alter_modify_drop,
-    bool & secondary_indices_on_columns_alter_modify_rebuild)
+    SecondaryIndicesOnColumnsAlterModify & secondary_indices_alter_mode)
 {
     NameSet altered_columns;
     if (this->size() == 1 && this->front().ast)
@@ -304,13 +303,11 @@ NameSet MutationCommands::getSecondaryIndicesOnColumnAlterModifyOptions(
         }
     }
 
-    secondary_indices_on_columns_alter_modify_drop = !altered_columns.empty() &&
-        (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify]
-            == SecondaryIndicesOnColumnsAlterModify::DROP;
-
-    secondary_indices_on_columns_alter_modify_rebuild = !altered_columns.empty() &&
-        (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify]
-            == SecondaryIndicesOnColumnsAlterModify::REBUILD;
+    if (!altered_columns.empty())
+    {
+        secondary_indices_alter_mode =
+            (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify];
+    }
 
     return altered_columns;
 }
