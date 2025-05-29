@@ -2,8 +2,8 @@
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ARG apt_archive="https://archive.ubuntu.com"
+RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 ENV DEBIAN_FRONTEND=noninteractive
 
