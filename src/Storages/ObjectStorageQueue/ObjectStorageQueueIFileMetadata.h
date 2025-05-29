@@ -88,6 +88,17 @@ public:
         const std::string & exception_message,
         bool reduce_retry_count);
 
+    struct HiveLastProcessedFileInfo
+    {
+        bool exists;
+        std::string file_path;
+    };
+
+    using HiveLastProcessedFileInfoMap = std::unordered_map<std::string, HiveLastProcessedFileInfo>;
+
+    /// Prepare keeper requests to save hive last processed files
+    virtual void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & /* file_map */) {}
+
     struct SetProcessingResponseIndexes
     {
         size_t processed_path_doesnt_exist_idx = 0;
@@ -104,14 +115,6 @@ public:
     void finalizeFailed(const std::string & exception_message);
     /// Do some work after prepared requests to set file as Processing succeeded.
     void finalizeProcessing(int processing_id_version_);
-
-    /// Set a starting point for processing.
-    /// Done on table creation, when we want to tell the table
-    /// that processing must be started from certain point,
-    /// instead of from scratch.
-    virtual void prepareProcessedAtStartRequests(
-        Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client) = 0;
 
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
