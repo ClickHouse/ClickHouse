@@ -29,6 +29,8 @@
     <backup_log remove="remove"/>
     <s3queue_log remove="remove"/>
     <blob_storage_log remove="remove"/>
+    <transactions_info_log remove="remove"/>
+    <filesystem_cache_log remove="remove"/>
 
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
 
