@@ -399,3 +399,9 @@ void Loggers::closeLogs(Poco::Logger & logger)
     if (!log_file)
         logger.warning("Logging to console but received signal to close log file (ignoring).");
 }
+
+void Loggers::flushTextLogs()
+{
+    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
+        async->waitForFlush();
+}

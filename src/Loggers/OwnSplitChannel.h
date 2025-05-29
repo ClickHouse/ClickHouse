@@ -89,6 +89,8 @@ public:
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
     void setLevel(const std::string & name, int level) override;
 
+    void waitForFlush() const;
+
 private:
     OwnSplitChannel sync_channel;
     Poco::Thread thread;

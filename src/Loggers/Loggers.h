@@ -25,6 +25,8 @@ public:
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
 
+    void flushTextLogs();
+
     virtual ~Loggers() = default;
 
 protected:

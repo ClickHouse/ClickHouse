@@ -289,6 +289,12 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
     }
 }
 
+void OwnAsyncSplitChannel::waitForFlush() const
+{
+    while (!queue.empty())
+        Poco::Thread::sleep(10);
+}
+
 void OwnAsyncSplitChannel::run()
 {
     Poco::AutoPtr<Poco::Notification> notification = queue.waitDequeueNotification();
