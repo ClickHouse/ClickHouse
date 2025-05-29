@@ -1,3 +1,4 @@
+-- Tags: no-s3-storage
 DROP TABLE IF EXISTS lwd_test;
 DROP TABLE IF EXISTS lwd_test_1;
 
