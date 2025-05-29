@@ -1,11 +1,13 @@
 #pragma once
 
-#include <optional>
-#include <string>
+#include <Loggers/OwnSplitChannel.h>
+
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <Poco/Util/Application.h>
-#include "OwnSplitChannel.h"
+
+#include <optional>
+#include <string>
 
 
 namespace Poco::Util
@@ -36,6 +38,5 @@ private:
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
     std::optional<std::string> config_logger;
 
-
-    Poco::AutoPtr<DB::OwnAsyncSplitChannel> split;
+    Poco::AutoPtr<DB::OwnSplitChannelBase> split;
 };

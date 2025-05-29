@@ -23,23 +23,39 @@ class SystemLogQueue;
 struct TextLogElement;
 using TextLogQueue = SystemLogQueue<TextLogElement>;
 
+class OwnSplitChannelBase : public Poco::Channel
+{
+public:
+    /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
+    void log(const Poco::Message & msg) override = 0;
+
+    virtual void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) = 0;
+
+    /// Adds a child channel
+    virtual void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name) = 0;
+
+    virtual void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) = 0;
+
+    virtual void setLevel(const std::string & name, int level) = 0;
+};
+
 /// Works as Poco::SplitterChannel, but performs additional work:
 ///  passes logs to Client via TCP interface
 ///  tries to use extended logging interface of child for more comprehensive logging
-class OwnSplitChannel : public Poco::Channel
+class OwnSplitChannel : public OwnSplitChannelBase
 {
 public:
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override;
 
-    void setChannelProperty(const std::string& channel_name, const std::string& name, const std::string& value);
+    void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) override;
 
     /// Adds a child channel
-    void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name);
+    void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name) override;
 
-    void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority);
+    void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
 
-    void setLevel(const std::string & name, int level);
+    void setLevel(const std::string & name, int level) override;
 
     void logSplit(
         const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & thread_name);
@@ -55,7 +71,7 @@ public:
 
 /// Same as OwnSplitChannel but it uses a separate thread for logging.
 /// Based on AsyncChannel
-class OwnAsyncSplitChannel : public Poco::Channel, public Poco::Runnable, public boost::noncopyable
+class OwnAsyncSplitChannel : public OwnSplitChannelBase, public Poco::Runnable, public boost::noncopyable
 {
 public:
     OwnAsyncSplitChannel();
@@ -67,11 +83,11 @@ public:
     void log(const Poco::Message & msg) override;
     void run() override;
 
-    void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value);
-    void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name);
+    void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) override;
+    void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name) override;
 
-    void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority);
-    void setLevel(const std::string & name, int level);
+    void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
+    void setLevel(const std::string & name, int level) override;
 
 private:
     OwnSplitChannel sync_channel;

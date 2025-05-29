@@ -65,7 +65,10 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     /// Split logs to ordinary log, error log, syslog and console.
     /// Use extended interface of Channel for more comprehensive logging.
-    split = new DB::OwnAsyncSplitChannel();
+    if (config.getBool("logger.async", true))
+        split = new DB::OwnAsyncSplitChannel();
+    else
+        split = new DB::OwnSplitChannel();
 
     auto log_level_string = config.getString("logger.level", "trace");
 
