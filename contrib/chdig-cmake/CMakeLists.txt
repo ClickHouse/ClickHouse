@@ -1,5 +1,8 @@
 set(USE_CHDIG_DEFAULT ${ENABLE_RUST})
-if (USE_CHDIG_DEFAULT AND (SANITIZE OR NO_ARMV81_OR_HIGHER))
+# SANITIZE            - Some issues with undefined symbols
+# NO_ARMV81_OR_HIGHER - Disabled because ring assumes that Neon is available with ARM
+# ENABLE_CLANG_TIDY   - clang-tidy knows nothing about Rust, plus chdig requires some libraries that are not generated due to dummy launcher (this can be fixed, but what for, let's simply disable it under tidy)
+if (USE_CHDIG_DEFAULT AND (SANITIZE OR NO_ARMV81_OR_HIGHER OR ENABLE_CLANG_TIDY))
     message(STATUS "Environment is not compatible with chdig. Disabling.")
     set(USE_CHDIG_DEFAULT OFF)
 endif()
