@@ -596,21 +596,21 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     // DISTINCT
     if (query_node.isDistinct())
     {
-        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsExpressionKey(query_node.getProjectionNode(), storage_snapshot, query_info))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getProjectionNode(), storage_snapshot, query_info))
             return {};
     }
 
     // GROUP BY
     if (query_info.has_aggregates || query_node.hasGroupBy())
     {
-        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !isShardingKeySuitsExpressionKey(query_node.getGroupByNode(), storage_snapshot, query_info))
+        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getGroupByNode(), storage_snapshot, query_info))
             return {};
     }
 
     // LIMIT BY
     if (query_node.hasLimitBy())
     {
-        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsExpressionKey(query_node.getLimitByNode(), storage_snapshot, query_info))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getLimitByNode(), storage_snapshot, query_info))
             return {};
     }
 
