@@ -309,7 +309,8 @@ Example:
     "Keys": ["x", "y"],
     "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
     "Parts": 3/2,
-    "Granules": 10/6
+    "Granules": 10/6,
+    "Search Algorithm": "generic exclusion search"
   },
   {
     "Type": "Skip",
@@ -348,6 +349,7 @@ Example:
     "Name": "region_proj",
     "Description": "Projection has been analyzed and is used for part-level filtering",
     "Condition": "(region in ['us_west', 'us_west'])",
+    "Search Algorithm": "binary search",
     "Selected Parts": 3,
     "Selected Marks": 3,
     "Selected Ranges": 3,
@@ -358,6 +360,7 @@ Example:
     "Name": "user_id_proj",
     "Description": "Projection has been analyzed and is used for part-level filtering",
     "Condition": "(user_id in [107, 107])",
+    "Search Algorithm": "binary search",
     "Selected Parts": 1,
     "Selected Marks": 1,
     "Selected Ranges": 1,

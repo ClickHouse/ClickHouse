@@ -97,6 +97,7 @@ public:
         std::string name = {};
         std::string description = {};
         std::string condition = {};
+        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
         UInt64 selected_parts = 0;
         UInt64 selected_ranges = 0;
         UInt64 selected_marks = 0;

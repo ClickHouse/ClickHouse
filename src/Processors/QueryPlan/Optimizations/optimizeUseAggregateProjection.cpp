@@ -584,7 +584,10 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
             for (const auto & index_stat : inexact_ranges_select_result->index_stats)
             {
                 if (index_stat.type == ReadFromMergeTree::IndexType::PrimaryKey)
+                {
                     stat.condition = index_stat.condition;
+                    stat.search_algorithm = index_stat.search_algorithm;
+                }
             }
 
             stat.selected_parts = exact_ranges_parts;
@@ -641,7 +644,10 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
                 for (const auto & index_stat : candidate.merge_tree_projection_select_result_ptr->index_stats)
                 {
                     if (index_stat.type == ReadFromMergeTree::IndexType::PrimaryKey)
+                    {
                         stat.condition = index_stat.condition;
+                        stat.search_algorithm = index_stat.search_algorithm;
+                    }
                 }
                 stat.selected_parts = candidate.selected_parts;
                 stat.selected_marks = candidate.selected_marks;
