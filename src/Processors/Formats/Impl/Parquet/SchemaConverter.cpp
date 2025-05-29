@@ -345,7 +345,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
     else
     {
         /// Tuple. (Possibly a Map key_value tuple.)
-        /// TODO: Test type hint having different element names.
+        /// TODO [parquet]: Test type hint having different element names.
         auto tuple_type_hint = typeid_cast<const DataTypeTuple *>(type_hint.get());
         if (type_hint && !tuple_type_hint)
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", name, type_hint->getName());
@@ -636,7 +636,7 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (logical.__isset.DECIMAL || converted == CONV::DECIMAL)
     {
-        //TODO
+        /// TODO [parquet]:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "decimal not implemented yet");
         // if physical is INT32:
         //     require that precision <= 9
@@ -673,11 +673,11 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (logical.__isset.FLOAT16)
     {
-        /// TODO: Support. For now, fall through to reading as FixedString(2).
+        /// TODO [parquet]: Support. For now, fall through to reading as FixedString(2).
     }
     else if (converted == CONV::INTERVAL)
     {
-        /// TODO: Support. For now, fall through to reading as FixedString(12).
+        /// TODO [parquet]: Support. For now, fall through to reading as FixedString(12).
     }
     else if (element.__isset.logicalType || element.__isset.converted_type)
     {
@@ -688,7 +688,7 @@ void SchemaConverter::processPrimitiveColumn(
     switch (type)
     {
         case parq::Type::BOOLEAN:
-            //TODO
+            /// TODO [parquet]:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BOOLEAN not implemented");
             //return;
         case parq::Type::INT32:
@@ -700,7 +700,7 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = std::make_shared<DataTypeInt64>();
             return;
         case parq::Type::INT96:
-            //TODO
+            /// TODO [parquet]:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INT96 not implemented");
             //return;
         case parq::Type::FLOAT:

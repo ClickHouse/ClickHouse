@@ -72,5 +72,6 @@ template std::string thriftToString<parq::PageHeader>(const parq::PageHeader &);
 template std::string thriftToString<parq::CompressionCodec::type>(const parq::CompressionCodec::type &);
 template std::string thriftToString<parq::SchemaElement>(const parq::SchemaElement &);
 template std::string thriftToString<parq::PageType::type>(const parq::PageType::type &);
+template std::string thriftToString<parq::PageLocation>(const parq::PageLocation &);
 
 }

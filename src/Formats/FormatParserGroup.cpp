@@ -64,6 +64,7 @@ void FormatParserGroup::initKeyCondition(const Block & keys)
     if (!ctx) throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
 
     ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), ctx);
+    /// TODO [parquet]: This doesn't work well with prewhere because `keys` doesn't contain prewhere-only columns.
     key_condition = std::make_shared<const KeyCondition>(
         inverted_dag, ctx, keys.getNames(),
         std::make_shared<ExpressionActions>(ActionsDAG(keys.getColumnsWithTypeAndName())));

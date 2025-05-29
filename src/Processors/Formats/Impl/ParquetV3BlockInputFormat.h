@@ -10,21 +10,21 @@
 namespace DB
 {
 
-class ParquetMk4BlockInputFormat : public IInputFormat
+class ParquetV3BlockInputFormat : public IInputFormat
 {
 public:
-    ParquetMk4BlockInputFormat(
+    ParquetV3BlockInputFormat(
         ReadBuffer & buf,
         const Block & header,
         const FormatSettings & format_settings,
         Parquet::SharedParsingThreadPoolPtr thread_pool_,
         size_t min_bytes_for_seek);
 
-    ~ParquetMk4BlockInputFormat() override;
+    ~ParquetV3BlockInputFormat() override;
 
     void resetParser() override;
 
-    String getName() const override { return "ParquetMk4BlockInputFormat"; }
+    String getName() const override { return "ParquetV3BlockInputFormat"; }
 
     void setPrewhereInfo(PrewhereInfoPtr prewhere_info_) override
     {

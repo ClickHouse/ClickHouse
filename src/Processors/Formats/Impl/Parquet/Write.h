@@ -28,8 +28,6 @@ struct WriteOptions
     /// wrapReadBufferWithCompressionMethod:
     ///  * Lz4 here lz4 block format, while in Lz4InflatingReadBuffer uses lz4 framed format,
     ///  * Snappy here doesn't have extra headers, while HadoopSnappyReadBuffer does.
-    /// TODO: There's no reason to use CompressionMethod enum here, change this field type to
-    ///       parquet::format::CompressionCodec::type.
     CompressionMethod compression = CompressionMethod::Lz4;
     int compression_level = 3;
 
