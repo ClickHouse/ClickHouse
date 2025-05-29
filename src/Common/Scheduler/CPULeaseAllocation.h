@@ -41,7 +41,7 @@ private:
         CPULeaseAllocationPtr parent; // Hold allocation to enforce destruction order
         size_t thread_num; // Thread number that acquired the slot
         UInt64 last_report_ns = 0; // Last time when the slot was renewed or started
-        CurrentMetrics::Increment acquired_slot_increment;
+        CurrentMetrics::Increment acquired_increment;
     };
 
     /// Represents a resource request for a cpu slot.

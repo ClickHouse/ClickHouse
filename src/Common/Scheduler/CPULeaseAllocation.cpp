@@ -1,4 +1,3 @@
-#include "Common/Scheduler/ResourceLink.h"
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Exception.h>
@@ -9,6 +8,7 @@
 namespace ProfileEvents
 {
     extern const Event ConcurrencyControlWaitMicroseconds;
+    extern const Event ConcurrencyControlPreemptedMicroseconds;
     extern const Event ConcurrencyControlSlotsAcquired;
     extern const Event ConcurrencyControlSlotsAcquiredNonCompeting;
 }
@@ -17,7 +17,7 @@ namespace CurrentMetrics
 {
     extern const Metric ConcurrencyControlScheduled;
     extern const Metric ConcurrencyControlAcquired;
-    extern const Metric ConcurrencyControlAcquiredNonCompeting;
+    extern const Metric ConcurrencyControlPreempted;
 }
 
 namespace DB
@@ -31,7 +31,7 @@ namespace ErrorCodes
 CPULeaseAllocation::Lease::Lease(CPULeaseAllocationPtr && lease_, size_t thread_num_)
     : parent(std::move(lease_))
     , thread_num(thread_num_)
-    , acquired_slot_increment(CurrentMetrics::ConcurrencyControlAcquired, 0)
+    , acquired_increment(CurrentMetrics::ConcurrencyControlAcquired, 0)
 {}
 
 CPULeaseAllocation::Lease::~Lease()
@@ -41,7 +41,7 @@ CPULeaseAllocation::Lease::~Lease()
 
 void CPULeaseAllocation::Lease::startConsumption()
 {
-    acquired_slot_increment.changeTo(1);
+    acquired_increment.changeTo(1);
     last_report_ns = clock_gettime_ns(CLOCK_THREAD_CPUTIME_ID);
 }
 
@@ -200,15 +200,17 @@ bool CPULeaseAllocation::renew(Lease & lease)
             // We only preempt the last running thread to avoid running many threads with low utilization (e.g spread 2 CPU among 10 threads).
             // It is better to run less threads, but utilize CPU better to avoid frequent context switches. This is how down-scaling works.
             preempted_threads.set(lease.thread_num);
-            lease.acquired_slot_increment.changeTo(0);
 
-            // TODO(serxa): add metrics to count current preempted threads and total preemption time profile event
+            auto preemption_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds);
+            CurrentMetrics::Increment preempted_increment(CurrentMetrics::ConcurrencyControlPreempted);
+            lease.acquired_increment.changeTo(0);
+
             // TODO(serxa): add timeout and return false to stop the thread (we do not want to block threads forever)
             wake_threads[lease.thread_num].wait(lock, [this, thread_num = lease.thread_num] { return !preempted_threads[thread_num] || exception; });
             if (exception)
                 throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "CPU Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
 
-            lease.acquired_slot_increment.changeTo(1);
+            lease.acquired_increment.changeTo(1);
             // There is no need in updating lease.last_report_ns because it counts only CPU time, not waiting time
         }
     }

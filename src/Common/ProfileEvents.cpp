@@ -981,6 +981,7 @@ The server successfully detected this situation and will download merged part fr
     M(ConcurrencyControlSlotsAcquiredNonCompeting, "Total number of noncompeting CPU slot acquired", ValueType::Number) \
     M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
     M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots.", ValueType::Microseconds) \
+    M(ConcurrencyControlPreemptedMicroseconds, "Total time a query was waiting due to preemption of CPU slots.", ValueType::Microseconds) \
     \
     M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
     M(SharedDatabaseCatalogStateApplicationMicroseconds, "Total time spend on application of new state in SharedDatabaseCatalog", ValueType::Microseconds) \
