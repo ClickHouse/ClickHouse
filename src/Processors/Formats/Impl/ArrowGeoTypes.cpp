@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -321,16 +322,19 @@ void PointColumnBuilder::appendObject(const ArrowGeometricObject & object)
     point_column_data_y.push_back(point.y);
 }
 
+void PointColumnBuilder::appendDefault()
+{
+    point_column_data_x.push_back(0);
+    point_column_data_y.push_back(0);
+}
+
 ColumnWithTypeAndName PointColumnBuilder::getResultColumn()
 {
     ColumnPtr result_x = point_column_x->getPtr();
     ColumnPtr result_y = point_column_y->getPtr();
     auto column = ColumnTuple::create(Columns{result_x, result_y});
 
-    DataTypePtr type_x = std::make_shared<DataTypeFloat64>();
-    DataTypePtr type_y = std::make_shared<DataTypeFloat64>();
-
-    auto tuple_type = std::make_shared<DataTypeTuple>(std::vector{type_x, type_y});
+    auto tuple_type = DataTypeFactory::instance().get("Point");
     return {std::move(column), tuple_type, name};
 }
 
@@ -356,12 +360,17 @@ void LineColumnBuilder::appendObject(const ArrowGeometricObject & object)
     offsets.push_back(offset);
 }
 
+void LineColumnBuilder::appendDefault()
+{
+    offsets.push_back(offset);
+}
+
 ColumnWithTypeAndName LineColumnBuilder::getResultColumn()
 {
     auto all_points_column = point_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("LineString");
     return {std::move(array_column), array_type, name};
 }
 
@@ -385,12 +394,17 @@ void PolygonColumnBuilder::appendObject(const ArrowGeometricObject & object)
     offsets.push_back(offset);
 }
 
+void PolygonColumnBuilder::appendDefault()
+{
+    offsets.push_back(offset);
+}
+
 ColumnWithTypeAndName PolygonColumnBuilder::getResultColumn()
 {
     auto all_points_column = line_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("Polygon");
     return {std::move(array_column), array_type, name};
 }
 
@@ -415,12 +429,17 @@ void MultiLineStringColumnBuilder::appendObject(const ArrowGeometricObject & obj
     offsets.push_back(offset);
 }
 
+void MultiLineStringColumnBuilder::appendDefault()
+{
+    offsets.push_back(offset);
+}
+
 ColumnWithTypeAndName MultiLineStringColumnBuilder::getResultColumn()
 {
     auto all_points_column = line_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("MultiLineString");
     return {std::move(array_column), array_type, name};
 }
 
@@ -445,12 +464,17 @@ void MultiPolygonColumnBuilder::appendObject(const ArrowGeometricObject & object
     offsets.push_back(offset);
 }
 
+void MultiPolygonColumnBuilder::appendDefault()
+{
+    offsets.push_back(offset);
+}
+
 ColumnWithTypeAndName MultiPolygonColumnBuilder::getResultColumn()
 {
     auto all_points_column = polygon_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("MultiPolygon");
     return {std::move(array_column), array_type, name};
 }
 
@@ -481,6 +505,12 @@ void GeoColumnBuilder::appendObject(const ArrowGeometricObject & object)
 {
     geomery_column_builder->appendObject(object);
 }
+
+void GeoColumnBuilder::appendDefault()
+{
+    geomery_column_builder->appendDefault();
+}
+
 
 ColumnWithTypeAndName GeoColumnBuilder::getResultColumn()
 {

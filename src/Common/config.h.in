@@ -13,7 +13,6 @@
 #cmakedefine01 USE_AZURE_BLOB_STORAGE
 #cmakedefine01 USE_BROTLI
 #cmakedefine01 USE_CASSANDRA
-#cmakedefine01 USE_SENTRY
 #cmakedefine01 USE_GRPC
 #cmakedefine01 USE_SIMDJSON
 #cmakedefine01 USE_RAPIDJSON
@@ -30,6 +29,7 @@
 #cmakedefine01 USE_S2_GEOMETRY
 #cmakedefine01 USE_FASTOPS
 #cmakedefine01 USE_SQIDS
+#cmakedefine01 USE_BECH32
 #cmakedefine01 USE_IDNA
 #cmakedefine01 USE_NLP
 #cmakedefine01 USE_VECTORSCAN

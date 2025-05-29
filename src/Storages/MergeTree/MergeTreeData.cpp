@@ -603,6 +603,7 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)");
     desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part");
     desc.addEphemeral("_part_data_version", std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
+    desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name");
 
     if (metadata.hasPartitionKey())
     {
@@ -627,6 +628,7 @@ VirtualColumnsDescription MergeTreeData::createProjectionVirtuals(const StorageI
     desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)");
     desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
     desc.addEphemeral("_part_data_version", std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
+    desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name");
 
     if (metadata.hasPartitionKey())
     {
@@ -1362,7 +1364,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
     /// TODO Checks for Graphite mode.
 }
 
-const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value", "_part_data_version"};
+const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value", "_part_data_version", "_disk_name"};
 
 Block MergeTreeData::getHeaderWithVirtualsForFilter(const StorageMetadataPtr & metadata) const
 {
@@ -3751,22 +3753,25 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     commands.apply(new_metadata, local_context);
 
-    if (AlterCommands::hasGinIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
+    if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
 
+    /// -------------------------------------------------------------------------------------------------------
+    /// Temporary checks during a transition period. Remove this block one year after text indexes became GA.
     if (AlterCommands::hasLegacyFullTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'full_text' index type is deprecated. Please use the 'gin' index type instead");
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'full_text' index type is deprecated. Please use the 'text' index type instead");
 
-    /// ---
-    /// Temporary checks during a transition period. Remove this block one year after GIN indexes became GA.
     if (AlterCommands::hasLegacyInvertedIndex(new_metadata) && !settings[Setting::allow_experimental_inverted_index])
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'inverted' index type is deprecated. Please use the 'gin' index type instead");
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'inverted' index type is deprecated. Please use the 'text' index type instead");
+
+    if (AlterCommands::hasLegacyGinIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'gin' index type is deprecated. Please use the 'text' index type instead");
+    /// -------------------------------------------------------------------------------------------------------
 
     if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && !settings[Setting::allow_experimental_vector_similarity_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Experimental vector similarity index is disabled (turn on setting 'allow_experimental_vector_similarity_index')");
-    /// ---
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
     ///     SET allow_experimental_vector_similarity_index = 1;
@@ -4214,11 +4219,6 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompresse
         part_type = PartType::Compact;
 
     return {part_type, PartStorageType::Full};
-}
-
-MergeTreeDataPartFormat MergeTreeData::choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const
-{
-    return choosePartFormat(bytes_uncompressed, rows_count);
 }
 
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
@@ -5478,14 +5478,7 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, C
     /// Remove metadata version file and take it from table.
     /// Currently we cannot attach parts with different schema, so
     /// we can assume that it's equal to table's current schema.
-    part->removeMetadataVersion();
-    {
-        auto out_metadata = part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, local_context->getWriteSettings());
-        writeText(metadata_version, *out_metadata);
-        out_metadata->finalize();
-        if (sync)
-            out_metadata->sync();
-    }
+    part->writeMetadataVersion(local_context, metadata_version, sync);
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
@@ -8139,7 +8132,7 @@ bool MergeTreeData::canUseAdaptiveGranularity() const
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 {
-    return disk->getPath() + relative_data_path;
+    return fs::path(disk->getPath()) / relative_data_path;
 }
 
 
@@ -9318,7 +9311,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     auto tmp_dir_holder = getTemporaryPartDirectoryHolder(EMPTY_PART_TMP_PREFIX + new_part_name);
     auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings())
-        .withBytesAndRowsOnDisk(0, 0)
+        .withBytesAndRows(0, 0)
         .withPartInfo(new_part_info)
         .build();
 

@@ -135,11 +135,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"time_to_run", [&](const JSONObjectType & value) { time_to_run = static_cast<uint32_t>(value.getUInt64()); }},
         {"fuzz_floating_points", [&](const JSONObjectType & value) { fuzz_floating_points = value.getBool(); }},
         {"test_with_fill", [&](const JSONObjectType & value) { test_with_fill = value.getBool(); }},
-        {"dump_table_oracle_compare_content", [&](const JSONObjectType & value) { dump_table_oracle_compare_content = value.getBool(); }},
+        {"use_dump_table_oracle", [&](const JSONObjectType & value) { use_dump_table_oracle = static_cast<uint32_t>(value.getUInt64()); }},
         {"compare_success_results", [&](const JSONObjectType & value) { compare_success_results = value.getBool(); }},
         {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
         {"compare_explains", [&](const JSONObjectType & value) { compare_explains = value.getBool(); }},
-        {"fail_on_timeout", [&](const JSONObjectType & value) { fail_on_timeout = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -164,6 +163,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
                     {"float", allow_floating_points},
                     {"date", allow_dates},
                     {"date32", allow_date32},
+                    {"time", allow_time},
+                    {"time64", allow_time64},
                     {"datetime", allow_datetimes},
                     {"datetime64", allow_datetime64},
                     {"string", allow_strings},
@@ -194,6 +195,33 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
                  }
                  type_mask &= (~type_entries.at(entry));
              }
+         }},
+        {"disallowed_error_codes",
+         [&](const JSONObjectType & value)
+         {
+             using std::operator""sv;
+             constexpr auto delim{","sv};
+
+             for (const auto word : std::views::split(String(value.getString()), delim))
+             {
+                 uint32_t result;
+                 const auto & sv = std::string_view(word);
+                 auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
+
+                 if (ec == std::errc::invalid_argument)
+                 {
+                     throw std::invalid_argument("Not a valid number for an error code");
+                 }
+                 else if (ec == std::errc::result_out_of_range)
+                 {
+                     throw std::out_of_range("Number out of range for uint32_t");
+                 }
+                 else if (ptr != sv.data() + sv.size())
+                 {
+                     throw std::invalid_argument("Invalid characters in input");
+                 }
+                 disallowed_error_codes.insert(result);
+             }
          }}};
 
     for (const auto [key, value] : object.getObject())
@@ -222,10 +250,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
             min_nested_rows,
             max_nested_rows);
     }
-    if (allow_infinite_tables && fail_on_timeout)
-    {
-        LOG_WARNING(log, "Setting both \"allow_infinite_tables\" and \"fail_on_timeout\" is not recommended");
-    }
     for (const auto & entry : std::views::values(metrics))
     {
         measure_performance |= entry.enabled;
@@ -249,12 +273,13 @@ void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, cons
     String buf;
     uint64_t found = 0;
 
-    if (processServerQuery(fmt::format(
-            R"(SELECT {}"{}" FROM "system"."{}" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
-            distinct ? "DISTINCT " : "",
-            col,
-            table,
-            fuzz_out.generic_string())))
+    if (processServerQuery(
+            fmt::format(
+                R"(SELECT {}"{}" FROM "system"."{}" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                distinct ? "DISTINCT " : "",
+                col,
+                table,
+                fuzz_out.generic_string())))
     {
         std::ifstream infile(fuzz_out);
         out.clear();
@@ -288,11 +313,12 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tabl
     String current_table;
     DB::Strings next_cols;
 
-    if (processServerQuery(fmt::format(
-            "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' AND "
-            "c.database = 'system' INTO OUTFILE "
-            "'{}' TRUNCATE FORMAT TabSeparated;",
-            fuzz_out.generic_string())))
+    if (processServerQuery(
+            fmt::format(
+                "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' AND "
+                "c.database = 'system' INTO OUTFILE "
+                "'{}' TRUNCATE FORMAT TabSeparated;",
+                fuzz_out.generic_string())))
     {
         std::ifstream infile(fuzz_out);
         while (std::getline(infile, buf) && buf.size() > 1)
@@ -327,12 +353,13 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
     const String & detached_tbl = detached ? "detached_parts" : "parts";
     const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
 
-    if (processServerQuery(fmt::format(
-            R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)",
-            detached_tbl,
-            db_clause,
-            table,
-            fuzz_out.generic_string())))
+    if (processServerQuery(
+            fmt::format(
+                R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)",
+                detached_tbl,
+                db_clause,
+                table,
+                fuzz_out.generic_string())))
     {
         std::ifstream infile(fuzz_out);
         if (std::getline(infile, buf))
@@ -351,19 +378,21 @@ FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partit
     const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
 
     /// The system.parts table doesn't support sampling, so pick up a random part with a window function
-    if (processServerQuery(fmt::format(
-            "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
-            "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"{}\" WHERE {}\"table\" "
-            "= "
-            "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
-            partition ? "partition_id" : "name",
-            detached_tbl,
-            db_clause,
-            table,
-            detached_tbl,
-            db_clause,
-            table,
-            fuzz_out.generic_string())))
+    if (processServerQuery(
+            fmt::format(
+                "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
+                "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"{}\" WHERE "
+                "{}\"table\" "
+                "= "
+                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
+                partition ? "partition_id" : "name",
+                detached_tbl,
+                db_clause,
+                table,
+                detached_tbl,
+                db_clause,
+                table,
+                fuzz_out.generic_string())))
     {
         std::ifstream infile(fuzz_out, std::ios::in);
         std::getline(infile, res);

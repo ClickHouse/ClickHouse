@@ -27,6 +27,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Context.h>
 
 #include <fmt/ranges.h>
 
@@ -157,11 +158,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         if (hasExactlyOneBracketsExpansion(path))
         {
             auto paths = expandSelectionGlob(configuration->getPath());
-
-            ConfigurationPtr copy_configuration = configuration->clone();
-            copy_configuration->setPaths(paths);
             iterator = std::make_unique<KeysIterator>(
-                object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
+                paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
                 query_settings.ignore_non_existent_file, skip_object_metadata, file_progress_callback);
         }
         else
@@ -180,12 +178,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else
     {
-        ConfigurationPtr copy_configuration = configuration->clone();
+        Strings paths;
+
         auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
         if (filter_dag)
         {
             auto keys = configuration->getPaths();
-            std::vector<String> paths;
             paths.reserve(keys.size());
             for (const auto & key : keys)
                 paths.push_back(fs::path(configuration->getNamespace()) / key);
@@ -193,11 +191,15 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
             VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, local_context);
-            copy_configuration->setPaths(keys);
+            paths = keys;
+        }
+        else
+        {
+            paths = configuration->getPaths();
         }
 
         iterator = std::make_unique<KeysIterator>(
-            object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
+            paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, file_progress_callback);
     }
 
@@ -833,18 +835,17 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
 }
 
 StorageObjectStorageSource::KeysIterator::KeysIterator(
+    const Strings & keys_,
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
     const NamesAndTypesList & virtual_columns_,
     ObjectInfos * read_keys_,
     bool ignore_non_existent_files_,
     bool skip_object_metadata_,
     std::function<void(FileProgress)> file_progress_callback_)
     : object_storage(object_storage_)
-    , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
-    , keys(configuration->getPaths())
+    , keys(keys_)
     , ignore_non_existent_files(ignore_non_existent_files_)
     , skip_object_metadata(skip_object_metadata_)
 {
