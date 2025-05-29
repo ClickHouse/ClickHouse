@@ -35,7 +35,6 @@ public:
         String subject;
     };
 
-    bool isSubscribed() const;
     void subscribe();
     void unsubscribe();
 

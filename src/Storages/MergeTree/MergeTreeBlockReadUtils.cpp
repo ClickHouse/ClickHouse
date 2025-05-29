@@ -89,8 +89,6 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
-}
-
 /** If some of the requested columns are not in the part,
   * then find out which columns may need to be read further,
   * so that you can calculate the DEFAULT expression for these columns.
@@ -140,6 +138,8 @@ NameSet injectRequiredColumns(
     }
 
     return injected_columns;
+}
+
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(

@@ -27,7 +27,6 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Context.h>
 
 #include <fmt/ranges.h>
 
@@ -128,12 +127,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
-    const std::optional<ActionsDAG> & filter_actions_dag,
     const NamesAndTypesList & virtual_columns,
     ObjectInfos * read_keys,
     std::function<void(FileProgress)> file_progress_callback,
-    bool ignore_archive_globs,
-    bool skip_object_metadata)
+    bool ignore_archive_globs)
 {
     const bool is_archive = configuration->isArchive();
 
@@ -158,9 +155,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         if (hasExactlyOneBracketsExpansion(path))
         {
             auto paths = expandSelectionGlob(configuration->getPath());
+
+            ConfigurationPtr copy_configuration = configuration->clone();
+            copy_configuration->setPaths(paths);
             iterator = std::make_unique<KeysIterator>(
-                paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
-                query_settings.ignore_non_existent_file, skip_object_metadata, file_progress_callback);
+                object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
+                query_settings.ignore_non_existent_file, file_progress_callback);
         }
         else
             /// Iterate through disclosed globs and make a source for each file
@@ -171,19 +171,16 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else if (configuration->supportsFileIterator())
     {
-        return configuration->iterate(
-            filter_actions_dag.has_value() ? &filter_actions_dag.value() : nullptr,
-            file_progress_callback,
-            query_settings.list_object_keys_size);
+        return configuration->iterate();
     }
     else
     {
-        Strings paths;
-
+        ConfigurationPtr copy_configuration = configuration->clone();
         auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
         if (filter_dag)
         {
             auto keys = configuration->getPaths();
+            std::vector<String> paths;
             paths.reserve(keys.size());
             for (const auto & key : keys)
                 paths.push_back(fs::path(configuration->getNamespace()) / key);
@@ -191,16 +188,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
             VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, local_context);
-            paths = keys;
-        }
-        else
-        {
-            paths = configuration->getPaths();
+            copy_configuration->setPaths(keys);
         }
 
         iterator = std::make_unique<KeysIterator>(
-            paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
-            query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, file_progress_callback);
+            object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
+            query_settings.ignore_non_existent_file, file_progress_callback);
     }
 
     if (is_archive)
@@ -415,17 +408,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (!object_info->metadata)
         {
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-
-            if (query_settings.ignore_non_existent_file)
-            {
-                auto metadata = object_storage->tryGetObjectMetadata(path);
-                if (!metadata)
-                    return {};
-
-                object_info->metadata = metadata;
-            }
-            else
-                object_info->metadata = object_storage->getObjectMetadata(path);
+            object_info->metadata = object_storage->getObjectMetadata(path);
         }
     }
     while (query_settings.skip_empty_files && object_info->metadata->size_bytes == 0);
@@ -835,19 +818,18 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
 }
 
 StorageObjectStorageSource::KeysIterator::KeysIterator(
-    const Strings & keys_,
     ObjectStoragePtr object_storage_,
+    ConfigurationPtr configuration_,
     const NamesAndTypesList & virtual_columns_,
     ObjectInfos * read_keys_,
     bool ignore_non_existent_files_,
-    bool skip_object_metadata_,
     std::function<void(FileProgress)> file_progress_callback_)
     : object_storage(object_storage_)
+    , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
-    , keys(keys_)
+    , keys(configuration->getPaths())
     , ignore_non_existent_files(ignore_non_existent_files_)
-    , skip_object_metadata(skip_object_metadata_)
 {
     if (read_keys_)
     {
@@ -871,18 +853,15 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
         auto key = keys[current_index];
 
         ObjectMetadata object_metadata{};
-        if (!skip_object_metadata)
+        if (ignore_non_existent_files)
         {
-            if (ignore_non_existent_files)
-            {
-                auto metadata = object_storage->tryGetObjectMetadata(key);
-                if (!metadata)
-                    continue;
-                object_metadata = *metadata;
-            }
-            else
-                object_metadata = object_storage->getObjectMetadata(key);
+            auto metadata = object_storage->tryGetObjectMetadata(key);
+            if (!metadata)
+                continue;
+            object_metadata = *metadata;
         }
+        else
+            object_metadata = object_storage->getObjectMetadata(key);
 
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));

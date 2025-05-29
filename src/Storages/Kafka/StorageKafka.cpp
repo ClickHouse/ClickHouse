@@ -2,7 +2,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -61,7 +60,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
     extern const SettingsMilliseconds stream_flush_interval_ms;
@@ -220,7 +219,7 @@ StorageKafka::StorageKafka(
         const auto & table = getStorageID().getTableName();
         const auto & thread_name = std::string("KfkCln:") + table;
         setThreadName(thread_name.c_str(), /*truncate=*/ true);
-        cleanConsumersByTTL();
+        cleanConsumers();
     });
 }
 
@@ -318,47 +317,21 @@ void StorageKafka::shutdown(bool)
     }
 
     {
+        std::lock_guard lock(mutex);
         LOG_TRACE(log, "Closing {} consumers", consumers.size());
         Stopwatch watch;
-        cleanConsumers();
-        LOG_TRACE(log, "Consumers closed in {} ms.", watch.elapsedMilliseconds());
-    }
-}
-
-void StorageKafka::cleanConsumers()
-{
-    /// We need to clear the cppkafka::Consumer separately from KafkaConsumer, since cppkafka::Consumer holds a weak_ptr to the KafkaConsumer (for logging callback)
-    /// So if we will remove cppkafka::Consumer from KafkaConsumer destructor, then due to librdkafka will call the logging again from destructor, it will lead to a deadlock
-    std::vector<ConsumerPtr> consumers_to_close;
-
-    {
-        std::unique_lock lock(mutex);
-        /// Wait until all consumers will be released
-        cv.wait(lock, [&, this]()
-        {
-            auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr)
-            {
-                return ptr->isInUse();
-            });
-            return it == consumers.end();
-        });
-
-        for (const auto & consumer : consumers)
-        {
-            if (!consumer->hasConsumer())
-                continue;
-            consumers_to_close.push_back(consumer->moveConsumer());
-        }
-    }
-
-    /// First close cppkafka::Consumer (it can use KafkaConsumer object via stat callback)
-    consumers_to_close.clear();
-
-    {
-        std::unique_lock lock(mutex);
         consumers.clear();
+        LOG_TRACE(log, "Consumers closed. Took {} ms.", watch.elapsedMilliseconds());
+    }
+
+    {
+        LOG_TRACE(log, "Waiting for final cleanup");
+        Stopwatch watch;
+        rd_kafka_wait_destroyed(KAFKA_CLEANUP_TIMEOUT_MS);
+        LOG_TRACE(log, "Final cleanup finished in {} ms (timeout {} ms).", watch.elapsedMilliseconds(), KAFKA_CLEANUP_TIMEOUT_MS);
     }
 }
+
 
 void StorageKafka::pushConsumer(KafkaConsumerPtr consumer)
 {
@@ -368,12 +341,16 @@ void StorageKafka::pushConsumer(KafkaConsumerPtr consumer)
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse, 1);
 }
 
+
+KafkaConsumerPtr StorageKafka::popConsumer()
+{
+    return popConsumer(std::chrono::milliseconds::zero());
+}
+
+
 KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
 {
     std::unique_lock lock(mutex);
-
-    if (shutdown_called)
-        throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
     KafkaConsumerPtr ret_consumer_ptr;
     std::optional<size_t> closed_consumer_index;
@@ -406,7 +383,7 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
     {
         ret_consumer_ptr = consumers[*closed_consumer_index];
 
-        cppkafka::Configuration consumer_config = getConsumerConfiguration(*closed_consumer_index, ret_consumer_ptr);
+        cppkafka::Configuration consumer_config = getConsumerConfiguration(*closed_consumer_index);
         /// It should be OK to create consumer under lock, since it should be fast (without subscribing).
         ret_consumer_ptr->createConsumer(consumer_config);
         LOG_TRACE(log, "Created #{} consumer", *closed_consumer_index);
@@ -457,7 +434,7 @@ KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
         topics);
     return kafka_consumer_ptr;
 }
-cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
+cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number)
 {
     KafkaConfigLoader::ConsumerConfigParams params{
         {getContext()->getConfigRef(), collection_name, topics, log},
@@ -467,7 +444,7 @@ cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_n
         consumer_number,
         client_id,
         getMaxBlockSize()};
-    return KafkaConfigLoader::getConsumerConfiguration(*this, params, exception_info_sink_ptr);
+    return KafkaConfigLoader::getConsumerConfiguration(*this, params);
 }
 
 cppkafka::Configuration StorageKafka::getProducerConfiguration()
@@ -479,7 +456,7 @@ cppkafka::Configuration StorageKafka::getProducerConfiguration()
     return KafkaConfigLoader::getProducerConfiguration(*this, params);
 }
 
-void StorageKafka::cleanConsumersByTTL()
+void StorageKafka::cleanConsumers()
 {
     UInt64 ttl_usec = (*kafka_settings)[KafkaSetting::kafka_consumers_pool_ttl_ms] * 1'000;
 
@@ -593,9 +570,6 @@ void StorageKafka::threadFunc(size_t idx)
                 }
             }
         }
-        else
-            LOG_DEBUG(log, "No attached views");
-
     }
     catch (...)
     {

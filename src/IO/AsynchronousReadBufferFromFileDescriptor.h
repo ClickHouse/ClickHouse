@@ -2,6 +2,7 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/AsynchronousReader.h>
+#include <Interpreters/Context.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/Priority.h>
 

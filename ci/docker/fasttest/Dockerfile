@@ -14,7 +14,6 @@ RUN apt-get update \
         apt-utils \
         ca-certificates \
         curl \
-        netcat-openbsd \
         gnupg \
         lsb-release \
         wget \
@@ -68,7 +67,7 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
 # Give suid to gdb to grant it attach permissions
 RUN chmod u+s /opt/gdb/bin/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"

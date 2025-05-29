@@ -693,13 +693,12 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     jobs = []
 
     glob1 = [2, 3, 4, 5]
-    glob2 = [1, 32, 48, 97, 11]
+    glob2 = [32, 48, 97, 11]
     nights = [x * 100 + y for x in glob1 for y in glob2]
 
     for night in nights:
         path = f"shard_{night // 100}/night_{night % 100}/tale.csv"
-        print(path)
-        query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
+        query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
             started_cluster.minio_ip,
             MINIO_INTERNAL_PORT,
             bucket,
@@ -712,7 +711,6 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     for job in jobs:
         job.join()
 
-    # Enum of multiple elements
     query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_2/night_{{32,48,97,11}}/tale.csv', 'CSV', '{}')".format(
         started_cluster.minio_redirect_host,
         started_cluster.minio_redirect_port,
@@ -721,26 +719,6 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     )
     query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
     assert run_query(instance, query, query_id=query_id).splitlines() == ["4\t4\t4\t4"]
-
-    # Enum of one element
-    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_2/night_{{32}}/tale.csv', 'CSV', '{}')".format(
-        started_cluster.minio_redirect_host,
-        started_cluster.minio_redirect_port,
-        bucket,
-        table_format,
-    )
-    query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
-    assert run_query(instance, query, query_id=query_id).splitlines() == ["1\t1\t1\t1"]
-
-    # Enum of one element of one char
-    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_2/night_{{1}}/tale.csv', 'CSV', '{}')".format(
-        started_cluster.minio_redirect_host,
-        started_cluster.minio_redirect_port,
-        bucket,
-        table_format,
-    )
-    query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
-    assert run_query(instance, query, query_id=query_id).splitlines() == ["1\t1\t1\t1"]
 
     instance.query("SYSTEM FLUSH LOGS")
     list_request_count = instance.query(
@@ -1652,11 +1630,8 @@ def test_parallel_reading_with_memory_limit(started_cluster):
         f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') select * from numbers(1000000) SETTINGS s3_truncate_on_insert=1"
     )
 
-    # max_download_buffer_size=1048576 -> Trigger parallel http reads
-    # max_memory_usage=1000 -> Cause an exception in parallel read and server should not crash
-    # max_block_size=65409/max_untracked_memory=2097152 -> Ensure that query does not succeed
     result = instance.query_and_get_error(
-        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') settings max_memory_usage=1000,max_untracked_memory=2097152,max_block_size=65409,max_download_buffer_size=1048576"
+        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') settings max_memory_usage=1000"
     )
 
     assert "Query memory limit exceeded" in result
