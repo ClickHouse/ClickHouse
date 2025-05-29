@@ -7,6 +7,7 @@ namespace DB
 
 using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
 using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
+
 /// This structure stores a node mapping from one DAG to another.
 /// The rule is following:
 /// * Input nodes are mapped by name.
@@ -81,6 +82,7 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     const MatchedTrees::Matches & matches,
     const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
+
 bool isInjectiveFunction(const ActionsDAG::Node * node);
 
 /// Our objective is to replace injective function nodes in `actions` results with its children

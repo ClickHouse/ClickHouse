@@ -539,7 +539,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 /// 1. Sharding key columns should be a subset of expression columns.
 /// 2. Sharding key expression is a deterministic function of col1, ..., coln and expression key is injective functions of these col1, ..., coln.
 /// 3. If the expression contains non-injective function, return false.
-bool StorageDistributed::isShardingKeySuitsExpressionKey(
+bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     const QueryTreeNodePtr & expr, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
     auto expr_ast
