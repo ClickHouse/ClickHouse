@@ -76,7 +76,6 @@ public:
     bool prefersLargeBlocks() const override { return false; }
 
     void pushConsumer(KafkaConsumerPtr consumer);
-    KafkaConsumerPtr popConsumer();
     KafkaConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const auto & getFormatName() const { return format_name; }
@@ -161,6 +160,7 @@ private:
 
     bool streamToViews();
 
+    void cleanConsumersByTTL();
     void cleanConsumers();
 };
 
