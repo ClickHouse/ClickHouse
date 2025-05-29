@@ -42,9 +42,9 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
 extern const int TOO_DEEP_RECURSION;
-extern const int TIMEOUT_EXCEEDED;
-extern const int SOCKET_TIMEOUT;
 extern const int BUZZHOUSE;
+using ErrorCode = int;
+extern std::string_view getName(ErrorCode error_code);
 }
 
 std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool permissive)
@@ -502,14 +502,13 @@ bool Client::processBuzzHouseQuery(const String & full_query)
         // Also discard the exception that we now know to be non-fatal,
         // so that it doesn't influence the exit code.
         const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
-        const bool throw_timeout_error = fuzz_config->fail_on_timeout && exception
-            && (exception->code() == ErrorCodes::TIMEOUT_EXCEEDED || exception->code() == ErrorCodes::SOCKET_TIMEOUT);
+        const int error_code = exception ? exception->code() : 0;
 
         server_exception.reset();
         client_exception.reset();
-        if (throw_timeout_error)
+        if (error_code > 0 && fuzz_config->disallowed_error_codes.find(error_code) != fuzz_config->disallowed_error_codes.end())
         {
-            throw Exception(ErrorCodes::BUZZHOUSE, "BuzzHouse exception on timeout");
+            throw Exception(ErrorCodes::BUZZHOUSE, "Found disallowed error code {} - {}", error_code, ErrorCodes::getName(error_code));
         }
     }
     return server_up;
@@ -645,8 +644,9 @@ bool Client::buzzHouse()
             {
                 const uint32_t correctness_oracle = 30;
                 const uint32_t settings_oracle = 30;
-                const uint32_t dump_oracle
-                    = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
+                const uint32_t dump_oracle = 30
+                    * static_cast<uint32_t>(fuzz_config->use_dump_table_oracle > 0
+                                            && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
                 const uint32_t peer_oracle
                     = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t run_query = 910;
@@ -713,7 +713,7 @@ bool Client::buzzHouse()
                 {
                     /// Test in and out formats
                     /// When testing content, we have to export and import to the same table
-                    const bool test_content = fuzz_config->dump_table_oracle_compare_content && rg.nextBool()
+                    const bool test_content = fuzz_config->use_dump_table_oracle > 1 && rg.nextBool()
                         && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content);
                     const auto & t1 = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
                         test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
