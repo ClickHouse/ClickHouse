@@ -72,6 +72,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
             {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
+            {"output_format_png_pixel_output_format", "RGB",  "RGB", "A new setting used to control the resulting pixel output format for PNG"},
+            {"output_format_png_coordinates_format", "IMPLICIT", "IMPLICIT", "A new setting used to control incoming coordinate format for PNG"},
+            {"output_format_png_max_height", 4096, 4096, "A new setting used to control maximum height of resulting PNG"},
+            {"output_format_png_max_width", 4096, 4096, "A new setting used to control maximum width of resulting PNG"}, 
+            {"output_format_png_compression_level", -1, -1, "A new setting used to control compression level of resulting PNG"}, 
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -875,7 +880,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"deduplicate_merge_projection_mode", "ignore", "throw", "Do not allow to create inconsistent projection"}
         });
     });
-
     return merge_tree_settings_changes_history;
 }
 

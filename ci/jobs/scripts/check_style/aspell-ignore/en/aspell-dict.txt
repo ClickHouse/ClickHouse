@@ -376,6 +376,7 @@ GoogleTest
 Grafana
 GraphQL
 GraphiteMergeTree
+Grayscale
 Greenwald
 HDDs
 HHMM
@@ -889,6 +890,7 @@ QuickSight
 QuoteMeta
 RBAC
 RClickHouse
+RGBA
 RHEL
 RIPEMD
 ROLLUP
