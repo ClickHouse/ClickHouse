@@ -9,14 +9,14 @@
 
 #define SZ3_MAGIC_NUMBER 0xF342F310
 
-#define SZ3_NAME "@PROJECT_NAME@"
-#define SZ3_VER  "@PROJECT_VERSION@"
-#define SZ3_VER_MAJOR @PROJECT_VERSION_MAJOR@
-#define SZ3_VER_MINOR @PROJECT_VERSION_MINOR@
-#define SZ3_VER_PATCH @PROJECT_VERSION_PATCH@
-#define SZ3_VER_TWEAK @PROJECT_VERSION_TWEAK@
+#define SZ3_NAME "SZ3"
+#define SZ3_VER  "3.2.2"
+#define SZ3_VER_MAJOR 3
+#define SZ3_VER_MINOR 2
+#define SZ3_VER_PATCH 2
+#define SZ3_VER_TWEAK 0
 
-#define SZ3_DATA_VER "@SZ3_DATA_VERSION@"
+#define SZ3_DATA_VER "3.2.2"
 
 inline uint32_t versionInt(const std::string& version) {
     uint32_t major = 0, minor = 0, patch = 0;
