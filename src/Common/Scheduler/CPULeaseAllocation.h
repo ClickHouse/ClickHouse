@@ -40,7 +40,7 @@ private:
     private:
         friend class CPULeaseAllocation;
         CPULeaseAllocationPtr parent; // Hold allocation to enforce destruction order
-        size_t thread_num; // Thread number that acquired the slot
+        const size_t thread_num; // Thread number that acquired the slot
         UInt64 last_report_ns = 0; // Last time when the slot was renewed or started
         CurrentMetrics::Increment acquired_increment;
     };
@@ -107,6 +107,16 @@ public:
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
 private:
+    /// Registers an additional leased thread and returns its thread_num
+    size_t upscale();
+
+    /// Unregisters specified thread from leased set
+    void downscale(size_t thread_num);
+
+    /// Preempted thread set management
+    void setPreempted(size_t thread_num);
+    void resetPreempted(size_t thread_num);
+
     /// Resource request failed.
     void failed(const std::exception_ptr & ptr);
 
@@ -140,21 +150,49 @@ private:
     mutable std::mutex mutex;
 
     /// Concurrency control (for interaction with consuming threads)
+    /// Every thread could be considered as a finite state machine w/states:
+    ///  * released: lease object was not created or was destructed, has no CPU slot
+    ///  * running: lease object owns a CPU slot
+    ///  * preempted: lease object does not own a CPU slot
+    /// Possible transitions:
+    ///  * released -> running: initial acquire() or tryAcquire() call
+    ///    - thread starts execution
+    ///  * running -> preempted: acquired slot was taken away during renew() and lease waits for another granted slot
+    ///    - thread execution is blocked
+    ///  * preempted -> running: newly granted slot was provided to lease
+    ///    - thread execution is unblocked
+    ///  * preempted -> released: timeout during renew() preemption wait - lease expired
+    ///    - renew() returns false and thread should stop itself
+    ///  * running -> released: lease destruction and release() of its acquired slot
+    ///    - thread execution stop voluntary (query is done/aborted/canceled)
+    struct Threads {
+        explicit Threads(size_t max_threads_)
+            : leased(max_threads_)
+            , preempted(max_threads_)
+            , wake(max_threads_)
+        {}
+        boost::dynamic_bitset<> leased; /// Thread lease object status bitmask (0=released; 1=preempted|running)
+        boost::dynamic_bitset<> preempted; /// Preempted threads bitmask (0=running|released; 1=preempted)
+        std::vector<std::condition_variable> wake; /// To wake specific preempted thread
+
+        // For optimization (could be computed based on leased and preempted fields)
+        size_t running_count = 0; /// Number of currently running threads (leased & !preempted)
+        size_t last_running = boost::dynamic_bitset<>::npos; /// Highest thread num of a running threads
+    } threads;
+
+    /// Resource accounting
+    SlotCount allocated = 0; /// Current number of allocated (granted and acquired) slots
+    Int64 granted = 0; /// Allocated but not acquired slots (might be negative if acquired more than allocated)
     ResourceCost consumed_ns = 0; /// Real consumption accumulated from renew() calls
     ResourceCost requested_ns = 0; /// Consumption requested from the scheduler (requested <= consumed + quantum)
-    Int64 granted = 0; /// Allocated slots left to acquire (might be negative if acquired more than allocated)
-    boost::dynamic_bitset<> acquired_threads; /// Acquired threads bitmask (0=released|not-acquired; 1=preempted|running)
-    boost::dynamic_bitset<> preempted_threads; /// Preempted threads bitmask (0=running|released|not-acquired; 1=preempted)
-    std::vector<std::condition_variable> wake_threads; /// To wake specific preempted thread
 
     /// Scheduling control (for interaction with resource scheduler)
-    std::exception_ptr exception;
-    SlotCount cur_slots = 0; /// Current number of allocated (granted and acquired) slots
     using Requests = std::vector<Request>;
     Requests requests; /// Circular buffer of requests per every slot
     Requests::iterator head; /// Next request to be enqueued
     Requests::iterator tail; /// Next request to be finished
     bool enqueued = false; /// True if the next request is already enqueued to the scheduler
+    std::exception_ptr exception; /// Exception from the scheduler
     bool shutdown = false; /// True if the destructor is called and we should stop scheduling
     std::condition_variable shutdown_cv; /// Used to notify waiting destructor
 
