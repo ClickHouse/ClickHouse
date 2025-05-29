@@ -149,51 +149,20 @@ namespace
 {
 constexpr UInt64 THREAD_GROUP_ID = 0;
 
-bool isSpecialFile(const String & path)
-{
-    return path == "/dev/null" || path == "/dev/stdout" || path == "/dev/stderr";
-}
 
-void handleTruncateMode(DB::ASTQueryWithOutput * query_with_output, const String & out_file, String & query)
-{
-    if (!query_with_output->is_outfile_truncate)
-        return;
-
-    /// Skip handling truncate mode of special files
-    if (isSpecialFile(out_file))
-        return;
-
-    /// Create a temporary file with unique suffix
-    String tmp_file = out_file + ".tmp." + DB::toString(randomSeed());
-
-    /// Update the AST to use the temporary file
-    auto tmp_file_literal = std::make_shared<DB::ASTLiteral>(tmp_file);
-    query_with_output->out_file = tmp_file_literal;
-
-    /// Update the query string after modifying the AST
-    query = query_with_output->formatWithSecretsOneLine();
-}
-
-void cleanupTempFile(const DB::ASTPtr & parsed_query)
+void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
         if (query_with_output->is_outfile_truncate && query_with_output->out_file)
         {
-            const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
-            String tmp_file = tmp_file_node.value.safeGet<std::string>();
-
-            /// Skip rename for special files
-            if (isSpecialFile(tmp_file))
-                return;
-
             if (fs::exists(tmp_file))
                 fs::remove(tmp_file);
         }
     }
 }
 
-void performAtomicRename(const DB::ASTPtr & parsed_query)
+void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
@@ -201,12 +170,6 @@ void performAtomicRename(const DB::ASTPtr & parsed_query)
         {
             const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
             String tmp_file = tmp_file_node.value.safeGet<std::string>();
-
-            /// Skip rename for special files
-            if (isSpecialFile(tmp_file))
-                return;
-
-            String out_file = tmp_file.substr(0, tmp_file.rfind(".tmp."));
 
             try
             {
@@ -1167,11 +1130,12 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
         }
     }
 
+    String out_file;
+    String out_file_if_truncated;
+
     // Run some local checks to make sure queries into output file will work before sending to server.
     if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
     {
-        String out_file;
-
         if (query_with_output->out_file)
         {
             if (isEmbeeddedClient())
@@ -1179,6 +1143,12 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
             out_file = out_file_node.value.safeGet<std::string>();
+
+            if (query_with_output->is_outfile_truncate)
+            {
+                out_file_if_truncated = out_file;
+                out_file = fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file);
+            }
 
             std::string compression_method_string;
 
@@ -1229,11 +1199,6 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                         out_file);
                 }
             }
-
-            if (query_with_output->is_outfile_truncate)
-            {
-                handleTruncateMode(const_cast<ASTQueryWithOutput *>(query_with_output), out_file, query);
-            }
         }
     }
 
@@ -1268,7 +1233,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             catch (const NetException &)
             {
                 // Clean up temporary file if it exists
-                cleanupTempFile(parsed_query);
+                cleanupTempFile(parsed_query, out_file);
 
                 // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
                 receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
@@ -1278,14 +1243,14 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
 
             // After successful query execution, perform atomic rename for TRUNCATE mode
-            performAtomicRename(parsed_query);
+            performAtomicRename(parsed_query, out_file_if_truncated);
 
             break;
         }
         catch (const Exception & e)
         {
             // Clean up temporary file if it exists
-            cleanupTempFile(parsed_query);
+            cleanupTempFile(parsed_query, out_file);
 
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
