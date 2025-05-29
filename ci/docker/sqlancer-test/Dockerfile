@@ -5,6 +5,10 @@ FROM ubuntu:22.04
 ARG apt_archive="https://archive.ubuntu.com"
 RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
+# We need ca-certificates first to be able to update all repos. This is why it's run twice
+RUN apt-get update \
+    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
+
 RUN apt-get update --yes \
     && env DEBIAN_FRONTEND=noninteractive apt-get install wget git python3 default-jdk maven --yes --no-install-recommends  \
     && apt-get clean \
