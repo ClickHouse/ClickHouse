@@ -564,6 +564,27 @@ def test_types(started_cluster, format_version, storage_type):
     )
 
 
+def count_secondary_subqueries(started_cluster, query_id, expected, comment):
+    for node_name, replica in started_cluster.instances.items():
+        cluster_secondary_queries = (
+            replica.query(
+                f"""
+                SELECT count(*) FROM system.query_log
+                WHERE
+                    type = 'QueryFinish'
+                    AND NOT is_initial_query
+                    AND initial_query_id='{query_id}'
+            """
+            )
+            .strip()
+        )
+
+        logging.info(
+            f"[{node_name}] cluster_secondary_queries {comment}: {cluster_secondary_queries}"
+        )
+        assert int(cluster_secondary_queries) == expected
+
+
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
 def test_cluster_table_function(started_cluster, format_version, storage_type):

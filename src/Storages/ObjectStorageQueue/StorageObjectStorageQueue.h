@@ -56,7 +56,7 @@ public:
         ContextPtr local_context,
         AlterLockHolder & table_lock_holder) override;
 
-    const auto & getFormatName() const { return configuration->format; }
+    const auto & getFormatName() const { return configuration->getFormat(); }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
 

@@ -234,6 +234,21 @@ def test_wrong_cluster(started_cluster):
 
     assert "not found" in error
 
+    error = node.query_and_get_error(
+        f"""
+    SELECT count(*) from s3(
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    UNION ALL
+    SELECT count(*) from s3(
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    SETTINGS object_storage_cluster = 'non_existing_cluster'
+    """
+    )
+
+    assert "not found" in error
+
 
 def test_ambiguous_join(started_cluster):
     node = started_cluster.instances["s0_0_0"]
@@ -248,6 +263,20 @@ def test_ambiguous_join(started_cluster):
         'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as r
     ON l.name = r.name
+    """
+    )
+    assert "AMBIGUOUS_COLUMN_NAME" not in result
+
+    result = node.query(
+        f"""
+    SELECT l.name, r.value from s3(
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as l
+    JOIN s3(
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as r
+    ON l.name = r.name
+    SETTINGS object_storage_cluster = 'cluster_simple'
     """
     )
     assert "AMBIGUOUS_COLUMN_NAME" not in result
@@ -267,6 +296,17 @@ def test_skip_unavailable_shards(started_cluster):
 
     assert result == "10\n"
 
+    result = node.query(
+        f"""
+    SELECT count(*) from s3(
+        'http://minio1:9001/root/data/clickhouse/part1.csv',
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    SETTINGS skip_unavailable_shards = 1, object_storage_cluster = 'cluster_non_existent_port'
+    """
+    )
+
+    assert result == "10\n"
+
 
 def test_unset_skip_unavailable_shards(started_cluster):
     # Although skip_unavailable_shards is not set, cluster table functions should always skip unavailable shards.
@@ -277,6 +317,17 @@ def test_unset_skip_unavailable_shards(started_cluster):
         'cluster_non_existent_port',
         'http://minio1:9001/root/data/clickhouse/part1.csv',
         'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    """
+    )
+
+    assert result == "10\n"
+
+    result = node.query(
+        f"""
+    SELECT count(*) from s3(
+        'http://minio1:9001/root/data/clickhouse/part1.csv',
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    SETTINGS object_storage_cluster = 'cluster_non_existent_port'
     """
     )
 
@@ -490,6 +541,18 @@ def test_cluster_format_detection(started_cluster):
 
     assert result == expected_result
 
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}') order by c1, c2 SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}', auto, 'a String, b UInt64') order by a, b SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
 
 def test_cluster_default_expression(started_cluster):
     node = started_cluster.instances["s0_0_0"]
@@ -534,6 +597,36 @@ def test_cluster_default_expression(started_cluster):
 
     result = node.query(
         "SELECT * FROM s3Cluster(cluster_simple, test_s3_with_default) order by id"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'auto', 'id UInt32, date Date DEFAULT 18262') order by id SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'auto', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        "SELECT * FROM s3(test_s3_with_default) order by id SETTINGS object_storage_cluster = 'cluster_simple'"
     )
 
     assert result == expected_result

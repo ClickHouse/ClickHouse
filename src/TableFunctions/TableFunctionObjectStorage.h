@@ -69,7 +69,7 @@ struct LocalDefinition
 struct IcebergDefinition
 {
     static constexpr auto name = "iceberg";
-    static constexpr auto storage_type_name = "S3";
+    static constexpr auto storage_type_name = "UNDEFINED";
 };
 
 struct IcebergS3Definition
@@ -138,15 +138,16 @@ public:
 
     String getName() const override { return name; }
 
-    bool hasStaticStructure() const override { return configuration->structure != "auto"; }
+    bool hasStaticStructure() const override { return configuration->getStructure() != "auto"; }
 
-    bool needStructureHint() const override { return configuration->structure == "auto"; }
+    bool needStructureHint() const override { return configuration->getStructure() == "auto"; }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override
     {
-        return configuration->format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
+        return configuration->getFormat() != "auto"
+            && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->getFormat(), context);
     }
 
     std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
@@ -156,7 +157,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true);
+        getConfiguration()->initialize(args, context, true);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -168,8 +169,8 @@ public:
         if constexpr (is_data_lake)
         {
             Configuration configuration(createEmptySettings());
-            if (configuration.format == "auto")
-                configuration.format = "Parquet"; /// Default format of data lakes.
+            if (configuration.getFormat() == "auto")
+                configuration.setFormat("Parquet"); /// Default format of data lakes.
 
             configuration.addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
         }
@@ -212,23 +213,24 @@ protected:
 };
 
 #if USE_AWS_S3
-using TableFunctionS3 = TableFunctionObjectStorage<S3Definition, StorageS3Configuration>;
+using TableFunctionS3 = TableFunctionObjectStorage<S3Definition, StorageS3Configuration, false>;
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>;
+using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration, false>;
 #endif
 
 #if USE_HDFS
-using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
+using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration, false>;
 #endif
 
-using TableFunctionLocal = TableFunctionObjectStorage<LocalDefinition, StorageLocalConfiguration>;
+using TableFunctionLocal = TableFunctionObjectStorage<LocalDefinition, StorageLocalConfiguration, false>;
 
 
 #if USE_AVRO
+using TableFunctionIceberg = TableFunctionObjectStorage<IcebergDefinition, StorageIcebergConfiguration, true>;
+
 #    if USE_AWS_S3
-using TableFunctionIceberg = TableFunctionObjectStorage<IcebergDefinition, StorageS3IcebergConfiguration, true>;
 using TableFunctionIcebergS3 = TableFunctionObjectStorage<IcebergS3Definition, StorageS3IcebergConfiguration, true>;
 #    endif
 #    if USE_AZURE_BLOB_STORAGE

@@ -100,6 +100,8 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
+    ASTPtr createArgsWithAccessData() const override;
+
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
