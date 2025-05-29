@@ -241,3 +241,25 @@ genres:    ['Action','Adventure','Comedy']
 directors: ['Robert Zemeckis']
 released:  1989-11-22
 ```
+
+```sql
+-- Find top 3 movies based on Cormac McCarthy's books
+SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) as rating
+FROM sample_mflix_table
+WHERE arrayExists(x -> x like 'Cormac McCarthy%', writers)
+ORDER BY rating DESC
+LIMIT 3;
+```
+
+```text
+   ┌─title──────────────────┬─rating─┐
+1. │ No Country for Old Men │    8.1 │
+2. │ The Sunset Limited     │    7.4 │
+3. │ The Road               │    7.3 │
+   └────────────────────────┴────────┘
+```
+
+## Troubleshooting {#troubleshooting}
+You can see the generated MongoDB query in DEBUG level logs.
+
+Implementation details can be found in [mongocxx](https://github.com/mongodb/mongo-cxx-driver) and [mongoc](https://github.com/mongodb/mongo-c-driver) documentations.
