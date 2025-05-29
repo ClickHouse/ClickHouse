@@ -344,7 +344,7 @@ void collectSymbolsFromELF(
         if (build_id.empty())
             build_id = Elf(object_name).getBuildID();
 
-        if (build_id.empty())
+        if (self_build_id.empty())
             self_build_id = build_id;
     }
 #endif

@@ -27,6 +27,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Context.h>
 
 #include <fmt/ranges.h>
 
@@ -73,9 +74,9 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IObjectIterator> file_iterator_,
-    size_t max_parsing_threads_,
+    FormatParserGroupPtr parser_group_,
     bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false)
+    : ISource(info.source_header, false)
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -83,7 +84,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
-    , max_parsing_threads(max_parsing_threads_)
+    , parser_group(std::move(parser_group_))
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -99,11 +100,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
 StorageObjectStorageSource::~StorageObjectStorageSource()
 {
     create_reader_pool->wait();
-}
-
-void StorageObjectStorageSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
-{
-    setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
@@ -127,7 +123,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
-    const std::optional<ActionsDAG> & filter_actions_dag,
+    const ActionsDAG * filter_actions_dag,
     const NamesAndTypesList & virtual_columns,
     ObjectInfos * read_keys,
     std::function<void(FileProgress)> file_progress_callback,
@@ -157,11 +153,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         if (hasExactlyOneBracketsExpansion(path))
         {
             auto paths = expandSelectionGlob(configuration->getPath());
-
-            ConfigurationPtr copy_configuration = configuration->clone();
-            copy_configuration->setPaths(paths);
             iterator = std::make_unique<KeysIterator>(
-                object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
+                paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
                 query_settings.ignore_non_existent_file, skip_object_metadata, file_progress_callback);
         }
         else
@@ -174,18 +167,18 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     else if (configuration->supportsFileIterator())
     {
         return configuration->iterate(
-            filter_actions_dag.has_value() ? &filter_actions_dag.value() : nullptr,
+            filter_actions_dag,
             file_progress_callback,
             query_settings.list_object_keys_size);
     }
     else
     {
-        ConfigurationPtr copy_configuration = configuration->clone();
+        Strings paths;
+
         auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
         if (filter_dag)
         {
             auto keys = configuration->getPaths();
-            std::vector<String> paths;
             paths.reserve(keys.size());
             for (const auto & key : keys)
                 paths.push_back(fs::path(configuration->getNamespace()) / key);
@@ -193,11 +186,15 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
             VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, local_context);
-            copy_configuration->setPaths(keys);
+            paths = keys;
+        }
+        else
+        {
+            paths = configuration->getPaths();
         }
 
         iterator = std::make_unique<KeysIterator>(
-            object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
+            paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, file_progress_callback);
     }
 
@@ -340,7 +337,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!key_condition || key_condition->alwaysUnknownOrTrue()))
+            && !parser_group->filter_actions_dag)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -376,12 +373,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         object_storage,
         read_from_format_info,
         format_settings,
-        key_condition,
         read_context,
         &schema_cache,
         log,
         max_block_size,
-        max_parsing_threads,
+        parser_group,
         need_only_count);
 }
 
@@ -392,12 +388,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
-    const std::shared_ptr<const KeyCondition> & key_condition_,
     const ContextPtr & context_,
     SchemaCache * schema_cache,
     const LoggerPtr & log,
     size_t max_block_size,
-    size_t max_parsing_threads,
+    FormatParserGroupPtr parser_group,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
@@ -500,16 +495,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             context_,
             max_block_size,
             format_settings,
-            need_only_count ? 1 : max_parsing_threads,
-            std::nullopt,
+            parser_group,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
 
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
-
-        if (key_condition_)
-            input_format->setKeyCondition(key_condition_);
 
         if (need_only_count)
             input_format->needOnlyCount();
@@ -833,18 +824,17 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
 }
 
 StorageObjectStorageSource::KeysIterator::KeysIterator(
+    const Strings & keys_,
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
     const NamesAndTypesList & virtual_columns_,
     ObjectInfos * read_keys_,
     bool ignore_non_existent_files_,
     bool skip_object_metadata_,
     std::function<void(FileProgress)> file_progress_callback_)
     : object_storage(object_storage_)
-    , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
-    , keys(configuration->getPaths())
+    , keys(keys_)
     , ignore_non_existent_files(ignore_non_existent_files_)
     , skip_object_metadata(skip_object_metadata_)
 {

@@ -1189,7 +1189,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     return pipeline;
 }
 
-static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
+static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
 {
     QueryPlan plan;
     SelectQueryOptions options;
@@ -1233,7 +1233,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
     }
 
     if (!source)
-        return {};
+        return nullptr;
 
     return source->detachFilterActionsDAG();
 }

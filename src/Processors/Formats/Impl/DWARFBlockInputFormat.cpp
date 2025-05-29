@@ -991,14 +991,13 @@ void registerInputFormatDWARF(FormatFactory & factory)
             const FormatSettings & settings,
             const ReadSettings &,
             bool /* is_remote_fs */,
-            size_t /* max_download_threads */,
-            size_t max_parsing_threads)
+            FormatParserGroupPtr parser_group)
         {
             return std::make_shared<DWARFBlockInputFormat>(
                 buf,
                 sample,
                 settings,
-                max_parsing_threads);
+                parser_group->getParsingThreadsPerReader());
         });
     factory.markFormatSupportsSubsetOfColumns("DWARF");
 }

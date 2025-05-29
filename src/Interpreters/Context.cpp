@@ -529,6 +529,9 @@ struct ContextSharedPart : boost::noncopyable
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
+    double min_os_cpu_wait_time_ratio_to_drop_connection = 15.0;
+    double max_os_cpu_wait_time_ratio_to_drop_connection = 30.0;
+
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
     mutable OnceFlag action_locks_manager_initialized;
@@ -4566,6 +4569,25 @@ void Context::setMaxDatabaseNumToWarn(size_t max_database_to_warn)
     shared->max_database_num_to_warn = max_database_to_warn;
 }
 
+double Context::getMinOSCPUWaitTimeRatioToDropConnection() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->min_os_cpu_wait_time_ratio_to_drop_connection;
+}
+
+double Context::getMaxOSCPUWaitTimeRatioToDropConnection() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_os_cpu_wait_time_ratio_to_drop_connection;
+}
+
+void Context::setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop_connection, double max_os_cpu_wait_time_ratio_to_drop_connection)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->min_os_cpu_wait_time_ratio_to_drop_connection = min_os_cpu_wait_time_ratio_to_drop_connection;
+    shared->max_os_cpu_wait_time_ratio_to_drop_connection = max_os_cpu_wait_time_ratio_to_drop_connection;
+}
+
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     if (auto res = tryGetCluster(cluster_name))
@@ -5384,9 +5406,9 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const

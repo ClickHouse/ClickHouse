@@ -43,8 +43,6 @@ protected:
 
     void onStart();
 
-    void onFinish();
-
 private:
     void init(const Block & sample_block);
 

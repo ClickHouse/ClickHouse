@@ -7,6 +7,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Interpreters/Context.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -34,7 +35,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
 }
@@ -271,7 +271,6 @@ public:
 
         Pipes pipes;
         auto context = getContext();
-        const size_t max_threads = context->getSettingsRef()[Setting::max_threads];
         size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
 
         if (estimated_keys_count > 1)
@@ -283,15 +282,14 @@ public:
             num_streams = 1;
         }
 
-        const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
+        auto parser_group = std::make_shared<FormatParserGroup>(context->getSettingsRef(), num_streams, filter_actions_dag, context);
 
         for (size_t i = 0; i < num_streams; ++i)
         {
             auto source = std::make_shared<StorageObjectStorageSource>(
                 getName(), object_storage, configuration, info, format_settings,
-                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count);
+                context, max_block_size, iterator_wrapper, parser_group, need_only_count);
 
-            source->setKeyCondition(filter_actions_dag, context);
             pipes.emplace_back(std::move(source));
         }
 
@@ -325,13 +323,13 @@ private:
             return;
 
         const ActionsDAG::Node * predicate = nullptr;
-        if (filter_actions_dag.has_value())
+        if (filter_actions_dag)
             predicate = filter_actions_dag->getOutputs().at(0);
 
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
             configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
-            context, predicate, filter_actions_dag, virtual_columns, nullptr, context->getFileProgressCallback());
+            context, predicate, filter_actions_dag.get(), virtual_columns, nullptr, context->getFileProgressCallback());
     }
 };
 }
@@ -455,8 +453,9 @@ SinkToStoragePtr StorageObjectStorage::write(
     configuration->setPaths(paths);
 
     return std::make_shared<StorageObjectStorageSink>(
+        paths.back(),
         object_storage,
-        configuration->clone(),
+        configuration,
         format_settings,
         sample_block,
         local_context);
@@ -610,8 +609,7 @@ void StorageObjectStorage::Configuration::initialize(
     Configuration & configuration_to_initialize,
     ASTs & engine_args,
     ContextPtr local_context,
-    bool with_table_structure,
-    StorageObjectStorageSettingsPtr settings)
+    bool with_table_structure)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
@@ -635,25 +633,12 @@ void StorageObjectStorage::Configuration::initialize(
     else
         FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
 
-    configuration_to_initialize.storage_settings = settings;
     configuration_to_initialize.initialized = true;
-}
-
-const StorageObjectStorageSettings & StorageObjectStorage::Configuration::getSettingsRef() const
-{
-    return *storage_settings;
 }
 
 void StorageObjectStorage::Configuration::check(ContextPtr) const
 {
     FormatFactory::instance().checkFormatName(format);
-}
-
-StorageObjectStorage::Configuration::Configuration(const Configuration & other)
-{
-    format = other.format;
-    compression_method = other.compression_method;
-    structure = other.structure;
 }
 
 bool StorageObjectStorage::Configuration::withPartitionWildcard() const

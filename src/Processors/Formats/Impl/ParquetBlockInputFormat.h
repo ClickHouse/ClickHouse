@@ -7,6 +7,7 @@
 #include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Formats/FormatParserGroup.h>
 
 #include <queue>
 
@@ -60,10 +61,9 @@ public:
     ParquetBlockInputFormat(
         ReadBuffer & buf,
         const Block & header,
-        const FormatSettings & format_settings,
-        size_t max_decoding_threads,
-        size_t max_io_threads,
-        size_t min_bytes_for_seek);
+        const FormatSettings & format_settings_,
+        FormatParserGroupPtr parser_group_,
+        size_t min_bytes_for_seek_);
 
     ~ParquetBlockInputFormat() override;
 
@@ -93,7 +93,7 @@ private:
 
     void threadFunction(size_t row_group_batch_idx);
 
-    inline bool supportPrefetch() const;
+    inline bool supportPrefetch(size_t max_decoding_threads, size_t max_io_threads) const;
 
     // Data layout in the file:
     //
@@ -301,8 +301,7 @@ private:
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
-    size_t max_decoding_threads;
-    size_t max_io_threads;
+    FormatParserGroupPtr parser_group;
     size_t min_bytes_for_seek;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 

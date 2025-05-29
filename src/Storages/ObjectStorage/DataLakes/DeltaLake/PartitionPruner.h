@@ -1,9 +1,11 @@
 #pragma once
 #include "config.h"
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 
 #if USE_DELTA_KERNEL_RS
+
+#include <Interpreters/Context_fwd.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 namespace DB
 {
