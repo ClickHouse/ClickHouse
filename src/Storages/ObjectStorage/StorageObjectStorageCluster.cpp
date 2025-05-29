@@ -16,7 +16,6 @@
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
-
 namespace DB
 {
 namespace Setting
@@ -181,7 +180,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     const ActionsDAG::Node * predicate,
     const ActionsDAG * filter,
     const ContextPtr & local_context,
-    const size_t number_of_replicas) const
+    ClusterPtr cluster) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
@@ -197,13 +196,27 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         /*ignore_archive_globs=*/true,
         /*skip_object_metadata=*/true);
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
+    std::vector<std::string> ids_of_hosts;
+    for (const auto & shard : cluster->getShardsInfo())
+    {
+        if (shard.per_replica_pools.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {} with empty shard {}", cluster->getName(), shard.shard_num);
+        for (const auto & replica : shard.per_replica_pools)
+        {
+            if (!replica)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {}, shard {} with empty node", cluster->getName(), shard.shard_num);
+            ids_of_hosts.push_back(replica->getAddress());
+        }
+    }
+
+    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, ids_of_hosts);
 
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor](size_t number_of_current_replica) mutable -> String
-        { return task_distributor->getNextTask(number_of_current_replica).value_or(""); });
+        [task_distributor](size_t number_of_current_replica) mutable -> String {
+            return task_distributor->getNextTask(number_of_current_replica).value_or("");
+        });
 
-    return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
+    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
 }

@@ -31,7 +31,7 @@ public:
         const ActionsDAG::Node * predicate,
         const ActionsDAG * /* filter */,
         const ContextPtr & context,
-        size_t number_of_replicas) const override;
+        ClusterPtr) const override;
 
 private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
