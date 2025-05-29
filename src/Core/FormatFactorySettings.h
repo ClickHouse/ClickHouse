@@ -194,15 +194,15 @@ When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
     DECLARE(UInt64, input_format_parquet_memory_low_watermark, 2ul << 20, R"(
 Schedule prefetches more aggressively if memory usage is below than threshold. Potentially useful e.g. if there are many small bloom filters to read over network.
     )", 0) \
-    /* TODO: Enable these 3 settings by default when the features are implemented. */ \
+    /* TODO: Enable these 2 settings by default when the features are implemented. */ \
     DECLARE(Bool, input_format_parquet_page_filter_push_down, false, R"(
 Skip pages using min/max values from column index.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_use_offset_index, false, R"(
-Minor tweak to how pages are read from parquet file when no page filtering is used.
-)", 0) \
     DECLARE(UInt64, input_format_parquet_dictionary_filter_limit_bytes, 0, R"(
 If a column chunk is fully dictionary-encoded, and the dictionary is smaller than this, use the dictionary for filtering, similar to bloom filter.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
+Minor tweak to how pages are read from parquet file when no page filtering is used.
 )", 0) \
     DECLARE(Bool, input_format_parquet_fuzz, true, R"(
 Randomize various decisions in parquet reader, for testing.

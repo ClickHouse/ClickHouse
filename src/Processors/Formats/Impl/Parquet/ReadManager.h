@@ -103,7 +103,7 @@ private:
         ///
         /// For Delivering stage, these tasks are picked up by read() instead of going to thread pool.
         ///
-        /// TODO: I'm not sure this is the best scheduling strategy. An appealing alternative is to
+        /// TODO [parquet]: I'm not sure this is the best scheduling strategy. An appealing alternative is to
         ///       not have any explicit task queues (neither here nor in thread pool) and instead have
         ///       each worker thread inspect row group states and pick up the "best" available piece
         ///       of work. E.g. the lowest-numbered column subchunk in the lowest-numbered row group
@@ -114,7 +114,7 @@ private:
         ///       (or require) tasks that finished prefetching. And a similar loop for prefetches,
         ///       with some different priority heuristics and different dependency graph
         ///       (can prefetch multiple subchunks ahead).
-        ///       Is it simpler (simple good priority function and stopping condition? simple data
+        ///       Is that simpler (simple good priority function and stopping condition? simple data
         ///       structures for finding the highest-priority available task?)? Is it robust
         ///       (e.g. doesn't get into a situation when most of memory budget is eaten by
         ///       something that won't be deallocated for a long time, crippling parallelism)?

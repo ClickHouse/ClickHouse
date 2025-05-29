@@ -92,8 +92,9 @@ struct BitPackedRLEDecoder : public PageDecoder
     void skipOrDecode(size_t num_values, T * out)
     {
         const T value_mask = T((1ul << bit_width) - 1);
-        /// TODO: May make sense to have specialized version of this loop for bit_width=1, which is
-        ///       very common as def levels for nullables.
+        /// TODO [parquet]: May make sense to have specialized version of this loop for bit_width=1,
+        ///                 which is very common as def levels for nullables.
+
         /// (Some stats from hits.parquet, in case it helps with optimization:
         ///  bit-packed runs: 64879089, total 2548822304 values (~39 values/run),
         ///  RLE runs: 81177527, total 7373423915 values (~91 values/run).)
@@ -258,7 +259,7 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
                         }
                 case Kind::Boolean: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BOOLEAN is not implemented");
             }
-        //TODO
+        /// TODO [parquet]:
         case parq::Encoding::RLE: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RLE encoding is not implemented");
         case parq::Encoding::BIT_PACKED: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BIT_PACKED encoding is not implemented");
         case parq::Encoding::DELTA_BINARY_PACKED: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_BINARY_PACKED encoding is not implemented");
@@ -280,7 +281,7 @@ void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_v
             BitPackedRLEDecoder<UInt8>(data, size_t(max) + 1, /*has_header_byte=*/ false).decodeArray(num_values, out);
             break;
         case parq::Encoding::BIT_PACKED:
-            //TODO
+            /// TODO [parquet]
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BIT_PACKED levels not implemented");
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected repetition/definition levels encoding: {}", thriftToString(encoding));
     }
@@ -435,7 +436,7 @@ void Dictionary::index(const PaddedPODArray<UInt32> & indexes, IColumn & out)
             {
                 size_t start = offsets[size_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
                 size_t len = offsets[idx] - start;
-                /// TODO: Try optimizing short memcpy by taking advantage of padding. Also in PlainStringDecoder.
+                /// TODO [parquet]: Try optimizing short memcpy by taking advantage of padding. Also in PlainStringDecoder.
                 c.insertData(data.data() + start, len);
             }
             break;

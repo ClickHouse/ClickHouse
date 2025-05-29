@@ -47,5 +47,6 @@ extern template std::string thriftToString<parq::PageHeader>(const parq::PageHea
 extern template std::string thriftToString<parq::CompressionCodec>(const parq::CompressionCodec &);
 extern template std::string thriftToString<parq::SchemaElement>(const parq::SchemaElement &);
 extern template std::string thriftToString<parq::PageType::type>(const parq::PageType::type &);
+extern template std::string thriftToString<parq::PageLocation>(const parq::PageLocation &);
 
 }

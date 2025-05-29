@@ -34,7 +34,7 @@
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Processors/Formats/Impl/Parquet/ColumnFilterHelper.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Processors/Formats/Impl/ParquetMk4BlockInputFormat.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <IO/SharedThreadPools.h>
 
 #include <shared_mutex>
@@ -1314,7 +1314,7 @@ void registerInputFormatParquet(FormatFactory & factory)
                 size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
                 if (settings.parquet.use_native_reader_v3)
                 {
-                    return std::make_shared<ParquetMk4BlockInputFormat>(
+                    return std::make_shared<ParquetV3BlockInputFormat>(
                         buf,
                         sample,
                         settings,

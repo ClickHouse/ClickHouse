@@ -24,7 +24,7 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 namespace DB::Parquet
 {
 
-// TODO:
+// TODO [parquet]:
 //  * profile
 //     - query profiler
 //     - perf or samply
@@ -87,10 +87,10 @@ namespace DB::Parquet
 ///  * SchemaConverter traverses parquet schema tree and figures out which primitive columns to read,
 ///    how to assemble them into compound columns (e.g. arrays or tuples), and what typecasts are
 ///    needed.
+///  * Decoding.{h,cpp} implement parsing of all the parquet data encodings.
 ///  * Reader implements decoding, filtering, and assembling primitive columns into final columns.
 ///    Doesn't have a clean API, needs to be micromanaged by ReadManager (to minimize boilerplate and
 ///    distractions in Reader, which is the most complex part).
-///    TODO: If it ends up split up, update this comment.
 ///  * ReadManager drives the Reader. Responsible for scheduling work to threads, thread safety,
 ///    limiting memory usage, and delivering output.
 
@@ -144,7 +144,7 @@ struct Reader
         DataTypePtr intermediate_type; // maybe Nullable
         DataTypePtr final_type; // castColumn to this type
         bool output_nullable = false;
-        /// TODO: Consider also adding output_low_cardinality to allow producing LowCardinality
+        /// TODO [parquet]: Consider also adding output_low_cardinality to allow producing LowCardinality
         ///       column directly from parquet dictionary+indices. This is not straightforward
         ///       because ColumnLowCardinality requires values to be unique and the first value to
         ///       be default. So we'd need to validate uniqueness and add/move default value
@@ -188,7 +188,7 @@ struct Reader
         size_t rows_total = 0;
         size_t rows_pass = 0;
         /// Can be empty if rows_pass is equal to 0 or rows_total.
-        /// TODO: Consider bitmask for faster range operations. See also: ColumnsCommon.h
+        /// TODO [parquet]: Consider bitmask for faster range operations. See also: ColumnsCommon.h
         IColumnFilter filter;
 
         MemoryUsageToken memory;
@@ -210,7 +210,7 @@ struct Reader
     {
         const parq::PageLocation * meta;
         size_t end_row_idx = 0;
-        PrefetchHandle prefetch;
+        PrefetchHandle prefetch {};
     };
 
     struct PageState
@@ -270,7 +270,8 @@ struct Reader
         bool use_column_index = false;
         bool need_null_map = false;
 
-        /// Prefetches. /// TODO: Check that all handles and tokens are reset after correct stages.
+        /// Prefetches.
+        /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
         PrefetchHandle bloom_filter_header_prefetch; // indicates if bloom filter should be used
         PrefetchHandle bloom_filter_data_prefetch;
         PrefetchHandle dictionary_page_prefetch;
@@ -292,7 +293,7 @@ struct Reader
         std::vector<DataPage> data_pages;
 
         parq::BloomFilterHeader bloom_filter_header;
-        parq::OffsetIndex offset_index; // TODO [parquet]: throw if page_locations.empty() after deserialization
+        parq::OffsetIndex offset_index;
         /// Dictionary page contents.
         /// May be loaded early if we decide to use it for filtering (instead of bloom filter).
         /// Otherwise, loaded just before the first dictionary-encoded data page (so if we end up
@@ -304,18 +305,15 @@ struct Reader
         PageState page; // TODO [parquet]: deallocate when column chunk is done (and check other fields too)
         /// Offset from the start of `data_pages_prefetch`, if not using offset index (`data_pages` is empty).
         size_t next_page_offset = 0;
-        size_t data_pages_idx = 0;
+        size_t data_pages_idx = 0; // corresponding to `page`
+        /// Index in data_pages up to which we checked which pages need to be read, after applying prewhere.
+        size_t data_pages_prefetch_idx = 0;
 
         ReadStage stage;
     };
 
     struct ColumnSubchunk
     {
-        /// Indices in ColumnChunk::data_pages of pages that overlap this subchunk and are not fully
-        /// filtered out. A page may be shared among multiple subchunk.
-        /// Empty if not using offset index (data_pages is empty).
-        std::vector<size_t> page_idxs;
-
         /// Primitive column.
         MutableColumnPtr column;
 
@@ -365,6 +363,8 @@ struct Reader
         std::vector<ColumnChunk> columns;
 
         std::deque<RowSubgroup> subgroups;
+
+        std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> intersected_row_ranges_after_column_index;
 
 
         /// Fields below are used only by ReadManager.
@@ -427,15 +427,15 @@ struct Reader
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
 
-    void decodeOffsetIndex(ColumnChunk & column);
-    /// Assigns start_page and end_page based on offset index, if present.
-    /// (We do this one subgroup at a time because later subgroups may not have run prewhere yet.)
-    void determinePagesToRead(ColumnSubchunk & subchunk, RowSubgroup & row_subgroup, RowGroup & row_group);
+    void decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group);
+    /// Call after prewhere is done on row subgroup. Un-requests prefetch for fully filtered out pages,
+    /// adds pages that need prefetch to `out`. Must be called in order.
+    void determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & row_subgroup, const RowGroup & row_group, std::vector<PrefetchHandle *> & out);
 
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
     double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
 
-    void decodePrimitiveColumn(ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, const RowSubgroup & row_subgroup);
+    void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, const RowSubgroup & row_subgroup);
 
     /// Returns mutable column because some of the recursive calls require it,
     /// e.g. ColumnArray::create does assumeMutable() on the nested columns.
@@ -448,12 +448,12 @@ struct Reader
 
 private:
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
-    void skipToRow(size_t row_idx, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info);
-    bool initializePage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info);
+    void skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    bool initializePage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decompressPageIfCompressed(PageState & page);
-    void createPageDecoder(PageState & page, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info);
-    bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info);
-    void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info);
+    void createPageDecoder(PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
 };
 
 }

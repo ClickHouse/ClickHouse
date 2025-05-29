@@ -450,7 +450,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx, std::unique_lock<st
             /// because memory usage is high, while memory usage can't decrease because tasks can't be scheduled.
             /// The way we prevent it is by always allowing scheduling tasks for the lowest-numbered
             /// <row group, row subgroup> pair that hasn't been completed (delivered or skipped) yet.
-            /// TODO: Surely there's a simpler way to avoid getting stuck, and to do scheduling in general?
+            /// TODO [parquet]: Surely there's a simpler way to avoid getting stuck, and to do scheduling in general?
             auto is_privileged_task = [&](const Task & task)
             {
                 size_t i = first_incomplete_row_group.load();
@@ -558,7 +558,7 @@ void ReadManager::scheduleTask(Task task, MemoryUsageDiff * diff, std::vector<Ta
                 RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(task.column_idx);
 
-                reader.determinePagesToRead(subchunk, row_subgroup, row_group);
+                reader.determinePagesToPrefetch(column, row_subgroup, row_group, prefetches);
 
                 /// Side note: would be nice to avoid reading the dictionary if all dictionary-encoded
                 /// pages were filtered out (e.g. if it's a 100 MB column chunk with unique long strings,
@@ -568,14 +568,8 @@ void ReadManager::scheduleTask(Task task, MemoryUsageDiff * diff, std::vector<Ta
                 if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
                     prefetches.push_back(&column.dictionary_page_prefetch);
 
-                chassert(column.data_pages.empty() == subchunk.page_idxs.empty());
                 if (column.data_pages.empty())
                     prefetches.push_back(&column.data_pages_prefetch);
-                else
-                {
-                    for (size_t idx : subchunk.page_idxs)
-                        prefetches.push_back(&column.data_pages.at(idx).prefetch);
-                }
 
                 double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
                 size_t column_memory = size_t(bytes_per_row * row_subgroup.filter.rows_pass);
@@ -678,14 +672,14 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 column.bloom_filter_header_prefetch.reset(&diff);
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
-                reader.decodeOffsetIndex(column);
+                reader.decodeOffsetIndex(column, row_group);
                 column.offset_index_prefetch.reset(&diff);
                 reader.applyColumnIndex(column, column_info);
                 column.column_index_prefetch.reset(&diff);
                 break;
             case ReadStage::PrewhereOffsetIndex:
             case ReadStage::MainOffsetIndex:
-                reader.decodeOffsetIndex(column);
+                reader.decodeOffsetIndex(column, row_group);
                 column.offset_index_prefetch.reset(&diff);
                 break;
             case ReadStage::PrewhereData:
@@ -860,11 +854,11 @@ Chunk ReadManager::read()
         const auto & idx_in_output_block = reader.output_columns[i].idx_in_output_block;
         if (!idx_in_output_block.has_value() || idx_in_output_block.value() >= num_final_columns)
             continue;
-        bool already_formed = row_subgroup.output.at(i) != nullptr;
+        bool already_formed = row_subgroup.output.at(*idx_in_output_block) != nullptr;
         chassert(already_formed == reader.output_columns[i].use_prewhere);
         if (already_formed)
             continue;
-        row_subgroup.output.at(idx_in_output_block.value()) =
+        row_subgroup.output.at(*idx_in_output_block) =
             reader.formOutputColumn(row_subgroup, i);
     }
     row_subgroup.output.resize(num_final_columns); // remove prewhere-only columns

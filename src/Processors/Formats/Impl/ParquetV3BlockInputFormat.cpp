@@ -1,4 +1,4 @@
-#include "ParquetMk4BlockInputFormat.h"
+#include "ParquetV3BlockInputFormat.h"
 
 #include <Common/ThreadPool.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
@@ -45,7 +45,7 @@ Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
     return options;
 }
 
-ParquetMk4BlockInputFormat::ParquetMk4BlockInputFormat(
+ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     ReadBuffer & buf,
     const Block & header_,
     const FormatSettings & format_settings_,
@@ -61,7 +61,7 @@ ParquetMk4BlockInputFormat::ParquetMk4BlockInputFormat(
     thread_pool->num_readers += 1;
 }
 
-void ParquetMk4BlockInputFormat::initializeIfNeeded()
+void ParquetV3BlockInputFormat::initializeIfNeeded()
 {
     if (!reader)
     {
@@ -72,24 +72,24 @@ void ParquetMk4BlockInputFormat::initializeIfNeeded()
     }
 }
 
-ParquetMk4BlockInputFormat::~ParquetMk4BlockInputFormat()
+ParquetV3BlockInputFormat::~ParquetV3BlockInputFormat()
 {
     thread_pool->num_readers -= 1;
 }
 
-Chunk ParquetMk4BlockInputFormat::read()
+Chunk ParquetV3BlockInputFormat::read()
 {
     initializeIfNeeded();
     return reader->read();
 }
 
-void ParquetMk4BlockInputFormat::onCancel() noexcept
+void ParquetV3BlockInputFormat::onCancel() noexcept
 {
     if (reader)
         reader->cancel();
 }
 
-void ParquetMk4BlockInputFormat::resetParser()
+void ParquetV3BlockInputFormat::resetParser()
 {
     reader.reset();
     IInputFormat::resetParser();

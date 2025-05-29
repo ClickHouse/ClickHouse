@@ -126,7 +126,7 @@ private:
         size_t length;
         double memory_amplification = 1;
 
-        /// TODO: If the range is long, it may make sense to have multiple subtasks reading parts of
+        /// TODO [parquet]: If the range is long, it may make sense to have multiple subtasks reading parts of
         ///       the range in parallel (into subranges of one buffer). E.g. if there's a big column
         ///       chunk with no offset index, and we're reading over network.
         PaddedPODArray<char> buf;

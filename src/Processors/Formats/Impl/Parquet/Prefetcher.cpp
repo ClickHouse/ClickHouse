@@ -218,7 +218,7 @@ std::vector<PrefetchHandle> Prefetcher::splitRange(
             /// other splits). (I just guessed that this would be a better tradeoff, didn't benchmark it.)
             size_t new_range_set_idx = range_sets.size();
             auto & new_ranges = range_sets.emplace_back().ranges;
-            new_ranges.resize(subranges.size());
+            new_ranges.reserve(subranges.size());
             for (size_t i = 0; i < subranges.size(); ++i)
             {
                 const auto [start, length] = subranges[i];
