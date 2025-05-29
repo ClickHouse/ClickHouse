@@ -11,9 +11,12 @@ ENV LANG=C.UTF-8
 ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# We need ca-certificates first to be able to update all repos. This is why it's run twice
+RUN apt-get update \
+    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
+
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
-            ca-certificates \
             libc6-dbg \
             moreutils \
             ncdu \
