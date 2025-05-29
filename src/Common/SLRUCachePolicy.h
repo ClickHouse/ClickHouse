@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ICachePolicy.h>
+#include <Common/CurrentMetrics.h>
 
 #include <list>
 #include <unordered_map>
@@ -29,14 +30,28 @@ public:
       * max_protected_size == 0 means that the default protected size is equal to half of the total max size.
       */
     /// TODO: construct from special struct with cache policy parameters (also with max_protected_size).
-    SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, double size_ratio_, OnWeightLossFunction on_weight_loss_function_)
+    SLRUCachePolicy(
+        CurrentMetrics::Metric size_in_bytes_metric_,
+        CurrentMetrics::Metric count_metric_,
+        size_t max_size_in_bytes_,
+        size_t max_count_,
+        double size_ratio_,
+        OnWeightLossFunction on_weight_loss_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
         , max_protected_size(calculateMaxProtectedSize(max_size_in_bytes_, size_ratio_))
         , max_count(max_count_)
         , size_ratio(size_ratio_)
+        , current_size_in_bytes_metric(size_in_bytes_metric_)
+        , count_metric(count_metric_)
         , on_weight_loss_function(on_weight_loss_function_)
     {
+    }
+
+    ~SLRUCachePolicy() override
+    {
+        CurrentMetrics::set(count_metric, cells.size());
+        CurrentMetrics::set(current_size_in_bytes_metric, 0);
     }
 
     size_t sizeInBytes() const override
@@ -57,24 +72,34 @@ public:
     void setMaxCount(size_t max_count_) override
     {
         max_count = max_count_;
+
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
+
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
+        CurrentMetrics::set(current_size_in_bytes_metric, current_size_in_bytes);
+        CurrentMetrics::set(count_metric, cells.size());
     }
 
     void setMaxSizeInBytes(size_t max_size_in_bytes_) override
     {
         max_protected_size = calculateMaxProtectedSize(max_size_in_bytes_, size_ratio);
         max_size_in_bytes = max_size_in_bytes_;
+
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
+
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
+        CurrentMetrics::set(current_size_in_bytes_metric, current_size_in_bytes);
+        CurrentMetrics::set(count_metric, cells.size());
     }
 
     void clear() override
     {
         cells.clear();
+        CurrentMetrics::set(count_metric, cells.size());
         probationary_queue.clear();
         protected_queue.clear();
         current_size_in_bytes = 0;
+        CurrentMetrics::set(current_size_in_bytes_metric, 0);
         current_protected_size = 0;
     }
 
@@ -89,10 +114,12 @@ public:
         current_size_in_bytes -= cell.size;
         if (cell.is_protected)
             current_protected_size -= cell.size;
+        CurrentMetrics::set(current_size_in_bytes_metric, current_size_in_bytes);
 
         auto & queue = cell.is_protected ? protected_queue : probationary_queue;
         queue.erase(cell.queue_iterator);
         cells.erase(it);
+        CurrentMetrics::set(count_metric, cells.size());
     }
 
     void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override
@@ -114,6 +141,9 @@ public:
             else
                 ++it;
         }
+
+        CurrentMetrics::set(current_size_in_bytes_metric, current_size_in_bytes);
+        CurrentMetrics::set(count_metric, cells.size());
     }
 
     MappedPtr get(const Key & key) override
@@ -204,7 +234,10 @@ public:
         current_protected_size += cell.is_protected ? cell.size : 0;
 
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
+
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
+        CurrentMetrics::set(current_size_in_bytes_metric, current_size_in_bytes);
+        CurrentMetrics::set(count_metric, cells.size());
     }
 
     std::vector<KeyMapped> dump() const override
@@ -240,6 +273,9 @@ private:
     const double size_ratio;
     size_t current_protected_size = 0;
     size_t current_size_in_bytes = 0;
+
+    CurrentMetrics::Metric current_size_in_bytes_metric;
+    CurrentMetrics::Metric count_metric;
 
     WeightFunction weight_function;
     OnWeightLossFunction on_weight_loss_function;

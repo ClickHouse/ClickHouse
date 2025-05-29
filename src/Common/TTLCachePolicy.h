@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ICachePolicy.h>
+#include <Common/CurrentMetrics.h>
 #include <base/UUID.h>
 
 #include <limits>
@@ -93,12 +94,21 @@ public:
     using typename Base::KeyMapped;
     using typename Base::OnWeightLossFunction;
 
-    explicit TTLCachePolicy(CachePolicyUserQuotaPtr quotas_)
+    explicit TTLCachePolicy(CurrentMetrics::Metric size_in_bytes_metric_, CurrentMetrics::Metric count_metric_, CachePolicyUserQuotaPtr quotas_)
         : Base(std::move(quotas_))
         , max_size_in_bytes(0)
         , max_count(0)
+        , size_in_bytes_metric(size_in_bytes_metric_)
+        , count_metric(count_metric_)
     {
     }
+
+    ~TTLCachePolicy() override
+    {
+        CurrentMetrics::set(count_metric, cache.size());
+        CurrentMetrics::set(size_in_bytes_metric, 0);
+    }
+
 
     size_t sizeInBytes() const override
     {
@@ -131,6 +141,10 @@ public:
     {
         cache.clear();
         Base::user_quotas->clear();
+
+        size_in_bytes = 0;
+        CurrentMetrics::set(size_in_bytes_metric, size_in_bytes);
+        CurrentMetrics::set(count_metric, cache.size());
     }
 
     void remove(const Key & key) override
@@ -143,6 +157,9 @@ public:
             Base::user_quotas->decreaseActual(*it->first.user_id, sz);
         cache.erase(it);
         size_in_bytes -= sz;
+
+        CurrentMetrics::set(size_in_bytes_metric, size_in_bytes);
+        CurrentMetrics::set(count_metric, cache.size());
     }
 
     void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override
@@ -160,6 +177,9 @@ public:
             else
                 ++it;
         }
+
+        CurrentMetrics::set(size_in_bytes_metric, size_in_bytes);
+        CurrentMetrics::set(count_metric, cache.size());
     }
 
     MappedPtr get(const Key & key) override
@@ -237,6 +257,9 @@ public:
             if (key.user_id.has_value())
                 Base::user_quotas->increaseActual(*key.user_id, entry_size_in_bytes);
         }
+
+        CurrentMetrics::set(size_in_bytes_metric, size_in_bytes);
+        CurrentMetrics::set(count_metric, cache.size());
     }
 
     std::vector<KeyMapped> dump() const override
@@ -259,6 +282,9 @@ private:
     size_t size_in_bytes = 0;
     size_t max_size_in_bytes;
     size_t max_count;
+
+    CurrentMetrics::Metric size_in_bytes_metric;
+    CurrentMetrics::Metric count_metric;
 
     WeightFunction weight_function;
     IsStaleFunction is_stale_function;
