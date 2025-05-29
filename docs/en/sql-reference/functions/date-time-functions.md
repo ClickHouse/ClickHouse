@@ -1644,17 +1644,15 @@ Result:
 **See Also**
 - [date_trunc](#date_trunc)
 
-## toTimeWithFixedDate {#totimewithfixeddate}
+## toTime {#totime}
 
 Converts a date with time to a certain fixed date, while preserving the time.
 
 **Syntax**
 
 ```sql
-toTimeWithFixedDate(date[,timezone])
+toTime(date[,timezone])
 ```
-
-Alias: `toTime` - can be used only when the `use_legacy_to_time` setting is enabled.
 
 **Arguments**
 

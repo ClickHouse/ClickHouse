@@ -1004,12 +1004,6 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
-toTime64
-toTime64OrNull
-toTime64OrZero
-toTimeOrNull
-toTimeOrZero
-toTimeWithFixedDate
 toTimezone
 toTypeName
 toUInt128
