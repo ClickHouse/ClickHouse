@@ -2673,7 +2673,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 
             if (!stat.used_keys.empty())
             {
-                format_settings.out << prefix << indent << indent << "Keys: " << stat.name << '\n';
+                format_settings.out << prefix << indent << indent << "Keys:" << '\n';
                 for (const auto & used_key : stat.used_keys)
                     format_settings.out << prefix << indent << indent << indent << used_key << '\n';
             }

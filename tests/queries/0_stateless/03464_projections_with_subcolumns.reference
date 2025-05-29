@@ -3,7 +3,7 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.a
         Condition: (json.a in [1, 1])
         Parts: 1/1
@@ -15,7 +15,7 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           t.a
         Condition: (t.a in [1, 1])
         Parts: 1/1
@@ -27,7 +27,7 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.c.:`Array(JSON)`.d.:`Int64`
         Condition: (json.c.:`Array(JSON)`.d.:`Int64` in [[1], [1]])
         Parts: 1/1
@@ -39,7 +39,7 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.a
         Condition: (json.a in [1, 1])
         Parts: 1/1
@@ -52,7 +52,7 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           t.a
         Condition: (t.a in [1, 1])
         Parts: 1/1
@@ -65,7 +65,7 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.c.:`Array(JSON)`.d.:`Int64`
         Condition: (json.c.:`Array(JSON)`.d.:`Int64` in [[1], [1]])
         Parts: 1/1
@@ -79,7 +79,7 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.a
         Condition: (json.a in [1, 1])
         Parts: 1/1
@@ -91,7 +91,7 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           t.a
         Condition: (t.a in [1, 1])
         Parts: 1/1
@@ -103,7 +103,7 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.c.:`Array(JSON)`.d.:`Int64`
         Condition: (json.c.:`Array(JSON)`.d.:`Int64` in [[1], [1]])
         Parts: 1/1

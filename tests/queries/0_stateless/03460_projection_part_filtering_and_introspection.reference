@@ -37,11 +37,12 @@ Expression ((Project names + Projection))
       Name: region_proj
         Description: Projection has been analyzed and is used for part-level filtering
         Condition: (region in [\'europe\', \'europe\'])
+        Search Algorithm: binary search
         Parts: 1
         Marks: 1
         Ranges: 1
         Rows: 1
-        Filtered parts: 4
+        Filtered Parts: 4
 -- Only user_id projection is effective for filtering
 EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region != 'unknown' AND user_id = 106;
 Expression ((Project names + Projection))
@@ -51,11 +52,12 @@ Expression ((Project names + Projection))
       Name: user_id_proj
         Description: Projection has been analyzed and is used for part-level filtering
         Condition: (user_id in [106, 106])
+        Search Algorithm: binary search
         Parts: 1
         Marks: 1
         Ranges: 1
         Rows: 1
-        Filtered parts: 4
+        Filtered Parts: 4
 -- Both region and user_id projections are effective for filtering
 EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'us_west' AND user_id = 107;
 Expression ((Project names + Projection))
@@ -65,19 +67,21 @@ Expression ((Project names + Projection))
       Name: region_proj
         Description: Projection has been analyzed and is used for part-level filtering
         Condition: (region in [\'us_west\', \'us_west\'])
+        Search Algorithm: binary search
         Parts: 3
         Marks: 3
         Ranges: 3
         Rows: 3
-        Filtered parts: 2
+        Filtered Parts: 2
       Name: user_id_proj
         Description: Projection has been analyzed and is used for part-level filtering
         Condition: (user_id in [107, 107])
+        Search Algorithm: binary search
         Parts: 1
         Marks: 1
         Ranges: 1
         Rows: 1
-        Filtered parts: 2
+        Filtered Parts: 2
 -- Neither projection is effective for filtering
 EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region != 'unknown' AND user_id != 999;
 Expression ((Project names + Projection))

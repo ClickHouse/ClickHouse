@@ -1,18 +1,18 @@
     ReadFromMergeTree (default.test_index)
     Indexes:
       MinMax
-        Keys: 
+        Keys:
           y
         Parts: 4/5
         Granules: 11/12
       Partition
-        Keys: 
+        Keys:
           y
           bitAnd(z, 3)
         Parts: 3/4
         Granules: 10/11
       PrimaryKey
-        Keys: 
+        Keys:
           x
           y
         Parts: 2/3
@@ -102,7 +102,7 @@
     ReadFromMergeTree (default.idx)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           x
           plus(x, y)
         Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-Inf, 2]))
@@ -112,18 +112,18 @@
     ReadFromMergeTree (default.test_index)
     Indexes:
       MinMax
-        Keys: 
+        Keys:
           y
         Parts: 4/5
         Granules: 11/12
       Partition
-        Keys: 
+        Keys:
           y
           bitAnd(z, 3)
         Parts: 3/4
         Granules: 10/11
       PrimaryKey
-        Keys: 
+        Keys:
           x
           y
         Parts: 2/3
@@ -215,7 +215,7 @@
     ReadFromMergeTree (default.idx)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           x
           plus(x, y)
         Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-Inf, 2]))

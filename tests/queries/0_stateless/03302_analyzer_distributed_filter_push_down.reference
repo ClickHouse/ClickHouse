@@ -30,7 +30,7 @@ Union
         Positions: 0 2
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             x
           Condition: (x in [42, 42])
           Parts: 1/1
@@ -78,7 +78,7 @@ Union
               Positions: 0 2
             Indexes:
               PrimaryKey
-                Keys: 
+                Keys:
                   x
                 Condition: (x in [42, 42])
                 Parts: 1/1
@@ -126,7 +126,7 @@ Positions: 1
             Positions: 0 2
           Indexes:
             PrimaryKey
-              Keys: 
+              Keys:
                 x
               Condition: (x in [42, 42])
               Parts: 1/1
@@ -170,7 +170,7 @@ Positions: 1
                   Positions: 0 2
                 Indexes:
                   PrimaryKey
-                    Keys: 
+                    Keys:
                       x
                     Condition: (x in [42, 42])
                     Parts: 1/1
@@ -226,7 +226,7 @@ Positions: 1 0
               Positions: 0 2
             Indexes:
               PrimaryKey
-                Keys: 
+                Keys:
                   x
                 Condition: (x in [42, 42])
                 Parts: 1/1
@@ -274,7 +274,7 @@ CreatingSets (Create sets before main query execution)
             ReadFromMergeTree (default.tab0)
             Indexes:
               PrimaryKey
-                Keys: 
+                Keys:
                   x
                 Condition: (x in 1-element set)
                 Parts: 1/1
@@ -289,7 +289,7 @@ CreatingSets (Create sets before main query execution)
                     ReadFromMergeTree (default.tab0)
                     Indexes:
                       PrimaryKey
-                        Keys: 
+                        Keys:
                           x
                         Condition: (x in 1-element set)
                         Parts: 1/1
@@ -308,7 +308,7 @@ CreatingSets (Create sets before main query execution)
                   ReadFromMergeTree (default.tab0)
                   Indexes:
                     PrimaryKey
-                      Keys: 
+                      Keys:
                         x
                       Condition: (x in 1-element set)
                       Parts: 1/1
@@ -326,7 +326,7 @@ CreatingSets (Create sets before main query execution)
           ReadFromMergeTree (default.tab0)
           Indexes:
             PrimaryKey
-              Keys: 
+              Keys:
                 x
               Condition: (x in 1-element set)
               Parts: 1/1
@@ -345,7 +345,7 @@ CreatingSets (Create sets before main query execution)
                   ReadFromMergeTree (default.tab0)
                   Indexes:
                     PrimaryKey
-                      Keys: 
+                      Keys:
                         x
                       Condition: (x in 1-element set)
                       Parts: 1/1
@@ -357,7 +357,7 @@ CreatingSets (Create sets before main query execution)
                   ReadFromMergeTree (default.tab0)
                   Indexes:
                     PrimaryKey
-                      Keys: 
+                      Keys:
                         x
                       Condition: (x in 1-element set)
                       Parts: 1/1
@@ -376,7 +376,7 @@ CreatingSets (Create sets before main query execution)
             ReadFromMergeTree (default.tab0)
             Indexes:
               PrimaryKey
-                Keys: 
+                Keys:
                   x
                 Condition: (x in 1-element set)
                 Parts: 1/1
@@ -391,7 +391,7 @@ CreatingSets (Create sets before main query execution)
                     ReadFromMergeTree (default.tab0)
                     Indexes:
                       PrimaryKey
-                        Keys: 
+                        Keys:
                           x
                         Condition: (x in 1-element set)
                         Parts: 1/1
@@ -407,7 +407,7 @@ CreatingSets (Create sets before main query execution)
             ReadFromMergeTree (default.tab0)
             Indexes:
               PrimaryKey
-                Keys: 
+                Keys:
                   x
                 Condition: (x in 1-element set)
                 Parts: 1/1
@@ -422,7 +422,7 @@ CreatingSets (Create sets before main query execution)
                     ReadFromMergeTree (default.tab0)
                     Indexes:
                       PrimaryKey
-                        Keys: 
+                        Keys:
                           x
                         Condition: (x in 1-element set)
                         Parts: 1/1
@@ -434,7 +434,7 @@ CreatingSets (Create sets before main query execution)
                     ReadFromMergeTree (default.tab0)
                     Indexes:
                       PrimaryKey
-                        Keys: 
+                        Keys:
                           x
                         Condition: (x in 1-element set)
                         Parts: 1/1
@@ -491,7 +491,7 @@ CreatingSets (Create sets before main query execution)
         ReadFromMergeTree (default.tab1)
         Indexes:
           PrimaryKey
-            Keys: 
+            Keys:
               recordTimestamp
             Condition: (recordTimestamp in 0-element set)
             Parts: 0/1
@@ -506,7 +506,7 @@ CreatingSets (Create sets before main query execution)
                 ReadFromMergeTree (default.tab1)
                 Indexes:
                   PrimaryKey
-                    Keys: 
+                    Keys:
                       recordTimestamp
                     Condition: (recordTimestamp in 0-element set)
                     Parts: 0/1
@@ -533,7 +533,7 @@ Union
       Granules: 1
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             n
           Condition: (n in [100, 100])
           Parts: 1/1
@@ -571,7 +571,7 @@ Union
             Granules: 1
             Indexes:
               PrimaryKey
-                Keys: 
+                Keys:
                   n
                 Condition: (n in [100, 100])
                 Parts: 1/1
