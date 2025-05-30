@@ -188,9 +188,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             auto data_part = task->getInfo().data_part;
 
+                            String part_name = data_part->isProjectionPart()
+                                ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                                : data_part->name;
                             query_condition_cache->write(
                                 data_part->storage.getStorageID().uuid,
-                                data_part->name,
+                                part_name,
                                 output->getHash(),
                                 reader_settings.query_condition_cache_store_conditions_as_plaintext
                                     ? prewhere_info->prewhere_actions.getNames()[0]
@@ -242,9 +245,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
             if (reader_settings.use_query_condition_cache)
             {
+                String part_name = data_part->isProjectionPart()
+                    ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                    : data_part->name;
                 chunk.getChunkInfos().add(
                     std::make_shared<MarkRangesInfo>(
-                        data_part->storage.getStorageID().uuid, data_part->name,
+                        data_part->storage.getStorageID().uuid, part_name,
                         data_part->index_granularity->getMarksCount(), data_part->index_granularity->hasFinalMark(),
                         res.read_mark_ranges));
             }
