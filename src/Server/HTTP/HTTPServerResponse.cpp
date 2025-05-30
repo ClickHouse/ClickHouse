@@ -35,7 +35,7 @@ std::shared_ptr<WriteBuffer> HTTPServerResponse::send()
     if (request && request->getMethod() == HTTPRequest::HTTP_HEAD)
     {
         // HTTP_HEAD is a special case
-        // client usually reads nothing from socet after headers even when 'Contex-Lenght' is sent
+        // client usually reads nothing from socket after headers even when 'Contex-Lenght' is sent
         // if server wrote a message to the connection with enabled 'Connection: Keep-Alive'
         // the connection would be poisoned.
         // Next request over that connection reads previously unreaded message as a HTTP status line
@@ -49,7 +49,7 @@ std::shared_ptr<WriteBuffer> HTTPServerResponse::send()
     }
     else if (getStatus() < 200 || getStatus() == HTTPResponse::HTTP_NOT_MODIFIED || getStatus() == HTTPResponse::HTTP_NO_CONTENT)
     {
-        // I really do not know why are we threting this cases as special one
+        // I really do not know why do we consider this cases as special one
         // but if we do, then it is safer to close the connection at the end
         setKeepAlive(false);
 
