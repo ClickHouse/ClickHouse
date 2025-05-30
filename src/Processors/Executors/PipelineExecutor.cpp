@@ -4,6 +4,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ConcurrencyControl.h>
+#include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
@@ -393,8 +394,15 @@ static SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool concurrency_c
         if (workload_cpu_scheduling_is_enabled)
         {
             /// Allocate CPU slots through resource scheduler
-            constexpr size_t master_threads = 1uz;
-            return std::make_shared<CPUSlotsAllocation>(master_threads, num_threads - master_threads, master_thread_link, worker_thread_link);
+            if (query_context->getCpuSlotPreemption())
+            {
+                return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link);
+            }
+            else
+            {
+                constexpr size_t master_threads = 1uz;
+                return std::make_shared<CPUSlotsAllocation>(master_threads, num_threads - master_threads, master_thread_link, worker_thread_link);
+            }
         }
         else
         {

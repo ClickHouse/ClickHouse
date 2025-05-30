@@ -19,6 +19,22 @@
 namespace DB
 {
 
+struct CPULeaseSettings
+{
+    static constexpr ResourceCost default_quantum_ns = 10'000'000;
+    static constexpr ResourceCost default_report_ns = default_quantum_ns / 10;
+    static constexpr std::chrono::milliseconds default_preemption_timeout = std::chrono::milliseconds(1000);
+
+    /// Estimated cost for requests, consumption limit without renewal
+    ResourceCost quantum_ns = default_quantum_ns;
+
+    /// Mimimum CPU consumption to report
+    ResourceCost report_ns = default_report_ns;
+
+    /// Timeout after which preempted thread should exit
+    std::chrono::milliseconds preemption_timeout = default_preemption_timeout;
+};
+
 class CPULeaseAllocation;
 using CPULeaseAllocationPtr = std::shared_ptr<CPULeaseAllocation>;
 
@@ -77,27 +93,11 @@ private:
     };
 
 public:
-    struct Settings
-    {
-        static constexpr ResourceCost default_quantum_ns = 10'000'000;
-        static constexpr ResourceCost default_report_ns = default_quantum_ns / 10;
-        static constexpr std::chrono::milliseconds default_preemption_timeout = std::chrono::milliseconds(1000);
-
-        /// Estimated cost for requests, consumption limit without renewal
-        ResourceCost quantum_ns = default_quantum_ns;
-
-        /// Mimimum CPU consumption to report
-        ResourceCost report_ns = default_report_ns;
-
-        /// Timeout after which preempted thread should exit
-        std::chrono::milliseconds preemption_timeout = default_preemption_timeout;
-    };
-
     CPULeaseAllocation(
         SlotCount max_threads_,
         ResourceLink master_link_,
         ResourceLink worker_link_,
-        Settings settings);
+        CPULeaseSettings settings = {});
     ~CPULeaseAllocation() override;
 
     /// Take one already granted slot if available. Never blocks or waits for slots.
@@ -151,7 +151,7 @@ private:
     const SlotCount max_threads; /// Max number of threads (and allocated slots)
     const ResourceLink master_link; /// Resource link to use for master thread resource requests
     const ResourceLink worker_link; /// Resource link to use for worker threads resource requests
-    const Settings settings;
+    const CPULeaseSettings settings;
 
     /// Protects all the fields below
     mutable std::mutex mutex;

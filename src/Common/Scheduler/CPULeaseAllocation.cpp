@@ -51,7 +51,7 @@ bool CPULeaseAllocation::Lease::renew()
         return false;
 }
 
-CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, Settings settings_ = {})
+CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_)
     : max_threads(max_threads_)
     , master_link(master_link_)
     , worker_link(worker_link_)
