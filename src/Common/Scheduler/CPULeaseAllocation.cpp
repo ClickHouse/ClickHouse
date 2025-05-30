@@ -54,16 +54,16 @@ bool CPULeaseAllocation::Lease::renew()
         return false;
 }
 
-CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink cpu_link_, Settings settings_ = {})
+CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, Settings settings_ = {})
     : max_threads(max_threads_)
-    , cpu_link(cpu_link_)
+    , master_link(master_link_)
+    , worker_link(worker_link_)
     , settings(std::move(settings_))
     , threads(max_threads)
     , requests(max_threads) // NOTE: it should not be reallocated after initialization because we use raw pointers and iterators
     , head(requests.begin())
     , tail(head)
 {
-    chassert(cpu_link);
     chassert(max_threads > 0);
     for (Request & request : requests)
         request.lease = this;
@@ -79,7 +79,9 @@ CPULeaseAllocation::~CPULeaseAllocation()
     // Properly cancel pending resource request (if any)
     if (enqueued)
     {
-        bool canceled = cpu_link.queue->cancelRequest(&*head);
+        auto * queue = head->is_master_slot ? master_link.queue : worker_link.queue;
+        chassert(queue);
+        bool canceled = queue->cancelRequest(&*head);
         if (!canceled) // Request is currently processed by the scheduler thread, we have to wait
             shutdown_cv.wait(lock, [this] { return !enqueued; });
         else
@@ -216,18 +218,22 @@ void CPULeaseAllocation::grant()
     enqueued = false;
     scheduled_slot_increment.reset();
     wait_timer.reset();
+    grantImpl(lock);
+    // Notify destructor that we are detached from the scheduler
+    if (shutdown)
+        shutdown_cv.notify_one();
+}
+
+void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
+{
     ++allocated;
     ++head;
     if (head == requests.end())
         head = requests.begin();
-    schedule(lock);
+    schedule(lock); // schedule the next request
     if (granted < 0 || !resumePreemptedThread(lock))
         ++granted;
     // TODO(serxa): we should release granted but not acquired slots after some timeout, to avoid unnecessary overprovisioning
-
-    // Notify destructor that we are detached from the scheduler
-    if (shutdown)
-        shutdown_cv.notify_one();
 }
 
 bool CPULeaseAllocation::renew(Lease & lease)
@@ -295,32 +301,46 @@ void CPULeaseAllocation::consume(std::unique_lock<std::mutex> & lock, ResourceCo
     if (allocated > 0 && consumed_ns >= tail->max_consumed)
     {
         tail->finish();
+        if (tail->is_master_slot)
+            request_master_slot = true;
         ++tail;
         if (tail == requests.end())
             tail = requests.begin();
-        if (allocated-- == max_threads)
+        if (!enqueued)
             schedule(lock); // In case if we renew the last slot, othewise the next request is already scheduled
         // NOTE: we do not finish more than one request per one report to avoid stalling the pipeline for reports larger than quantum
     }
 }
 
-void CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
+void CPULeaseAllocation::schedule(std::unique_lock<std::mutex> & lock)
 {
+    chassert(!enqueued);
+
     if (allocated == max_threads || shutdown)
         return;
 
     ResourceCost cost = settings.quantum_ns + std::max<ResourceCost>(0, consumed_ns - requested_ns);
     head->reset(cost);
+    head->is_master_slot = request_master_slot;
+    request_master_slot = false;
     requested_ns += cost;
     head->max_consumed = requested_ns; // Lease expires if we consume what we requested
 
-    // We do not use enqueueRequestUsingBudget() because it redistributes resource between requests in the queue (which might be from different queries).
-    // Instead we do budgeting for every query independently for better fairness
-    cpu_link.queue->enqueueRequest(&*head);
-    enqueued = true;
-
-    scheduled_slot_increment.emplace(CurrentMetrics::ConcurrencyControlScheduled);
-    wait_timer.emplace(CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
+    if (auto * queue = head->is_master_slot ? master_link.queue : worker_link.queue)
+    {
+        head->is_noncompeting = false;
+        // We do not use enqueueRequestUsingBudget() because it redistributes resource between requests in the queue (which might be from different queries).
+        // Instead we do budgeting for every query independently for better fairness
+        queue->enqueueRequest(&*head);
+        enqueued = true;
+        scheduled_slot_increment.emplace(CurrentMetrics::ConcurrencyControlScheduled);
+        wait_timer.emplace(CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
+    }
+    else // noncompeting slot - provide immediately for free
+    {
+        head->is_noncompeting = true;
+        grantImpl(lock);
+    }
 }
 
 bool CPULeaseAllocation::resumePreemptedThread(std::unique_lock<std::mutex> &)

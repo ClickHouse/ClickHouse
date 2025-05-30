@@ -73,6 +73,8 @@ private:
 
         CPULeaseAllocation * lease = nullptr;
         ResourceCost max_consumed = 0; /// Maximum consumption value for this request before it should be finished
+        bool is_master_slot = false; /// (true) master or (false) worker slot
+        bool is_noncompeting = false;
     };
 
 public:
@@ -94,7 +96,8 @@ public:
 
     CPULeaseAllocation(
         SlotCount max_threads_,
-        ResourceLink cpu_link_,
+        ResourceLink master_link_,
+        ResourceLink worker_link_,
         Settings settings);
     ~CPULeaseAllocation() override;
 
@@ -122,6 +125,7 @@ private:
 
     /// Grant a slot and enqueue another resource request if necessary.
     void grant();
+    void grantImpl(std::unique_lock<std::mutex> & lock);
 
     /// Report real CPU consumption by a thread.
     /// Returns true if renewal has been successful,
@@ -143,7 +147,8 @@ private:
 
     /// Configuration
     const SlotCount max_threads; /// Max number of threads (and allocated slots)
-    const ResourceLink cpu_link; /// Resource link to use for resource requests
+    const ResourceLink master_link; /// Resource link to use for master thread resource requests
+    const ResourceLink worker_link; /// Resource link to use for worker threads resource requests
     const Settings settings;
 
     /// Protects all the fields below
@@ -192,6 +197,7 @@ private:
     Requests::iterator head; /// Next request to be enqueued
     Requests::iterator tail; /// Next request to be finished
     bool enqueued = false; /// True if the next request is already enqueued to the scheduler
+    bool request_master_slot = true; /// The next request should use (true) master_link or (false) worker_link
     std::exception_ptr exception; /// Exception from the scheduler
     bool shutdown = false; /// True if the destructor is called and we should stop scheduling
     std::condition_variable shutdown_cv; /// Used to notify waiting destructor
