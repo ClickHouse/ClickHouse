@@ -25,7 +25,7 @@ charset-normalizer==3.3.2
 click==8.1.7
 confluent-kafka==2.3.0
 cramjam==2.9.1
-cryptography==43.0.1
+cryptography==44.0.1
 datacompy==0.7.3
 decorator==5.1.1
 delta-spark==3.3.0
@@ -107,6 +107,6 @@ tomli==2.0.1
 typing_extensions==4.11.0
 tzdata==2025.1
 tzlocal==2.1
-urllib3==2.0.7
+urllib3==2.2.2
 websocket-client==1.8.0
 wheel==0.46.1
