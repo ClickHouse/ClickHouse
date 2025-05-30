@@ -970,7 +970,7 @@ SELECT mapSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 └──────────────────────────────┘
 ```
 
-For more details see the [reference](/sql-reference/functions/array-functions#sort) for `arraySort` function. 
+For more details see the [reference](/sql-reference/functions/array-functions#arraySort) for `arraySort` function. 
 
 ## mapPartialSort {#mappartialsort}
 
