@@ -144,7 +144,7 @@ def test_distributed_ddl_rubbish(started_cluster):
     assert (
         int(
             node1.query(
-                f"SELECT count(1) FROM system.distributed_ddl_queue WHERE entry='{new_query}' AND IsNull(cluster)"
+                f"SELECT count(1) FROM system.distributed_ddl_queue WHERE entry='{new_query}' AND cluster=''"
             )
         )
         == 4
