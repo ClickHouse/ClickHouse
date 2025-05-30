@@ -484,16 +484,30 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     /// Collect non-joined streams from each slot
     std::vector<IBlocksStreamPtr> streams;
     streams.reserve(slots);
-    for (const auto & hash_join : hash_joins)
+
+    // Special handling for joins with always false condition
+    if (table_join->getOnlyClause().key_names_right.empty())
     {
-        std::lock_guard lock(hash_join->mutex);
-        bool had_non_joined = hash_join->data->hasNonJoinedRows()
-                            || hash_join->has_non_joined_rows.load(std::memory_order_relaxed);
-        if (!had_non_joined)
-            continue;
-        if (auto s = hash_join->data->getNonJoinedBlocks(
+        // For RIGHT/FULL joins with always false condition, all rows should be considered non-joined
+        // We need to return all rows from the right table
+        std::lock_guard lock(hash_joins[0]->mutex);
+        if (auto s = hash_joins[0]->data->getNonJoinedBlocks(
                 left_sample_block, result_sample_block, max_block_size))
             streams.push_back(std::move(s));
+    }
+    else
+    {
+        for (const auto & hash_join : hash_joins)
+        {
+            std::lock_guard lock(hash_join->mutex);
+            bool had_non_joined = hash_join->data->hasNonJoinedRows()
+                                || hash_join->has_non_joined_rows.load(std::memory_order_relaxed);
+            if (!had_non_joined)
+                continue;
+            if (auto s = hash_join->data->getNonJoinedBlocks(
+                    left_sample_block, result_sample_block, max_block_size))
+                streams.push_back(std::move(s));
+        }
     }
 
     if (streams.empty())
