@@ -7,7 +7,7 @@ title: 'system.iceberg_history'
 
 # system.iceberg_history
 
-Contains snapshot history of iceberg table.
+This system table contain the snapshot history of Iceberg tables existing in ClickHouse. It will be empty if you don't have any Iceberg table in ClickHouse.
 
 Columns:
 

@@ -116,12 +116,7 @@ base58Decode
 base58Encode
 basename
 bin
-bitCount
-bitHammingDistance
 bitPositionsToArray
-bitTest
-bitTestAll
-bitTestAny
 bitmapAnd
 bitmapAndCardinality
 bitmapAndnot
