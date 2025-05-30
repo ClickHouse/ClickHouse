@@ -5,7 +5,7 @@ slug: /sql-reference/aggregate-functions/reference/timeSeriesResampleToGridWithS
 title: 'timeSeriesResampleToGridWithStaleness'
 ---
 
-Aggregate function that takes time series data as pairs of timestamps and values and re-samples this data to a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the most recent (withing the specified time window) sample is chosen.
+Aggregate function that takes time series data as pairs of timestamps and values and re-samples this data to a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the most recent (within the specified time window) sample is chosen.
 
 Parameters:
 - `start timestamp` - specifies start of the grid
@@ -18,7 +18,7 @@ Arguments:
 - `value` - value of the time series corresponding to the `timestamp`
 
 Return value:
-time series values re-sampled to the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there the is no sample for a particular grid point.
+time series values re-sampled to the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there is no sample for a particular grid point.
 
 Example:
 The following query re-samples time series data to the grid [90, 105, 120, 135, 150, 165, 180, 195, 210] by choosing the value no older then 30 sec for each point on the grid:

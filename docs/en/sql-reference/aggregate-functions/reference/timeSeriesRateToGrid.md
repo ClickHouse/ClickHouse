@@ -5,7 +5,7 @@ slug: /sql-reference/aggregate-functions/reference/timeSeriesRateToGrid
 title: 'timeSeriesRateToGrid'
 ---
 
-Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `rate` are considered withing the specified time window.
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `rate` are considered within the specified time window.
 
 Parameters:
 - `start timestamp` - specifies start of the grid
@@ -18,7 +18,7 @@ Arguments:
 - `value` - value of the time series corresponding to the `timestamp`
 
 Return value:
-`rate` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there the is no sample for a particular grid point.
+`rate` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there is no sample for a particular grid point.
 
 Example:
 The following query calculates `rate` values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210]:

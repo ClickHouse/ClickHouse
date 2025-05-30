@@ -5,7 +5,7 @@ slug: /sql-reference/aggregate-functions/reference/timeSeriesInstantDeltaToGrid
 title: 'timeSeriesInstantDeltaToGrid'
 ---
 
-Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like idelta](https://prometheus.io/docs/prometheus/latest/querying/functions/#idelta) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `idelta` are considered withing the specified time window.
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like idelta](https://prometheus.io/docs/prometheus/latest/querying/functions/#idelta) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `idelta` are considered within the specified time window.
 
 Parameters:
 - `start timestamp` - specifies start of the grid
@@ -18,7 +18,7 @@ Arguments:
 - `value` - value of the time series corresponding to the `timestamp`
 
 Return value:
-`idelta` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there the is no sample for a particular grid point.
+`idelta` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there is no sample for a particular grid point.
 
 Example:
 The following query calculates `idelta` values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210]:
