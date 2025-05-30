@@ -2969,6 +2969,7 @@ throwif
 timeDiff
 timeSeriesData
 timeSeriesMetrics
+timeSeriesResampleToGridWithStaleness
 timeSeriesTags
 timeSlot
 timeSlots
