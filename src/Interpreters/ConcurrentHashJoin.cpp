@@ -93,35 +93,18 @@ public:
                 continue;
 
             // Get the key column (first column)
-            const auto & key_column = block.getByPosition(0).column;
+            // const auto & key_column = block.getByPosition(0).column;
             
-            // Create a filter to keep only unique NULL values
-            auto filter_column = ColumnUInt8::create(block.rows());
+            // Create a filter to keep all rows
+            auto filter_column = ColumnUInt8::create(block.rows(), 1);
             auto & filter_data = filter_column->getData();
             
-            std::unordered_set<size_t> seen_null_positions;
-            bool has_null = false;
-            
+            // For RIGHT JOIN, we want to keep all rows from the right table
+            // that have NULL keys or weren't joined
             for (size_t i = 0; i < block.rows(); ++i)
             {
-                if (key_column->isNullAt(i))
-                {
-                    // For NULL values, only keep the first occurrence
-                    if (!has_null)
-                    {
-                        filter_data[i] = 1;
-                        has_null = true;
-                    }
-                    else
-                    {
-                        filter_data[i] = 0;
-                    }
-                }
-                else
-                {
-                    // For non-NULL values, keep all rows
-                    filter_data[i] = 1;
-                }
+                // Keep all rows - we don't need to deduplicate NULLs for RIGHT JOIN
+                filter_data[i] = 1;
             }
 
             // Apply the filter
