@@ -22,9 +22,11 @@ public:
 
     KeyValuePairExtractorBuilder & withMaxNumberOfPairs(uint64_t max_number_of_pairs_);
 
+    KeyValuePairExtractorBuilder & withUnexpectedQuotingCharacterStrategy(const std::string & unexpected_quoting_character_strategy_);
+
     auto buildWithoutEscaping() const
     {
-        auto configuration = extractKV::ConfigurationFactory::createWithoutEscaping(key_value_delimiter, quoting_character, item_delimiters);
+        auto configuration = extractKV::ConfigurationFactory::createWithoutEscaping(key_value_delimiter, quoting_character, item_delimiters, unexpected_quoting_character_strategy);
 
         return KeyValuePairExtractorNoEscaping(configuration, max_number_of_pairs);
     }
@@ -38,7 +40,7 @@ public:
 
     auto buildWithReferenceMap() const
     {
-        auto configuration = extractKV::ConfigurationFactory::createWithoutEscaping(key_value_delimiter, quoting_character, item_delimiters);
+        auto configuration = extractKV::ConfigurationFactory::createWithoutEscaping(key_value_delimiter, quoting_character, item_delimiters, unexpected_quoting_character_strategy);
 
         return KeyValuePairExtractorReferenceMap(configuration, max_number_of_pairs);
     }
@@ -48,6 +50,7 @@ private:
     char quoting_character = '"';
     std::vector<char> item_delimiters = {' ', ',', ';'};
     uint64_t max_number_of_pairs = std::numeric_limits<uint64_t>::max();
+    std::string unexpected_quoting_character_strategy = "invalid";
 };
 
 }
