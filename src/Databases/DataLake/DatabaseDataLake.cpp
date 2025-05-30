@@ -495,7 +495,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
         /// have this try/catch here.
         try
         {
-            auto storage = tryGetTableImpl(table_name, context_, true);
+            auto storage = tryGetTableImpl(table_name, context_, true, skip_not_loaded);
             if (storage == nullptr)
                 continue;
 
