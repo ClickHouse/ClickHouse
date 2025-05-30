@@ -425,6 +425,7 @@ struct ContextSharedPart : boost::noncopyable
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
+    bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
@@ -1949,6 +1950,18 @@ void Context::setThrowOnUnknownWorkload(bool value)
 {
     std::lock_guard lock(shared->mutex);
     shared->throw_on_unknown_workload = value;
+}
+
+bool Context::getCpuSlotPreemption() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->cpu_slot_preemption;
+}
+
+void Context::setCpuSlotPreemption(bool value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->cpu_slot_preemption = value;
 }
 
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const

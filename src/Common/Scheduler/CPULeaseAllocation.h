@@ -28,7 +28,7 @@ class CPULeaseAllocation final : public ISlotAllocation
 private:
     /// Controls a cpu slot of one specific thread.
     class Lease;
-    friend class Lease; // for renew()
+    friend class Lease; // for renew() and release()
     class Lease final : public ISlotLease
     {
     public:

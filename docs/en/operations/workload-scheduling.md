@@ -6,7 +6,7 @@ slug: /operations/workload-scheduling
 title: 'Workload scheduling'
 ---
 
-When ClickHouse execute multiple queries simultaneously, they may be using shared resources (e.g. disks). Scheduling constraints and policies can be applied to regulate how resources are utilized and shared between different workloads. For every resource a scheduling hierarchy can be configured. Hierarchy root represents a resource, while leafs are queues, holding requests that exceed resource capacity.
+When ClickHouse execute multiple queries simultaneously, they may be using shared resources (e.g. disks and CPU cores). Scheduling constraints and policies can be applied to regulate how resources are utilized and shared between different workloads. For all resource a common scheduling hierarchy can be configured. Hierarchy root represents shared resources, while leafs are specific workloads, holding requests that exceed resource capacity.
 
 :::note
 Currently [remote disk IO](#disk_config) and [CPU](#cpu_scheduling) can be scheduled using described method. For flexible memory limits see [Memory overcommit](settings/memory-overcommit.md)
@@ -267,7 +267,7 @@ To exclude a query from CPU scheduling set a query setting [use_concurrency_cont
 CPU scheduling is not supported for merges and mutations yet.
 
 :::warning
-Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md#max_threads) but does not guarantee fair CPU time allocation yet. This requires further development of CPU slot preemption and will be supported later.
+Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md#max_threads) but does not guarantee fair CPU time allocation unless server setting `cpu_slot_preemption` is set to `true`, otherwise fairness is provided based on number of CPU slot allocations among competing workloads. It does not imply equal amount of CPU seconds because without preemption CPU slot may be held indefinitely. A thread acquires a slot at the beginning and release when work is done. With preemption enabled thread renews its slot periodically. Such a renewal could block execution if CPU is overloaded. When execution is blocked for prolonged time about 1 second, then query downscales and number of concurrently running threads decreases dynamically. Note that with cpu slot preemption enabled fairness between queries in the same workload is not guaranteed, but fairness is guaranteed between workloads.
 :::
 
 :::note
