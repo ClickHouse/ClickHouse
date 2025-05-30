@@ -296,13 +296,51 @@ void WriteFileOperation::undo(std::unique_lock<SharedMutex> &)
     }
 }
 
-void AddBlobOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
+DiskObjectStorageMetadataPtr CreateOrReadDiskObjectStorageMetadata(const std::string & path, const MetadataStorageFromDisk & metadata_storage, IDisk & disk, std::unique_lock<SharedMutex> & metadata_lock)
 {
     DiskObjectStorageMetadataPtr metadata;
     if (metadata_storage.existsFile(path))
-        metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
+        return metadata_storage.readMetadataUnlocked(path, metadata_lock);
     else
-        metadata = std::make_unique<DiskObjectStorageMetadata>(disk.getPath(), path);
+        return std::make_unique<DiskObjectStorageMetadata>(disk.getPath(), path);
+}
+
+void WriteInlineDataOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
+{
+    auto metadata = CreateOrReadDiskObjectStorageMetadata(path, metadata_storage, disk, metadata_lock);
+
+    metadata->setInlineData(inline_data);
+
+    write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
+    write_operation->execute(metadata_lock);
+}
+
+void WriteInlineDataOperation::undo(std::unique_lock<SharedMutex> & lock)
+{
+    if (write_operation)
+        write_operation->undo(lock);
+}
+
+void RewriteFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
+{
+    auto metadata = CreateOrReadDiskObjectStorageMetadata(path, metadata_storage, disk, metadata_lock);
+
+    metadata->resetData();
+    metadata->addObject(object_key, size_in_bytes);
+
+    write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
+    write_operation->execute(metadata_lock);
+}
+
+void RewriteFileOperation::undo(std::unique_lock<SharedMutex> & lock)
+{
+    if (write_operation)
+        write_operation->undo(lock);
+}
+
+void AddBlobOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
+{
+    auto metadata = CreateOrReadDiskObjectStorageMetadata(path, metadata_storage, disk, metadata_lock);
 
     metadata->addObject(object_key, size_in_bytes);
 
