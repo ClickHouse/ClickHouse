@@ -35,7 +35,7 @@ static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, Azure
 
     if (conn_string_a && conn_string_b)
     {
-        return conn_string_a == conn_string_b;
+        return *conn_string_a == *conn_string_b;
     }
 
     const auto * shared_key_a = std::get_if<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(&auth_method_a);
