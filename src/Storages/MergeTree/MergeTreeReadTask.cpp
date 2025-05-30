@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeReaderProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Common/Exception.h>
@@ -82,7 +83,8 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     return new_readers;
 }
 
-MergeTreeReadersChain MergeTreeReadTask::createReadersChain(const Readers & task_readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters)
+MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
+    const Readers & task_readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (prewhere_actions.steps.size() != task_readers.prewhere.size())
         throw Exception(
@@ -91,15 +93,29 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(const Readers & task
             prewhere_actions.steps.size(), task_readers.prewhere.size());
 
     std::vector<MergeTreeRangeReader> range_readers;
-    range_readers.reserve(prewhere_actions.steps.size() + 1);
+    size_t num_readers = prewhere_actions.steps.size() + 1;
+    if (task_readers.projection_index)
+        ++num_readers;
+    range_readers.reserve(num_readers);
 
+    if (task_readers.projection_index)
+    {
+        range_readers.emplace_back(
+            task_readers.projection_index.get(),
+            Block{},
+            /*prewhere_info_=*/nullptr,
+            read_steps_performance_counters.getCounterForProjectionIndexStep(),
+            /*main_reader_=*/false);
+    }
+
+    size_t counter_idx = 0;
     for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
     {
         range_readers.emplace_back(
             task_readers.prewhere[i].get(),
             (i == 0) ? Block{} : range_readers.back().getSampleBlock(),
             prewhere_actions.steps[i].get(),
-            read_steps_performance_counters.getCountersForStep(i),
+            read_steps_performance_counters.getCountersForStep(counter_idx++),
             /*main_reader_=*/ false);
     }
 
@@ -109,17 +125,28 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(const Readers & task
             task_readers.main.get(),
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             /*prewhere_info_=*/ nullptr,
-            read_steps_performance_counters.getCountersForStep(range_readers.size()),
+            read_steps_performance_counters.getCountersForStep(counter_idx),
             /*main_reader_=*/ true);
     }
 
     return MergeTreeReadersChain{std::move(range_readers)};
 }
 
-void MergeTreeReadTask::initializeReadersChain(const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters)
+void MergeTreeReadTask::initializeReadersChain(
+    const PrewhereExprInfo & prewhere_actions,
+    ReadStepsPerformanceCounters & read_steps_performance_counters,
+    const ProjectionIndexBitmapsBuilder & projection_index_builder)
 {
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
+
+    if (projection_index_builder)
+    {
+        auto projection_index_bitmaps = projection_index_builder();
+        if (!projection_index_bitmaps.empty())
+            readers.projection_index
+                = std::make_unique<MergeTreeReaderProjectionIndex>(readers.main.get(), std::move(projection_index_bitmaps));
+    }
 
     readers_chain = createReadersChain(readers, prewhere_actions, read_steps_performance_counters);
 }
