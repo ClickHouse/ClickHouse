@@ -18,7 +18,7 @@ public:
     /// (I'm trying this style because the usual pattern of passing-through lots of arguments through
     /// layers of constructors seems bad. This seems better but still not great, hopefully there's an
     /// even better way.)
-    void init(SharedParsingThreadPoolPtr thread_pool_);
+    void init(FormatParserGroupPtr parser_group_);
 
     ~ReadManager();
 
@@ -75,7 +75,7 @@ private:
     struct Stage
     {
         std::atomic<size_t> memory_usage {0};
-        /// Tasks that are either in thread_pool's queue or executing. Not in tasks_to_schedule.
+        /// Tasks that are either in thread pool's queue or executing. Not in tasks_to_schedule.
         std::atomic<size_t> batches_in_progress {0};
 
         /// An optimization to avoid excessive calls to scheduleTasksIfNeeded.
@@ -124,7 +124,7 @@ private:
         std::priority_queue<Task> tasks_to_schedule;
     };
 
-    SharedParsingThreadPoolPtr thread_pool;
+    FormatParserGroupPtr parser_group;
 
     std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();
 

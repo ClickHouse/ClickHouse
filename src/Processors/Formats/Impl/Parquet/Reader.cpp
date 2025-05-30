@@ -13,6 +13,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/thread_local_rng.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Formats/FormatParserGroup.h>
 #include <lz4.h>
 #if USE_SNAPPY
 #include <snappy.h>
@@ -106,12 +107,11 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
     }
 }
 
-void Reader::init(const ReadOptions & options_, const Block & sample_block_, std::shared_ptr<const KeyCondition> key_condition_, PrewhereInfoPtr prewhere_info_)
+void Reader::init(const ReadOptions & options_, const Block & sample_block_, FormatParserGroupPtr parser_group_)
 {
     options = options_;
     sample_block = &sample_block_;
-    key_condition = key_condition_;
-    prewhere_info = prewhere_info_;
+    parser_group = parser_group_;
 }
 
 parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
@@ -162,20 +162,9 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
 void Reader::prefilterAndInitRowGroups()
 {
     extended_sample_block = *sample_block;
-    if (prewhere_info)
-    {
-        auto add_columns = [&](const ActionsDAG & dag)
-        {
-            for (const auto & col : dag.getRequiredColumns())
-            {
-                if (!extended_sample_block.has(col.name))
-                    extended_sample_block.insert({col.type->createColumn(), col.type, col.name});
-            }
-        };
-        if (prewhere_info->row_level_filter.has_value())
-            add_columns(prewhere_info->row_level_filter.value());
-        add_columns(prewhere_info->prewhere_actions);
-    }
+    for (const auto & col : parser_group->additional_columns)
+        extended_sample_block.insert(col);
+    PrewhereInfoPtr prewhere_info = parser_group->prewhere_info;
 
     SchemaConverter schemer(file_metadata, options, &extended_sample_block);
     if (prewhere_info && !prewhere_info->remove_prewhere_column)
@@ -185,7 +174,7 @@ void Reader::prefilterAndInitRowGroups()
     total_primitive_columns_in_file = schemer.primitive_column_idx;
     output_columns = std::move(schemer.output_columns);
 
-    if (key_condition)
+    if (parser_group->key_condition)
     {
         /// TODO [parquet]: assign PrimitiveColumnInfo:: use_bloom_filter and use_column_index; possibly:
         /// Expect that either all or none of the column chunks have indexes written.
@@ -349,14 +338,15 @@ void Reader::prefilterAndInitRowGroups()
 
 void Reader::preparePrewhere()
 {
+    PrewhereInfoPtr prewhere_info = parser_group->prewhere_info;
     if (!prewhere_info)
         return;
 
-    /// TODO [parquet]: We currently run prewhere after reading all columns of the row group, in one thread
-    ///       per row group. Instead, we could extract single-column conditions and run them after
-    ///       decoding the corresponding columns, in parallel. (Still run multi-column conditions,
-    ///       like `col1 = 42 or col2 = 'yes'`, after reading all columns.)
-    ///       Probably reuse tryBuildPrewhereSteps from MergeTree for splitting the expression.
+    /// TODO [parquet]: We currently run prewhere after reading all prewhere columns of the row
+    ///     subgroup, in one thread per row group. Instead, we could extract single-column conditions
+    ///     and run them after decoding the corresponding columns, in parallel.
+    ///     (Still run multi-column conditions, like `col1 = 42 or col2 = 'yes'`, after reading all columns.)
+    ///     Probably reuse tryBuildPrewhereSteps from MergeTree for splitting the expression.
 
     /// Convert ActionsDAG to ExpressionActions.
     ExpressionActionsSettings actions_settings;

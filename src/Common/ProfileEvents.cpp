@@ -1048,6 +1048,8 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetSkippedRows, "Rows skipped by push down filters", ValueType::Number) \
     M(ParquetOutputRows, "Parquet output rows", ValueType::Number) \
     M(ParquetSkipPageNum, "Parquet pages skipped", ValueType::Number) \
+    M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
+    M(ParquetDecodingTaskBatches, "Task groups sent to a thread pool by parquet reader", ValueType::Number) \
     \
     M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
     M(IndexBinarySearchAlgorithm, "Number of times the binary search algorithm is used over the index marks", ValueType::Number) \

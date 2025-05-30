@@ -385,8 +385,11 @@ InputFormatPtr FormatFactory::getInput(
     if (!creators.input_creator && !creators.random_access_input_creator)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
 
-    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    const FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
+
+    if (parser_group && parser_group->prewhere_info && (!creators.random_access_input_creator || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE passed to format that doesn't support it");
 
     if (!parser_group)
         parser_group = std::make_shared<FormatParserGroup>(

@@ -10,6 +10,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void CountingSemaphore::acquire()
+{
+    UInt32 x = val.load(std::memory_order_relaxed);
+    while (true)
+    {
+        if (x == 0)
+        {
+            futexWait(&val, 0);
+            x = val.load(std::memory_order_relaxed);
+        }
+        else if (val.compare_exchange_weak(
+                    x, x - 1, std::memory_order_acquire, std::memory_order_relaxed))
+            break;
+    }
+}
+
+void CountingSemaphore::release(UInt32 n, UInt32 wake_threshold)
+{
+    UInt32 x = val.fetch_add(n, std::memory_order_release);
+    if (x < wake_threshold)
+        futexWake(&val, n);
+}
+
 ThreadPoolCallbackRunnerFast::ThreadPoolCallbackRunnerFast() = default;
 
 void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max_threads_, std::string thread_name_, ThreadGroupPtr thread_group_)

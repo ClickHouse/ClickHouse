@@ -1,7 +1,22 @@
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 
+#include <Common/assert_cast.h>
+#include <Common/futex.h>
+#include <Formats/FormatParserGroup.h>
+
 namespace DB::Parquet
 {
+
+ParserGroupExt::Limits ParserGroupExt::getLimitsPerReader(const FormatParserGroup & parser_group, double fraction)
+{
+    const ParserGroupExt & ext = *assert_cast<const ParserGroupExt *>(parser_group.opaque.get());
+    size_t n = parser_group.num_streams.load(std::memory_order_relaxed);
+    fraction /= std::max(n, size_t(1));
+    return Limits {
+        .memory_low_watermark = size_t(ext.total_memory_low_watermark * fraction),
+        .memory_high_watermark = size_t(ext.total_memory_high_watermark * fraction),
+        .parsing_threads = std::max(size_t(parser_group.parsing_runner.getMaxThreads() * fraction + .5), size_t(1))};
+}
 
 #ifdef OS_LINUX
 

@@ -628,7 +628,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return;
 
     metadata = parquet::ReadMetaData(arrow_file);
-    const bool prefetch_group = io_pool != nullptr;
+    const bool prefetch_group = io_pool != nullptr && !format_settings.parquet.use_native_reader_with_filter_push_down;
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
@@ -802,11 +802,8 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         new_native_reader = std::make_shared<ParquetReader>(
             getPort().getHeader(), *seekable_in, settings, metadata, io_pool);
         new_native_reader->setSourceArrowFile(arrow_file);
-        const auto & helper = key_condition->getColumnFilterHelper();
-        if (helper)
-        {
-            helper->pushDownToReader(*new_native_reader, format_settings.parquet.case_insensitive_column_matching);
-        }
+        if (parser_group->key_condition && parser_group->key_condition->getColumnFilterHelper())
+            parser_group->key_condition->getColumnFilterHelper()->pushDownToReader(*new_native_reader, format_settings.parquet.case_insensitive_column_matching);
     }
 }
 

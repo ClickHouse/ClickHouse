@@ -1239,7 +1239,6 @@ StorageFileSource::StorageFileSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<StorageFile> storage_,
     const ContextPtr & context_,
-    PrewhereInfoPtr prewhere_info_,
     UInt64 max_block_size_,
     FilesIteratorPtr files_iterator_,
     std::unique_ptr<ReadBuffer> read_buf_,
@@ -1247,7 +1246,6 @@ StorageFileSource::StorageFileSource(
     FormatParserGroupPtr parser_group_)
     : ISource(info.source_header, false), WithContext(context_)
     , storage(std::move(storage_))
-    , prewhere_info(std::move(prewhere_info_))
     , files_iterator(std::move(files_iterator_))
     , read_buf(std::move(read_buf_))
     , parser_group(std::move(parser_group_))
@@ -1483,9 +1481,6 @@ Chunk StorageFileSource::generate()
 
             if (need_only_count)
                 input_format->needOnlyCount();
-
-            if (prewhere_info)
-                input_format->setPrewhereInfo(prewhere_info);
 
             QueryPipelineBuilder builder;
             builder.init(Pipe(input_format));
@@ -1741,6 +1736,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     auto parser_group = std::make_shared<FormatParserGroup>(ctx->getSettingsRef(), num_streams, filter_actions_dag, ctx);
+    parser_group->prewhere_info = prewhere_info;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1756,7 +1752,6 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             info,
             storage,
             ctx,
-            prewhere_info,
             max_block_size,
             files_iterator,
             std::move(read_buffer),

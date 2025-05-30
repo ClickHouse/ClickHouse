@@ -2,9 +2,14 @@
 
 #include <condition_variable>
 #include <shared_mutex>
-#include <Common/futex.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+
+namespace DB
+{
+struct FormatParserGroup;
+using FormatParserGroupPtr = std::shared_ptr<FormatParserGroup>;
+}
 
 namespace DB::Parquet
 {
@@ -37,16 +42,10 @@ struct ReadOptions
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
 };
 
-
-/// TODO [parquet]: Move this to a shared file and reconcile with https://github.com/ClickHouse/ClickHouse/pull/66253/files , probably make it opaque and created by FormatFactory or something, or contains an opaque shared_ptr lazy-initialized by the format
-struct SharedParsingThreadPool
+struct ParserGroupExt
 {
-    ThreadPoolCallbackRunnerFast io_runner;
-    ThreadPoolCallbackRunnerFast parsing_runner;
-
     size_t total_memory_low_watermark = 0;
     size_t total_memory_high_watermark = 0;
-    std::atomic<size_t> num_readers {0};
 
     struct Limits
     {
@@ -55,18 +54,8 @@ struct SharedParsingThreadPool
         size_t parsing_threads;
     };
 
-    Limits getLimitsPerReader(double fraction) const
-    {
-        size_t n = num_readers.load(std::memory_order_relaxed);
-        fraction /= std::max(n, size_t(1));
-        return Limits {
-            .memory_low_watermark = size_t(total_memory_low_watermark * fraction),
-            .memory_high_watermark = size_t(total_memory_high_watermark * fraction),
-            .parsing_threads = std::max(size_t(parsing_runner.getMaxThreads() * fraction + .5), size_t(1))};
-    }
+    static Limits getLimitsPerReader(const FormatParserGroup & parser_group, double fraction);
 };
-
-using SharedParsingThreadPoolPtr = std::shared_ptr<SharedParsingThreadPool>;
 
 
 /// Each column chunk goes through some subsequence of these stages, in order.

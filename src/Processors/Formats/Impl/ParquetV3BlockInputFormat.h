@@ -17,20 +17,12 @@ public:
         ReadBuffer & buf,
         const Block & header,
         const FormatSettings & format_settings,
-        Parquet::SharedParsingThreadPoolPtr thread_pool_,
+        FormatParserGroupPtr parser_group_,
         size_t min_bytes_for_seek);
-
-    ~ParquetV3BlockInputFormat() override;
 
     void resetParser() override;
 
     String getName() const override { return "ParquetV3BlockInputFormat"; }
-
-    void setPrewhereInfo(PrewhereInfoPtr prewhere_info_) override
-    {
-        chassert(!prewhere_info);
-        prewhere_info = std::move(prewhere_info_);
-    }
 
     const BlockMissingValues * getMissingValues() const override
     {
@@ -51,7 +43,7 @@ private:
 
     const FormatSettings format_settings;
     Parquet::ReadOptions read_options;
-    Parquet::SharedParsingThreadPoolPtr thread_pool;
+    FormatParserGroupPtr parser_group;
     PrewhereInfoPtr prewhere_info;
 
     std::optional<Parquet::ReadManager> reader;

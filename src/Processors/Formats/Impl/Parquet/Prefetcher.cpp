@@ -4,6 +4,7 @@
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
+#include <Formats/FormatParserGroup.h>
 
 namespace DB::ErrorCodes
 {
@@ -15,11 +16,11 @@ namespace DB::ErrorCodes
 namespace DB::Parquet
 {
 
-void Prefetcher::init(ReadBuffer * reader_, const ReadOptions & options, SharedParsingThreadPoolPtr thread_pool_)
+void Prefetcher::init(ReadBuffer * reader_, const ReadOptions & options, FormatParserGroupPtr parser_group_)
 {
     min_bytes_for_seek = options.min_bytes_for_seek;
     bytes_per_read_task = options.bytes_per_read_task;
-    thread_pool = thread_pool_;
+    parser_group = parser_group_;
     determineReadModeAndFileSize(reader_, options);
     range_sets.resize(1);
 }
@@ -391,8 +392,8 @@ void Prefetcher::decreaseTaskRefcount(Task * task, size_t amount)
 
 void Prefetcher::scheduleTask(Task * task)
 {
-    if (!thread_pool->io_runner.isDisabled())
-        thread_pool->io_runner([this, task]
+    if (parser_group && !parser_group->io_runner.isDisabled())
+        parser_group->io_runner([this, task]
             {
                 std::shared_lock shutdown_lock(*shutdown, std::try_to_lock);
                 if (!shutdown_lock.owns_lock())
