@@ -44,8 +44,7 @@ public:
 
     ~LRUCachePolicy() override
     {
-        CurrentMetrics::set(count_metric, cells.size());
-        CurrentMetrics::set(current_size_in_bytes_metric, 0);
+        clear();
     }
 
     size_t sizeInBytes() const override
@@ -77,12 +76,12 @@ public:
 
     void clear() override
     {
+        CurrentMetrics::sub(count_metric, cells.size());
+        CurrentMetrics::sub(current_size_in_bytes_metric, current_size_in_bytes);
+
         queue.clear();
         cells.clear();
         current_size_in_bytes = 0;
-
-        CurrentMetrics::set(current_size_in_bytes_metric, current_size_in_bytes);
-        CurrentMetrics::set(count_metric, cells.size());
     }
 
     void remove(const Key & key) override
@@ -92,15 +91,18 @@ public:
             return;
         auto & cell = it->second;
         current_size_in_bytes -= cell.size;
+        CurrentMetrics::sub(current_size_in_bytes_metric, cell.size);
+
         queue.erase(cell.queue_iterator);
         cells.erase(it);
-
-        CurrentMetrics::set(current_size_in_bytes_metric, current_size_in_bytes);
-        CurrentMetrics::set(count_metric, cells.size());
+        CurrentMetrics::sub(count_metric);
     }
 
     void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override
     {
+        const size_t old_size_in_bytes = current_size_in_bytes;
+        const size_t old_size = cells.size();
+
         for (auto it = cells.begin(); it != cells.end();)
         {
             if (predicate(it->first, it->second.value))
@@ -114,8 +116,8 @@ public:
                 ++it;
         }
 
-        CurrentMetrics::set(current_size_in_bytes_metric, current_size_in_bytes);
-        CurrentMetrics::set(count_metric, cells.size());
+        CurrentMetrics::sub(current_size_in_bytes_metric, old_size_in_bytes - current_size_in_bytes);
+        CurrentMetrics::sub(count_metric, old_size - cells.size());
     }
 
     MappedPtr get(const Key & key) override
@@ -153,6 +155,9 @@ public:
 
     void set(const Key & key, const MappedPtr & mapped) override
     {
+        const size_t old_size_in_bytes = current_size_in_bytes;
+        const size_t old_size = cells.size();
+
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
             std::forward_as_tuple());
@@ -181,10 +186,10 @@ public:
         cell.size = cell.value ? weight_function(*cell.value) : 0;
         current_size_in_bytes += cell.size;
 
-        removeOverflow();
+        CurrentMetrics::add(current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - old_size_in_bytes);
+        CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - old_size);
 
-        CurrentMetrics::set(current_size_in_bytes_metric, current_size_in_bytes);
-        CurrentMetrics::set(count_metric, cells.size());
+        removeOverflow();
     }
 
     std::vector<KeyMapped> dump() const override
@@ -225,6 +230,9 @@ private:
 
     void removeOverflow()
     {
+        const size_t old_size_in_bytes = current_size_in_bytes;
+        const size_t old_size = cells.size();
+
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
 
@@ -250,6 +258,9 @@ private:
 
         if (current_size_in_bytes > (1ull << 63))
             std::terminate(); // Queue became inconsistent
+
+        CurrentMetrics::sub(current_size_in_bytes_metric, old_size_in_bytes - current_size_in_bytes);
+        CurrentMetrics::sub(count_metric, old_size - cells.size());
     }
 };
 

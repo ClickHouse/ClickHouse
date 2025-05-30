@@ -5,6 +5,7 @@
 #include <base/UUID.h>
 
 #include <limits>
+#include <map>
 #include <unordered_map>
 
 namespace DB
@@ -105,8 +106,7 @@ public:
 
     ~TTLCachePolicy() override
     {
-        CurrentMetrics::set(count_metric, cache.size());
-        CurrentMetrics::set(size_in_bytes_metric, 0);
+        clear();
     }
 
 
@@ -139,12 +139,13 @@ public:
 
     void clear() override
     {
+        CurrentMetrics::sub(size_in_bytes_metric, size_in_bytes);
+        CurrentMetrics::sub(count_metric, cache.size());
+
         cache.clear();
         Base::user_quotas->clear();
 
         size_in_bytes = 0;
-        CurrentMetrics::set(size_in_bytes_metric, size_in_bytes);
-        CurrentMetrics::set(count_metric, cache.size());
     }
 
     void remove(const Key & key) override
@@ -158,12 +159,15 @@ public:
         cache.erase(it);
         size_in_bytes -= sz;
 
-        CurrentMetrics::set(size_in_bytes_metric, size_in_bytes);
-        CurrentMetrics::set(count_metric, cache.size());
+        CurrentMetrics::sub(size_in_bytes_metric, sz);
+        CurrentMetrics::sub(count_metric);
     }
 
     void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override
     {
+        const size_t old_size_in_bytes = size_in_bytes;
+        const size_t old_size = cache.size();
+
         for (auto it = cache.begin(); it != cache.end();)
         {
             if (predicate(it->first, it->second))
@@ -178,8 +182,8 @@ public:
                 ++it;
         }
 
-        CurrentMetrics::set(size_in_bytes_metric, size_in_bytes);
-        CurrentMetrics::set(count_metric, cache.size());
+        CurrentMetrics::sub(size_in_bytes_metric, old_size_in_bytes - size_in_bytes);
+        CurrentMetrics::sub(count_metric, old_size - cache.size());
     }
 
     MappedPtr get(const Key & key) override
@@ -208,6 +212,8 @@ public:
     {
         chassert(mapped.get());
 
+        const size_t old_size_in_bytes = size_in_bytes;
+        const size_t old_size = cache.size();
         const size_t entry_size_in_bytes = weight_function(*mapped);
 
         /// Checks against per-cache limits
@@ -258,8 +264,8 @@ public:
                 Base::user_quotas->increaseActual(*key.user_id, entry_size_in_bytes);
         }
 
-        CurrentMetrics::set(size_in_bytes_metric, size_in_bytes);
-        CurrentMetrics::set(count_metric, cache.size());
+        CurrentMetrics::add(size_in_bytes_metric, static_cast<Int64>(size_in_bytes) - old_size_in_bytes);
+        CurrentMetrics::add(count_metric, static_cast<Int64>(cache.size()) - old_size);
     }
 
     std::vector<KeyMapped> dump() const override
