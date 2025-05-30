@@ -9,7 +9,7 @@
 #include <Poco/Net/HTTPFixedLengthStream.h>
 #include <Poco/Net/HTTPHeaderStream.h>
 #include <Poco/Net/HTTPStream.h>
-#include "IO/NullWriteBuffer.h"
+#include <IO/NullWriteBuffer.h>
 #include <sstream>
 
 
