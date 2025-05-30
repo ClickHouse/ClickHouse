@@ -479,9 +479,23 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        auto storage = tryGetTableImpl(table_name, context_, true);
-        [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
-        chassert(inserted);
+        /// NOTE: There are one million of different ways how we can recieve
+        /// weird response from different catalogs. tryGetTableImpl will not
+        /// throw only in case of expected errors, but sometimes we can receive
+        /// completely unexpected results for some objects which can be stored
+        /// in catalogs. But this function is used in SHOW TABLES query which
+        /// should return at least properly described tables. That is why we
+        /// have this try/catch here.
+        try
+        {
+            auto storage = tryGetTableImpl(table_name, context_, true);
+            [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
+            chassert(inserted);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("ignoring table {}", table_name));
+        }
     }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
