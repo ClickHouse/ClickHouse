@@ -479,7 +479,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        /// NOTE: There are one million of different ways how we can recieve
+        /// NOTE: There are one million of different ways how we can receive
         /// weird response from different catalogs. tryGetTableImpl will not
         /// throw only in case of expected errors, but sometimes we can receive
         /// completely unexpected results for some objects which can be stored
