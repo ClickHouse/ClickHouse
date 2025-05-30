@@ -57,7 +57,6 @@ public:
         "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     StorageS3Configuration() = default;
-    StorageS3Configuration(const StorageS3Configuration & other);
 
     ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
@@ -85,7 +84,6 @@ public:
 
     void check(ContextPtr context) const override;
     void validateNamespace(const String & name) const override;
-    ConfigurationPtr clone() override { return std::make_shared<StorageS3Configuration>(*this); }
     bool isStaticConfiguration() const override { return static_configuration; }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
