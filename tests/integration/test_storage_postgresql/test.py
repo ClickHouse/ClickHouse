@@ -45,6 +45,8 @@ def setup_teardown():
     node1.query("DROP DATABASE test")
     node1.query("CREATE DATABASE test")
 
+def test_postgres_select_with_comment(started_cluster):
+    assert(node1.query("SELECT 1; /* some comment */").rstrip() == "1")
 
 def test_postgres_select_insert(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
