@@ -954,12 +954,15 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix)
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers)
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
+    if (http_response_headers_override.has_value())
+        http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
 
     auto creator = [&server, query_param_name, http_response_headers_override, connection_config]() -> std::unique_ptr<DynamicQueryHandler>
     { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override); };
@@ -992,7 +995,8 @@ static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
 
 HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix)
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers)
 {
     if (!config.has(config_prefix + ".handler.query"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}.handler.query' in configuration file.", config_prefix);
@@ -1020,6 +1024,8 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     }
 
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
+    if (http_response_headers_override.has_value())
+        http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
 
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 

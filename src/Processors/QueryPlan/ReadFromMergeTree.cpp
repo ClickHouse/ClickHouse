@@ -2677,6 +2677,18 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             if (i)
                 format_settings.out << '/' << index_stats[i - 1].num_granules_after;
             format_settings.out << '\n';
+
+            auto search_algorithm_to_string = [](const MarkRanges::SearchAlgorithm search_algorithm) -> String {
+                switch (search_algorithm)
+                {
+                    case MarkRanges::SearchAlgorithm::BinarySearch: return "binary search";
+                    case MarkRanges::SearchAlgorithm::GenericExclusionSearch: return "generic exclusion search";
+                    default: return "";
+                }
+            };
+            const auto search_algorithm = search_algorithm_to_string(stat.search_algorithm);
+            if (!search_algorithm.empty())
+                format_settings.out << prefix << indent << indent << "Search algorithm: " << search_algorithm << "\n";
         }
     }
 }
