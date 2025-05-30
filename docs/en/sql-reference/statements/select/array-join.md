@@ -222,7 +222,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-The example below uses the [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) function:
+The example below uses the [arrayEnumerate](/sql-reference/functions/array-functions#arrayEnumerate) function:
 
 ```sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
