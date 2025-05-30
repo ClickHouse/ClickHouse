@@ -41,7 +41,7 @@ def test_disk_checker_started_log(started_cluster):
 
     # This is the log string we expect (case-sensitive grep)
 
-    expected_log = "Disk check for disk test1 started with period 10.00s"
+    expected_log = "Disk check for disk test1 started with period 10.00 s"
 
     count = node.count_in_log(expected_log)
 
@@ -50,6 +50,13 @@ def test_disk_checker_started_log(started_cluster):
     assert int(count) > 0, "DiskChecker did not start or log not found"
 
 def wait_for_file(node, filepath, timeout=30):
+    '''
+    Wait for file to exist within timeout
+    :param node:      The node to be checked
+    :param filepath:  The file to be checked
+    :param timeout:   The maximum wait time
+    :return:
+    '''
     for _ in range(timeout):
         res = node.exec_in_container(["bash", "-c", f"test -f {filepath} && echo exists || echo missing"]).strip()
         if res == "exists":
@@ -58,6 +65,14 @@ def wait_for_file(node, filepath, timeout=30):
     return False
 
 def wait_for_log(node, expected_log, timeout=30):
+    '''
+    Wait for log to exist within timeout
+    :param node:         The testing instance
+    :param expected_log: The log expected in clickhouse-server.log
+    :param timeout:      In the config.xml, we set up the check period to 10s,
+                         so the timeout 30s is good enough
+    :return:
+    '''
     for _ in range(timeout):
         count = int(node.count_in_log(expected_log))
         if count > 0:
@@ -79,7 +94,13 @@ def wait_for_metrics(node, metric_name, expected_value, timeout=30):
         time.sleep(1)
     return False
 
-def test_disk_readonly_prometheus_status(started_cluster):
+
+def test_disk_broken_prometheus_status(started_cluster):
+    '''
+    Manually move away the disk checker file to simulate the disk broken status
+    :param started_cluster:
+    :return:
+    '''
     node = cluster.instances["test_disk_checker"]
     disk_name = "test1"
     # Based on your config, disk name is 'test1' and path inside container is:
@@ -92,9 +113,40 @@ def test_disk_readonly_prometheus_status(started_cluster):
 
     # Step 2: Move away .disk_checker_file to simulate readonly disk
     node.exec_in_container(["mv", disk_checker_path, disk_checker_backup_path])
-    logging.info("Moved .disk_checker_file away to simulate disk readonly")
+    logging.info("Moved .disk_checker_file away to simulate disk broken")
 
     # Wait some seconds to let ClickHouse detect the change
+    expected_log = f"Disk {disk_name} marked as broken"
+    assert wait_for_log(node, expected_log), "DiskChecker did not find expected log for broken disk"
+    assert wait_for_metrics(node, "BrokenDisks", 1), "BrokenDisks metric did not reach 1"
+
+    # Step 3: Move the .disk_checker_file back to restore disk readable status
+    node.exec_in_container(["mv", disk_checker_backup_path, disk_checker_path])
+    logging.info("Restored .disk_checker_file to simulate broken disk back to normal")
+
+    assert wait_for_metrics(node, "BrokenDisks", 0), "BrokenDisks metric did not reach 0"
+
+
+def test_disk_readonly_prometheus_status(started_cluster):
+    '''
+    Manually change disk permission to r-xr-xr-w to simulate that disk is readonly
+    :param started_cluster:
+    :return:
+    '''
+    node = cluster.instances["test_disk_checker"]
+
+    disk_path = "/var/lib/clickhouse/path1"
+    disk_name = "test1"
+
+    output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
+    logging.info(f"Initial permissions for {disk_path}: {output}")
+
+    # Step 1: Remove write permission to simulate broken disk
+    node.exec_in_container(["chmod", "555", disk_path])
+    logging.info(f"Changed permissions to 555 on {disk_path} to simulate readonly disk")
+
+    output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
+    logging.info(f"After changed to readonly,  permissions for {disk_path}: {output}")
 
     # We should find the readonly log
     expected_log = f"Disk {disk_name} is readonly"
@@ -107,34 +159,6 @@ def test_disk_readonly_prometheus_status(started_cluster):
     # Check Prometheus metrics for readonly disk
     assert wait_for_metrics(node, "ReadonlyDisks", 1), "ReadonlyDisks metric did not reach 1"
 
-    # Step 3: Move the .disk_checker_file back to restore disk readable status
-    node.exec_in_container(["mv", disk_checker_backup_path, disk_checker_path])
-    logging.info("Restored .disk_checker_file to simulate disk back to normal")
-
-    # Check Prometheus metrics again, disk should no longer be readonly
-    assert wait_for_metrics(node, "ReadonlyDisks", 0), "ReadonlyDisks metric did not reach 0"
-
-def test_disk_broken_prometheus_status(started_cluster):
-    node = cluster.instances["test_disk_checker"]
-
-    disk_path = "/var/lib/clickhouse/path1"
-    disk_name = "test1"
-
-    output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
-    logging.info(f"Initial permissions for {disk_path}: {output}")
-
-
-    # Step 1: Remove write permission to simulate broken disk
-    node.exec_in_container(["chmod", "555", disk_path])
-    logging.info(f"Changed permissions to 555 on {disk_path} to simulate broken disk")
-
-    output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
-    logging.info(f"After changed to Readonly,  permissions for {disk_path}: {output}")
-
-    expected_log = f"Disk {disk_name} marked as broken"
-    assert wait_for_log(node, expected_log), "DiskChecker did not find expected log for broken disk"
-    assert wait_for_metrics(node, "BrokenDisks", 1), "BrokenDisks metric did not reach 1"
-
     # Step 2: Restore permissions
     node.exec_in_container(["chmod", "775", disk_path])
     logging.info(f"Restored permissions to 775 on {disk_path}")
@@ -142,6 +166,5 @@ def test_disk_broken_prometheus_status(started_cluster):
     output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
     logging.info(f"After changed to 775 again,  permissions for {disk_path}: {output}")
 
-    assert wait_for_metrics(node, "BrokenDisks", 0), "BrokenDisks metric did not reach 0"
-
-
+    # Check Prometheus metrics again, disk should no longer be readonly
+    assert wait_for_metrics(node, "ReadonlyDisks", 0), "ReadonlyDisks metric did not reach 0"
