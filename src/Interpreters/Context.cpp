@@ -3421,11 +3421,20 @@ MarkCachePtr Context::getMarkCache() const
 void Context::clearMarkCache() const
 {
     /// Get local shared pointer to the cache
-    MarkCachePtr cache = getMarkCache();
+    if (MarkCachePtr cache = getMarkCache())
+    {
+        /// Clear the cache without holding context mutex to avoid blocking context for a long time
+        if (cache)
+            cache->clear();
+    }
 
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
+    /// Get local shared pointer to the cache
+    if (MarkCachePtr cache = getIndexMarkCache())
+    {
+        /// Clear the cache without holding context mutex to avoid blocking context for a long time
+        if (cache)
+            cache->clear();
+    }
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
