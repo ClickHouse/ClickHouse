@@ -18,10 +18,9 @@ using namespace DB;
 
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     std::unique_ptr<ReadBufferFromFileBase> buffer_,
-    const std::string & manifest_file_path_,
     const DB::FormatSettings & format_settings)
     : buffer(std::move(buffer_))
-    , manifest_file_path(manifest_file_path_)
+    , manifest_file_path(buffer->getFileName())
 {
     auto manifest_file_reader
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));

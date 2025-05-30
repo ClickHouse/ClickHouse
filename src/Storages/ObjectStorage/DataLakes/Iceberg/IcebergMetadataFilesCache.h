@@ -72,10 +72,11 @@ private:
     static size_t getMemorySizeOfManifestCacheKeys(const ManifestFileCacheKeys & manifest_file_cache_keys)
     {
          size_t total_size = 0;
-         for (const auto & entry: manifest_file_cache_keys)
+         for (const auto & entry : manifest_file_cache_keys)
          {
              total_size += sizeof(ManifestFileCacheKey) + entry.manifest_file_path.capacity();
          }
+         total_size += sizeof(ManifestFileCacheKey) * (manifest_file_cache_keys.capacity() - manifest_file_cache_keys.size());
          return total_size;
     }
 

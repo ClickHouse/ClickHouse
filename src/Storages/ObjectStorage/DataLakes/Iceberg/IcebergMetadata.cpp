@@ -66,23 +66,6 @@ using namespace Iceberg;
 namespace
 {
 
-std::pair<Int32, Poco::JSON::Object::Ptr>
-parseTableSchemaFromManifestFile(const AvroForIcebergDeserializer & deserializer, const String & manifest_file_name)
-{
-    auto schema_json_string = deserializer.tryGetAvroMetadataValue(f_schema);
-    if (!schema_json_string.has_value())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
-            manifest_file_name, f_schema);
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var json = parser.parse(*schema_json_string);
-    const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-    Int32 schema_object_id = schema_object->getValue<int>(f_schema_id);
-    return {schema_object_id, schema_object};
-}
-
-
 std::string normalizeUuid(const std::string & uuid)
 {
     std::string result;
@@ -660,7 +643,7 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
         ManifestList manifest_list;
         StorageObjectStorage::ObjectInfo object_info(filename);
         auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
-        AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(getContext()));
+        AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), getFormatSettings(getContext()));
 
         ManifestFileCacheKeys manifest_file_cache_keys;
 
@@ -673,6 +656,8 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
                 added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, f_sequence_number, TypeIndex::Int64).safeGet<Int64>();
             manifest_file_cache_keys.emplace_back(manifest_file_name, added_sequence_number);
         }
+        /// Keep it compact (since it can be cached in memory)
+        manifest_file_cache_keys.shrink_to_fit();
         /// We only return the list of {file name, seq number} for cache.
         /// Because ManifestList holds a list of ManifestFilePtr which consume much memory space.
         /// ManifestFilePtr is shared pointers can be held for too much time, so we cache ManifestFile separately.
@@ -786,28 +771,24 @@ ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 
     {
         ObjectInfo manifest_object_info(filename);
         auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
-        AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(getContext()));
-        auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(manifest_file_deserializer, filename);
-        schema_processor.addIcebergTableSchema(schema_object);
         return std::make_shared<ManifestFileContent>(
-            manifest_file_deserializer,
+            std::move(buffer),
             format_version,
             configuration_ptr->getPath(),
-            schema_id,
-            schema_object,
             schema_processor,
             inherited_sequence_number,
             table_location,
             getContext());
     };
 
+    std::shared_ptr<const ManifestFileContent> manifest_file;
     if (manifest_cache)
-    {
-        auto manifest_file = manifest_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
-        schema_processor.addIcebergTableSchema(manifest_file->getSchemaObject());
-        return manifest_file;
-    }
-    return create_fn();
+        manifest_file = manifest_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
+    else
+        manifest_file = create_fn();
+
+    schema_processor.addIcebergTableSchema(manifest_file->parseSchema());
+    return manifest_file;
 }
 
 Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
