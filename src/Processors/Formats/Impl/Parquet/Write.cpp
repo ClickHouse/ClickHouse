@@ -984,7 +984,7 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
                 writeColumnImpl<parquet::ByteArrayType>(
                     s, options, out, ConverterEnumAsString<Int8>(s.primitive_column, s.enum_type));
             else
-                N(Int8,   Int32Type);
+                N(Int8, Int32Type);
          break;
         }
         case TypeIndex::Int16:
@@ -993,7 +993,7 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
                 writeColumnImpl<parquet::ByteArrayType>(
                     s, options, out, ConverterEnumAsString<Int16>(s.primitive_column, s.enum_type));
             else
-                N(Int16,   Int32Type);
+                N(Int16, Int32Type);
             break;
         }
         case TypeIndex::Int32  : N(Int32,  Int32Type); break;
