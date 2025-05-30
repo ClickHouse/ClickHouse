@@ -218,7 +218,7 @@ CREATE TABLE system.distributed_ddl_queue
     `entry_version` Nullable(UInt8),
     `initiator_host` Nullable(String),
     `initiator_port` Nullable(UInt16),
-    `cluster` Nullable(String),
+    `cluster` String,
     `query` String,
     `settings` Map(String, String),
     `query_create_time` DateTime,
