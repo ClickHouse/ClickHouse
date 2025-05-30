@@ -108,6 +108,7 @@ namespace Setting
     extern const SettingsUInt64 poll_interval;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsBool send_profile_events;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsSeconds send_timeout;
     extern const SettingsTimezone session_timezone;
@@ -540,7 +541,8 @@ void TCPHandler::runImpl()
                 CurrentThread::attachInternalTextLogsQueue(query_state->logs_queue, client_logs_level);
             }
 
-            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
+            const auto send_profile_events = query_state->query_context->getSettingsRef()[Setting::send_profile_events];
+            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS && send_profile_events)
             {
                 query_state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
                 CurrentThread::attachInternalProfileEventsQueue(query_state->profile_queue);
@@ -1489,6 +1491,9 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 
 void TCPHandler::sendProfileEvents(QueryState & state)
 {
+    if (!state.query_context->getSettingsRef()[Setting::send_profile_events])
+        return;
+
     Stopwatch stopwatch;
     Block block = ProfileEvents::getProfileEvents(host_name, state.profile_queue, state.last_sent_snapshots);
     if (block.rows() != 0)
