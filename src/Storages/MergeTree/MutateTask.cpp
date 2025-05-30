@@ -674,11 +674,10 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     analyzeSkipIndicesCommands(ctx, mutated_data);
     analyzeStatisticsCommands(ctx, mutated_data);
 
-    UNUSED(alter_conversions);
     auto part_columns = ctx.source_part->getColumnsDescription();
 
-    NameSet read_columns;
     NameSet dropped_columns;
+    NameSet affected_columns;
 
     for (const auto & command : ctx.commands_for_part)
     {
@@ -688,16 +687,12 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
         if (!has_column && !has_nested_column)
             continue;
 
-        if (command.type == MutationCommand::Type::DROP_COLUMN)
+        if (command.type == MutationCommand::Type::READ_COLUMN)
         {
-            dropped_columns.emplace(command.column_name);
-        }
-        else if (command.type == MutationCommand::Type::READ_COLUMN)
-        {
-            read_columns.emplace(command.column_name);
+            affected_columns.emplace(command.column_name);
             ctx.for_interpreter.push_back(command);
         }
-        else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+        else if (command.type == MutationCommand::Type::RENAME_COLUMN || command.type == MutationCommand::Type::DROP_COLUMN)
         {
             if (has_nested_column)
             {
@@ -705,12 +700,15 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
                 chassert(!nested.empty());
 
                 for (const auto & nested_column : nested)
-                    read_columns.emplace(nested_column.name);
+                    affected_columns.emplace(nested_column.name);
             }
             else
             {
-                read_columns.emplace(command.column_name);
+                affected_columns.emplace(command.column_name);
             }
+
+            if (command.type == MutationCommand::Type::DROP_COLUMN)
+                dropped_columns.emplace(command.column_name);
         }
     }
 
@@ -756,7 +754,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
                 .column_name = column.name,
             });
         }
-        else if (!read_columns.contains(column.name))
+        else if (!affected_columns.contains(column.name))
         {
             const auto & part = ctx.source_part;
             const auto & metadata_snapshot = ctx.metadata_snapshot;
