@@ -362,8 +362,8 @@ def main():
         if not Path(f"{db_path}/.done").is_file():
             Shell.check(f"mkdir -p {db_path}", verbose=True)
             dataset_paths = {
-                "hits10": "https://clickhouse-private-datasets.s3.amazonaws.com/hits_10m_single/partitions/hits_10m_single.tar",
-                "hits100": "https://clickhouse-private-datasets.s3.amazonaws.com/hits_100m_single/partitions/hits_100m_single.tar",
+                "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
+                "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
             }
