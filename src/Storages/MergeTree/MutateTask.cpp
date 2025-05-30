@@ -590,6 +590,11 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
                 mutated_data.updated_columns.insert(command.column_name);
             }
         }
+        else if (command.type == MutationCommand::APPLY_DELETED_MASK)
+        {
+            ctx.for_interpreter.push_back(command);
+            mutated_data.has_delete_command = true;
+        }
         else if (command.type == MutationCommand::UPDATE || command.type == MutationCommand::DELETE)
         {
             ctx.for_interpreter.push_back(command);
@@ -600,9 +605,10 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
                 mutated_data.updated_columns.insert(column_name);
                 addUsedIdentifiers(ast, ctx.context, ctx.required_readonly_columns);
             }
-        }
 
-        mutated_data.has_delete_command |= command.isDeleteCommand();
+            if (command.type == MutationCommand::DELETE)
+                mutated_data.has_delete_command = true;
+        }
     }
 
     mutated_data.has_lightweight_delete = mutated_data.updated_columns.contains(RowExistsColumn::name);
