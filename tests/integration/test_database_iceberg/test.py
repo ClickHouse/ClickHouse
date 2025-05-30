@@ -305,7 +305,7 @@ def test_select(started_cluster):
         node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
     )
 
-    assert int(node.query("SELECT count() FROM system.iceberg_history").strip()) == 1
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{namespace}.{table_name}' and database = '{CATALOG_NAME}'").strip()) == 1
 
 
 def test_hide_sensitive_info(started_cluster):

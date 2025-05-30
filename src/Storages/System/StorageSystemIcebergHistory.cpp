@@ -36,8 +36,8 @@ ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"database_name",std::make_shared<DataTypeString>(),"Database name"},
-        {"table_name",std::make_shared<DataTypeString>(),"Table name."},
+        {"database",std::make_shared<DataTypeString>(),"Database name."},
+        {"table",std::make_shared<DataTypeString>(),"Table name."},
         {"made_current_at",std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)),"date & time when this snapshot was made current snapshot"},
         {"snapshot_id",std::make_shared<DataTypeUInt64>(),"snapshot id which is used to identify a snapshot."},
         {"parent_id",std::make_shared<DataTypeUInt64>(),"parent id of this snapshot."},

@@ -13,7 +13,7 @@ Columns:
 
 - `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 
-- `name` ([String](../../sql-reference/data-types/string.md)) — Table name.
+- `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
 
 - `made_current_at` ([DateTime](../../sql-reference/data-types/uuid.md)) — Time when the snapshot was made current snapshot.
 
