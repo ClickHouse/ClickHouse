@@ -183,7 +183,12 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
     return key_values;
 }
 
-VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, const ContextPtr & context, const std::string & path, std::optional<FormatSettings> format_settings_)
+VirtualColumnsDescription getVirtualsForFileLikeStorage(
+    ColumnsDescription & storage_columns,
+    const ContextPtr & context,
+    const std::string & path,
+    std::optional<FormatSettings> format_settings_,
+    bool is_data_lake)
 {
     VirtualColumnsDescription desc;
 
@@ -210,7 +215,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
         add_virtual(item, false);
 
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (context->getSettingsRef()[Setting::use_hive_partitioning] && !is_data_lake)
     {
         const auto map = parseHivePartitioningKeysAndValues(path);
         auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
