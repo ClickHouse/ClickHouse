@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-merge-tree-settings
+-- Tags: no-parallel, no-random-merge-tree-settings, long
 
 drop table if exists pr_t;
 drop table if exists dist_t_different_dbs;
