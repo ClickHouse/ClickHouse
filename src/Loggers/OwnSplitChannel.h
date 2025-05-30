@@ -5,6 +5,7 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <vector>
 
 #include <boost/noncopyable.hpp>
 
@@ -26,6 +27,10 @@ using TextLogQueue = SystemLogQueue<TextLogElement>;
 class OwnSplitChannelBase : public Poco::Channel
 {
 public:
+    using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
+    /// Handler and its pointer cast to extended interface
+    using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
+
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override = 0;
 
@@ -58,20 +63,21 @@ public:
     void setLevel(const std::string & name, int level) override;
 
     void logSplit(
-        const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & thread_name);
+        const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name);
 
-    using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
-    /// Handler and its pointer cast to extended interface
-    using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::map<std::string, ExtendedChannelPtrPair> channels;
-
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = -1;
 };
 
-/// Same as OwnSplitChannel but it uses a separate thread for logging.
-/// Based on AsyncChannel
-class OwnAsyncSplitChannel : public OwnSplitChannelBase, public Poco::Runnable, public boost::noncopyable
+struct OwnRunnableForChannel;
+struct OwnRunnableForTextLog;
+
+/// Same as OwnSplitChannel but it uses separate threads for logging.
+/// Note that it uses a separate thread per each different channel (including one for text_log) instead of using a common thread pool
+/// to ensure the order is kept
+/// Currently logging to the internalTextLogsQueue (TCP queue for --send-logs-level) is done synchronously when log is called
+class OwnAsyncSplitChannel : public OwnSplitChannelBase, public boost::noncopyable
 {
 public:
     OwnAsyncSplitChannel();
@@ -81,7 +87,8 @@ public:
     void close() override;
 
     void log(const Poco::Message & msg) override;
-    void run() override;
+    void runChannel(size_t i);
+    void runTextLog();
 
     void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) override;
     void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name) override;
@@ -92,8 +99,49 @@ public:
     void flushTextLogs() const;
 
 private:
-    OwnSplitChannel sync_channel;
-    Poco::Thread thread;
-    Poco::NotificationQueue queue;
+    /// Each channel has a different queue, and each one a single thread handling it
+    std::map<std::string, ExtendedChannelPtrPair> name_to_channels;
+    std::vector<ExtendedChannelPtrPair> channels;
+    std::vector<std::unique_ptr<Poco::NotificationQueue>> queues;
+    std::vector<std::unique_ptr<Poco::Thread>> threads;
+    std::vector<std::unique_ptr<OwnRunnableForChannel>> runnables;
+
+    /// system.text_log does not have a channel, but it's also async
+    Poco::NotificationQueue text_log_queue;
+    std::unique_ptr<Poco::Thread> text_log_thread;
+    std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
+    std::weak_ptr<DB::TextLogQueue> text_log;
+    std::atomic<int> text_log_max_priority = 0;
+};
+
+
+struct OwnRunnableForChannel : public Poco::Runnable
+{
+    OwnRunnableForChannel(OwnAsyncSplitChannel & split_, size_t i_)
+        : split(split_)
+        , i(i_)
+    {
+    }
+    ~OwnRunnableForChannel() override { }
+
+    void run() override { split.runChannel(i); }
+
+private:
+    OwnAsyncSplitChannel & split;
+    size_t i;
+};
+
+struct OwnRunnableForTextLog : public Poco::Runnable
+{
+    explicit OwnRunnableForTextLog(OwnAsyncSplitChannel & split_)
+        : split(split_)
+    {
+    }
+    ~OwnRunnableForTextLog() override { }
+
+    void run() override { split.runTextLog(); }
+
+private:
+    OwnAsyncSplitChannel & split;
 };
 };

@@ -42,7 +42,7 @@ void OwnSplitChannel::log(const Poco::Message & msg)
 namespace
 {
 
-void pushExtendedMessageToInternalTextLogQueue(
+void pushExtendedMessageToInternalTCPTextLogQueue(
     const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue)
 {
     const Poco::Message & msg = *msg_ext.base;
@@ -61,10 +61,53 @@ void pushExtendedMessageToInternalTextLogQueue(
     [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
 }
 
+void logToSystemTextLogQueue(
+    const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked,
+    const ExtendedLogMessage & msg_ext,
+    const std::string & msg_thread_name)
+{
+    const Poco::Message & msg = *msg_ext.base;
+    TextLogElement elem;
+
+    elem.event_time = msg_ext.time_seconds;
+    elem.event_time_microseconds = msg_ext.time_in_microseconds;
+
+    elem.thread_name = msg_thread_name;
+    elem.thread_id = msg_ext.thread_id;
+
+    elem.query_id = msg_ext.query_id;
+
+    elem.message = msg.getText();
+    elem.logger_name = msg.getSource();
+    elem.level = msg.getPriority();
+    elem.source_file = msg.getSourceFile();
+
+    elem.source_line = msg.getSourceLine();
+    elem.message_format_string = msg.getFormatString();
+
+#define SET_VALUE_IF_EXISTS(INDEX) \
+    if ((INDEX) <= msg.getFormatStringArgs().size()) \
+        (elem.value##INDEX) = msg.getFormatStringArgs()[(INDEX) - 1]
+
+    SET_VALUE_IF_EXISTS(1);
+    SET_VALUE_IF_EXISTS(2);
+    SET_VALUE_IF_EXISTS(3);
+    SET_VALUE_IF_EXISTS(4);
+    SET_VALUE_IF_EXISTS(5);
+    SET_VALUE_IF_EXISTS(6);
+    SET_VALUE_IF_EXISTS(7);
+    SET_VALUE_IF_EXISTS(8);
+    SET_VALUE_IF_EXISTS(9);
+    SET_VALUE_IF_EXISTS(10);
+
+#undef SET_VALUE_IF_EXISTS
+
+    text_log_locked->push(std::move(elem));
+}
 }
 
 void OwnSplitChannel::logSplit(
-    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & thread_name)
+    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name)
 {
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     const Poco::Message & msg = *msg_ext.base;
@@ -82,7 +125,7 @@ void OwnSplitChannel::logSplit(
 
         /// Log to "TCP queue" if message is not too noisy
         if (logs_queue && logs_queue->isNeeded(msg.getPriority(), msg.getSource()))
-            pushExtendedMessageToInternalTextLogQueue(msg_ext, logs_queue);
+            pushExtendedMessageToInternalTCPTextLogQueue(msg_ext, logs_queue);
 
         auto text_log_locked = text_log.lock();
         if (!text_log_locked)
@@ -92,40 +135,7 @@ void OwnSplitChannel::logSplit(
         auto text_log_max_priority_loaded = text_log_max_priority.load(std::memory_order_relaxed);
         if (text_log_max_priority_loaded && msg.getPriority() <= text_log_max_priority_loaded)
         {
-            TextLogElement elem;
-
-            elem.event_time = msg_ext.time_seconds;
-            elem.event_time_microseconds = msg_ext.time_in_microseconds;
-
-            elem.thread_name = thread_name;
-            elem.thread_id = msg_ext.thread_id;
-
-            elem.query_id = msg_ext.query_id;
-
-            elem.message = msg.getText();
-            elem.logger_name = msg.getSource();
-            elem.level = msg.getPriority();
-            elem.source_file = msg.getSourceFile();
-
-            elem.source_line = msg.getSourceLine();
-            elem.message_format_string = msg.getFormatString();
-
-#define SET_VALUE_IF_EXISTS(INDEX) if ((INDEX) <= msg.getFormatStringArgs().size()) (elem.value##INDEX) = msg.getFormatStringArgs()[(INDEX) - 1]
-
-            SET_VALUE_IF_EXISTS(1);
-            SET_VALUE_IF_EXISTS(2);
-            SET_VALUE_IF_EXISTS(3);
-            SET_VALUE_IF_EXISTS(4);
-            SET_VALUE_IF_EXISTS(5);
-            SET_VALUE_IF_EXISTS(6);
-            SET_VALUE_IF_EXISTS(7);
-            SET_VALUE_IF_EXISTS(8);
-            SET_VALUE_IF_EXISTS(9);
-            SET_VALUE_IF_EXISTS(10);
-
-#undef SET_VALUE_IF_EXISTS
-
-            text_log_locked->push(std::move(elem));
+            logToSystemTextLogQueue(text_log_locked, msg_ext, msg_thread_name);
         }
     }
     /// It is better to catch the errors here in order to avoid
@@ -185,9 +195,7 @@ void OwnSplitChannel::setChannelProperty(const std::string& channel_name, const 
 }
 
 OwnAsyncSplitChannel::OwnAsyncSplitChannel()
-    : thread("AsyncLogger")
 {
-    OwnAsyncSplitChannel::open();
 }
 
 OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
@@ -197,23 +205,40 @@ OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
 
 void OwnAsyncSplitChannel::open()
 {
-    if (!thread.isRunning())
-        thread.start(*this);
+    if (text_log_max_priority && text_log_thread)
+        text_log_thread->start(*text_log_runnable);
+
+    for (size_t i = 0; i < channels.size(); i++)
+        threads[i]->start(*runnables[i]);
 }
 
 void OwnAsyncSplitChannel::close()
 {
     try
     {
-        if (thread.isRunning())
+        if (text_log_thread && text_log_thread->isRunning())
         {
-            while (!queue.empty())
+            while (!text_log_queue.empty())
                 Poco::Thread::sleep(100);
 
             do
             {
-                queue.wakeUpAll();
-            } while (!thread.tryJoin(100));
+                text_log_queue.wakeUpAll();
+            } while (!text_log_thread->tryJoin(100));
+        }
+
+        for (size_t i = 0; i < channels.size(); i++)
+        {
+            if (threads[i]->isRunning())
+            {
+                while (!queues[i]->empty())
+                    Poco::Thread::sleep(100);
+
+                do
+                {
+                    queues[i]->wakeUpAll();
+                } while (!threads[i]->tryJoin(100));
+            }
         }
     }
     catch (...)
@@ -231,7 +256,7 @@ public:
     explicit OwnMessageNotification(const Message & msg_)
         : msg(msg_)
         , msg_ext(ExtendedLogMessage::getFrom(msg))
-        , thread_name(getThreadName())
+        , msg_thread_name(getThreadName())
     {
         if (const auto & masker = SensitiveDataMasker::getInstance())
         {
@@ -247,7 +272,7 @@ public:
 
     Message msg; /// Need to keep a copy until we finish logging
     ExtendedLogMessage msg_ext;
-    std::string thread_name;
+    std::string msg_thread_name;
 };
 
 void OwnAsyncSplitChannel::log(const Poco::Message & msg)
@@ -264,16 +289,20 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
         {
             /// If we need to push to the TCP queue, due it now since it's expected to receive all messages synchronously
             notification = new OwnMessageNotification(msg);
-            pushExtendedMessageToInternalTextLogQueue(notification->msg_ext, logs_queue);
+            pushExtendedMessageToInternalTCPTextLogQueue(notification->msg_ext, logs_queue);
         }
 
-        if (sync_channel.channels.empty())
+        if (channels.empty() && !text_log_max_priority)
             return;
 
         if (!notification)
             notification = new OwnMessageNotification(msg);
 
-        queue.enqueueNotification(notification);
+        if (msg.getPriority() < text_log_max_priority)
+            text_log_queue.enqueueNotification(notification);
+
+        for (auto & queue : queues)
+            queue->enqueueNotification(notification);
     }
     catch (...)
     {
@@ -291,48 +320,88 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
 
 void OwnAsyncSplitChannel::flushTextLogs() const
 {
-    auto text_log_locked = sync_channel.text_log.lock();
+    auto text_log_locked = text_log.lock();
     if (!text_log_locked)
         return;
 
     /// TODO: Improve this to avoid blocking infinitely
     /// Block flushing thread, get the queue and replace it with an empty one, flush the old queue completely, enable flushing thread
-    while (!queue.empty())
+    while (!text_log_queue.empty())
         Poco::Thread::sleep(10);
 }
 
-void OwnAsyncSplitChannel::run()
+void OwnAsyncSplitChannel::runChannel(size_t i)
 {
-    Poco::AutoPtr<Poco::Notification> notification = queue.waitDequeueNotification();
+    Poco::AutoPtr<Poco::Notification> notification = queues[i]->waitDequeueNotification();
     while (notification)
     {
         const OwnMessageNotification * own_notification = dynamic_cast<const OwnMessageNotification *>(notification.get());
         {
-            /// Empty logs_queue since it was already logged synchronously
             if (own_notification)
-                sync_channel.logSplit(own_notification->msg_ext, nullptr, own_notification->thread_name);
+            {
+                if (channels[i].second)
+                    channels[i].second->logExtended(own_notification->msg_ext); // extended child
+                else
+                    channels[i].first->log(*own_notification->msg_ext.base); // ordinary child
+            }
         }
-        notification = queue.waitDequeueNotification();
+        notification = queues[i]->waitDequeueNotification();
+    }
+}
+
+void OwnAsyncSplitChannel::runTextLog()
+{
+    Poco::AutoPtr<Poco::Notification> notification = text_log_queue.waitDequeueNotification();
+    while (notification)
+    {
+        const OwnMessageNotification * own_notification = dynamic_cast<const OwnMessageNotification *>(notification.get());
+        {
+            if (own_notification)
+            {
+                auto text_log_locked = text_log.lock();
+                if (!text_log_locked)
+                    return;
+                logToSystemTextLogQueue(text_log_locked, own_notification->msg_ext, own_notification->msg_thread_name);
+            }
+        }
+        notification = text_log_queue.waitDequeueNotification();
     }
 }
 
 void OwnAsyncSplitChannel::setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value)
 {
-    sync_channel.setChannelProperty(channel_name, name, value);
+    if (auto it = name_to_channels.find(channel_name); it != name_to_channels.end())
+    {
+        if (auto * channel = dynamic_cast<DB::OwnFormattingChannel *>(it->second.first.get()))
+            channel->setProperty(name, value);
+    }
 }
 
 void OwnAsyncSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name)
 {
-    sync_channel.addChannel(channel, name);
+    auto extended = ExtendedChannelPtrPair(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get()));
+    name_to_channels.emplace(name, extended);
+    channels.emplace_back(extended);
+    queues.emplace_back(std::make_unique<Poco::NotificationQueue>());
+    threads.emplace_back(std::make_unique<Poco::Thread>("AsyncLog"));
+    const size_t i = threads.size() - 1;
+    runnables.emplace_back(new OwnRunnableForChannel(*this, i));
 }
 
 void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority)
 {
-    sync_channel.addTextLog(log_queue, max_priority);
+    text_log = log_queue;
+    text_log_max_priority.store(max_priority, std::memory_order_relaxed);
+    text_log_thread = std::make_unique<Poco::Thread>("AsyncTextLog");
+    text_log_runnable = std::make_unique<OwnRunnableForTextLog>(*this);
 }
 
 void OwnAsyncSplitChannel::setLevel(const std::string & name, int level)
 {
-    sync_channel.setLevel(name, level);
+    if (auto it = name_to_channels.find(name); it != name_to_channels.end())
+    {
+        if (auto * channel = dynamic_cast<DB::OwnFormattingChannel *>(it->second.first.get()))
+            channel->setLevel(level);
+    }
 }
 }

@@ -825,7 +825,7 @@ The location and format of log messages.
 | `formatting`        | Log format for console output. Currently, only `json` is supported                                                                                                                  |
 | `use_syslog`        | Also forward log output to syslog.                                                                                                                                                  |
 | `syslog_level`      | Log level for logging to syslog.                                                                                                                                                    |
-| `async`             | When `true` (default) logging will happen asynchronously. Otherwise it will log inside the thread calling LOG                                                                       |
+| `async`             | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG                            |
 
 **Log format specifiers**
 
