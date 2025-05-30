@@ -10,7 +10,6 @@ namespace ProfileEvents
     extern const Event ConcurrencyControlWaitMicroseconds;
     extern const Event ConcurrencyControlPreemptedMicroseconds;
     extern const Event ConcurrencyControlSlotsAcquired;
-    extern const Event ConcurrencyControlSlotsAcquiredNonCompeting;
 }
 
 namespace CurrentMetrics
@@ -31,7 +30,6 @@ namespace ErrorCodes
 CPULeaseAllocation::Lease::Lease(CPULeaseAllocationPtr && lease_, size_t thread_num_)
     : parent(std::move(lease_))
     , thread_num(thread_num_)
-    , acquired_increment(CurrentMetrics::ConcurrencyControlAcquired, 0)
 {}
 
 CPULeaseAllocation::Lease::~Lease()
@@ -42,7 +40,6 @@ CPULeaseAllocation::Lease::~Lease()
 
 void CPULeaseAllocation::Lease::startConsumption()
 {
-    acquired_increment.changeTo(1);
     last_report_ns = clock_gettime_ns(CLOCK_THREAD_CPUTIME_ID);
 }
 
@@ -63,6 +60,8 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
     , requests(max_threads) // NOTE: it should not be reallocated after initialization because we use raw pointers and iterators
     , head(requests.begin())
     , tail(head)
+    , acquired_increment(CurrentMetrics::ConcurrencyControlAcquired, 0)
+    , scheduled_increment(CurrentMetrics::ConcurrencyControlScheduled, 0)
 {
     chassert(max_threads > 0);
     for (Request & request : requests)
@@ -103,13 +102,8 @@ CPULeaseAllocation::~CPULeaseAllocation()
     std::unique_lock lock{mutex};
     if (exception)
         throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "CPU Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
-
     if (granted > 0)
-    {
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
-        --granted;
-        return AcquiredSlotPtr(new Lease(std::static_pointer_cast<CPULeaseAllocation>(shared_from_this()), upscale()));
-    }
+        return acquireImpl(lock);
     return {};
 }
 
@@ -118,7 +112,13 @@ CPULeaseAllocation::~CPULeaseAllocation()
     std::unique_lock lock{mutex};
     if (threads.leased.count() == max_threads)
         return {}; // Max number of threads already acquired
-    ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
+    return acquireImpl(lock);
+}
+
+AcquiredSlotPtr CPULeaseAllocation::acquireImpl(std::unique_lock<std::mutex> &)
+{
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired);
+    acquired_increment.add();
     --granted; // Might became negative, but it is ok because we are going allocate a slot later
     return AcquiredSlotPtr(new Lease(std::static_pointer_cast<CPULeaseAllocation>(shared_from_this()), upscale()));
 }
@@ -198,7 +198,7 @@ void CPULeaseAllocation::failed(const std::exception_ptr & ptr)
     // This code runs in the scheduler thread, so we have to keep it fast and simple
     std::unique_lock lock{mutex};
     enqueued = false;
-    scheduled_slot_increment.reset();
+    scheduled_increment.sub();
     wait_timer.reset();
     exception = ptr;
 
@@ -216,7 +216,7 @@ void CPULeaseAllocation::grant()
     // This code runs in the scheduler thread, so we have to keep it fast and simple
     std::unique_lock lock{mutex};
     enqueued = false;
-    scheduled_slot_increment.reset();
+    scheduled_increment.sub();
     wait_timer.reset();
     grantImpl(lock);
     // Notify destructor that we are detached from the scheduler
@@ -267,7 +267,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
 
             auto preemption_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds);
             CurrentMetrics::Increment preempted_increment(CurrentMetrics::ConcurrencyControlPreempted);
-            lease.acquired_increment.changeTo(0);
+            acquired_increment.sub(1);
 
             using Timeout = std::chrono::steady_clock::duration;
             auto timeout = thread_num == 0
@@ -288,7 +288,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
             if (exception) // Stop the query
                 throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "CPU Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
 
-            lease.acquired_increment.changeTo(1);
+            acquired_increment.add(1);
             // There is no need in updating lease.last_report_ns because it counts only CPU time, not waiting time
         }
     }
@@ -333,7 +333,7 @@ void CPULeaseAllocation::schedule(std::unique_lock<std::mutex> & lock)
         // Instead we do budgeting for every query independently for better fairness
         queue->enqueueRequest(&*head);
         enqueued = true;
-        scheduled_slot_increment.emplace(CurrentMetrics::ConcurrencyControlScheduled);
+        scheduled_increment.add();
         wait_timer.emplace(CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
     }
     else // noncompeting slot - provide immediately for free

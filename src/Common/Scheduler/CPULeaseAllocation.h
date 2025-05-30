@@ -42,7 +42,6 @@ private:
         CPULeaseAllocationPtr parent; // Hold allocation to enforce destruction order
         const size_t thread_num; // Thread number that acquired the slot
         UInt64 last_report_ns = 0; // Last time when the slot was renewed or started
-        CurrentMetrics::Increment acquired_increment;
     };
 
     /// Represents a resource request for a cpu slot.
@@ -110,6 +109,9 @@ public:
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
 private:
+    /// Helper to make a lease
+    AcquiredSlotPtr acquireImpl(std::unique_lock<std::mutex> & lock);
+
     /// Registers an additional leased thread and returns its thread_num
     size_t upscale();
 
@@ -203,7 +205,8 @@ private:
     std::condition_variable shutdown_cv; /// Used to notify waiting destructor
 
     /// Introspection
-    std::optional<CurrentMetrics::Increment> scheduled_slot_increment;
+    CurrentMetrics::Increment acquired_increment;
+    CurrentMetrics::Increment scheduled_increment;
     std::optional<ProfileEvents::Timer> wait_timer;
 };
 
