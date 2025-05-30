@@ -8,14 +8,14 @@ title: 'timeSeriesResampleToGridWithStaleness'
 Aggregate function that takes time series data as pairs of timestamps and values and re-samples this data to a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the most recent (withing the specified time window) sample is chosen.
 
 Parameters:
-`start timestamp` - specifies start of the grid
-`end timestamp` - specifies end of the grid
-`grid step` - specifies step of the grid in seconds
-`staleness window` - specified the maximum "staleness" of the most recent sample in seconds
+- `start timestamp` - specifies start of the grid
+- `end timestamp` - specifies end of the grid
+- `grid step` - specifies step of the grid in seconds
+- `staleness window` - specified the maximum "staleness" of the most recent sample in seconds
 
 Arguments:
-`timestamp` - timestamp of the sample
-`value` - value of the time series corresponding to the `timestamp`
+- `timestamp` - timestamp of the sample
+- `value` - value of the time series corresponding to the `timestamp`
 
 Return value:
 time series values re-sampled to the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there the is no sample for a particular grid point.
@@ -43,8 +43,9 @@ FROM
 );
 ```
 
-Return value:
-```
+Response:
+
+```response
    ┌─timeSeriesResa⋯stamp, value)─┐
 1. │ [NULL,NULL,1,3,4,4,NULL,5,8] │
    └──────────────────────────────┘
@@ -63,4 +64,6 @@ WITH
 SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values);
 ```
 
-NOTE: the function is experimental, enabled it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+:::note
+This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+:::
