@@ -31,6 +31,7 @@ public:
         size_t buckets_num_,
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
+        bool path_with_hive_partitioning,
         LoggerPtr log_);
 
     struct BucketHolder;
@@ -56,16 +57,19 @@ public:
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
+        bool path_with_hive_partitioning,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(
         Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client) override;
+        const zkutil::ZooKeeperPtr & zk_client);
 
 private:
     const size_t buckets_num;
     const std::string zk_path;
     const BucketInfoPtr bucket_info;
+
+    bool path_with_hive_partitioning = false;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 
@@ -82,11 +86,20 @@ private:
         const std::string & processed_node_path_,
         const zkutil::ZooKeeperPtr & zk_client);
 
+    static bool getMaxProcessedFilesByHive(
+        std::unordered_map<std::string, std::string> & max_processed_files,
+        const std::string & processed_node_path_,
+        const zkutil::ZooKeeperPtr & zk_client);
+
     void prepareProcessedRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client,
         const std::string & processed_node_path_,
         bool ignore_if_exists);
+
+    void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & file_map) override;
+
+    static std::string getHivePart(const std::string & file_path);
 };
 
 struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::noncopyable

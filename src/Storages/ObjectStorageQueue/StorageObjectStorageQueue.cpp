@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 namespace FailPoints
@@ -240,13 +241,22 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_, configuration->getPath()));
     setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
+    bool path_with_hive_partitioning = false;
+
+    if (getContext()->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        auto key_values = VirtualColumnUtils::parseHivePartitioningKeysAndValues(configuration->getPath());
+        if (!key_values.empty())
+            path_with_hive_partitioning = true;
+    }
+
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
+        zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, path_with_hive_partitioning, log);
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
@@ -256,7 +266,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
-        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
+        path_with_hive_partitioning);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)

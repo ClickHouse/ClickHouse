@@ -120,15 +120,6 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     }
 }
 
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedAtStartRequests(
-    Coordination::Requests & requests,
-    const zkutil::ZooKeeperPtr &)
-{
-    requests.push_back(
-        zkutil::makeCreateRequest(
-            processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
-}
-
 void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
 {
     if (processing_id_version.has_value())

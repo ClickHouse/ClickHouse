@@ -109,6 +109,7 @@ def create_table(
     expect_error=False,
     database_name="default",
     no_settings=False,
+    hive_partitioning="",
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -126,10 +127,10 @@ def create_table(
 
     engine_def = None
     if engine_name == "S3Queue":
-        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
+        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/{hive_partitioning}"
         engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
     else:
-        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
+        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/{hive_partitioning}', 'CSV')"
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     if no_settings:
@@ -158,6 +159,7 @@ def create_mv(
     create_dst_table_first=True,
     format="column1 UInt32, column2 UInt32, column3 UInt32",
     extra_dst_format=None,
+    virtual_columns=None, #  "date Date, city String"
 ):
     if mv_name is None:
         mv_name = f"{src_table_name}_mv"
@@ -165,6 +167,15 @@ def create_mv(
         extra_dst_format = f", {extra_dst_format}"
     else:
         extra_dst_format = ""
+
+    if virtual_columns is not None:
+        columns = virtual_columns.split(",")
+        virtual_columns = ""
+        for column in columns:
+            extra_dst_format += f", {column}"
+            virtual_columns += f", {column.split()[0]}"
+    else:
+        virtual_columns = ""
 
     node.query(f"""
         DROP TABLE IF EXISTS {dst_table_name};
@@ -177,14 +188,14 @@ def create_mv(
             CREATE TABLE {dst_table_name} ({format}{extra_dst_format}, _path String)
             ENGINE = MergeTree()
             ORDER BY column1;
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *{virtual_columns}, _path FROM {src_table_name};
             """
         )
     else:
         node.query(
             f"""
             SET allow_materialized_view_with_bad_select=1;
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *{virtual_columns}, _path FROM {src_table_name};
             CREATE TABLE {dst_table_name} ({format}{extra_dst_format}, _path String)
             ENGINE = MergeTree()
             ORDER BY column1;

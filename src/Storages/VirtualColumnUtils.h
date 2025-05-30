@@ -114,6 +114,10 @@ using HivePartitioningKeysAndValues = absl::flat_hash_map<std::string_view, std:
 
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path);
 
+/// Find hive partitioning part inside path
+/// /a/b/c/d=e/f=g/h.i => d=e/f=g
+std::string_view findHivePartitioningInPath(const String & path);
+
 }
 
 }
