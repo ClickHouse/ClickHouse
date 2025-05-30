@@ -1,9 +1,13 @@
+#include <boost/iostreams/get.hpp>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -27,9 +31,12 @@
 #include <Common/parseGlobs.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 
 #include <Poco/Logger.h>
+
+#include "AggregateFunctions/AggregateFunctionGroupBitmapData.h"
 
 namespace DB
 {
@@ -45,6 +52,8 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -67,12 +76,15 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         {}, // predicate
         {},
         {}, // virtual_columns
+        {}, /* hive_columns */
         nullptr, // read_keys
         {} // file_progress_callback
     );
 
-    if (!configuration->isArchive() && !configuration->isPathWithGlobs() && !local_distributed_processing)
-        return configuration->getPath();
+    const auto path = configuration->getRawPath();
+
+    if (!configuration->isArchive() && !path.withGlobs() && !local_distributed_processing)
+        return path.path;
 
     if (auto file = file_iterator->next(0))
         return file->getPath();
@@ -84,7 +96,7 @@ StorageObjectStorage::StorageObjectStorage(
     ObjectStoragePtr object_storage_,
     ContextPtr context,
     const StorageID & table_id_,
-    const ColumnsDescription & columns_,
+    const ColumnsDescription & columns_in_table_or_function_definition,
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
@@ -97,11 +109,10 @@ StorageObjectStorage::StorageObjectStorage(
     , configuration(configuration_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
-    , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
+    bool do_lazy_init = lazy_init && !columns_in_table_or_function_definition.empty() && !configuration->format.empty();
     update_configuration_on_read = !is_table_function_ || do_lazy_init;
     bool failed_init = false;
     auto do_init = [&]()
@@ -112,12 +123,13 @@ StorageObjectStorage::StorageObjectStorage(
                 configuration->updateAndGetCurrentSchema(object_storage, context);
             else
                 configuration->update(object_storage, context);
+            configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
         }
         catch (...)
         {
             // If we don't have format or schema yet, we can't ignore failed configuration update,
             // because relevant configuration is crucial for format and schema inference
-            if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
+            if (mode <= LoadingStrictnessLevel::CREATE || columns_in_table_or_function_definition.empty() || configuration->format == "auto")
             {
                 throw;
             }
@@ -133,21 +145,17 @@ StorageObjectStorage::StorageObjectStorage(
         do_init();
 
     std::string sample_path;
-    ColumnsDescription columns{columns_};
+    ColumnsDescription columns{columns_in_table_or_function_definition};
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     configuration->check(context);
-
-    StorageInMemoryMetadata metadata;
-    metadata.setColumns(columns);
-    metadata.setConstraints(constraints_);
-    metadata.setComment(comment);
 
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
     if (!failed_init
         && sample_path.empty()
         && context->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->withPartitionWildcard())
+        && !configuration->getRawPath().withPartitionWildcard()
+        && !configuration->partition_strategy)
     {
         if (do_lazy_init)
             do_init();
@@ -163,7 +171,66 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
+    if (configuration->partition_strategy && configuration->partition_strategy_name == "hive")
+    {
+        hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+    }
+    else if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, format_settings, context);
+
+        if (columns_in_table_or_function_definition.empty())
+        {
+            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
+            {
+                if (!columns.has(name))
+                {
+                    columns.add({name, type});
+                }
+            }
+        }
+    }
+
+    if (configuration->partition_columns_in_data_file)
+    {
+        file_columns = columns;
+    }
+    else
+    {
+        std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
+
+        for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
+        {
+            hive_partition_columns_to_read_from_file_path_set.insert(name);
+        }
+
+        for (const auto & [name, type] : columns.getAllPhysical())
+        {
+            if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
+            {
+                file_columns.add({name, type});
+            }
+        }
+    }
+
+    // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
+    if (!columns.empty())
+    {
+        if (file_columns.empty())
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "File without physical columns is not supported. Give it a try with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
+                sample_path);
+        }
+    }
+
+    // todo arthur perhaps set partition key description? What if we don't have partition by?
+    StorageInMemoryMetadata metadata;
+    metadata.setColumns(columns);
+    metadata.setConstraints(constraints_);
+    metadata.setComment(comment);
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
 }
 
@@ -191,6 +258,19 @@ void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
+}
+
+void StorageObjectStorage::Configuration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
+{
+
+    partition_strategy = PartitionStrategyFactory::get(
+        partition_by,
+        columns.getOrdinary(),
+        context,
+        format,
+        getPath().withGlobs(),
+        partition_strategy_name,
+        partition_columns_in_data_file);
 }
 
 bool StorageObjectStorage::hasExternalDynamicMetadata() const
@@ -332,7 +412,7 @@ private:
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
             configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
-            context, predicate, filter_actions_dag, virtual_columns, nullptr, context->getFileProgressCallback());
+            context, predicate, filter_actions_dag, virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback());
     }
 };
 }
@@ -342,9 +422,17 @@ ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
-    ContextPtr local_context)
+    ContextPtr local_context,
+    const NamesAndTypesList & file_columns_,
+    const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
+    return DB::prepareReadingFromFormat(
+        requested_columns,
+        storage_snapshot,
+        local_context,
+        supports_subset_of_columns,
+        file_columns_,
+        hive_partition_columns_to_read_from_file_path_);
 }
 
 std::optional<ColumnsDescription> StorageObjectStorage::Configuration::tryGetTableStructureFromMetadata() const
@@ -367,15 +455,17 @@ void StorageObjectStorage::read(
     if (update_configuration_on_read)
         configuration->update(object_storage, local_context);
 
-    if (partition_by && configuration->withPartitionWildcard())
+    if (configuration->partition_strategy && configuration->partition_strategy_name != "hive")
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Reading from a partitioned {} storage is not implemented yet",
                         getName());
     }
 
-    const auto read_from_format_info = configuration->prepareReadingFromFormat(
-        object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
+    auto all_file_columns = file_columns.getAll();
+
+    auto read_from_format_info = configuration->prepareReadingFromFormat(
+        object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context, all_file_columns, hive_partition_columns_to_read_from_file_path);
 
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
@@ -385,6 +475,13 @@ void StorageObjectStorage::read(
         modified_format_settings.emplace(getFormatSettings(local_context));
 
     configuration->modifyFormatSettings(modified_format_settings.value());
+
+    // auto configuration_clone = configuration->clone();
+    //
+    // if (configuration->partition_strategy)
+    // {
+    //     configuration_clone->setPath(configuration->partition_strategy->getReadingPath(configuration->getPath()));
+    // }
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
@@ -406,7 +503,7 @@ void StorageObjectStorage::read(
 }
 
 SinkToStoragePtr StorageObjectStorage::write(
-    const ASTPtr & query,
+    const ASTPtr &,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context,
     bool /* async_insert */)
@@ -415,48 +512,39 @@ SinkToStoragePtr StorageObjectStorage::write(
     const auto sample_block = metadata_snapshot->getSampleBlock();
     const auto & settings = configuration->getQuerySettings(local_context);
 
+    const auto path = configuration->getRawPath();
+
     if (configuration->isArchive())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Write into archive is not supported",
-                        configuration->getPath());
+                        path.path);
     }
 
-    if (configuration->withGlobsIgnorePartitionWildcard())
+    if (path.withGlobsIgnorePartitionWildcard())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "Path '{}' contains globs, so the table is in readonly mode",
-                        configuration->getPath());
+                        "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
+                        configuration->getRawPath().path);
     }
 
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    if (configuration->withPartitionWildcard())
+    if (configuration->partition_strategy)
     {
-        ASTPtr partition_by_ast = partition_by;
-        if (auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
-        {
-            if (insert_query->partition_by)
-                partition_by_ast = insert_query->partition_by;
-        }
-
-        if (partition_by_ast)
-        {
-            return std::make_shared<PartitionedStorageObjectStorageSink>(
-                object_storage, configuration, format_settings, sample_block, local_context, partition_by_ast);
-        }
+        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
     }
 
     auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front(), paths.size()))
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
     {
-        paths.push_back(*new_key);
+        paths.push_back({*new_key});
     }
     configuration->setPaths(paths);
 
     return std::make_shared<StorageObjectStorageSink>(
-        paths.back(),
+        paths.back().path,
         object_storage,
         configuration,
         format_settings,
@@ -470,24 +558,28 @@ void StorageObjectStorage::truncate(
     ContextPtr /* context */,
     TableExclusiveLockHolder & /* table_holder */)
 {
+    // this method assumes all data was written using clickhouse and clickhouse was not restarted if I am reading this correctly.
+    // this is bad imo.
+    const auto path = configuration->getRawPath();
+
     if (configuration->isArchive())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Table cannot be truncated",
-                        configuration->getPath());
+                        path.path);
     }
 
-    if (configuration->withGlobs())
+    if (path.withGlobs())
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,
             "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
-            getName(), configuration->getPath());
+            getName(), path.path);
     }
 
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
-        objects.emplace_back(key);
+        objects.emplace_back(key.path);
 
     object_storage->removeObjectsIfExist(objects);
 }
@@ -508,6 +600,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         {}/* predicate */,
         {},
         {}/* virtual_columns */,
+        {}, /* hive_columns */
         &read_keys);
 
     return std::make_unique<ReadBufferIterator>(
@@ -619,6 +712,12 @@ void StorageObjectStorage::Configuration::initialize(
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
 
+    const auto raw_path = configuration_to_initialize.getRawPath();
+
+    if (configuration_to_initialize.isNamespaceWithGlobs())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Expression can not have wildcards inside {} name", configuration_to_initialize.getNamespaceType());
+
     if (configuration_to_initialize.format == "auto")
     {
         if (configuration_to_initialize.isDataLakeConfiguration())
@@ -629,7 +728,7 @@ void StorageObjectStorage::Configuration::initialize(
         {
             configuration_to_initialize.format
                 = FormatFactory::instance()
-                      .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : configuration_to_initialize.getPath())
+                      .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : raw_path.path)
                       .value_or("auto");
         }
     }
@@ -644,33 +743,70 @@ void StorageObjectStorage::Configuration::check(ContextPtr) const
     FormatFactory::instance().checkFormatName(format);
 }
 
-bool StorageObjectStorage::Configuration::withPartitionWildcard() const
+StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getRawPath() const
 {
-    static const String PARTITION_ID_WILDCARD = "{_partition_id}";
-    return getPath().find(PARTITION_ID_WILDCARD) != String::npos
-        || getNamespace().find(PARTITION_ID_WILDCARD) != String::npos;
+    return getPath();
 }
 
-bool StorageObjectStorage::Configuration::withGlobsIgnorePartitionWildcard() const
+StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getReadingPath() const
+{
+    auto raw_path = getRawPath();
+
+    if (!partition_strategy)
+    {
+        return raw_path;
+    }
+
+    return Path {partition_strategy->getReadingPath(raw_path.path)};
+}
+
+StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getWritingPath(const std::string & partition_id) const
+{
+    auto raw_path = getRawPath();
+
+    if (!partition_strategy)
+    {
+        return raw_path;
+    }
+
+    return Path {partition_strategy->getWritingPath(raw_path.path, partition_id)};
+}
+
+bool StorageObjectStorage::Configuration::Path::withPartitionWildcard() const
+{
+    static const String PARTITION_ID_WILDCARD = "{_partition_id}";
+    return path.find(PARTITION_ID_WILDCARD) != String::npos;
+}
+
+bool StorageObjectStorage::Configuration::Path::withGlobsIgnorePartitionWildcard() const
 {
     if (!withPartitionWildcard())
         return withGlobs();
-    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
+    return PartitionedSink::replaceWildcards(path, "").find_first_of("*?{") != std::string::npos;
 }
 
-bool StorageObjectStorage::Configuration::isPathWithGlobs() const
+bool StorageObjectStorage::Configuration::Path::withGlobs() const
 {
-    return getPath().find_first_of("*?{") != std::string::npos;
+    return path.find_first_of("*?{") != std::string::npos;
+}
+
+std::string StorageObjectStorage::Configuration::Path::getWithoutGlobs() const
+{
+    if (allow_partial_prefix)
+    {
+        return path.substr(0, path.find_first_of("*?{"));
+    }
+
+    auto first_glob_pos = path.find_first_of("*?{");
+    auto end_of_path_without_globs = path.substr(0, first_glob_pos).rfind('/');
+    if (end_of_path_without_globs == std::string::npos || end_of_path_without_globs == 0)
+        return "/";
+    return path.substr(0, end_of_path_without_globs);
 }
 
 bool StorageObjectStorage::Configuration::isNamespaceWithGlobs() const
 {
     return getNamespace().find_first_of("*?{") != std::string::npos;
-}
-
-std::string StorageObjectStorage::Configuration::getPathWithoutGlobs() const
-{
-    return getPath().substr(0, getPath().find_first_of("*?{"));
 }
 
 bool StorageObjectStorage::Configuration::isPathInArchiveWithGlobs() const
@@ -680,7 +816,7 @@ bool StorageObjectStorage::Configuration::isPathInArchiveWithGlobs() const
 
 std::string StorageObjectStorage::Configuration::getPathInArchive() const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getPath());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getRawPath().path);
 }
 
 void StorageObjectStorage::Configuration::assertInitialized() const

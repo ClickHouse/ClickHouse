@@ -18,8 +18,17 @@ ReadFromFormatInfo prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    bool supports_subset_of_columns)
+    bool supports_subset_of_columns,
+    const NamesAndTypesList & file_columns,
+    const NamesAndTypesList & columns_to_read_from_file_path)
 {
+    std::unordered_map<std::string, NameAndTypePair> columns_to_read_from_file_path_map;
+
+    for (const auto & column : columns_to_read_from_file_path)
+    {
+        columns_to_read_from_file_path_map.insert(std::make_pair(column.name, column));
+    }
+
     ReadFromFormatInfo info;
     /// Collect requested virtual columns and remove them from requested columns.
     Strings columns_to_read;
@@ -27,15 +36,20 @@ ReadFromFormatInfo prepareReadingFromFormat(
     {
         if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
+        else if (columns_to_read_from_file_path_map.contains(column_name))
+            info.hive_partition_columns_to_read_from_file_path.emplace_back(columns_to_read_from_file_path_map[column_name]);
         else
             columns_to_read.push_back(column_name);
     }
 
-    /// Create header for Source that will contain all requested columns including virtual columns at the end
+    /// Create header for Source that will contain all requested columns including virtual and hive columns at the end
     /// (because they will be added to the chunk after reading regular columns).
     info.source_header = storage_snapshot->getSampleBlockForColumns(columns_to_read);
     for (const auto & requested_virtual_column : info.requested_virtual_columns)
         info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
+
+    for (const auto & column_from_filepath : info.hive_partition_columns_to_read_from_file_path)
+        info.source_header.insert({column_from_filepath.type->createColumn(), column_from_filepath.type, column_from_filepath.name});
 
     /// Set requested columns that should be read from data.
     info.requested_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), columns_to_read);
@@ -45,7 +59,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
         /// If only virtual columns were requested, just read the smallest column.
         if (columns_to_read.empty())
         {
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(file_columns).name);
         }
         /// We need to replace all subcolumns with their nested columns (e.g `a.b`, `a.b.c`, `x.y` -> `a`, `x`),
         /// because most formats cannot extract subcolumns on their own.
@@ -72,7 +86,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     /// Requested columns/subcolumns will be extracted after reading.
     else
     {
-        info.columns_description = storage_snapshot->metadata->getColumns();
+        info.columns_description = storage_snapshot->getDescriptionForColumns(file_columns.getNames());
     }
 
     /// Create header for InputFormat with columns that will be read from the data.

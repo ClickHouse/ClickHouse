@@ -209,15 +209,17 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    if (configuration->getPath().empty())
+    // todo arthur
+    const auto raw_path = configuration->getRawPath();
+    if (raw_path.path.empty())
     {
-        configuration->setPath("/*");
+        configuration->setPath({"/*"});
     }
-    else if (configuration->getPath().ends_with('/'))
+    else if (raw_path.path.ends_with('/'))
     {
-        configuration->setPath(configuration->getPath() + '*');
+        configuration->setPath({raw_path.path + '*'});
     }
-    else if (!configuration->isPathWithGlobs())
+    else if (!raw_path.withGlobs())
     {
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
@@ -240,7 +242,9 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
+    // todo arthur why is it not needed?
+    file_columns = columns.getAll();
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
@@ -401,7 +405,8 @@ void StorageObjectStorageQueue::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    // todo arthur
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context), file_columns);
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
         column_names,
@@ -616,11 +621,13 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             /*no_destination=*/ true,
             /*async_insert_=*/ false);
         auto block_io = interpreter.execute();
+        // todo arthur
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),
             storage_snapshot,
             queue_context,
-            supportsSubsetOfColumns(queue_context));
+            supportsSubsetOfColumns(queue_context),
+            file_columns);
 
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;

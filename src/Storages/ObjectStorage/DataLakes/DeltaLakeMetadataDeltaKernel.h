@@ -29,6 +29,8 @@ public:
         ObjectStoragePtr object_storage_,
         ConfigurationObserverPtr configuration_);
 
+    DeltaLakeMetadataDeltaKernel(const DeltaLakeMetadataDeltaKernel & other) : log(other.log), table_snapshot(other.table_snapshot) {}
+
     bool supportsUpdate() const override { return true; }
 
     bool update(const ContextPtr & context) override;
@@ -39,7 +41,9 @@ public:
         const Strings & requested_columns,
         const DB::StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
-        bool supports_subset_of_columns) override;
+        bool supports_subset_of_columns,
+        const NamesAndTypesList & file_columns,
+        const NamesAndTypesList & columns_to_read_from_file_path) override;
 
     bool operator ==(const IDataLakeMetadata &) const override;
 

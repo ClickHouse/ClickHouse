@@ -18,12 +18,12 @@
 
 namespace DB
 {
-
 class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
+struct PartitionStrategy;
 
 namespace ErrorCodes
 {
@@ -68,7 +68,7 @@ public:
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
-        const ColumnsDescription & columns_,
+        const ColumnsDescription & columns_in_table_or_function_definition,
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
@@ -149,6 +149,7 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
 protected:
     String getPathSample(ContextPtr context);
 
@@ -162,9 +163,10 @@ protected:
     ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
-    const ASTPtr partition_by;
     const bool distributed_processing;
     bool update_configuration_on_read;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    ColumnsDescription file_columns;
 
     LoggerPtr log;
 };
@@ -175,7 +177,23 @@ public:
     Configuration() = default;
     virtual ~Configuration() = default;
 
-    using Path = std::string;
+    struct Path
+    {
+        Path() = default;
+        Path(const std::string & path_) : path(path_) {} /// NOLINT(google-explicit-constructor)
+        Path(const std::string & path_, bool allow_partial_prefix_) : path(path_), allow_partial_prefix(allow_partial_prefix_) {}
+
+        std::string path;
+
+        bool withPartitionWildcard() const;
+        bool withGlobsIgnorePartitionWildcard() const;
+        bool withGlobs() const;
+        std::string getWithoutGlobs() const;
+
+    private:
+        bool allow_partial_prefix = true;
+    };
+
     using Paths = std::vector<Path>;
 
     static void initialize(
@@ -193,10 +211,16 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual std::string getNamespaceType() const { return "namespace"; }
 
-    virtual Path getFullPath() const { return ""; }
+    Path getRawPath() const;
+    Path getReadingPath() const;
+    Path getWritingPath(const std::string & partition_id = "") const;
+    virtual Path getFullPath() const { return {}; }
     virtual Path getPath() const = 0;
     virtual void setPath(const Path & path) = 0;
 
+    // todo add docs: this is very bad code
+    // todo understand the keys iterator thing, but I can imagine why that shit was written
+    // it apparently is a list of paths that were used during write so the writer does not lose track of the counter..
     virtual const Paths & getPaths() const = 0;
     virtual void setPaths(const Paths & paths) = 0;
 
@@ -209,13 +233,7 @@ public:
     virtual void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
 
-    bool withPartitionWildcard() const;
-    bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }
-    bool withGlobsIgnorePartitionWildcard() const;
-    bool isPathWithGlobs() const;
     bool isNamespaceWithGlobs() const;
-    virtual std::string getPathWithoutGlobs() const;
-
     virtual bool isArchive() const { return false; }
     bool isPathInArchiveWithGlobs() const;
     virtual std::string getPathInArchive() const;
@@ -251,7 +269,9 @@ public:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
-        ContextPtr local_context);
+        ContextPtr local_context,
+        const NamesAndTypesList & file_columns_,
+        const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_);
 
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
@@ -268,6 +288,9 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
+    void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
+
+    const StorageObjectStorageSettings & getSettingsRef() const;
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
@@ -276,6 +299,12 @@ public:
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
+    std::string partition_strategy_name = "wildcard";
+    /*
+     * Only supported by hive partitioning style for now
+     */
+    bool partition_columns_in_data_file = true;
+    std::shared_ptr<PartitionStrategy> partition_strategy;
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
