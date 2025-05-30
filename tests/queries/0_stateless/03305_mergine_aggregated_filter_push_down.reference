@@ -12,12 +12,12 @@ Expression ((Project names + (Projection + )))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
-                Keys: 
+                Keys:
                   x
                 Condition: (x in [42, 42])
                 Parts: 1/1
                 Granules: 1/123
-                Search algorithm: binary search
+                Search Algorithm: binary search
       Filter (( + Change remote column names to local column names))
         ReadFromRemote (Read from remote replica)
 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by grouping sets ((x, z + 1), (x, z + 2))) where x = 42;
@@ -34,12 +34,12 @@ Expression ((Project names + (Projection + )))
               ReadFromMergeTree (default.tab)
               Indexes:
                 PrimaryKey
-                  Keys: 
+                  Keys:
                     x
                   Condition: (x in [42, 42])
                   Parts: 1/1
                   Granules: 1/123
-                  Search algorithm: binary search
+                  Search Algorithm: binary search
       Filter (( + Change remote column names to local column names))
         ReadFromRemote (Read from remote replica)
 select * from (select x, sum(y), z + 1 as q from remote('127.0.0.{1,2}', currentDatabase(), tab) group by grouping sets ((x, z + 1), (x, z + 2))) where q = 42;
@@ -73,12 +73,12 @@ Expression ((Project names + (Projection + )))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
-                Keys: 
+                Keys:
                   x
                 Condition: (x in [42, 42])
                 Parts: 1/1
                 Granules: 1/123
-                Search algorithm: binary search
+                Search Algorithm: binary search
       Filter (( + Change remote column names to local column names))
         ReadFromRemote (Read from remote replica)
 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by grouping sets ((x, z + 1), (x, z + 2))) where x = 42;

@@ -24,6 +24,8 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
+    extern const SettingsUInt64 max_rows_to_use_projection_index;
+    extern const SettingsUInt64 min_rows_to_use_projection_index;
 }
 
 namespace ErrorCodes
@@ -210,7 +212,19 @@ bool QueryDAG::build(QueryPlan::Node & node)
             filter_node = &dag->addFunction(func_builder_and, std::move(filter_nodes), {});
         }
         else
+        {
+            /// Add an alias node around existing filter node.
+            ///
+            /// This simplifies downstream handling: regardless of whether the filter node is newly constructed
+            /// or comes from the original query, we consistently wrap it so that it can be removed uniformly.
+            ///
+            /// We only remove nodes we added explicitly. Since original filter nodes may be reused elsewhere,
+            /// we avoid altering them directly.
+            ///
+            /// The alias name is prefixed with an underscore to minimize collision risk, as such names
+            /// are uncommon and not guaranteed to work in user queries.
             filter_node = &dag->addAlias(*filter_node, "_projection_filter");
+        }
 
         auto & outputs = dag->getOutputs();
         outputs.insert(outputs.begin(), filter_node);
@@ -219,21 +233,48 @@ bool QueryDAG::build(QueryPlan::Node & node)
     return true;
 }
 
+size_t filterPartsByProjection(
+    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts)
+{
+    size_t filtered_parts = 0;
+    auto & parts_with_ranges = reading_select_result.parts_with_ranges;
+    auto out = parts_with_ranges.begin();
+
+    for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end(); ++it)
+    {
+        const auto & part = *it;
+        if (valid_parts.contains(part.data_part.get()))
+        {
+            if (out != it)
+                *out = std::move(*it);
+            ++out;
+        }
+        else
+        {
+            reading_select_result.selected_parts -= 1;
+            reading_select_result.selected_marks -= part.getMarksCount();
+            reading_select_result.selected_rows -= part.getRowsCount();
+            reading_select_result.selected_ranges -= part.ranges.size();
+            ++filtered_parts;
+        }
+    }
+
+    parts_with_ranges.erase(out, parts_with_ranges.end());
+    return filtered_parts;
+}
+
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
-    const ReadFromMergeTree & reading,
     const MergeTreeDataSelectExecutor & reader,
+    MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     const Names & required_column_names,
-    const RangesInDataParts & parts_with_ranges,
-    const SelectQueryInfo & query_info,
-    const ContextPtr & context,
-    const PartitionIdToMaxBlockPtr & max_added_blocks,
-    const ActionsDAG * dag)
+    ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
+    const SelectQueryInfo & projection_query_info,
+    const ContextPtr & context)
 {
     RangesInDataParts projection_parts;
-    RangesInDataParts normal_parts;
-
-    for (const auto & part_with_ranges : parts_with_ranges)
+    size_t parent_parts_sum_marks = 0;
+    for (const auto & part_with_ranges : parent_reading_select_result.parts_with_ranges)
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
@@ -244,44 +285,170 @@ bool analyzeProjectionCandidate(
         }
         else
         {
-            normal_parts.push_back(part_with_ranges);
+            candidate.parent_parts.emplace(part_with_ranges.data_part.get());
+            parent_parts_sum_marks += part_with_ranges.getMarksCount();
         }
     }
 
     if (projection_parts.empty())
         return false;
 
-    auto projection_query_info = query_info;
-    projection_query_info.prewhere_info = nullptr;
-    if (dag)
-        projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(dag->clone());
-
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
-        reading.getMutationsSnapshot()->cloneEmpty(),
+        empty_mutations_snapshot,
         required_column_names,
         candidate.projection->metadata,
         projection_query_info,
         context,
-        context->getSettingsRef()[Setting::max_threads],
-        max_added_blocks);
+        context->getSettingsRef()[Setting::max_threads]);
+
+    std::unordered_set<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
+    for (auto & part : projection_result_ptr->parts_with_ranges)
+        valid_parts.emplace(part.data_part->getParentPart());
+
+    /// Remove ranges whose data parts are fully filtered by projection.
+    size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
+
+    candidate.selected_parts = projection_result_ptr->selected_parts;
+    candidate.selected_marks = projection_result_ptr->selected_marks;
+    candidate.selected_ranges = projection_result_ptr->selected_ranges;
+    candidate.selected_rows = projection_result_ptr->selected_rows;
+    candidate.filtered_parts = filtered_parts;
 
     candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
-    candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->selected_marks;
+    candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->selected_marks + parent_parts_sum_marks;
 
-    if (!normal_parts.empty())
+    return true;
+}
+
+void filterPartsAndCollectProjectionCandidates(
+    ReadFromMergeTree & reading,
+    const ProjectionDescription & projection,
+    const MergeTreeDataSelectExecutor & reader,
+    MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
+    ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
+    const SelectQueryInfo & projection_query_info,
+    const ActionsDAG::Node * filter_node,
+    const ContextPtr & context)
+{
+    static Names required_column_names = {"_parent_part_offset"};
+    RangesInDataParts projection_parts;
+    std::unordered_set<const IMergeTreeDataPart *> valid_parts;
+
+    for (const auto & part_with_ranges : parent_reading_select_result.parts_with_ranges)
     {
-        /// TODO: We can reuse existing analysis_result by filtering out projection parts
-        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts));
-
-        if (normal_result_ptr->selected_marks != 0)
+        const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
+        auto it = created_projections.find(projection.name);
+        if (it != created_projections.end() && !it->second->is_broken)
         {
-            candidate.sum_marks += normal_result_ptr->selected_marks;
-            candidate.merge_tree_ordinary_select_result_ptr = std::move(normal_result_ptr);
+            RangesInDataPart projection_part(
+                it->second, part_with_ranges.part_index_in_query, part_with_ranges.part_starting_offset_in_query);
+
+            projection_part.parent_ranges.reserve(part_with_ranges.ranges.size());
+            for (const auto & range : part_with_ranges.ranges)
+            {
+                size_t begin = part_with_ranges.data_part->index_granularity->getMarkStartingRow(range.begin);
+                size_t end = part_with_ranges.data_part->index_granularity->getMarkStartingRow(range.end);
+                projection_part.parent_ranges.emplace_back(begin, end);
+                projection_part.parent_ranges.total_rows += end - begin;
+            }
+            projection_part.parent_ranges.max_part_offset = part_with_ranges.data_part->rows_count - 1;
+            projection_parts.push_back(std::move(projection_part));
+        }
+        else
+        {
+            valid_parts.emplace(part_with_ranges.data_part.get());
         }
     }
 
-    return true;
+    if (projection_parts.empty())
+        return;
+
+    auto projection_marks_to_read = projection_parts.getMarksCountAllParts();
+    auto projection_result_ptr = reader.estimateNumMarksToRead(
+        std::move(projection_parts),
+        empty_mutations_snapshot,
+        required_column_names,
+        projection.metadata,
+        projection_query_info,
+        context,
+        context->getSettingsRef()[Setting::max_threads],
+        nullptr);
+
+    /// Projection has no filtering effect, skip it
+    if (projection_result_ptr->selected_marks == projection_marks_to_read)
+        return;
+
+    size_t max_rows_to_use_projection_index = context->getSettingsRef()[Setting::max_rows_to_use_projection_index];
+    size_t min_rows_to_use_projection_index = context->getSettingsRef()[Setting::min_rows_to_use_projection_index];
+    auto & desc = reading.getProjectionIndexReadDescription();
+    bool in_use = false;
+    for (auto & part : projection_result_ptr->parts_with_ranges)
+    {
+        valid_parts.emplace(part.data_part->getParentPart());
+        if (part.getRowsCount() <= max_rows_to_use_projection_index && part.parent_ranges.total_rows >= min_rows_to_use_projection_index)
+        {
+            desc.read_ranges[part.part_index_in_query].push_back(std::move(part));
+            in_use = true;
+        }
+    }
+
+    /// Remove ranges whose data parts are fully filtered by projection.
+    size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
+
+    if (in_use)
+    {
+        NameSet available_inputs;
+        available_inputs.reserve(projection.sample_block.columns());
+        for (const auto & column : projection.sample_block)
+            available_inputs.emplace(column.name);
+
+        auto prewhere_info = std::make_shared<PrewhereInfo>();
+        prewhere_info->prewhere_actions
+            = projection_query_info.filter_actions_dag->restrictFilterDAGToInputs(filter_node, available_inputs);
+        prewhere_info->need_filter = true;
+        prewhere_info->prewhere_column_name = prewhere_info->prewhere_actions.getOutputs().front()->result_name;
+        prewhere_info->remove_prewhere_column = true;
+
+        const ActionsDAG::Node * parent_part_offset_node = nullptr;
+        for (const auto * input : prewhere_info->prewhere_actions.getInputs())
+        {
+            if (input->result_name == "_parent_part_offset")
+            {
+                parent_part_offset_node = input;
+                break;
+            }
+        }
+
+        if (parent_part_offset_node == nullptr)
+            parent_part_offset_node = &prewhere_info->prewhere_actions.addInput("_parent_part_offset", std::make_shared<DataTypeUInt64>());
+
+        prewhere_info->prewhere_actions.getOutputs().emplace_back(parent_part_offset_node);
+        desc.read_infos.emplace_back(&projection, std::move(prewhere_info));
+    }
+
+    if (in_use || filtered_parts > 0)
+    {
+        auto & stats = parent_reading_select_result.projection_stats.emplace_back();
+        stats.name = projection.name;
+        if (in_use)
+            stats.description = "Projection has been analyzed and will be applied during reading";
+        else
+            stats.description = "Projection has been analyzed and is used for part-level filtering";
+        for (const auto & stat : projection_result_ptr->index_stats)
+        {
+            if (stat.type == ReadFromMergeTree::IndexType::PrimaryKey)
+            {
+                stats.condition = stat.condition;
+                stats.search_algorithm = stat.search_algorithm;
+            }
+        }
+        stats.selected_parts = projection_result_ptr->selected_parts;
+        stats.selected_marks = projection_result_ptr->selected_marks;
+        stats.selected_ranges = projection_result_ptr->selected_ranges;
+        stats.selected_rows = projection_result_ptr->selected_rows;
+        stats.filtered_parts = filtered_parts;
+    }
 }
 
 }
