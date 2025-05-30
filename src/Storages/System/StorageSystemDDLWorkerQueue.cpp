@@ -92,7 +92,7 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
         query = parseQuery(
             parser_query, begin, end, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
-    catch (Exception &)
+    catch (const Exception &)
     {
         /// Best effort - ignore parse error and present available information
         LOG_INFO(getLogger("StorageSystemDDLWorkerQueue"), "Failed to determine cluster");
