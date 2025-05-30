@@ -37,6 +37,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <unordered_set>
 
 using namespace DB;
 
@@ -72,7 +73,72 @@ extern const Metric ConcurrentHashJoinPoolThreadsScheduled;
 namespace
 {
 
-using BlockHashes = std::vector<UInt64>;
+using BlockHashes = std::vector<UInt8>;
+
+class DeduplicateNullStream : public IBlocksStream
+{
+public:
+    explicit DeduplicateNullStream(IBlocksStreamPtr source_) : source(std::move(source_)) {}
+
+    Block nextImpl() override
+    {
+        while (true)
+        {
+            Block block = source->next();
+            if (!block)
+                return {};
+
+            // If the block has no rows, continue to next block
+            if (block.rows() == 0)
+                continue;
+
+            // Get the key column (first column)
+            const auto & key_column = block.getByPosition(0).column;
+            
+            // Create a filter to keep only unique NULL values
+            auto filter_column = ColumnUInt8::create(block.rows());
+            auto & filter_data = filter_column->getData();
+            
+            std::unordered_set<size_t> seen_null_positions;
+            bool has_null = false;
+            
+            for (size_t i = 0; i < block.rows(); ++i)
+            {
+                if (key_column->isNullAt(i))
+                {
+                    // For NULL values, only keep the first occurrence
+                    if (!has_null)
+                    {
+                        filter_data[i] = 1;
+                        has_null = true;
+                    }
+                    else
+                    {
+                        filter_data[i] = 0;
+                    }
+                }
+                else
+                {
+                    // For non-NULL values, keep all rows
+                    filter_data[i] = 1;
+                }
+            }
+
+            // Apply the filter
+            for (size_t i = 0; i < block.columns(); ++i)
+            {
+                auto & column = block.getByPosition(i).column;
+                column = column->filter(filter_data, -1);
+            }
+
+            if (block.rows() > 0)
+                return block;
+        }
+    }
+
+private:
+    IBlocksStreamPtr source;
+};
 
 void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams & params)
 {
@@ -85,8 +151,7 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     for (const auto & hash_join : hash_joins)
     {
         size_t size = hash_join->data->getTotalRowCount();
-        if (size > max_ht_size)
-            max_ht_size = size;
+        max_ht_size = std::max(size, max_ht_size);
     }
 
     const auto source_rows = std::accumulate(
@@ -497,6 +562,8 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     }
     else
     {
+        // For regular joins, we need to deduplicate NULL values
+        std::unordered_set<size_t> processed_rows;
         for (const auto & hash_join : hash_joins)
         {
             std::lock_guard lock(hash_join->mutex);
@@ -504,9 +571,15 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
                                 || hash_join->has_non_joined_rows.load(std::memory_order_relaxed);
             if (!had_non_joined)
                 continue;
+
+            // Get the non-joined blocks and deduplicate NULL values
             if (auto s = hash_join->data->getNonJoinedBlocks(
                     left_sample_block, result_sample_block, max_block_size))
-                streams.push_back(std::move(s));
+            {
+                // Create a wrapper stream that deduplicates NULL values
+                auto dedup_stream = std::make_shared<DeduplicateNullStream>(std::move(s));
+                streams.push_back(std::move(dedup_stream));
+            }
         }
     }
 
