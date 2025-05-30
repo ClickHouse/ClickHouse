@@ -90,7 +90,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
         for (const auto & db: databases)
         {
             /// with last flag we are filtering out all non iceberg table
-            for (auto iterator = db.second->getTablesIterator(context, {}, true); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getLightweightTablesIterator(context, {}, true); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();
 
