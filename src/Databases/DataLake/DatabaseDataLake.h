@@ -71,7 +71,8 @@ private:
     std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration(DatabaseDataLakeStorageType type) const;
     std::string getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const;
 
-
+    /// Can return nullptr in case of *expected* issues with response from catalog. Sometimes
+    /// catalogs can produce completely unexpected responses. In such cases this function may throw.
     StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool lightweight) const;
 };
 
