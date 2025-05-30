@@ -1036,7 +1036,8 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     }
     connection_pools.resize(max_replicas_to_use);
 
-    LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
+    if (local_replica_index)
+        LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 
     String formatted_query;
     {
@@ -1068,7 +1069,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
     for (size_t i = 0; i < connection_pools.size(); ++i)
     {
-        if (skip_local_replica && i == *local_replica_index)
+        if (skip_local_replica && (local_replica_index && i == *local_replica_index))
             continue;
 
         IConnections::ReplicaInfo replica_info{
