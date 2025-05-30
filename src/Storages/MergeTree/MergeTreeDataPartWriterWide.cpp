@@ -897,7 +897,7 @@ void MergeTreeDataPartWriterWide::initColumnsSubstreamsIfNeeded(const Block & bl
         auto serialization = getSerialization(name_and_type.name);
         const auto & column = block.getByName(name_and_type.name);
         serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
-        serialization->serializeBinaryBulkWithMultipleStreams(*column.column, 0, 0, serialize_settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
     }
 }

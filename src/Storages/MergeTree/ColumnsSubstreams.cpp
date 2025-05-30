@@ -177,6 +177,13 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
     }
 }
 
+String ColumnsSubstreams::toString() const
+{
+    WriteBufferFromOwnString buf;
+    writeText(buf);
+    return buf.str();
+}
+
 void ColumnsSubstreams::validateColumns(const std::vector<String> & columns) const
 {
     if (columns.size() != columns_substreams.size())

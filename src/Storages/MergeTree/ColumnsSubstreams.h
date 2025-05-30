@@ -34,6 +34,7 @@ public:
     const std::vector<String> & getColumnSubstreams(size_t column_position) const;
     void writeText(WriteBuffer & buf) const;
     void readText(ReadBuffer & buf);
+    String toString() const;
 
     size_t getTotalSubstreams() const { return total_substreams; }
     bool empty() const { return !total_substreams; }

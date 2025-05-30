@@ -356,9 +356,16 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->getColumns().writeText(buffer);
     });
 
-    auto columns_substreams = writer->getColumnsSubstreams();
-    if (additional_columns_substreams)
-        columns_substreams = ColumnsSubstreams::merge(columns_substreams, *additional_columns_substreams, new_part->getColumns().getNames());
+    /// Merge columns substreams from current writer and additional columns substreams
+    /// from other writers (that could be used during vertical merge).
+    /// If there are no additional columns substreams we still need to call merge
+    /// so we will keep only columns that are present in new_part->getColumns().
+    /// It may happen that new_part->getColumns() has less columns then columns substreams
+    /// from writer because of expired TTL.
+    auto columns_substreams = ColumnsSubstreams::merge(
+        writer->getColumnsSubstreams(),
+        additional_columns_substreams ? *additional_columns_substreams : ColumnsSubstreams{},
+        new_part->getColumns().getNames());
 
     if (!columns_substreams.empty())
     {
