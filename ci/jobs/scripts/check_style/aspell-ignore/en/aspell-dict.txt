@@ -2968,7 +2968,11 @@ throwIf
 throwif
 timeDiff
 timeSeriesData
+timeSeriesDeltaToGrid
 timeSeriesMetrics
+timeSeriesInstantDeltaToGrid
+timeSeriesInstantRateToGrid
+timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
 timeSeriesTags
 timeSlot
