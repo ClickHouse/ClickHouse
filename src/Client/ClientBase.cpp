@@ -31,7 +31,8 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -1047,7 +1048,11 @@ void ClientBase::updateSuggest(const ASTPtr & ast)
         }
     }
 
-    if (const auto * create_function = ast->as<ASTCreateFunctionQuery>())
+    if (const auto * create_function = ast->as<ASTCreateSQLMacroFunctionQuery>())
+    {
+        new_words.push_back(create_function->getFunctionName());
+    }
+    if (const auto * create_function = ast->as<ASTCreateWasmFunctionQuery>())
     {
         new_words.push_back(create_function->getFunctionName());
     }

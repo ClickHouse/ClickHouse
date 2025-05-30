@@ -143,7 +143,7 @@ private:
         const ProjectionName & fill_step_expression_projection_name,
         const ProjectionName & fill_staleness_expression_projection_name);
 
-    QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
+    QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedMacroFunctions(const ASTPtr & create_function_ast, ContextPtr context);
 
     void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, IdentifierResolveScope & scope);
 

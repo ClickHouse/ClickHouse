@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/NamePrompter.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -52,5 +52,7 @@ private:
 
     UserDefinedSQLFunctionFactory();
 };
+
+ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context);
 
 }

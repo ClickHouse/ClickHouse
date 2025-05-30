@@ -245,6 +245,10 @@ add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf,
 
 add_contrib (jwt-cpp-cmake jwt-cpp)
 
+add_contrib (wasmedge-cmake wasmedge)
+
+add_contrib (wasmtime-cpp-cmake wasmtime wasmtime-cpp)
+
 add_contrib (sha3iuf-cmake SHA3IUF)
 
 add_contrib (bech32)

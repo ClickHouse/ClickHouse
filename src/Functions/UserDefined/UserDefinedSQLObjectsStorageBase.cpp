@@ -6,7 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
 
 namespace DB
 {
@@ -21,22 +22,22 @@ namespace ErrorCodes
     extern const int UNKNOWN_FUNCTION;
 }
 
-namespace
-{
+// namespace
+// {
 
-ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context)
-{
-    auto ptr = create_function_query.clone();
-    auto & res = typeid_cast<ASTCreateFunctionQuery &>(*ptr);
-    res.if_not_exists = false;
-    res.or_replace = false;
-    FunctionNameNormalizer::visit(res.function_core.get());
-    NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
-    NormalizeSelectWithUnionQueryVisitor{data}.visit(res.function_core);
-    return ptr;
-}
+// ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context)
+// {
+//     auto ptr = create_function_query.clone();
+//     auto & res = typeid_cast<ASTCreateFunctionQuery &>(*ptr);
+//     res.if_not_exists = false;
+//     res.or_replace = false;
+//     FunctionNameNormalizer::visit(res.function_core.get());
+//     NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
+//     NormalizeSelectWithUnionQueryVisitor{data}.visit(res.function_core);
+//     return ptr;
+// }
 
-}
+// }
 
 UserDefinedSQLObjectsStorageBase::UserDefinedSQLObjectsStorageBase(ContextPtr global_context_)
     : global_context(std::move(global_context_))
