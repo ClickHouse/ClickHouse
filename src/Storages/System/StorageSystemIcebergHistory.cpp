@@ -56,7 +56,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
             return;
 
         /// Unfortunately this try/catch is unavoidable. Iceberg tables can be broken in arbitrary way, it's impossible
-        /// to handle properly all posible errors which we can get when attempting to read metadata of iceberg table
+        /// to handle properly all possible errors which we can get when attempting to read metadata of iceberg table
         try
         {
             if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context)); iceberg_metadata)
