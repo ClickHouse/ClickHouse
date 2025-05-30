@@ -1,4 +1,4 @@
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
@@ -7,16 +7,12 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
 #include <fmt/ranges.h>
+#include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_DATA;
-}
 
 namespace Setting
 {
@@ -202,21 +198,6 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::default_max_bytes_in_join] = default_max_bytes_in_join;
 }
 
-std::string_view toString(PredicateOperator op)
-{
-    switch (op)
-    {
-        case PredicateOperator::Equals: return "=";
-        case PredicateOperator::NullSafeEquals: return "<=>";
-        case PredicateOperator::Less: return "<";
-        case PredicateOperator::LessOrEquals: return "<=";
-        case PredicateOperator::Greater: return ">";
-        case PredicateOperator::GreaterOrEquals: return ">=";
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value for PredicateOperator: {}", static_cast<Int32>(op));
-}
-
-
 String toString(const JoinActionRef & node)
 {
     WriteBufferFromOwnString out;
@@ -229,323 +210,49 @@ String toString(const JoinActionRef & node)
     return out.str();
 }
 
-String toString(const JoinPredicate & predicate)
+static void serializeJoinActions(WriteBuffer & out, const std::vector<JoinActionRef> & actions, const ActionsDAG * actions_dag)
 {
-    return fmt::format("{} {} {}", toString(predicate.left_node), toString(predicate.op), toString(predicate.right_node));
+    auto nodes = std::ranges::to<std::vector>(actions | std::views::transform([] (const auto & action) { return action.getNode(); }));
+    ActionsDAG::serializeNodeList(out, actions_dag->getNodeToIdMap(), nodes);
 }
 
-String toString(const JoinCondition & condition)
+static std::vector<JoinActionRef> deserializeJoinActions(ReadBuffer & in, JoinExpressionActions & expression_actions)
 {
-    auto format_conditions = [](std::string_view label, const auto & conditions)
-    {
-        if (conditions.empty())
-            return String{};
-        return fmt::format("{}: {}", label, fmt::join(conditions | std::views::transform([](auto && x) { return toString(x); }), ", "));
-    };
-    return fmt::format("{} {} {} {}",
-        fmt::join(condition.predicates | std::views::transform([](auto && x) { return toString(x); }), ", "),
-        format_conditions("Left filter", condition.left_filter_conditions),
-        format_conditions("Right filter", condition.right_filter_conditions),
-        format_conditions("Residual filter", condition.residual_conditions)
-    );
-}
-
-
-static bool checkNodeInOutputs(const ActionsDAG::Node * node, const ActionsDAG * actions_dag)
-{
-    for (const auto * output : actions_dag->getOutputs())
-    {
-        if (output == node)
-            return true;
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not in outputs of actions DAG:\n{}", node->result_name, actions_dag->dumpDAG());
-}
-
-JoinActionRef::JoinActionRef(const ActionsDAG::Node * node_, const ActionsDAG * actions_dag_)
-    : actions_dag(actions_dag_)
-    , column_name(node_->result_name)
-{
-    chassert(checkNodeInOutputs(node_, actions_dag));
-}
-
-const ActionsDAG::Node * JoinActionRef::getNode() const
-{
-    const auto * node = actions_dag ? actions_dag->tryFindInOutputs(column_name) : nullptr;
-    if (!node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find column {} in actions DAG:\n{}",
-            column_name, actions_dag ? actions_dag->dumpDAG() : "nullptr");
-    return node;
-}
-
-ColumnWithTypeAndName JoinActionRef::getColumn() const
-{
-    const auto * node = getNode();
-    return {node->column, node->result_type, column_name};
-}
-
-const String & JoinActionRef::getColumnName() const
-{
-    return column_name;
-}
-
-DataTypePtr JoinActionRef::getType() const
-{
-    return getNode()->result_type;
-}
-
-void serializePredicateOperator(PredicateOperator op, WriteBuffer & out)
-{
-    UInt8 val = UInt8(op);
-    writeIntBinary(val, out);
-}
-
-PredicateOperator deserializePredicateOperator(ReadBuffer & in)
-{
-    UInt8 val;
-    readIntBinary(val, in);
-
-    if (val == UInt8(PredicateOperator::Equals))
-        return PredicateOperator::Equals;
-    if (val == UInt8(PredicateOperator::NullSafeEquals))
-        return PredicateOperator::NullSafeEquals;
-    if (val == UInt8(PredicateOperator::Less))
-        return PredicateOperator::Less;
-    if (val == UInt8(PredicateOperator::LessOrEquals))
-        return PredicateOperator::LessOrEquals;
-    if (val == UInt8(PredicateOperator::Greater))
-        return PredicateOperator::Greater;
-    if (val == UInt8(PredicateOperator::GreaterOrEquals))
-        return PredicateOperator::GreaterOrEquals;
-
-    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to PredicateOperator", UInt16(val));
-}
-
-void JoinActionRef::serialize(WriteBuffer & out, const ActionsDAGRawPtrs & dags) const
-{
-    if (actions_dag == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot serialize JoinActionRef({}) because actions_dag is nullptr", column_name);
-
-    UInt64 pos = 0;
-    while (pos < dags.size() && dags[pos] != actions_dag)
-        ++pos;
-
-    if (pos == dags.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot serialize JoinActionRef({}) because actions_dag is not in the DAGs list. DAG: {}",
-            column_name, actions_dag->dumpDAG());
-
-    writeVarUInt(pos, out);
-    writeStringBinary(column_name, out);
-}
-
-JoinActionRef JoinActionRef::deserialize(ReadBuffer & in, const ActionsDAGRawPtrs & dags)
-{
-    UInt64 pos;
-    readVarUInt(pos, in);
-
-    if (pos >= dags.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot deserialize JoinActionRef because actions_dag position {} outside of range (0, {})",
-            pos, dags.size());
-
-    JoinActionRef res(nullptr);
-    readStringBinary(res.column_name, in);
-    res.actions_dag = dags[pos];
-
-    return res;
-}
-
-JoinActionRef JoinActionRef::clone(const ActionsDAG * actions_dag_) const
-{
-    return JoinActionRef{actions_dag_, column_name};
-}
-
-JoinActionRef::JoinActionRef(const ActionsDAG * actions_dag_, const String & column_name_)
-    : actions_dag(actions_dag_)
-    , column_name(column_name_)
-{}
-
-void JoinPredicate::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
-{
-    serializePredicateOperator(op, out);
-    left_node.serialize(out, dags);
-    right_node.serialize(out, dags);
-}
-
-JoinPredicate JoinPredicate::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
-{
-    auto op = deserializePredicateOperator(in);
-    auto left_node = JoinActionRef::deserialize(in, dags);
-    auto right_node = JoinActionRef::deserialize(in, dags);
-    return {std::move(left_node), std::move(right_node), op};
-}
-
-static void serializePredicates(WriteBuffer & out, const std::vector<JoinPredicate> & predicates, const JoinActionRef::ActionsDAGRawPtrs & dags)
-{
-    writeVarUInt(predicates.size(), out);
-    for (const auto & predicate : predicates)
-        predicate.serialize(out, dags);
-}
-
-static std::vector<JoinPredicate> deserializePredicates(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
-{
-    UInt64 size;
-    readVarUInt(size, in);
-
-    std::vector<JoinPredicate> predicates;
-    predicates.reserve(size);
-
-    for (size_t i = 0; i < size; ++i)
-        predicates.emplace_back(JoinPredicate::deserialize(in, dags));
-
-    return predicates;
-}
-
-static void serializeJoinActions(WriteBuffer & out, const std::vector<JoinActionRef> & actions, const JoinActionRef::ActionsDAGRawPtrs & dags)
-{
-    writeVarUInt(actions.size(), out);
-    for (const auto & action : actions)
-        action.serialize(out, dags);
-}
-
-static std::vector<JoinActionRef> deserializeJoinActions(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
-{
-    UInt64 size;
-    readVarUInt(size, in);
+    auto node_map = expression_actions.getActionsDAG()->getIdToNodeMap();
+    auto nodes = ActionsDAG::deserializeNodeList(in, node_map);
 
     std::vector<JoinActionRef> actions;
-    actions.reserve(size);
-
-    for (size_t i = 0; i < size; ++i)
-        actions.emplace_back(JoinActionRef::deserialize(in, dags));
+    actions.reserve(nodes.size());
+    for (const auto * node : nodes)
+        actions.emplace_back(node, expression_actions);
 
     return actions;
 }
 
-void JoinCondition::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
+void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const
 {
-    serializePredicates(out, predicates, dags);
-    serializeJoinActions(out, left_filter_conditions, dags);
-    serializeJoinActions(out, right_filter_conditions, dags);
-    serializeJoinActions(out, residual_conditions, dags);
-}
+    serializeJoinActions(out, expression, actions_dag);
+    serializeJoinActions(out, residual_filter, actions_dag);
 
-JoinCondition JoinCondition::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
-{
-    auto predicates = deserializePredicates(in, dags);
-    auto left_filter_conditions = deserializeJoinActions(in, dags);
-    auto right_filter_conditions = deserializeJoinActions(in, dags);
-    auto residual_conditions = deserializeJoinActions(in, dags);
-    return {
-        std::move(predicates),
-        std::move(left_filter_conditions),
-        std::move(right_filter_conditions),
-        std::move(residual_conditions)
-    };
-}
-
-JoinCondition JoinCondition::clone(const JoinExpressionActions & expression_actions) const
-{
-    JoinCondition copy;
-
-    copy.predicates.reserve(predicates.size());
-    for (const auto & predicate : predicates)
-    {
-        copy.predicates.emplace_back(
-            predicate.left_node.clone(expression_actions.left_pre_join_actions.get()),
-            predicate.right_node.clone(expression_actions.right_pre_join_actions.get()),
-            predicate.op);
-    }
-
-    copy.left_filter_conditions.reserve(left_filter_conditions.size());
-    for (const auto & condition: left_filter_conditions)
-    {
-        copy.left_filter_conditions.emplace_back(condition.clone(expression_actions.left_pre_join_actions.get()));
-    }
-
-    copy.right_filter_conditions.reserve(right_filter_conditions.size());
-    for (const auto & condition: right_filter_conditions)
-    {
-        copy.right_filter_conditions.emplace_back(condition.clone(expression_actions.right_pre_join_actions.get()));
-    }
-
-    copy.residual_conditions.reserve(residual_conditions.size());
-    for (const auto & condition: residual_conditions)
-    {
-        copy.residual_conditions.emplace_back(condition.clone(expression_actions.post_join_actions.get()));
-    }
-
-    return copy;
-}
-
-void JoinExpression::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
-{
-    UInt8 is_using_flag = is_using ? 1 : 0;
-    writeIntBinary(is_using_flag, out);
-
-    UInt64 num_conditions = disjunctive_conditions.size() + 1;
-    writeVarUInt(num_conditions, out);
-
-    condition.serialize(out, dags);
-    for (const auto & disjunctive_condition : disjunctive_conditions)
-        disjunctive_condition.serialize(out, dags);
-}
-
-JoinExpression JoinExpression::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
-{
-    UInt8 is_using_flag;
-    readIntBinary(is_using_flag, in);
-
-    if (is_using_flag > 1)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Cannot deserialize JoinExpression because is_using flag ({}) is not 0 or 1",
-            UInt16(is_using_flag));
-
-    UInt64 num_conditions;
-    readVarUInt(num_conditions, in);
-    if (num_conditions == 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Cannot deserialize JoinExpression because the list of conditions is empty");
-
-    auto condition = JoinCondition::deserialize(in, dags);
-    std::vector<JoinCondition> disjunctive_conditions;
-    disjunctive_conditions.reserve(num_conditions - 1);
-    for (size_t i = 1; i < num_conditions; ++i)
-        disjunctive_conditions.emplace_back(JoinCondition::deserialize(in, dags));
-
-    return {std::move(condition), std::move(disjunctive_conditions), bool(is_using_flag)};
-}
-
-JoinExpression JoinExpression::clone(const JoinExpressionActions & expression_copy) const
-{
-    JoinExpression copy;
-    copy.condition = condition.clone(expression_copy);
-
-    copy.disjunctive_conditions.reserve(disjunctive_conditions.size());
-    for (const auto & disjunctive_condition : disjunctive_conditions)
-        copy.disjunctive_conditions.emplace_back(disjunctive_condition.clone(expression_copy));
-
-    copy.is_using = is_using;
-
-    return copy;
-}
-
-void JoinInfo::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
-{
-    expression.serialize(out, dags);
     serializeJoinKind(kind, out);
     serializeJoinStrictness(strictness, out);
     serializeJoinLocality(locality, out);
 }
-JoinInfo JoinInfo::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
+
+JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions)
 {
-    auto expressin = JoinExpression::deserialize(in, dags);
+    auto actions = deserializeJoinActions(in, expression_actions);
+    auto residual_filter = deserializeJoinActions(in, expression_actions);
+
     auto kind = deserializeJoinKind(in);
     auto strictness = deserializeJoinStrictness(in);
     auto locality = deserializeJoinLocality(in);
 
-    return {std::move(expressin), kind, strictness, locality};
+    JoinOperator result(kind, strictness, locality);
+    result.expression = std::move(actions);
+    result.residual_filter = std::move(residual_filter);
+
+    return result;
 }
 
 }

@@ -5364,6 +5364,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 return nullptr;
             };
 
+            QueryTreeNodes result_table_expressions;
+
             QueryTreeNodePtr result_left_table_expression = nullptr;
             /** With `analyzer_compatibility_join_using_top_level_identifier` alias in projection has higher priority than column from left table.
               * But if aliased expression cannot be resolved from left table, we get UNKNOW_IDENTIFIER error,
@@ -5415,11 +5417,32 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             }
 
             if (result_left_table_expression->getNodeType() != QueryTreeNodeType::COLUMN)
+            {
+                if (result_left_table_expression->getNodeType() == QueryTreeNodeType::FUNCTION)
+                {
+                    const auto & function_node = result_left_table_expression->as<FunctionNode &>();
+                    auto is_column_node = [](const auto & argument) { return argument->getNodeType() == QueryTreeNodeType::COLUMN; };
+                    if (function_node.getFunctionName() == "firstTruthy" && std::ranges::all_of(function_node.getArguments().getNodes(), is_column_node))
+                    {
+                        for (const auto & argument : function_node.getArguments().getNodes())
+                        {
+                            result_table_expressions.push_back(argument);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                result_table_expressions.push_back(result_left_table_expression);
+            }
+
+            if (result_table_expressions.empty())
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "JOIN {} using identifier '{}' must be resolved into column node from left table expression. In scope {}",
                     join_node_typed.formatASTForErrorMessage(),
                     identifier_full_name,
                     scope.scope_node->formatASTForErrorMessage());
+
 
             /// Here we allow syntax 'USING (a AS b)' which means that 'a' is taken from left and 'b' is taken from right.
             /// See 03449_join_using_allow_alias.sql and the comment in JoinNode.cpp
@@ -5452,8 +5475,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     right_name,
                     scope.scope_node->formatASTForErrorMessage());
 
+            result_table_expressions.push_back(result_right_table_expression);
+
             NameAndTypePair join_using_column(identifier_full_name, common_type);
-            ListNodePtr join_using_expression = std::make_shared<ListNode>(QueryTreeNodes{result_left_table_expression, result_right_table_expression});
+            ListNodePtr join_using_expression = std::make_shared<ListNode>(result_table_expressions);
             auto join_using_column_node = std::make_shared<ColumnNode>(std::move(join_using_column), std::move(join_using_expression), join_node);
             join_using_node = std::move(join_using_column_node);
         }

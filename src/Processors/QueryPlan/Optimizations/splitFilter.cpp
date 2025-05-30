@@ -3,11 +3,10 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 
 namespace DB::QueryPlanOptimizations
 {
-
-QueryPlan::Node * makeExpressionNodeOnTopOf(QueryPlan::Node * node, ActionsDAG actions_dag, const String & filter_column_name, QueryPlan::Nodes & nodes);
 
 size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 {
@@ -21,23 +20,21 @@ size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 
     if (auto fitler_dag = join_step->getFilterActions(JoinTableSide::Left, filter_coumn_name))
     {
-        auto * new_node = makeExpressionNodeOnTopOf(node->children.at(0), std::move(*fitler_dag), filter_coumn_name, nodes);
-        node->children.at(0) = new_node;
-        new_node->step->setStepDescription("Join filter");
-        num_new_nodes++;
+        auto & child_node = *node->children.at(0);
+        if (makeExpressionNodeOnTopOf(child_node, std::move(*fitler_dag), filter_coumn_name, nodes, "Join filter"))
+            num_new_nodes++;
     }
 
     if (auto fitler_dag = join_step->getFilterActions(JoinTableSide::Right, filter_coumn_name))
     {
-        auto * new_node = makeExpressionNodeOnTopOf(node->children.at(1), std::move(*fitler_dag), filter_coumn_name, nodes);
-        node->children.at(1) = new_node;
-        new_node->step->setStepDescription("Join filter");
-        num_new_nodes++;
+        auto & child_node = *node->children.at(1);
+        if (makeExpressionNodeOnTopOf(child_node, std::move(*fitler_dag), filter_coumn_name, nodes, "Join filter"))
+            num_new_nodes++;
     }
     return num_new_nodes;
 }
 
-/// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
+/// Split FilterStep into chain `FilterStep -> ExpressionStep`, where FilterStep contains minimal number of nodes.
 size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     if (size_t join_split = trySplitJoin(node, nodes))

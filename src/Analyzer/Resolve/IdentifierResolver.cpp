@@ -872,6 +872,19 @@ bool resolvedIdenfiersFromJoinAreEquals(
     return left_resolved_to_compare->isEqual(*right_resolved_to_compare, IQueryTreeNode::CompareOptions{.compare_aliases = false});
 }
 
+QueryTreeNodePtr createProjectionForUsing(QueryTreeNodes arguments, const ContextPtr & context)
+{
+    String function_name("firstTruthy");
+
+    auto function_node = std::make_shared<FunctionNode>(function_name);
+    function_node->getArguments().getNodes() = std::move(arguments);
+
+    auto cast_function = FunctionFactory::instance().get(function_name, context);
+    function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
+
+    return function_node;
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -958,7 +971,12 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         if (node->getNodeType() != QueryTreeNodeType::FUNCTION)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected node type {}, expected function node", node->getNodeType());
 
-        const auto & function_argument_nodes = node->as<FunctionNode &>().getArguments().getNodes();
+        const auto & function_node = node->as<FunctionNode &>();
+        auto is_column_node = [](const auto & argument) { return argument->getNodeType() == QueryTreeNodeType::COLUMN; };
+        if (function_node.getFunctionName() == "firstTruthy" && std::ranges::all_of(function_node.getArguments().getNodes(), is_column_node))
+            return;
+
+        const auto & function_argument_nodes = function_node.getArguments().getNodes();
         for (const auto & argument_node : function_argument_nodes)
         {
             if (argument_node->getNodeType() == QueryTreeNodeType::COLUMN)
@@ -1039,20 +1057,20 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 check_nested_column_not_in_using(left_resolved_identifier);
             if (right_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
                 check_nested_column_not_in_using(right_resolved_identifier);
+
+            if (left_resolved_identifier->hasAlias())
+                using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_identifier->getAlias());
+
         }
 
         if (using_column_node_it != join_using_column_name_to_column_node.end())
         {
-            JoinTableSide using_column_inner_column_table_side = isRight(join_kind) ? JoinTableSide::Right : JoinTableSide::Left;
             auto & using_column_node = using_column_node_it->second->as<ColumnNode &>();
             auto & using_expression_list = using_column_node.getExpression()->as<ListNode &>();
 
-            size_t inner_column_node_index = using_column_inner_column_table_side == JoinTableSide::Left ? 0 : 1;
-            const auto & inner_column_node = using_expression_list.getNodes().at(inner_column_node_index);
 
-            auto result_column_node = inner_column_node->clone();
-            auto & result_column = result_column_node->as<ColumnNode &>();
-            result_column.setColumnType(using_column_node.getColumnType());
+            auto result_column_node = createProjectionForUsing(using_expression_list.getNodes(), scope.context);
+            result_column_node->setAlias(identifier_lookup.identifier.getFullName());
 
             const auto & join_using_left_column = using_expression_list.getNodes().at(0);
             if (!result_column_node->isEqual(*join_using_left_column))

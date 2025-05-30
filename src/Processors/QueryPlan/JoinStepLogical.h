@@ -1,11 +1,15 @@
 #pragma once
 
 #include <optional>
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/Optimizations/joinCost.h>
+#include <Core/Joins.h>
+#include <Interpreters/JoinExpressionActions.h>
 
 namespace DB
 {
@@ -17,7 +21,7 @@ struct PreparedJoinStorage
 {
     std::unordered_map<String, String> column_mapping;
 
-    /// None or one of these fields is set
+    /// At most one of these fields is set
     std::shared_ptr<StorageJoin> storage_join;
     std::shared_ptr<const IKeyValueEntity> storage_key_value;
 
@@ -44,10 +48,19 @@ public:
     JoinStepLogical(
         const Block & left_header_,
         const Block & right_header_,
-        JoinInfo join_info_,
+        JoinOperator join_operator_,
         JoinExpressionActions join_expression_actions_,
-        Names required_output_columns_,
+        const NameSet & required_output_columns_,
         bool use_nulls_,
+        JoinSettings join_settings_,
+        SortingStep::Settings sorting_settings_);
+
+    JoinStepLogical(
+        const Block & left_header_,
+        const Block & right_header_,
+        JoinOperator join_operator_,
+        JoinExpressionActions join_expression_actions_,
+        std::vector<const ActionsDAG::Node *> actions_after_join_,
         JoinSettings join_settings_,
         SortingStep::Settings sorting_settings_);
 
@@ -65,14 +78,8 @@ public:
     void setPreparedJoinStorage(PreparedJoinStorage storage);
     const SortingStep::Settings & getSortingSettings() const { return sorting_settings; }
     const JoinSettings & getJoinSettings() const { return join_settings; }
-    const JoinInfo & getJoinInfo() const { return join_info; }
-    JoinInfo & getJoinInfo() { return join_info; }
-    const Names & getRequiredOutpurColumns() const { return required_output_columns; }
-
-    std::optional<ActionsDAG> getFilterActions(JoinTableSide side, String & filter_column_name);
-
-    void setSwapInputs() { swap_inputs = true; }
-    bool areInputsSwapped() const { return swap_inputs; }
+    const JoinOperator & getJoinOperator() const { return join_operator; }
+    JoinOperator & getJoinOperator() { return join_operator; }
 
     JoinPtr convertToPhysical(
         JoinActionRef & post_filter,
@@ -84,12 +91,10 @@ public:
         const ExpressionActionsSettings & actions_settings,
         std::optional<UInt64> rhs_size_estimation);
 
-    const JoinExpressionActions & getExpressionActions() const { return expression_actions; }
+    const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
 
     const JoinSettings & getSettings() const { return join_settings; }
     bool useNulls() const { return use_nulls; }
-
-    void appendRequiredOutputsToActions(JoinActionRef & post_filter);
 
     struct HashTableKeyHashes
     {
@@ -110,19 +115,35 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;
-    bool hasCorrelatedExpressions() const override { return expression_actions.hasCorrelatedExpressions(); }
+
+    bool hasCorrelatedExpressions() const override
+    {
+        return expression_actions.getActionsDAG()->hasCorrelatedColumns();
+    }
+
+    void addConditions(ActionsDAG::NodeRawConstPtrs conditions);
+    std::optional<ActionsDAG> getFilterActions(JoinTableSide side, String & filter_column_name);
+
+    static void buildPhysicalJoin(
+        QueryPlan::Node & node,
+        std::vector<RelationStats> relation_stats,
+        const QueryPlanOptimizationSettings & optimization_settings,
+        QueryPlan::Nodes & nodes);
 
 protected:
     void updateOutputHeader() override;
 
-    std::vector<std::pair<String, String>> describeJoinActions() const;
+    std::vector<std::pair<String, String>> describeJoinProperties() const;
 
     std::optional<HashTableKeyHashes> hash_table_key_hashes;
 
     JoinExpressionActions expression_actions;
-    JoinInfo join_info;
+    JoinOperator join_operator;
 
-    Names required_output_columns;
+    /// This is the nodes which used to split expressions calculated before and after join
+    /// Nodes from this list are used as inputs for ActionsDAG executed after join operation
+    /// It can be input or node with toNullable function applied to input
+    std::vector<const ActionsDAG::Node *> actions_after_join = {};
 
     PreparedJoinStorage prepared_join_storage;
 
@@ -130,8 +151,6 @@ protected:
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
-
-    bool swap_inputs = false;
 
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;

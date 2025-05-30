@@ -24,6 +24,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <stack>
+#include <unordered_map>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
@@ -756,8 +757,13 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
-    ActionsDAG actions;
     std::unordered_map<const Node *, Node *> copy_map;
+    return cloneSubDAG(outputs, copy_map, remove_aliases);
+}
+
+ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, NodePtrMap & copy_map, bool remove_aliases)
+{
+    ActionsDAG actions;
 
     struct Frame
     {
@@ -3564,17 +3570,68 @@ static MutableColumnPtr deserializeConstant(
     return ColumnConst::create(std::move(column), 0);
 }
 
-void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
+std::unordered_map<const ActionsDAG::Node *, size_t> ActionsDAG::getNodeToIdMap() const
 {
-    size_t nodes_size = nodes.size();
-    writeVarUInt(nodes_size, out);
-
     std::unordered_map<const Node *, size_t> node_to_id;
     for (const auto & node : nodes)
         node_to_id.emplace(&node, node_to_id.size());
 
-    if (nodes_size != node_to_id.size())
+    if (nodes.size() != node_to_id.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate nodes in ActionsDAG");
+
+    return node_to_id;
+}
+
+std::unordered_map<size_t, const ActionsDAG::Node *> ActionsDAG::getIdToNodeMap() const
+{
+    std::unordered_map<size_t, const Node *> id_to_node;
+    for (const auto & node : nodes)
+        id_to_node.emplace(id_to_node.size(), &node);
+
+    return id_to_node;
+}
+
+void ActionsDAG::serializeNodeList(WriteBuffer & out, const std::unordered_map<const Node *, size_t> & node_to_id, const NodeRawConstPtrs & nodes)
+{
+    writeVarUInt(nodes.size(), out);
+    for (const auto * node : nodes)
+    {
+        if (auto it = node_to_id.find(node); it != node_to_id.end())
+            writeVarUInt(it->second, out);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find node '{}' in node map", node->result_name);
+    }
+}
+
+ActionsDAG::NodeRawConstPtrs ActionsDAG::deserializeNodeList(ReadBuffer & in, const std::unordered_map<size_t, const Node *> & node_map)
+{
+    size_t num_nodes;
+    readVarUInt(num_nodes, in);
+    if (num_nodes > node_map.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Number of nodes {} is greater than number of nodes in node map {}", num_nodes, node_map.size());
+
+    NodeRawConstPtrs nodes(num_nodes);
+
+    for (size_t i = 0; i < num_nodes; ++i)
+    {
+        size_t node_id;
+        readVarUInt(node_id, in);
+        if (auto it = node_map.find(node_id); it != node_map.end())
+            nodes[i] = it->second;
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find node with id {} in node map", node_id);
+    }
+
+    return nodes;
+}
+
+
+void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
+{
+    auto node_to_id = getNodeToIdMap();
+    size_t nodes_size = node_to_id.size();
+
+    writeVarUInt(nodes_size, out);
 
     for (const auto & node : nodes)
     {
