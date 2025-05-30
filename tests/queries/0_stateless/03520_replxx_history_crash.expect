@@ -48,18 +48,23 @@ expect ":) "
 
 # SELECT 2 -> SELECT '2'
 send -- "\033\[A"
+expect "SELECT '2'"
 send -- "\033\[A"
+expect "SELECT '1'"
 send -- "\033\[A"
 expect "SELECT 2"
 send -- "\x7f"
 send -- "'2'"
+expect "SELECT '2'"
 # SELECT 1 -> SELECT '1'
 send -- "\033\[A"
 expect "SELECT 1"
 send -- "\x7f"
 send -- "'1'"
+expect "SELECT '1'"
 # Commit
 send -- "\r"
+expect ":) "
 
 send -- "SELECT '2'\r"
 expect ":) "
@@ -68,6 +73,7 @@ expect ":) "
 send -- "SELECT '2'\r"
 expect ":) "
 send -- "\033\[A"
+expect "SELECT '2'"
 send -- "\033\[A"
 expect "SELECT 2"
 # This should trigger heap-use-after-free in replxx::History::erase()
