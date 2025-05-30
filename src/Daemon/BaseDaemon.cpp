@@ -145,7 +145,6 @@ BaseDaemon::~BaseDaemon()
     }
 
     disableLogging();
-    // split->flush();
 }
 
 

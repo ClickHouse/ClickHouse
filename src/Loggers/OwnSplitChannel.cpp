@@ -289,8 +289,14 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
     }
 }
 
-void OwnAsyncSplitChannel::waitForFlush() const
+void OwnAsyncSplitChannel::flushTextLogs() const
 {
+    auto text_log_locked = sync_channel.text_log.lock();
+    if (!text_log_locked)
+        return;
+
+    /// TODO: Improve this to avoid blocking infinitely
+    /// Block flushing thread, get the queue and replace it with an empty one, flush the old queue completely, enable flushing thread
     while (!queue.empty())
         Poco::Thread::sleep(10);
 }

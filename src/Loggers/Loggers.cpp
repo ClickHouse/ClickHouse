@@ -403,5 +403,5 @@ void Loggers::closeLogs(Poco::Logger & logger)
 void Loggers::flushTextLogs()
 {
     if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
-        async->waitForFlush();
+        async->flushTextLogs();
 }

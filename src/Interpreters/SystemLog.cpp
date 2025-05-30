@@ -1,5 +1,5 @@
 #include <Interpreters/SystemLog.h>
-#include "Daemon/BaseDaemon.h"
+#include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
 #include <Common/Logger.h>
