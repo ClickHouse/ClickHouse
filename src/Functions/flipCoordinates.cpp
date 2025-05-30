@@ -172,11 +172,14 @@ REGISTER_FUNCTION(FlipCoordinates)
     };
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+
     FunctionDocumentation function_documentation = {
         .description = description,
         .syntax = syntax,
         .arguments = arguments,
         .returned_value = returned_value,
+        .introduced_in = introduced_in,
         .examples = examples,
         .category = category
     };
