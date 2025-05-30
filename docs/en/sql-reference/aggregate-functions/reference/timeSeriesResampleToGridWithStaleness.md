@@ -21,7 +21,7 @@ Return value:
 time series values re-sampled to the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there is no sample for a particular grid point.
 
 Example:
-The following query re-samples time series data to the grid [90, 105, 120, 135, 150, 165, 180, 195, 210] by choosing the value no older then 30 sec for each point on the grid:
+The following query re-samples time series data to the grid [90, 105, 120, 135, 150, 165, 180, 195, 210] by choosing the value no older than 30 sec for each point on the grid:
 
 ```sql
 WITH
