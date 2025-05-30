@@ -77,6 +77,7 @@ struct MutationCommand
 
     /// This command shouldn't stick with other commands
     bool isBarrierCommand() const;
+    bool isDeleteCommand() const;
 };
 
 /// Multiple mutation commands, possible from different ALTER queries

@@ -53,11 +53,13 @@ public:
 private:
 
     bool prepare();
+    void setDataPartPromise();
 
     enum class State : uint8_t
     {
         NEED_PREPARE,
-        NEED_EXECUTE
+        NEED_EXECUTE,
+        NEED_EXECUTE_PROJECTIONS,
     };
 
     State state{State::NEED_PREPARE};
@@ -67,6 +69,10 @@ private:
     std::shared_ptr<MutationContext> ctx;
     ExecutableTaskPtr task;
 
+    using ProjectionTasks = std::vector<std::unique_ptr<MutateTask>>;
+
+    ProjectionTasks projection_tasks;
+    ProjectionTasks::iterator projection_tasks_it;
 };
 
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MutateTaskPtr task)
