@@ -1185,7 +1185,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     else if (type == DROP_INDEX)
     {
         result.type = MutationCommand::Type::DROP_INDEX;
-        result.column_name = index_name;
+        result.index_name = index_name;
         if (clear)
             result.clear = true;
         if (partition)

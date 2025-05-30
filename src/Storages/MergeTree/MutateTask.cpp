@@ -1192,8 +1192,8 @@ static NameToNameVector collectFilesForRenames(
 
             for (const auto & suffix : suffixes)
             {
-                const String filename = INDEX_FILE_PREFIX + command.column_name + suffix;
-                const String filename_mrk = INDEX_FILE_PREFIX + command.column_name + mrk_extension;
+                const String filename = INDEX_FILE_PREFIX + command.index_name + suffix;
+                const String filename_mrk = INDEX_FILE_PREFIX + command.index_name + mrk_extension;
 
                 if (source_part->checksums.has(filename))
                 {

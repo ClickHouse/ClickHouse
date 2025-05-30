@@ -154,7 +154,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_INDEX;
-        res.column_name = command->index->as<ASTIdentifier &>().name();
+        res.index_name = command->index->as<ASTIdentifier &>().name();
         if (command->partition)
             res.partition = command->partition->clone();
         if (command->clear_index)
