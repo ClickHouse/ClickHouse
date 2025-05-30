@@ -264,7 +264,8 @@ Chunk StorageObjectStorageSource::generate()
                  .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
                  .filename = &filename,
                  .last_modified = object_info->metadata->last_modified,
-                 .etag = &(object_info->metadata->etag)},
+                 .etag = &(object_info->metadata->etag),
+                 .tags = &(object_info->metadata->tags)},
                 read_context);
 
             if (chunk_size && chunk.hasColumns())
