@@ -223,6 +223,20 @@ public:
     }
 };
 
+//asdqwe
+class CountingSemaphore
+{
+private:
+    std::atomic<UInt32> val {0};
+
+public:
+    CountingSemaphore() = default;
+
+    void acquire();
+
+    void release(UInt32 n, UInt32 wake_threshold = UINT32_MAX);
+};
+
 /// Has a task queue and a set of threads from ThreadPool.
 /// Per-task overhead is lower than in ThreadPool because ThreadGroup is not switched, stack trace is
 /// not propagated, etc.

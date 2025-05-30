@@ -23,7 +23,7 @@ private:
     struct Task;
 
 public:
-    void init(ReadBuffer * reader_, const ReadOptions & options, SharedParsingThreadPoolPtr thread_pool_);
+    void init(ReadBuffer * reader_, const ReadOptions & options, FormatParserGroupPtr parser_group_);
 
     /// Waits for in-progress reads to complete, cancels queued reads that haven't started yet.
     ~Prefetcher();
@@ -155,7 +155,7 @@ private:
         std::vector<RangeState> ranges;
     };
 
-    SharedParsingThreadPoolPtr thread_pool;
+    FormatParserGroupPtr parser_group;
 
     std::mutex read_mutex;
     ReadMode read_mode;

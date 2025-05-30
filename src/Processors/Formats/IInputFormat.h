@@ -69,14 +69,6 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
-    virtual void setPrewhereInfo(PrewhereInfoPtr)
-    {
-        /// Can't ignore it, otherwise unfiltered rows will end up in query result.
-        /// Must only be called for formats that declared prewhere support via
-        /// FormatFactory::registerPrewhereSupportChecker.
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected prewhere for format {}", getName());
-    }
-
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }

@@ -82,7 +82,7 @@ namespace DB::Parquet
 ///  * Prefetcher is responsible for coalescing nearby short reads into bigger reads.
 ///    It needs to know an approximate set of all needed ranges in advance, which we can produce
 ///    from parquet file metadata.
-///  * SharedParsingThreadPool is shared can be shared across multiple parquet file readers belonging
+///  * FormatParserGroup is shared can be shared across multiple parquet file readers belonging
 ///    to the same query, e.g. when doing `SELECT * FROM url('.../part_{0..999}.parquet')`.
 ///    Splits the memory and thread count budgets among the readers. Important because we want to
 ///    use much more memory per reader when reading one file than when reading 100 files in parallel.
@@ -393,7 +393,7 @@ struct Reader
 
     ReadOptions options;
     const Block * sample_block;
-    std::shared_ptr<const KeyCondition> key_condition;
+    FormatParserGroupPtr parser_group;
     Prefetcher prefetcher;
 
     parq::FileMetaData file_metadata;
@@ -403,7 +403,6 @@ struct Reader
     size_t total_primitive_columns_in_file = 0;
     std::vector<OutputColumnInfo> output_columns;
 
-    PrewhereInfoPtr prewhere_info;
     /// sample_block with maybe some columns added at the end.
     /// The added columns are used as inputs to prewhere expression, then discarded.
     /// (Why not just add them to sample_block? To avoid unnecessarily applying filter to them.)
@@ -412,7 +411,7 @@ struct Reader
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
-    void init(const ReadOptions & options_, const Block & sample_block_, std::shared_ptr<const KeyCondition> key_condition_, PrewhereInfoPtr prewhere_info_);
+    void init(const ReadOptions & options_, const Block & sample_block_, FormatParserGroupPtr parser_group_);
 
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
     void prefilterAndInitRowGroups();

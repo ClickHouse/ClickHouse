@@ -1,17 +1,26 @@
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
 
+#include <Common/ProfileEvents.h>
+#include <Formats/FormatParserGroup.h>
+
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
 }
 
+namespace ProfileEvents
+{
+    extern const Event ParquetDecodingTasks;
+    extern const Event ParquetDecodingTaskBatches;
+}
+
 namespace DB::Parquet
 {
 
-void ReadManager::init(SharedParsingThreadPoolPtr thread_pool_)
+void ReadManager::init(FormatParserGroupPtr parser_group_)
 {
-    thread_pool = thread_pool_;
+    parser_group = parser_group_;
     reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
     reader.prefilterAndInitRowGroups();
     reader.preparePrewhere();
@@ -377,7 +386,7 @@ void ReadManager::advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDi
     }
 }
 
-static bool checkTaskSchedulingLimits(size_t memory_usage, size_t added_memory, size_t batches_in_progress, size_t added_tasks, const SharedParsingThreadPool::Limits & limits)
+static bool checkTaskSchedulingLimits(size_t memory_usage, size_t added_memory, size_t batches_in_progress, size_t added_tasks, const ParserGroupExt::Limits & limits)
 {
     if (added_tasks == 0)
     {
@@ -388,7 +397,8 @@ static bool checkTaskSchedulingLimits(size_t memory_usage, size_t added_memory, 
     {
         /// If we're going to pay the cost of adding tasks to the queue, prefer to add many at once.
         return added_memory < limits.memory_low_watermark ||
-               added_tasks < limits.parsing_threads;
+               (memory_usage + added_memory <= limits.memory_high_watermark &&
+                added_tasks < limits.parsing_threads);
     }
 }
 
@@ -412,7 +422,7 @@ void ReadManager::flushMemoryUsageDiff(MemoryUsageDiff && diff)
         if (!should_schedule && d < 0)
         {
             const auto & stage = stages[i];
-            auto limits = thread_pool->getLimitsPerReader(stage.memory_target_fraction);
+            auto limits = ParserGroupExt::getLimitsPerReader(*parser_group, stage.memory_target_fraction);
             should_schedule = checkTaskSchedulingLimits(
                 stage.memory_usage.load(std::memory_order_relaxed), 0,
                 stage.batches_in_progress.load(std::memory_order_relaxed), 0, limits);
@@ -443,7 +453,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx, std::unique_lock<st
         {
             MemoryUsageDiff diff(stage_idx);
             std::vector<Task> tasks;
-            auto limits = thread_pool->getLimitsPerReader(stage.memory_target_fraction);
+            auto limits = ParserGroupExt::getLimitsPerReader(*parser_group, stage.memory_target_fraction);
             size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed);
             size_t batches_in_progress = stage.batches_in_progress.load(std::memory_order_relaxed);
             /// Need to be careful to avoid getting deadlocked in a situation where tasks can't be scheduled
@@ -513,7 +523,9 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx, std::unique_lock<st
                     });
                 }
                 stage.batches_in_progress.fetch_add(funcs.size(), std::memory_order_relaxed);
-                thread_pool->parsing_runner.bulkSchedule(std::move(funcs));
+                ProfileEvents::increment(ProfileEvents::ParquetDecodingTasks, tasks.size());
+                ProfileEvents::increment(ProfileEvents::ParquetDecodingTaskBatches, funcs.size());
+                parser_group->parsing_runner.bulkSchedule(std::move(funcs));
             }
         }
 
@@ -814,10 +826,10 @@ Chunk ReadManager::read()
             }
 
             /// Wait for progress.
-            if (thread_pool->parsing_runner.isManual())
+            if (parser_group->parsing_runner.isManual())
             {
                 lock.unlock();
-                if (!thread_pool->parsing_runner.runTaskInline())
+                if (!parser_group->parsing_runner.runTaskInline())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager");
                 lock.lock();
             }

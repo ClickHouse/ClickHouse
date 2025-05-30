@@ -25,9 +25,6 @@ using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 class PullingPipelineExecutor;
 
-struct PrewhereInfo;
-using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
-
 class StorageFile final : public IStorage
 {
 public:
@@ -264,7 +261,6 @@ private:
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
         const ContextPtr & context_,
-        PrewhereInfoPtr prewhere_info_,
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
@@ -296,7 +292,6 @@ private:
     std::optional<size_t> tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const;
 
     std::shared_ptr<StorageFile> storage;
-    PrewhereInfoPtr prewhere_info;
     FilesIteratorPtr files_iterator;
     String current_path;
     std::optional<size_t> current_file_size;
