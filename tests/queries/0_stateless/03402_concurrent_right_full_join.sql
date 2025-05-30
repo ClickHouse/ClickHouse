@@ -1,11 +1,11 @@
-CREATE TABLE IF NOT EXISTS default.left_table
+CREATE TABLE IF NOT EXISTS left_table
 (
     `id` UInt32,
     `value` String
 )
 ENGINE = Memory;
 
-CREATE TABLE IF NOT EXISTS default.right_table
+CREATE TABLE IF NOT EXISTS right_table
 (
     `id` UInt32,
     `description` String
