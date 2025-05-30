@@ -1031,7 +1031,7 @@ SELECT mapReverseSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 └──────────────────────────────┘
 ```
 
-For more details see function [arrayReverseSort](/sql-reference/functions/array-functions#arrayreversesort).
+For more details see function [arrayReverseSort](/sql-reference/functions/array-functions#arrayReverseSort).
 
 ## mapPartialReverseSort {#mappartialreversesort}
 
