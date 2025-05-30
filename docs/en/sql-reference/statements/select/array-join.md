@@ -355,7 +355,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Example of using the [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) function:
+Example of using the [arrayEnumerate](/sql-reference/functions/array-functions#arrayEnumerate) function:
 
 ```sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
