@@ -35,7 +35,7 @@ check_sql_udf_functions() {
       SYSTEM FLUSH LOGS"
 
     $CLICKHOUSE_CLIENT -q "
-        SELECT arraySort(used_functions) FROM system.query_log
+        SELECT arraySort(used_sql_user_defined_functions) FROM system.query_log
         WHERE type = 'QueryFinish' AND query_id = '${query_id}'"
 
     for func in "${@}"; do
