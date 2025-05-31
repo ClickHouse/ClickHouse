@@ -369,6 +369,9 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/chdig"]
+	path = contrib/chdig
+	url = https://github.com/azat/chdig.git
 [submodule "contrib/sz3"]
 	path = contrib/sz3
 	url = https://github.com/szcompressor/SZ3.git
