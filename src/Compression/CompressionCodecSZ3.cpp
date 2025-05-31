@@ -86,7 +86,6 @@ uint8_t CompressionCodecSZ3::getMethodByte() const
 void CompressionCodecSZ3::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash, true);
-    hash.update(float_size);
 }
 
 UInt32 CompressionCodecSZ3::getMaxCompressedDataSize(UInt32 uncompressed_size) const
