@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+check_sql_udf_functions() {
+    if [ "${#}" == "0" ]; then
+        return
+    fi
+
+    for func in "${@}"; do
+        $CLICKHOUSE_CLIENT -q "
+            DROP FUNCTION IF EXISTS ${func};
+            CREATE FUNCTION ${func} AS (input) -> input"
+    done
+
+    execute_sql_udf=""
+    if [ "${#}" == "1" ]; then
+        execute_sql_udf="${1}(8)"
+    else
+        joined_string=""
+        for func in "${@}"; do
+            if [ -n "${joined_string}" ]; then
+                joined_string+=", "
+            fi
+            joined_string+="${func}(8)"
+        done
+        execute_sql_udf="concat(${joined_string})"
+    fi
+
+    query_id="query_id_${FUNCNAME}_${RANDOM}_${RANDOM}"
+    $CLICKHOUSE_CLIENT --query_id=${query_id} -q "
+      SELECT ${execute_sql_udf};
+      SYSTEM FLUSH LOGS"
+
+    $CLICKHOUSE_CLIENT -q "
+        SELECT arraySort(used_functions) FROM system.query_log
+        WHERE type = 'QueryFinish' AND query_id = '${query_id}'"
+
+    for func in "${@}"; do
+        $CLICKHOUSE_CLIENT -q "DROP FUNCTION IF EXISTS ${func}"
+    done
+}
+
+test_sql_udf_single() {
+    check_sql_udf_functions ${FUNCNAME}
+}
+
+test_sql_udf_multiple() {
+    check_sql_udf_functions "${FUNCNAME}_1" "${FUNCNAME}_2" "${FUNCNAME}_3"
+}
+
+test_sql_udf_duplicate() {
+    check_sql_udf_functions ${FUNCNAME} ${FUNCNAME} ${FUNCNAME}
+}
+
+test_sql_udf_single
+test_sql_udf_multiple
+test_sql_udf_duplicate
