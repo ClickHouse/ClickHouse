@@ -401,7 +401,7 @@ finish:
                 }
             }
 
-            if (max_length >= MIN_LENGTH_FOR_STRSTR || (!is_first_call && max_length > 0))
+            if (max_length >= MIN_LENGTH_FOR_STRSTR || ((!is_first_call || has_alternative_on_depth_0) && max_length > 0))
             {
                 required_substring.literal = candidate_it->first;
                 required_substring.prefix = candidate_it->second;
@@ -421,7 +421,7 @@ finish:
     if (has_alternative_on_depth_0)
     {
         /// compare the quality of required substring and alternatives and choose the better one.
-        if (shortest_literal_length(global_alternatives) < required_substring.literal.size())
+        if (global_alternatives.empty() || shortest_literal_length(global_alternatives) < required_substring.literal.size())
             global_alternatives = {required_substring};
         Literals next_alternatives;
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
