@@ -2421,7 +2421,8 @@ namespace
             bool with_length_delimiter_,
             bool google_wrappers_special_treatment_,
             std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler_,
-            const ProtobufReaderOrWriter & reader_or_writer_)
+            const ProtobufReaderOrWriter & reader_or_writer_,
+            bool use_confluent_)
             : parent_field_descriptor(parent_field_descriptor_)
             , with_length_delimiter(with_length_delimiter_)
             , google_wrappers_special_treatment(google_wrappers_special_treatment_)
@@ -2430,6 +2431,7 @@ namespace
                 ? shouldSkipZeroOrEmpty(*parent_field_descriptor, google_wrappers_special_treatment_) : false)
             , reader(reader_or_writer_.reader)
             , writer(reader_or_writer_.writer)
+            , use_confluent(use_confluent_)
         {
             field_infos.reserve(field_descs_.size());
             for (auto & desc : field_descs_)
@@ -2541,7 +2543,12 @@ namespace
                     {
                         size_t field_index = findFieldIndexByFieldTag(field_tag);
                         if (field_index == static_cast<size_t>(-1))
-                            continue;
+                        {
+                            if (use_confluent)
+                                break;
+                            else
+                                continue;
+                        }
                         auto * field_serializer = field_infos[field_index].field_serializer.get();
                         field_serializer->readRow(row_num);
                         field_infos[field_index].field_read = true;
@@ -2576,11 +2583,13 @@ namespace
                 }
             }
 
-            if (parent_field_descriptor || has_envelope_as_parent)
-                reader->endNestedMessage();
-            else
-                reader->endMessage(false);
-
+            if (!use_confluent)
+            {
+                if (parent_field_descriptor || has_envelope_as_parent)
+                    reader->endNestedMessage();
+                else
+                    reader->endMessage(false);
+            }
             addDefaultsToMissingColumns(row_num);
         }
 
@@ -2686,6 +2695,7 @@ namespace
         std::vector<FieldInfo> field_infos;
         std::unordered_map<int, size_t> field_index_by_field_tag;
         MutableColumns mutable_columns;
+        bool use_confluent;
         bool has_missing_columns = false;
         int last_field_tag = 0;
         size_t last_field_index = static_cast<size_t>(-1);
@@ -3002,7 +3012,8 @@ namespace
             const MessageDescriptor & message_descriptor,
             bool with_length_delimiter,
             bool with_envelope,
-            bool google_wrappers_special_treatment)
+            bool google_wrappers_special_treatment,
+            bool use_confluent)
         {
             root_serializer_ptr = std::make_shared<ProtobufSerializer *>();
             get_root_desc_function = [my_root_serializer_ptr = root_serializer_ptr](size_t indent) -> String
@@ -3023,7 +3034,8 @@ namespace
                 /* parent_field_descriptor = */ nullptr,
                 used_column_indices,
                 /* columns_are_reordered_outside = */ false,
-                /* check_nested_while_filling_missing_columns = */ true);
+                /* check_nested_while_filling_missing_columns = */ true,
+                use_confluent);
 
             if (!message_serializer)
             {
@@ -3224,7 +3236,8 @@ namespace
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
             bool columns_are_reordered_outside,
-            bool check_nested_while_filling_missing_columns)
+            bool check_nested_while_filling_missing_columns,
+            bool use_confluent)
         {
             std::vector<std::string_view> column_names_sv;
             column_names_sv.reserve(num_columns);
@@ -3241,7 +3254,8 @@ namespace
                 parent_field_descriptor,
                 used_column_indices,
                 columns_are_reordered_outside,
-                check_nested_while_filling_missing_columns);
+                check_nested_while_filling_missing_columns,
+                use_confluent);
         }
 
         std::unique_ptr<ProtobufSerializerMessage> buildMessageSerializerImpl(
@@ -3254,7 +3268,8 @@ namespace
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
             bool columns_are_reordered_outside,
-            bool check_nested_while_filling_missing_columns)
+            bool check_nested_while_filling_missing_columns,
+            bool use_confluent)
         {
             std::vector<ProtobufSerializerMessage::FieldDesc> field_descs;
             boost::container::flat_map<const FieldDescriptor *, std::string_view> field_descriptors_in_use;
@@ -3311,7 +3326,7 @@ namespace
                     /// Simple case: one column is serialized as one field.
                     const auto & field_descriptor = *field_descriptors_with_suffixes[0].first;
                     auto field_serializer = buildFieldSerializer(column_name, data_type,
-                        field_descriptor, field_descriptor.is_repeated(), google_wrappers_special_treatment);
+                        field_descriptor, field_descriptor.is_repeated(), google_wrappers_special_treatment, use_confluent);
 
                     if (field_serializer)
                     {
@@ -3383,7 +3398,8 @@ namespace
                             field_descriptor,
                             used_column_indices_in_nested,
                             /* columns_are_reordered_outside = */ true,
-                            /* check_nested_while_filling_missing_columns = */ false);
+                            /* check_nested_while_filling_missing_columns = */ false,
+                            use_confluent);
 
                         /// `columns_are_reordered_outside` is true because column indices are
                         /// going to be transformed and then written to the outer message,
@@ -3484,7 +3500,7 @@ namespace
 
             return std::make_unique<ProtobufSerializerMessage>(
                 std::move(field_descs), parent_field_descriptor, with_length_delimiter, google_wrappers_special_treatment,
-                std::move(missing_columns_filler), reader_or_writer);
+                std::move(missing_columns_filler), reader_or_writer, use_confluent);
         }
 
         /// Builds a serializer for one-to-one match:
@@ -3494,7 +3510,8 @@ namespace
             const DataTypePtr & data_type,
             const FieldDescriptor & field_descriptor,
             bool allow_repeat,
-            bool google_wrappers_special_treatment)
+            bool google_wrappers_special_treatment,
+            bool use_confluent)
         {
             auto data_type_id = data_type->getTypeId();
             switch (data_type_id)
@@ -3535,7 +3552,7 @@ namespace
                 {
                     const auto & nullable_data_type = assert_cast<const DataTypeNullable &>(*data_type);
                     auto nested_serializer = buildFieldSerializer(column_name, nullable_data_type.getNestedType(),
-                        field_descriptor, allow_repeat, google_wrappers_special_treatment);
+                        field_descriptor, allow_repeat, google_wrappers_special_treatment, use_confluent);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerNullable>(std::move(nested_serializer));
@@ -3546,7 +3563,7 @@ namespace
                     const auto & low_cardinality_data_type = assert_cast<const DataTypeLowCardinality &>(*data_type);
                     auto nested_serializer
                         = buildFieldSerializer(column_name, low_cardinality_data_type.getDictionaryType(),
-                        field_descriptor, allow_repeat, google_wrappers_special_treatment);
+                        field_descriptor, allow_repeat, google_wrappers_special_treatment, use_confluent);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerLowCardinality>(std::move(nested_serializer));
@@ -3556,7 +3573,7 @@ namespace
                 {
                     const auto & map_data_type = assert_cast<const DataTypeMap &>(*data_type);
                     auto nested_serializer = buildFieldSerializer(column_name, map_data_type.getNestedType(),
-                        field_descriptor, allow_repeat, google_wrappers_special_treatment);
+                        field_descriptor, allow_repeat, google_wrappers_special_treatment, use_confluent);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerMap>(std::move(nested_serializer));
@@ -3593,7 +3610,8 @@ namespace
                                 &field_descriptor,
                                 used_column_indices,
                                 /* columns_are_reordered_outside = */ false,
-                                /* check_nested_while_filling_missing_columns = */ false);
+                                /* check_nested_while_filling_missing_columns = */ false,
+                                use_confluent);
 
                             if (!message_serializer)
                                 return nullptr;
@@ -3606,7 +3624,7 @@ namespace
 
                     auto nested_serializer = buildFieldSerializer(column_name, array_data_type.getNestedType(), field_descriptor,
                                                                   /* allow_repeat = */ false, // We do our repeating now, so for nested type we forget about the repeating.
-                                                                  google_wrappers_special_treatment);
+                                                                  google_wrappers_special_treatment, use_confluent);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerArray>(std::move(nested_serializer));
@@ -3654,7 +3672,8 @@ namespace
                             &field_descriptor,
                             used_column_indices,
                             /* columns_are_reordered_outside = */ false,
-                            /* check_nested_while_filling_missing_columns = */ false);
+                            /* check_nested_while_filling_missing_columns = */ false,
+                            use_confluent);
 
                         if (!message_serializer)
                         {
@@ -3678,7 +3697,7 @@ namespace
                     {
                         auto nested_serializer = buildFieldSerializer(column_name, nested_data_type, field_descriptor,
                                                                       /* allow_repeat = */ false, // We do our repeating now, so for nested type we forget about the repeating.
-                                                                      google_wrappers_special_treatment);
+                                                                      google_wrappers_special_treatment, use_confluent);
                         if (!nested_serializer)
                             break;
                         nested_serializers.push_back(std::move(nested_serializer));
@@ -3894,7 +3913,24 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     return ProtobufSerializerBuilder(reader).buildMessageSerializer(
         column_names, data_types, missing_column_indices,
         *descriptor.message_descriptor,
-        with_length_delimiter, with_envelope, flatten_google_wrappers);
+        with_length_delimiter, with_envelope, flatten_google_wrappers, false);
+}
+
+std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
+    const Strings & column_names,
+    const DataTypes & data_types,
+    std::vector<size_t> & missing_column_indices,
+    const google::protobuf::Descriptor * descriptor,
+    bool with_length_delimiter,
+    bool with_envelope,
+    bool flatten_google_wrappers,
+    ProtobufReader & reader,
+    bool use_confluent)
+{
+    return ProtobufSerializerBuilder(reader).buildMessageSerializer(
+        column_names, data_types, missing_column_indices,
+        *descriptor,
+        with_length_delimiter, with_envelope, flatten_google_wrappers, use_confluent);
 }
 
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
@@ -3910,7 +3946,7 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     return ProtobufSerializerBuilder(writer).buildMessageSerializer(
         column_names, data_types, missing_column_indices,
         *descriptor.message_descriptor,
-        with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers);
+        with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers, false);
 }
 
 NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields)

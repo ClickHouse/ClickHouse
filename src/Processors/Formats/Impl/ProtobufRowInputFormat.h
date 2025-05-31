@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Formats/Impl/ConfluentRegistry.h>
 #include "config.h"
 
 #if USE_PROTOBUF
@@ -60,6 +61,37 @@ private:
 
     bool with_length_delimiter;
     bool flatten_google_wrappers;
+};
+
+class ProtobufConfluentRowInputFormat final : public IRowInputFormat
+{
+public:
+    ProtobufConfluentRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    String getName() const override { return "ProtobufConfluentRowInputFormat"; }
+
+private:
+    bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
+    void readPrefix() override;
+
+    bool allowSyncAfterError() const override { return true; }
+    void syncAfterError() override;
+
+    std::shared_ptr<ConfluentSchemaRegistry> schema_registry;
+    using SchemaId = uint32_t;
+
+    FormatSettings format_settings;
+
+    void createReaderAndSerializer();
+
+    std::unique_ptr<ProtobufReader> reader;
+    std::unique_ptr<ProtobufSerializer> serializer;
+
+    google::protobuf::Descriptor * descriptor;
+    std::vector<size_t> missing_column_indices;
+    bool with_length_delimiter;
+    bool flatten_google_wrappers;
+
+    bool first_row = true;
 };
 
 class ProtobufSchemaReader : public IExternalSchemaReader

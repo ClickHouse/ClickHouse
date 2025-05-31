@@ -50,6 +50,17 @@ public:
     static std::unique_ptr<ProtobufSerializer> create(
         const Strings & column_names,
         const DataTypes & data_types,
+        std::vector<size_t> & missing_column_indices,
+        const google::protobuf::Descriptor * descriptor,
+        bool with_length_delimiter,
+        bool with_envelope,
+        bool flatten_google_wrappers,
+        ProtobufReader & reader,
+        bool use_confluent);
+
+    static std::unique_ptr<ProtobufSerializer> create(
+        const Strings & column_names,
+        const DataTypes & data_types,
         const ProtobufSchemas::DescriptorHolder & descriptor,
         bool with_length_delimiter,
         bool with_envelope,

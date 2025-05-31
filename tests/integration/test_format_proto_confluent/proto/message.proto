@@ -1,0 +1,6 @@
+syntax = "proto3";
+
+message TestRecord {
+  int64 value = 1;
+  string value2 = 2;
+}
