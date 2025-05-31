@@ -2273,7 +2273,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
         case QueryLogFactories::ExecutableUserDefinedFunction:
             query_factories_info.executable_user_defined_functions.emplace(created_object);
             break;
-        case QueryLogFactories::SqlUserDefinedFunction:
+        case QueryLogFactories::SQLUserDefinedFunction:
             query_factories_info.sql_user_defined_functions.emplace(created_object);
     }
 }

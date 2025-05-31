@@ -195,7 +195,7 @@ ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
     {
         auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SqlUserDefinedFunction, function_name);
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
     }
 
     return ast;
@@ -209,7 +209,7 @@ ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) 
     {
         auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SqlUserDefinedFunction, function_name);
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
     }
 
     return ast;

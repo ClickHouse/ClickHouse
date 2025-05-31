@@ -36,7 +36,7 @@ check_sql_udf_functions() {
 
     $CLICKHOUSE_CLIENT -q "
         SELECT arraySort(used_sql_user_defined_functions) FROM system.query_log
-        WHERE type = 'QueryFinish' AND query_id = '${query_id}'"
+        WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query_id = '${query_id}'"
 
     for func in "${@}"; do
         $CLICKHOUSE_CLIENT -q "DROP FUNCTION IF EXISTS ${func}"

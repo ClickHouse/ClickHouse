@@ -881,7 +881,7 @@ public:
         Storage,
         TableFunction,
         ExecutableUserDefinedFunction,
-        SqlUserDefinedFunction
+        SQLUserDefinedFunction
     };
 
     QueryFactoriesInfo getQueryFactoriesInfo() const;
