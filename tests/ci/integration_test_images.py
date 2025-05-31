@@ -12,6 +12,7 @@ IMAGES_ENV = {
     "clickhouse/mysql-php-client": "DOCKER_MYSQL_PHP_CLIENT_TAG",
     "clickhouse/nginx-dav": "DOCKER_NGINX_DAV_TAG",
     "clickhouse/postgresql-java-client": "DOCKER_POSTGRESQL_JAVA_CLIENT_TAG",
+    "clickhouse/postgresql-dotnet-client": "DOCKER_POSTGRESQL_DOTNET_CLIENT_TAG",
     "clickhouse/python-bottle": "DOCKER_PYTHON_BOTTLE_TAG",
     "clickhouse/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
 }
