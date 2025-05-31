@@ -91,7 +91,7 @@ public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
-    using typename Base::OnWeightLossFunction;
+    using typename Base::OnEvictionFunction;
 
     explicit TTLCachePolicy(CachePolicyUserQuotaPtr quotas_)
         : Base(std::move(quotas_))
@@ -262,7 +262,7 @@ private:
 
     WeightFunction weight_function;
     IsStaleFunction is_stale_function;
-    /// TODO support OnWeightLossFunction callback
+    /// TODO support OnEvictionFunction callback
 };
 
 }

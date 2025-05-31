@@ -12,6 +12,9 @@ namespace ProfileEvents
 {
     extern const Event MarkCacheHits;
     extern const Event MarkCacheMisses;
+    extern const Event MarkCacheEvictedBytes;
+    extern const Event MarkCacheEvictedMarks;
+    extern const Event MarkCacheEvictedFiles;
 }
 
 namespace DB
@@ -41,7 +44,7 @@ private:
 public:
     MarkCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
-    /// Calculate key from path to file and offset.
+    /// Calculate key from path to file.
     static UInt128 hash(const String & path_to_file);
 
     template <typename LoadFunc>
@@ -54,6 +57,22 @@ public:
             ProfileEvents::increment(ProfileEvents::MarkCacheHits);
 
         return result.first;
+    }
+
+private:
+    /// Called when the cache is full, and we evict some cells as per the cache policy.
+    void onEviction(const EvictionDetails & details) override
+    {
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, details.total_weight_loss);
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks,
+            /// Sum up the total number of marks across all evicted cache entries
+            std::accumulate(details.evicted_values.begin(), details.evicted_values.end(), 0ULL,
+            [](size_t sum, const MappedPtr & ptr)
+            {
+                return sum + std::static_pointer_cast<MarksInCompressedFile>(ptr)->getNumberOfMarks();
+            }));
+        /// number of files evicted from the cache is same as number of evicted values as both are tied together as a cell in the cache
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles, details.evicted_values.size());
     }
 };
 
