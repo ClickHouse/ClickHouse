@@ -1,0 +1,7 @@
+<profiles>
+    <default>
+        <max_memory_usage>10000000000</max_memory_usage>
+        <max_query_duration>60</max_query_duration>
+        <!-- Другие настройки по умолчанию -->
+    </default>
+</profiles>

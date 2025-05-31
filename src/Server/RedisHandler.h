@@ -1,0 +1,47 @@
+#pragma once
+
+#include <memory>
+#include <Poco/Logger.h>
+#include <Poco/Net/StreamSocket.h>
+#include <Poco/Net/TCPServerConnection.h>
+
+#include "IO/ReadBufferFromPocoSocket.h"
+#include "IO/WriteBufferFromPocoSocket.h"
+#include "IServer.h"
+#include "Server/TCPServer.h"
+#include "RedisProtocolMapping.h"
+#include "base/types.h"
+
+namespace DB
+{
+class ReadBufferFromPocoSocket;
+class Session;
+class TCPServer;
+
+class RedisHandler : public Poco::Net::TCPServerConnection
+{
+public:
+    RedisHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, RedisProtocol::Config & config_);
+
+    void run() final;
+
+private:
+
+    bool process_request();
+
+    void init_db(UInt32 db_);
+
+    IServer & server;
+    TCPServer & tcp_server;
+    std::shared_ptr<ReadBufferFromPocoSocket> in;
+    std::shared_ptr<WriteBufferFromPocoSocket> out;
+    std::unique_ptr<Session> session;
+
+    RedisProtocol::Config config;
+    UInt32 db = RedisProtocol::DB_MAX_NUM;
+    std::map<UInt32, std::unique_ptr<RedisProtocol::RedisClickHouseMapping>> redis_click_house_mapping;
+
+    Poco::Logger * log = &Poco::Logger::get("RedisHandler");
+};
+
+}
