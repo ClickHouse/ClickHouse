@@ -165,12 +165,12 @@ class CHServer:
                 --profile-seconds 10 \
                 {test_file}",
             verbose=True,
+            strip=False,
         )
         duration = sw.duration
         if res != 0:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
-            err = Shell.get_output(f"echo \"{err}\" | grep '{test_name}\t'")
         with open(f"{results_path}/{test_name}-raw.tsv", "w") as f:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:
@@ -319,7 +319,7 @@ def main():
             f"cp ./programs/server/config.xml {perf_right_config}",
             f"cp ./programs/server/users.xml {perf_right_config}",
             f"cp -r --dereference ./programs/server/config.d {perf_right_config}",
-            # f"cp ./tests/performance/scripts/config/config.d/*.xml {perf_right_config}/config.d/",
+            f"cp ./tests/performance/scripts/config/config.d/*xml {perf_right_config}/config.d/",
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             # f"cp -r ./tests/performance {perf_right}",
@@ -331,9 +331,7 @@ def main():
             "clickhouse-local --version",
         ]
         results.append(
-            Result.from_commands_run(
-                name="Install ClickHouse", command=commands, with_log=True
-            )
+            Result.from_commands_run(name="Install ClickHouse", command=commands)
         )
         res = results[-1].is_ok()
 
@@ -352,7 +350,7 @@ def main():
             ]
             results.append(
                 Result.from_commands_run(
-                    name="Install Reference ClickHouse", command=commands, with_log=True
+                    name="Install Reference ClickHouse", command=commands
                 )
             )
             res = results[-1].is_ok()
@@ -421,9 +419,7 @@ def main():
             f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
             f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
         ]
-        results.append(
-            Result.from_commands_run(name="Configure", command=commands, with_log=True)
-        )
+        results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
 
     leftCH = CHServer(is_left=True)
@@ -524,7 +520,6 @@ def main():
             Result.from_commands_run(
                 name="Report",
                 command=commands,
-                with_log=True,
                 workdir=perf_wd,
             )
         )

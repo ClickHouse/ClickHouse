@@ -80,12 +80,8 @@ bool needToFormatWithParentheses(ASTAlterCommand::Type type)
 
 void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    scope_guard closing_bracket_guard;
-    if (format_alter_commands_with_parentheses || needToFormatWithParentheses(type))
-    {
-        ostr << "(";
-        closing_bracket_guard = make_scope_guard(std::function<void(void)>([&ostr]() { ostr << ")"; }));
-    }
+    ostr << "(";
+    auto closing_bracket_guard = make_scope_guard(std::function<void(void)>([&ostr]() { ostr << ")"; }));
 
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
@@ -510,6 +506,16 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::APPLY_DELETED_MASK)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << "APPLY DELETED MASK" << (settings.hilite ? hilite_none : "");
+
+        if (partition)
+        {
+            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->format(ostr, settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::APPLY_PATCHES)
+    {
+        ostr << (settings.hilite ? hilite_keyword : "") << "APPLY PATCHES" << (settings.hilite ? hilite_none : "");
 
         if (partition)
         {

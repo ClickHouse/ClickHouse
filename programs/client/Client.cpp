@@ -21,6 +21,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
@@ -71,7 +72,7 @@ Client::Client()
 
 Client::~Client() = default;
 
-void Client::processError(const String & query) const
+void Client::processError(std::string_view query) const
 {
     if (server_exception)
     {
@@ -353,7 +354,6 @@ try
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
-    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()

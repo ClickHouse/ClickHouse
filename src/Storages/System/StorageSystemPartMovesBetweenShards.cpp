@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/StorageSystemPartMovesBetweenShards.h>
 #include <Storages/VirtualColumnUtils.h>

@@ -7,6 +7,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Interpreters/Context.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -197,6 +198,11 @@ bool StorageObjectStorage::hasExternalDynamicMetadata() const
     return configuration->hasExternalDynamicMetadata();
 }
 
+IDataLakeMetadata * StorageObjectStorage::getExternalMetadata() const
+{
+    return configuration->getExternalMetadata();
+}
+
 void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 {
     StorageInMemoryMetadata metadata;
@@ -370,8 +376,15 @@ void StorageObjectStorage::read(
 
     const auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
+
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
+
+    auto modified_format_settings{format_settings};
+    if (!modified_format_settings.has_value())
+        modified_format_settings.emplace(getFormatSettings(local_context));
+
+    configuration->modifyFormatSettings(modified_format_settings.value());
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
@@ -381,7 +394,7 @@ void StorageObjectStorage::read(
         getVirtualsList(),
         query_info,
         storage_snapshot,
-        format_settings,
+        modified_format_settings,
         distributed_processing,
         read_from_format_info,
         need_only_count,
@@ -416,15 +429,16 @@ SinkToStoragePtr StorageObjectStorage::write(
                         configuration->getPath());
     }
 
+    if (!configuration->supportsWrites())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
+
     if (configuration->withPartitionWildcard())
     {
-        ASTPtr partition_by_ast = nullptr;
+        ASTPtr partition_by_ast = partition_by;
         if (auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
         {
             if (insert_query->partition_by)
                 partition_by_ast = insert_query->partition_by;
-            else
-                partition_by_ast = partition_by;
         }
 
         if (partition_by_ast)
@@ -442,8 +456,9 @@ SinkToStoragePtr StorageObjectStorage::write(
     configuration->setPaths(paths);
 
     return std::make_shared<StorageObjectStorageSink>(
+        paths.back(),
         object_storage,
-        configuration->clone(),
+        configuration,
         format_settings,
         sample_block,
         local_context);
@@ -597,8 +612,7 @@ void StorageObjectStorage::Configuration::initialize(
     Configuration & configuration_to_initialize,
     ASTs & engine_args,
     ContextPtr local_context,
-    bool with_table_structure,
-    StorageObjectStorageSettingsPtr settings)
+    bool with_table_structure)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
@@ -622,25 +636,12 @@ void StorageObjectStorage::Configuration::initialize(
     else
         FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
 
-    configuration_to_initialize.storage_settings = settings;
     configuration_to_initialize.initialized = true;
-}
-
-const StorageObjectStorageSettings & StorageObjectStorage::Configuration::getSettingsRef() const
-{
-    return *storage_settings;
 }
 
 void StorageObjectStorage::Configuration::check(ContextPtr) const
 {
     FormatFactory::instance().checkFormatName(format);
-}
-
-StorageObjectStorage::Configuration::Configuration(const Configuration & other)
-{
-    format = other.format;
-    compression_method = other.compression_method;
-    structure = other.structure;
 }
 
 bool StorageObjectStorage::Configuration::withPartitionWildcard() const

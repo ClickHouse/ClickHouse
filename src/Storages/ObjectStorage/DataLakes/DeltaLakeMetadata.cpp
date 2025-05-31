@@ -15,7 +15,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Interpreters/Context.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -54,6 +56,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_delta_kernel_rs;
+}
+
 
 namespace
 {
@@ -500,12 +508,13 @@ struct DeltaLakeMetadataImpl
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
             format_settings.date_time_overflow_behavior,
+            format_settings.parquet.allow_geoparquet_parser,
             /* case_insensitive_column_matching */false);
 
         std::shared_ptr<arrow::Table> table;
         THROW_ARROW_NOT_OK(reader->ReadTable(&table));
 
-        Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows());
+        Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows(), reader->parquet_reader()->metadata()->key_value_metadata());
         auto res_block = header.cloneWithColumns(chunk.detachColumns());
         res_block = Nested::flatten(res_block);
 
@@ -606,6 +615,30 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, Configura
              data_files.size(), partition_columns.size(), schema.toString());
 }
 
+DataLakeMetadataPtr DeltaLakeMetadata::create(
+    ObjectStoragePtr object_storage,
+    ConfigurationObserverPtr configuration,
+    ContextPtr local_context)
+{
+#if USE_DELTA_KERNEL_RS
+    auto configuration_ptr = configuration.lock();
+    const auto & query_settings_ref = local_context->getSettingsRef();
+
+    const auto storage_type = configuration_ptr->getType();
+    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
+
+    bool enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs];
+    if (supports_delta_kernel && enable_delta_kernel)
+    {
+        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
+    }
+    else
+        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+#else
+    return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+#endif
+}
+
 DataTypePtr DeltaLakeMetadata::getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable)
 {
      if (field->isObject(type_key))
@@ -645,7 +678,7 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
         return DataTypeFactory::instance().get("Bool");
     if (type_name == "date")
         return std::make_shared<DataTypeDate32>();
-    if (type_name == "timestamp")
+    if (type_name == "timestamp" || type_name == "timestamp_ntz")
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
     {
