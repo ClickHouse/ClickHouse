@@ -8,6 +8,7 @@ Positions: 0
         Function: count() → UInt64
         Arguments: none
   Skip merging: 0
+  Use sharding: 1
     Expression (Before GROUP BY)
     Positions:
       Filter (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + WHERE))

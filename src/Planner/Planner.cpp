@@ -138,6 +138,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsBool group_by_use_sharding;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -493,6 +494,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_software_prefetch_in_aggregation],
         /* only_merge */ false,
         settings[Setting::optimize_group_by_constant_keys],
+        /*use_sharding_by_keys_=*/false,
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params);
 
@@ -561,7 +563,8 @@ void addAggregationStep(QueryPlan & query_plan,
         std::move(group_by_sort_description),
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        settings[Setting::force_aggregation_in_order]);
+        settings[Setting::force_aggregation_in_order],
+        settings[Setting::group_by_use_sharding]);
     query_plan.addStep(std::move(aggregating_step));
 }
 
