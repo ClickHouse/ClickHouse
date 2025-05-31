@@ -68,9 +68,6 @@ public:
 
         Cluster::ShardInfo shard_info;
 
-        /// If we connect to replicas lazily.
-        /// (When there is a local replica with big delay).
-        bool lazy = false;
         AdditionalShardFilterGenerator shard_filter_generator{};
     };
 
