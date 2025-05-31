@@ -508,11 +508,25 @@ void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CachePr
 
     const auto & entry = *iterator;
 
-    if (!cache_priority->canFit(size, /* elements */0, lock))
+    if (entry->useRealDiskSize())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        size_t fit_size = entry->key_metadata->alignFileSize(entry->getSize(true) + size) - entry->getSize();
+
+        if (!cache_priority->canFit(fit_size, 0, lock))
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot increment size by {} for entry {}. Current state: {}",
-                        size, entry->toString(), cache_priority->getStateInfoForLog(lock));
+                        fit_size, entry->toString(), cache_priority->getStateInfoForLog(lock));
+        }
+    }
+    else
+    {
+        if (!cache_priority->canFit(size, /* elements */0, lock))
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Cannot increment size by {} for entry {}. Current state: {}",
+                            size, entry->toString(), cache_priority->getStateInfoForLog(lock));
+        }
     }
 
     LOG_TEST(
