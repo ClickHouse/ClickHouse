@@ -340,22 +340,19 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            if (spawn_status == ExecutorTasks::SHOULD_SPAWN)
+            try
             {
-                try
-                {
-                    /// Communicate with resource scheduler or ConcurrencyControl
-                    /// Do upscaling, downscaling, or sleep for preemption
-                    if (!controlConcurrency(cpu_lease))
-                        break;
-                }
-                catch (...)
-                {
-                    /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
-                    /// We should cancel execution properly before rethrow.
-                    cancel(ExecutionStatus::Exception);
-                    throw;
-                }
+                /// Communicate with resource scheduler or ConcurrencyControl
+                /// Do upscaling, downscaling, or sleep for preemption
+                if (!controlConcurrency(cpu_lease, spawn_status == ExecutorTasks::SHOULD_SPAWN))
+                    break;
+            }
+            catch (...)
+            {
+                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                /// We should cancel execution properly before rethrow.
+                cancel(ExecutionStatus::Exception);
+                throw;
             }
 
             /// We have executed single processor. Check if we need to yield execution.
@@ -450,8 +447,15 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
         pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
 }
 
-bool PipelineExecutor::controlConcurrency(ISlotLease * cpu_lease)
+bool PipelineExecutor::controlConcurrency(ISlotLease * cpu_lease, bool should_spawn)
 {
+    /// Only allow one thread to spawn, if someone is already spawning threads, just skip.
+    if (should_spawn && spawn_mutex.try_lock())
+    {
+        std::lock_guard lock(spawn_mutex, std::adopt_lock);
+        spawnThreads({});
+    }
+
     if (cpu_lease) // Check if preemtion is enabled (see `cpu_slot_preemption` server setting)
     {
         // Preemption point. Renewal could block execution due to CPU overload.
@@ -459,12 +463,6 @@ bool PipelineExecutor::controlConcurrency(ISlotLease * cpu_lease)
             return false; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
     }
 
-    /// Only allow one thread to spawn, if someone is already spawning threads, just skip.
-    if (spawn_mutex.try_lock())
-    {
-        std::lock_guard lock(spawn_mutex, std::adopt_lock);
-        spawnThreads({});
-    }
     return true;
 }
 
