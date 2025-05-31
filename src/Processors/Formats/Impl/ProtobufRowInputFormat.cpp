@@ -37,8 +37,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
 extern const int CANNOT_READ_ALL_DATA;
+extern const int INCORRECT_DATA;
 }
 
 ProtobufRowInputFormat::ProtobufRowInputFormat(
@@ -193,7 +193,7 @@ void ProtobufConfluentRowInputFormat::readPrefix()
 
 void ProtobufConfluentRowInputFormat::createReaderAndSerializer()
 {
-    
+
     reader = std::make_unique<ProtobufReader>(*in);
     serializer = ProtobufSerializer::create(
         getPort().getHeader().getNames(),

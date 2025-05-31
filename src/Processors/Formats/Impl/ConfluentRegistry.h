@@ -14,28 +14,23 @@
 #include <Poco/URI.h>
 
 #if USE_AVRO
-#include <DataFile.hh>
-#include <Decoder.hh>
-#include <Schema.hh>
-#include <ValidSchema.hh>
-#include <Compiler.hh>
+#    include <Compiler.hh>
+#    include <DataFile.hh>
+#    include <Decoder.hh>
+#    include <Schema.hh>
+#    include <ValidSchema.hh>
 #endif
 
 #if USE_PROTOBUF
-#include <google/protobuf/descriptor.pb.h>
-#include <google/protobuf/dynamic_message.h>
-#include <google/protobuf/compiler/importer.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
-#include <google/protobuf/io/tokenizer.h>
+#    include <google/protobuf/compiler/importer.h>
+#    include <google/protobuf/descriptor.pb.h>
+#    include <google/protobuf/dynamic_message.h>
+#    include <google/protobuf/io/tokenizer.h>
+#    include <google/protobuf/io/zero_copy_stream_impl.h>
 #endif
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
 
 class ConfluentSchemaRegistry
 {
@@ -49,10 +44,10 @@ public:
 #if USE_PROTOBUF
     class ErrorCollector : public google::protobuf::compiler::MultiFileErrorCollector
     {
-        void AddError(const std::string&, int line, int column, const std::string& message) override;
+        void AddError(const std::string &, int line, int column, const std::string & message) override;
     };
 
-    const google::protobuf::Descriptor* getProtobufSchema(uint32_t id);
+    const google::protobuf::Descriptor * getProtobufSchema(uint32_t id);
 #endif
 
 private:
@@ -65,7 +60,7 @@ private:
 #endif
 
 #if USE_PROTOBUF
-    CacheBase<uint32_t, const google::protobuf::Descriptor*> protobuf_schema_cache;
+    CacheBase<uint32_t, const google::protobuf::Descriptor *> protobuf_schema_cache;
 #endif
 
     String logger_name;

@@ -1,24 +1,25 @@
 #include <Processors/Formats/Impl/ConfluentRegistry.h>
 
 #include <IO/HTTPCommon.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int INCORRECT_DATA;
 }
 
-ConfluentSchemaRegistry::ConfluentSchemaRegistry(const std::string & base_url_, const String & logger_name_, size_t schema_cache_max_size)
+ConfluentSchemaRegistry::ConfluentSchemaRegistry(const std::string & base_url_, const String & logger_name_, [[maybe_unused]] size_t schema_cache_max_size)
     : base_url(base_url_)
 #if USE_AVRO
     , avro_schema_cache(schema_cache_max_size)
 #endif
 #if USE_PROTOBUF
     , protobuf_schema_cache(schema_cache_max_size)
-#endif 
+#endif
     , logger_name(logger_name_)
 {
     if (base_url.empty())
@@ -30,35 +31,36 @@ avro::ValidSchema ConfluentSchemaRegistry::getAvroSchema(uint32_t id)
 {
     auto [schema, loaded] = avro_schema_cache.getOrSet(
         id,
-        [this, id](){ 
+        [this, id]()
+        {
             try
             {
                 auto representation = fetchSchema(id);
-                auto result_schema = std::make_shared<avro::ValidSchema>(avro::compileJsonSchemaFromString(representation)); 
+                auto result_schema = std::make_shared<avro::ValidSchema>(avro::compileJsonSchemaFromString(representation));
                 return result_schema;
             }
             catch (const avro::Exception & e)
             {
                 throw Exception::createDeprecated(e.what(), ErrorCodes::INCORRECT_DATA);
             }
-        }
-    );
+        });
     return *schema;
 }
 #endif
 
 #if USE_PROTOBUF
 
-void ConfluentSchemaRegistry::ErrorCollector::AddError(const std::string&, int line, int column, const std::string& message)
+void ConfluentSchemaRegistry::ErrorCollector::AddError(const std::string &, int line, int column, const std::string & message)
 {
     throw Exception(ErrorCodes::INCORRECT_DATA, "Proto parse error at {}: {} {}", line, column, message);
 }
 
-const google::protobuf::Descriptor* ConfluentSchemaRegistry::getProtobufSchema(uint32_t id)
+const google::protobuf::Descriptor * ConfluentSchemaRegistry::getProtobufSchema(uint32_t id)
 {
     auto [schema, loaded] = protobuf_schema_cache.getOrSet(
         id,
-        [this, id](){ 
+        [this, id]()
+        {
             auto schema_representation = fetchSchema(id);
 
             ErrorCollector error_collector;
@@ -84,9 +86,8 @@ const google::protobuf::Descriptor* ConfluentSchemaRegistry::getProtobufSchema(u
             *fds.add_file() = file_proto;
 
             google::protobuf::DescriptorPool independent_pool;
-            return std::make_shared<const google::protobuf::Descriptor*>(independent_pool.BuildFile(file_proto)->message_type(0));
-        }
-    );
+            return std::make_shared<const google::protobuf::Descriptor *>(independent_pool.BuildFile(file_proto)->message_type(0));
+        });
     return *schema;
 }
 
@@ -102,10 +103,7 @@ String ConfluentSchemaRegistry::fetchSchema(uint32_t id)
             LOG_TRACE((getLogger(logger_name)), "Fetching schema id = {} from url {}", id, url.toString());
 
             /// One second for connect/send/receive. Just in case.
-            auto timeouts = ConnectionTimeouts()
-                .withConnectionTimeout(1)
-                .withSendTimeout(1)
-                .withReceiveTimeout(1);
+            auto timeouts = ConnectionTimeouts().withConnectionTimeout(1).withSendTimeout(1).withReceiveTimeout(1);
 
             Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
             request.setHost(url.getHost());
