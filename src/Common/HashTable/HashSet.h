@@ -70,6 +70,13 @@ public:
 
     using Base::Base;
 
+    template <typename... Args>
+    void merge(const HashSetTable<Key, Args...> & rhs)
+    {
+        for (auto it = rhs.begin(), end = rhs.end(); it != end; ++it)
+            this->insert(it->getValue());
+    }
+
     /// Writes its content in a way that it will be correctly read by HashSetTable.
     /// Used by uniqExact to preserve backward compatibility.
     void writeAsSingleLevel(DB::WriteBuffer & wb) const
