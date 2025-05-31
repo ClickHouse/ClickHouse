@@ -214,3 +214,29 @@ TEST(SLRUCache, getOrSet)
     ASSERT_TRUE(value != nullptr);
     ASSERT_TRUE(*value == 5);
 }
+
+TEST(SLRUCache, MaxCount)
+{
+    using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
+
+    size_t x = 5;
+    auto load_func = [&] { return std::make_shared<size_t>(x); };
+
+    for (size_t max_count = 1; max_count < 1024; max_count *= 2)
+    {
+        SimpleCacheBase slru_cache("SLRU", CurrentMetrics::end(), CurrentMetrics::end(),
+                                   /*max_size_in_bytes=*/1'000'000'000,
+                                   /*max_count=*/max_count,
+                                   /*size_ratio*/0.5);
+        for (size_t i = 0; i < 10; ++i)
+        {
+            auto [value, loaded] = slru_cache.getOrSet(i, load_func);
+            ASSERT_NE(value, nullptr)
+                << "max_count = " << max_count << ", i = " << i;
+            ASSERT_EQ(*value, 5)
+                << "max_count = " << max_count << ", i = " << i;
+            ASSERT_EQ(slru_cache.count(), std::min(i + 1, max_count))
+                << "max_count = " << max_count << ", i = " << i;
+        }
+    }
+}
