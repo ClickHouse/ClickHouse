@@ -37,7 +37,6 @@ public:
 
     AvroForIcebergDeserializer(
         std::unique_ptr<DB::ReadBufferFromFileBase> buffer_,
-        const std::string & manifest_file_path_,
         const DB::FormatSettings & format_settings);
 
     size_t rows() const;
@@ -50,6 +49,8 @@ public:
     DB::Field getValueFromRowByName(size_t row_num, const std::string & path, std::optional<DB::TypeIndex> expected_type = std::nullopt) const;
 
     std::optional<std::string> tryGetAvroMetadataValue(std::string metadata_key) const;
+
+    String getMetadataFileName() const { return buffer->getFileName(); }
 };
 
 }

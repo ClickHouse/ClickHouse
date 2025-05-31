@@ -1,3 +1,4 @@
+#include <Formats/FormatFactory.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -21,6 +22,7 @@ namespace DB::ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace Iceberg
@@ -104,6 +106,13 @@ namespace
         }
     }
 
+    Int32 getSchemaObjectIdFromManifestFile(const String & schema_json_string)
+    {
+        Poco::JSON::Parser parser;
+        Poco::Dynamic::Var json = parser.parse(schema_json_string);
+        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
+        return schema_object->getValue<int>(f_schema_id);
+    }
 }
 
 const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles() const
@@ -119,18 +128,25 @@ Int32 ManifestFileContent::getSchemaId() const
 using namespace DB;
 
 ManifestFileContent::ManifestFileContent(
-    const AvroForIcebergDeserializer & manifest_file_deserializer,
+    std::unique_ptr<DB::ReadBufferFromFileBase> && buffer,
     Int32 format_version_,
     const String & common_path,
-    Int32 schema_id_,
-    Poco::JSON::Object::Ptr schema_object_,
     const IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
     const String & table_location,
     DB::ContextPtr context)
 {
-    this->schema_id = schema_id_;
-    this->schema_object = schema_object_;
+    AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), getFormatSettings(context));
+
+    auto schema_json_str_ = manifest_file_deserializer.tryGetAvroMetadataValue(f_schema);
+    if (!schema_json_str_.has_value())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
+            manifest_file_deserializer.getMetadataFileName(), f_schema);
+    }
+    schema_json_str = std::move(schema_json_str_.value());
+    schema_id = getSchemaObjectIdFromManifestFile(schema_json_str);
 
     for (const auto & column_name : {f_status, f_data_file})
     {
@@ -177,7 +193,7 @@ ManifestFileContent::ManifestFileContent(
     }
 
     if (!partition_columns_description.empty())
-        this->partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context));
+        partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context));
 
     for (size_t i = 0; i < manifest_file_deserializer.rows(); ++i)
     {
@@ -300,13 +316,21 @@ ManifestFileContent::ManifestFileContent(
                     break;
             }
         }
-        this->files.emplace_back(status, added_sequence_number, file, partition_key_value, columns_infos);
+        files.emplace_back(status, added_sequence_number, file, partition_key_value, columns_infos);
     }
 }
 
 bool ManifestFileContent::hasPartitionKey() const
 {
     return partition_key_description.has_value();
+}
+
+Poco::JSON::Object::Ptr ManifestFileContent::parseSchema() const
+{
+    Poco::JSON::Parser parser;
+    Poco::Dynamic::Var json = parser.parse(schema_json_str);
+    const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
+    return schema_object;
 }
 
 const DB::KeyDescription & ManifestFileContent::getPartitionKeyDescription() const
@@ -328,11 +352,26 @@ const std::set<Int32> & ManifestFileContent::getColumnsIDsWithBounds() const
 
 size_t ManifestFileContent::getSizeInMemory() const
 {
+    static size_t constexpr PARTITION_KEY_DESCRIPTION_PADDING = 1024;
+
     size_t total_size = sizeof(ManifestFileContent);
+    total_size += schema_json_str.capacity();
     if (partition_key_description)
-        total_size += sizeof(DB::KeyDescription);
+    {
+        total_size += partition_key_description->sample_block.allocatedBytes();
+        total_size += partition_key_description->column_names.capacity() * sizeof(typename decltype(partition_key_description->column_names)::value_type);
+        total_size += partition_key_description->additional_column.value_or(String()).capacity();
+        total_size += PARTITION_KEY_DESCRIPTION_PADDING;
+    }
     total_size += column_ids_which_have_bounds.size() * sizeof(Int32);
     total_size += files.capacity() * sizeof(ManifestFileEntry);
+    for (const auto & file : files)
+    {
+        if (std::holds_alternative<DataFileEntry>(file.file))
+            total_size += std::get<DataFileEntry>(file.file).file_name.capacity();
+        total_size += file.partition_key_value.capacity() * sizeof(typename decltype(file.partition_key_value)::value_type);
+        total_size += file.columns_infos.size() * sizeof(typename decltype(file.columns_infos)::value_type);
+    }
     return total_size;
 }
 
