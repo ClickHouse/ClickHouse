@@ -29,6 +29,11 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
 }
 
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
+
 enum class Status : uint8_t
 {
     INACTIVE,
@@ -92,11 +97,15 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
         query = parseQuery(
             parser_query, begin, end, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
-        /// Best effort - ignore parse error and present available information
         LOG_INFO(getLogger("StorageSystemDDLWorkerQueue"), "Failed to determine cluster");
-        return "";
+        if (e.code() == ErrorCodes::SYNTAX_ERROR)
+        {
+            /// ignore parse error and present available information
+            return "";
+        }
+        throw;
     }
 
     String cluster_name;
