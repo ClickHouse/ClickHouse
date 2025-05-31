@@ -3,18 +3,21 @@
 #include "config.h"
 
 #if USE_ORC
-#    include <Formats/FormatSettings.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <Processors/Formats/IInputFormat.h>
-#    include <Processors/Formats/ISchemaReader.h>
-#    include <Storages/MergeTree/KeyCondition.h>
-#    include <boost/algorithm/string.hpp>
-#    include <orc/MemoryPool.hh>
-#    include <orc/OrcFile.hh>
-#    include <Common/threadPoolCallbackRunner.h>
+
+#include <Formats/FormatSettings.h>
+#include <Formats/FormatParserGroup.h>
+#include <IO/ReadBufferFromString.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <boost/algorithm/string.hpp>
+#include <orc/MemoryPool.hh>
+#include <orc/OrcFile.hh>
+#include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
 {
+
+class KeyCondition;
 
 class ORCInputStream : public orc::InputStream
 {
@@ -60,7 +63,7 @@ class NativeORCBlockInputFormat : public IInputFormat
 {
 public:
     NativeORCBlockInputFormat(
-        ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_);
+        ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_, FormatParserGroupPtr parser_group_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
@@ -101,6 +104,7 @@ private:
     const std::unordered_set<int> & skip_stripes;
     const bool use_prefetch;
     const size_t min_bytes_for_seek;
+    FormatParserGroupPtr parser_group;
 
     std::vector<int> selected_stripes;
     size_t read_iterator;
