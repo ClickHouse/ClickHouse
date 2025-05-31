@@ -615,6 +615,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
             MergeTreeMutationEntry & entry = it->second;
             if (is_successful)
             {
+                entry.finish_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                 if (!entry.latest_failed_part.empty() && result_part->part_info.contains(entry.latest_failed_part_info))
                 {
                     entry.latest_failed_part.clear();
@@ -628,6 +629,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
             }
             else
             {
+                entry.finish_time = 0;
                 entry.latest_failed_part = failed_part->name;
                 entry.latest_failed_part_info = failed_part->info;
                 entry.latest_fail_time = time(nullptr);
@@ -809,7 +811,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             return result;
         }
     }
-
+    result.finish_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     result.is_done = true;
     return result;
 }
@@ -874,6 +876,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.file_name,
                 command.ast->formatWithSecretsOneLine(),
                 entry.create_time,
+                entry.finish_time,
                 block_numbers_map,
                 parts_to_do_names,
                 /* is_done = */parts_to_do_names.empty(),
@@ -1575,6 +1578,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
             if (!entry.is_done)
             {
                 entry.is_done = true;
+                entry.finish_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                 decrementMutationsCounters(mutation_counters, *entry.commands);
             }
 
