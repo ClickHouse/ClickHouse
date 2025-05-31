@@ -1,3 +1,4 @@
+#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
@@ -9,6 +10,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
+#include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -17,7 +19,10 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 #include <cstring> // memcpy
+#include <city.h>
 
+using Hash = CityHash_v1_0_2::uint128;
+using HashState = SipHash;
 
 namespace DB
 {
@@ -152,21 +157,13 @@ std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
 
-    String value_name {"["};
-    DataTypes element_types;
-    element_types.reserve(size);
+    HashState h;
 
     for (size_t i = 0; i < size; ++i)
-    {
-        const auto & [value, type] = getData().getValueNameAndType(offset + i);
-        element_types.push_back(type);
-        if (i > 0)
-            value_name += ", ";
-        value_name += value;
-    }
-    value_name += "]";
-
-    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
+        h.update(getData().getDataAt(offset + i).toView());
+            
+    auto p = getSipHash128AsPair(h);
+    return {fmt::format("{}_{}", p.high64, p.low64), getDataTypeByColumn(*this)};
 }
 
 StringRef ColumnArray::getDataAt(size_t n) const
