@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- no-replicated-database: test relies on system.part_log but mutation can be executed on the second replica
+
 DROP TABLE IF EXISTS t_delete_empty_part_rmt;
 
 CREATE TABLE t_delete_empty_part_rmt (a UInt64, b UInt64)
