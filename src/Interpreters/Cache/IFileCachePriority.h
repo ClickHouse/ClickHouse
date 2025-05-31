@@ -33,7 +33,17 @@ public:
         const size_t offset;
         const KeyMetadataPtr key_metadata;
 
-        std::atomic<size_t> size;
+        /// While using `use_real_disk_size` the aligned(real) size could defer from filled size.
+        /// This mean that download_size in FileSegment could defer from entry.getSize()
+        /// `not_aligned` = true force to return not-aligned size
+        /// `not_aligned` = false return the size depends on use_real_disk_size value
+        size_t getSize(bool not_aligned = false) const;
+        bool useRealDiskSize() const;
+        void setSize(size_t size_);
+
+        void increaseSize(size_t size_);
+        void decreaseSize(size_t size_);
+
         size_t hits = 0;
 
         std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }
@@ -64,6 +74,9 @@ public:
         }
 
     private:
+        std::atomic<size_t> size;
+        std::atomic<size_t> aligned_size;
+        const bool use_real_disk_size = false;
         mutable std::atomic<bool> evicting = false;
     };
     using EntryPtr = std::shared_ptr<Entry>;

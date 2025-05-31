@@ -143,6 +143,8 @@ public:
 
     size_t getReservedSize() const;
 
+    size_t getSize(bool aligned = false) const;
+
     /// Now detached status can be used in the following cases:
     /// 1. there is only 1 remaining file segment holder
     ///    && it does not need this segment anymore
