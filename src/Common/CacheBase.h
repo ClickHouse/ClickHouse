@@ -65,7 +65,7 @@ public:
         size_t max_count,
         double size_ratio)
     {
-        auto on_eviction_function = [&](size_t weight_loss, std::vector<MappedPtr>& evicted_values)
+        auto on_eviction_function = [&](size_t weight_loss, std::vector<MappedPtr> & evicted_values)
         {
             EvictionDetails details{weight_loss, std::move(evicted_values)};
             onEviction(details);
@@ -346,7 +346,7 @@ private:
 
     /// Override this method if you want to track eviction metrics in removeOverflow method.
     /// To add more metrics, add them to EvictionDetails struct.
-    virtual void onEviction(const EvictionDetails&) {}
+    virtual void onEviction(const EvictionDetails &) {}
 };
 
 
