@@ -28,7 +28,7 @@ struct CPULeaseSettings
     /// Estimated cost for requests, consumption limit without renewal
     ResourceCost quantum_ns = default_quantum_ns;
 
-    /// Mimimum CPU consumption to report
+    /// Minimum CPU consumption to report
     ResourceCost report_ns = default_report_ns;
 
     /// Timeout after which preempted thread should exit
@@ -175,7 +175,8 @@ private:
     ///    - renew() returns false and thread should stop itself
     ///  * running -> released: lease destruction and release() of its acquired slot
     ///    - thread execution stop voluntary (query is done/aborted/canceled)
-    struct Threads {
+    struct Threads
+    {
         explicit Threads(size_t max_threads_)
             : leased(max_threads_)
             , preempted(max_threads_)

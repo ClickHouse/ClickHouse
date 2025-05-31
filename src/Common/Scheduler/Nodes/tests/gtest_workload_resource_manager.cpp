@@ -435,6 +435,7 @@ struct TestQuery {
     size_t threads_finished = 0;
     size_t active_threads = 0;
     size_t started_threads = 0;
+    size_t renewing_threads = 0; // They might be just reporting consumption or being preempted
     bool query_is_finished = false;
     UInt64 work_left = UInt64(-1);
     String name;
@@ -468,7 +469,11 @@ struct TestQuery {
 
         // preemption and downscaling
         if (cpu_lease)
+        {
+            onRenewalStart();
+            SCOPE_EXIT({ onRenewalStop(); });
             return cpu_lease->renew();
+        }
         else
             return true;
     }
@@ -501,6 +506,13 @@ struct TestQuery {
         cv.wait(lock, [=, this] () { return started_threads >= thread_num_to_wait; });
     }
 
+    // Wait until number of renewing threads is not less than specified
+    void waitRenewingThreads(size_t thread_num_to_wait)
+    {
+        std::unique_lock lock{mutex};
+        cv.wait(lock, [=, this] () { return renewing_threads >= thread_num_to_wait; });
+    }
+
     // Wait until resource request is enqueued
     void waitEnqueued()
     {
@@ -531,24 +543,50 @@ struct TestQuery {
         active_threads--;
     }
 
+    // Returns unique thread number
+    void onRenewalStart()
+    {
+        std::scoped_lock lock{mutex};
+        renewing_threads++;
+        cv.notify_all();
+    }
+
+    void onRenewalStop()
+    {
+        std::scoped_lock lock{mutex};
+        renewing_threads--;
+        cv.notify_all();
+    }
+
     // Returns true iff query should continue execution
     bool doWork(size_t thread_num)
     {
-        std::unique_lock lock{mutex};
+        {
+            // Take one piece of work to do for the next 10 us
+            std::unique_lock lock{mutex};
+            if (work_left > 0)
+                work_left--;
+        }
 
-        // Take one piece of work to do for the next 10 us
-        if (work_left > 0)
-            work_left--;
-
-        // Emulate work with waiting on cv
-        bool timeout = !cv.wait_for(lock, std::chrono::microseconds(us_per_work), [=, this]
+        auto predicate = [=, this]
         {
             return query_is_finished
                 || work_left == 0
                 || (thread_num < threads_finished // When finish not the last thread make sure query will have at least 1 active thread afterwards
                     && (active_threads > 1 || threads_finished == max_threads));
-        });
-        return timeout;
+        };
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(us_per_work);
+        volatile uint64_t count = 0;
+        while (std::chrono::steady_clock::now() < deadline) {
+            count = count + 1; // CPU-intensive work
+            if (count % 1024 == 0) {
+                std::unique_lock lock2{mutex};
+                if (predicate())
+                    return false;
+            }
+        }
+        std::unique_lock lock2{mutex};
+        return !predicate();
     }
 
     void threadFunc(AcquiredSlotPtr self_slot)
@@ -891,6 +929,33 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingIndependentPools)
 
             queries.clear();
         });
+    }
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingSmoke)
+{
+    ResourceTest t;
+
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    // Do multiple iterations to check that:
+    // (a) scheduling is memoryless
+    // (b) resource request canceling works as expected
+    for (int iteration = 0; iteration < 4; ++iteration)
+    {
+        std::vector<TestQueryPtr> queries;
+        for (int query = 0; query < 2; query++)
+            queries.push_back(std::make_shared<TestQuery>(t));
+
+        queries[0]->start(TestQuery::AllocateLeaseNoDownscale, "A", 8);
+        queries[0]->waitStartedThreads(8);
+        queries[1]->start(TestQuery::AllocateLeaseNoDownscale, "B", 8);
+        queries[0]->waitRenewingThreads(4);
+        queries[1]->waitRenewingThreads(4);
     }
 
     t.wait();

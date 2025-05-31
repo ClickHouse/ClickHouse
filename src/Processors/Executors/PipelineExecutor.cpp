@@ -401,7 +401,7 @@ static SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool concurrency_c
         if (workload_cpu_scheduling_is_enabled)
         {
             /// Allocate CPU slots through resource scheduler
-            if (query_context->getCpuSlotPreemption())
+            if (query_context->getCPUSlotPreemption())
             {
                 return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link);
             }

@@ -1958,7 +1958,7 @@ void Context::setThrowOnUnknownWorkload(bool value)
     shared->throw_on_unknown_workload = value;
 }
 
-bool Context::getCpuSlotPreemption() const
+bool Context::getCPUSlotPreemption() const
 {
     SharedLockGuard lock(shared->mutex);
     return shared->cpu_slot_preemption;
