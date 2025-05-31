@@ -163,7 +163,7 @@ def test_size_adjustment(started_cluster):
 
     rss = int(
         node.query(
-            "select value from system.metrics where metric = 'MemoryResident'"
+            "select value from system.asynchronous_metrics where metric = 'MemoryResident'"
         )
     )
     # Check there's at least some free memory for page cache. If this fails, maybe server's memory
