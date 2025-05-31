@@ -111,13 +111,13 @@ private:
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
-    void spawnThreads();
-    void spawnThreadsImpl(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
+    bool controlConcurrency(ISlotLease * cpu_lease);
+    void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
-    void executeStepImpl(size_t thread_num, std::atomic_bool * yield_flag = nullptr);
-    void executeSingleThread(size_t thread_num);
+    void executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_slot, std::atomic_bool * yield_flag = nullptr);
+    void executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot = nullptr);
     void finish();
     void cancel(ExecutionStatus reason);
 
