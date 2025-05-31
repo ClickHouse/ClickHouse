@@ -58,7 +58,7 @@ public:
 
     /// Renew the slot. This method should be called periodically.
     /// Call may block while waiting for the slot to be reacquired in case of preemption.
-    /// Returns true if the slot is still acquired.
+    /// Returns true if the slot is still acquired (possibly after a preemption period).
     /// Returns false if the slot is released and holder should stop using it (e.g. thread should be stopped).
     virtual bool renew() = 0;
 };
@@ -77,6 +77,9 @@ public:
 
     /// Take one granted slot or wait until it is available.
     [[nodiscard]] virtual AcquiredSlotPtr acquire() = 0;
+
+    /// For tests. Returns true iff resource request is currently enqueued into the scheduler.
+    virtual bool isRequesting() const { return false; }
 };
 
 using SlotAllocationPtr = std::shared_ptr<ISlotAllocation>;

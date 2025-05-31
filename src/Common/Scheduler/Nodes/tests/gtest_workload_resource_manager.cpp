@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <memory>
@@ -8,7 +9,9 @@
 #include <Core/Settings.h>
 
 #include <Common/setThreadName.h>
+#include <Common/ThreadPool.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
+#include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
@@ -29,6 +32,12 @@
 
 using namespace DB;
 
+namespace CurrentMetrics
+{
+    extern const Metric QueryPipelineExecutorThreads;
+    extern const Metric QueryPipelineExecutorThreadsActive;
+    extern const Metric QueryPipelineExecutorThreadsScheduled;
+}
 class WorkloadEntityTestStorage : public WorkloadEntityStorageBase
 {
 public:
@@ -208,6 +217,48 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
         });
         return &threads.back();
     }
+
+    template <class Func>
+    void async(ThreadPool & pool, Func func)
+    {
+        pool.scheduleOrThrowOnError([func2 = std::move(func)] mutable
+        {
+            func2();
+        });
+    }
+
+    template <class Func>
+    void async(ThreadPool & pool, const String & workload, Func func)
+    {
+        pool.scheduleOrThrowOnError([=, this, func2 = std::move(func)] mutable
+        {
+            ClassifierPtr classifier = manager->acquire(workload);
+            func2(classifier);
+        });
+    }
+
+    template <class Func>
+    void async(ThreadPool & pool, const String & workload, const String & resource, Func func)
+    {
+        pool.scheduleOrThrowOnError([=, this, func2 = std::move(func)] mutable
+        {
+            ClassifierPtr classifier = manager->acquire(workload);
+            ResourceLink link = classifier->get(resource);
+            func2(link);
+        });
+    }
+
+    template <class Func>
+    void async(ThreadPool & pool, const String & workload, const String & resource1, const String & resource2, Func func)
+    {
+        pool.scheduleOrThrowOnError([=, this, func2 = std::move(func)] mutable
+        {
+            ClassifierPtr classifier = manager->acquire(workload);
+            ResourceLink link1 = resource1.empty() ? ResourceLink{} : classifier->get(resource1);
+            ResourceLink link2 = resource2.empty() ? ResourceLink{} : classifier->get(resource2);
+            func2(link1, link2);
+        });
+    }
 };
 
 using TestGuard = ResourceTest::Guard;
@@ -376,7 +427,7 @@ struct TestQuery {
     ResourceTest & t;
 
     std::mutex slots_mutex;
-    std::shared_ptr<CPUSlotsAllocation> slots;
+    SlotAllocationPtr slots;
 
     std::mutex mutex;
     std::condition_variable cv;
@@ -389,9 +440,7 @@ struct TestQuery {
     String name;
 
     ThreadFromGlobalPool * master_thread = nullptr;
-
-    std::mutex worker_threads_mutex;
-    std::vector<ThreadFromGlobalPool *> worker_threads;
+    std::unique_ptr<ThreadPool> pool;
 
     static constexpr int us_per_work = 10;
 
@@ -406,38 +455,22 @@ struct TestQuery {
             master_thread->join();
     }
 
-    void joinWorkerThreads()
+    bool controlConcurrency(ISlotLease * cpu_lease)
     {
-        while (true)
-        {
-            std::vector<ThreadFromGlobalPool *> threads_to_join;
-            {
-                std::scoped_lock lock{worker_threads_mutex};
-                threads_to_join.swap(worker_threads);
-            }
-            if (threads_to_join.empty())
-                break;
-            for (ThreadFromGlobalPool * thread : threads_to_join)
-            {
-                if (thread->joinable())
-                    thread->join();
-            }
-            // We have to repeat because threads we have just joined could have created new threads in the meantime
-        }
-    }
-
-    void upscaleIfPossible()
-    {
+        // upscale if possible
         while (auto slot = slots->tryAcquire())
         {
-            ThreadFromGlobalPool * thread = t.async([this, my_slot = std::move(slot)] mutable
+            t.async(*pool, [this, my_slot = std::move(slot)] mutable
             {
                 threadFunc(std::move(my_slot));
             });
-
-            std::scoped_lock lock{worker_threads_mutex};
-            worker_threads.push_back(thread);
         }
+
+        // preemption and downscaling
+        if (cpu_lease)
+            return cpu_lease->renew();
+        else
+            return true;
     }
 
     void finish()
@@ -522,33 +555,62 @@ struct TestQuery {
     {
         chassert(self_slot);
 
+        // If we use lease instead of a plain slot then, start consumption to track lease expiry time
+        ISlotLease * cpu_lease = dynamic_cast<ISlotLease *>(self_slot.get());
+        if (cpu_lease)
+            cpu_lease->startConsumption();
+
         size_t thread_num = onThreadStart();
         SCOPE_EXIT({ onThreadStop(); });
 
         setThreadName(fmt::format("name.{}", name, thread_num).c_str());
         while (true)
         {
-            upscaleIfPossible();
+            if (!controlConcurrency(cpu_lease))
+                break;
             if (!doWork(thread_num))
                 break;
         }
     }
 
+    enum AllocationType
+    {
+        AllocateSlots, // CpuSlotsAllocation (slot count fairness, no preemption)
+        AllocateLease, // CpuLeaseAllocation (cpu time fairness + preemption)
+        AllocateLeaseNoDownscale, // CpuLeaseAllocation (cpu time fairness + preemption w/o timeout)
+    };
+
+    SlotAllocationPtr allocateCPUSlots(AllocationType type, ResourceLink master_link, ResourceLink worker_link)
+    {
+        std::scoped_lock lock{slots_mutex};
+        switch (type) {
+            case AllocateSlots:
+                return std::make_shared<CPUSlotsAllocation>(1, max_threads - 1, master_link, worker_link);
+            case AllocateLease:
+                return std::make_shared<CPULeaseAllocation>(max_threads, master_link, worker_link);
+            case AllocateLeaseNoDownscale:
+                return std::make_shared<CPULeaseAllocation>(max_threads, master_link, worker_link, CPULeaseSettings{.preemption_timeout = std::chrono::milliseconds::max()});
+        }
+    }
+
     void start(String workload, SlotCount max_threads_, UInt64 runtime_us = UInt64(-1))
+    {
+        start(AllocateSlots, workload, max_threads_, runtime_us);
+    }
+
+    void start(AllocationType type, String workload, SlotCount max_threads_, UInt64 runtime_us = UInt64(-1))
     {
         std::scoped_lock lock{mutex};
         name = workload;
         max_threads = max_threads_;
         if (runtime_us != UInt64(-1))
             work_left = runtime_us / us_per_work;
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, max_threads);
         master_thread = t.async(workload, t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName(),
-            [&, workload] (ResourceLink master_link, ResourceLink worker_link)
+            [&, type, workload] (ResourceLink master_link, ResourceLink worker_link)
             {
                 setThreadName(workload.c_str());
-                {
-                    std::scoped_lock lock2{slots_mutex};
-                    slots = std::make_shared<CPUSlotsAllocation>(1, max_threads - 1, master_link, worker_link);
-                }
+                slots = allocateCPUSlots(type, master_link, worker_link);
                 threadFunc(slots->acquire());
 
                 // We have to keep this thread alive even when threadFunc() is finished
@@ -560,7 +622,8 @@ struct TestQuery {
                 }
 
                 // Acquired slot holds a reference to the allocation, we need to wait for release of all acquired slots
-                joinWorkerThreads();
+                if (pool)
+                    pool->wait();
 
                 std::unique_lock lock4{slots_mutex};
                 chassert(slots.use_count() == 1); // We need to destroy slots here, before thread exit

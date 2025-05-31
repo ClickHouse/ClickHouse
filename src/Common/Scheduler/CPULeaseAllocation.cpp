@@ -370,4 +370,10 @@ void CPULeaseAllocation::release(Lease & lease)
     lease.parent.reset();
 }
 
+bool CPULeaseAllocation::isRequesting() const
+{
+    std::unique_lock lock{mutex};
+    return enqueued;
+}
+
 }

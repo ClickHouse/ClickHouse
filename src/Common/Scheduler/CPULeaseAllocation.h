@@ -108,6 +108,9 @@ public:
     /// It never blocks or waits for slots. Should be used to acquire the master thread for a query.
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
+    // For tests only. Returns true iff resource request is enqueued in the scheduler
+    bool isRequesting() const override;
+
 private:
     /// Helper to make a lease
     AcquiredSlotPtr acquireImpl(std::unique_lock<std::mutex> & lock);

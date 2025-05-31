@@ -68,7 +68,7 @@ public:
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
     // For tests only. Returns true iff resource request is enqueued in the scheduler
-    bool isRequesting() const;
+    bool isRequesting() const override;
 
 private:
     friend class CPUSlotRequest; // for grant() and failed()
