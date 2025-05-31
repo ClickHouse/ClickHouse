@@ -56,7 +56,7 @@ def test_select(started_cluster):
     serializer = ProtobufSerializer(
         TestRecord,
         schema_registry_client,
-        {"use.deprecated.format": False},  # или True, если используете старую схему
+        {"use.deprecated.format": False},
     )
 
     buf = io.BytesIO()
@@ -69,7 +69,7 @@ def test_select(started_cluster):
 
     data = buf.getvalue()
 
-    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    instance = started_cluster.instances["dummy"]
     schema_registry_url = f"http://{started_cluster.schema_registry_host}:{started_cluster.schema_registry_port}"
 
     run_query(instance, "create table protobuf_data(value Int64, value2 String) engine = Memory()")
@@ -93,7 +93,7 @@ def test_select_auth(started_cluster):
     serializer = ProtobufSerializer(
         TestRecord,
         schema_registry_client,
-        {"use.deprecated.format": False},  # или True, если используете старую схему
+        {"use.deprecated.format": False},
     )
 
     buf = io.BytesIO()
@@ -120,4 +120,3 @@ def test_select_auth(started_cluster):
     run_query(instance, "insert into protobuf_data_auth format ProtobufConfluent", data, settings)
     stdout = run_query(instance, "select * from protobuf_data_auth")
     assert list(map(str.split, stdout.splitlines())) == [['42', 'abc'], ['43', 'abc'], ['44', 'abc']]
-

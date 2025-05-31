@@ -63,7 +63,7 @@ const google::protobuf::Descriptor* ConfluentSchemaRegistry::getProtobufSchema(u
 
             ErrorCollector error_collector;
             google::protobuf::compiler::DiskSourceTree source_tree;
-            source_tree.MapPath("", "."); // fake root
+            source_tree.MapPath("", ".");
 
             google::protobuf::compiler::SourceTreeDescriptorDatabase db(&source_tree);
             google::protobuf::DescriptorPool pool(&db);
