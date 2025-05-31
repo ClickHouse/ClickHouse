@@ -42,7 +42,7 @@ void addConvertingToCommonHeaderActionsIfNeeded(
     Blocks & query_plans_headers);
 
 /// Convert query node to ASTSelectQuery
-ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
+ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name = true);
 
 /// Convert query node to ASTSelectQuery for distributed processing
 ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
