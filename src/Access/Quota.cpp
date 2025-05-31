@@ -51,6 +51,7 @@ void Quota::clearAllExceptDependencies()
 {
     all_limits.clear();
     key_type = QuotaKeyType::NONE;
+    // TODO: Check if we need to clear prefix bits here.
 }
 
 }

@@ -517,9 +517,11 @@ namespace
         quota->setName(quota_name);
 
         String quota_config = "quotas." + quota_name;
-        if (config.has(quota_config + ".keyed_by_ip"))
+        if (config.has(quota_config + ".keyed_by_ip")) {
             quota->key_type = QuotaKeyType::IP_ADDRESS;
-        else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
+            String ip_config = quota_config + ".keyed_by_ip";
+            quota->prefix_bits = config.getInt(ip_config, 128);
+        } else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
             quota->key_type = QuotaKeyType::FORWARDED_IP_ADDRESS;
         else if (config.has(quota_config + ".keyed"))
             quota->key_type = QuotaKeyType::CLIENT_KEY_OR_USER_NAME;
