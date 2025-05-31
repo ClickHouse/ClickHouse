@@ -44,7 +44,7 @@ public:
 
     ~LRUCachePolicy() override
     {
-        clear();
+        clearImpl();
     }
 
     size_t sizeInBytes() const override
@@ -76,12 +76,7 @@ public:
 
     void clear() override
     {
-        CurrentMetrics::sub(count_metric, cells.size());
-        CurrentMetrics::sub(current_size_in_bytes_metric, current_size_in_bytes);
-
-        queue.clear();
-        cells.clear();
-        current_size_in_bytes = 0;
+        clearImpl();
     }
 
     void remove(const Key & key) override
@@ -262,6 +257,17 @@ private:
         CurrentMetrics::sub(current_size_in_bytes_metric, old_size_in_bytes - current_size_in_bytes);
         CurrentMetrics::sub(count_metric, old_size - cells.size());
     }
+
+    void clearImpl()
+    {
+        CurrentMetrics::sub(count_metric, cells.size());
+        CurrentMetrics::sub(current_size_in_bytes_metric, current_size_in_bytes);
+
+        queue.clear();
+        cells.clear();
+        current_size_in_bytes = 0;
+    }
+
 };
 
 }

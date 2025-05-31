@@ -106,7 +106,7 @@ public:
 
     ~TTLCachePolicy() override
     {
-        clear();
+        clearImpl();
     }
 
 
@@ -139,13 +139,7 @@ public:
 
     void clear() override
     {
-        CurrentMetrics::sub(size_in_bytes_metric, size_in_bytes);
-        CurrentMetrics::sub(count_metric, cache.size());
-
-        cache.clear();
-        Base::user_quotas->clear();
-
-        size_in_bytes = 0;
+        clearImpl();
     }
 
     void remove(const Key & key) override
@@ -295,6 +289,17 @@ private:
     WeightFunction weight_function;
     IsStaleFunction is_stale_function;
     /// TODO support OnWeightLossFunction callback
+
+    void clearImpl()
+    {
+        CurrentMetrics::sub(size_in_bytes_metric, size_in_bytes);
+        CurrentMetrics::sub(count_metric, cache.size());
+
+        cache.clear();
+        Base::user_quotas->clear();
+
+        size_in_bytes = 0;
+    }
 };
 
 }
