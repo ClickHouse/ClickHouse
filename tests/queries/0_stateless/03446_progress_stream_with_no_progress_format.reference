@@ -1,0 +1,38 @@
+event: progress
+data: {"total_rows_to_read":"10"}
+
+event: progress
+data: {"read_rows":"10","read_bytes":"80","total_rows_to_read":"10"}
+
+event: results
+data: {"sleep(0.5)":0,"number":"0"}
+
+event: results
+data: {"sleep(0.5)":0,"number":"1"}
+
+event: results
+data: {"sleep(0.5)":0,"number":"2"}
+
+event: results
+data: {"sleep(0.5)":0,"number":"3"}
+
+event: results
+data: {"sleep(0.5)":0,"number":"4"}
+
+event: results
+data: {"sleep(0.5)":0,"number":"5"}
+
+event: results
+data: {"sleep(0.5)":0,"number":"6"}
+
+event: results
+data: {"sleep(0.5)":0,"number":"7"}
+
+event: results
+data: {"sleep(0.5)":0,"number":"8"}
+
+event: results
+data: {"sleep(0.5)":0,"number":"9"}
+
+event: progress
+data: {"read_rows":"10","read_bytes":"80","total_rows_to_read":"10","result_rows":"10","result_bytes":"345"}
