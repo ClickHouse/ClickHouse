@@ -11,7 +11,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromString.h>
-#include <google/protobuf/descriptor.h>
 
 #include "Common/Exception.h"
 #include <Common/CacheBase.h>
