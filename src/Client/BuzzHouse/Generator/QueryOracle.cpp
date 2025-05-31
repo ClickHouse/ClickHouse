@@ -84,7 +84,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.setAllowEngineUDF(true);
 
     ts->set_format(OutFormat::OUT_CSV);
-    sif->set_path(qfile.generic_string());
+    sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
@@ -121,7 +121,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
     ts->set_format(sq1.single_query().explain().inner_query().select().format());
-    sif->set_path(qfile.generic_string());
+    sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
@@ -218,7 +218,7 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
 
     addLimitOrOffset(rg, gen, ncols, sel);
     ts->set_format(rg.pickRandomly(outIn));
-    sif->set_path(qfile.generic_string());
+    sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
@@ -230,16 +230,17 @@ void QueryOracle::generateExportQuery(
     FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
     Expr * expr = ff->mutable_structure();
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
-    const std::filesystem::path & nfile = fc.db_file_path / "table.data";
+    const std::filesystem::path & cnfile = fc.client_file_path / "table.data";
+    const std::filesystem::path & snfile = fc.server_file_path / "table.data";
     OutFormat outf = rg.pickRandomly(outIn);
 
     can_test_query_success &= test_content;
     /// Remove the file if exists
-    if (!std::filesystem::remove(nfile, ec) && ec)
+    if (!std::filesystem::remove(cnfile, ec) && ec)
     {
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
     }
-    ff->set_path(nfile.generic_string());
+    ff->set_path(snfile.generic_string());
 
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     if (!can_test_query_success && rg.nextSmallNumber() < 3)
@@ -338,7 +339,9 @@ void QueryOracle::generateImportQuery(
         gen.columnPathRef(entry, nins->add_cols());
     }
     gen.entries.clear();
-    iff->set_path(ff.path());
+    const std::string & base_filename = ff.path().substr(ff.path().find_last_of(std::filesystem::path::preferred_separator) + 1);
+    const std::filesystem::path & ifile = fc.client_file_path / base_filename;
+    iff->set_path(ifile.generic_string());
     iff->set_format(inf);
     if (ff.has_fcomp())
     {
@@ -474,11 +477,11 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
         OutFormat outf = rg.pickRandomly(outIn);
 
-        if (!std::filesystem::remove(qfile, ec) && ec)
+        if (!std::filesystem::remove(qcfile, ec) && ec)
         {
             LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         }
-        ff->set_path(qfile.generic_string());
+        ff->set_path(qsfile.generic_string());
         if (peer_query == PeerQuery::ClickHouseOnly && outf == OutFormat::OUT_Parquet)
         {
             /// ClickHouse prints server version on Parquet file, making checksum incompatible between versions
@@ -819,7 +822,7 @@ void QueryOracle::processFirstOracleQueryResult(const bool success, ExternalInte
         }
         else
         {
-            md5_hash1.hashFile(qfile.generic_string(), first_digest);
+            md5_hash1.hashFile(qcfile.generic_string(), first_digest);
         }
     }
     first_success = success;
@@ -844,7 +847,7 @@ void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalInt
             }
             else
             {
-                md5_hash2.hashFile((peer_query == PeerQuery::ClickHouseOnly ? qfile_peer : qfile).generic_string(), second_digest);
+                md5_hash2.hashFile((peer_query == PeerQuery::ClickHouseOnly ? qfile_peer : qcfile).generic_string(), second_digest);
                 if (first_digest != second_digest)
                 {
                     throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different result sets", oracle_name);

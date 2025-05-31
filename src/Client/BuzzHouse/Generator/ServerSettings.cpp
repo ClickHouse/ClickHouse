@@ -903,6 +903,9 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "'10M'"}, false)}});
         serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false)}});
     }
+    performanceSettings.insert({{"output_format_parquet_row_group_size", CHSetting(rowsRange, {}, false)}});
+    serverSettings.insert({{"output_format_parquet_row_group_size", CHSetting(rowsRange, {}, false)}});
+
     /// Number of bytes values
     for (const auto & entry :
          {"aggregation_in_order_max_block_bytes",
@@ -998,7 +1001,7 @@ std::unique_ptr<SQLType> size_tp, null_tp;
 
 std::unordered_map<String, DB::Strings> systemTables;
 
-void loadSystemTables(const FuzzConfig & fc)
+void loadSystemTables(FuzzConfig & fc)
 {
     size_tp = std::make_unique<IntType>(64, true);
     null_tp = std::make_unique<BoolType>();

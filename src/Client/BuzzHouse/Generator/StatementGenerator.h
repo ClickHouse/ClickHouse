@@ -111,7 +111,7 @@ public:
 class StatementGenerator
 {
 public:
-    const FuzzConfig & fc;
+    FuzzConfig & fc;
     uint32_t next_type_mask = std::numeric_limits<uint32_t>::max();
 
 private:
@@ -313,7 +313,7 @@ private:
     void addTableProjection(RandomGenerator & rg, SQLTable & t, bool staged, ProjectionDef * pdef);
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, TableEngineValues teng, bool allow_asc_desc, TableKey * tkey);
-    void setClusterInfo(RandomGenerator & rg, SQLBase & b);
+    void setClusterInfo(RandomGenerator & rg, SQLBase & b) const;
     void generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLBase & b, bool add_pkey, TableEngine * te);
     void generateEngineDetails(RandomGenerator & rg, SQLBase & b, bool add_pkey, TableEngine * te);
 
@@ -469,6 +469,7 @@ public:
     void generateNextStatement(RandomGenerator & rg, SQLQuery & sq);
 
     void updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success);
+    void setInTransaction(const bool value) { in_transaction = value; }
 
     friend class QueryOracle;
 };

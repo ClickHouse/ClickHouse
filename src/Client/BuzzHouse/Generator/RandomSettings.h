@@ -171,6 +171,6 @@ extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSettin
 
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);
-void loadSystemTables(const FuzzConfig & fc);
+void loadSystemTables(FuzzConfig & fc);
 
 }
