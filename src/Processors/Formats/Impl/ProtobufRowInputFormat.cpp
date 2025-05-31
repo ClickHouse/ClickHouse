@@ -16,12 +16,6 @@
 #include "Common/Exception.h"
 #include <Common/CacheBase.h>
 
-#include <google/protobuf/descriptor.pb.h>
-#include <google/protobuf/dynamic_message.h>
-#include <google/protobuf/compiler/importer.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
-#include <google/protobuf/io/tokenizer.h>
-
 #include <Processors/Formats/Impl/ConfluentRegistry.h>
 
 #if USE_PROTOBUF
@@ -31,6 +25,12 @@
 #   include <Formats/ProtobufReader.h>
 #   include <Formats/ProtobufSchemas.h>
 #   include <Formats/ProtobufSerializer.h>
+
+#   include <google/protobuf/descriptor.pb.h>
+#   include <google/protobuf/dynamic_message.h>
+#   include <google/protobuf/compiler/importer.h>
+#   include <google/protobuf/io/zero_copy_stream_impl.h>
+#   include <google/protobuf/io/tokenizer.h>
 
 namespace DB
 {

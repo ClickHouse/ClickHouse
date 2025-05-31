@@ -12,7 +12,8 @@ extern const int BAD_ARGUMENTS;
 extern const int INCORRECT_DATA;
 }
 
-ConfluentSchemaRegistry::ConfluentSchemaRegistry(const std::string & base_url_, const String & logger_name_, [[maybe_unused]] size_t schema_cache_max_size)
+ConfluentSchemaRegistry::ConfluentSchemaRegistry(
+    const std::string & base_url_, const String & logger_name_, [[maybe_unused]] size_t schema_cache_max_size)
     : base_url(base_url_)
 #if USE_AVRO
     , avro_schema_cache(schema_cache_max_size)
@@ -71,7 +72,8 @@ const google::protobuf::Descriptor * ConfluentSchemaRegistry::getProtobufSchema(
             google::protobuf::DescriptorPool pool(&db);
             google::protobuf::compiler::Importer importer(&source_tree, &error_collector);
 
-            std::istringstream iss(schema_representation);
+            std::istringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+                iss(schema_representation);
             google::protobuf::io::IstreamInputStream input_stream(&iss);
             google::protobuf::io::Tokenizer tokenizer(&input_stream, nullptr);
             google::protobuf::compiler::Parser parser;
