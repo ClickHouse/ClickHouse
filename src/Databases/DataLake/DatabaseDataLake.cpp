@@ -448,19 +448,38 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     const FilterByNameFunction & filter_by_table_name,
     bool /* skip_not_loaded */) const
 {
+    std::mutex mutex;
     Tables tables;
     auto catalog = getCatalog();
     const auto iceberg_tables = catalog->getTables();
+
+    auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
     for (const auto & table_name : iceberg_tables)
     {
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        auto storage = tryGetTable(table_name, context_);
-        [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
-        chassert(inserted);
+        try
+        {
+            pool.scheduleOrThrow(
+                [this, table_name, &tables, &mutex, context_]() mutable
+                {
+                    auto storage = tryGetTable(table_name, context_);
+                    std::lock_guard lock(mutex);
+                    [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
+                    chassert(inserted);
+                });
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to schedule task");
+            pool.wait();
+            throw;
+        }
     }
+
+    pool.wait();
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
@@ -470,9 +489,12 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     const FilterByNameFunction & filter_by_table_name,
     bool /*skip_not_loaded*/) const
 {
-     Tables tables;
+    std::mutex mutex;
+    Tables tables;
     auto catalog = getCatalog();
     const auto iceberg_tables = catalog->getTables();
+
+    auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
     for (const auto & table_name : iceberg_tables)
     {
@@ -488,15 +510,30 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
         /// have this try/catch here.
         try
         {
-            auto storage = tryGetTableImpl(table_name, context_, true);
-            [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
-            chassert(inserted);
+            pool.scheduleOrThrow(
+                [this, table_name, &tables, &mutex, context_] mutable
+                {
+                    try
+                    {
+                        auto storage = tryGetTableImpl(table_name, context_, true);
+
+                        std::lock_guard lock(mutex);
+                        [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
+                        chassert(inserted);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format("ignoring table {}", table_name));
+                    }
+                });
         }
         catch (...)
         {
-            tryLogCurrentException(log, fmt::format("ignoring table {}", table_name));
+            tryLogCurrentException(log, "Failed to schedule task into pool");
         }
     }
+
+    pool.wait();
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
