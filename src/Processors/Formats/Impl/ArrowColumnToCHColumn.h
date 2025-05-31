@@ -24,12 +24,14 @@ public:
     ArrowColumnToCHColumn(
         const Block & header_,
         const std::string & format_name_,
+        const FormatSettings & format_settings_,
         bool allow_missing_columns_,
         bool null_as_default_,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
         bool allow_geoparquet_parser_,
         bool case_insensitive_matching_ = false,
-        bool is_stream_ = false);
+        bool is_stream_ = false,
+        bool enable_json_parsing_ = true);
 
     Chunk arrowTableToCHChunk(
         const std::shared_ptr<arrow::Table> & table,
@@ -42,10 +44,12 @@ public:
         const arrow::Schema & schema,
         std::shared_ptr<const arrow::KeyValueMetadata> metadata,
         const std::string & format_name,
+        const FormatSettings & format_settings,
         bool skip_columns_with_unsupported_types = false,
         bool allow_inferring_nullable_columns = true,
         bool case_insensitive_matching = false,
-        bool allow_geoparquet_parser = true);
+        bool allow_geoparquet_parser = true,
+        bool enable_json_parsing = true);
 
     struct DictionaryInfo
     {
@@ -71,6 +75,8 @@ private:
 
     const Block & header;
     const std::string format_name;
+
+    const FormatSettings & format_settings;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;
@@ -78,6 +84,7 @@ private:
     bool allow_geoparquet_parser;
     bool case_insensitive_matching;
     bool is_stream;
+    bool enable_json_parsing;
 
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary

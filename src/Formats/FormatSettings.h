@@ -283,6 +283,7 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         bool use_native_reader = false;
+        bool enable_json_parsing = true;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool output_datetime_as_uint32 = false;

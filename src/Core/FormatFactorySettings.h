@@ -179,6 +179,9 @@ When reading Parquet files, skip whole row groups based on the WHERE expressions
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
 When reading Parquet files, to use native reader instead of arrow reader.
 )", 0) \
+DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
+  When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
+  )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.
 
