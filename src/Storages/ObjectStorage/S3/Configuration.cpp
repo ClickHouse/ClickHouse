@@ -123,20 +123,6 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 {
     assertInitialized();
 
-    const auto & config = context->getConfigRef();
-    const auto & settings = context->getSettingsRef();
-
-    auto s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, settings[Setting::s3_validate_request_settings]);
-
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
-    {
-        s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
-
-    s3_settings->auth_settings.updateIfChanged(auth_settings);
-    s3_settings->request_settings.updateIfChanged(request_settings);
-
     if (!headers_from_ast.empty())
     {
         s3_settings->auth_settings.headers.insert(
@@ -146,11 +132,15 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
     auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
-    auto s3_capabilities = getCapabilitiesFromConfig(config, "s3");
 
     return std::make_shared<S3ObjectStorage>(
-        std::move(client), std::move(s3_settings), url, s3_capabilities,
-        key_generator, "StorageS3", false);
+        std::move(client),
+        std::make_unique<S3ObjectStorageSettings>(*s3_settings),
+        url,
+        *s3_capabilities,
+        key_generator,
+        "StorageS3",
+        false);
 }
 
 void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
@@ -164,22 +154,35 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     else
         url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
 
-    auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
-    auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
-    auth_settings[S3AuthSetting::use_environment_credentials] = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
-    auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
-    auth_settings[S3AuthSetting::expiration_window_seconds] = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
-    auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<String>("session_token", "");
+    const auto & config = context->getConfigRef();
+    s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, settings[Setting::s3_validate_request_settings]);
+
+    s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
+    s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
+    s3_settings->auth_settings[S3AuthSetting::use_environment_credentials] = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
+    s3_settings->auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
+    s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds] = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
+    s3_settings->auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<String>("session_token", "");
 
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     structure = collection.getOrDefault<String>("structure", "auto");
 
-    request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */true);
+    s3_settings->request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */true);
 
-    static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
+    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty() || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+
+    s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
 
     keys = {url.key};
+
+    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty() || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
+    {
+        s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+        s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+    }
 }
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
@@ -192,6 +195,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             getMaxNumberOfArguments(with_structure),
             getSignatures(with_structure));
 
+    S3::S3AuthSettings auth_settings;
     std::unordered_map<std::string_view, size_t> engine_args_to_idx;
     bool no_sign_request = false;
 
@@ -383,6 +387,19 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 
     static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
     auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
+
+    const auto & config = context->getConfigRef();
+    s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
+
+    s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, context->getSettingsRef()[Setting::s3_validate_request_settings]);
+
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
+    {
+        s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+        s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+    }
+
+    s3_settings->auth_settings.updateIfChanged(auth_settings);
 
     keys = {url.key};
 }
