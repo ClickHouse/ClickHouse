@@ -84,64 +84,6 @@ ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
 
 void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
-    if (auto mark_cache = getContext()->getMarkCache())
-    {
-        new_values["MarkCacheBytes"] = { mark_cache->sizeInBytes(), "Total size of mark cache in bytes" };
-        new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
-    }
-
-    if (auto primary_index_cache = getContext()->getPrimaryIndexCache())
-    {
-        new_values["PrimaryIndexCacheBytes"] = { primary_index_cache->sizeInBytes(), "Total size of primary index cache in bytes" };
-        new_values["PrimaryIndexCacheFiles"] = { primary_index_cache->count(), "Total number of index files cached in the primary index cache" };
-    }
-
-    if (auto page_cache = getContext()->getPageCache())
-    {
-        new_values["PageCacheMaxBytes"] = { page_cache->maxSizeInBytes(),
-            "Current limit on the size of userspace page cache, in bytes." };
-        new_values["PageCacheBytes"] = { page_cache->sizeInBytes(),
-            "Total size of userspace page cache in bytes." };
-        new_values["PageCacheCells"] = { page_cache->count(),
-            "Total number of entries in the userspace page cache." };
-    }
-
-    if (auto uncompressed_cache = getContext()->getUncompressedCache())
-    {
-        new_values["UncompressedCacheBytes"] = { uncompressed_cache->sizeInBytes(),
-            "Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided." };
-        new_values["UncompressedCacheCells"] = { uncompressed_cache->count(),
-            "Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided." };
-    }
-
-    if (auto index_mark_cache = getContext()->getIndexMarkCache())
-    {
-        new_values["IndexMarkCacheBytes"] = { index_mark_cache->sizeInBytes(), "Total size of mark cache for secondary indices in bytes." };
-        new_values["IndexMarkCacheFiles"] = { index_mark_cache->count(), "Total number of mark files cached in the mark cache for secondary indices." };
-    }
-
-    if (auto index_uncompressed_cache = getContext()->getIndexUncompressedCache())
-    {
-        new_values["IndexUncompressedCacheBytes"] = { index_uncompressed_cache->sizeInBytes(),
-            "Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided." };
-        new_values["IndexUncompressedCacheCells"] = { index_uncompressed_cache->count(),
-            "Total number of entries in the uncompressed cache for secondary indices. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided." };
-    }
-
-    if (auto mmap_cache = getContext()->getMMappedFileCache())
-    {
-        new_values["MMapCacheCells"] = { mmap_cache->count(),
-            "The number of files opened with `mmap` (mapped in memory)."
-            " This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`."
-            " The files opened with `mmap` are kept in the cache to avoid costly TLB flushes."};
-    }
-
-    if (auto query_result_cache = getContext()->getQueryResultCache())
-    {
-        new_values["QueryCacheBytes"] = { query_result_cache->sizeInBytes(), "Total size of the query cache in bytes." };
-        new_values["QueryCacheEntries"] = { query_result_cache->count(), "Total number of entries in the query cache." };
-    }
-
     {
         auto caches = FileCacheFactory::instance().getAll();
         size_t total_bytes = 0;
@@ -162,16 +104,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
     }
-
-#if USE_EMBEDDED_COMPILER
-    if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-    {
-        new_values["CompiledExpressionCacheBytes"] = { compiled_expression_cache->sizeInBytes(),
-            "Total bytes used for the cache of JIT-compiled code." };
-        new_values["CompiledExpressionCacheCount"] = { compiled_expression_cache->count(),
-            "Total entries in the cache of JIT-compiled code." };
-    }
-#endif
 
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
         "The server uptime in seconds. It includes the time spent for server initialization before accepting connections." };

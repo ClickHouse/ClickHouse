@@ -162,6 +162,11 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         },
         {
             { "dashboard", "Overview" },
+            { "title", "In-Memory Caches (bytes)" },
+            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric\n  FROM merge('system', '^metric_log')\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+        },
+        {
+            { "dashboard", "Overview" },
             { "title", "Load Average (15 minutes)" },
             { "query", trim(R"EOQ(
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
@@ -488,6 +493,11 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
             { "dashboard", "Cloud overview" },
             { "title", "Memory (tracked, bytes)" },
             { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(CurrentMetric_MemoryTracking) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "In-Memory Caches (bytes)" },
+            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric\n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
         },
         {
             { "dashboard", "Cloud overview" },

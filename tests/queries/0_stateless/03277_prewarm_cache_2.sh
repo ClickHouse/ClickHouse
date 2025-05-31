@@ -27,13 +27,11 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_prewarm_cache_rmt_1 SELECT number, rand(), rand() FROM numbers(100, 100);
     INSERT INTO t_prewarm_cache_rmt_1 SELECT number, rand(), rand() FROM numbers(1000, 2000);
 
-    SYSTEM RELOAD ASYNCHRONOUS METRICS;
-    SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
+    SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
 
     SELECT count() FROM t_prewarm_cache_rmt_1 WHERE a % 2 = 0 AND a >= 100 AND a < 2000 AND NOT ignore(a, b);
 
-    SYSTEM RELOAD ASYNCHRONOUS METRICS;
-    SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
+    SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
 
     SYSTEM DROP MARK CACHE;
     SYSTEM DROP PRIMARY INDEX CACHE;
@@ -42,16 +40,14 @@ $CLICKHOUSE_CLIENT --query "
 
     SELECT count() FROM t_prewarm_cache_rmt_1 WHERE a % 2 = 0 AND a >= 100 AND a < 2000 AND NOT ignore(a, b);
 
-    SYSTEM RELOAD ASYNCHRONOUS METRICS;
-    SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
+    SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
 
     TRUNCATE TABLE t_prewarm_cache_rmt_1;
 "
 
 for _ in {1..100}; do
     res=$($CLICKHOUSE_CLIENT -q "
-        SYSTEM RELOAD ASYNCHRONOUS METRICS;
-        SELECT value FROM system.asynchronous_metrics WHERE metric = 'PrimaryIndexCacheFiles';
+        SELECT value FROM system.metrics WHERE metric = 'PrimaryIndexCacheFiles';
     ")
     if [[ $res -eq 0 ]]; then
         break
@@ -60,8 +56,7 @@ for _ in {1..100}; do
 done
 
 $CLICKHOUSE_CLIENT --query "
-    SYSTEM RELOAD ASYNCHRONOUS METRICS;
-    SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
+    SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
 
     SYSTEM FLUSH LOGS query_log;
 

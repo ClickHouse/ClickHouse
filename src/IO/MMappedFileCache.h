@@ -4,6 +4,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 #include <IO/MMappedFile.h>
 
 
@@ -11,6 +12,11 @@ namespace ProfileEvents
 {
     extern const Event MMappedFileCacheHits;
     extern const Event MMappedFileCacheMisses;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric MMapCacheCells;
 }
 
 namespace DB
@@ -27,7 +33,8 @@ private:
 
 public:
     explicit MMappedFileCache(size_t max_size_in_bytes)
-        : Base(max_size_in_bytes) {}
+        : Base(CurrentMetrics::end(), CurrentMetrics::MMapCacheCells, max_size_in_bytes)
+    {}
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file, size_t offset, ssize_t length = -1);

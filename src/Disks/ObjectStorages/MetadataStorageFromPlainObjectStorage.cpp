@@ -37,7 +37,7 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
     : object_storage(object_storage_), storage_path_prefix(std::move(storage_path_prefix_))
 {
     if (object_metadata_cache_size)
-        object_metadata_cache.emplace(object_metadata_cache_size);
+        object_metadata_cache.emplace(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
