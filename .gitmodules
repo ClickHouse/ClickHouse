@@ -372,3 +372,6 @@
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
+[submodule "contrib/sz3"]
+	path = contrib/sz3
+	url = https://github.com/szcompressor/SZ3.git

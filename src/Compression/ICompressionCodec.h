@@ -5,6 +5,8 @@
 #include <Compression/CompressionInfo.h>
 #include <base/types.h>
 #include <Parsers/IAST_fwd.h>
+#include "Common/Exception.h"
+#include "Interpreters/Context_fwd.h"
 
 class SipHash;
 
@@ -17,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_DECOMPRESS;
     extern const int CORRUPTED_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 /**
@@ -126,6 +129,13 @@ public:
 
     /// If it does nothing.
     virtual bool isNone() const { return false; }
+
+    virtual void setDimensions(const std::vector<size_t> & /*dimensions*/)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions to non-vector codec");
+    }
+
+    virtual bool isVectorCodec() const { return false; }
 
 protected:
     /// This is used for fuzz testing
