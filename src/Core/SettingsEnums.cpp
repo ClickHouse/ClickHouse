@@ -207,6 +207,12 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
+IMPLEMENT_SETTING_ENUM(SecondaryIndicesOnColumnsAlterModify, ErrorCodes::BAD_ARGUMENTS,
+    {{"ignore", SecondaryIndicesOnColumnsAlterModify::IGNORE},
+     {"throw", SecondaryIndicesOnColumnsAlterModify::THROW},
+     {"drop", SecondaryIndicesOnColumnsAlterModify::DROP},
+     {"rebuild", SecondaryIndicesOnColumnsAlterModify::REBUILD}})
+
 IMPLEMENT_SETTING_ENUM(ParallelReplicasMode, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", ParallelReplicasMode::AUTO},
      {"read_tasks", ParallelReplicasMode::READ_TASKS},
