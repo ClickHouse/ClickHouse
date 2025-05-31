@@ -303,6 +303,7 @@ bool NoOpTokenExtractor::nextInString(const char * /*data*/, size_t length, size
 {
     if (*pos == 0)
     {
+        *pos = length;
         *token_start = 0;
         *token_length = length;
         return true;
