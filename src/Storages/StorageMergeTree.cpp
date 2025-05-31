@@ -238,7 +238,7 @@ void StorageMergeTree::shutdown(bool)
     }
 
     merger_mutator.merges_blocker.cancelForever();
-    parts_mover.moves_blocker.cancelForever();
+    parts_mover->moves_blocker.cancelForever();
 
     background_operations_assignee.finish();
     background_moves_assignee.finish();
@@ -2492,7 +2492,7 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
     if (action_type == ActionLocks::PartsTTLMerge)
         return merger_mutator.ttl_merges_blocker.cancel();
     if (action_type == ActionLocks::PartsMove)
-        return parts_mover.moves_blocker.cancel();
+        return parts_mover->moves_blocker.cancel();
 
     return {};
 }
