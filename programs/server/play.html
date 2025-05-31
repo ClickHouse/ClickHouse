@@ -1289,11 +1289,38 @@ if (window.location.hash) {
     query_area.value = window.atob(window.location.hash.substr(1));
 }
 
+function extractQuery() {
+    const value = query_area.value;
+    const initialStart = query_area.selectionStart;
+    const initialEnd = query_area.selectionEnd;
+    let start = initialStart;
+    let end = query_area.selectionEnd;
+
+    if (start === end) {
+        if (value[end - 1] === ";") end -= 2;
+        if (start > end) start = end;
+
+        while (end <= value.length && value[end] !== ";") end++;
+        while (start > 0 && value[start - 1] !== ";") start--;
+    }
+    query_area.selectionStart = start
+    query_area.selectionEnd = end
+
+    setTimeout(() => { 
+	if (initialStart === initialEnd) {
+            query_area.selectionStart = initialStart;
+            query_area.selectionEnd = initialStart;
+        }
+    }, 300)
+
+    return value.slice(start, end);
+}
+
 let in_flight = false;
 async function post()
 {
     ++request_num;
-    let query = query_area.value;
+    let query = extractQuery(query_area);
     in_flight = true;
     let run = document.getElementById('run');
     run.innerText = 'Stop';
