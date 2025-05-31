@@ -217,7 +217,6 @@ namespace ServerSetting
     extern const ServerSettingsInt32 dns_cache_update_period;
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
-    extern const ServerSettingsBool format_alter_operations_with_parentheses;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -324,6 +323,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
+}
+
+namespace ErrorCodes
+{
+    extern const int STARTUP_SCRIPTS_ERROR;
 }
 
 }
@@ -791,7 +795,7 @@ void sanityChecks(Server & server)
 
     try
     {
-        if (!logs_path.empty())
+        if (!logs_path.empty() && fs::is_regular_file(logs_path))
         {
             auto logs_parent = fs::path(logs_path).parent_path();
             if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
@@ -830,6 +834,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
         for (const auto & key : keys)
         {
+            if (key == "throw_on_error")
+                continue;
             std::string full_prefix = "startup_scripts." + key;
 
             auto user = config.getString(full_prefix + ".user", "");
@@ -899,6 +905,10 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     {
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
+        if (config.getBool("startup_scripts.throw_on_error", false))
+            throw Exception(
+                ErrorCodes::STARTUP_SCRIPTS_ERROR,
+                "Cannot finish startup_script successfully. Use startup_scripts.throw_on_error setting to change this behavior");
     }
 }
 
@@ -983,8 +993,6 @@ try
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
-
-    ASTAlterCommand::setFormatAlterCommandsWithParentheses(server_settings[ServerSetting::format_alter_operations_with_parentheses]);
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
@@ -1117,6 +1125,19 @@ try
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
+    // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
+    // Otherwise, crash might happen during cache resizing in src/Common/PageCache.cpp::autoResize
+    size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
+    size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
+    if (page_cache_max_size != 0 && (page_cache_min_size > page_cache_max_size))
+    {
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Invalid page cache configuration: page_cache_min_size ({}) is greater than page_cache_max_size ({}).",
+            page_cache_min_size,
+            page_cache_max_size);
+    }
+
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
@@ -1165,7 +1186,7 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    if (server_settings[ServerSetting::page_cache_max_size] != 0)
+    if (page_cache_max_size != 0)
     {
         global_context->setPageCache(
             std::chrono::milliseconds(Int64(server_settings[ServerSetting::page_cache_history_window_ms])),
@@ -1950,6 +1971,8 @@ try
             global_context->setMaxPendingMutationsToWarn(new_server_settings[ServerSetting::max_pending_mutations_to_warn]);
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
+
+            global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
 
             size_t read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
             size_t write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
@@ -2859,10 +2882,9 @@ void Server::createServers(
 
     const TCPServerConnectionFilter::Ptr & connection_filter = new TCPServerConnectionFilter{[&]()
     {
-        const auto & server_settings = global_context->getServerSettings();
-        return !ProfileEvents::checkCPUOverload(server_settings[ServerSetting::os_cpu_busy_time_threshold],
-                server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection],
-                server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection],
+        return !ProfileEvents::checkCPUOverload(global_context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
+                global_context->getMinOSCPUWaitTimeRatioToDropConnection(),
+                global_context->getMaxOSCPUWaitTimeRatioToDropConnection(),
                 /*should_throw*/ false);
     }};
 

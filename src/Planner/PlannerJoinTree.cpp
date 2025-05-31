@@ -94,7 +94,7 @@ namespace Setting
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool query_plan_use_new_logical_join_step;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
@@ -1515,7 +1515,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
     const auto cache_key_for_parallel_hash = calculateCacheKey(table_join, hash_table_stat_cache_key);
     auto join_algorithm = chooseJoinAlgorithm(
-        table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), cache_key_for_parallel_hash);
+        table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), cache_key_for_parallel_hash, /*rhs_size_estimation=*/{});
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();
