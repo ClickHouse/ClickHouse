@@ -195,7 +195,8 @@ public:
 #pragma clang diagnostic ignored "-Wnontrivial-memcall"
             memset(&elem, 0, sizeof(elem)); /// NOLINT(bugprone-undefined-memory-manipulation)
 #pragma clang diagnostic pop
-            elem = samples[i];
+            elem.first = samples[i].first;
+            elem.second = samples[i].second;
 
             DB::transformEndianness<std::endian::little>(elem);
             DB::writeString(reinterpret_cast<const char*>(&elem), sizeof(elem), buf);
