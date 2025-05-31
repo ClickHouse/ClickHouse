@@ -104,6 +104,14 @@ void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
 
+#if USE_AWS_SQS
+void registerStorageSQS(StorageFactory & factory);
+#endif
+
+#if USE_AWS_KINESIS
+void registerStorageKinesis(StorageFactory & factory);
+#endif
+
 void registerStorages()
 {
     auto & factory = StorageFactory::instance();
@@ -203,6 +211,14 @@ void registerStorages()
     registerStorageKeeperMap(factory);
 
     registerStorageObjectStorage(factory);
+
+    #if USE_AWS_SQS
+    registerStorageSQS(factory);
+    #endif
+
+    #if USE_AWS_KINESIS
+    registerStorageKinesis(factory);
+    #endif
 }
 
 }
