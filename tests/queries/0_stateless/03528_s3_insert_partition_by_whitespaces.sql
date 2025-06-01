@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- ^ for S3
+
 INSERT INTO FUNCTION
    s3(
        s3_conn
