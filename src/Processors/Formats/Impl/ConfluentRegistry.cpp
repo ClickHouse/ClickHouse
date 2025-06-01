@@ -37,7 +37,9 @@ avro::ValidSchema ConfluentSchemaRegistry::getAvroSchema(uint32_t id)
             try
             {
                 auto representation = fetchSchema(id);
+// clang-format off
                 auto result_schema = avro::compileJsonSchemaFromString(representation);
+// clang-format on
                 return std::make_shared<avro::ValidSchema>(result_schema);
             }
             catch (const avro::Exception & e)
