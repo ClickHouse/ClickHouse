@@ -93,7 +93,7 @@ namespace ErrorCodes
 
 static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log)
 {
-    if (blocksHaveEqualStructure(header, block))
+    if (isCompatibleHeader(header, block))
         return block;
 
     LOG_WARNING(log,

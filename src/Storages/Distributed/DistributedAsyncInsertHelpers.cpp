@@ -93,7 +93,7 @@ void writeRemoteConvert(
         return;
     }
 
-    if (!blocksHaveEqualStructure(distributed_header.block_header, remote.getHeader()))
+    if (!isCompatibleHeader(distributed_header.block_header, remote.getHeader()))
     {
         LOG_WARNING(log,
             "Structure does not match (remote: {}, local: {}), implicit conversion will be done",
