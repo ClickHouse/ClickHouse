@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: deadlock, no-parallel
+# Tags: deadlock, no-parallel, log-engine
 
 set -e
 

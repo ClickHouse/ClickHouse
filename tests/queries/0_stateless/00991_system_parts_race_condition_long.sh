@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: race, no-flaky-check
+# Tags: race, no-parallel, no-flaky-check
+# no-parallel because we run many concurrent mutations, which may break other tests by delaying their mutations for a long time.
 # no-flaky-check: some queries are too long with Thread Fuzzer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

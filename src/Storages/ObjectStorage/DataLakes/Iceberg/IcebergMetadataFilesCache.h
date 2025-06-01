@@ -41,15 +41,15 @@ using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;
 struct IcebergMetadataFilesCacheCell : private boost::noncopyable
 {
     /// The cached element could be
-    /// - metadata.json deserialized as Poco::JSON::Object::Ptr
+    /// - metadata.json content
     /// - manifest list consists of cache keys which will retrieve the manifest file from cache
     /// - manifest file
-    std::variant<Poco::JSON::Object::Ptr, ManifestFileCacheKeys, Iceberg::ManifestFilePtr> cached_element;
+    std::variant<String, ManifestFileCacheKeys, Iceberg::ManifestFilePtr> cached_element;
     Int64 memory_bytes;
 
-    explicit IcebergMetadataFilesCacheCell(Poco::JSON::Object::Ptr metadata_object_, size_t memory_bytes_)
-        : cached_element(metadata_object_)
-        , memory_bytes(memory_bytes_ + SIZE_IN_MEMORY_OVERHEAD)
+    explicit IcebergMetadataFilesCacheCell(String && metadata_json_str)
+        : cached_element(std::move(metadata_json_str))
+        , memory_bytes(std::get<String>(cached_element).capacity() + SIZE_IN_MEMORY_OVERHEAD)
         , metric_increment{CurrentMetrics::IcebergMetadataFilesCacheSize, memory_bytes}
     {
     }
@@ -104,19 +104,19 @@ public:
     }
 
     template <typename LoadFunc>
-    Poco::JSON::Object::Ptr getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
+    const String & getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
     {
         auto load_fn_wrapper = [&]()
         {
-            const auto & [json_ptr, json_size] = load_fn();
-            return std::make_shared<IcebergMetadataFilesCacheCell>(json_ptr, json_size);
+            auto metadata_json_str = load_fn();
+            return std::make_shared<IcebergMetadataFilesCacheCell>(std::move(metadata_json_str));
         };
         auto result = Base::getOrSet(data_path, load_fn_wrapper);
         if (result.second)
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
-        return std::get<Poco::JSON::Object::Ptr>(result.first->cached_element);
+        return std::get<String>(result.first->cached_element);
     }
 
     template <typename LoadFunc>

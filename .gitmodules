@@ -296,9 +296,6 @@
 [submodule "contrib/aws-c-compression"]
 	path = contrib/aws-c-compression
 	url = https://github.com/awslabs/aws-c-compression
-[submodule "contrib/aws-s2n-tls"]
-	path = contrib/aws-s2n-tls
-	url = https://github.com/ClickHouse/s2n-tls
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
 	url = https://github.com/antonblanchard/crc32-vpmsum.git
@@ -372,3 +369,6 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/chdig"]
+	path = contrib/chdig
+	url = https://github.com/azat/chdig.git
