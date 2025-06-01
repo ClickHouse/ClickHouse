@@ -154,6 +154,15 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
     if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
         return std::make_shared<DataTypeArray>(getDataTypeByColumn(column_array->getData()));
 
+    if (const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column))
+    {
+        DataTypes types;
+        types.resize(column_tuple->tupleSize());
+        for (const auto & col : column_tuple->getColumns())
+            types.push_back(getDataTypeByColumn(*col));
+        return std::make_shared<DataTypeTuple>(types);
+    }
+
     if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&column))
         return makeNullable(getDataTypeByColumn(column_nullable->getNestedColumn()));
 

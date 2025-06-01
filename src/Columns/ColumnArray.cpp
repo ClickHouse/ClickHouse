@@ -158,9 +158,9 @@ std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
     size_t size = sizeAt(n);
 
     HashState h;
-
+    const auto & data_column = getData();
     for (size_t i = 0; i < size; ++i)
-        h.update(getData().getDataAt(offset + i).toView());
+        data_column.updateHashWithValue(offset + i, h);
 
     auto p = getSipHash128AsPair(h);
     return {fmt::format("{}_{}", p.high64, p.low64), getDataTypeByColumn(*this)};
