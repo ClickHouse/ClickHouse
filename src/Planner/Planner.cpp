@@ -553,7 +553,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         optimization_indexes = findOptimizationSublistIndexes(group_by_nodes, order_by_nodes);
     }
 
-    size_t limit_plus_offset_length = 18446744073709551615ull;
+    size_t limit_plus_offset_length = std::numeric_limits<size_t>::max();
     if (query_analysis_result.limit_length > 0 && query_analysis_result.limit_length+query_analysis_result.limit_offset > 1)
         limit_plus_offset_length = query_analysis_result.limit_length+query_analysis_result.limit_offset;
     Aggregator::Params aggregator_params = Aggregator::Params(

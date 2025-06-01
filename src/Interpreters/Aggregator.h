@@ -144,7 +144,7 @@ public:
             bool optimize_group_by_constant_keys_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_,
-            size_t limit_plus_offset_length_ = 9223372036854775807ll,
+            size_t limit_plus_offset_length_ = std::numeric_limits<size_t>::max(),
             std::optional<std::vector<ColumnsHashing::OptimizationDataOneExpression>> optimization_indexes_ = std::nullopt);
 
         /// Only parameters that matter during merge.
