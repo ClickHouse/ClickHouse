@@ -129,7 +129,7 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         if (!format.empty())
         {
             ostr << delim
-                << (settings.hilite ? hilite_keyword : "") << "FORMAT" << (settings.hilite ? hilite_none : "") << format << " ";
+                << (settings.hilite ? hilite_keyword : "") << "FORMAT" << (settings.hilite ? hilite_none : "") << " " << format;
         }
         else if (!infile)
         {
