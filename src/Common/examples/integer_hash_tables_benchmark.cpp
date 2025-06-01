@@ -11,7 +11,7 @@
 #include <Common/Stopwatch.h>
 
 #include <base/types.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
 

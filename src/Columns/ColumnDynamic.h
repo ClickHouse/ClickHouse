@@ -277,9 +277,9 @@ public:
         return variant_column_ptr->capacity();
     }
 
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const Columns & source_columns) override;
     /// Prepare only variants but not discriminators and offsets.
-    void prepareVariantsForSquashing(const Columns & source_columns, size_t factor);
+    void prepareVariantsForSquashing(const Columns & source_columns);
 
     void ensureOwnership() override
     {

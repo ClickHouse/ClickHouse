@@ -18,13 +18,6 @@ void ASTQueryParameter::formatImplWithoutAlias(WriteBuffer & ostr, const FormatS
         << (settings.hilite ? hilite_none : "");
 }
 
-ASTPtr ASTQueryParameter::clone() const
-{
-    auto ret = std::make_shared<ASTQueryParameter>(*this);
-    ret->cloneChildren();
-    return ret;
-}
-
 void ASTQueryParameter::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     writeString(name, ostr);

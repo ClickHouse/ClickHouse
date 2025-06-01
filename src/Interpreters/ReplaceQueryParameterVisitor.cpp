@@ -33,7 +33,7 @@ namespace ErrorCodes
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
     checkStackSize();
-    resolveParameterizedAlias(ast);
+    resolveParametrizedAlias(ast);
 
     if (ast->as<ASTQueryParameter>())
         visitQueryParameter(ast);
@@ -157,7 +157,7 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
     ast_identifier->children.clear();
 }
 
-void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
+void ReplaceQueryParameterVisitor::resolveParametrizedAlias(ASTPtr & ast)
 {
     auto ast_with_alias = std::dynamic_pointer_cast<ASTWithAlias>(ast);
     if (!ast_with_alias)

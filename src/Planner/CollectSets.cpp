@@ -1,7 +1,11 @@
 #include <Planner/CollectSets.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
+
 #include <Storages/StorageSet.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -9,11 +13,11 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Set.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
-
 
 namespace DB
 {
@@ -64,7 +68,7 @@ public:
         if (storage_set)
         {
             /// Handle storage_set as ready set.
-            auto set_key = in_second_argument->getTreeHash();
+            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
             if (sets.findStorage(set_key))
                 return;
             auto ast = in_second_argument->toAST();
@@ -85,7 +89,7 @@ public:
                 set_element_types = left_tuple_type->getElements();
 
             set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
-            auto set_key = in_second_argument->getTreeHash();
+            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
 
             if (sets.findTuple(set_key, set_element_types))
                 return;
@@ -97,7 +101,7 @@ public:
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
             in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
-            auto set_key = in_second_argument->getTreeHash();
+            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
             if (sets.findSubquery(set_key))
                 return;
 
