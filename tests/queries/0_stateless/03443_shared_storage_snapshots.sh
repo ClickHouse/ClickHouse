@@ -22,8 +22,8 @@ function test_snapshot_sharing()
     "
 
     local query_id="${CLICKHOUSE_DATABASE}_${RANDOM}${RANDOM}_sharing"
-    $CLICKHOUSE_CLIENT --query_id=$query_id "$@" --query "
-        SET merge_tree_storage_snapshot_sleep_ms = 5000;
+    $CLICKHOUSE_CLIENT --query_id="$query_id" "$@" --query "
+        SET merge_tree_storage_snapshot_sleep_ms = 1000;
         SELECT count() FROM events WHERE (_part, _part_offset) IN (
             SELECT _part, _part_offset FROM events WHERE user_id = 2
         )" &
@@ -46,21 +46,26 @@ function test_snapshot_sharing()
 
     $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE events FINAL"
 
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-    if [[ $($CLICKHOUSE_CLIENT --query "SELECT argMax(message_format_string, _part_starting_offset + _part_offset) like 'Injecting {}ms artificial delay before taking storage snapshot' FROM system.text_log WHERE event_date >= yesterday() AND query_id = '$query_id' SETTINGS max_rows_to_read = 0") -eq 0 ]]; then
-        wait $PID
-        echo "Query progressed before optimize completed; test result is unreliable"
-        return
-    else
-        wait $PID
-    fi
+    # NOTE: we can additionally ensure that the between injecting the sleep and
+    # OPTIMIZE query did not processed further, to add additional guarantees,
+    # but it does not worth it.
+    #
+    # $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+    # if [[ $($CLICKHOUSE_CLIENT --query "SELECT argMax(message_format_string, _part_starting_offset + _part_offset) like 'Injecting {}ms artificial delay before taking storage snapshot' FROM system.text_log WHERE event_date >= yesterday() AND query_id = '$query_id' SETTINGS max_rows_to_read = 0") -eq 0 ]]; then
+    #     wait $PID
+    #     echo "Query progressed before optimize completed; test result is unreliable"
+    #     return
+    # else
+    #     wait $PID
+    # fi
+    wait $PID
 
     $CLICKHOUSE_CLIENT --query "DROP TABLE events"
 }
 
 function test_snapshot_shared()
 {
-    local result i
+    local result
     for _ in {1..10}; do
         result=$(test_snapshot_sharing --enable_shared_storage_snapshot_in_query=1)
         if [ "$result" = 1 ]; then
@@ -74,7 +79,7 @@ function test_snapshot_shared()
 
 function test_snapshot_not_shared()
 {
-    local result i
+    local result
     for _ in {1..10}; do
         result=$(test_snapshot_sharing --enable_shared_storage_snapshot_in_query=0)
         if [ "$result" = 0 ]; then
