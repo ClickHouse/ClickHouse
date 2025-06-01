@@ -35,7 +35,3 @@ from helpers.test_tools import TSV, assert_eq_with_retry
 from helpers.kafka import kafka_pb2, social_pb2, message_with_repeated_pb2
 
 from google.protobuf.internal.encoder import _VarintBytes
-
-
-if is_arm():
-    pytestmark = pytest.mark.skip

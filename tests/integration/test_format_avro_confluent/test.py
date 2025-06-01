@@ -12,10 +12,6 @@ from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 
-# Skip on ARM due to Confluent/Kafka
-if is_arm():
-    pytestmark = pytest.mark.skip
-
 
 @pytest.fixture(scope="module")
 def started_cluster():

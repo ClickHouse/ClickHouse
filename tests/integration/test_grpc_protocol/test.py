@@ -22,10 +22,6 @@ import clickhouse_grpc_pb2_grpc
 GRPC_PORT = 9100
 DEFAULT_ENCODING = "utf-8"
 
-# GRPC is disabled on ARM build - skip tests
-if is_arm():
-    pytestmark = pytest.mark.skip
-
 
 # Utilities
 
