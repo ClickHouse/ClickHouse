@@ -144,20 +144,16 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     {
         auto caches = FileCacheFactory::instance().getAll();
         size_t total_bytes = 0;
-        size_t max_bytes = 0;
         size_t total_files = 0;
 
         for (const auto & [_, cache_data] : caches)
         {
             total_bytes += cache_data->cache->getUsedCacheSize();
-            max_bytes += cache_data->cache->getMaxCacheSize();
             total_files += cache_data->cache->getFileSegmentsNum();
         }
 
         new_values["FilesystemCacheBytes"] = { total_bytes,
             "Total bytes in the `cache` virtual filesystem. This cache is hold on disk." };
-        new_values["FilesystemCacheCapacity"] = { max_bytes,
-            "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
     }
@@ -309,8 +305,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
         size_t total_primary_key_bytes_memory = 0;
         size_t total_primary_key_bytes_memory_allocated = 0;
-        size_t total_index_granularity_bytes_in_memory = 0;
-        size_t total_index_granularity_bytes_in_memory_allocated = 0;
 
         for (const auto & db : databases)
         {
@@ -333,10 +327,12 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
                 if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
                 {
+                    const auto & settings = getContext()->getSettingsRef();
+
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
 
-                    size_t bytes = table_merge_tree->totalBytes(getContext()).value();
-                    size_t rows = table_merge_tree->totalRows(getContext()).value();
+                    size_t bytes = table_merge_tree->totalBytes(settings).value();
+                    size_t rows = table_merge_tree->totalRows(settings).value();
                     size_t parts = table_merge_tree->getActivePartsCount();
 
                     total_number_of_bytes += bytes;
@@ -357,8 +353,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     {
                         total_primary_key_bytes_memory += part->getIndexSizeInBytes();
                         total_primary_key_bytes_memory_allocated += part->getIndexSizeInAllocatedBytes();
-                        total_index_granularity_bytes_in_memory += part->getIndexGranularityBytes();
-                        total_index_granularity_bytes_in_memory_allocated += part->getIndexGranularityAllocatedBytes();
                     }
                 }
 
@@ -422,8 +416,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
         new_values["TotalPrimaryKeyBytesInMemory"] = { total_primary_key_bytes_memory, "The total amount of memory (in bytes) used by primary key values (only takes active parts into account)." };
         new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
-        new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granulas (only takes active parts into account)." };
-        new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
     }
 
 #if USE_NURAFT
@@ -475,26 +467,10 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
                 }
 
                 // mutation status
-                const auto max_pending_mutations_execution_time_sec = static_cast<std::chrono::seconds::rep>(getContext()->getMaxPendingMutationsExecutionTimeToWarn());
                 for (const auto & mutation_status : table_merge_tree->getMutationsStatus())
                 {
                     if (!mutation_status.is_done)
-                    {
                         ++current_mutation_stats.pending_mutations;
-                        // Check if the pending mutation is over the setting max_pending_mutations_execution_time_to_warn
-                        // The aim here is to warn the user about mutations that are pending for a very long time (default is 24 hours)
-                        {
-                            if (!mutation_status.parts_to_do_names.empty())
-                            {
-                                auto mutation_create_time = std::chrono::system_clock::from_time_t(mutation_status.create_time);
-                                auto current_time = std::chrono::system_clock::now();
-                                const auto time_elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(current_time - mutation_create_time).count();
-
-                                if (time_elapsed_sec > max_pending_mutations_execution_time_sec)
-                                    ++current_mutation_stats.pending_mutations_over_execution_time;
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -547,7 +523,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     new_values["NumberOfDetachedParts"] = { detached_parts_stats.count, "The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed." };
     new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };
     new_values["NumberOfPendingMutations"] = { mutation_stats.pending_mutations, "The total number of mutations that are in left to be mutated." };
-    new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
+    new_values["NumberOfStuckMutations"] = { mutation_stats.stuck_mutations, "The total number of mutations which have data part left to be mutated over the last 1 hour." };
 }
 
 }

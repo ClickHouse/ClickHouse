@@ -3,7 +3,6 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
-#include <Interpreters/Context.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
@@ -469,7 +468,13 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         return {};
     }
 
-    String node_data = zookeeper->get(entry_path);
+    String node_data;
+    if (!zookeeper->tryGet(entry_path, node_data))
+    {
+        LOG_ERROR(log, "Cannot get log entry {}", entry_path);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "should be unreachable");
+    }
+
     task->entry.parse(node_data);
 
     if (task->entry.query.empty())

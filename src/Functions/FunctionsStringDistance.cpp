@@ -518,32 +518,30 @@ using FunctionJaroWinklerSimilarity = FunctionsStringSimilarity<FunctionStringDi
 
 REGISTER_FUNCTION(StringDistance)
 {
-    constexpr auto category_string = FunctionDocumentation::Category::String;
-
     factory.registerFunction<FunctionByteHammingDistance>(
-        FunctionDocumentation{.description = R"(Calculates Hamming distance between two byte-strings.)", .category = category_string});
+        FunctionDocumentation{.description = R"(Calculates Hamming distance between two byte-strings.)"});
     factory.registerAlias("mismatches", NameByteHammingDistance::name);
 
     factory.registerFunction<FunctionEditDistance>(
-        FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)", .category = category_string});
+        FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
     factory.registerAlias("levenshteinDistance", NameEditDistance::name);
 
     factory.registerFunction<FunctionEditDistanceUTF8>(
-        FunctionDocumentation{.description = R"(Calculates the edit distance between two UTF8 strings.)", .category = category_string});
+        FunctionDocumentation{.description = R"(Calculates the edit distance between two UTF8 strings.)"});
     factory.registerAlias("levenshteinDistanceUTF8", NameEditDistanceUTF8::name);
 
     factory.registerFunction<FunctionDamerauLevenshteinDistance>(
-        FunctionDocumentation{.description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)", .category = category_string});
+        FunctionDocumentation{.description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)"});
 
     factory.registerFunction<FunctionStringJaccardIndex>(
-        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two byte strings.)", .category = category_string});
+        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two byte strings.)"});
     factory.registerFunction<FunctionStringJaccardIndexUTF8>(
-        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two UTF8 strings.)", .category = category_string});
+        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two UTF8 strings.)"});
 
     factory.registerFunction<FunctionJaroSimilarity>(
-        FunctionDocumentation{.description = R"(Calculates the Jaro similarity between two byte-string.)", .category = category_string});
+        FunctionDocumentation{.description = R"(Calculates the Jaro similarity between two byte-string.)"});
 
     factory.registerFunction<FunctionJaroWinklerSimilarity>(
-        FunctionDocumentation{.description = R"(Calculates the Jaro-Winkler similarity between two byte-string.)", .category = category_string});
+        FunctionDocumentation{.description = R"(Calculates the Jaro-Winkler similarity between two byte-string.)"});
 }
 }
