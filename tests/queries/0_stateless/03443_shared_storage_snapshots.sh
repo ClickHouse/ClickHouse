@@ -23,7 +23,6 @@ function test_snapshot_sharing()
 
     local query_id="${CLICKHOUSE_DATABASE}_${RANDOM}${RANDOM}_sharing"
     $CLICKHOUSE_CLIENT --query_id="$query_id" "$@" --query "
-        SET merge_tree_storage_snapshot_sleep_ms = 1000;
         SELECT count() FROM events WHERE (_part, _part_offset) IN (
             SELECT _part, _part_offset FROM events WHERE user_id = 2
         )" &
@@ -67,7 +66,7 @@ function test_snapshot_shared()
 {
     local result
     for _ in {1..10}; do
-        result=$(test_snapshot_sharing --enable_shared_storage_snapshot_in_query=1)
+        result=$(test_snapshot_sharing --enable_shared_storage_snapshot_in_query=1 --merge_tree_storage_snapshot_sleep_ms=1000)
         if [ "$result" = 1 ]; then
             echo "With snapshot sharing enabled: $result"
             return
@@ -81,7 +80,8 @@ function test_snapshot_not_shared()
 {
     local result
     for _ in {1..10}; do
-        result=$(test_snapshot_sharing --enable_shared_storage_snapshot_in_query=0)
+        # NOTE: when snapshot should not be shared, the test is sensitive to the merge_tree_storage_snapshot_sleep_ms
+        result=$(test_snapshot_sharing --enable_shared_storage_snapshot_in_query=0 --merge_tree_storage_snapshot_sleep_ms=5000)
         if [ "$result" = 0 ]; then
             echo "With snapshot sharing disabled: $result"
             return
