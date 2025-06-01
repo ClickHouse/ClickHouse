@@ -609,8 +609,8 @@ void MergeJoin::mergeInMemoryRightBlocks()
         /*increase_sort_description_compile_attempts=*/false,
         /*max_bytes_before_remerge_*/0,
         /*remerge_lowered_memory_bytes_ratio_*/0,
-        /*min_external_sort_block_bytes_*/0,
-        /*max_bytes_before_external_sort_*/0,
+        /*max_bytes_in_block_before_external_sort_*/0,
+        /*max_bytes_in_query_before_external_sort_*/0,
         /*tmp_data_*/nullptr,
         /*min_free_disk_space_*/0));
 
