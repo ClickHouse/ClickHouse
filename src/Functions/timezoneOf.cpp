@@ -67,7 +67,8 @@ public:
 private:
     static bool isDateTimeOrDateTime64(const IDataType & type)
     {
-        DataTypePtr type_no_nullable = removeNullable(DataTypePtr(&type, [](const IDataType *) {}));
+        DataTypePtr type_no_nullable = removeNullable(type.getPtr());
+
         return WhichDataType(*type_no_nullable).isDateTimeOrDateTime64();
     }
 };
