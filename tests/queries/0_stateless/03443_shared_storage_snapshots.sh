@@ -6,8 +6,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-###### Snapshot sharing enabled
-
 function test_snapshot_sharing()
 {
     $CLICKHOUSE_CLIENT -nm --query "
@@ -25,7 +23,7 @@ function test_snapshot_sharing()
 
     local query_id="${CLICKHOUSE_DATABASE}_${RANDOM}${RANDOM}_sharing"
     $CLICKHOUSE_CLIENT --query_id=$query_id "$@" --query "
-        SET merge_tree_storage_snapshot_sleep_ms = 2000;
+        SET merge_tree_storage_snapshot_sleep_ms = 5000;
         SELECT count() FROM events WHERE (_part, _part_offset) IN (
             SELECT _part, _part_offset FROM events WHERE user_id = 2
         )" &
@@ -63,7 +61,7 @@ function test_snapshot_sharing()
 function test_snapshot_shared()
 {
     local result i
-    for i in {1..10}; do
+    for _ in {1..10}; do
         result=$(test_snapshot_sharing --enable_shared_storage_snapshot_in_query=1)
         if [ "$result" = 1 ]; then
             echo "With snapshot sharing enabled: $result"
@@ -77,7 +75,7 @@ function test_snapshot_shared()
 function test_snapshot_not_shared()
 {
     local result i
-    for i in {1..10}; do
+    for _ in {1..10}; do
         result=$(test_snapshot_sharing --enable_shared_storage_snapshot_in_query=0)
         if [ "$result" = 0 ]; then
             echo "With snapshot sharing disabled: $result"
