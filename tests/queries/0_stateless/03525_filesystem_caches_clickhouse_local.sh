@@ -16,7 +16,7 @@ filesystem_caches:
 "
 
 $CLICKHOUSE_LOCAL --config-file "${CONFIG_FILE}" --filesystem_cache_name cache --query "
-SELECT cache_name, path, max_size FROM system.filesystem_cache_settings FORMAT Vertical
+SELECT cache_name, extract(path, '/cache/$') AS path, max_size FROM system.filesystem_cache_settings FORMAT Vertical
 "
 
 rm "${CONFIG_FILE}"
