@@ -3,7 +3,7 @@
 
 INSERT INTO FUNCTION
    s3(
-       s3_conn
+       s3_conn,
        filename = currentDatabase() || '/test1.parquet',
        format = Parquet
     )
@@ -18,7 +18,7 @@ SELECT * FROM s3(s3_conn, filename = currentDatabase() || '/test1.parquet');
 
 INSERT INTO FUNCTION
    s3(
-       s3_conn
+       s3_conn,
        filename = currentDatabase() || '/test2.parquet',
        format = Parquet
     ) PARTITION BY rand() % 10 SELECT
