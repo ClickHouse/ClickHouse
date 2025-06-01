@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- ^ depends on the Protobuf library.
+
 DROP TABLE IF EXISTS t0;
 
 SET engine_file_truncate_on_insert = 1;
