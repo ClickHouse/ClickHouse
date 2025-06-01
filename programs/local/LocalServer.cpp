@@ -33,6 +33,8 @@
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
@@ -884,6 +886,9 @@ void LocalServer::processConfig()
     size_t compiled_expression_cache_max_elements = server_settings[ServerSetting::compiled_expression_cache_elements_size];
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
+
+    NamedCollectionFactory::instance().loadIfNot();
+    FileCacheFactory::instance().loadDefaultCaches(config());
 
     /// NOTE: it is important to apply any overrides before
     /// `setDefaultProfiles` calls since it will copy current context (i.e.
