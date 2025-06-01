@@ -31,11 +31,10 @@ check_sql_udf_functions() {
     fi
 
     query_id=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
-    $CLICKHOUSE_CLIENT --query_id=${query_id} -q "
-      SELECT ${execute_sql_udf};
-      SYSTEM FLUSH LOGS"
+    $CLICKHOUSE_CLIENT --query_id=${query_id} -q "SELECT ${execute_sql_udf}"
 
     $CLICKHOUSE_CLIENT -q "
+        SYSTEM FLUSH LOGS query_log;
         SELECT arraySort(used_sql_user_defined_functions) FROM system.query_log
         WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query_id = '${query_id}'"
 
