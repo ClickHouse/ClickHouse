@@ -1823,7 +1823,6 @@ try
 #endif
 
     NamedCollectionFactory::instance().loadIfNot();
-
     FileCacheFactory::instance().loadDefaultCaches(config());
 
     /// Initialize main config reloader.
@@ -2124,7 +2123,6 @@ try
             CertificateReloader::instance().tryReloadAll(*config);
 #endif
             NamedCollectionFactory::instance().reloadFromConfig(*config);
-
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
             HTTPConnectionPools::instance().setLimits(
