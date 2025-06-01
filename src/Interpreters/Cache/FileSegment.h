@@ -56,6 +56,13 @@ public:
     using Info = FileSegmentInfo;
     using QueueEntryType = FileCacheQueueEntryType;
 
+    enum SizeAlignment
+    {
+        CACHE_ALIGNMENT,
+        ALIGNED,
+        NOT_ALIGNED
+    };
+
     FileSegment(
         const Key & key_,
         size_t offset_,
@@ -143,7 +150,7 @@ public:
 
     size_t getReservedSize() const;
 
-    size_t getSize(bool aligned = false) const;
+    size_t getSize(SizeAlignment alignment = SizeAlignment::NOT_ALIGNED) const;
 
     /// Now detached status can be used in the following cases:
     /// 1. there is only 1 remaining file segment holder
