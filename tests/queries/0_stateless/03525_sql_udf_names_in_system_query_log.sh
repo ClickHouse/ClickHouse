@@ -30,7 +30,7 @@ check_sql_udf_functions() {
         execute_sql_udf="concat(${joined_string})"
     fi
 
-    query_id="query_id_${FUNCNAME}_${RANDOM}_${RANDOM}"
+    query_id=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
     $CLICKHOUSE_CLIENT --query_id=${query_id} -q "
       SELECT ${execute_sql_udf};
       SYSTEM FLUSH LOGS"
