@@ -13,6 +13,7 @@
 #include "InterserverIOHTTPHandler.h"
 #include "WebUIRequestHandler.h"
 
+#include <iostream>
 
 namespace DB
 {
@@ -31,27 +32,35 @@ class RedirectRequestHandler : public HTTPRequestHandler
 {
 private:
     std::string url;
+    std::unordered_map<String, String> http_response_headers_override;
 
 public:
-    explicit RedirectRequestHandler(std::string url_)
-        : url(std::move(url_))
+    explicit RedirectRequestHandler(std::string url_, std::unordered_map<String, String> http_response_headers_override_ = {})
+        : url(std::move(url_)), http_response_headers_override(http_response_headers_override_)
     {
     }
 
     void handleRequest(HTTPServerRequest &, HTTPServerResponse & response, const ProfileEvents::Event &) override
     {
+        applyHTTPResponseHeaders(response, http_response_headers_override);
         response.redirect(url);
     }
 };
 
 HTTPRequestHandlerFactoryPtr createRedirectHandlerFactory(
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix)
+    const std::string & config_prefix,
+    std::unordered_map<String, String> common_headers)
 {
     std::string url = config.getString(config_prefix + ".handler.location");
 
+    auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, common_headers);
+
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<RedirectRequestHandler>>(
-        [my_url = std::move(url)]() { return std::make_unique<RedirectRequestHandler>(my_url); });
+        [my_url = std::move(url), headers_override = std::move(headers)]()
+        {
+            return std::make_unique<RedirectRequestHandler>(my_url, headers_override);
+        });
 
     factory->addFiltersFromConfig(config, config_prefix);
     return factory;
@@ -78,6 +87,33 @@ static auto createPingHandlerFactory(IServer & server)
     return std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(creator));
 }
 
+static auto createPingHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+                                     std::unordered_map<String, String> common_headers)
+{
+    auto creator = [&server,&config,config_prefix,common_headers]() -> std::unique_ptr<StaticRequestHandler>
+    {
+        constexpr auto ping_response_expression = "Ok.\n";
+
+        auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, "text/html; charset=UTF-8", common_headers);
+
+        return std::make_unique<StaticRequestHandler>(
+            server, ping_response_expression, headers);
+    };
+    return std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(creator));
+}
+
+template <typename UIRequestHandler>
+static auto createWebUIHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+                                      std::unordered_map<String, String> common_headers)
+{
+    auto creator = [&server,&config,config_prefix,common_headers]() -> std::unique_ptr<UIRequestHandler>
+    {
+        auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, "text/html; charset=UTF-8", common_headers);
+        return std::make_unique<UIRequestHandler>(server, headers);
+    };
+    return std::make_shared<HandlingRuleHTTPHandlerFactory<UIRequestHandler>>(std::move(creator));
+}
+
 static inline auto createHandlersFactoryFromConfig(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
@@ -89,6 +125,19 @@ static inline auto createHandlersFactoryFromConfig(
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(prefix, keys);
+
+    std::unordered_map<String, String> common_headers_override;
+
+    if (std::find(keys.begin(), keys.end(), "common_http_response_headers") != keys.end())
+    {
+        auto common_headers_prefix = prefix + ".common_http_response_headers";
+        Poco::Util::AbstractConfiguration::Keys headers_keys;
+        config.keys(common_headers_prefix, headers_keys);
+        for (const auto & header_key : headers_keys)
+        {
+            common_headers_override[header_key] = config.getString(common_headers_prefix + "." + header_key);
+        }
+    }
 
     for (const auto & key : keys)
     {
@@ -106,56 +155,73 @@ static inline auto createHandlersFactoryFromConfig(
 
             if (handler_type == "static")
             {
-                main_handler_factory->addHandler(createStaticHandlerFactory(server, config, prefix + "." + key));
+                main_handler_factory->addHandler(createStaticHandlerFactory(server, config, prefix + "." + key, common_headers_override));
             }
             else if (handler_type == "redirect")
             {
-                main_handler_factory->addHandler(createRedirectHandlerFactory(config, prefix + "." + key));
+                main_handler_factory->addHandler(createRedirectHandlerFactory(config, prefix + "." + key, common_headers_override));
             }
             else if (handler_type == "dynamic_query_handler")
             {
-                main_handler_factory->addHandler(createDynamicHandlerFactory(server, config, prefix + "." + key));
+                main_handler_factory->addHandler(createDynamicHandlerFactory(server, config, prefix + "." + key, common_headers_override));
             }
             else if (handler_type == "predefined_query_handler")
             {
-                main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key));
+                main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key, common_headers_override));
             }
             else if (handler_type == "prometheus")
             {
                 main_handler_factory->addHandler(
-                    createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics));
+                    createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics, common_headers_override));
             }
             else if (handler_type == "replicas_status")
             {
-                main_handler_factory->addHandler(createReplicasStatusHandlerFactory(server, config, prefix + "." + key));
+                main_handler_factory->addHandler(createReplicasStatusHandlerFactory(server, config, prefix + "." + key, common_headers_override));
             }
             else if (handler_type == "ping")
             {
-                auto handler = createPingHandlerFactory(server);
-                handler->addFiltersFromConfig(config, prefix + "." + key);
+                const String config_prefix = prefix + "." + key;
+                auto handler = createPingHandlerFactory(server, config, config_prefix, common_headers_override);
+                handler->addFiltersFromConfig(config, config_prefix);
                 main_handler_factory->addHandler(std::move(handler));
             }
             else if (handler_type == "play")
             {
-                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PlayWebUIRequestHandler>>(server);
+                auto handler = createWebUIHandlerFactory<PlayWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
             else if (handler_type == "dashboard")
             {
-                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DashboardWebUIRequestHandler>>(server);
+                auto handler = createWebUIHandlerFactory<DashboardWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
             else if (handler_type == "binary")
             {
-                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<BinaryWebUIRequestHandler>>(server);
+                auto handler = createWebUIHandlerFactory<BinaryWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
             else if (handler_type == "merges")
             {
-                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<MergesWebUIRequestHandler>>(server);
+                auto handler = createWebUIHandlerFactory<MergesWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+            else if (handler_type == "js")
+            {
+                // NOTE: JavaScriptWebUIRequestHandler only makes sense for paths other then /js/uplot.js, /js/lz-string.js
+                // because these paths are hardcoded in dashboard.html
+                const auto & path = config.getString(prefix + "." + key + ".url", "");
+                if (path != "/js/uplot.js" && path != "/js/lz-string.js")
+                {
+                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                    "Handler type 'js' is only supported for url '/js/'. "
+                                    "Configured path here: {}", path);
+                }
+
+                auto handler = createWebUIHandlerFactory<JavaScriptWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
@@ -163,7 +229,7 @@ static inline auto createHandlersFactoryFromConfig(
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
                     handler_type, prefix, key);
         }
-        else
+        else if (key != "common_http_response_headers")
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: "
                 "{}.{}, must be 'rule' or 'defaults'", prefix, key);
     }

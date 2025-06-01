@@ -166,6 +166,7 @@ namespace DB::ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
     extern const int INCORRECT_DATA;
+    extern const int UNKNOWN_TABLE;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -1073,6 +1074,8 @@ void TCPHandler::startInsertQuery(QueryState & state)
             if (!table_id.empty())
             {
                 auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, state.query_context);
+                if (!storage_ptr)
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs());
                 sendTableColumns(state, storage_ptr->getInMemoryMetadataPtr()->getColumns());
             }
         }
@@ -1116,7 +1119,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     Chunk result_chunk = Squashing::squash(squashing.flush());
     if (!result_chunk)
     {
-        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader(), state.query_context);
+        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader().cloneWithoutColumns(), state.query_context);
     }
 
     auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
