@@ -1009,7 +1009,7 @@ bool FileCache::tryReserve(
         {
             if (queue_iterator)
             {
-                size_to_reserve = key_metadata->alignFileSize(file_segment.getReservedSize() + size) - file_segment.getSize(true);
+                size_to_reserve = key_metadata->alignFileSize(file_segment.getReservedSize() + size) - file_segment.getSize(FileSegment::SizeAlignment::NOT_ALIGNED);
             }
             else
             {
@@ -1133,7 +1133,7 @@ bool FileCache::tryReserve(
     }
 
     file_segment.reserved_size += size;
-    chassert(file_segment.reserved_size == queue_iterator->getEntry()->getSize(true));
+    chassert(file_segment.reserved_size == queue_iterator->getEntry()->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED));
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");

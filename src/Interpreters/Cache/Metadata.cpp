@@ -57,9 +57,9 @@ FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
     }
 }
 
-size_t FileSegmentMetadata::size(bool aligned) const
+size_t FileSegmentMetadata::size(FileSegment::SizeAlignment alignment) const
 {
-    return file_segment->getSize(aligned);
+    return file_segment->getSize(alignment);
 }
 
 

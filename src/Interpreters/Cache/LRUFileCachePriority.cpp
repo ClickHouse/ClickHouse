@@ -209,22 +209,22 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
             continue;
         }
 
-        if (metadata->size() != entry.getSize(true))
+        if (metadata->size() != entry.getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED))
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Mismatch of file segment size in file segment metadata "
                 "and priority queue: {} != {} ({})",
-                entry.getSize(true), metadata->size(), metadata->file_segment->getInfoForLog());
+                entry.getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED), metadata->size(), metadata->file_segment->getInfoForLog());
         }
 
-        if (metadata->size(locked_key->useRealDiskSize()) != entry.getSize())
+        if (metadata->size(FileSegment::SizeAlignment::CACHE_ALIGNMENT) != entry.getSize())
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Mismatch of entry file segment size in file segment metadata "
                 "and priority queue: {} != {} ({})",
-                entry.getSize(), metadata->size(locked_key->useRealDiskSize()), metadata->file_segment->getInfoForLog()
+                entry.getSize(), metadata->size(FileSegment::SizeAlignment::CACHE_ALIGNMENT), metadata->file_segment->getInfoForLog()
             );
         }
 
@@ -384,12 +384,12 @@ void LRUFileCachePriority::iterateForEviction(
         if (segment_metadata->releasable())
         {
             res.add(segment_metadata, locked_key, lock);
-            stat.update(file_segment->getSize(locked_key.useRealDiskSize()), file_segment->getKind(), true);
+            stat.update(file_segment->getSize(FileSegment::SizeAlignment::CACHE_ALIGNMENT), file_segment->getKind(), true);
         }
         else
         {
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
-            stat.update(file_segment->getSize(locked_key.useRealDiskSize()), file_segment->getKind(), false);
+            stat.update(file_segment->getSize(FileSegment::SizeAlignment::CACHE_ALIGNMENT), file_segment->getKind(), false);
         }
 
         return IterationResult::CONTINUE;
@@ -510,7 +510,7 @@ void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CachePr
 
     if (entry->useRealDiskSize())
     {
-        size_t fit_size = entry->key_metadata->alignFileSize(entry->getSize(true) + size) - entry->getSize();
+        size_t fit_size = entry->key_metadata->alignFileSize(entry->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED) + size) - entry->getSize();
 
         if (!cache_priority->canFit(fit_size, 0, lock))
         {

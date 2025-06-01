@@ -26,6 +26,12 @@ public:
 
     struct Entry
     {
+        enum SizeAlignment
+        {
+            CACHE_ALIGNMENT,
+            ALIGNED,
+            NOT_ALIGNED
+        };
         Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_);
         Entry(const Entry & other);
 
@@ -37,7 +43,7 @@ public:
         /// This mean that download_size in FileSegment could defer from entry.getSize()
         /// `not_aligned` = true force to return not-aligned size
         /// `not_aligned` = false return the size depends on use_real_disk_size value
-        size_t getSize(bool not_aligned = false) const;
+        size_t getSize(SizeAlignment alignment = SizeAlignment::CACHE_ALIGNMENT) const;
         bool useRealDiskSize() const;
         void setSize(size_t size_);
 
