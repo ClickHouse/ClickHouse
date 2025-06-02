@@ -9,7 +9,6 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/ColumnString.h>
-#include <Core/Settings.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
