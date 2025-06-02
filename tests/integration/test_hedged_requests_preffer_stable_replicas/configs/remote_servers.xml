@@ -24,4 +24,6 @@
             </shard2>
         </test_cluster>
     </remote_servers>
+    <distributed_min_unstable_period_for_replica>300</distributed_min_unstable_period_for_replica>
+    <distributed_max_unstable_period_for_replica>300</distributed_max_unstable_period_for_replica>
 </clickhouse>

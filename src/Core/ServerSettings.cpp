@@ -1067,7 +1067,22 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
     )", 0) \
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
+        DECLARE(Seconds, distributed_min_unstable_period_for_replica, 1, R"(
+    Minimal period of time when replica can be unstable. Replica can become unstable if the last connection couldn't be established. It follows exponential policy with [distributed_min_unstable_period_for_replica; distributed_max_unstable_period_for_replica] bounds.
 
+    See also:
+
+    - [hedged_connections_prefer_stable_pools](#hedged_connections_prefer_stable_pools)
+    - [distributed_max_unstable_period_for_replica](#distributed_max_unstable_period_for_replica)
+    )", 0) \
+        DECLARE(Seconds, distributed_max_unstable_period_for_replica, 600, R"(
+    Max period of time when replica can be unstable. Replica can become unstable if the last connection couldn't be established. It follows exponential policy with [distributed_min_unstable_period_for_replica; distributed_max_unstable_period_for_replica] bounds.
+
+    See also:
+
+    - [hedged_connections_prefer_stable_pools](#hedged_connections_prefer_stable_pools)
+    - [distributed_min_unstable_period_for_replica](#distributed_min_unstable_period_for_replica)
+    )", 0) \
 
 // clang-format on
 
