@@ -90,7 +90,7 @@ def drop_table(cluster):
 
 
 # S3 request will be failed for an appropriate part file write.
-FILES_PER_PART_BASE = 6  # partition.dat, metadata_version.txt, default_compression_codec.txt, count.txt, columns.txt, checksums.txt
+FILES_PER_PART_BASE = 7  # partition.dat, metadata_version.txt, default_compression_codec.txt, count.txt, columns.txt, checksums.txt, columns_substreams.txt
 FILES_PER_PART_WIDE = (
     FILES_PER_PART_BASE + 1 + 1 + 3 * 2
 )  # Primary index, MinMax, Mark and data file for column(s)
@@ -98,7 +98,7 @@ FILES_PER_PART_WIDE = (
 # In debug build there are additional requests (from MergeTreeDataPartWriterWide.cpp:554 due to additional validation).
 FILES_PER_PART_WIDE_DEBUG = 2  # Additional requests to S3 in debug build
 
-FILES_PER_PART_COMPACT = FILES_PER_PART_BASE + 1 + 1 + 2 + 1
+FILES_PER_PART_COMPACT = FILES_PER_PART_BASE + 1 + 1 + 2
 FILES_PER_PART_COMPACT_DEBUG = 0
 
 
