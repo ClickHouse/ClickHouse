@@ -12,17 +12,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Poco/ConsoleChannel.h>
-#include <Poco/SimpleFileChannel.h>
-#include <Poco/SplitterChannel.h>
-#include <Poco/Util/Application.h>
-
-
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFile.h>
 
 #include <boost/program_options.hpp>
@@ -31,6 +21,8 @@
 #include <optional>
 #include <string_view>
 #include <string>
+
+#include <Poco/Util/LayeredConfiguration.h>
 
 namespace po = boost::program_options;
 
@@ -74,6 +66,8 @@ std::istream& operator>> (std::istream & in, ProgressOption & progress);
 class InternalTextLogs;
 class TerminalKeystrokeInterceptor;
 class WriteBufferFromFileDescriptor;
+struct Settings;
+struct MergeTreeSettings;
 
 /**
  * The base class which encapsulates the core functionality of a client.
@@ -342,8 +336,8 @@ protected:
     std::vector<std::pair<String, String>> query_id_formats;
 
     /// Settings specified via command line args
-    Settings cmd_settings;
-    MergeTreeSettings cmd_merge_tree_settings;
+    std::unique_ptr<Settings> cmd_settings;
+    std::unique_ptr<MergeTreeSettings> cmd_merge_tree_settings;
 
     /// thread status should be destructed before shared context because it relies on process list.
     /// This field may not be initialized in case if we run the client in the embedded mode (SSH).
