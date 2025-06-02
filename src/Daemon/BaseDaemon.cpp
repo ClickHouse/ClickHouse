@@ -143,8 +143,6 @@ BaseDaemon::~BaseDaemon()
     {
         tryLogCurrentException(&logger());
     }
-
-    disableLogging();
 }
 
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Loggers/ExtendedLogChannel.h>
+#include <base/defines.h>
 
 #include <atomic>
 #include <map>
@@ -99,6 +100,7 @@ public:
     void flushTextLogs() const;
 
 private:
+    std::atomic<bool> is_open = false;
     /// Each channel has a different queue, and each one a single thread handling it
     std::map<std::string, ExtendedChannelPtrPair> name_to_channels;
     std::vector<ExtendedChannelPtrPair> channels;
