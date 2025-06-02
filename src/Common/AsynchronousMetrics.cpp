@@ -1385,8 +1385,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     {
                         auto total = rest.substr(total_pos + 1);
                         uint64_t counter = std::stoull(total);
-                        new_values[fmt::format("PSICPU_{}", stallType)] = {counter,
-                            fmt::format("Total microseconds of CPU stall time for {} stall type", stallType)};
+                        new_values[fmt::format("PSICPU_{}", stallType)] = AsynchronousMetricValue(counter,
+                            fmt::format("Total microseconds of CPU stall time for {} stall type", stallType));
                     }
                     skipToNextLineOrEOF(*cpu_pressure);
                 }
@@ -1417,8 +1417,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 {
                     auto total = rest.substr(pos + 1);
                     uint64_t counter = std::stoull(total);
-                    new_values[fmt::format("PSIMemory_{}", stallType)] = {counter,
-                        fmt::format("Total microseconds of memory stall time for {} stall type", stallType)};
+                    new_values[fmt::format("PSIMemory_{}", stallType)] = AsynchronousMetricValue(counter,
+                        fmt::format("Total microseconds of memory stall time for {} stall type", stallType));
                 }
                 skipToNextLineOrEOF(*memory_pressure);
             }
@@ -1448,8 +1448,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 {
                     auto total = rest.substr(pos + 1);
                     uint64_t counter = std::stoull(total);
-                    new_values[fmt::format("PSIIO_{}", stallType)] = {counter,
-                        fmt::format("Total microseconds of IO stall time for {} stall type", stallType)};
+                    new_values[fmt::format("PSIIO_{}", stallType)] = AsynchronousMetricValue(counter,
+                        fmt::format("Total microseconds of IO stall time for {} stall type", stallType));
                 }
                 skipToNextLineOrEOF(*io_pressure);
             }
