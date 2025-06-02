@@ -141,41 +141,41 @@ def remove_file(node, disk_name: str, file_path: str):
         ["bash", "-c", f"{disk_cmd_prefix} 'remove {file_path}'"]
     )
 
-# Currently, 's3' doesn't support moveFile, so the DB with 's3' disk cannot be dropped.
-# def test_db_disk_setting_with_s3(start_cluster):
-#     db_name = f"db_test"
+@pytest.mark.skip(reason="'s3' disk doesn't support moveFile, so the DB with 's3' disk cannot be dropped.")
+def test_db_disk_setting_with_s3(start_cluster):
+    db_name = f"db_test"
     
-#     node1.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    node1.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
     
-#     node1.query(f"CREATE DATABASE {db_name} ENGINE= Atomic SETTINGS disk='db_disk'")
-#     node1.query(f"CREATE TABLE {db_name}.test (x INT) ENGINE=MergeTree ORDER BY x")
+    node1.query(f"CREATE DATABASE {db_name} ENGINE= Atomic SETTINGS disk='db_disk'")
+    node1.query(f"CREATE TABLE {db_name}.test (x INT) ENGINE=MergeTree ORDER BY x")
     
-#     table_metadata_path = node1.query(
-#         f"SELECT metadata_path FROM system.tables WHERE database='{db_name}' AND table='test'"
-#     ).strip()
+    table_metadata_path = node1.query(
+        f"SELECT metadata_path FROM system.tables WHERE database='{db_name}' AND table='test'"
+    ).strip()
     
      
-#     print(f"table_metadata_path: {table_metadata_path}")
+    print(f"table_metadata_path: {table_metadata_path}")
     
-#     node1.stop_clickhouse()
+    node1.stop_clickhouse()
     
-#     # Update disk of the DB to 's3'
-#     replace_text_in_metadata(node1, "global_db_disk", f"metadata/{db_name}.sql", "db_disk", "s3")
+    # Update disk of the DB to 's3'
+    replace_text_in_metadata(node1, "global_db_disk", f"metadata/{db_name}.sql", "db_disk", "s3")
     
-#     # Copy the table metadata file into 's3' disk
-#     table_metadata_content = read_file(node1, "db_disk", table_metadata_path)
-#     print(f"table_metadata_content: {table_metadata_content}")
-#     write_to_file(node1, 's3', table_metadata_path, table_metadata_content)
+    # Copy the table metadata file into 's3' disk
+    table_metadata_content = read_file(node1, "db_disk", table_metadata_path)
+    print(f"table_metadata_content: {table_metadata_content}")
+    write_to_file(node1, 's3', table_metadata_path, table_metadata_content)
     
-#     # Remove metadata file on the DB disk
-#     remove_file(node1, "db_disk", table_metadata_path)
+    # Remove metadata file on the DB disk
+    remove_file(node1, "db_disk", table_metadata_path)
     
-#     node1.start_clickhouse()
+    node1.start_clickhouse()
     
-#     validate_db_path(node1, "s3", db_name, False)
-#     assert directory_exists(node1, "s3", table_metadata_path)
+    validate_db_path(node1, "s3", db_name, False)
+    assert directory_exists(node1, "s3", table_metadata_path)
     
-#     assert node1.query("SELECT count() FROM system.tables WHERE table='test'").strip() == "1"
+    assert node1.query("SELECT count() FROM system.tables WHERE table='test'").strip() == "1"
     
-#     node1.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    node1.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
     

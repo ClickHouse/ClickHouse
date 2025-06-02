@@ -632,13 +632,13 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         /// Delete the database.
         db->drop(local_context);
 
-        auto global_db_disk = getContext()->getDatabaseDisk();
+        auto default_db_disk = getContext()->getDatabaseDisk();
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
         fs::path database_metadata_dir = fs::path("metadata") / escapeForFileName(database_name);
-        global_db_disk->removeDirectoryIfExists(database_metadata_dir);
+        default_db_disk->removeDirectoryIfExists(database_metadata_dir);
         fs::path database_metadata_file = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
-        global_db_disk->removeFileIfExists(database_metadata_file);
+        default_db_disk->removeFileIfExists(database_metadata_file);
 
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMappingFinally(db_uuid);
@@ -695,10 +695,10 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
 
     auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql.tmp");
     auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql");
-    auto global_db_disk = getContext()->getDatabaseDisk();
+    auto default_db_disk = getContext()->getDatabaseDisk();
 
     writeMetadataFile(
-        global_db_disk,
+        default_db_disk,
         /*file_path=*/database_metadata_tmp_path,
         /*content=*/statement,
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
@@ -706,11 +706,11 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
     try
     {
         /// rename atomically replaces the old file with the new one.
-        global_db_disk->replaceFile(database_metadata_tmp_path, database_metadata_path);
+        default_db_disk->replaceFile(database_metadata_tmp_path, database_metadata_path);
     }
     catch (...)
     {
-        global_db_disk->removeFileIfExists(database_metadata_tmp_path);
+        default_db_disk->removeFileIfExists(database_metadata_tmp_path);
         throw;
     }
 }
@@ -1041,6 +1041,8 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
     assert(!cleanup_task);
 
+    // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
+    // we need to check the dropped metadata on these disks, not just the default database disk.
     std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
     String path = fs::path("metadata_dropped") / "";
 

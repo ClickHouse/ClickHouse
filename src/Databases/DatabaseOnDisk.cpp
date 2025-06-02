@@ -559,14 +559,14 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
 
 ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
-    auto global_db_disk = getContext()->getDatabaseDisk();
+    auto default_db_disk = getContext()->getDatabaseDisk();
     ASTPtr ast;
 
     const auto & settings = getContext()->getSettingsRef();
     {
         std::lock_guard lock(mutex);
         auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
-        ast = parseQueryFromMetadata(log, getContext(), global_db_disk, database_metadata_path, true);
+        ast = parseQueryFromMetadata(log, getContext(), default_db_disk, database_metadata_path, true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
         ast_create_query.setDatabase(database_name);
@@ -907,14 +907,14 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     fs::path metadata_file_tmp_path = fs::path("metadata") / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = fs::path("metadata") / (database_name_escaped + ".sql");
 
-    auto global_db_disk = getContext()->getDatabaseDisk();
+    auto default_db_disk = getContext()->getDatabaseDisk();
     writeMetadataFile(
-        global_db_disk,
+        default_db_disk,
         /*file_path=*/metadata_file_tmp_path,
         /*content=*/statement,
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
-    global_db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
+    default_db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
 }
 
 void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)

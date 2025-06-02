@@ -563,7 +563,7 @@
     </storage_configuration>
     -->
 
-    <!-- Database disk configuration example: -->
+    <!-- Default database disk storing metadata files: -->
     <!--
     <database_disk>
         <disk>default</disk>

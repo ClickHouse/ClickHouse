@@ -380,7 +380,10 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr config TSA_GUARDED_BY(mutex);           /// Global configuration settings.
     String tmp_path TSA_GUARDED_BY(mutex);                   /// Path to the temporary files that occur when processing the request.
 
-    std::shared_ptr<IDisk> global_db_disk TSA_GUARDED_BY(mutex);
+    /// The default disk storing metadata files for databases: database metadata files and table metadata files.
+    /// For DBs which have `disk` setting in the create query, the table metadata files of these DBs are stored on that disk.
+    /// However, the DB metadata files are still stored on this `default_db_disk`. So the instance can load its DBs during starting up.
+    std::shared_ptr<IDisk> default_db_disk TSA_GUARDED_BY(mutex);
 
     /// All temporary files that occur when processing the requests accounted here.
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
@@ -1194,8 +1197,8 @@ std::shared_ptr<IDisk> Context::getDatabaseDisk() const
 {
     {
         SharedLockGuard lock(shared->mutex);
-        if (shared->global_db_disk)
-            return shared->global_db_disk;
+        if (shared->default_db_disk)
+            return shared->default_db_disk;
     }
 
     // This is called first time early during the initialization.
@@ -1220,10 +1223,10 @@ std::shared_ptr<IDisk> Context::getDatabaseDisk() const
     }();
 
     std::lock_guard lock(shared->mutex);
-    if (shared->global_db_disk)
-        return shared->global_db_disk;
+    if (shared->default_db_disk)
+        return shared->default_db_disk;
 
-    return shared->global_db_disk = target_db_disk;
+    return shared->default_db_disk = target_db_disk;
 }
 
 String Context::getFilesystemCacheUser() const
