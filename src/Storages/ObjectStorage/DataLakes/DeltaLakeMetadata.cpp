@@ -15,6 +15,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/Context.h>
 
@@ -55,6 +56,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_delta_kernel_rs;
+}
+
 
 namespace
 {
@@ -615,8 +622,6 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
 {
 #if USE_DELTA_KERNEL_RS
     auto configuration_ptr = configuration.lock();
-
-    const auto & storage_settings_ref = configuration_ptr->getSettingsRef();
     const auto & query_settings_ref = local_context->getSettingsRef();
 
     const auto storage_type = configuration_ptr->getType();
@@ -625,10 +630,7 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
     bool enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs];
     if (supports_delta_kernel && enable_delta_kernel)
     {
-        return std::make_unique<DeltaLakeMetadataDeltaKernel>(
-            object_storage,
-            configuration,
-            storage_settings_ref[StorageObjectStorageSetting::delta_lake_read_schema_same_as_table_schema]);
+        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
     }
     else
         return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
@@ -676,7 +678,7 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
         return DataTypeFactory::instance().get("Bool");
     if (type_name == "date")
         return std::make_shared<DataTypeDate32>();
-    if (type_name == "timestamp")
+    if (type_name == "timestamp" || type_name == "timestamp_ntz")
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
     {

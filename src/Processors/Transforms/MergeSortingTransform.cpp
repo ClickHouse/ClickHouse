@@ -142,15 +142,15 @@ MergeSortingTransform::MergeSortingTransform(
     bool increase_sort_description_compile_attempts,
     size_t max_bytes_before_remerge_,
     double remerge_lowered_memory_bytes_ratio_,
-    size_t min_external_sort_block_bytes_,
-    size_t max_bytes_before_external_sort_,
+    size_t max_bytes_in_block_before_external_sort_,
+    size_t max_bytes_in_query_before_external_sort_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
-    , min_external_sort_block_bytes(min_external_sort_block_bytes_)
-    , max_bytes_before_external_sort(max_bytes_before_external_sort_)
+    , max_bytes_in_block_before_external_sort(max_bytes_in_block_before_external_sort_)
+    , max_bytes_in_query_before_external_sort(max_bytes_in_query_before_external_sort_)
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
@@ -225,16 +225,16 @@ void MergeSortingTransform::consume(Chunk chunk)
       *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
       * NOTE. It's possible to check free space in filesystem.
       */
-    if (sum_bytes_in_blocks > min_external_sort_block_bytes && max_bytes_before_external_sort)
+    if (max_bytes_in_block_before_external_sort && sum_bytes_in_blocks > max_bytes_in_block_before_external_sort)
     {
         Int64 query_memory = getCurrentQueryMemoryUsage();
-        if (query_memory > static_cast<Int64>(max_bytes_before_external_sort))
+        if (!max_bytes_in_query_before_external_sort || query_memory > static_cast<Int64>(max_bytes_in_query_before_external_sort))
         {
             if (!tmp_data)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDisk is not set for MergeSortingTransform");
             temporary_files_num++;
 
-            LOG_TRACE(log, "Will dump sorting block to disk ({} > {})", formatReadableSizeWithBinarySuffix(query_memory), formatReadableSizeWithBinarySuffix(max_bytes_before_external_sort));
+            LOG_TRACE(log, "Will dump sorting block to disk ({} > {})", formatReadableSizeWithBinarySuffix(query_memory), formatReadableSizeWithBinarySuffix(max_bytes_in_query_before_external_sort));
 
             /// If there's less free disk space than reserve_size, an exception will be thrown
             size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
