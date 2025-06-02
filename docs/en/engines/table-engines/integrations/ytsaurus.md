@@ -72,6 +72,63 @@ SELECT * FROM yt_saurus;
  └────┴────┘
 ```
 
+## Data types
+### Primitive data types
+| YTsaurus data type | Clickhouse data type    |
+| ------------------ | ----------------------- |
+| `int8`             | `Int8`                  |
+| `int16`            | `Int16`                 |
+| `int32`            | `Int32`                 |
+| `int64`            | `Int64`                 |
+| `uint8`            | `UInt8`                 |
+| `uint16`           | `UInt16`                |
+| `uint32`           | `UInt32`                |
+| `uint64`           | `UInt64`                |
+| `float`            | `Float32`               |
+| `double`           | `Float64`               |
+| `boolean`          | `Boolean`               |
+| `bool(type_v3)`    | `Boolean`               |
+| `string`           | `String`                |
+| `utf8`             | `String`                |
+| `json`             | `JSON`                  |
+| `yson(type_v3)`    | `JSON`                  |
+| `uuid`             | `UUID`                  |
+| `date32`           | `Int32`                 |
+| `datetime64`       | `Int64`                 |
+| `timestamp64`      | `Int64`                 |
+| `interval64`       | `Int64`                 |
+| `date`             | `Date`                  |
+| `datetime`         | `DateTime`              |
+| `timestamp`        | `DateTime64(6)`         |
+| `interval`         | `Interval(MICROSECOND)` |
+| `any`              | `String`                |
+| `null`             | `Nothing`               |
+| `void`             | `Nothing`               |
+| `T` with `required = False`| `Nullable(T)`   |
+
+### Composite types
+| YTsaurus data type | Clickhouse data type |
+| ------------------ | -------------------- |
+| `decimal`          | `Decimal`            |
+| `optional`         | `Nullable`           |
+| `list`             | `Array`              |
+| `struct`           | `Array(Tuple(String, T))`|
+| `tuple`            | `Tuple`              |
+| `variant`          | `Variant`            |
+| `dict`             | `Map`                |
+| `tagged`           | `Tuple(String, T)`   |
+
+### Restrictions
+#### Nullable
+Since ClickHouse doesn't support types `Nullable<Nullable<T>>`, `Nullable<Array>` and `Nullable<Tuple>`, this types have alternative convertation.
+
+- `optional<optional<T>>` converts to `optional<T>`, which is `Nullable<T>` in ClickHouse
+- `optional<list<T>>` converts to `Array<T>` in ClickHouse with default value `[]`, which represents `null`
+- `optional<tuple<T1, T2, ...>>` converts to `Tuple<T1, T2, ...>` in ClickHouse with default value `(T1(), T2(), ...)`(each value in tuple is default constructor of type `TN`), which represents `null`.
+
+
 **See Also**
 
 - [ytsaurus](../../../sql-reference/table-functions/ytsaurus.md) table function
+- [ytsaurus data schema](https://ytsaurus.tech/docs/en/user-guide/storage/static-schema)
+- [ytsaurus data types](https://ytsaurus.tech/docs/en/user-guide/storage/data-types)
