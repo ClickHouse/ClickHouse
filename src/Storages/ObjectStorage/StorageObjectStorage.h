@@ -211,15 +211,13 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual std::string getNamespaceType() const { return "namespace"; }
 
-    Path getRawPath() const;
+    virtual Path getRawPath() const = 0;
     Path getReadingPath() const;
     Path getWritingPath(const std::string & partition_id = "") const;
-    virtual Path getFullPath() const { return {}; }
-    virtual Path getPath() const = 0;
+
     virtual void setPath(const Path & path) = 0;
 
-    // todo add docs: this is very bad code
-    // todo understand the keys iterator thing, but I can imagine why that shit was written
+    // todo
     // it apparently is a list of paths that were used during write so the writer does not lose track of the counter..
     virtual const Paths & getPaths() const = 0;
     virtual void setPaths(const Paths & paths) = 0;

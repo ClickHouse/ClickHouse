@@ -112,7 +112,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
             reading_path.path);
     }
 
-    const auto globbed_key = configuration_->getPath().path;
+    const auto globbed_key = reading_path.path;
     object_storage_iterator = object_storage->iterate(reading_path.getWithoutGlobs(), list_objects_batch_size_);
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));

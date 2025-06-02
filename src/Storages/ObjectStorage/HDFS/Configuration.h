@@ -44,7 +44,7 @@ public:
     /// Unlike s3 and azure, which are object storages,
     /// hdfs is a filesystem, so it cannot list files by partial prefix,
     /// only by directory.
-    Path getPath() const override { return path; }
+    Path getRawPath() const override { return path; }
     void setPath(const Path & path_) override { path = {path_.path, false}; }
 
     const Paths & getPaths() const override { return paths; }

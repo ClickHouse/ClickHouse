@@ -268,7 +268,7 @@ void StorageObjectStorage::Configuration::initPartitionStrategy(ASTPtr partition
         columns.getOrdinary(),
         context,
         format,
-        getPath().withGlobs(),
+        getRawPath().withGlobs(),
         partition_strategy_name,
         partition_columns_in_data_file);
 }
@@ -741,11 +741,6 @@ void StorageObjectStorage::Configuration::initialize(
 void StorageObjectStorage::Configuration::check(ContextPtr) const
 {
     FormatFactory::instance().checkFormatName(format);
-}
-
-StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getRawPath() const
-{
-    return getPath();
 }
 
 StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getReadingPath() const
