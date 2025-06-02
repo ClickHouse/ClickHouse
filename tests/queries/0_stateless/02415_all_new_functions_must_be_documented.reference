@@ -318,10 +318,6 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
-makeDate
-makeDate32
-makeDateTime
-makeDateTime64
 map
 mapAdd
 mapFromArrays

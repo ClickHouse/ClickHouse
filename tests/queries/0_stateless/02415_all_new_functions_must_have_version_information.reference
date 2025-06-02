@@ -66,10 +66,6 @@ UUIDNumToString
 UUIDStringToNum
 UUIDToNum
 UUIDv7ToDateTime
-YYYYMMDDToDate
-YYYYMMDDToDate32
-YYYYMMDDhhmmssToDateTime
-YYYYMMDDhhmmssToDateTime64
 _CAST
 __actionName
 __bitBoolMaskAnd
@@ -441,10 +437,6 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
-makeDate
-makeDate32
-makeDateTime
-makeDateTime64
 map
 mapAdd
 mapFromArrays
