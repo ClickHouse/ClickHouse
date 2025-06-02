@@ -18,9 +18,12 @@ INSERT INTO right_table VALUES (2, 'Second'), (3, 'Third'), (4, 'Fourth');
 INSERT INTO left_table VALUES (1, 'A'), (2, 'B'), (3, 'C');
 INSERT INTO right_table VALUES (2, 'Second'), (3, 'Third'), (4, 'Fourth'), (5, 'Fifth'), (6, 'Sixth');
 
+SET join_algorithm='parallel_hash';
+SET query_plan_join_swap_table = 0;
+
 SELECT l.id, l.value, r.description
 FROM left_table l
-RIGHT JOIN right_table r ON l.id = r.id;
+RIGHT JOIN right_table r ON l.id = r.id ORDER BY l.id, r.description;
 
 explain actions=1, keep_logical_steps=0 SELECT l.id, l.value, r.description
 FROM left_table l
@@ -28,7 +31,7 @@ RIGHT JOIN right_table r ON l.id = r.id;
 
 SELECT l.id, l.value, r.description
 FROM left_table l
-FULL OUTER JOIN right_table r ON l.id = r.id;
+FULL OUTER JOIN right_table r ON l.id = r.id ORDER BY l.id, r.description;
 
 explain actions=1, keep_logical_steps=0 SELECT l.id, l.value, r.description
 FROM left_table l

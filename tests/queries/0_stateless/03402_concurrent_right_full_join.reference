@@ -1,15 +1,15 @@
-2	B	Second
-2	B	Second
-3	C	Third
-3	C	Third
-2	B	Second
-2	B	Second
-3	C	Third
-3	C	Third
 0		Fifth
 0		Fourth
 0		Fourth
 0		Sixth
+2	B	Second
+2	B	Second
+2	B	Second
+2	B	Second
+3	C	Third
+3	C	Third
+3	C	Third
+3	C	Third
 Expression ((Project names + Projection))
 Actions: INPUT : 0 -> __table1.id UInt32 : 0
          INPUT : 1 -> __table1.value String : 1
@@ -42,20 +42,20 @@ Positions: 3 0 1
                ALIAS id :: 1 -> __table2.id UInt32 : 0
       Positions: 2 0
         ReadFromMemoryStorage
-1	A	
-2	B	Second
-2	B	Second
-3	C	Third
-3	C	Third
-1	A	
-2	B	Second
-2	B	Second
-3	C	Third
-3	C	Third
 0		Fifth
 0		Fourth
 0		Fourth
 0		Sixth
+1	A	
+1	A	
+2	B	Second
+2	B	Second
+2	B	Second
+2	B	Second
+3	C	Third
+3	C	Third
+3	C	Third
+3	C	Third
 Expression ((Project names + Projection))
 Actions: INPUT : 0 -> __table1.id UInt32 : 0
          INPUT : 1 -> __table1.value String : 1

@@ -183,13 +183,13 @@ void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollect
 
         const auto & right_data = hash_join.getJoinedData();
         std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, ind); }, right_data->maps.at(0));
-        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size / slots);
+        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size);
     }
 }
 
 template <typename HashTable>
 concept HasGetBucketFromHashMemberFunc = requires {
-    { std::declval<HashTable>().getBucketFromHash(static_cast<size_t>(0)) };
+    { std::declval<HashTable>().getBucketFromHash(static_cast<size_t>(0)) } -> std::same_as<size_t>;
 };
 }
 

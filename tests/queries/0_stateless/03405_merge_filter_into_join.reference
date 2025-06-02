@@ -309,7 +309,7 @@ Positions: 6 0 1 2 3 4
           Join
           Type: FULL
           Strictness: ALL
-          Algorithm: HashJoin
+          Algorithm: ConcurrentHashJoin
           Clauses: [(__lhs_const) = (__rhs_const)]
             Expression
             Actions: INPUT :: 0 -> __table2.uid Int16 : 0
