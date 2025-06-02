@@ -30,21 +30,22 @@ ConfluentSchemaRegistry::ConfluentSchemaRegistry(
 #if USE_AVRO
 avro::ValidSchema ConfluentSchemaRegistry::getAvroSchema(uint32_t id)
 {
-    auto [schema, loaded] = avro_schema_cache.getOrSet(
+    auto [result_schema, loaded] = avro_schema_cache.getOrSet(
         id,
         [this, id]()
         {
             try
             {
-                auto schema = fetchSchema(id);
-                return std::make_shared<avro::ValidSchema>(avro::compileJsonSchemaFromString(schema));
+                auto avro_schema = fetchSchema(id);
+                /// NOLINTNEXTLINE
+                return std::make_shared<avro::ValidSchema>(avro::compileJsonSchemaFromString(avro_schema));
             }
             catch (const avro::Exception & e)
             {
                 throw Exception::createDeprecated(e.what(), ErrorCodes::INCORRECT_DATA);
             }
         });
-    return *schema;
+    return *result_schema;
 }
 #endif
 
