@@ -484,13 +484,6 @@ void StorageObjectStorage::read(
 
     configuration->modifyFormatSettings(modified_format_settings.value());
 
-    // auto configuration_clone = configuration->clone();
-    //
-    // if (configuration->partition_strategy)
-    // {
-    //     configuration_clone->setPath(configuration->partition_strategy->getReadingPath(configuration->getPath()));
-    // }
-
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
         configuration,
