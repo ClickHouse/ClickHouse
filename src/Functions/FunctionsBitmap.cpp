@@ -179,7 +179,8 @@ The result depends on the array ordering if `from_array` and `to_array`.
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapTransform = {20, 1};
     FunctionDocumentation::Category category_bitmapTransform = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapTransform = {
+    FunctionDocumentation documentation_bitmapTransform =
+    {
         description_bitmapTransform,
         syntax_bitmapTransform,
         arguments_bitmapTransform,
