@@ -69,7 +69,6 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     return haystack.find(needle) != std::string_view::npos;
 }
 
-// clang-format off
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
 {                                                                                                                   \
     static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsOneLine"), "Think twice!");                    \
@@ -92,21 +91,33 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     std::string _formatted_message;                                                                                 \
     std::vector<std::string> _format_string_args;                                                                   \
                                                                                                                     \
-    if constexpr (LogTypeInfo::is_static)                                                                           \
+    try                                                                                                             \
     {                                                                                                               \
-        formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), _nargs - 1);                                      \
-        _format_string = ConstexprIfsAreNotIfdefs<LogTypeInfo::is_static>::getStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__)); \
-    }                                                                                                               \
+        if constexpr (LogTypeInfo::is_static)                                                                       \
+        {                                                                                                           \
+            formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), _nargs - 1);                                  \
+            _format_string = ConstexprIfsAreNotIfdefs<LogTypeInfo::is_static>::getStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__)); \
+        }                                                                                                           \
                                                                                                                     \
-    constexpr bool is_preformatted_message = !LogTypeInfo::is_static && LogTypeInfo::has_format;                    \
-    if constexpr (is_preformatted_message)                                                                          \
-    {                                                                                                               \
-        static_assert(_nargs == 1 || !is_preformatted_message);                                                     \
-        ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string, _format_string_args);  \
+        constexpr bool is_preformatted_message = !LogTypeInfo::is_static && LogTypeInfo::has_format;                \
+        if constexpr (is_preformatted_message)                                                                      \
+        {                                                                                                           \
+            static_assert(_nargs == 1 || !is_preformatted_message);                                                 \
+            ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string, _format_string_args);  \
+        }                                                                                                           \
+        else                                                                                                        \
+        {                                                                                                           \
+             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
+        }                                                                                                           \
     }                                                                                                               \
-    else                                                                                                            \
+    /* We want to propage all exceptions from arguments evaluation, e.g.                                         */ \
+    /* LOG_TRACE(log, "my value is {}", empty_optional.value());                                                 */ \
+    /* because we assume that the user code is to be blamed. Still it means that we have to catch errors that were not a user's fault. */ \
+    catch (const std::bad_alloc & logger_exception)                                                                 \
     {                                                                                                               \
-        _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        const char * logger_exception_message = logger_exception.what();                                            \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
     }                                                                                                               \
                                                                                                                     \
     try                                                                                                             \
