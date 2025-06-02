@@ -149,6 +149,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     offset += sizeof(UInt8);
 
     memcpy(dest + offset, compressed, compressed_size);
+    delete[] compressed;
     return static_cast<UInt32>(offset + compressed_size);
 }
 
