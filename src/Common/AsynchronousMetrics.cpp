@@ -1385,8 +1385,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     {
                         auto total = rest.substr(total_pos + 1);
                         uint64_t counter = std::stoull(total);
-                        new_values[std::format("PSICPU_{}", stallType)] = {counter,
-                            std::format("Total microseconds of CPU stall time for {} stall type", stallType)};
+                        new_values[fmt::format("PSICPU_{}", stallType)] = {counter,
+                            fmt::format("Total microseconds of CPU stall time for {} stall type", stallType)};
                     }
                 }
             }
@@ -1416,8 +1416,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                         {
                             auto total = rest.substr(pos + 1);
                             uint64_t counter = std::stoull(total);
-                            new_values[std::format("PSIMemory_{}", stallType)] = {counter,
-                                std:format("Total microseconds of memory stall time for {} stall type", stallType)};
+                            new_values[fmt::format("PSIMemory_{}", stallType)] = {counter,
+                                fmt::format("Total microseconds of memory stall time for {} stall type", stallType)};
                         }
                     }
                 }
@@ -1447,8 +1447,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                         {
                             auto total = rest.substr(pos + 1);
                             uint64_t counter = std::stoull(total);
-                            new_values[std::format("PSIIO_{}", stallType)] = {counter,
-                                std::format("Total microseconds of IO stall time for {} stall type")};
+                            new_values[fmt::format("PSIIO_{}", stallType)] = {counter,
+                                fmt::format("Total microseconds of IO stall time for {} stall type", stallType)};
                         }
                     }
                 }
