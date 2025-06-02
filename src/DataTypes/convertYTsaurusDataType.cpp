@@ -18,7 +18,6 @@
 #include <Common/Exception.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <iostream>
 namespace DB
 {
 
@@ -30,7 +29,7 @@ namespace ErrorCodes
 
 
 /// https://ytsaurus.tech/docs/ru/user-guide/storage/data-types#schema_primitive
-DataTypePtr convertYTSimpleType(const String & data_type, bool type_v3)
+DataTypePtr convertYTPrimitiveType(const String & data_type, bool type_v3)
 {
     DataTypePtr data_type_ptr;
     if (data_type == "int64")
@@ -127,8 +126,7 @@ DataTypePtr convertYTSimpleType(const String & data_type, bool type_v3)
     }
     else if (data_type == "any")
     {
-        // Not simple type, need to parse type_v3
-        return nullptr;
+        data_type_ptr = std::make_shared<DataTypeObject>(DB::DataTypeObject::SchemaFormat::JSON);
     }
     else if (data_type == "null")
     {
@@ -136,7 +134,7 @@ DataTypePtr convertYTSimpleType(const String & data_type, bool type_v3)
     }
     else if (data_type == "void")
     {
-        // ?
+        data_type_ptr = std::make_shared<DataTypeNothing>();
     }
 
     return data_type_ptr;
@@ -146,7 +144,7 @@ DataTypePtr convertYTItemType(const Poco::Dynamic::Var & item)
 {
     if (item.isString())
     {
-        return convertYTSimpleType(item.extract<String>(), false);
+        return convertYTPrimitiveType(item.extract<String>(), false);
     }
     return convertYTTypeV3(item.extract<Poco::JSON::Object::Ptr>());
 }
@@ -188,6 +186,10 @@ DataTypePtr convertYTOptional(const Poco::JSON::Object::Ptr & json)
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'optional' type from YT(incorrect nested type)");
     }
+    if (nested_type->isNullable() || !nested_type->canBeInsideNullable())
+    {
+        return nested_type;
+    }
     return std::make_shared<DataTypeNullable>(nested_type);
 }
 
@@ -220,7 +222,7 @@ DataTypePtr convertYTVariant(const Poco::JSON::Object::Ptr &json)
 {
     if (!json->has("elements"))
     {
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Couldn't 'variant' type from YTsaurus");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'variant' type from YTsaurus");
     }
     auto elements_json = json->getArray("elements");
     DataTypes types;
@@ -233,11 +235,46 @@ DataTypePtr convertYTVariant(const Poco::JSON::Object::Ptr &json)
     return std::make_shared<DataTypeVariant>(types);
 }
 
+DataTypePtr convertYTStruct(const Poco::JSON::Object::Ptr &json)
+{
+    if (!json->has("members"))
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'struct' type from YTsaurus");
+    }
+    auto members_json = json->getArray("members");
+    DataTypes types;
+    types.reserve(members_json->size());
+    for (const auto & member : *members_json)
+    {
+        auto member_json = member.extract<Poco::JSON::Object::Ptr>();
+        if (!member_json->get("name") || !member_json->has("type"))
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'struct' type from YTsaurus");
+        }
+        types.push_back(std::make_shared<DB::DataTypeTuple>(
+            std::vector<DataTypePtr>{
+                std::make_shared<DB::DataTypeString>(),
+                convertYTItemType(member_json->get("type"))
+            }
+        ));
+    }
+    return std::make_shared<DB::DataTypeTuple>(types);
+}
+
+DataTypePtr convertYTTagged(const Poco::JSON::Object::Ptr & json)
+{
+    if (!json->has("tag") || !json->has("type"))
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'tagged' type from YTsaurus");
+    }
+    return std::make_shared<DB::DataTypeTuple>(DB::DataTypes{std::make_shared<DB::DataTypeString>(), convertYTItemType(json->get("type"))});
+}
+
 DataTypePtr convertYTTypeV3(const Poco::JSON::Object::Ptr & json)
 {
     if (!json->has("type_name"))
     {
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Coudn't parse the YT json schema('type_name' was not found)");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Coudn't parse the YT json schema('type_name' was not found)");
     }
     auto data_type_var = json->get("type_name");
     if (!data_type_var.isString())
@@ -260,7 +297,7 @@ DataTypePtr convertYTTypeV3(const Poco::JSON::Object::Ptr & json)
     }
     else if (data_type == "struct")
     {
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Couldn't convert 'struct' type from YTsaurus");
+        data_type_ptr = convertYTStruct(json);
     }
     else if (data_type == "tuple")
     {
@@ -276,7 +313,7 @@ DataTypePtr convertYTTypeV3(const Poco::JSON::Object::Ptr & json)
     }
     else if (data_type == "tagged")
     {
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Couldn't 'tagged' type from YTsaurus");
+        data_type_ptr = convertYTTagged(json);
     }
     return data_type_ptr;
 }
@@ -286,7 +323,7 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
     DataTypePtr data_type_ptr;
     if (json->has("type"))
     {
-        data_type_ptr = convertYTSimpleType(json->getValue<String>("type"), false);
+        data_type_ptr = convertYTPrimitiveType(json->getValue<String>("type"), false);
         if (data_type_ptr)
         {
             if (!json->has("required"))
@@ -295,6 +332,11 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
             }
             bool required = json->getValue<bool>("required");
             if (required)
+            {
+                return data_type_ptr;
+            }
+
+            if (data_type_ptr->isNullable() || !data_type_ptr->canBeInsideNullable())
             {
                 return data_type_ptr;
             }
@@ -311,7 +353,7 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
     auto value = json->get("type_v3");
     if (value.isString())
     {
-        return convertYTSimpleType(value.extract<String>(), true);
+        return convertYTPrimitiveType(value.extract<String>(), true);
     }
     try {
         return convertYTTypeV3(value.extract<Poco::JSON::Object::Ptr>());

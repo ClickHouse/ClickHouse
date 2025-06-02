@@ -112,7 +112,7 @@ SELECT * FROM yt_saurus;
 | `decimal`          | `Decimal`            |
 | `optional`         | `Nullable`           |
 | `list`             | `Array`              |
-| `struct`           | `Array(Tuple(String, T))`|
+| `struct`           | `Tuple(Tuple(String, TN))`|
 | `tuple`            | `Tuple`              |
 | `variant`          | `Variant`            |
 | `dict`             | `Map`                |
