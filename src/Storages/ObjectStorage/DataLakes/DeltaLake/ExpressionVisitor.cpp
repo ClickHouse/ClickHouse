@@ -84,7 +84,13 @@ struct ExpressionVisitorData
 
     void addIdentifier(size_t list_id, const std::string & name)
     {
-        auto name_and_type = schema.tryGetByName(name);
+        std::string column_name;
+        if (name.starts_with("`") && name.ends_with("`"))
+            column_name = name.substr(1, name.size() - 2);
+        else
+            column_name = name;
+
+        auto name_and_type = schema.tryGetByName(column_name);
         if (!name_and_type.has_value())
         {
             throw DB::Exception(

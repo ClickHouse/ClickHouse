@@ -1,17 +1,15 @@
-#include "Core/ColumnWithTypeAndName.h"
-#include "DataTypes/DataTypesNumber.h"
-#include "IO/WriteBufferFromString.h"
 #include "config.h"
-#include "delta_kernel_ffi.hpp"
 
 #if USE_DELTA_KERNEL_RS
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 
+#include <Core/ColumnWithTypeAndName.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
+
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -20,6 +18,7 @@
 #include <Common/escapeForFileName.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 
 #include "getSchemaFromSnapshot.h"
