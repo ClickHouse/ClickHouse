@@ -87,6 +87,7 @@ void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
 
+    /// Pipeline is resized to single stream before TotalsHavingTransform. So, we need to resize it back to "default" number of streams after transform.
     pipeline.resize(settings.max_threads);
 }
 
