@@ -120,7 +120,6 @@ SETTINGS_H_EXCLUDES=(
     --exclude "$ROOT_PATH/src/Access/resolveSetting.h"
     # TODO
     --exclude "$ROOT_PATH/src/Client/ClientBase.h"
-    --exclude "$ROOT_PATH/src/Interpreters/AsynchronousInsertQueue.h"
 
     # For functions we allow it for regular functions (due to lots of
     # templates), but forbid it in interface (IFunction) part.
