@@ -182,7 +182,7 @@ class Shell:
         return res.stdout.strip()
 
     @classmethod
-    def get_res_stdout_stderr(cls, command, verbose=True):
+    def get_res_stdout_stderr(cls, command, verbose=True, strip=True):
         if verbose:
             print(f"Run command [{command}]")
         res = subprocess.run(
@@ -192,7 +192,10 @@ class Shell:
             stderr=subprocess.PIPE,
             text=True,
         )
-        return res.returncode, res.stdout.strip(), res.stderr.strip()
+        if strip:
+            return res.returncode, res.stdout.strip(), res.stderr.strip()
+        else:
+            return res.returncode, res.stdout, res.stderr
 
     @classmethod
     def check(
@@ -627,6 +630,18 @@ class Utils:
         return path_out
 
     @classmethod
+    def compress_file_gz(cls, path):
+        path_out = ""
+        if Shell.check("which gzip"):
+            path_out = f"{path}.gz"
+            Shell.check(
+                f"rm -f {path_out} && gzip < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        return path_out
+
+    @classmethod
     def compress_file(cls, path, no_strict=False):
         if Shell.check("which zstd"):
             return cls.compress_file_zst(path)
@@ -638,12 +653,7 @@ class Utils:
                 strict=True,
             )
         elif Shell.check("which gzip"):
-            path_out = f"{path}.gz"
-            Shell.check(
-                f"rm -f {path_out} && gzip < {path} > {path_out}",
-                verbose=True,
-                strict=True,
-            )
+            return cls.compress_file_gz(path)
         else:
             path_out = path
             if not no_strict:

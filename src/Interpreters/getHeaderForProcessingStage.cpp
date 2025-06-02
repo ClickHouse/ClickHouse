@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTFunction.h>

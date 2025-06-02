@@ -1,3 +1,5 @@
+-- Tags: log-engine
+
 SET check_query_single_value_result = 1;
 
 DROP TABLE IF EXISTS check_query_tiny_log;
