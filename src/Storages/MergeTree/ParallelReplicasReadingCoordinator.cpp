@@ -1223,7 +1223,7 @@ ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t re
 
 ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator()
 {
-    // the profile event is not in constructor to check that coordinator is destoyed
+    // the profile event is not in constructor to check that coordinator is destroyed
     ProfileEvents::increment(ProfileEvents::ParallelReplicasQueryCount);
 }
 
