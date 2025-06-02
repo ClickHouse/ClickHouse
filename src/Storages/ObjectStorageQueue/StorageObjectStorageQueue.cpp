@@ -213,11 +213,11 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const auto raw_path = configuration->getRawPath();
     if (raw_path.path.empty())
     {
-        configuration->setPath({"/*"});
+        configuration->setRawPath({"/*"});
     }
     else if (raw_path.path.ends_with('/'))
     {
-        configuration->setPath({raw_path.path + '*'});
+        configuration->setRawPath({raw_path.path + '*'});
     }
     else if (!raw_path.withGlobs())
     {

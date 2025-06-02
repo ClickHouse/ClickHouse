@@ -218,7 +218,7 @@ public:
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getWritingPath(const std::string & partition_id = "") const;
 
-    virtual void setPath(const Path & path) = 0;
+    virtual void setRawPath(const Path & path) = 0;
 
     // todo
     // it apparently is a list of paths that were used during write so the writer does not lose track of the counter..
