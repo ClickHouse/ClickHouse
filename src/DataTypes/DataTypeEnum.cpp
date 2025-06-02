@@ -81,8 +81,8 @@ void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 {
     const auto & default_value = this->getValues().front().second;
 
-    /// This code is actually bad, but unfortunately, `IDataType::insertDefaultInto` 
-    /// breaks the abstraction of the separation of data types, serializations, and columns. 
+    /// This code is actually bad, but unfortunately, `IDataType::insertDefaultInto`
+    /// breaks the abstraction of the separation of data types, serializations, and columns.
     /// Since this method is overridden only for `DataTypeEnum` and this code
     /// has remained unchanged for years, so it should be okay.
     if (auto * sparse_column = typeid_cast<ColumnSparse *>(&column))
