@@ -264,6 +264,8 @@ DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
+DictionaryMaxUpdateDelay
+DictionaryTotalFailedUpdates
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
@@ -2075,6 +2077,7 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
+isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2260,6 +2263,7 @@ metacharacters
 metasymbols
 metrica
 metroHash
+mergeTreePartInfo
 mfedotov
 mflix
 minMap
@@ -3062,7 +3066,6 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
-toTimeWithFixedDate
 toTimeZone
 toType
 toTypeName
