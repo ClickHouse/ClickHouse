@@ -16,17 +16,17 @@ REGISTER_FUNCTION(Bitmap)
     factory.registerFunction<FunctionBitmapSubsetOffsetLimit>();
     factory.registerFunction<FunctionBitmapTransform>();
 
-    // Documentation for bitmapCardinality
-    FunctionDocumentation::Description description_bitmapCardinality = "Returns the number of elements (cardinality) in the bitmap.";
+    /// Documentation for bitmapCardinality
+    FunctionDocumentation::Description description_bitmapCardinality = "Returns the number of bits set (the cardinality) in the bitmap.";
     FunctionDocumentation::Syntax syntax_bitmapCardinality = "bitmapCardinality(bitmap)";
     FunctionDocumentation::Arguments arguments_bitmapCardinality = {
         {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapCardinality = "Returns the number of elements in the bitmap. [`UInt64`](/sql-reference/data-types/int-uint)";
-    FunctionDocumentation::Examples examples_bitmapCardinality = {{"Usage example", "SELECT bitmapCardinality(bitmapBuild([1, 3, 5, 4, 6])) AS res;",
+    FunctionDocumentation::ReturnedValue returned_value_bitmapCardinality = "Returns the number of bits set in the bitmap. [`UInt64`](/sql-reference/data-types/int-uint)";
+    FunctionDocumentation::Examples examples_bitmapCardinality = {{"Usage example", "SELECT bitmapCardinality(bitmapBuild([1, 3, 3, 5, 7, 7])) AS res",
         R"(
 ┌─res─┐
-│  5  │
+│   4 │
 └─────┘
     )"}
     };
@@ -44,17 +44,17 @@ REGISTER_FUNCTION(Bitmap)
 
     factory.registerFunction<FunctionBitmapSelfCardinality>(documentation_bitmapCardinality);
 
-    // Documentation for bitmapMin
-    FunctionDocumentation::Description description_bitmapMin = "Computes the smallest bit set in a bitmap, or `UINT32_MAX` if the bitmap is empty (`UINT64_MAX` if `type >= 8 bits`).";
+    /// Documentation for bitmapMin
+    FunctionDocumentation::Description description_bitmapMin = "Returns the position of the smallest bit set in a bitmap. If all bits are unset, or `UINT32_MAX` (`UINT64_MAX` if the bitmap contains more than `2^64` bits).";
     FunctionDocumentation::Syntax syntax_bitmapMin = "bitmapMin(bitmap)";
     FunctionDocumentation::Arguments arguments_bitmapMin = {
         {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapMin = "Returns the smallest bit set in the bitmap, or `UINT32_MAX`. [`UInt64`](/sql-reference/data-types/int-uint).";
-    FunctionDocumentation::Examples examples_bitmapMin = {{"Usage example", "SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res;",
+    FunctionDocumentation::ReturnedValue returned_value_bitmapMin = "Returns the position of the smallest bit set in the bitmap, or `UINT32_MAX`/`UINT64_MAX`. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_bitmapMin = {{"Usage example", "SELECT bitmapMin(bitmapBuild([3, 5, 2, 6])) AS res;",
         R"(
 ┌─res─┐
-│   1 │
+│   2 │
 └─────┘
     )"}
     };
@@ -72,13 +72,13 @@ REGISTER_FUNCTION(Bitmap)
 
     factory.registerFunction<FunctionBitmapMin>(documentation_bitmapMin);
 
-    // Documentation for bitmapMax
-    FunctionDocumentation::Description description_bitmapMax = "Computes the greatest bit set in a bitmap, or 0 if the bitmap is empty.";
+    /// Documentation for bitmapMax
+    FunctionDocumentation::Description description_bitmapMax = "Returns the position of the greatest bit set in a bitmap, or `0` if the bitmap is empty.";
     FunctionDocumentation::Syntax syntax_bitmapMax = "bitmapMax(bitmap)";
     FunctionDocumentation::Arguments arguments_bitmapMax = {
         {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapMax = "Returns the greatest bit set in the bitmap, otherwise `0`. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_bitmapMax = "Returns the position of the greatest bit set in the bitmap, otherwise `0`. [`UInt64`](/sql-reference/data-types/int-uint).";
     FunctionDocumentation::Examples examples_bitmapMax = {{"Usage example", "SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;",
         R"(
 ┌─res─┐
@@ -100,14 +100,14 @@ REGISTER_FUNCTION(Bitmap)
 
     factory.registerFunction<FunctionBitmapMax>(documentation_bitmapMax);
 
-    // Documentation for bitmapAndCardinality
+    /// Documentation for bitmapAndCardinality
     FunctionDocumentation::Description description_bitmapAndCardinality = "Returns the cardinality of the logical conjunction (AND) of two bitmaps.";
     FunctionDocumentation::Syntax syntax_bitmapAndCardinality = "bitmapAndCardinality(bitmap1, bitmap2)";
     FunctionDocumentation::Arguments arguments_bitmapAndCardinality = {
         {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
         {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapAndCardinality = "Returns the number of elements in the intersection of the two bitmaps. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_bitmapAndCardinality = "Returns the number of set bits in the intersection of the two bitmaps. [`UInt64`](/sql-reference/data-types/int-uint).";
     FunctionDocumentation::Examples examples_bitmapAndCardinality = {{"Usage example", "SELECT bitmapAndCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;",
         R"(
 ┌─res─┐
@@ -129,14 +129,14 @@ REGISTER_FUNCTION(Bitmap)
 
     factory.registerFunction<FunctionBitmapAndCardinality>(documentation_bitmapAndCardinality);
 
-    // Documentation for bitmapOrCardinality
+    /// Documentation for bitmapOrCardinality
     FunctionDocumentation::Description description_bitmapOrCardinality = "Returns the cardinality of the logical disjunction (OR) of two bitmaps.";
     FunctionDocumentation::Syntax syntax_bitmapOrCardinality = "bitmapOrCardinality(bitmap1, bitmap2)";
     FunctionDocumentation::Arguments arguments_bitmapOrCardinality = {
         {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
         {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapOrCardinality = "Returns the number of elements in the union of the two bitmaps. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_bitmapOrCardinality = "Returns the number of set bits in the union of the two bitmaps. [`UInt64`](/sql-reference/data-types/int-uint).";
     FunctionDocumentation::Examples examples_bitmapOrCardinality = {{"Usage example", "SELECT bitmapOrCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;",
         R"(
 ┌─res─┐
@@ -158,14 +158,14 @@ REGISTER_FUNCTION(Bitmap)
 
     factory.registerFunction<FunctionBitmapOrCardinality>(documentation_bitmapOrCardinality);
 
-    // Documentation for bitmapXorCardinality
+    /// Documentation for bitmapXorCardinality
     FunctionDocumentation::Description description_bitmapXorCardinality = "Returns the cardinality of the XOR (symmetric difference) of two bitmaps.";
     FunctionDocumentation::Syntax syntax_bitmapXorCardinality = "bitmapXorCardinality(bitmap1, bitmap2)";
     FunctionDocumentation::Arguments arguments_bitmapXorCardinality = {
         {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
         {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapXorCardinality = "Returns the number of elements in the symmetric difference of the two bitmaps. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_bitmapXorCardinality = "Returns the number of set bits in the symmetric difference of the two bitmaps. [`UInt64`](/sql-reference/data-types/int-uint).";
     FunctionDocumentation::Examples examples_bitmapXorCardinality = {{"Usage example", "SELECT bitmapXorCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;",
         R"(
 ┌─res─┐
@@ -187,14 +187,14 @@ REGISTER_FUNCTION(Bitmap)
 
     factory.registerFunction<FunctionBitmapXorCardinality>(documentation_bitmapXorCardinality);
 
-    // Documentation for bitmapAndnotCardinality
+    /// Documentation for bitmapAndnotCardinality
     FunctionDocumentation::Description description_bitmapAndnotCardinality = "Returns the cardinality of the AND-NOT operation of two bitmaps.";
     FunctionDocumentation::Syntax syntax_bitmapAndnotCardinality = "bitmapAndnotCardinality(bitmap1, bitmap2)";
     FunctionDocumentation::Arguments arguments_bitmapAndnotCardinality = {
         {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
         {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapAndnotCardinality = "Returns the number of elements in the result of `bitmap1 AND-NOT bitmap2`. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_bitmapAndnotCardinality = "Returns the number of set bits in the result of `bitmap1 AND-NOT bitmap2`. [`UInt64`](/sql-reference/data-types/int-uint).";
     FunctionDocumentation::Examples examples_bitmapAndnotCardinality = {{"Usage example", "SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;",
         R"(
 ┌─res─┐
