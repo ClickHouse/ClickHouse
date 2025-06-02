@@ -47,7 +47,7 @@ public:
     bool hasStaticStructure() const override { return true; }
 
     StoragePtr executeImpl(
-        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query = nullptr) const override;
+        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     const char * getStorageTypeName() const override { return storage_type_name; }
     ColumnsDescription getActualTableStructure(ContextPtr, bool is_insert_query) const override;
@@ -98,7 +98,7 @@ StoragePtr TableFunctionHive::executeImpl(
     ContextPtr context_,
     const std::string & table_name_,
     ColumnsDescription /*cached_columns_*/,
-    ASTInsertQuery * /*insert_query*/) const
+    bool /*is_insert_query*/) const
 {
     const Settings & settings = context_->getSettingsRef();
     ParserExpression partition_by_parser;

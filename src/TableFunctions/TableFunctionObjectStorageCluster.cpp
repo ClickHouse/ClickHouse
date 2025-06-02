@@ -17,7 +17,7 @@ namespace DB
 template <typename Definition, typename Configuration, bool is_data_lake>
 StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_lake>::executeImpl(
     const ASTPtr & /*function*/, ContextPtr context,
-    const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const
+    const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
     auto configuration = Base::getConfiguration();
 
@@ -29,7 +29,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     else if (!cached_columns.empty())
         columns = cached_columns;
 
-    auto object_storage = Base::getObjectStorage(context, !insert_query);
+    auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {

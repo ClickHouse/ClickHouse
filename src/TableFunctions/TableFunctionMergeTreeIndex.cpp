@@ -37,7 +37,7 @@ private:
         ContextPtr context,
         const std::string & table_name,
         ColumnsDescription cached_columns,
-        ASTInsertQuery * insert_query = nullptr) const override;
+        bool is_insert_query) const override;
 
     const char * getStorageTypeName() const override { return "MergeTreeIndex"; }
 
@@ -177,10 +177,10 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/,
-    ASTInsertQuery * insert_query) const
+    bool is_insert_query) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto columns = getActualTableStructure(context, insert_query);
+    auto columns = getActualTableStructure(context, is_insert_query);
 
     StorageID storage_id(getDatabaseName(), table_name);
     auto res = std::make_shared<StorageMergeTreeIndex>(std::move(storage_id), std::move(source_table), std::move(columns), with_marks);

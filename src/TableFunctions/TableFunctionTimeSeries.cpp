@@ -85,7 +85,7 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        ASTInsertQuery * /*insert_query*/) const
+        bool /* is_insert_query */) const
 {
     return getTargetTable(context);
 }

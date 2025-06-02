@@ -41,7 +41,7 @@ public:
 private:
     StoragePtr executeImpl(
         const ASTPtr & ast_function, ContextPtr context,
-        const String & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query = nullptr) const override;
+        const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     const char * getStorageTypeName() const override { return "Redis"; }
 
@@ -54,9 +54,9 @@ private:
 };
 
 StoragePtr TableFunctionRedis::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/, ASTInsertQuery * insert_query) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    auto columns = getActualTableStructure(context, insert_query);
+    auto columns = getActualTableStructure(context, is_insert_query);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);

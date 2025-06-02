@@ -42,7 +42,7 @@ public:
 private:
     StoragePtr executeImpl(
             const ASTPtr & ast_function, ContextPtr context,
-            const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query = nullptr) const override;
+            const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     const char * getStorageTypeName() const override { return "PostgreSQL"; }
 
@@ -54,7 +54,7 @@ private:
 };
 
 StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * /* insert_query */) const
+        ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
 {
     auto result = std::make_shared<StoragePostgreSQL>(
         StorageID(getDatabaseName(), table_name),

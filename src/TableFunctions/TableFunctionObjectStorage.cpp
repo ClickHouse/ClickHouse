@@ -145,7 +145,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription cached_columns,
-    ASTInsertQuery * insert_query) const
+    bool is_insert_query) const
 {
     chassert(configuration);
     ColumnsDescription columns;
