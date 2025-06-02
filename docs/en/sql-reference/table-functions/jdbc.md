@@ -18,7 +18,7 @@ JDBC table function returns table that is connected via JDBC driver.
 This table function requires separate [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) program to be running.
 It supports Nullable types (based on DDL of remote table that is queried).
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 jdbc(datasource, schema, table)
@@ -26,7 +26,7 @@ jdbc(datasource, table)
 jdbc(named_collection)
 ```
 
-**Examples**
+## Examples {#examples}
 
 ```sql
 SELECT * FROM jdbc('jdbc:mysql://localhost:3306/?user=root&password=root', 'schema', 'table')

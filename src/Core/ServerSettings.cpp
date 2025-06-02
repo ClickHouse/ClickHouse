@@ -139,9 +139,9 @@ namespace DB
     A value of `0` (default) means unlimited.
     :::
     )", 0) \
-    DECLARE(UInt64, backup_threads, 16, R"(The maximum number of threads to execute `BACKUP` requests.)", 0) \
+    DECLARE(NonZeroUInt64, backup_threads, 16, R"(The maximum number of threads to execute `BACKUP` requests.)", 0) \
     DECLARE(UInt64, max_backup_bandwidth_for_server, 0, R"(The maximum read speed in bytes per second for all backups on server. Zero means unlimited.)", 0) \
-    DECLARE(UInt64, restore_threads, 16, R"(The maximum number of threads to execute RESTORE requests.)", 0) \
+    DECLARE(NonZeroUInt64, restore_threads, 16, R"(The maximum number of threads to execute RESTORE requests.)", 0) \
     DECLARE(Bool, shutdown_wait_backups_and_restores, true, R"(If set to true ClickHouse will wait for running backups and restores to finish before shutdown.)", 0) \
     DECLARE(Double, cannot_allocate_thread_fault_injection_probability, 0, R"(For testing purposes.)", 0) \
     DECLARE(Int32, max_connections, 4096, R"(Max server connections.)", 0) \
@@ -1058,8 +1058,14 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0) \
     DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materizlied view creation delay)", 0) \
     DECLARE(UInt64, os_cpu_busy_time_threshold, 1'000'000, "Threshold of OS CPU busy time in microseconds (OSCPUVirtualTimeMicroseconds metric) to consider CPU doing some useful work, no CPU overload would be considered if busy time was below this value.", 0) \
-    DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
-    DECLARE(Float, max_os_cpu_wait_time_ratio_to_drop_connection, 0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
+    DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
+    Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.
+    See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
+    )", 0) \
+    DECLARE(Float, max_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
+    Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.
+    See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
+    )", 0) \
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
 
 
@@ -1171,6 +1177,9 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_pending_mutations_to_warn", {std::to_string(context->getMaxPendingMutationsToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_pending_mutations_execution_time_to_warn", {std::to_string(context->getMaxPendingMutationsExecutionTimeToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_partition_size_to_drop", {std::to_string(context->getMaxPartitionSizeToDrop()), ChangeableWithoutRestart::Yes}},
+
+            {"min_os_cpu_wait_time_ratio_to_drop_connection", {std::to_string(context->getMinOSCPUWaitTimeRatioToDropConnection()), ChangeableWithoutRestart::Yes}},
+            {"max_os_cpu_wait_time_ratio_to_drop_connection", {std::to_string(context->getMaxOSCPUWaitTimeRatioToDropConnection()), ChangeableWithoutRestart::Yes}},
 
             {"max_concurrent_queries", {std::to_string(context->getProcessList().getMaxSize()), ChangeableWithoutRestart::Yes}},
             {"max_concurrent_insert_queries",
