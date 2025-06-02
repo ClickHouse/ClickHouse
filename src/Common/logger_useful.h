@@ -110,7 +110,7 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
              _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
         }                                                                                                           \
     }                                                                                                               \
-    /* We want to propage all exceptions from arguments evaluation, e.g.                                         */ \
+    /* We want to propagate all exceptions from arguments evaluation, e.g.                                       */ \
     /* LOG_TRACE(log, "my value is {}", empty_optional.value());                                                 */ \
     /* because we assume that the user code is to be blamed. Still it means that we have to catch errors that were not a user's fault. */ \
     catch (const std::bad_alloc & logger_exception)                                                                 \
