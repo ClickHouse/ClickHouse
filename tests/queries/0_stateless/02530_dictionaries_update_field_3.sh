@@ -13,11 +13,12 @@ $CLICKHOUSE_CLIENT --session_timezone '' -q "
         value String,
         last_insert_time DateTime
     )
-    ENGINE = TinyLog
+    ENGINE = MergeTree()
+    ORDER BY tuple()
 "
 
 layouts=(
-    flat
+    complex_key_hashed
 )
 for layout in "${layouts[@]}"; do
     for custom_query in "" "custom"; do
