@@ -36,6 +36,10 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include "Columns/ColumnObject.h"
+#include "Columns/ColumnVariant.h"
+#include "DataTypes/DataTypeObject.h"
+#include "DataTypes/DataTypeVariant.h"
 
 
 namespace DB
@@ -155,8 +159,11 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
 {
     auto idx = column.getDataType();
     WhichDataType which(idx);
-    if (which.isSimple() || which.isDateTime64())
+    if (which.isSimple() || which.isDateTime64() || which.isIPv4() || which.isIPv6() || which.isUUID())
         return DataTypeFactory::instance().get(String(magic_enum::enum_name(idx)));
+
+    if (which.isObject())
+        return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
 
     if (const auto * column_fixedstring = checkAndGetColumn<ColumnFixedString>(&column))
         return std::make_shared<DataTypeFixedString>(column_fixedstring->getN());
@@ -200,6 +207,16 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
     {
         const auto aggregate_func = column_aggregate_func->getAggregateFunction();
         return std::make_shared<DataTypeAggregateFunction>(aggregate_func, aggregate_func->getArgumentTypes(), aggregate_func->getParameters());
+    }
+
+    if (const auto * column_variant = checkAndGetColumn<ColumnVariant>(&column))
+    {
+        const auto & variants = column_variant->getVariants();
+        DataTypes types;
+        types.reserve(variants.size());
+        for (const auto & variant : variants)
+            types.push_back(getDataTypeByColumn(*variant));
+        return std::make_shared<DataTypeVariant>(types);
     }
 
     /// TODO: add more types.
