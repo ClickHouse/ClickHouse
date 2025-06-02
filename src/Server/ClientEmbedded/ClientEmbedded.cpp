@@ -5,8 +5,8 @@
 #include <base/getFQDNOrHostName.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/Context.h>
-#include <boost/algorithm/string/replace.hpp>
 #include <Common/setThreadName.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Common/Exception.h>
 
 #include <iomanip>

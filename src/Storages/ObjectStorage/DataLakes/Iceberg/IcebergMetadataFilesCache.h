@@ -3,10 +3,8 @@
 
 #if USE_AVRO
 
-#include <Core/Settings.h>
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/logger_useful.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
