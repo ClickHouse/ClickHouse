@@ -6,7 +6,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/QueryPriorities.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/QuerySlot.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/ExecutionSpeedLimits.h>
