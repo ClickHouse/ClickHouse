@@ -91,7 +91,7 @@ REGISTER_FUNCTION(ArrayConcat)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayConcat>();
+    factory.registerFunction<FunctionArrayConcat>(documentation);
 }
 
 }
