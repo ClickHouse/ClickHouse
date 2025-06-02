@@ -1152,14 +1152,20 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
     if (is_reading_completed && read_completed_callback.has_value())
     {
-        String replicas{"none"};
-        if (!replicas_to_exclude.empty())
-            replicas = fmt::format("{}", fmt::join(replicas_to_exclude, ", "));
+        if (replicas_count > replicas_to_exclude.size())
+        {
+            String replicas{"none"};
+            if (!replicas_to_exclude.empty())
+                replicas = fmt::format("{}", fmt::join(replicas_to_exclude, ", "));
 
-        LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Reading is completed. Cancelling reading for replicas: {}", replicas);
+            LOG_DEBUG(
+                getLogger("ParallelReplicasReadingCoordinator"),
+                "All ranges for reading has been assigned to replicas. Cancelling execution for unused replicas. Used replicas: {}",
+                replicas);
 
-        chassert(!replicas_used.empty());
-        (*read_completed_callback)(replicas_to_exclude);
+            chassert(!replicas_used.empty());
+            (*read_completed_callback)(replicas_to_exclude);
+        }
     }
 
     return response;

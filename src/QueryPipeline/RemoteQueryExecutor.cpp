@@ -1028,5 +1028,4 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 
     return false;
 }
-
 }

@@ -37,12 +37,11 @@ public:
     /// snapshot replica - first replica the coordinator got InitialAllRangesAnnouncement from
     std::optional<size_t> getSnapshotReplicaNum() const { return snapshot_replica_num; }
 
-    bool isReadingCompleted() const;
-
     void setReadCompletedCallback(ReadCompletedCallback callback);
 
 private:
     void initialize(CoordinationMode mode);
+    bool isReadingCompleted() const;
 
     std::mutex mutex;
     const size_t replicas_count{0};
