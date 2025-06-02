@@ -513,16 +513,16 @@ SinkToStoragePtr StorageObjectStorage::write(
     const auto sample_block = metadata_snapshot->getSampleBlock();
     const auto & settings = configuration->getQuerySettings(local_context);
 
-    const auto path = configuration->getRawPath();
+    const auto raw_path = configuration->getRawPath();
 
     if (configuration->isArchive())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Write into archive is not supported",
-                        path.path);
+                        raw_path.path);
     }
 
-    if (path.withGlobsIgnorePartitionWildcard())
+    if (raw_path.withGlobsIgnorePartitionWildcard())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",

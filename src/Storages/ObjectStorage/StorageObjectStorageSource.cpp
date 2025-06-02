@@ -284,12 +284,7 @@ Chunk StorageObjectStorageSource::generate()
                  .etag = &(object_info->metadata->etag)},
                 read_context);
 
-            // todo arthur: I need to ALWAYS read hive columns in case some hive_column = 1, even if it is not in the list of requested columns
-            // this needs to be passed down to the filters, which lives somewhere else
-            // I should add it to the chunk ONLY if it is in requested columns.
-
-            // UPDT: these are literally the hive columns that must be read EXCLUSIVELY from the path, so the name makes sense.
-            // the order is important, it must be added after virtual columns..
+            // The order is important, it must be added after virtual columns..
             if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
             {
                 auto hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
