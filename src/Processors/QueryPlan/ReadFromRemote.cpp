@@ -899,7 +899,8 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
     }
     LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
-    std::unordered_map<size_t, ProcessorPtr> remote_sources;
+    using ProcessorWeakPtr = std::weak_ptr<IProcessor>;
+    std::unordered_map<size_t, ProcessorWeakPtr> remote_sources;
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
         if (exclude_pool_index.has_value() && i == exclude_pool_index)
@@ -929,7 +930,9 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
                 if (used_replicas.contains(replica_num))
                     continue;
 
-                processor->cancel();
+                auto proc = processor.lock();
+                if (proc)
+                    proc->cancel();
             }
         });
 
