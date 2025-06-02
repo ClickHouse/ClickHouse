@@ -168,12 +168,12 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query && !insert_query)
+    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
             configuration,
-            getObjectStorage(context, !insert_query),
+            getObjectStorage(context, !is_insert_query),
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
@@ -183,18 +183,9 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         return storage;
     }
 
-    ASTPtr partition_by;
-    if (insert_query)
-    {
-        if (const auto * insert_query_class = insert_query->as<ASTInsertQuery>())
-        {
-            partition_by = insert_query_class->partition_by;
-        }
-    }
-
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        getObjectStorage(context, !insert_query),
+        getObjectStorage(context, !is_insert_query),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -203,7 +194,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
         /* distributed_processing */ is_secondary_query,
-        /* partition_by */ partition_by,
+        /* partition_by */ nullptr,
         /* is_table_function */true);
 
     storage->startup();

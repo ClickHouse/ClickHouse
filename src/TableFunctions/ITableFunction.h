@@ -83,7 +83,7 @@ public:
 
     /// Create storage according to the query.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, ASTInsertQuery * insert_query = nullptr) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
 
     virtual ~ITableFunction() = default;
 
@@ -93,12 +93,6 @@ protected:
 private:
     virtual StoragePtr executeImpl(
         const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const = 0;
-
-    virtual StoragePtr executeImpl(
-            const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query = nullptr) const
-    {
-        return executeImpl(ast_function, context, table_name, cached_columns, insert_query != nullptr);
-    }
 
     virtual const char * getStorageTypeName() const = 0;
 };

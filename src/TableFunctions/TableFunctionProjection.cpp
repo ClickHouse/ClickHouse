@@ -29,7 +29,7 @@ private:
         ContextPtr context,
         const std::string & table_name,
         ColumnsDescription cached_columns,
-        const ASTPtr & insert_query) const override;
+        bool is_insert_query) const override;
 
     const char * getStorageTypeName() const override { return "MergeTreeProjection"; }
 
@@ -78,7 +78,7 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/,
-    const ASTPtr & /* insert_query */) const
+    bool /* insert_query */) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
