@@ -1388,7 +1388,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                         new_values[fmt::format("PSICPU_{}", stallType)] = {counter,
                             fmt::format("Total microseconds of CPU stall time for {} stall type", stallType)};
                     }
+                    skipToNextLineOrEOF(*cpu_pressure);
                 }
+
             }
             catch (...)
             {
@@ -1419,6 +1421,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                             new_values[fmt::format("PSIMemory_{}", stallType)] = {counter,
                                 fmt::format("Total microseconds of memory stall time for {} stall type", stallType)};
                         }
+                        skipToNextLineOrEOF(*memory_pressure);
                     }
                 }
                 catch (...)
@@ -1450,6 +1453,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                             new_values[fmt::format("PSIIO_{}", stallType)] = {counter,
                                 fmt::format("Total microseconds of IO stall time for {} stall type", stallType)};
                         }
+                        skipToNextLineOrEOF(*io_pressure);
                     }
                 }
                 catch (...)
