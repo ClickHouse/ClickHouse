@@ -88,26 +88,23 @@ public:
             if (!block)
                 return {};
 
-            // If the block has no rows, continue to next block
+            /// If the block is empty, continue to next block
             if (block.rows() == 0)
                 continue;
 
-            // Get the key column (first column)
-            // const auto & key_column = block.getByPosition(0).column;
-            
-            // Create a filter to keep all rows
+            /// Create a filter to keep all rows
             auto filter_column = ColumnUInt8::create(block.rows(), 1);
             auto & filter_data = filter_column->getData();
-            
-            // For RIGHT JOIN, we want to keep all rows from the right table
-            // that have NULL keys or weren't joined
+
+            /// we want to keep all rows from the right table
+            /// that have NULL keys or weren't joined
             for (size_t i = 0; i < block.rows(); ++i)
             {
-                // Keep all rows - we don't need to deduplicate NULLs for RIGHT JOIN
+                /// keep all rows, we don't need to deduplicate NULLs
                 filter_data[i] = 1;
             }
 
-            // Apply the filter
+            /// Apply the filter
             for (size_t i = 0; i < block.columns(); ++i)
             {
                 auto & column = block.getByPosition(i).column;
@@ -128,8 +125,7 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     if (!params.isCollectionAndUseEnabled())
         return;
 
-    // Don't verify identical sizes as each HashJoin instance has its own hash table
-    // Just use the max size among all joins for statistics
+    /// Don't verify identical sizes as each HashJoin instance has its own hash table, just use the max size
     size_t max_ht_size = 0;
     for (const auto & hash_join : hash_joins)
     {
@@ -222,7 +218,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     , stats_collecting_params(stats_collecting_params_)
 {
     hash_joins.resize(slots);
-    /// Initialize a single shared flags map for all HashJoin slots.
+    /// a single shared flags map for all HashJoin slots
     shared_used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
     auto shared_used_flags_local = shared_used_flags;
 
@@ -377,7 +373,7 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     }
     else
     {
-        // Materialize once and scatter the block across all slots
+        /// materialize once and scatter the block across all slots
         hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
         dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
     }
@@ -478,7 +474,7 @@ bool ConcurrentHashJoin::hasNonJoinedRows() const
     if (!isRightOrFull(table_join->kind()))
         return false;
 
-    // Check if any shard has non-joined rows
+    /// Check if any shard has non-joined rows
     bool found_non_joined = false;
     for (const auto & hash_join_ptr : hash_joins)
     {
@@ -536,8 +532,8 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     // Special handling for joins with always false condition
     if (table_join->getOnlyClause().key_names_right.empty())
     {
-        // For RIGHT/FULL joins with always false condition, all rows should be considered non-joined
-        // We need to return all rows from the right table
+        /// for RIGHT/FULL joins with always false condition, all rows should be considered non-joined
+        /// we need to return all rows from the right table
         std::lock_guard lock(hash_joins[0]->mutex);
         if (auto s = hash_joins[0]->data->getNonJoinedBlocks(
                 left_sample_block, result_sample_block, max_block_size))
@@ -545,7 +541,7 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     }
     else
     {
-        // For regular joins, we need to deduplicate NULL values
+        /// for regular joins, we need to deduplicate NULL values
         std::unordered_set<size_t> processed_rows;
         for (const auto & hash_join : hash_joins)
         {
@@ -555,11 +551,11 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
             if (!had_non_joined)
                 continue;
 
-            // Get the non-joined blocks and deduplicate NULL values
+            /// get non-joined blocks and deduplicate NULL values
             if (auto s = hash_join->data->getNonJoinedBlocks(
                     left_sample_block, result_sample_block, max_block_size))
             {
-                // Create a wrapper stream that deduplicates NULL values
+                /// wrapper stream that deduplicates NULL values
                 auto dedup_stream = std::make_shared<DeduplicateNullStream>(std::move(s));
                 streams.push_back(std::move(dedup_stream));
             }

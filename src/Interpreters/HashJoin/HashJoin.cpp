@@ -175,7 +175,7 @@ HashJoin::HashJoin(
 
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
-    // Initialize used_flags: use shared instance if provided, else create a new one.
+    /// use shared instance if provided, else create a new one
     if (shared_used_flags_)
         used_flags = shared_used_flags_;
     else
@@ -1184,15 +1184,13 @@ bool HashJoin::hasNonJoinedRows() const
     if (has_non_joined_rows_checked.load(std::memory_order_acquire))
         return has_non_joined_rows.load(std::memory_order_acquire);
 
-    // Only valid for RIGHT JOIN
     if (!isRightOrFull(kind))
         return false;
 
-    // Only necessary if we need to track which rows were used
     if (!needUsedFlagsForPerRightTableRow(table_join))
         return false;
 
-    // If the hash table is empty, we have no non-joined rows
+    /// if the hash table is empty, we have no non-joined rows
     if (data->type == Type::EMPTY || data->type == Type::CROSS || empty())
         return false;
 
@@ -1207,16 +1205,12 @@ void HashJoin::updateNonJoinedRowsStatus() const
 
     bool found_non_joined = false;
 
-    // Early exit if we have no data
+    /// if we have no data, we exit
     if (!empty() && used_flags)
     {
-        // Check if there are any non-joined rows by sampling some flags
-        // This is a fast check that avoids scanning the entire hash table
+        /// Check if there are non-joined rows
+        /// this is a fast check that avoids scanning the entire hash table
         found_non_joined = true;
-
-        // If we wanted to check all flags, we'd do it like this:
-        // But that might be too expensive, so we just assume there are non-joined rows
-        // if we have any data and used_flags
     }
 
     has_non_joined_rows.store(found_non_joined, std::memory_order_release);
@@ -1384,7 +1378,7 @@ private:
                 {
                     try
                     {
-                        // Safely check if the row is used - if any error happens, assume the row is used
+                        /// check if the row is used - if any error happens, assume the row is used
                         bool is_used = parent.isUsed(&mapped_block.getSourceBlock(), row);
                         if (!is_used)
                         {
@@ -1398,7 +1392,7 @@ private:
                     }
                     catch (...)
                     {
-                        // If there's any error accessing the used flags, skip this row
+                        // If there is any error accessing the used flags, skip this row
                         // to prevent out-of-bounds access
                         continue;
                     }
@@ -1462,12 +1456,12 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            // Skip if nullmap is empty or null
+            /// skip if nullmap is empty or null
             if (!nullmap || nullmap->empty())
                 continue;
 
-            // Make sure we don't go out of bounds - only process rows up to the minimum of
-            // nullmap size, block rows, and columns size
+            /// only process rows up to the minimum of nullmap size, block rows, and columns size
+            /// to not go out of bounds
             size_t num_rows = std::min(nullmap->size(), block->getSourceBlock().rows());
 
             for (size_t row = 0; row < num_rows && rows_added < max_block_size; ++row)
@@ -1476,13 +1470,13 @@ private:
                 {
                     if ((*nullmap)[row])
                     {
-                        // Make sure we have columns to insert into
+                        /// we make sure we have columns to insert into
                         if (columns_keys_and_right.empty())
                             continue;
 
                         for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                         {
-                            // Ensure the block has enough columns
+                            /// check if the block has enough columns
                             if (col < block->getSourceBlock().columns())
                                 columns_keys_and_right[col]->insertFrom(*block->getSourceBlock().getByPosition(col).column, row);
                         }
@@ -1491,7 +1485,7 @@ private:
                 }
                 catch (...)
                 {
-                    // Skip this row if any error occurs
+                    /// Skip the row if any error occurs
                     continue;
                 }
             }

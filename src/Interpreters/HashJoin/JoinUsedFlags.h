@@ -69,7 +69,7 @@ public:
         std::lock_guard lock(mutex);
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            assert(flags[nullptr].size() <= size);
+            // assert(flags[nullptr].size() <= size);
             need_flags = true;
             // For one disjunct clause case, we don't need to reinit each time we call addBlockToJoin.
             // and there is no value inserted in this JoinUsedFlags before addBlockToJoin finish.

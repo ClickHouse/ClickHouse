@@ -111,7 +111,6 @@ public:
     friend class NotJoinedHash;
 
 private:
-    /// Finalize each slot after build-phase.
     void finalizeSlots();
 
     std::shared_ptr<TableJoin> table_join;
@@ -164,6 +163,7 @@ private:
     };
 };
 
+// The following two methods are deprecated and hopefully will be removed in the future.
 IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash);
 }
