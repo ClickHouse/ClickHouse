@@ -325,6 +325,11 @@ namespace ServerSetting
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
 }
 
+namespace ErrorCodes
+{
+    extern const int STARTUP_SCRIPTS_ERROR;
+}
+
 }
 
 namespace CurrentMetrics
@@ -829,6 +834,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
         for (const auto & key : keys)
         {
+            if (key == "throw_on_error")
+                continue;
             std::string full_prefix = "startup_scripts." + key;
 
             auto user = config.getString(full_prefix + ".user", "");
@@ -898,6 +905,10 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     {
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
+        if (config.getBool("startup_scripts.throw_on_error", false))
+            throw Exception(
+                ErrorCodes::STARTUP_SCRIPTS_ERROR,
+                "Cannot finish startup_script successfully. Use startup_scripts.throw_on_error setting to change this behavior");
     }
 }
 
@@ -1812,7 +1823,6 @@ try
 #endif
 
     NamedCollectionFactory::instance().loadIfNot();
-
     FileCacheFactory::instance().loadDefaultCaches(config());
 
     /// Initialize main config reloader.
@@ -2113,7 +2123,6 @@ try
             CertificateReloader::instance().tryReloadAll(*config);
 #endif
             NamedCollectionFactory::instance().reloadFromConfig(*config);
-
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
             HTTPConnectionPools::instance().setLimits(
