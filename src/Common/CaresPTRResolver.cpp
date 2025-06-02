@@ -134,7 +134,8 @@ struct AresChannelRAII
         }
     }
 
-    ~AresChannelRAII() {
+    ~AresChannelRAII()
+    {
         ares_destroy(channel);
     }
 
