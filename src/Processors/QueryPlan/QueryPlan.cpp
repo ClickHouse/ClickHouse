@@ -705,7 +705,7 @@ void QueryPlan::replaceNode(Node * node, QueryPlanPtr plan)
             ErrorCodes::LOGICAL_ERROR,
             "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
             node->step->getName(),
-            root->step->getName(),
+            plan->root->step->getName(),
             plan_header.dumpStructure(),
             header.dumpStructure());
 
