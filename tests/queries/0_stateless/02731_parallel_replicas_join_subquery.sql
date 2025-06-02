@@ -23,7 +23,6 @@ LIMIT 100;
 
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
-SET parallel_replicas_local_plan = 1;
 SET joined_subquery_requires_alias = 0;
 
 SELECT '=============== INNER QUERY (NO PARALLEL) ===============';
@@ -55,14 +54,12 @@ LIMIT 10
 SETTINGS enable_parallel_replicas = 1, enable_analyzer=0, parallel_replicas_only_with_analyzer=0;
 
 SYSTEM FLUSH LOGS query_log;
--- There should be 4 queries. The main query as received by the initiator and the 3 equal queries sent to each replica
--- BUT after introduction of cancelling queries as soon as snapshot is read - number of queries can vary, so only presence of queries is checked
-SELECT is_initial_query, replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
+SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
       event_date >= yesterday()
   AND type = 'QueryFinish'
-  AND initial_query_id IN
+  AND query_id IN
       (
           SELECT query_id
           FROM system.query_log
@@ -71,9 +68,7 @@ WHERE
             AND event_date >= yesterday()
             AND type = 'QueryFinish'
             AND query LIKE '-- Parallel inner query alone without analyzer%'
-      )
-GROUP BY is_initial_query, query
-ORDER BY is_initial_query, query;
+      );
 
 SELECT '=============== analyzer: INNER QUERY (PARALLEL), QUERIES EXECUTED BY PARALLEL INNER QUERY ALONE ===============';
 
@@ -91,14 +86,12 @@ LIMIT 10
 SETTINGS enable_parallel_replicas = 1, enable_analyzer=1;
 
 SYSTEM FLUSH LOGS query_log;
--- There should be 4 queries. The main query as received by the initiator and the 3 equal queries sent to each replica
--- BUT after introduction of cancelling queries as soon as snapshot is read - number of queries can vary, so only presence of queries is checked
-SELECT is_initial_query, replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
+SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
       event_date >= yesterday()
   AND type = 'QueryFinish'
-  AND initial_query_id IN
+  AND query_id IN
       (
           SELECT query_id
           FROM system.query_log
@@ -107,9 +100,7 @@ WHERE
             AND event_date >= yesterday()
             AND type = 'QueryFinish'
             AND query LIKE '-- Parallel inner query alone with analyzer%'
-      )
-GROUP BY is_initial_query, query
-ORDER BY is_initial_query, query;
+      );
 
 ---- Query with JOIN
 
@@ -197,16 +188,12 @@ ORDER BY value1, value2
 SETTINGS enable_parallel_replicas = 1, enable_analyzer=0, parallel_replicas_only_with_analyzer=0;
 
 SYSTEM FLUSH LOGS query_log;
-
--- There should be 7 queries. The main query as received by the initiator, the 3 equal queries to execute the subquery
--- in the inner join and the 3 queries executing the whole query (but replacing the subquery with a temp table)
--- BUT after introduction of cancelling queries as soon as snapshot is read - number of queries can vary, so only presence of queries is checked
-SELECT is_initial_query, replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
+SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
       event_date >= yesterday()
   AND type = 'QueryFinish'
-  AND initial_query_id IN
+  AND query_id IN
       (
           SELECT query_id
           FROM system.query_log
@@ -215,13 +202,10 @@ WHERE
             AND event_date >= yesterday()
             AND type = 'QueryFinish'
             AND query LIKE '-- Parallel full query without analyzer%'
-      )
-GROUP BY is_initial_query, query
-ORDER BY is_initial_query, query;
+      );
 
 SELECT '=============== analyzer: OUTER QUERY (PARALLEL) ===============';
 
-set parallel_replicas_local_plan=0; -- otherwise query can be executed completely locally and no remote queries can be in the query_log
 -- Parallel full query with analyzer
 SELECT
     value1,
@@ -253,16 +237,12 @@ ORDER BY value1, value2
 SETTINGS enable_parallel_replicas = 1, enable_analyzer=1;
 
 SYSTEM FLUSH LOGS query_log;
-
--- There should be 7 queries. The main query as received by the initiator, the 3 equal queries to execute the subquery
--- in the inner join and the 3 queries executing the whole query (but replacing the subquery with a temp table)
--- BUT after introduction of cancelling queries as soon as snapshot is read - number of queries can vary, so only presence of queries is checked
-SELECT is_initial_query, replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
+SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
       event_date >= yesterday()
   AND type = 'QueryFinish'
-  AND initial_query_id IN
+  AND query_id IN
       (
           SELECT query_id
           FROM system.query_log
@@ -271,6 +251,4 @@ WHERE
             AND event_date >= yesterday()
             AND type = 'QueryFinish'
             AND query LIKE '-- Parallel full query with analyzer%'
-      )
-GROUP BY is_initial_query, query
-ORDER BY is_initial_query, query;
+      );

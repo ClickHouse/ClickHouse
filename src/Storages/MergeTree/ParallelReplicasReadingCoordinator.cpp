@@ -1218,12 +1218,14 @@ void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_)
 {
-    ProfileEvents::increment(ProfileEvents::ParallelReplicasQueryCount);
-
     LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Creating parallel replicas coordinator with replicas_count={}", replicas_count);
 }
 
-ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator() = default;
+ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator()
+{
+    // the profile event is not in constructor to check that coordinator is destoyed
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasQueryCount);
+}
 
 void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)
 {
