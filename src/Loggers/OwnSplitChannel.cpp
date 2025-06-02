@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
     if (!isLoggingEnabled())
@@ -205,11 +210,12 @@ OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
 
 void OwnAsyncSplitChannel::open()
 {
-    if (text_log_max_priority && text_log_thread)
+    if (text_log_max_priority && text_log_thread && !text_log_thread->isRunning())
         text_log_thread->start(*text_log_runnable);
 
     for (size_t i = 0; i < channels.size(); i++)
-        threads[i]->start(*runnables[i]);
+        if (!threads[i]->isRunning())
+            threads[i]->start(*runnables[i]);
 }
 
 void OwnAsyncSplitChannel::close()
@@ -292,13 +298,14 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
             pushExtendedMessageToInternalTCPTextLogQueue(notification->msg_ext, logs_queue);
         }
 
-        if (channels.empty() && !text_log_max_priority)
+        auto text_log_max_priority_loaded = text_log_max_priority.load(std::memory_order_relaxed);
+        if (channels.empty() && !text_log_max_priority_loaded)
             return;
 
         if (!notification)
             notification = new OwnMessageNotification(msg);
 
-        if (msg.getPriority() < text_log_max_priority)
+        if (msg.getPriority() <= text_log_max_priority_loaded)
             text_log_queue.enqueueNotification(notification);
 
         for (auto & queue : queues)
@@ -332,6 +339,7 @@ void OwnAsyncSplitChannel::flushTextLogs() const
 
 void OwnAsyncSplitChannel::runChannel(size_t i)
 {
+    setThreadName("AsyncLog");
     Poco::AutoPtr<Poco::Notification> notification = queues[i]->waitDequeueNotification();
     while (notification)
     {
@@ -351,6 +359,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
 void OwnAsyncSplitChannel::runTextLog()
 {
+    setThreadName("AsyncTextLog", true);
     Poco::AutoPtr<Poco::Notification> notification = text_log_queue.waitDequeueNotification();
     while (notification)
     {
@@ -380,12 +389,16 @@ void OwnAsyncSplitChannel::setChannelProperty(const std::string & channel_name, 
 void OwnAsyncSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name)
 {
     auto extended = ExtendedChannelPtrPair(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get()));
-    name_to_channels.emplace(name, extended);
+    auto element = name_to_channels.try_emplace(name, extended);
+    if (!element.second)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Channel {} is already registered", name);
+
     channels.emplace_back(extended);
     queues.emplace_back(std::make_unique<Poco::NotificationQueue>());
-    threads.emplace_back(std::make_unique<Poco::Thread>("AsyncLog"));
+    const auto & thread = threads.emplace_back(std::make_unique<Poco::Thread>("AsyncLog"));
     const size_t i = threads.size() - 1;
     runnables.emplace_back(new OwnRunnableForChannel(*this, i));
+    thread->start(*runnables[i]);
 }
 
 void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority)
@@ -394,6 +407,8 @@ void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queu
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
     text_log_thread = std::make_unique<Poco::Thread>("AsyncTextLog");
     text_log_runnable = std::make_unique<OwnRunnableForTextLog>(*this);
+    if (text_log_max_priority)
+        text_log_thread->start(*text_log_runnable);
 }
 
 void OwnAsyncSplitChannel::setLevel(const std::string & name, int level)

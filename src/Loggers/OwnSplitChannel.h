@@ -122,7 +122,7 @@ struct OwnRunnableForChannel : public Poco::Runnable
         , i(i_)
     {
     }
-    ~OwnRunnableForChannel() override { }
+    ~OwnRunnableForChannel() override = default;
 
     void run() override { split.runChannel(i); }
 
@@ -137,7 +137,7 @@ struct OwnRunnableForTextLog : public Poco::Runnable
         : split(split_)
     {
     }
-    ~OwnRunnableForTextLog() override { }
+    ~OwnRunnableForTextLog() override = default;
 
     void run() override { split.runTextLog(); }
 
