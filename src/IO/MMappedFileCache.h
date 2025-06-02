@@ -32,8 +32,9 @@ private:
     using Base = CacheBase<UInt128, MMappedFile, UInt128TrivialHash>;
 
 public:
-    explicit MMappedFileCache(size_t max_size_in_bytes)
-        : Base(CurrentMetrics::end(), CurrentMetrics::MMapCacheCells, max_size_in_bytes)
+    explicit MMappedFileCache(size_t max_size_in_cells)
+        // Note, it is OK to use max_size_in_bytes=max_size_in_cells since default weight is 1
+        : Base(CurrentMetrics::end(), CurrentMetrics::MMapCacheCells, /*max_size_in_bytes=*/ max_size_in_cells)
     {}
 
     /// Calculate key from path to file and offset.
