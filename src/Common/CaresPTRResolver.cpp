@@ -45,7 +45,7 @@ namespace DB
     {
         AresChannelRAII()
         {
-            if (ares_init(&channel) != ARES_SUCCESS)
+            if (ares_init_options(&channel, nullptr, 0) != ARES_SUCCESS)
             {
                 throw DB::Exception(DB::ErrorCodes::DNS_ERROR, "Failed to initialize c-ares channel");
             }
