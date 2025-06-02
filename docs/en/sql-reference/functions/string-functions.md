@@ -50,7 +50,7 @@ Result:
 
 Checks whether the input string is non-empty. A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
 
-The function is also available for [arrays](/sql-reference/functions/array-functions#notempty) and [UUIDs](uuid-functions.md#notempty).
+The function is also available for [arrays](/sql-reference/functions/array-functions#notEmpty) and [UUIDs](uuid-functions.md#notempty).
 
 **Syntax**
 
