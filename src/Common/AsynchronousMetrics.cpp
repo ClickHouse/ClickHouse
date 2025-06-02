@@ -1375,7 +1375,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 while (!cpu_pressure->eof())
                 {
                     String stallType;
-                    readStringUntilWhitespaceInto(stallType, *cpu_pressure);
+                    readStringUntilWhitespace(stallType, *cpu_pressure);
 
                     String rest;
                     readStringUntilNewlineInto(rest, *cpu_pressure);
@@ -1407,7 +1407,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             while (!memory_pressure->eof())
             {
                 String stallType;
-                readStringUntilWhitespaceInto(stallType, *memory_pressure);
+                readStringUntilWhitespace(stallType, *memory_pressure);
 
                 String rest;
                 readStringUntilNewlineInto(rest, *memory_pressure);
@@ -1438,7 +1438,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             while (!io_pressure->eof())
             {
                 String stallType;
-                readStringUntilWhitespaceInto(stallType, *io_pressure);
+                readStringUntilWhitespace(stallType, *io_pressure);
 
                 String rest;
                 readStringUntilNewlineInto(rest, *io_pressure);
