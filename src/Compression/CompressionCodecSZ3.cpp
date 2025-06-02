@@ -19,10 +19,10 @@
 #    include <Parsers/ASTIdentifier.h>
 #    include <Parsers/ASTLiteral.h>
 #    include <Parsers/IAST.h>
+#    include <SZ3/api/sz.hpp>
+#    include <SZ3/utils/Config.hpp>
 #    include <Common/CurrentThread.h>
 #    include <Common/SipHash.h>
-#    include <SZ3/utils/Config.hpp>
-#    include <SZ3/api/sz.hpp>
 
 namespace DB
 {
@@ -133,11 +133,25 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     switch (float_size)
     {
         case 4: {
-            compressed = SZ_compress(config, reinterpret_cast<const float *>(source), compressed_size);
+            try
+            {
+                compressed = SZ_compress(config, reinterpret_cast<const float *>(source), compressed_size);
+            }
+            catch (...)
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
+            }
             break;
         }
         case 8: {
-            compressed = SZ_compress(config, reinterpret_cast<const double *>(source), compressed_size);
+            try
+            {
+                compressed = SZ_compress(config, reinterpret_cast<const double *>(source), compressed_size);
+            }
+            catch (...)
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
+            }
             break;
         }
         default:
@@ -170,13 +184,27 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
         switch (width)
         {
             case 4: {
-                float * dest_typed = reinterpret_cast<float *>(dest);
-                SZ_decompress<float>(config, const_cast<char *>(source), source_size, dest_typed);
+                try
+                {
+                    float * dest_typed = reinterpret_cast<float *>(dest);
+                    SZ_decompress<float>(config, const_cast<char *>(source), source_size, dest_typed);
+                }
+                catch (...)
+                {
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
+                }
                 break;
             }
             case 8: {
-                double * dest_typed = reinterpret_cast<double *>(dest);
-                SZ_decompress<double>(config, const_cast<char *>(source), source_size, dest_typed);
+                try
+                {
+                    double * dest_typed = reinterpret_cast<double *>(dest);
+                    SZ_decompress<double>(config, const_cast<char *>(source), source_size, dest_typed);
+                }
+                catch (...)
+                {
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
+                }
                 break;
             }
             default:
