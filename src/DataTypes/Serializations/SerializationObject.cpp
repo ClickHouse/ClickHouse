@@ -213,14 +213,19 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     if (!stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Object column structure during serialization of binary bulk state prefix");
 
-    /// Write serialization version.
+    /// Choose the serialization type.
+    /// By default we use serialization V2.
     UInt64 serialization_version = ObjectSerializationVersion::Value::V2;
+    /// Check if we are writing data in Native format and have STRING or FLATTENED serializations enabled.
     if (settings.native_format && settings.format_settings && settings.format_settings->native.write_json_as_string)
         serialization_version = ObjectSerializationVersion::Value::STRING;
     else if (settings.native_format && settings.format_settings && settings.format_settings->native.use_flattened_dynamic_and_json_serialization)
         serialization_version = ObjectSerializationVersion::Value::FLATTENED;
+    /// Check if we should use V1 serialization for compatibility.
     else if (settings.use_v1_object_and_dynamic_serialization)
         serialization_version = ObjectSerializationVersion::Value::V1;
+
+    /// Write selected serialization version.
     writeBinaryLittleEndian(serialization_version, *stream);
 
     auto object_state = std::make_shared<SerializeBinaryBulkStateObject>(serialization_version);

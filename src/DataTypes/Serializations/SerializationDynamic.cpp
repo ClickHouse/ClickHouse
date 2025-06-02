@@ -125,12 +125,17 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     if (!stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Dynamic column structure during serialization of binary bulk state prefix");
 
-    /// Write structure serialization version. By default we use V2 version.
+    /// Choose serialization type.
+    /// By default we use serialization V2.
     UInt64 structure_version = DynamicSerializationVersion::Value::V2;
+    /// Check if we are writing data in Native format and have FLATTENED serialization enabled.
     if (settings.native_format && settings.format_settings && settings.format_settings->native.use_flattened_dynamic_and_json_serialization)
         structure_version = DynamicSerializationVersion::Value::FLATTENED;
+    /// Check if we should use V1 serialization for compatibility.
     else if (settings.use_v1_object_and_dynamic_serialization)
         structure_version = DynamicSerializationVersion::Value::V1;
+
+    /// Write selected structure serialization version.
     writeBinaryLittleEndian(structure_version, *stream);
 
     auto dynamic_state = std::make_shared<SerializeBinaryBulkStateDynamic>(structure_version);

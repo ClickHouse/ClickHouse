@@ -63,6 +63,18 @@ ColumnPtr createIndexes(
 
 }
 
+DataTypePtr getIndexesTypeForFlattenedDynamicColumn(size_t max_index)
+{
+    if (max_index <= std::numeric_limits<UInt8>::max())
+        return std::make_shared<DataTypeUInt8>();
+    if (max_index <= std::numeric_limits<UInt16>::max())
+        return std::make_shared<DataTypeUInt16>();
+    if (max_index <= std::numeric_limits<UInt32>::max())
+        return std::make_shared<DataTypeUInt32>();
+    return std::make_shared<DataTypeUInt64>();
+}
+
+
 FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column)
 {
     const auto & variant_info = dynamic_column.getVariantInfo();
@@ -109,25 +121,23 @@ FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column
 
     /// Now choose type for indexes column and create it.
     size_t max_index = flattened_dynamic_column.types.size(); /// This index will be used for NULL.
-    if (max_index <= std::numeric_limits<UInt8>::max())
+    flattened_dynamic_column.indexes_type = getIndexesTypeForFlattenedDynamicColumn(max_index);
+    switch (flattened_dynamic_column.indexes_type->getTypeId())
     {
-        flattened_dynamic_column.indexes_type = std::make_shared<DataTypeUInt8>();
-        flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt8>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
-    }
-    else if (max_index <= std::numeric_limits<UInt16>::max())
-    {
-        flattened_dynamic_column.indexes_type = std::make_shared<DataTypeUInt16>();
-        flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt16>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
-    }
-    else if (max_index <= std::numeric_limits<UInt32>::max())
-    {
-        flattened_dynamic_column.indexes_type = std::make_shared<DataTypeUInt32>();
-        flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt32>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
-    }
-    else
-    {
-        flattened_dynamic_column.indexes_type = std::make_shared<DataTypeUInt64>();
-        flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt64>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
+        case TypeIndex::UInt8:
+            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt8>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
+            break;
+        case TypeIndex::UInt16:
+            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt16>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
+            break;
+        case TypeIndex::UInt32:
+            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt32>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
+            break;
+        case TypeIndex::UInt64:
+            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt64>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
+            break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type as type of indices column type: {}", flattened_dynamic_column.indexes_type->getName());
     }
 
     return flattened_dynamic_column;
@@ -231,17 +241,6 @@ void unflattenDynamicColumn(FlattenedDynamicColumn && flattened_column, ColumnDy
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of indexes in flattened Dynamic column: {}", flattened_column.indexes_type->getName());
     }
-}
-
-DataTypePtr getIndexesTypeForFlattenedDynamicColumn(size_t max_index)
-{
-    if (max_index <= std::numeric_limits<UInt8>::max())
-        return std::make_shared<DataTypeUInt8>();
-    if (max_index <= std::numeric_limits<UInt16>::max())
-        return std::make_shared<DataTypeUInt16>();
-    if (max_index <= std::numeric_limits<UInt32>::max())
-        return std::make_shared<DataTypeUInt32>();
-    return std::make_shared<DataTypeUInt64>();
 }
 
 namespace
