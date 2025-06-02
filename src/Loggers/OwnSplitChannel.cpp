@@ -199,9 +199,7 @@ void OwnSplitChannel::setChannelProperty(const std::string& channel_name, const 
     }
 }
 
-OwnAsyncSplitChannel::OwnAsyncSplitChannel()
-{
-}
+OwnAsyncSplitChannel::OwnAsyncSplitChannel() = default;
 
 OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
 {
