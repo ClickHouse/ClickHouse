@@ -1,6 +1,5 @@
 #include "CaresPTRResolver.h"
 #include <cstdlib>
-#include <ares_private.h>
 #include <arpa/inet.h>
 #include <sys/select.h>
 #include <Common/Exception.h>
