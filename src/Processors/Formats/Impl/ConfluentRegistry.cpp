@@ -37,7 +37,6 @@ avro::ValidSchema ConfluentSchemaRegistry::getAvroSchema(uint32_t id)
             try
             {
                 auto avro_schema = fetchSchema(id);
-                /// NOLINTNEXTLINE
                 return std::make_shared<avro::ValidSchema>(avro::compileJsonSchemaFromString(avro_schema));
             }
             catch (const avro::Exception & e)
