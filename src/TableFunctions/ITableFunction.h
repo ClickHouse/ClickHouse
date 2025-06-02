@@ -81,7 +81,8 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
-    // todo add comment
+    // INSERT INTO TABLE FUNCTION ... PARTITION BY
+    // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
     virtual void setPartitionBy(const ASTPtr & /**/) {}
 
     /// Create storage according to the query.
