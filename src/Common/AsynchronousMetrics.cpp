@@ -1399,69 +1399,67 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             }
         }
 
-        // Process memory pressure
-            if (memory_pressure)
+    if (memory_pressure)
+    {
+        try
+        {
+            memory_pressure->rewind();
+            while (!memory_pressure->eof())
             {
-                try
-                {
-                    memory_pressure->rewind();
-                    while (!memory_pressure->eof())
-                    {
-                        String stallType;
-                        readStringUntilWhitespaceInto(stallType, *memory_pressure);
+                String stallType;
+                readStringUntilWhitespaceInto(stallType, *memory_pressure);
 
-                        String rest;
-                        readStringUntilNewlineInto(rest, *memory_pressure);
+                String rest;
+                readStringUntilNewlineInto(rest, *memory_pressure);
 
-                        auto pos = rest.find("total=");
-                        if (pos != String::npos)
-                        {
-                            auto total = rest.substr(pos + 1);
-                            uint64_t counter = std::stoull(total);
-                            new_values[fmt::format("PSIMemory_{}", stallType)] = {counter,
-                                fmt::format("Total microseconds of memory stall time for {} stall type", stallType)};
-                        }
-                        skipToNextLineOrEOF(*memory_pressure);
-                    }
-                }
-                catch (...)
+                auto pos = rest.find("total=");
+                if (pos != String::npos)
                 {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                    openFileIfExists("/proc/pressure/memory", memory_pressure);
+                    auto total = rest.substr(pos + 1);
+                    uint64_t counter = std::stoull(total);
+                    new_values[fmt::format("PSIMemory_{}", stallType)] = {counter,
+                        fmt::format("Total microseconds of memory stall time for {} stall type", stallType)};
                 }
+                skipToNextLineOrEOF(*memory_pressure);
             }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/pressure/memory", memory_pressure);
+        }
+    }
 
-            // Process IO pressure
-            if (io_pressure)
+    if (io_pressure)
+    {
+        try
+        {
+            io_pressure->rewind();
+            while (!io_pressure->eof())
             {
-                try
-                {
-                    io_pressure->rewind();
-                    while (!io_pressure->eof())
-                    {
-                        String stallType;
-                        readStringUntilWhitespaceInto(stallType, *io_pressure);
+                String stallType;
+                readStringUntilWhitespaceInto(stallType, *io_pressure);
 
-                        String rest;
-                        readStringUntilNewlineInto(rest, *io_pressure);
+                String rest;
+                readStringUntilNewlineInto(rest, *io_pressure);
 
-                        auto pos = rest.find("total=");
-                        if (pos != String::npos)
-                        {
-                            auto total = rest.substr(pos + 1);
-                            uint64_t counter = std::stoull(total);
-                            new_values[fmt::format("PSIIO_{}", stallType)] = {counter,
-                                fmt::format("Total microseconds of IO stall time for {} stall type", stallType)};
-                        }
-                        skipToNextLineOrEOF(*io_pressure);
-                    }
-                }
-                catch (...)
+                auto pos = rest.find("total=");
+                if (pos != String::npos)
                 {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                    openFileIfExists("/proc/pressure/io", io_pressure);
+                    auto total = rest.substr(pos + 1);
+                    uint64_t counter = std::stoull(total);
+                    new_values[fmt::format("PSIIO_{}", stallType)] = {counter,
+                        fmt::format("Total microseconds of IO stall time for {} stall type", stallType)};
                 }
+                skipToNextLineOrEOF(*io_pressure);
             }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/pressure/io", io_pressure);
+        }
+    }
 
     if (file_nr)
     {
