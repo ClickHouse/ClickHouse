@@ -1,13 +1,9 @@
-#include <boost/iostreams/get.hpp>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -35,8 +31,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 
 #include <Poco/Logger.h>
-
-#include "AggregateFunctions/AggregateFunctionGroupBitmapData.h"
 
 namespace DB
 {
