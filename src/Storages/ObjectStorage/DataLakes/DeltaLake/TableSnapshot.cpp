@@ -77,7 +77,7 @@ public:
         KernelScan & scan_,
         const std::string & data_prefix_,
         const DB::NamesAndTypesList & table_schema_,
-        const DB::NamesAndTypesList & read_schema_,
+        const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
         DB::ObjectStoragePtr object_storage_,
         const DB::ActionsDAG * filter_dag_,
@@ -89,7 +89,6 @@ public:
         , scan(scan_)
         , data_prefix(data_prefix_)
         , table_schema(table_schema_)
-        , read_schema(read_schema_)
         , partition_columns(partition_columns_)
         , object_storage(object_storage_)
         , callback(callback_)
@@ -105,18 +104,11 @@ public:
         if (filter_dag_)
             pruner.emplace(*filter_dag_, table_schema_, partition_columns_, DB::Context::getGlobalContextInstance());
 
-        partition_column_positions.reserve(partition_columns.size());
-        for (const auto & partition_column : partition_columns)
+        expression_schema = table_schema;
+        if (!physical_names_map_.empty())
         {
-            auto name_and_type = table_schema.tryGetByName(partition_column);
-            if (!name_and_type.has_value())
-            {
-                throw DB::Exception(
-                    DB::ErrorCodes::LOGICAL_ERROR,
-                    "Cannot find parititon column {} in schema",
-                    partition_column);
-            }
-            partition_column_positions.push_back(table_schema.getPosByName(partition_column));
+            for (auto & [name, value] : expression_schema)
+                name = physical_names_map_.at(name);
         }
     }
 
@@ -275,32 +267,27 @@ public:
         /// DeltaLake does not store partition values in the actual data files,
         /// but instead in data files paths directory names.
         /// So we extract these values here and put into `partitions_info`.
-        DB::ObjectInfoWithPartitionColumns::PartitionColumnsInfo partitions_info;
+        std::unique_ptr<ParsedExpression> expression;
         if (transform && !context->partition_columns.empty())
-        {
-            const auto result = visitExpression(transform, context->read_schema);
-            auto values = result->getPartitionValues(context->partition_column_positions);
-            chassert(values.size() == context->partition_column_positions.size());
-            for (size_t i = 0; i < values.size(); ++i)
-            {
-                auto name = context->partition_columns[i];
-                auto name_and_type = context->table_schema.tryGetByName(name);
-                chassert(name_and_type);
-                chassert(name == name_and_type->name);
-                partitions_info.emplace_back(name_and_type.value(), std::move(values[i]));
-            }
-        }
+            expression = visitExpression(transform, context->expression_schema);
 
         LOG_TEST(
             context->log,
-            "Scanned file: {}, size: {}, num records: {}, partition columns: {}",
-            full_path, size, stats ? DB::toString(stats->num_records) : "Unknown", partitions_info.size());
+            "Scanned file: {}, size: {}, num records: {}",
+            full_path, size, stats ? DB::toString(stats->num_records) : "Unknown");
 
         DB::ObjectInfoPtr object;
-        if (partitions_info.empty())
-            object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
+        if (expression)
+        {
+            object = std::make_shared<DB::ObjectInfoWithPartitionColumns>(
+                std::move(expression),
+                context->partition_columns,
+                std::move(full_path));
+        }
         else
-            object = std::make_shared<DB::ObjectInfoWithPartitionColumns>(std::move(partitions_info), std::move(full_path));
+        {
+            object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
+        }
 
         {
             std::lock_guard lock(context->next_mutex);
@@ -321,15 +308,12 @@ private:
 
     const std::string data_prefix;
     const DB::NamesAndTypesList & table_schema;
-    const DB::NamesAndTypesList & read_schema;
+    DB::NamesAndTypesList expression_schema;
     const DB::Names & partition_columns;
     const DB::ObjectStoragePtr object_storage;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
     const LoggerPtr log;
-
-    /// Positions of partition columns in table schema.
-    std::vector<size_t> partition_column_positions;
 
     std::exception_ptr scan_exception;
 
@@ -427,7 +411,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         scan,
         helper->getDataPath(),
         getTableSchema(),
-        getReadSchema(),
+        getPhysicalNamesMap(),
         getPartitionColumns(),
         object_storage,
         filter_dag,

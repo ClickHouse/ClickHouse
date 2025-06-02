@@ -12,6 +12,10 @@ namespace ffi
 struct Expression;
 struct SharedExpression;
 }
+namespace DB
+{
+class Chunk;
+}
 
 namespace DeltaLake
 {
@@ -19,15 +23,15 @@ namespace DeltaLake
 class ParsedExpression
 {
 public:
-    using ParsedResult = std::map<size_t, DB::ActionsDAG::NodeRawConstPtrs>;
+    explicit ParsedExpression(DB::ActionsDAG && dag_, const DB::NamesAndTypesList & schema_);
 
-    ParsedExpression(ParsedResult && result_, DB::ActionsDAG && dag_);
+    std::vector<DB::Field> getConstValues(const DB::Names & columns) const;
 
-    std::vector<DB::Field> getPartitionValues(const std::vector<size_t> & partition_column_ids);
+    void apply(DB::Chunk & chunk, const DB::NamesAndTypesList & chunk_schema, const DB::Names & columns);
 
 private:
-    DB::ActionsDAG dag;
-    ParsedResult result;
+    const DB::ActionsDAG dag;
+    const DB::NamesAndTypesList schema;
 };
 
 std::unique_ptr<ParsedExpression> visitExpression(

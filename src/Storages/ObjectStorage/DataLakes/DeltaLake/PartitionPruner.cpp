@@ -85,9 +85,10 @@ bool PartitionPruner::canBePruned(const DB::ObjectInfoWithPartitionColumns & obj
         return false;
 
     DB::Row partition_key_values;
-    partition_key_values.reserve(object_info.partitions_info.size());
+    const auto partition_values = object_info.getPartitionValues();
+    partition_key_values.reserve(partition_values.size());
 
-    for (const auto & [name_and_type, value] : object_info.partitions_info)
+    for (const auto & value : partition_values)
     {
         if (value.isNull())
             partition_key_values.push_back(DB::POSITIVE_INFINITY); /// NULL_LAST
