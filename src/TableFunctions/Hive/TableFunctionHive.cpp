@@ -47,7 +47,7 @@ public:
     bool hasStaticStructure() const override { return true; }
 
     StoragePtr executeImpl(
-        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const override;
+        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query = nullptr) const override;
 
     const char * getStorageTypeName() const override { return storage_type_name; }
     ColumnsDescription getActualTableStructure(ContextPtr, bool is_insert_query) const override;

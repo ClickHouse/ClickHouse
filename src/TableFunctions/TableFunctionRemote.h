@@ -28,7 +28,7 @@ public:
 
 private:
 
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query = nullptr) const override;
     const char * getStorageTypeName() const override { return "Distributed"; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;

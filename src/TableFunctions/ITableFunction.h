@@ -92,7 +92,7 @@ protected:
 
 private:
     virtual StoragePtr executeImpl(
-        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const = 0;
+        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query = nullptr) const = 0;
 
     virtual const char * getStorageTypeName() const = 0;
 };

@@ -37,7 +37,7 @@ private:
         ContextPtr context,
         const std::string & table_name,
         ColumnsDescription cached_columns,
-        ASTInsertQuery * insert_query) const override;
+        ASTInsertQuery * insert_query = nullptr) const override;
 
     const char * getStorageTypeName() const override { return "MergeTreeIndex"; }
 
