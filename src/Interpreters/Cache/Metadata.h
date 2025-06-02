@@ -38,7 +38,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     bool releasable() const { return isSharedPtrUnique(file_segment); }
 
-    size_t size(FileSegment::SizeAlignment alignment = FileSegment::SizeAlignment::NOT_ALIGNED) const;
+    size_t size(FileSegment::SizeAlignment alignment = FileSegment::SizeAlignment::DEFAULT_ALIGNMENT) const;
 
 
     bool isEvictingOrRemoved(const CachePriorityGuard::Lock & lock) const
