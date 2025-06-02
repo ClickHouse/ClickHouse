@@ -3057,7 +3057,7 @@ def test_bucket_partition_pruning(started_cluster, storage_type):
     creation_expression = get_creation_expression(
         storage_type, TABLE_NAME, started_cluster, table_function=True
     )
-
+    
     queries = [
         f"SELECT * FROM {creation_expression} WHERE id == 1 ORDER BY ALL",
         f"SELECT * FROM {creation_expression} WHERE value == 20.00 OR event_time == '2024-01-24 14:00:00' ORDER BY ALL",
