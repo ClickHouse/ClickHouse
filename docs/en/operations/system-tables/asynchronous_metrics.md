@@ -552,8 +552,6 @@ The total amount of memory (in bytes) reserved for primary key values (only take
 
 Total amount of rows (records) stored in all tables of MergeTree family.
 
-Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided.
-
 ### Uptime {#uptime}
 
 The server uptime in seconds. It includes the time spent for server initialization before accepting connections.
