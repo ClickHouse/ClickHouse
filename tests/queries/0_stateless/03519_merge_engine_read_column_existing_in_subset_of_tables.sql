@@ -1,3 +1,5 @@
+set enable_analyzer=1;
+
 drop table if exists test1;
 drop table if exists test2;
 drop table if exists test3;
