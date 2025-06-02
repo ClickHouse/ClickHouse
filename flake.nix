@@ -207,20 +207,20 @@
           yasm
           nasm
 
+          libgccjit
+
           rustNightly.rustc
           rustNightly.cargo
         ];
 
         cmakeFlags = [
           "-DCOMPILER_CACHE=disabled"
-          "-DENABLE_LIBRARIES=0"
           "-DENABLE_TESTS=0"
           "-DENABLE_DELTA_KERNEL_RS=0"
         ];
 
         env = {
-          CARGO_HOME = "$PWD/../.cargo/";
-          NIX_CFLAGS_COMPILE = "-Wno-used-but-marked-unused";
+          NIX_CFLAGS_COMPILE = "-Wno-used-but-marked-unused -Wno-unused-result";
         };
       };
 
