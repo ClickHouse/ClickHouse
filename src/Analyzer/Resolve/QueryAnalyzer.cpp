@@ -980,7 +980,9 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
     if (!function)
         return {false, 0};
 
-    if (function->isAggregateFunction() || function->isWindowFunction())
+    // We don't need to have GROUPING under GROUP BY ALL, so we treat GROUPING
+    // as an aggregate function for GROUP BY ALL expansion
+    if (function->isAggregateFunction() || function->isWindowFunction() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
         return {true, 0};
 
     UInt64 pushed_children = 0;
@@ -2535,6 +2537,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         if (identifier_node)
         {
             node = parent_window_node->clone();
+            node->removeAlias();
             result_projection_name = parent_window_name;
         }
         else
