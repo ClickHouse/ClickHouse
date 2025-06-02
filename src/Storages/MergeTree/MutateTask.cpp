@@ -136,95 +136,6 @@ enum class ExecuteTTLType : uint8_t
     RECALCULATE= 2,
 };
 
-struct MutationContext
-{
-    MergeTreeData * data;
-    MergeTreeDataMergerMutator * mutator;
-    PartitionActionBlocker * merges_blocker;
-    TableLockHolder * holder;
-    MergeListEntry * mutate_entry;
-
-    LoggerPtr log{getLogger("MutateTask")};
-
-    FutureMergedMutatedPartPtr future_part;
-    MergeTreeData::DataPartPtr source_part;
-    StorageMetadataPtr metadata_snapshot;
-
-    MutationCommandsConstPtr commands;
-    time_t time_of_mutation;
-    ContextPtr context;
-    ReservationSharedPtr space_reservation;
-
-    CompressionCodecPtr compression_codec;
-
-    std::unique_ptr<CurrentMetrics::Increment> num_mutations;
-
-    QueryPipelineBuilder mutating_pipeline_builder;
-    QueryPipeline mutating_pipeline; // in
-    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
-    ProgressCallback progress_callback;
-    Block updated_header;
-
-    std::unique_ptr<MutationsInterpreter> interpreter;
-    UInt64 watch_prev_elapsed = 0;
-    std::unique_ptr<MergeStageProgress> stage_progress;
-
-    MutationCommands commands_for_part;
-    MutationCommands for_interpreter;
-    MutationCommands for_file_renames;
-
-    NamesAndTypesList storage_columns;
-    NameSet materialized_indices;
-    NameSet materialized_projections;
-    NameSet materialized_statistics;
-
-    MergeTreeData::MutableDataPartPtr new_data_part;
-    IMergedBlockOutputStreamPtr out;
-
-    String mrk_extension;
-
-    std::vector<ProjectionDescriptionRawPtr> projections_to_build;
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
-
-    std::set<MergeTreeIndexPtr> indices_to_recalc;
-    std::set<ColumnStatisticsPartPtr> stats_to_recalc;
-    std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
-    MergeTreeData::DataPart::Checksums existing_indices_stats_checksums;
-    NameSet files_to_skip;
-    NameToNameVector files_to_rename;
-
-    bool need_sync;
-    ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
-
-    MergeTreeTransactionPtr txn;
-
-    HardlinkedFiles hardlinked_files;
-
-    bool need_prefix = true;
-
-    scope_guard temporary_directory_lock;
-
-    bool checkOperationIsNotCanceled() const
-    {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
-            || (*mutate_entry)->is_cancelled)
-        {
-            throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
-        }
-
-        return true;
-    }
-
-    /// Whether we need to count lightweight delete rows in this mutation
-    bool count_lightweight_deleted_rows;
-    UInt64 execute_elapsed_ns = 0;
-
-    /// For projection masks, used in lightweight delete.
-    std::vector<ProjectionMutationContextPtr> projection_mutation_contexts;
-};
-
-using MutationContextPtr = std::shared_ptr<MutationContext>;
-
 
 namespace MutationHelpers
 {
@@ -1169,6 +1080,96 @@ void finalizeMutatedPart(
 }
 
 }
+
+
+struct MutationContext
+{
+    MergeTreeData * data;
+    MergeTreeDataMergerMutator * mutator;
+    PartitionActionBlocker * merges_blocker;
+    TableLockHolder * holder;
+    MergeListEntry * mutate_entry;
+
+    LoggerPtr log{getLogger("MutateTask")};
+
+    FutureMergedMutatedPartPtr future_part;
+    MergeTreeData::DataPartPtr source_part;
+    StorageMetadataPtr metadata_snapshot;
+
+    MutationCommandsConstPtr commands;
+    time_t time_of_mutation;
+    ContextPtr context;
+    ReservationSharedPtr space_reservation;
+
+    CompressionCodecPtr compression_codec;
+
+    std::unique_ptr<CurrentMetrics::Increment> num_mutations;
+
+    QueryPipelineBuilder mutating_pipeline_builder;
+    QueryPipeline mutating_pipeline; // in
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
+    ProgressCallback progress_callback;
+    Block updated_header;
+
+    std::unique_ptr<MutationsInterpreter> interpreter;
+    UInt64 watch_prev_elapsed = 0;
+    std::unique_ptr<MergeStageProgress> stage_progress;
+
+    MutationCommands commands_for_part;
+    MutationCommands for_interpreter;
+    MutationCommands for_file_renames;
+
+    NamesAndTypesList storage_columns;
+    NameSet materialized_indices;
+    NameSet materialized_projections;
+    NameSet materialized_statistics;
+
+    MergeTreeData::MutableDataPartPtr new_data_part;
+    IMergedBlockOutputStreamPtr out;
+
+    String mrk_extension;
+
+    std::vector<ProjectionDescriptionRawPtr> projections_to_build;
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+
+    std::set<MergeTreeIndexPtr> indices_to_recalc;
+    std::set<ColumnStatisticsPartPtr> stats_to_recalc;
+    std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
+    MergeTreeData::DataPart::Checksums existing_indices_stats_checksums;
+    NameSet files_to_skip;
+    NameToNameVector files_to_rename;
+
+    bool need_sync;
+    ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+
+    MergeTreeTransactionPtr txn;
+
+    HardlinkedFiles hardlinked_files;
+
+    bool need_prefix = true;
+
+    scope_guard temporary_directory_lock;
+
+    bool checkOperationIsNotCanceled() const
+    {
+        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
+            || (*mutate_entry)->is_cancelled)
+        {
+            throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+        }
+
+        return true;
+    }
+
+    /// Whether we need to count lightweight delete rows in this mutation
+    bool count_lightweight_deleted_rows;
+    UInt64 execute_elapsed_ns = 0;
+
+    /// For projection masks, used in lightweight delete.
+    std::vector<ProjectionMutationContextPtr> projection_mutation_contexts;
+};
+
+using MutationContextPtr = std::shared_ptr<MutationContext>;
 
 void ProjectionMutationContext::prepareAllPart(bool always_use_copy_instead_of_hardlinks,
     CompressionCodecPtr compression_codec, const WriteSettings & write_settings)
