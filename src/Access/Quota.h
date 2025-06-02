@@ -41,7 +41,8 @@ struct Quota : public IAccessEntity
     /// Which roles or users should use this quota.
     RolesOrUsersSet to_roles;
 
-    int prefix_bits;
+    int ipv4_prefix_bits;
+    int ipv6_prefix_bits;
     
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<Quota>(); }

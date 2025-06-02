@@ -1444,6 +1444,74 @@ def test_reload_users_xml_by_timer():
         [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]],
     )
 
+def test_prefix_bits():
+    """
+    Check that quota keyed by IP uses correct key with and without prefix bits.
+    """
+
+    # Test with no prefix (should match full IP)
+    copy_quota_xml("tracking.xml")
+    instance.query("SELECT * from test_table")
+    system_quota_usage(
+        [
+            [
+                "ipQuota",           # quota_name
+                "127.0.0.1",         # quota_key (full IP)
+                31556952,            # start_time 
+                1,                   # end_time 
+                "\\N",               # duration
+                1,                   # queries
+                "\\N",               # query_selects
+                0,                   # query_inserts
+                "\\N",               # max_query_inserts
+                0,                   # errors
+                "\\N",               # max_errors
+                50,               # result_rows
+                "\\N",               # max_result_rows
+                200,               # result_bytes
+                "\\N",               # max_result_bytes
+                50,               # read_rows
+                "\\N",               # max_read_rows
+                200,               # read_bytes
+                "\\N",               # max_read_bytes
+                "\\N",               # execution_time
+                "\\N",               # max_execution_time
+            ]
+        ]
+    )
+
+    # Test with IPv4 prefix /24 (should match by subnet)
+    # copy_quota_xml("prefix_bits.xml")
+    # instance.query("SELECT * from test_table")
+    # system_quota_usage(
+    #     [
+    #         [
+    #             "ipQuota",           # quota_name
+    #             "127.0.0.0",         # quota_key (subnet)
+    #             31556952,            # duration
+    #             "\\N",               # queries
+    #             "\\N",               # max_queries
+    #             "\\N",               # query_selects
+    #             "\\N",               # max_query_selects
+    #             "\\N",               # query_inserts
+    #             "\\N",               # max_query_inserts
+    #             "\\N",               # errors
+    #             "\\N",               # max_errors
+    #             "\\N",               # result_rows
+    #             "\\N",               # max_result_rows
+    #             "\\N",               # result_bytes
+    #             "\\N",               # max_result_bytes
+    #             "\\N",               # read_rows
+    #             "\\N",               # max_read_rows
+    #             "\\N",               # read_bytes
+    #             "\\N",               # max_read_bytes
+    #             "\\N",               # execution_time
+    #             "\\N",               # max_execution_time
+    #             "\\N",               # failed_sequential_authentications
+    #             "\\N",               # max_failed_sequential_authentications
+    #         ]
+    #     ]
+    # )
 
 def test_dcl_introspection():
     assert instance.query("SHOW QUOTAS") == "myQuota\n"

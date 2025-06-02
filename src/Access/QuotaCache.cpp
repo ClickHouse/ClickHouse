@@ -12,7 +12,11 @@
 #include <boost/smart_ptr/make_shared.hpp>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketDefs.h>
+<<<<<<< Updated upstream
 
+=======
+#include <iostream>
+>>>>>>> Stashed changes
 
 namespace DB
 {
@@ -31,24 +35,40 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
     rebuildAllIntervals();
 }
 
+<<<<<<< Updated upstream
 Poco::Net::IPAddress QuotaCache::QuotaInfo::getMaskedIP(Poco::Net::IPAddress & ipAddr) const 
+=======
+Poco::Net::IPAddress QuotaCache::QuotaInfo::getMaskedIP(Poco::Net::IPAddress ipAddr) const 
+>>>>>>> Stashed changes
 {
     Poco::Net::IPAddress mask;
     if (ipAddr.family() == Poco::Net::AddressFamily::IPv4) 
     {
+<<<<<<< Updated upstream
         mask = Poco::Net::IPAddress(quota->prefix_bits, Poco::Net::AddressFamily::IPv4);
         ipAddr.mask(mask);
     } else if (ipAddr.family() == Poco::Net::AddressFamily::IPv6) {
         // mask method is not currently supported for IPv6.
         mask = Poco::Net::IPAddress(quota->prefix_bits, Poco::Net::AddressFamily::IPv6);
+=======
+        mask = Poco::Net::IPAddress(quota->ipv4_prefix_bits, Poco::Net::AddressFamily::IPv4);
+        ipAddr.mask(mask);
+    } else if (ipAddr.family() == Poco::Net::AddressFamily::IPv6) {
+        
+        // mask method is not currently supported for IPv6.
+        mask = Poco::Net::IPAddress(quota->ipv6_prefix_bits, Poco::Net::AddressFamily::IPv6);
+>>>>>>> Stashed changes
         std::array<unsigned char, 16> masked_addr;
         const unsigned char* raw_ip = static_cast<const unsigned char*>(ipAddr.addr());
         const unsigned char* raw_mask = static_cast<const unsigned char*>(mask.addr());
 
-        for (int i = 0; i < 16; ++i) {
+        auto ipv6_bytes = 16;
+        for (int i = 0; i < ipv6_bytes; ++i)
+        {
             masked_addr[i] = raw_ip[i] & raw_mask[i];
         }
-        return Poco::Net::IPAddress(masked_addr.data(), 16);
+
+        return Poco::Net::IPAddress(masked_addr.data(), ipv6_bytes);
     }
     return ipAddr;
 }
@@ -57,6 +77,8 @@ Poco::Net::IPAddress QuotaCache::QuotaInfo::getMaskedIP(Poco::Net::IPAddress & i
 String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool throw_if_client_key_empty) const
 {
     const auto & params = enabled.params;
+    const auto & masked_ip = getMaskedIP(params.client_address);
+    std::cout << "Client Address is: " << params.client_address.toString() << std::endl;
     switch (quota->key_type)
     {
         case QuotaKeyType::NONE:
@@ -69,7 +91,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         }
         case QuotaKeyType::IP_ADDRESS:
         {
-            return params.client_address.toString();
+            return masked_ip.toString();
         }
         case QuotaKeyType::FORWARDED_IP_ADDRESS:
         {
@@ -98,7 +120,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         {
             if (!params.client_key.empty())
                 return params.client_key;
-            return params.client_address.toString();
+            return masked_ip.toString();
         }
         case QuotaKeyType::MAX: break;
     }

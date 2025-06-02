@@ -44,7 +44,7 @@ private:
         void setQuota(const QuotaPtr & quota_, const UUID & quota_id_);
 
         String calculateKey(const EnabledQuota & enabled_quota, bool throw_if_client_key_empty) const;
-        Poco::Net::IPAddress getMaskedIP(Poco::Net::IPAddress & ipAddr) const;
+        Poco::Net::IPAddress getMaskedIP(Poco::Net::IPAddress ipAddr) const;
         boost::shared_ptr<const Intervals> getOrBuildIntervals(const String & key);
         boost::shared_ptr<const Intervals> rebuildIntervals(const String & key, std::chrono::system_clock::time_point current_time);
         void rebuildAllIntervals();

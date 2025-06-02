@@ -520,7 +520,10 @@ namespace
         if (config.has(quota_config + ".keyed_by_ip")) {
             quota->key_type = QuotaKeyType::IP_ADDRESS;
             String ip_config = quota_config + ".keyed_by_ip";
-            quota->prefix_bits = config.getInt(ip_config, 128);
+            String ipv4_config = ip_config + ".ipv4_prefix_bits";
+            String ipv6_config = ip_config + ".ipv6_prefix_bits";
+            quota->ipv4_prefix_bits = config.getInt(ipv4_config, 32);
+            quota->ipv6_prefix_bits = config.getInt(ipv6_config, 128);
         } else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
             quota->key_type = QuotaKeyType::FORWARDED_IP_ADDRESS;
         else if (config.has(quota_config + ".keyed"))
