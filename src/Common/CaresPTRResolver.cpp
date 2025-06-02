@@ -136,6 +136,9 @@ struct AresChannelRAII
 
     ~AresChannelRAII()
     {
+        free(dns_state.poll_fds);
+        free(dns_state.ares_fds);
+
         ares_destroy(channel);
     }
 
