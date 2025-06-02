@@ -69,6 +69,7 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     return haystack.find(needle) != std::string_view::npos;
 }
 
+// clang-format off
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
 {                                                                                                                   \
     static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsOneLine"), "Think twice!");                    \
@@ -79,37 +80,37 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
         break;                                                                                                      \
                                                                                                                     \
     Stopwatch _logger_watch;                                                                                        \
+    ProfileEvents::incrementForLogMessage(PRIORITY);                                                                \
+    auto _channel = _logger->getChannel();                                                                          \
+    if (!_channel)                                                                                                  \
+        break;                                                                                                      \
+                                                                                                                    \
+    constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                        \
+    using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;              \
+                                                                                                                    \
+    std::string_view _format_string;                                                                                \
+    std::string _formatted_message;                                                                                 \
+    std::vector<std::string> _format_string_args;                                                                   \
+                                                                                                                    \
+    if constexpr (LogTypeInfo::is_static)                                                                           \
+    {                                                                                                               \
+        formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), _nargs - 1);                                      \
+        _format_string = ConstexprIfsAreNotIfdefs<LogTypeInfo::is_static>::getStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__)); \
+    }                                                                                                               \
+                                                                                                                    \
+    constexpr bool is_preformatted_message = !LogTypeInfo::is_static && LogTypeInfo::has_format;                    \
+    if constexpr (is_preformatted_message)                                                                          \
+    {                                                                                                               \
+        static_assert(_nargs == 1 || !is_preformatted_message);                                                     \
+        ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string, _format_string_args);  \
+    }                                                                                                               \
+    else                                                                                                            \
+    {                                                                                                               \
+        _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
+    }                                                                                                               \
+                                                                                                                    \
     try                                                                                                             \
     {                                                                                                               \
-        ProfileEvents::incrementForLogMessage(PRIORITY);                                                            \
-        auto _channel = _logger->getChannel();                                                                      \
-        if (!_channel)                                                                                              \
-            break;                                                                                                  \
-                                                                                                                    \
-        constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                    \
-        using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;          \
-                                                                                                                    \
-        std::string_view _format_string;                                                                            \
-        std::string _formatted_message;                                                                             \
-        std::vector<std::string> _format_string_args;                                                               \
-                                                                                                                    \
-        if constexpr (LogTypeInfo::is_static)                                                                       \
-        {                                                                                                           \
-            formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), _nargs - 1);                                  \
-            _format_string = ConstexprIfsAreNotIfdefs<LogTypeInfo::is_static>::getStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__)); \
-        }                                                                                                           \
-                                                                                                                    \
-        constexpr bool is_preformatted_message = !LogTypeInfo::is_static && LogTypeInfo::has_format;                \
-        if constexpr (is_preformatted_message)                                                                      \
-        {                                                                                                           \
-            static_assert(_nargs == 1 || !is_preformatted_message);                                                 \
-            ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string, _format_string_args);  \
-        }                                                                                                           \
-        else                                                                                                        \
-        {                                                                                                           \
-             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
-        }                                                                                                           \
-                                                                                                                    \
         std::string _file_function = __FILE__ "; ";                                                                 \
         _file_function += __PRETTY_FUNCTION__;                                                                      \
         Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
