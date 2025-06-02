@@ -1375,17 +1375,17 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 while (!cpu_pressure->eof())
                 {
                     String stallType;
-                    readStringUntilWhitespaceOrEOF(stallType, *cpu_pressure);
+                    readStringUntilWhitespaceInto(stallType, *cpu_pressure);
 
                     String rest;
-                    readStringUntilNewlineOrEOF(rest, *cpu_pressure);
+                    readStringUntilNewlineInto(rest, *cpu_pressure);
 
                     auto total_pos = rest.find("total=");
                     if (total_pos != String::npos)
                     {
                         auto total = rest.substr(total_pos + 1);
                         uint64_t counter = std::stoull(total);
-                        new_values["PSICPUTotal" + stallType] = {counter,
+                        new_values["PSICPU" + stallType] = {counter,
                             "Total microseconds of CPU stall time for " + stallType + " stall type"};
                     }
                 }
@@ -1406,10 +1406,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     while (!memory_pressure->eof())
                     {
                         String stallType;
-                        readStringUntilWhitespaceOrEOF(stallType, *memory_pressure);
+                        readStringUntilWhitespaceInto(stallType, *memory_pressure);
 
                         String rest;
-                        readStringUntilNewlineOrEOF(rest, *memory_pressure);
+                        readStringUntilNewlineInto(rest, *memory_pressure);
 
                         auto pos = rest.find("total=");
                         if (pos != String::npos)
@@ -1437,10 +1437,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     while (!io_pressure->eof())
                     {
                         String stallType;
-                        readStringUntilWhitespaceOrEOF(stallType, *io_pressure);
+                        readStringUntilWhitespaceInto(stallType, *io_pressure);
 
                         String rest;
-                        readStringUntilNewlineOrEOF(rest, *io_pressure);
+                        readStringUntilNewlineInto(rest, *io_pressure);
 
                         auto pos = rest.find("total=");
                         if (pos != String::npos)
