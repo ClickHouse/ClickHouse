@@ -169,7 +169,7 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
         return std::make_shared<DataTypeFixedString>(column_fixedstring->getN());
 
 #define HANDLE_DECIMAL_COLUMN(TYPE) \
-    if (const auto * column_decimal = checkAndGetColumn<ColumnDecimal<TYPE>>(&column)) \
+    if (const auto * column_decimal = checkAndGetColumn<ColumnDecimal<TYPE>>(&column)) /* NOLINT(bugprone-macro-parentheses) */ \
         return createDecimalMaxPrecision<TYPE>(column_decimal->getScale());
 
     HANDLE_DECIMAL_COLUMN(Decimal32)
