@@ -47,13 +47,6 @@ static void callback(void * arg, int status, int, struct hostent * host)
 
 static void socket_state_change_callback(void * data, ares_socket_t socket_fd, int readable, int writable)
 {
-    LOG_TRACE(
-        &Poco::Logger::get("uwu"),
-        "Socket state change callback called for socket {}: readable = {}, writable = {}",
-        socket_fd,
-        readable,
-        writable);
-
     dnsstate_t * state = static_cast<dnsstate_t *>(data);
     size_t idx;
 
