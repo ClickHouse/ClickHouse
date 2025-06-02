@@ -93,6 +93,8 @@ extern const Event ParallelReplicasReadAssignedForStealingMarks;
 
 extern const Event ParallelReplicasUsedCount;
 extern const Event ParallelReplicasUnavailableCount;
+
+extern const Event ParallelReplicasQueryCount;
 }
 
 namespace DB
@@ -1214,6 +1216,8 @@ void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_)
 {
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasQueryCount);
+
     LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Creating parallel replicas coordinator with replicas_count={}", replicas_count);
 }
 
