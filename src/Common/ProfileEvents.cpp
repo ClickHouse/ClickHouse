@@ -261,6 +261,9 @@
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \
+    M(GranulesDroppedByPrewhereReaders, "Number of granules dropped during PREWHERE filtering", ValueType::Number) \
+    M(GranulesReadByPrewhereReaders, "Number of granules read from MergeTree tables (in total) by prewhere readers", ValueType::Number) \
+    M(RowsDroppedByPrewhereReaders, "Number of rows dropped during PREWHERE filtering", ValueType::Number) \
     M(LoadedDataParts, "Number of data parts loaded by MergeTree tables during initialization.", ValueType::Number) \
     M(LoadedDataPartsMicroseconds, "Microseconds spent by MergeTree tables for loading data parts during initialization.", ValueType::Microseconds) \
     M(FilteringMarksWithPrimaryKeyMicroseconds, "Time spent filtering parts by PK.", ValueType::Microseconds) \
