@@ -129,10 +129,22 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
     {
         if (auto named_collection = tryGetNamedCollectionWithOverrides(ast_function->children.at(0)->children, context))
         {
-            String name = getName();
-            connection_string = name == "JDBC" ? named_collection->get<String>("datasource") : named_collection->get<String>("connection_settings");
-            schema_name = name == "JDBC" ? named_collection->get<String>("schema") : named_collection->getOrDefault<String>("external_database", "");
-            remote_table_name = name == "JDBC" ? named_collection->get<String>("table") : named_collection->getOrDefault<String>("external_table", "");
+            if (getName() == "JDBC")
+            {
+                validateNamedCollection<>(*named_collection, {"datasource"}, {"schema", "table"});
+                connection_string = named_collection->get<String>("datasource");
+                schema_name = named_collection->get<String>("schema");
+                remote_table_name = named_collection->get<String>("table");
+            }
+            else
+            {
+                validateNamedCollection<>(*named_collection, {"connection_settings"}, {"external_database", "external_table"});
+
+                connection_string = named_collection->get<String>("connection_settings");
+                schema_name = named_collection->getOrDefault<String>("external_database", "");
+                remote_table_name = named_collection->getOrDefault<String>("external_table", "");
+
+            }
         }
         else
         {
