@@ -69,9 +69,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.6",
         {
+            {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
             {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
             {"hedged_connections_prefer_stable_pools", false, false, "New setting."},
+            {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -251,7 +253,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "24.11",
         {
             {"validate_mutation_query", false, true, "New setting to validate mutation queries by default."},
-            {"enable_job_stack_trace", false, true, "Enable by default collecting stack traces from job's scheduling."},
+            {"enable_job_stack_trace", false, false, "Enables collecting stack traces from job's scheduling. Disabled by default to avoid performance overhead."},
             {"allow_suspicious_types_in_group_by", true, false, "Don't allow Variant/Dynamic types in GROUP BY by default"},
             {"allow_suspicious_types_in_order_by", true, false, "Don't allow Variant/Dynamic types in ORDER BY by default"},
             {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
