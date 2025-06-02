@@ -139,7 +139,8 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
         return nullptr;
 
     /// TableFunctionS3 throws exceptions, if table cannot be created.
-    auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, std::make_shared<ASTInsertQuery>());
+    ASTInsertQuery empty_insert_query;
+    auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, &empty_insert_query);
     if (table_storage)
         addTable(name, table_storage);
 

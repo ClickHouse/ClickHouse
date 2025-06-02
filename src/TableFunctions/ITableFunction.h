@@ -15,6 +15,7 @@ namespace DB
 {
 
 class Context;
+class ASTInsertQuery;
 
 /** Interface for table functions.
   *
@@ -82,7 +83,7 @@ public:
 
     /// Create storage according to the query.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, const ASTPtr & insert_query = nullptr) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, ASTInsertQuery * insert_query = nullptr) const;
 
     virtual ~ITableFunction() = default;
 
@@ -91,7 +92,7 @@ protected:
 
 private:
     virtual StoragePtr executeImpl(
-        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const = 0;
+        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const = 0;
 
     virtual const char * getStorageTypeName() const = 0;
 };

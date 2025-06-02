@@ -44,7 +44,7 @@ public:
     std::string getName() const override { return name; }
     bool hasStaticStructure() const override { return true; }
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const override;
     const char * getStorageTypeName() const override { return "Values"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
@@ -150,9 +150,9 @@ ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr /*con
     return structure;
 }
 
-StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, const ASTPtr & insert_query) const
+StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, ASTInsertQuery * insert_query) const
 {
-    auto columns = getActualTableStructure(context, insert_query != nullptr);
+    auto columns = getActualTableStructure(context, insert_query);
 
     Block sample_block;
     for (const auto & name_type : columns.getOrdinary())

@@ -44,7 +44,7 @@ public:
     std::string getName() const override { return name; }
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const override;
 
     const char * getStorageTypeName() const override { return "Explain"; }
 
@@ -171,7 +171,7 @@ Block executeMonoBlock(QueryPipeline & pipeline)
 }
 
 StoragePtr TableFunctionExplain::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, const ASTPtr & insert_query) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, ASTInsertQuery * insert_query) const
 {
     /// To support settings inside explain subquery.
     auto mutable_context = Context::createCopy(context);
@@ -180,7 +180,7 @@ StoragePtr TableFunctionExplain::executeImpl(
     Block block = executeMonoBlock(blockio.pipeline);
 
     StorageID storage_id(getDatabaseName(), table_name);
-    auto storage = std::make_shared<StorageValues>(storage_id, getActualTableStructure(context, insert_query != nullptr), std::move(block));
+    auto storage = std::make_shared<StorageValues>(storage_id, getActualTableStructure(context, insert_query), std::move(block));
     storage->startup();
     return storage;
 }

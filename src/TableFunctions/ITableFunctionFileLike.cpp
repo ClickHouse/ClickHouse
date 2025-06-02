@@ -85,7 +85,7 @@ void ITableFunctionFileLike::parseArgumentsImpl(ASTs & args, const ContextPtr & 
         compression_method = checkAndGetLiteralArgument<String>(args[3], "compression_method");
 }
 
-StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, const ASTPtr & insert_query) const
+StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, ASTInsertQuery * insert_query) const
 {
     ColumnsDescription columns;
     if (structure != "auto")
@@ -93,7 +93,7 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     else if (!structure_hint.empty())
         columns = structure_hint;
 
-    StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method, insert_query != nullptr);
+    StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method, insert_query);
     storage->startup();
     return storage;
 }

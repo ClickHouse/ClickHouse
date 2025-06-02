@@ -21,7 +21,7 @@ AccessType ITableFunction::getSourceAccessType() const
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
-                                   ColumnsDescription cached_columns, bool use_global_context, const ASTPtr & insert_query) const
+                                   ColumnsDescription cached_columns, bool use_global_context, ASTInsertQuery * insert_query) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
@@ -36,7 +36,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     if (cached_columns.empty())
         return executeImpl(ast_function, context, table_name, std::move(cached_columns), insert_query);
 
-    if (hasStaticStructure() && cached_columns == getActualTableStructure(context, insert_query != nullptr))
+    if (hasStaticStructure() && cached_columns == getActualTableStructure(context, insert_query))
         return executeImpl(ast_function, context_to_use, table_name, std::move(cached_columns), insert_query);
 
     auto this_table_function = shared_from_this();

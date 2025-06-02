@@ -78,10 +78,10 @@ ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr c
 }
 
 StoragePtr TableFunctionDictionary::executeImpl(
-    const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription, const ASTPtr & insert_query) const
+    const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription, ASTInsertQuery * insert_query) const
 {
     StorageID dict_id(getDatabaseName(), table_name);
-    auto dictionary_table_structure = getActualTableStructure(context, insert_query != nullptr);
+    auto dictionary_table_structure = getActualTableStructure(context, insert_query);
 
     auto result = std::make_shared<StorageDictionary>(
         dict_id, dictionary_name, std::move(dictionary_table_structure), String{}, StorageDictionary::Location::Custom, context);

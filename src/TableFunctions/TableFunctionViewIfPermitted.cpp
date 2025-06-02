@@ -45,7 +45,7 @@ public:
     std::string getName() const override { return name; }
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const override;
 
     const char * getStorageTypeName() const override { return "ViewIfPermitted"; }
 
@@ -95,10 +95,10 @@ ColumnsDescription TableFunctionViewIfPermitted::getActualTableStructure(Context
 }
 
 StoragePtr TableFunctionViewIfPermitted::executeImpl(
-    const ASTPtr & /* ast_function */, ContextPtr context, const std::string & table_name, ColumnsDescription /* cached_columns */, const ASTPtr & insert_query) const
+    const ASTPtr & /* ast_function */, ContextPtr context, const std::string & table_name, ColumnsDescription /* cached_columns */, ASTInsertQuery * insert_query) const
 {
     StoragePtr storage;
-    auto columns = getActualTableStructure(context, insert_query != nullptr);
+    auto columns = getActualTableStructure(context, insert_query);
 
     if (isPermitted(context, columns))
     {

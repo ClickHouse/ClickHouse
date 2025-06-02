@@ -39,7 +39,7 @@ public:
 private:
     StoragePtr executeImpl(
             const ASTPtr & ast_function, ContextPtr context,
-            const std::string & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const override;
+            const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const override;
 
     const char * getStorageTypeName() const override { return "SQLite"; }
 
@@ -51,7 +51,7 @@ private:
 };
 
 StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const String & table_name, ColumnsDescription cached_columns, const ASTPtr & /*insert_query*/) const
+        ContextPtr context, const String & table_name, ColumnsDescription cached_columns, ASTInsertQuery * /*insert_query*/) const
 {
     auto storage = std::make_shared<StorageSQLite>(StorageID(getDatabaseName(), table_name),
                                          sqlite_db,

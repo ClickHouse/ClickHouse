@@ -20,7 +20,7 @@ public:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription, const ASTPtr & insert_query) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription, ASTInsertQuery * insert_query) const override;
 
     const char * getStorageTypeName() const override { return "Dictionary"; }
 

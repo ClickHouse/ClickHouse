@@ -35,7 +35,7 @@ public:
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const override;
     const char * getStorageTypeName() const override { return "Input"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
@@ -82,9 +82,9 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, const ASTPtr & insert_query) const
+StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, ASTInsertQuery * insert_query) const
 {
-    auto storage = std::make_shared<StorageInput>(StorageID(getDatabaseName(), table_name), getActualTableStructure(context, insert_query != nullptr));
+    auto storage = std::make_shared<StorageInput>(StorageID(getDatabaseName(), table_name), getActualTableStructure(context, insert_query));
     storage->startup();
     return storage;
 }

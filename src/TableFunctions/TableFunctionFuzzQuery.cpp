@@ -30,9 +30,9 @@ StoragePtr TableFunctionFuzzQuery::executeImpl(
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/,
-    const ASTPtr & insert_query) const
+    ASTInsertQuery * insert_query) const
 {
-    ColumnsDescription columns = getActualTableStructure(context, insert_query != nullptr);
+    ColumnsDescription columns = getActualTableStructure(context, insert_query);
     auto res = std::make_shared<StorageFuzzQuery>(
         StorageID(getDatabaseName(), table_name),
         columns,

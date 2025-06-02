@@ -35,7 +35,7 @@ public:
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const override;
     const char * getStorageTypeName() const override { return "Null"; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -69,7 +69,7 @@ ColumnsDescription TableFunctionNull::getActualTableStructure(ContextPtr context
     return default_structure;
 }
 
-StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, const ASTPtr & /*insert_query*/) const
+StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, ASTInsertQuery * /*insert_query*/) const
 {
     ColumnsDescription columns;
     if (structure != "auto")

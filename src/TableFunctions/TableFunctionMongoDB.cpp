@@ -40,7 +40,7 @@ public:
 private:
     StoragePtr executeImpl(
             const ASTPtr & ast_function, ContextPtr context,
-            const std::string & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const override;
+            const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const override;
 
     const char * getStorageTypeName() const override { return "MongoDB"; }
 
@@ -52,9 +52,9 @@ private:
 };
 
 StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/, const ASTPtr & insert_query) const
+        ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/, ASTInsertQuery * insert_query) const
 {
-    auto columns = getActualTableStructure(context, insert_query != nullptr);
+    auto columns = getActualTableStructure(context, insert_query);
     auto storage = std::make_shared<StorageMongoDB>(
         StorageID(getDatabaseName(), table_name),
         std::move(*configuration),

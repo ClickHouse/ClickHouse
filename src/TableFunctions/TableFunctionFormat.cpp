@@ -52,7 +52,7 @@ public:
     bool hasStaticStructure() const override { return false; }
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const override;
     const char * getStorageTypeName() const override { return "Values"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
@@ -130,7 +130,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     return concatenateBlocks(blocks);
 }
 
-StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, const ASTPtr & /*insert_query*/) const
+StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, ASTInsertQuery * /*insert_query*/) const
 {
     ColumnsDescription columns;
     String format_name = format;

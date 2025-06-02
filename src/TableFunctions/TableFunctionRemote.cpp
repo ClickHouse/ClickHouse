@@ -302,12 +302,12 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     remote_table_id.table_name = table;
 }
 
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, const ASTPtr & insert_query) const
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, ASTInsertQuery * insert_query) const
 {
     /// StorageDistributed supports mismatching structure of remote table, so we can use outdated structure for CREATE ... AS remote(...)
     /// without additional conversion in StorageTableFunctionProxy
     if (cached_columns.empty())
-        cached_columns = getActualTableStructure(context, insert_query != nullptr);
+        cached_columns = getActualTableStructure(context, insert_query);
 
     assert(cluster);
     StoragePtr res = std::make_shared<StorageDistributed>(
