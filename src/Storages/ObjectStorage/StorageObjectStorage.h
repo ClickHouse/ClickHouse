@@ -10,8 +10,12 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Formats/FormatSettings.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <memory>
+
 namespace DB
 {
 
@@ -169,7 +173,6 @@ class StorageObjectStorage::Configuration
 {
 public:
     Configuration() = default;
-    Configuration(const Configuration & other);
     virtual ~Configuration() = default;
 
     using Path = std::string;
@@ -179,8 +182,7 @@ public:
         Configuration & configuration_to_initialize,
         ASTs & engine_args,
         ContextPtr local_context,
-        bool with_table_structure,
-        StorageObjectStorageSettingsPtr settings);
+        bool with_table_structure);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -222,7 +224,6 @@ public:
     virtual void validateNamespace(const String & /* name */) const {}
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
-    virtual ConfigurationPtr clone() = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
     virtual bool isDataLakeConfiguration() const { return false; }
@@ -265,13 +266,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+    virtual const DataLakeStorageSettings & getDataLakeSettings() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
+    }
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
-
-    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
-
-    const StorageObjectStorageSettings & getSettingsRef() const;
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
@@ -280,8 +284,6 @@ protected:
     void assertInitialized() const;
 
     bool initialized = false;
-
-    StorageObjectStorageSettingsPtr storage_settings;
 };
 
 }

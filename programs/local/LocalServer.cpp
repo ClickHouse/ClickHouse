@@ -33,6 +33,8 @@
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
@@ -617,7 +619,6 @@ try
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
         toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
-    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     /// try to load user defined executable functions, throw on error and die
     try
@@ -886,6 +887,9 @@ void LocalServer::processConfig()
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
+    NamedCollectionFactory::instance().loadIfNot();
+    FileCacheFactory::instance().loadDefaultCaches(config());
+
     /// NOTE: it is important to apply any overrides before
     /// `setDefaultProfiles` calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
@@ -949,14 +953,14 @@ void LocalServer::processConfig()
                 DatabaseCatalog::instance().startupBackgroundTasks();
             }
 
-            /// For ClickHouse local if path is not set the loader will be disabled.
-            global_context->getUserDefinedSQLObjectsStorage().loadObjects();
-
             LOG_DEBUG(log, "Loaded metadata.");
         }
 
         if (!attached_system_database)
             attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
+
+        if (fs::exists(fs::path(path) / "user_defined"))
+            global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
