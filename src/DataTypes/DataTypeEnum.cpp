@@ -8,6 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Columns/ColumnSparse.h>
 #include <Poco/UTF8Encoding.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -78,7 +79,19 @@ Field DataTypeEnum<Type>::getDefault() const
 template <typename Type>
 void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 {
-    assert_cast<ColumnType &>(column).getData().push_back(this->getValues().front().second);
+    const auto & default_value = this->getValues().front().second;
+
+    if (auto * sparse_column = typeid_cast<ColumnSparse *>(&column))
+    {
+        if (default_value == Type{})
+            sparse_column->insertDefault();
+        else
+            sparse_column->insert(default_value);
+    }
+    else
+    {
+        assert_cast<ColumnType &>(column).getData().push_back(default_value);
+    }
 }
 
 template <typename Type>
