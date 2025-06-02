@@ -242,8 +242,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
-    // todo arthur why is it not needed?
-    file_columns = columns.getAll();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 
@@ -405,8 +403,7 @@ void StorageObjectStorageQueue::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
-    // todo arthur
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context), file_columns);
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
         column_names,
@@ -621,13 +618,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             /*no_destination=*/ true,
             /*async_insert_=*/ false);
         auto block_io = interpreter.execute();
-        // todo arthur
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),
             storage_snapshot,
             queue_context,
-            supportsSubsetOfColumns(queue_context),
-            file_columns);
+            supportsSubsetOfColumns(queue_context));
 
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;

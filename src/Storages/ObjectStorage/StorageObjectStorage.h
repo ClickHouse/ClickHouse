@@ -271,8 +271,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
         ContextPtr local_context,
-        const NamesAndTypesList & file_columns_,
-        const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_);
+        const PrepareReadingFromFormatHiveParams & hive_parameters);
 
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 

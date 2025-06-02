@@ -434,16 +434,14 @@ ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
     ContextPtr local_context,
-    const NamesAndTypesList & file_columns_,
-    const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_)
+    const PrepareReadingFromFormatHiveParams & hive_parameters)
 {
     return DB::prepareReadingFromFormat(
         requested_columns,
         storage_snapshot,
         local_context,
         supports_subset_of_columns,
-        file_columns_,
-        hive_partition_columns_to_read_from_file_path_);
+        hive_parameters);
 }
 
 std::optional<ColumnsDescription> StorageObjectStorage::Configuration::tryGetTableStructureFromMetadata() const
@@ -476,10 +474,15 @@ void StorageObjectStorage::read(
     auto all_file_columns = file_columns.getAll();
 
     auto read_from_format_info = configuration->prepareReadingFromFormat(
-        object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context, all_file_columns, hive_partition_columns_to_read_from_file_path);
+        object_storage,
+        column_names,
+        storage_snapshot,
+        supportsSubsetOfColumns(local_context),
+        local_context,
+        PrepareReadingFromFormatHiveParams { all_file_columns, hive_partition_columns_to_read_from_file_path.getNameToPairMap() });
 
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && local_context->getSettingsRef()[Setting::optimize_count_from_files];
+                                 && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto modified_format_settings{format_settings};
     if (!modified_format_settings.has_value())

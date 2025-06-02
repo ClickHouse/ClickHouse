@@ -104,7 +104,6 @@ private:
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
-    NamesAndTypesList file_columns;
 
     LoggerPtr log;
 

@@ -101,6 +101,8 @@ public:
     NameSet getNameSet() const;
     DataTypes getTypes() const;
 
+    std::unordered_map<std::string, NameAndTypePair> getNameToPairMap() const;
+
     /// Remove columns which names are not in the `names`.
     void filterColumns(const NameSet & names);
 

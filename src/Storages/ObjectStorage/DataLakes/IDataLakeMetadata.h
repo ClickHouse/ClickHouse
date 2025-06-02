@@ -37,9 +37,7 @@ public:
         const Strings & requested_columns,
         const DB::StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
-        bool supports_subset_of_columns,
-        const NamesAndTypesList & file_columns,
-        const NamesAndTypesList & columns_to_read_from_file_path);
+        bool supports_subset_of_columns);
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & /* path */) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & /* path */) const { return {}; }

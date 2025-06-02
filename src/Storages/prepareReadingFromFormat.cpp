@@ -19,16 +19,10 @@ ReadFromFormatInfo prepareReadingFromFormat(
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
     bool supports_subset_of_columns,
-    const NamesAndTypesList & file_columns,
-    const NamesAndTypesList & columns_to_read_from_file_path)
+    const PrepareReadingFromFormatHiveParams & hive_parameters)
 {
-    std::unordered_map<std::string, NameAndTypePair> columns_to_read_from_file_path_map;
-
-    for (const auto & column : columns_to_read_from_file_path)
-    {
-        columns_to_read_from_file_path_map.insert(std::make_pair(column.name, column));
-    }
-
+    const NamesAndTypesList & columns_in_data_file =
+        hive_parameters.file_columns.empty() ? storage_snapshot->metadata->getColumns().getAllPhysical() : hive_parameters.file_columns;
     ReadFromFormatInfo info;
     /// Collect requested virtual columns and remove them from requested columns.
     Strings columns_to_read;
@@ -36,8 +30,8 @@ ReadFromFormatInfo prepareReadingFromFormat(
     {
         if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
-        else if (columns_to_read_from_file_path_map.contains(column_name))
-            info.hive_partition_columns_to_read_from_file_path.emplace_back(columns_to_read_from_file_path_map[column_name]);
+        else if (hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column_name))
+            info.hive_partition_columns_to_read_from_file_path.emplace_back(hive_parameters.hive_partition_columns_to_read_from_file_path_map.at(column_name));
         else
             columns_to_read.push_back(column_name);
     }
@@ -59,7 +53,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
         /// If only virtual columns were requested, just read the smallest column.
         if (columns_to_read.empty())
         {
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(file_columns).name);
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
         }
         /// We need to replace all subcolumns with their nested columns (e.g `a.b`, `a.b.c`, `x.y` -> `a`, `x`),
         /// because most formats cannot extract subcolumns on their own.
@@ -86,7 +80,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     /// Requested columns/subcolumns will be extracted after reading.
     else
     {
-        info.columns_description = storage_snapshot->getDescriptionForColumns(file_columns.getNames());
+        info.columns_description = storage_snapshot->getDescriptionForColumns(columns_in_data_file.getNames());
     }
 
     /// Create header for InputFormat with columns that will be read from the data.

@@ -288,6 +288,7 @@ Chunk StorageObjectStorageSource::generate()
             // this needs to be passed down to the filters, which lives somewhere else
             // I should add it to the chunk ONLY if it is in requested columns.
 
+            // UPDT: these are literally the hive columns that must be read EXCLUSIVELY from the path, so the name makes sense.
             // the order is important, it must be added after virtual columns..
             if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
             {

@@ -208,7 +208,7 @@ IStorageURLBase::IStorageURLBase(
     }
 
     // todo arthur change once argument is properly implemented
-    file_columns = storage_columns;
+    file_columns = storage_columns.getAllPhysical();
 
     // todo arthur it is needed
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
@@ -1184,7 +1184,12 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context), file_columns.getAll(), hive_partition_columns_to_read_from_file_path);
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names,
+        storage_snapshot,
+        local_context,
+        supportsSubsetOfColumns(local_context),
+        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToPairMap()});
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
@@ -1355,8 +1360,7 @@ void StorageURLWithFailover::read(
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     // todo arthur
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot,
-        local_context, supportsSubsetOfColumns(local_context), storage_snapshot->getAllColumnsDescription().getAll(), {});
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
