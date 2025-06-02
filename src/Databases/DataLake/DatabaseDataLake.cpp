@@ -455,31 +455,54 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
+    std::vector<std::shared_ptr<std::promise<void>>> promises;
+    std::vector<std::future<void>> futures;
     for (const auto & table_name : iceberg_tables)
     {
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
-
         try
         {
+            promises.emplace_back(std::make_shared<std::promise<void>>());
+            futures.emplace_back(promises.back()->get_future());
+
             pool.scheduleOrThrow(
-                [this, table_name, &tables, &mutex, context_]() mutable
+                [this, table_name, &tables, &mutex, context_, promise=promises.back()]() mutable
                 {
-                    auto storage = tryGetTable(table_name, context_);
-                    std::lock_guard lock(mutex);
-                    [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
-                    chassert(inserted);
+                    try
+                    {
+                        auto storage = tryGetTable(table_name, context_);
+                        std::lock_guard lock(mutex);
+                        [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
+                        chassert(inserted);
+                        promise->set_value();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
+                        promise->set_exception(std::current_exception());
+                    }
                 });
         }
         catch (...)
         {
             tryLogCurrentException(log, "Failed to schedule task");
             pool.wait();
+
+            /// Rethrow exceptions if any
+            for (auto & future : futures)
+                future.get();
+
             throw;
         }
     }
 
-    pool.wait();
+    for (const auto & future : futures)
+        future.wait();
+
+    /// Rethrow exceptions if any
+    for (auto & future : futures)
+        future.get();
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
@@ -496,6 +519,9 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
+    std::vector<std::shared_ptr<std::promise<void>>> promises;
+    std::vector<std::future<void>> futures;
+
     for (const auto & table_name : iceberg_tables)
     {
         if (filter_by_table_name && !filter_by_table_name(table_name))
@@ -510,8 +536,11 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
         /// have this try/catch here.
         try
         {
+            promises.emplace_back(std::make_shared<std::promise<void>>());
+            futures.emplace_back(promises.back()->get_future());
+
             pool.scheduleOrThrow(
-                [this, table_name, &tables, &mutex, context_] mutable
+                [this, table_name, &tables, &mutex, context_, promise = promises.back()] mutable
                 {
                     try
                     {
@@ -525,6 +554,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
                     {
                         tryLogCurrentException(log, fmt::format("ignoring table {}", table_name));
                     }
+                    promise->set_value();
                 });
         }
         catch (...)
@@ -533,7 +563,8 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
         }
     }
 
-    pool.wait();
+    for (const auto & future : futures)
+        future.wait();
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
