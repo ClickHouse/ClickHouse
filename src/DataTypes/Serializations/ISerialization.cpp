@@ -266,7 +266,7 @@ String ISerialization::getFileNameForRenamedColumnStream(const String & name_fro
     if (file_name.starts_with(nested_storage_name_escaped))
         return escapeForFileName(Nested::extractTableName(name_to)) + file_name.substr(0, nested_storage_name_escaped.size());
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "File name {} desn't correspond to column {}", file_name, name_from);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "File name {} doesn't correspond to column {}", file_name, name_from);
 }
 
 String ISerialization::getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name)
