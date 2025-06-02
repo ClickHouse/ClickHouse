@@ -1123,6 +1123,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         return response;
 
     std::set<size_t> replicas_to_exclude;
+    bool reading_assignment_has_been_completed = false;
     {
         std::lock_guard lock(mutex);
         if (is_reading_completed)
@@ -1144,7 +1145,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         {
             if (isReadingCompleted())
             {
-                is_reading_completed = true;
+                reading_assignment_has_been_completed = !is_reading_completed.exchange(true);
                 replicas_to_exclude = replicas_used;
                 // exclude itself from canceling
                 replicas_to_exclude.insert(replica_num);
@@ -1152,7 +1153,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         }
     }
 
-    if (is_reading_completed && read_completed_callback.has_value())
+    if (reading_assignment_has_been_completed && read_completed_callback.has_value())
     {
         if (replicas_count > replicas_to_exclude.size())
         {
@@ -1167,6 +1168,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
             chassert(!replicas_used.empty());
             (*read_completed_callback)(replicas_to_exclude);
+            read_completed_callback.reset();
         }
     }
 
