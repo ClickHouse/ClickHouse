@@ -175,6 +175,13 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
+    /*
+     * If `partition_strategy=hive`, the partition columns shall be extracted from the `PARTITION BY` expression.
+     * There is no need to read from the filepath.
+     *
+     * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
+     * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
+     */
     if (configuration->partition_strategy && configuration->partition_strategy_name == "hive")
     {
         hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
@@ -228,7 +235,7 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    // todo arthur perhaps set partition key description? What if we don't have partition by?
+    // todo arthur perhaps set partition key description?
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);

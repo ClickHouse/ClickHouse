@@ -51,9 +51,10 @@ public:
     void setPaths(const Paths & paths_) override
     {
         paths.clear();
+        // copy paths adjusting `allow_partial_prefix=false` since partial prefixes are not allowd in HDFS
         for (const auto & p : paths_)
         {
-            paths.emplace_back(p.path, false);
+            paths.emplace_back(p.path, /* allow_partial_prefix */false);
         }
     }
 
