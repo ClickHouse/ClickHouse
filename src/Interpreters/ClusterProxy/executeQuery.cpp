@@ -662,21 +662,7 @@ void executeQueryWithParallelReplicas(
     {
         auto local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
 
-        if (connection_pools.size() == 1)
-        {
-            auto [local_plan, with_parallel_replicas] = createLocalPlanForParallelReplicas(
-                query_ast,
-                header,
-                new_context,
-                processed_stage,
-                coordinator,
-                std::move(analyzed_read_from_merge_tree),
-                local_replica_index.value());
-            query_plan = std::move(*local_plan);
-            return;
-        }
-
-        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
+        auto [local_plan, with_parallel_replicas] = createLocalPlanForParallelReplicas(
             query_ast,
             header,
             new_context,
@@ -684,8 +670,16 @@ void executeQueryWithParallelReplicas(
             coordinator,
             std::move(analyzed_read_from_merge_tree),
             local_replica_index.value());
-        auto local_plan = std::make_unique<QueryPlan>();
-        local_plan->addStep(std::move(read_from_local));
+
+        if (!with_parallel_replicas || connection_pools.size() == 1)
+        {
+            query_plan = std::move(*local_plan);
+            return;
+        }
+
+        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan));
+        auto stub_local_plan = std::make_unique<QueryPlan>();
+        stub_local_plan->addStep(std::move(read_from_local));
 
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 
@@ -711,11 +705,11 @@ void executeQueryWithParallelReplicas(
 
         Headers input_headers;
         input_headers.reserve(2);
-        input_headers.emplace_back(local_plan->getCurrentHeader());
+        input_headers.emplace_back(stub_local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
         std::vector<QueryPlanPtr> plans;
-        plans.emplace_back(std::move(local_plan));
+        plans.emplace_back(std::move(stub_local_plan));
         plans.emplace_back(std::move(remote_plan));
 
         auto union_step = std::make_unique<UnionStep>(std::move(input_headers));

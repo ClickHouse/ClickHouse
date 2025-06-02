@@ -204,8 +204,7 @@ void optimizeTreeSecondPass(
         }
         if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep*>(frame.node->step.get()))
         {
-            // TODO: check if plan used parallel replicas
-            auto [local_plan, _] = read_from_local->createQueryPlan();
+            auto local_plan = read_from_local->extractQueryPlan();
             local_plan->optimize(optimization_settings);
             if (optimization_settings.merge_expressions)
                 local_plan->mergeExpressions();

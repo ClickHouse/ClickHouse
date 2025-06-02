@@ -1,4 +1,3 @@
-#include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 
 namespace DB
@@ -9,21 +8,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(
-    const ASTPtr & query_ast_,
-    Block header_,
-    ContextPtr context_,
-    QueryProcessingStage::Enum processed_stage_,
-    ParallelReplicasReadingCoordinatorPtr coordinator_,
-    QueryPlanStepPtr read_from_merge_tree_,
-    size_t replica_number_)
-    : ISourceStep(std::move(header_))
-    , query_ast(query_ast_)
-    , context(context_)
-    , processed_stage(processed_stage_)
-    , coordinator(coordinator_)
-    , read_from_merge_tree(std::move(read_from_merge_tree_))
-    , replica_number(replica_number_)
+ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_)
+    : ISourceStep(query_plan_->getCurrentHeader())
+    , query_plan(std::move(query_plan_))
 {
 }
 
@@ -32,9 +19,8 @@ void ReadFromLocalParallelReplicaStep::initializePipeline(QueryPipelineBuilder &
     throw Exception(ErrorCodes::LOGICAL_ERROR, "{} shouldn't be called", __PRETTY_FUNCTION__);
 }
 
-std::pair<QueryPlanPtr, bool> ReadFromLocalParallelReplicaStep::createQueryPlan()
+QueryPlanPtr ReadFromLocalParallelReplicaStep::extractQueryPlan()
 {
-    return createLocalPlanForParallelReplicas(
-        query_ast, getOutputHeader(), context, processed_stage, coordinator, std::move(read_from_merge_tree), replica_number);
+    return std::move(query_plan);
 }
 }
