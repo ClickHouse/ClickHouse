@@ -2154,6 +2154,11 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
         storage_snapshot->getSampleBlockForColumns(all_column_names),
         lazily_read_info,
         prewhere_info);
+
+    /// if analysis has already been done (like in optimization for projections),
+    /// then update columns to read in analysis result
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
@@ -2672,6 +2677,18 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             if (i)
                 format_settings.out << '/' << index_stats[i - 1].num_granules_after;
             format_settings.out << '\n';
+
+            auto search_algorithm_to_string = [](const MarkRanges::SearchAlgorithm search_algorithm) -> String {
+                switch (search_algorithm)
+                {
+                    case MarkRanges::SearchAlgorithm::BinarySearch: return "binary search";
+                    case MarkRanges::SearchAlgorithm::GenericExclusionSearch: return "generic exclusion search";
+                    default: return "";
+                }
+            };
+            const auto search_algorithm = search_algorithm_to_string(stat.search_algorithm);
+            if (!search_algorithm.empty())
+                format_settings.out << prefix << indent << indent << "Search algorithm: " << search_algorithm << "\n";
         }
     }
 }
