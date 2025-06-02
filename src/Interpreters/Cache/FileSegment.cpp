@@ -166,7 +166,7 @@ size_t FileSegment::getSize(FileSegment::SizeAlignment alignment) const
             return getKeyMetadata()->alignFileSize(size);
         case FileSegment::SizeAlignment::NOT_ALIGNED:
             return size;
-        case FileSegment::SizeAlignment::CACHE_ALIGNMENT:
+        case FileSegment::SizeAlignment::DEFAULT_ALIGNMENT:
             auto locked_key = getKeyMetadata();
             chassert(locked_key);
             return locked_key->useRealDiskSize() ? locked_key->alignFileSize(size) : size;

@@ -53,7 +53,7 @@ size_t IFileCachePriority::Entry::getSize(IFileCachePriority::Entry::SizeAlignme
 {
     switch (alignment)
     {
-        case IFileCachePriority::Entry::SizeAlignment::CACHE_ALIGNMENT:
+        case IFileCachePriority::Entry::SizeAlignment::DEFAULT_ALIGNMENT:
             if (useRealDiskSize())
             {
                 return aligned_size.load();

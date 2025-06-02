@@ -998,10 +998,14 @@ bool FileCache::tryReserve(
         chassert(file_segment.getReservedSize() == 0);
     }
 
-    /// If it is the first space reservatiob attempt for a file segment
+    /// If it is the first space reservation attempt for a file segment
     /// we need to make space for 1 element in cache,
     /// otherwise space is already taken and we need 0 elements to free.
     size_t required_elements_num = queue_iterator ? 0 : 1;
+
+    /// If it is the first space reservation attempt for a file segment
+    /// we need to align the file size,
+    /// otherwise we need to get aligned difference(might be 0, if aligned space if enough)
     size_t size_to_reserve = 0;
     {
         auto key_metadata = file_segment.getKeyMetadata();

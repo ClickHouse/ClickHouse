@@ -209,22 +209,22 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
             continue;
         }
 
-        if (metadata->size() != entry.getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED))
+        if (metadata->size(FileSegment::SizeAlignment::NOT_ALIGNED) != entry.getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED))
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Mismatch of file segment size in file segment metadata "
                 "and priority queue: {} != {} ({})",
-                entry.getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED), metadata->size(), metadata->file_segment->getInfoForLog());
+                entry.getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED), metadata->size(FileSegment::SizeAlignment::NOT_ALIGNED), metadata->file_segment->getInfoForLog());
         }
 
-        if (metadata->size(FileSegment::SizeAlignment::CACHE_ALIGNMENT) != entry.getSize())
+        if (metadata->size() != entry.getSize())
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Mismatch of entry file segment size in file segment metadata "
                 "and priority queue: {} != {} ({})",
-                entry.getSize(), metadata->size(FileSegment::SizeAlignment::CACHE_ALIGNMENT), metadata->file_segment->getInfoForLog()
+                entry.getSize(), metadata->size(), metadata->file_segment->getInfoForLog()
             );
         }
 
@@ -384,12 +384,12 @@ void LRUFileCachePriority::iterateForEviction(
         if (segment_metadata->releasable())
         {
             res.add(segment_metadata, locked_key, lock);
-            stat.update(file_segment->getSize(FileSegment::SizeAlignment::CACHE_ALIGNMENT), file_segment->getKind(), true);
+            stat.update(file_segment->getSize(), file_segment->getKind(), true);
         }
         else
         {
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
-            stat.update(file_segment->getSize(FileSegment::SizeAlignment::CACHE_ALIGNMENT), file_segment->getKind(), false);
+            stat.update(file_segment->getSize(), file_segment->getKind(), false);
         }
 
         return IterationResult::CONTINUE;

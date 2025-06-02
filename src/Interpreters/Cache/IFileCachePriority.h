@@ -26,10 +26,17 @@ public:
 
     struct Entry
     {
+        /// A hint for what size to use in methods like `getSize()`.
+        /// By default, the DEFAULT kind should be used,
+        /// but a specific kind (aligned/non-aligned) of size might be requested explicitly in case of assertions.
         enum SizeAlignment
         {
-            CACHE_ALIGNMENT,
+            /// Use the default size alignment,
+            /// which is chosen according to `use_real_cache_size` cache setting.
+            DEFAULT_ALIGNMENT,
+            /// Use aligned size.
             ALIGNED,
+            /// Use non-aligned size.
             NOT_ALIGNED
         };
         Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_);
@@ -43,7 +50,7 @@ public:
         /// This mean that download_size in FileSegment could defer from entry.getSize()
         /// `not_aligned` = true force to return not-aligned size
         /// `not_aligned` = false return the size depends on use_real_disk_size value
-        size_t getSize(SizeAlignment alignment = SizeAlignment::CACHE_ALIGNMENT) const;
+        size_t getSize(SizeAlignment alignment = SizeAlignment::DEFAULT_ALIGNMENT) const;
         bool useRealDiskSize() const;
         void setSize(size_t size_);
 

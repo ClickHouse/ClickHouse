@@ -56,10 +56,17 @@ public:
     using Info = FileSegmentInfo;
     using QueueEntryType = FileCacheQueueEntryType;
 
+    /// A hint for what size to use in methods like `getSize()`.
+    /// By default, the DEFAULT kind should be used,
+    /// but a specific kind (aligned/non-aligned) of size might be requested explicitly in case of assertions.
     enum SizeAlignment
     {
-        CACHE_ALIGNMENT,
+        /// Use the default size alignment,
+        /// which is chosen according to `use_real_cache_size` cache setting.
+        DEFAULT_ALIGNMENT,
+        /// Use aligned size.
         ALIGNED,
+        /// Use non-aligned size.
         NOT_ALIGNED
     };
 
@@ -150,7 +157,7 @@ public:
 
     size_t getReservedSize() const;
 
-    size_t getSize(SizeAlignment alignment = SizeAlignment::NOT_ALIGNED) const;
+    size_t getSize(SizeAlignment alignment = SizeAlignment::DEFAULT_ALIGNMENT) const;
 
     /// Now detached status can be used in the following cases:
     /// 1. there is only 1 remaining file segment holder
