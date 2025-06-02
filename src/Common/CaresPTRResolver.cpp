@@ -231,7 +231,6 @@ bool CaresPTRResolver::wait_and_process(AresChannelRAII & channel_raii)
 
     while (true)
     {
-        // auto readable_sockets = get_readable_sockets(sockets, pollfd, channel);
         auto timeout = calculate_timeout(channel);
 
         int number_of_fds_ready = poll(dns_state.poll_fds, static_cast<nfds_t>(dns_state.poll_nfds), static_cast<int>(timeout));
@@ -248,7 +247,6 @@ bool CaresPTRResolver::wait_and_process(AresChannelRAII & channel_raii)
             process_possible_timeout(channel);
             break;
         }
-
 
         for (size_t i = 0; i < dns_state.poll_nfds; ++i)
         {
