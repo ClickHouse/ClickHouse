@@ -1,4 +1,9 @@
 #pragma once
+
+#include "config.h"
+
+#if USE_DELTA_KERNEL_RS
+
 #include <Interpreters/ActionsDAG.h>
 #include <Core/Field.h>
 
@@ -31,4 +36,7 @@ std::unique_ptr<ParsedExpression> visitExpression(
 
 /// A method used in unit test.
 DB::ActionsDAG visitExpression(ffi::SharedExpression * expression, const DB::NamesAndTypesList & expression_schema);
+
 }
+
+#endif

@@ -1,5 +1,7 @@
 #include "ExpressionVisitor.h"
 
+#if USE_DELTA_KERNEL_RS
+
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -30,6 +32,12 @@
 #include "delta_kernel_ffi.hpp"
 
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace DeltaLake
 {
 
@@ -45,9 +53,9 @@ struct ExpressionVisitorData
     const DB::NamesAndTypesList & schema;
 
     using NodeList = std::vector<const DB::ActionsDAG::Node *>;
-    /// Intermidiate parsing result.
+    /// Intermediate parsing result.
     DB::ActionsDAG dag;
-    /// Intermidiate parsing result in lists representation.
+    /// Intermediate parsing result in lists representation.
     std::map<size_t, NodeList> node_lists;
     /// First exception thrown from visitor functions.
     std::exception_ptr visitor_exception;
@@ -591,3 +599,5 @@ DB::ActionsDAG visitExpression(
 }
 
 }
+
+#endif
