@@ -211,8 +211,11 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual std::string getNamespaceType() const { return "namespace"; }
 
+    // Path provided by the user in the query
     virtual Path getRawPath() const = 0;
+    // Path used for reading, it is usually a globbed path like `'table_root/**.parquet'
     Path getReadingPath() const;
+    // Path used for writing, it should not be globbed and might contain a partition key
     Path getWritingPath(const std::string & partition_id = "") const;
 
     virtual void setPath(const Path & path) = 0;

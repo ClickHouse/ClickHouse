@@ -146,6 +146,10 @@ StorageObjectStorage::StorageObjectStorage(
 
     std::string sample_path;
     ColumnsDescription columns{columns_in_table_or_function_definition};
+
+    // In case schema and format is not specified, this function will perform a list operation on the storage and grab a path to be used as "sample"
+    // mainly so hive partition columns can be extracted. This is needed for when `use_hive_partitioning=1` and `partition_strategy != hive`
+    // if `partition_strategy=hive`, it is a must that schema is specified and this call is not needed
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     configuration->check(context);
 
