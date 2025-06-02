@@ -1,4 +1,7 @@
 #include <gtest/gtest.h>
+#include "config.h"
+
+#if USE_DELTA_KERNEL_RS
 
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -62,3 +65,5 @@ TEST_F(DeltaKernelTest, ExpressionVisitor)
     }
     ASSERT_TRUE(false);
 }
+
+#endif
