@@ -822,8 +822,10 @@ def test_restart_broken_table_function(started_cluster, use_delta_kernel):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
 
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_partition_columns(started_cluster, use_delta_kernel):
+@pytest.mark.parametrize(
+    "use_delta_kernel, on_cluster", [("1", False), ("1", True), ("0", False)]
+)
+def test_partition_columns(started_cluster, use_delta_kernel, on_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
@@ -879,23 +881,35 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     assert len(files) > 0
     print(f"Uploaded files: {files}")
 
-    result = instance.query(
-        f"describe table deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
-    ).strip()
+    if on_cluster:
+        table_function = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', 'Parquet', 'a Nullable(Int32), b Nullable(String), c Nullable(Date32), d Nullable(Int32), e Nullable(Bool)')"
+    else:
+        table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+
+    result = instance.query(f"describe table {table_function}").strip()
 
     assert (
         result
         == "a\tNullable(Int32)\t\t\t\t\t\nb\tNullable(String)\t\t\t\t\t\nc\tNullable(Date32)\t\t\t\t\t\nd\tNullable(Int32)\t\t\t\t\t\ne\tNullable(Bool)"
     )
 
-    result = int(
-        instance.query(
-            f"""SELECT count()
-            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
-            """
-        )
-    )
+    result = int(instance.query(f"SELECT count() FROM {table_function}"))
     assert result == num_rows
+
+    assert (
+        """1	test1	2000-01-01	1	true
+2	test2	2000-01-02	2	false
+3	test3	2000-01-03	3	true
+4	test4	2000-01-04	4	false
+5	test5	2000-01-05	5	true
+6	test6	2000-01-06	6	false
+7	test7	2000-01-07	7	true
+8	test8	2000-01-08	8	false
+9	test9	2000-01-09	9	true"""
+        == instance.query(
+            f"SELECT a, e FROM {table_function} WHERE _path != 'kek' SETTINGS allow_experimental_analyzer=0"
+        ).strip()
+    )
 
     query_id = f"query_with_filter_{TABLE_NAME}"
     result = int(
@@ -1919,4 +1933,35 @@ deltaLake(
         == node.query(
             f"SELECT * FROM {delta_function} ORDER BY all settings input_format_parquet_allow_missing_columns=0 "
         )
+    )
+
+
+@pytest.mark.parametrize("new_analyzer", ["1", "0"])
+def test_cluster_function(started_cluster, new_analyzer):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    TABLE_NAME = randomize_table_name("test_cluster_function")
+    bucket = started_cluster.minio_bucket
+    result_file = f"{TABLE_NAME}"
+
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+
+    parquet_data_path = create_initial_data_file(
+        started_cluster,
+        instance,
+        "SELECT toUInt64(number), toString(number) FROM numbers(100)",
+        TABLE_NAME,
+    )
+
+    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+
+    table_function = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    instance.query(
+        f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+    )
+    instance.query(
+        f"SELECT a, b FROM {table_function} WHERE _path != 'kek' SETTINGS allow_experimental_analyzer={new_analyzer}"
     )
