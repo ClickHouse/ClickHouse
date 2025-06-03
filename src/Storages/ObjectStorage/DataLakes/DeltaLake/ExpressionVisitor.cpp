@@ -668,10 +668,12 @@ void ParsedExpression::apply(
             case DB::ActionsDAG::ActionType::COLUMN:
             {
                 auto name_and_type = schema.tryGetByName(node->result_name);
-                chassert(name_and_type);
+                if (!name_and_type.has_value())
+                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Not found column {} in schema", node->result_name);
 
-                auto column = name_and_type->type->createColumn();
-                column->insert((*node->column)[0]);
+                auto column = name_and_type->type->createColumnConst(
+                    chunk.getNumRows(),
+                    (*node->column)[0])->convertToFullColumnIfConst();
 
                 chunk.erase(current_chunk_pos);
                 if (current_chunk_pos < chunk.getNumColumns())

@@ -285,9 +285,5 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     )
     print(ntz_data)
     assert ntz_data[0] == "2024-10-01"
-    if use_delta_kernel == "1":
-        assert ntz_data[1] == "2024-10-01 00:12:00.000" #FIXME
-        assert ntz_data[2] == "2024-10-01 00:12:00.000" #FIXME
-    else:
-        assert ntz_data[1] == "2024-10-01 00:12:00.000000"
-        assert ntz_data[2] == "2024-10-01 00:12:00.000000"
+    assert ntz_data[1] == "2024-10-01 00:12:00.000000"
+    assert ntz_data[2] == "2024-10-01 00:12:00.000000"
