@@ -2231,30 +2231,45 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             const auto part_old_name = part_info->getPartNameV1();
             const auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
 
-            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name, getReadSettings())
+            {
+                auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name, getReadSettings())
+                    .withPartFormatFromDisk()
+                    .build();
+
+                try
+                {
+                    part->loadChecksums(true);
+                } catch (const Exception&)
+                {
+                    /// This method throws if the part does not have a checksums.txt
+                    /// Such parts are scipped
+                    continue;
+                }
+
+                if (entry.part_checksum != part->checksums.getTotalChecksumHex())
+                    continue;
+            }
+
+            const auto part_tmp_name = "attaching_" + part_old_name;
+            disk->moveFile(
+                fs::path(relative_data_path) / DETACHED_DIR_NAME / part_old_name,
+                fs::path(relative_data_path) / DETACHED_DIR_NAME / part_tmp_name);
+
+            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_tmp_name, getReadSettings())
                 .withPartFormatFromDisk()
                 .build();
 
-            try
-            {
-                part->loadColumnsChecksumsIndexes(
-                    /* require_columns_checksums = */ true, /* check_consistency = */ true, /* load_metadata_version = */ false);
-            }
-            catch (const Exception&)
-            {
-                /// This method throws if the part data is corrupted or partly missing. In this case, we simply don't
-                /// process the part.
-                continue;
-            }
+            part->loadColumnsChecksumsIndexes(
+                /* require_columns_checksums = */ true,
+                /* check_consistency = */ true,
+                /* load_metadata_version = */ false);
 
-            if (entry.part_checksum == part->checksums.getTotalChecksumHex())
-            {
-                auto metadata_version = getInMemoryMetadataPtr()->getMetadataVersion();
-                part->writeMetadataVersion(getContext(), metadata_version, (*getSettings())[MergeTreeSetting::fsync_after_insert]);
-                part->setMetadataVersion(metadata_version);
-                part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
-                return part;
-            }
+            auto metadata_version = getInMemoryMetadataPtr()->getMetadataVersion();
+            part->writeMetadataVersion(getContext(), metadata_version, (*getSettings())[MergeTreeSetting::fsync_after_insert]);
+            part->setMetadataVersion(metadata_version);
+            part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
+
+            return part;
         }
     }
 
