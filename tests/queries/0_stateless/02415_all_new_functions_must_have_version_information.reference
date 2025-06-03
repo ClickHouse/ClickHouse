@@ -117,6 +117,7 @@ base58Encode
 basename
 bin
 bitPositionsToArray
+<<<<<<< HEAD
 bitmapAndCardinality
 bitmapAndnotCardinality
 bitmapBuild
@@ -129,6 +130,15 @@ bitmapSubsetLimit
 bitmapToArray
 bitmapTransform
 bitmapXorCardinality
+=======
+bitmapAnd
+bitmapAndnot
+bitmapContains
+bitmapHasAll
+bitmapHasAny
+bitmapOr
+bitmapXor
+>>>>>>> 7f6d57275acf69b99c06ecf21593c4232cf0738b
 bitmaskToArray
 bitmaskToList
 blockNumber
@@ -722,7 +732,6 @@ stringJaccardIndex
 stringJaccardIndexUTF8
 structureToCapnProtoSchema
 structureToProtobufSchema
-subBitmap
 subDate
 substring
 substringIndex
