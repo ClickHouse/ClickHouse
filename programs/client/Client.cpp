@@ -1,6 +1,7 @@
 #include "Client.h"
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
+#include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/ThreadStatus.h>
@@ -8,7 +9,6 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/ColumnString.h>
-#include <Core/Settings.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
@@ -28,7 +28,7 @@
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
 
-#include <Parsers/ASTAlterQuery.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Poco/Util/Application.h>
 
@@ -646,7 +646,7 @@ void Client::printChangedSettings() const
     };
 
     print_changes(client_context->getSettingsRef().changes(), "settings");
-    print_changes(cmd_merge_tree_settings.changes(), "MergeTree settings");
+    print_changes(cmd_merge_tree_settings->changes(), "MergeTree settings");
 }
 
 
@@ -786,7 +786,7 @@ void Client::processOptions(
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::CLIENT);
-    global_context->setSettings(cmd_settings);
+    global_context->setSettings(*cmd_settings);
 
     /// Copy settings-related program options to config.
     /// TODO: Is this code necessary?
