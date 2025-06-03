@@ -1162,7 +1162,7 @@ struct ConvertThroughParsing
         const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
 
         /// For conversion to Date/Time or DateTime type, second argument with time zone could be specified.
-        if constexpr (to_datetime> || std::is_same_v<ToDataType, DataTypeTime> || to_datetime64 || to_time64)
+        if constexpr (to_datetime || std::is_same_v<ToDataType, DataTypeTime> || to_datetime64 || to_time64)
         {
             const auto result_type = removeNullable(res_type);
             // Time zone is already figured out during result type resolution, no need to do it here.
