@@ -177,4 +177,12 @@ function(clickhouse_config_crate_flags target_name)
     if (NOT "${RUST_CARGO_BUILD_STD}" STREQUAL "")
         corrosion_set_cargo_flags(${target_name} "${RUST_CARGO_BUILD_STD}")
     endif()
+
+    # See [1] for more details, but basically:
+    # - we need to explicitly set CXXSTDLIB to avoid using of libstdc++
+    # - link with the library explicitly to add search path (-L)
+    #
+    #   [1]: https://github.com/rust-lang/cc-rs/blob/7666d4f4f36d3bcacce9ab72fc6538fcc0ea1716/src/lib.rs#L762-L775
+    corrosion_set_env_vars(${target_name} "CXXSTDLIB=cxx")
+    corrosion_link_libraries(${target_name} cxx)
 endfunction()
