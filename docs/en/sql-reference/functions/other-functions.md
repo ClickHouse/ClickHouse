@@ -2538,7 +2538,7 @@ INSERT INTO metrics VALUES (0, initializeAggregation('sumState', toUInt64(42)))
 
 **See Also**
 
-- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayReduce)
 
 ## finalizeAggregation {#finalizeaggregation}
 
@@ -2640,7 +2640,7 @@ Result:
 
 **See Also**
 
-- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayReduce)
 - [initializeAggregation](#initializeaggregation)
 
 ## runningAccumulate {#runningaccumulate}

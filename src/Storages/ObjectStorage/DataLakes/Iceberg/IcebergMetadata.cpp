@@ -13,7 +13,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/ExpressionActions.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -36,12 +36,12 @@ namespace ProfileEvents
 namespace DB
 {
 
-namespace StorageObjectStorageSetting
+namespace DataLakeStorageSetting
 {
-    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
-    extern const StorageObjectStorageSettingsString iceberg_metadata_table_uuid;
-    extern const StorageObjectStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
-    extern const StorageObjectStorageSettingsBool iceberg_use_version_hint;
+    extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
+    extern const DataLakeStorageSettingsString iceberg_metadata_table_uuid;
+    extern const DataLakeStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
+    extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace ErrorCodes
@@ -301,7 +301,7 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
 {
     auto log = getLogger("IcebergMetadataFileResolver");
     MostRecentMetadataFileSelectionWay selection_way
-        = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
+        = configuration.getDataLakeSettings()[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
         ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
         : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
     bool need_all_metadata_files_parsing
@@ -378,9 +378,10 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
     const ContextPtr & local_context,
     Poco::Logger * log)
 {
-    if (configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].changed)
+    const auto & data_lake_settings = configuration.getDataLakeSettings();
+    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
     {
-        auto explicit_metadata_path = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].value;
+        auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
         try
         {
             LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
@@ -401,12 +402,12 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid path {} specified for iceberg_metadata_file_path: '{}'", explicit_metadata_path, ex.what());
         }
     }
-    else if (configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_table_uuid].changed)
+    else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].changed)
     {
-        std::optional<String> table_uuid = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_table_uuid].value;
+        std::optional<String> table_uuid = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].value;
         return getLatestMetadataFileAndVersion(object_storage, configuration, local_context, table_uuid);
     }
-    else if (configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_use_version_hint].value)
+    else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
         auto prefix_storage_path = configuration.getPath();
         auto version_hint_path = std::filesystem::path(prefix_storage_path) / "metadata" / "version-hint.text";
@@ -729,15 +730,19 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
             parents_list[snapshot_id] = 0;
     }
 
-    auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
-
-    /// Add current snapshot-id to ancestors list
-    ancestors.push_back(current_snapshot_id);
-    while (parents_list[current_snapshot_id] != 0)
+    /// For empty table we may have no snapshots
+    if (metadata_object->has(f_current_snapshot_id))
     {
-        ancestors.push_back(parents_list[current_snapshot_id]);
-        current_snapshot_id = parents_list[current_snapshot_id];
+        auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
+        /// Add current snapshot-id to ancestors list
+        ancestors.push_back(current_snapshot_id);
+        while (parents_list[current_snapshot_id] != 0)
+        {
+            ancestors.push_back(parents_list[current_snapshot_id]);
+            current_snapshot_id = parents_list[current_snapshot_id];
+        }
     }
+
 
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
