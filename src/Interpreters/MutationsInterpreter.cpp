@@ -1187,8 +1187,11 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         updated_header = std::make_unique<Block>();
         const auto & output_columns = stages.back().output_columns;
 
-        for (const auto & output_name : output_columns)
-            updated_header->insert(output_header->getByName(output_name));
+        for (const auto & column : *output_header)
+        {
+            if (output_columns.contains(column.name))
+                updated_header->insert(column);
+        }
     }
 
     return builder;
@@ -1216,6 +1219,11 @@ std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
 Block MutationsInterpreter::getUpdatedHeader() const
 {
     return *updated_header;
+}
+
+Block MutationsInterpreter::getOutputHeader() const
+{
+    return *output_header;
 }
 
 size_t MutationsInterpreter::evaluateCommandsSize()

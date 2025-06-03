@@ -89,6 +89,9 @@ public:
     /// Only changed columns.
     Block getUpdatedHeader() const;
 
+    /// TODO: comment.
+    Block getOutputHeader() const;
+
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
 
