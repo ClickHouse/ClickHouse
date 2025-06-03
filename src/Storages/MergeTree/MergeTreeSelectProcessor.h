@@ -50,8 +50,9 @@ private:
 };
 
 using RangesByIndex = std::unordered_map<size_t, RangesInDataPart>;
-class MergeTreeSkipIndexReadResultPool;
-using MergeTreeSkipIndexReadResultPoolPtr = std::shared_ptr<MergeTreeSkipIndexReadResultPool>;
+using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+class MergeTreeIndexReadResultPool;
+using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
 
 /// A simple wrapper to allow atomic counters to be mutated even when accessed through a const map.
 struct MutableAtomicSizeT
@@ -60,14 +61,17 @@ struct MutableAtomicSizeT
 };
 using PartRemainingMarks = std::unordered_map<size_t, MutableAtomicSizeT>;
 
-/// Provides shared context needed to build filtering indexes (e.g., skip indexes) during data reads.
+/// Provides shared context needed to build filtering indexes (e.g., skip indexes or projection indexes) during data reads.
 struct MergeTreeIndexBuildContext
 {
     /// For each part, stores all ranges need to be read.
     const RangesByIndex read_ranges;
 
-    /// Thread-safe shared pool for reading skip indexes and building granule-level filters.
-    const MergeTreeSkipIndexReadResultPoolPtr skip_index_reader;
+    /// For each part, stores a set of read ranges grouped by projection.
+    const ProjectionRangesByIndex projection_read_ranges;
+
+    /// Thread-safe shared pool for reading and building index filters.
+    const MergeTreeIndexReadResultPoolPtr index_reader;
 
     /// Tracks how many marks are still being processed for each part during the execution phase. Once the count reaches
     /// zero for a part, its cached index can be released to free resources.
@@ -115,6 +119,8 @@ public:
     void onFinish() const;
 
 private:
+    friend class SingleProjectionIndexReader;
+
     static void injectLazilyReadColumns(size_t rows, Block & block, size_t part_index, const LazilyReadInfoPtr & lazily_read_info);
 
     /// Sets up range readers corresponding to data readers
@@ -148,7 +154,5 @@ private:
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};
 };
-
-using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 
 }

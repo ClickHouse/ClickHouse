@@ -1,5 +1,6 @@
-#include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeReaderIndex.h>
+
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 
 namespace DB
 {
@@ -23,7 +24,7 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
     , index_read_result(std::move(index_read_result_))
 {
     chassert(index_read_result);
-    chassert(index_read_result->skip_index_read_result);
+    chassert(index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
 }
 
 size_t MergeTreeReaderIndex::readRows(
@@ -34,14 +35,14 @@ size_t MergeTreeReaderIndex::readRows(
     size_t rows_offset,
     Columns & res_columns)
 {
-    /// TODO(ab): Projection index result will be used here to construct a filter column.
-
-    if (!res_columns.empty())
+    if (res_columns.size() != 1)
+    {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Invalid number of columns passed to MergeTreeReaderIndex::readRows. "
-            "Expected 0, got {}",
+            "Expected 1, got {}",
             res_columns.size());
+    }
 
     /// Determine the starting row.
     size_t starting_row;
@@ -55,13 +56,55 @@ size_t MergeTreeReaderIndex::readRows(
     if (starting_row < total_rows)
         max_rows_to_read = std::min(max_rows_to_read, total_rows - starting_row);
 
+    /// If projection index is available, attempt to construct the filter column
+    if (index_read_result->projection_index_read_result)
+    {
+        ColumnPtr & filter_column = res_columns.front();
+
+        if (filter_column == nullptr)
+        {
+            filter_column = ColumnUInt8::create();
+        }
+        else if (!typeid_cast<const ColumnUInt8 *>(filter_column.get()))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Illegal type {} of column for projection index filter. Must be UInt8",
+                filter_column->getName());
+        }
+
+        /// If there are rows to read, apply bitmap filtering.
+        if (max_rows_to_read > 0)
+        {
+            auto mutable_filter_column = filter_column->assumeMutable();
+            auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
+            index_read_result->projection_index_read_result->appendToFilter(filter_data, starting_row, max_rows_to_read);
+            filter_column = std::move(mutable_filter_column);
+        }
+    }
+
+    current_row += max_rows_to_read;
     return max_rows_to_read;
 }
 
 bool MergeTreeReaderIndex::canSkipMark(size_t mark) const
 {
-    chassert(mark < index_read_result->skip_index_read_result->size());
-    return !index_read_result->skip_index_read_result->at(mark);
+    if (index_read_result->skip_index_read_result)
+    {
+        chassert(mark < index_read_result->skip_index_read_result->size());
+        if (!index_read_result->skip_index_read_result->at(mark))
+            return true;
+    }
+
+    if (index_read_result->projection_index_read_result)
+    {
+        size_t begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(mark);
+        size_t end = begin + data_part_info_for_read->getIndexGranularity().getMarkRows(mark);
+        if (index_read_result->projection_index_read_result->rangeAllZero(begin, end))
+            return true;
+    }
+
+    return false;
 }
 
 }
