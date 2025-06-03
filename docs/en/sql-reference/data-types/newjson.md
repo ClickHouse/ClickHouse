@@ -8,6 +8,19 @@ slug: /sql-reference/data-types/newjson
 title: 'JSON Data Type'
 ---
 
+import {CardSecondary} from '@clickhouse/click-ui/bundled';
+
+<CardSecondary
+  badgeState="success"
+  badgeText=""
+  description="Check out our JSON best practice guide for examples, advanced features and considerations for using the JSON type."
+  icon="book"
+  infoText="Read more"
+  infoUrl="/docs/best-practices/use-json-where-appropriate"
+  title="Looking for a guide?"
+/>
+<br/>
+
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
 
 If you want to use the `JSON` type, and for the examples on this page, please use:
@@ -17,6 +30,11 @@ SET enable_json_type = 1
 ```
 
 However, if you are using ClickHouse Cloud, you must first [get in touch with support](https://clickhouse.com/docs/about-us/support) to enable the usage of the `JSON` type.
+
+:::note
+In ClickHouse Open-Source JSON data type is marked as production ready in version 25.3. It's not recommended to use this type in production in previous versions.
+:::
+
 
 To declare a column of `JSON` type, you can use the following syntax:
 
@@ -310,7 +328,6 @@ During parsing of `JSON`, ClickHouse tries to detect the most appropriate data t
 It works similarly to [automatic schema inference from input data](/interfaces/schema-inference.md),
 and is controlled by the same settings:
  
-- [input_format_try_infer_integers](/operations/settings/formats#input_format_try_infer_integers)
 - [input_format_try_infer_dates](/operations/settings/formats#input_format_try_infer_dates)
 - [input_format_try_infer_datetimes](/operations/settings/formats#input_format_try_infer_datetimes)
 - [schema_inference_make_columns_nullable](/operations/settings/formats#schema_inference_make_columns_nullable)
@@ -827,7 +844,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 └────────────┴─────────────────────┴────────────────────┴──────────────────────┴───────────────────────┘
 ```
 
-**Note:** when 2 paths contain values of different data types, they are compared according to [comparison rule](variant.md#comparing-values-of-variant-type-comparing-values-of-variant-data) of `Variant` data type.
+**Note:** when 2 paths contain values of different data types, they are compared according to [comparison rule](/sql-reference/data-types/variant#comparing-values-of-variant-data) of `Variant` data type.
 
 ## Tips for better usage of the JSON type {#tips-for-better-usage-of-the-json-type}
 

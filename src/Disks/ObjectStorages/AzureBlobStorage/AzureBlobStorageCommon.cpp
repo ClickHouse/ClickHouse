@@ -442,6 +442,7 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
 
     settings->min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024);
     settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
+    settings->read_only = config.getBool(config_prefix + ".readonly", false);
 
     settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", settings_ref[Setting::azure_max_single_part_upload_size]);
     settings->max_single_read_retries = config.getUInt64(config_prefix + ".max_single_read_retries", settings_ref[Setting::azure_max_single_read_retries]);

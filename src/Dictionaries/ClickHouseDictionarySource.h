@@ -3,7 +3,7 @@
 #include <memory>
 #include <Poco/Logger.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include "IDictionarySource.h"

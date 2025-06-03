@@ -71,6 +71,7 @@
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
+#include <TableFunctions/ITableFunction.h>
 
 #include <filesystem>
 #include <iostream>
@@ -103,7 +104,7 @@ namespace Setting
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool async_insert;
     extern const SettingsDialect dialect;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -149,51 +150,20 @@ namespace
 {
 constexpr UInt64 THREAD_GROUP_ID = 0;
 
-bool isSpecialFile(const String & path)
-{
-    return path == "/dev/null" || path == "/dev/stdout" || path == "/dev/stderr";
-}
 
-void handleTruncateMode(DB::ASTQueryWithOutput * query_with_output, const String & out_file, String & query)
-{
-    if (!query_with_output->is_outfile_truncate)
-        return;
-
-    /// Skip handling truncate mode of special files
-    if (isSpecialFile(out_file))
-        return;
-
-    /// Create a temporary file with unique suffix
-    String tmp_file = out_file + ".tmp." + DB::toString(randomSeed());
-
-    /// Update the AST to use the temporary file
-    auto tmp_file_literal = std::make_shared<DB::ASTLiteral>(tmp_file);
-    query_with_output->out_file = tmp_file_literal;
-
-    /// Update the query string after modifying the AST
-    query = query_with_output->formatWithSecretsOneLine();
-}
-
-void cleanupTempFile(const DB::ASTPtr & parsed_query)
+void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
         if (query_with_output->is_outfile_truncate && query_with_output->out_file)
         {
-            const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
-            String tmp_file = tmp_file_node.value.safeGet<std::string>();
-
-            /// Skip rename for special files
-            if (isSpecialFile(tmp_file))
-                return;
-
             if (fs::exists(tmp_file))
                 fs::remove(tmp_file);
         }
     }
 }
 
-void performAtomicRename(const DB::ASTPtr & parsed_query)
+void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
@@ -201,12 +171,6 @@ void performAtomicRename(const DB::ASTPtr & parsed_query)
         {
             const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
             String tmp_file = tmp_file_node.value.safeGet<std::string>();
-
-            /// Skip rename for special files
-            if (isSpecialFile(tmp_file))
-                return;
-
-            String out_file = tmp_file.substr(0, tmp_file.rfind(".tmp."));
 
             try
             {
@@ -877,10 +841,11 @@ void ClientBase::initClientContext()
     client_context->setQueryParameters(query_parameters);
 }
 
-bool ClientBase::isRegularFile(int fd)
+bool ClientBase::isFileDescriptorSuitableForInput(int fd)
 {
     struct stat file_stat;
-    return fstat(fd, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+    return fstat(fd, &file_stat) == 0
+        && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode));
 }
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
@@ -900,7 +865,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         default_output_format = "Vertical";
         is_default_format = false;
     }
-    else if (isRegularFile(stdout_fd))
+    else if (isFileDescriptorSuitableForInput(stdout_fd))
     {
         std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(stdout_fd);
         if (format_from_file_name)
@@ -936,7 +901,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         if (format_from_file_name)
             default_input_format = *format_from_file_name;
         else
-            default_input_format = "TSV";
+            default_input_format = "auto";
     }
     else
     {
@@ -944,7 +909,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         if (format_from_file_name)
             default_input_format = *format_from_file_name;
         else
-            default_input_format = "TSV";
+            default_input_format = "auto";
 
         std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdin_fd);
         if (file_name)
@@ -1167,11 +1132,12 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
         }
     }
 
+    String out_file;
+    String out_file_if_truncated;
+
     // Run some local checks to make sure queries into output file will work before sending to server.
     if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
     {
-        String out_file;
-
         if (query_with_output->out_file)
         {
             if (isEmbeeddedClient())
@@ -1179,6 +1145,12 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
             out_file = out_file_node.value.safeGet<std::string>();
+
+            if (query_with_output->is_outfile_truncate)
+            {
+                out_file_if_truncated = out_file;
+                out_file = fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file);
+            }
 
             std::string compression_method_string;
 
@@ -1229,11 +1201,6 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                         out_file);
                 }
             }
-
-            if (query_with_output->is_outfile_truncate)
-            {
-                handleTruncateMode(const_cast<ASTQueryWithOutput *>(query_with_output), out_file, query);
-            }
         }
     }
 
@@ -1268,7 +1235,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             catch (const NetException &)
             {
                 // Clean up temporary file if it exists
-                cleanupTempFile(parsed_query);
+                cleanupTempFile(parsed_query, out_file);
 
                 // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
                 receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
@@ -1278,14 +1245,14 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
 
             // After successful query execution, perform atomic rename for TRUNCATE mode
-            performAtomicRename(parsed_query);
+            performAtomicRename(parsed_query, out_file_if_truncated);
 
             break;
         }
         catch (const Exception & e)
         {
             // Clean up temporary file if it exists
-            cleanupTempFile(parsed_query);
+            cleanupTempFile(parsed_query, out_file);
 
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
@@ -1705,13 +1672,21 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 
 void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 {
-    if (!client_context->hasInsertionTable() && insert_query.table)
+    if (!client_context->hasInsertionTable())
     {
-        String table = insert_query.table->as<ASTIdentifier &>().shortName();
-        if (!table.empty())
+        if  (insert_query.table)
         {
-            String database = insert_query.database ? insert_query.database->as<ASTIdentifier &>().shortName() : "";
-            client_context->setInsertionTable(StorageID(database, table));
+            String table = insert_query.table->as<ASTIdentifier &>().shortName();
+            if (!table.empty())
+            {
+                String database = insert_query.database ? insert_query.database->as<ASTIdentifier &>().shortName() : "";
+                client_context->setInsertionTable(StorageID(database, table));
+            }
+        }
+        else if (insert_query.table_function)
+        {
+            String table_function = insert_query.table_function->as<ASTFunction &>().name;
+            client_context->setInsertionTable(StorageID(ITableFunction::getDatabaseName(), table_function));
         }
     }
 }
@@ -2159,6 +2134,7 @@ void ClientBase::processParsedSingleQuery(
     cancelled_printed = false;
     client_exception.reset();
     server_exception.reset();
+    client_context->setInsertionTable(StorageID::createEmpty());
 
     if (is_interactive)
     {
