@@ -243,10 +243,13 @@ public:
         }
         catch (...)
         {
-            /// We cannot allow to throw exceptions from ScanCallback,
-            /// otherwise delta-kernel will panic and call terminate.
             auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
-            context->scan_exception = std::current_exception();
+            if (!context->scan_exception)
+            {
+                /// We cannot allow to throw exceptions from ScanCallback,
+                /// otherwise delta-kernel will panic and call terminate.
+                context->scan_exception = std::current_exception();
+            }
         }
     }
 
