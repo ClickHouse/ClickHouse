@@ -121,8 +121,6 @@ public:
         auto user = credentials.substr(0, pos);
         auto password = credentials.substr(pos + 1);
 
-        std::cout << token << " : " << user << " : " << password << "\n";
-
         *middleware = std::make_unique<AuthMiddleware>(token, user, password);
         return arrow::Status::OK();
     }
@@ -163,7 +161,7 @@ std::unique_ptr<Session> ArrowFlightHandler::createSession(const arrow::flight::
 void ArrowFlightHandler::start() {
     setThreadName("ArrowFlight");
 
-    bool use_tls = server.config().getBool("grpc.enable_ssl", false);
+    bool use_tls = server.config().getBool("arrowflight.enable_ssl", false);
 
     arrow::Result<arrow::flight::Location> parse_location_status;
 
@@ -189,8 +187,8 @@ void ArrowFlightHandler::start() {
     
     if (use_tls)
     {
-        auto cert_path = server.config().getString("grpc.ssl_cert_file");
-        auto key_path = server.config().getString("grpc.ssl_key_file");
+        auto cert_path = server.config().getString("arrowflight.ssl_cert_file");
+        auto key_path = server.config().getString("arrowflight.ssl_key_file");
 
         auto cert = readFile(cert_path);
         auto key = readFile(key_path);
