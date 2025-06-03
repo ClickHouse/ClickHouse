@@ -194,7 +194,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         return no_layers_updated;
 
     size_t updated_layers = no_layers_updated;
-    bool optimize_plan = !settings.vector_search_with_rescoring;
+    bool optimize_plan = !settings.vector_search_with_rescoring && !additional_filters_present;
     if (optimize_plan)
     {
         for (const auto & output : expression.getOutputs())
@@ -226,7 +226,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         }
     }
 
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, optimize_plan, additional_filters_present);
+    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present, optimize_plan);
     read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
 
     return updated_layers;
