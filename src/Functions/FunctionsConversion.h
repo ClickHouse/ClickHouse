@@ -441,14 +441,18 @@ struct ToTimeTransformFromDateTime
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        const auto converted = time_zone.toTime(from);
+        auto utc_seconds = from;
+        UInt64 offset = time_zone.timezoneOffset(utc_seconds);
+        /// compute local time-of-day in seconds
+        UInt64 local_seconds = (utc_seconds + offset) % 86400;
+
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (converted > MAX_TIME_TIMESTAMP) [[unlikely]]
+            if (local_seconds > MAX_TIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
 
-        return static_cast<ToType>(std::min(time_t(converted), time_t(MAX_TIME_TIMESTAMP)));
+        return static_cast<ToType>(std::min(time_t(local_seconds), time_t(MAX_TIME_TIMESTAMP)));
     }
 };
 
