@@ -474,6 +474,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_parquet_preserve_order", CHSetting(trueOrFalse, {}, false)},
     {"input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference", CHSetting(trueOrFalse, {}, false)},
     {"input_format_parquet_use_native_reader", CHSetting(trueOrFalse, {}, false)},
+    {"input_format_parquet_enable_json_parsing", CHSetting(trueOrFalse, {}, true)},
     {"input_format_protobuf_flatten_google_wrappers", CHSetting(trueOrFalse, {}, false)},
     {"input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference", CHSetting(trueOrFalse, {}, false)},
     {"input_format_skip_unknown_fields", CHSetting(trueOrFalse, {}, false)},

@@ -32,7 +32,6 @@
 #include <Processors/Transforms/CheckConstraintsTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
@@ -420,12 +419,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
     {
         return std::make_shared<ExpressionTransform>(in_header, actions);
-    });
-
-    /// We need to convert Sparse columns to full if the destination storage doesn't support them.
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-    {
-        return std::make_shared<MaterializingTransform>(in_header, !table->supportsSparseSerialization());
     });
 
     pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr

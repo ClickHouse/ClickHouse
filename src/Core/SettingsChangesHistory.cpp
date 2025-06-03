@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
             {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
             {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
+            {"input_format_parquet_enable_json_parsing", true, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
         });
         addSettingsChanges(settings_changes_history, "25.5",
