@@ -3423,7 +3423,6 @@ MarkCachePtr Context::getMarkCache() const
 
 void Context::clearMarkCache() const
 {
-    /// Get local shared pointer to the cache
     MarkCachePtr cache = getMarkCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
