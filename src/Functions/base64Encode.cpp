@@ -13,10 +13,9 @@ REGISTER_FUNCTION(Base64Encode)
     FunctionDocumentation::Arguments arguments = {{"plaintext", "String column or constant."}};
     FunctionDocumentation::ReturnedValue returned_value = "A string containing the encoded value of the argument.";
     FunctionDocumentation::Examples examples = {{"Example", "SELECT base64Encode('clickhouse')", "Y2xpY2tob3VzZQ=="}};
-    FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation::Category category = {"Strings"};
 
-    factory.registerFunction<FunctionBase64Conversion<Base64Encode<Base64Variant::Normal>>>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionBase64Conversion<Base64Encode<Base64Variant::Normal>>>({description, syntax, arguments, returned_value, examples, category});
 
     /// MySQL compatibility alias.
     factory.registerAlias("TO_BASE64", "base64Encode", FunctionFactory::Case::Insensitive);

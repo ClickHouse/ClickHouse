@@ -63,6 +63,12 @@ list (APPEND PRIVATE_LIBS
         ch_contrib::xxHash
 )
 
+if (TARGET ch_rust::blake3)
+    list (APPEND PUBLIC_LIBS
+        ch_rust::blake3
+    )
+endif()
+
 if (TARGET OpenSSL::Crypto)
     list (APPEND PUBLIC_LIBS OpenSSL::Crypto)
 endif()

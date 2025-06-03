@@ -13,7 +13,6 @@
 
 #include <DataTypes/DataTypeString.h>
 
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/MutationsInterpreter.h>
 

@@ -208,7 +208,7 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 {
     if (!aggregation_result.empty())
     {
-        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true);
+        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true, 1);
 
         for (auto & agg_block : aggregated_res)
         {

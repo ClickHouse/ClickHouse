@@ -2,6 +2,8 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
@@ -9,12 +11,14 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
 
 #if defined(OS_LINUX)
 #include <sys/prctl.h>
 #endif
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <iostream>
@@ -414,13 +418,12 @@ extern const char * GIT_HASH;
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
     SentryWriter::initializeInstance(config());
-    if (config().getBool("send_crash_reports.enabled", false)
-        && config().getBool("send_crash_reports.send_logical_errors", false))
+    if (config().getBool("send_crash_reports.send_logical_errors", false))
     {
         /// In release builds send it to sentry (if it is configured)
         if (auto * sentry = SentryWriter::getInstance())
         {
-            LOG_DEBUG(&logger(), "Sending logical errors to sentry is enabled");
+            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
             Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
             {
                 if (!remote && code == ErrorCodes::LOGICAL_ERROR)

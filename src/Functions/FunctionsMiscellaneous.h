@@ -25,7 +25,7 @@ struct LambdaCapture
     NamesAndTypesList lambda_arguments;
     String return_name;
     DataTypePtr return_type;
-    bool allow_constant_folding = false;
+    bool allow_constant_folding;
 };
 
 using LambdaCapturePtr = std::shared_ptr<LambdaCapture>;

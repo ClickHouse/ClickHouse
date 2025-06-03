@@ -18,7 +18,6 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
-#include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/FileLogSource.h>
@@ -125,11 +124,7 @@ private:
         if (file_log.file_infos.file_names.empty())
         {
             LOG_WARNING(file_log.log, "There is a idle table named {}, no files need to parse.", getName());
-            Header header;
-            auto column_names_and_types = storage_snapshot->getColumnsByNames(GetColumnsOptions::All, column_names);
-            for (const auto & [name, type] : column_names_and_types)
-                header.insert(ColumnWithTypeAndName(type, name));
-            return Pipe(std::make_unique<NullSource>(header));
+            return Pipe{};
         }
 
         auto modified_context = Context::createCopy(file_log.filelog_context);

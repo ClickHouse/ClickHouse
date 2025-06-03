@@ -736,7 +736,7 @@ size_t ColumnNullable::capacity() const
     return getNullMapData().capacity();
 }
 
-void ColumnNullable::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnNullable::prepareForSquashing(const Columns & source_columns)
 {
     size_t new_size = size();
     Columns nested_source_columns;
@@ -748,8 +748,8 @@ void ColumnNullable::prepareForSquashing(const Columns & source_columns, size_t 
         nested_source_columns.push_back(source_nullable_column.getNestedColumnPtr());
     }
 
-    nested_column->prepareForSquashing(nested_source_columns, factor);
-    getNullMapData().reserve(new_size * factor);
+    nested_column->prepareForSquashing(nested_source_columns);
+    getNullMapData().reserve(new_size);
 }
 
 void ColumnNullable::shrinkToFit()

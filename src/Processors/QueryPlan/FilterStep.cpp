@@ -173,7 +173,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
+        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition_hash);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
@@ -248,9 +248,9 @@ void FilterStep::updateOutputHeader()
         return;
 }
 
-void FilterStep::setConditionForQueryConditionCache(size_t condition_hash_, const String & condition_)
+void FilterStep::setQueryConditionHash(size_t condition_hash_)
 {
-    condition = {condition_hash_, condition_};
+    condition_hash = condition_hash_;
 }
 
 bool FilterStep::canUseType(const DataTypePtr & filter_type)
@@ -271,7 +271,7 @@ void FilterStep::serialize(Serialization & ctx) const
     actions_dag.serialize(ctx.out, ctx.registry);
 }
 
-QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
+std::unique_ptr<IQueryPlanStep> FilterStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "FilterStep must have one input stream");
@@ -287,11 +287,6 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
 
     return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
-}
-
-QueryPlanStepPtr FilterStep::clone() const
-{
-    return std::make_unique<FilterStep>(*this);
 }
 
 void registerFilterStep(QueryPlanStepRegistry & registry)
