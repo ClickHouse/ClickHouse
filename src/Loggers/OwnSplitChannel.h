@@ -48,7 +48,7 @@ public:
 /// Works as Poco::SplitterChannel, but performs additional work:
 ///  passes logs to Client via TCP interface
 ///  tries to use extended logging interface of child for more comprehensive logging
-class OwnSplitChannel : public OwnSplitChannelBase
+class OwnSplitChannel final : public OwnSplitChannelBase
 {
 public:
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
@@ -78,7 +78,7 @@ struct OwnRunnableForTextLog;
 /// Note that it uses a separate thread per each different channel (including one for text_log) instead of using a common thread pool
 /// to ensure the order is kept
 /// Currently logging to the internalTextLogsQueue (TCP queue for --send-logs-level) is done synchronously when log is called
-class OwnAsyncSplitChannel : public OwnSplitChannelBase, public boost::noncopyable
+class OwnAsyncSplitChannel final : public OwnSplitChannelBase, public boost::noncopyable
 {
 public:
     OwnAsyncSplitChannel();
