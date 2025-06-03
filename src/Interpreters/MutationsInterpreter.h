@@ -190,6 +190,9 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
+        /// TODO: comment.
+        Names readonly_input_columns;
+
         std::unique_ptr<ExpressionAnalyzer> analyzer;
 
         /// A chain of actions needed to execute this stage.
@@ -202,7 +205,9 @@ private:
         bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
+    std::unique_ptr<Block> output_header;
     std::unique_ptr<Block> updated_header;
+
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
     bool deleted_mask_updated = false;

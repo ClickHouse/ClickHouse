@@ -679,7 +679,14 @@ void addReadonlyColumns(MutationContext & ctx)
     for (const auto & column_name : ctx.required_readonly_columns)
     {
         if (ctx.storage_snapshot->tryGetColumn(options, column_name))
-            ctx.for_interpreter.push_back({.type = MutationCommand::Type::READ_COLUMN, .column_name = column_name});
+        {
+            ctx.for_interpreter.push_back(
+            {
+                .type = MutationCommand::Type::READ_COLUMN,
+                .column_name = column_name,
+                .readonly = true,
+            });
+        }
     }
 }
 
@@ -740,8 +747,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     auto part_columns = ctx.source_part->getColumnsDescription();
 
     NameSet dropped_columns;
-    // bool need_mutate_columns = !mutated_data.updated_columns.empty() || mutated_data.has_delete_command;
-
+    bool need_mutate_columns = !mutated_data.updated_columns.empty() || mutated_data.has_delete_command;
     addReadonlyColumns(ctx);
 
     for (const auto & command : ctx.commands_for_part)
@@ -755,6 +761,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
         if (command.type == MutationCommand::Type::READ_COLUMN)
         {
             ctx.for_interpreter.push_back(command);
+            need_mutate_columns = true;
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
@@ -770,6 +777,8 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
             {
                 dropped_columns.emplace(command.column_name);
             }
+
+            need_mutate_columns = true;
         }
     }
 
@@ -798,8 +807,11 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
             });
 
             part_columns.rename(rename_from, rename_to);
+            need_mutate_columns = true;
         }
     }
+
+    UNUSED(need_mutate_columns);
 
     /// If it's compact part, then we don't need to actually remove files from disk we just don't read dropped columns
     for (const auto & column : part_columns)
@@ -847,8 +859,12 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
                 }
             }
 
-            ctx.for_interpreter.emplace_back(
-                MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+            ctx.for_interpreter.emplace_back(MutationCommand
+            {
+                .type = MutationCommand::Type::READ_COLUMN,
+                .column_name = column.name,
+                .data_type = column.type
+            });
         }
     }
 }

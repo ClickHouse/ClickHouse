@@ -586,7 +586,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
     }
 
-    std::vector<String> read_columns;
+    Names modified_columns;
+    Names readonly_columns;
 
     /// First, break a sequence of commands into stages.
     for (const auto & command : commands)
@@ -749,7 +750,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::READ_COLUMN)
         {
-            read_columns.emplace_back(command.column_name);
+            if (command.readonly)
+                readonly_columns.emplace_back(command.column_name);
+            else
+                modified_columns.emplace_back(command.column_name);
         }
         // else
         // {
@@ -757,15 +761,18 @@ void MutationsInterpreter::prepare(bool dry_run)
         // }
     }
 
-    if (!read_columns.empty())
+    if (!modified_columns.empty() || !readonly_columns.empty())
     {
         if (stages.empty() || !stages.back().column_to_updated.empty())
             stages.emplace_back(context);
         if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
             stages.emplace_back(context);
 
-        for (auto & column_name : read_columns)
+        for (auto & column_name : modified_columns)
             stages.back().column_to_updated.emplace(column_name, std::make_shared<ASTIdentifier>(column_name));
+
+        for (auto & column_name : readonly_columns)
+            stages.back().readonly_input_columns.emplace_back(column_name);
     }
 
     /// Stages might be empty when we materialize skip indices or projections which don't add any
@@ -854,6 +861,9 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         for (const auto & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
+        for (const auto & column : stage.readonly_input_columns)
+            all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
+
         /// Executing scalar subquery on that stage can lead to deadlock
         /// e.g. ALTER referencing the same table in scalar subquery
         bool execute_scalar_subqueries = !dry_run;
@@ -897,6 +907,18 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             }
         }
 
+        if (!stage.readonly_input_columns.empty())
+        {
+            if (!actions_chain.steps.empty())
+                actions_chain.addStep();
+
+            for (const auto & column : stage.readonly_input_columns)
+            {
+                auto identifier = std::make_shared<ASTIdentifier>(column);
+                stage.analyzer->appendExpression(actions_chain, identifier, dry_run);
+            }
+        }
+
         if (i == 0 && actions_chain.steps.empty())
             actions_chain.lastStep(syntax_result->required_source_columns);
 
@@ -904,7 +926,11 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         actions_chain.addStep();
         actions_chain.getLastStep().required_output.clear();
         ActionsDAG::NodeRawConstPtrs new_index;
+
         for (const auto & name : stage.output_columns)
+            actions_chain.getLastStep().addRequiredOutput(name);
+
+        for (const auto & name : stage.readonly_input_columns)
             actions_chain.getLastStep().addRequiredOutput(name);
 
         actions_chain.getLastActions();
@@ -1150,8 +1176,20 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         });
     }
 
+    if (!output_header)
+    {
+        output_header = std::make_unique<Block>(builder.getHeader());
+    }
+
     if (!updated_header)
-        updated_header = std::make_unique<Block>(builder.getHeader());
+    {
+        chassert(!stages.empty());
+        updated_header = std::make_unique<Block>();
+        const auto & output_columns = stages.back().output_columns;
+
+        for (const auto & output_name : output_columns)
+            updated_header->insert(output_header->getByName(output_name));
+    }
 
     return builder;
 }

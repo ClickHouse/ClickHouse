@@ -65,6 +65,7 @@ struct MutationCommand
     /// For reads, drops and etc.
     String column_name = {};
     DataTypePtr data_type = {}; /// Maybe empty if we just want to drop column
+    bool readonly = false;
 
     /// We need just clear column, not drop from metadata.
     bool clear = false;
