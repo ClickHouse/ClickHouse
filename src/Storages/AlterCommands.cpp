@@ -1208,7 +1208,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     else if (type == DROP_PROJECTION)
     {
         result.type = MutationCommand::Type::DROP_PROJECTION;
-        result.column_name = projection_name;
+        result.projection_name = projection_name;
         if (clear)
             result.clear = true;
         if (partition)

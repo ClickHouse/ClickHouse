@@ -424,18 +424,17 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
     mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
     mut_context->setSetting("transform_null_in", Field(0));
 
-    Block block_copy = block;
-    if (block_copy.has(RowExistsColumn::name))
+    Block source_block = block;
+    if (source_block.has(RowExistsColumn::name))
     {
-        const auto & row_exists_column = block_copy.getByName(RowExistsColumn::name);
+        const auto & row_exists_column = source_block.getByName(RowExistsColumn::name);
         const auto & filter = assert_cast<const ColumnUInt8 &>(*row_exists_column.column).getData();
 
-        for (auto & column : block_copy)
+        for (auto & column : source_block)
             column.column = column.column->filter(filter, -1);
     }
 
     /// Create "_part_offset" column when needed for projection with parent part offsets
-    Block source_block = block;
     if (with_parent_part_offset)
     {
         chassert(sample_block.has("_parent_part_offset"));

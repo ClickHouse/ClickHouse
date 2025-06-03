@@ -178,7 +178,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_PROJECTION;
-        res.column_name = command->projection->as<ASTIdentifier &>().name();
+        res.projection_name = command->projection->as<ASTIdentifier &>().name();
         if (command->partition)
             res.partition = command->partition->clone();
         if (command->clear_projection)

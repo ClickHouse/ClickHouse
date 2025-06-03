@@ -147,7 +147,7 @@ struct MutationContext
 
     String mrk_extension;
 
-    std::set<ProjectionDescriptionRawPtr> projections_to_drop;
+    NameSet projections_to_drop;
     std::set<ProjectionDescriptionRawPtr> projections_to_build;
     std::set<ProjectionDescriptionRawPtr> projections_to_hardlink;
     std::map<ProjectionDescriptionRawPtr, MutationCommands> projections_to_mutate;
@@ -380,6 +380,12 @@ static void analyzeProjectionCommands(MutationContext & ctx, const MutatedData &
             ctx.required_readonly_columns.insert(column);
     };
 
+    auto add_projection_to_drop = [&](const MutationCommand & command)
+    {
+        ctx.for_file_renames.push_back(command);
+        ctx.projections_to_drop.insert(command.projection_name);
+    };
+
     NameSet modfied_columns;
     const auto & projections = ctx.metadata_snapshot->getProjections();
 
@@ -387,8 +393,7 @@ static void analyzeProjectionCommands(MutationContext & ctx, const MutatedData &
     {
         if (command.type == MutationCommand::DROP_PROJECTION)
         {
-            ctx.for_file_renames.push_back(command);
-            ctx.projections_to_drop.insert(&projections.get(command.projection_name));
+            add_projection_to_drop(command);
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
@@ -405,7 +410,7 @@ static void analyzeProjectionCommands(MutationContext & ctx, const MutatedData &
 
     for (const auto & projection : projections)
     {
-        if (ctx.projections_to_drop.contains(&projection) || !ctx.source_part->hasProjection(projection.name))
+        if (ctx.projections_to_drop.contains(projection.name) || !ctx.source_part->hasProjection(projection.name))
             continue;
 
          /// Always rebuild broken projections.
@@ -435,14 +440,7 @@ static void analyzeProjectionCommands(MutationContext & ctx, const MutatedData &
         }
         else if (action == MutatedData::Action::Drop)
         {
-            MutationCommand command =
-            {
-                .type = MutationCommand::Type::DROP_PROJECTION,
-                .projection_name = projection.name
-            };
-
-            ctx.projections_to_drop.insert(&projection);
-            ctx.for_file_renames.push_back(command);
+            add_projection_to_drop({.type = MutationCommand::Type::DROP_PROJECTION, .projection_name = projection.name});
         }
     }
 }
@@ -1170,7 +1168,7 @@ static NameSet collectFilesToSkip(
     const Block & updated_header,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
-    const std::set<ProjectionDescriptionRawPtr> & projections_to_skip,
+    const Names & projections_to_skip,
     const std::set<ColumnStatisticsPartPtr> & stats_to_recalc)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
@@ -1195,8 +1193,8 @@ static NameSet collectFilesToSkip(
         }
     }
 
-    for (const auto & projection : projections_to_skip)
-        files_to_skip.insert(projection->getDirectoryName());
+    for (const auto & projection_dir : projections_to_skip)
+        files_to_skip.insert(projection_dir);
 
     for (const auto & stat : stats_to_recalc)
         files_to_skip.insert(stat->getFileName() + STATS_FILE_SUFFIX);
@@ -1285,8 +1283,8 @@ static NameToNameVector collectFilesForRenames(
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)
         {
-            if (source_part->checksums.has(command.column_name + ".proj"))
-                add_rename(command.column_name + ".proj", "");
+            if (source_part->checksums.has(command.projection_name + ".proj"))
+                add_rename(command.projection_name + ".proj", "");
         }
         else if (command.type == MutationCommand::Type::DROP_STATISTICS)
         {
@@ -1877,12 +1875,6 @@ private:
                 entries_to_hardlink.insert(it->first);
                 ctx->existing_indices_stats_checksums.addFile(it->first, it->second.file_size, it->second.file_hash);
             }
-        }
-
-        for (const auto & projection : ctx->projections_to_hardlink)
-        {
-            if (ctx->source_part->checksums.has(projection->getDirectoryName()))
-                entries_to_hardlink.insert(projection->getDirectoryName());
         }
 
         NameSet hardlinked_files;
@@ -2668,14 +2660,10 @@ bool MutateTask::prepare()
 
     if (ctx->execution_mode == MutationContext::Mode::AllColumns)
     {
-        for (const auto & projection : ctx->projections_to_hardlink)
-            ctx->projections_to_build.insert(projection);
-
         for (const auto & [projection, _] : ctx->projections_to_mutate)
             ctx->projections_to_build.insert(projection);
 
         ctx->projections_to_mutate.clear();
-        ctx->projections_to_hardlink.clear();
 
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
@@ -2688,17 +2676,16 @@ bool MutateTask::prepare()
     else /// TODO: check that we modify only non-key columns in this case.
     {
         MutationHelpers::addTransformToBuildIndices(ctx->mutating_pipeline_builder, ctx->indices_to_build, ctx->context);
-
-        std::set<ProjectionDescriptionRawPtr> projections_to_skip;
+        Names projections_to_skip;
 
         for (const auto & projection : ctx->projections_to_drop)
-            projections_to_skip.insert(projection);
+            projections_to_skip.push_back(projection + ".proj");
 
         for (const auto & projection : ctx->projections_to_build)
-            projections_to_skip.insert(projection);
+            projections_to_skip.push_back(projection->getDirectoryName());
 
         for (const auto & [projection, _] : ctx->projections_to_mutate)
-            projections_to_skip.insert(projection);
+            projections_to_skip.push_back(projection->getDirectoryName());
 
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,
