@@ -239,7 +239,7 @@ void FileCacheSettings::validate()
         settings[FileCacheSetting::max_size] =
             static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * total_space));
 
-        LOG_TRACE(
+        LOG_INFO(
             getLogger("FileCacheSettings"),
             "Using max_size as ratio {} to total disk space on path {}: {} (total space: {})",
             settings[FileCacheSetting::max_size_ratio_to_total_space].value,
