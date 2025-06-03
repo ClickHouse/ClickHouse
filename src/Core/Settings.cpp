@@ -6739,9 +6739,9 @@ Possible values:
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
-    DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

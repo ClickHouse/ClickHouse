@@ -82,7 +82,7 @@ UInt64 extractIntParamater(const std::string & function_name, const std::string 
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_ts_to_grid_aggregate_function;
+    extern const SettingsBool allow_experimental_time_series_aggregate_functions;
 }
 
 namespace
@@ -148,10 +148,10 @@ template <
 >
 AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    if (settings && (*settings)[Setting::allow_experimental_ts_to_grid_aggregate_function] == 0)
+    if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0)
         throw Exception(
             ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-            "Aggregate function {} is experimental and disabled by default. Enable it with setting allow_experimental_ts_to_grid_aggregate_function",
+            "Aggregate function {} is experimental and disabled by default. Enable it with setting allow_experimental_time_series_aggregate_functions",
             name);
 
     assertBinary(name, argument_types);

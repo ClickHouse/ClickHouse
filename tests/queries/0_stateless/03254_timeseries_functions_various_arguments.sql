@@ -4,7 +4,7 @@ CREATE TABLE ts_data_nullable(id UInt64, timestamp UInt32, value Nullable(Float6
 INSERT INTO ts_data VALUES (1, [10,20], [1,2]), (2, [30,40,50], [3,4]), (3, [60], [6]), (4, [], []), (5, [80], [8,9]), (6, [100], [10]);
 INSERT INTO ts_data_nullable SELECT id, timestamp, value FROM ts_data ARRAY JOIN timestamps as timestamp, arrayResize(values, length(timestamps), NULL) AS value;
 
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
+SET allow_experimental_time_series_aggregate_functions = 1;
 
 -- Fail because of rows with non-matching lengths of timestamps and values
 SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 10)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
