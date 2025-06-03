@@ -134,10 +134,15 @@ public:
             visitor_exception = exception;
     }
 
-    /// Generate next list id (for intermediate parsing result).
-    size_t nextListID()
+    /// Create a new node list and return its id.
+    size_t makeNewList(size_t capacity_hint)
     {
-        return list_counter++;
+        size_t id = list_counter++;
+        auto [it, inserted] = node_lists.emplace(id, DB::ActionsDAG::NodeRawConstPtrs{});
+        chassert(inserted);
+        if (capacity_hint > 0)
+            it->second.reserve(capacity_hint);
+        return id;
     }
 
     /// Add literal (constant) value to the list by `list_id`.
@@ -356,10 +361,10 @@ private:
         return visitor;
     }
 
-    static uintptr_t makeFieldList(void * data, uintptr_t /* capacity_hint */)
+    static uintptr_t makeFieldList(void * data, uintptr_t capacity_hint)
     {
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        return state->nextListID();
+        return state->makeNewList(capacity_hint);
     }
 
     template <typename Func>
