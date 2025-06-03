@@ -1,4 +1,5 @@
 <clickhouse>
+    <filesystem_caches_path>/var/log/clickhouse/fs-cache/</filesystem_caches_path>
     <storage_configuration>
         <disks>
             <hdd_blob>
@@ -14,6 +15,12 @@
                 <boundary_alignment>10</boundary_alignment>
                 <path>./cache_dynamic_reload/</path>
             </cache_dynamic_resize>
+            <cache_with_max_size_ratio>
+                <type>cache</type>
+                <disk>hdd_blob</disk>
+                <path>max_size_ratio/</path>
+                <max_size_ratio_to_total_space>0.7</max_size_ratio_to_total_space>
+            </cache_with_max_size_ratio>
         </disks>
     </storage_configuration>
     <filesystem_cache_log>
