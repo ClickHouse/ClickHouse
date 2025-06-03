@@ -123,6 +123,6 @@ void DB::TLSHandler::run()
     stack_data.socket = socket();
     stack_data.certificate = params.certificateFile;
 #else
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
+    throw Exception(::ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
 }
