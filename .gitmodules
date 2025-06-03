@@ -76,9 +76,6 @@
 [submodule "contrib/fastops"]
 	path = contrib/fastops
 	url = https://github.com/ClickHouse/fastops
-[submodule "contrib/orc"]
-	path = contrib/orc
-	url = https://github.com/ClickHouse/orc
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11
@@ -372,3 +369,6 @@
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
+[submodule "contrib/orc"]
+	path = contrib/orc
+	url = https://github.com/apache/orc.git
