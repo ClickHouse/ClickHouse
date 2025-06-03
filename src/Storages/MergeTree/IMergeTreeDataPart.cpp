@@ -1210,7 +1210,7 @@ void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, 
 
 void IMergeTreeDataPart::writeMetadataVersion(ContextPtr context, int32_t metadata_version_, bool sync)
 {
-    removeMetadataVersion();
+    getDataPartStorage().beginTransaction();
     {
         auto out_metadata = getDataPartStorage().writeFile(METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
         writeText(metadata_version_, *out_metadata);
@@ -1218,6 +1218,7 @@ void IMergeTreeDataPart::writeMetadataVersion(ContextPtr context, int32_t metada
         if (sync)
             out_metadata->sync();
     }
+    getDataPartStorage().commitTransaction();
     old_part_with_no_metadata_version_on_disk = false;
 }
 
