@@ -136,6 +136,14 @@ Total bytes used for the cache of JIT-compiled code.
 
 Total entries in the cache of JIT-compiled code.
 
+### DictionaryMaxUpdateDelay {#dictionarymaxlastsuccessfulupdatetime}
+
+The maximum delay (in seconds) of dictionary update.
+
+### DictionaryTotalFailedUpdates {#dictionaryloadfailed}
+
+Number of errors since last successful loading in all dictionaries.
+
 ### DiskAvailable_*name* {#diskavailable_name}
 
 Available bytes on the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB.
