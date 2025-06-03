@@ -116,6 +116,7 @@ struct MutationContext
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
     StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
 
     MutationCommandsConstPtr commands;
     time_t time_of_mutation;
@@ -376,7 +377,7 @@ static void analyzeProjectionCommands(MutationContext & ctx, const MutatedData &
     {
         ctx.projections_to_build.insert(&projection);
 
-        for (const auto & column : projection.getRequiredColumns())
+        for (const auto & column : projection.required_columns)
             ctx.required_readonly_columns.insert(column);
     };
 
@@ -673,10 +674,11 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
 
 void addReadonlyColumns(MutationContext & ctx)
 {
-    const auto & all_columns = ctx.metadata_snapshot->getColumns();
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals();
+
     for (const auto & column_name : ctx.required_readonly_columns)
     {
-        if (all_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
+        if (ctx.storage_snapshot->tryGetColumn(options, column_name))
             ctx.for_interpreter.push_back({.type = MutationCommand::Type::READ_COLUMN, .column_name = column_name});
     }
 }
@@ -2298,9 +2300,8 @@ MutateTask::MutateTask(
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
     ctx->need_prefix = need_prefix_;
-
-    auto storage_snapshot = ctx->data->getStorageSnapshotWithoutData(ctx->metadata_snapshot, context_);
-    extendObjectColumns(ctx->storage_columns, storage_snapshot->object_columns, /*with_subcolumns=*/ false);
+    ctx->storage_snapshot = ctx->data->getStorageSnapshotWithoutData(ctx->metadata_snapshot, context_);
+    extendObjectColumns(ctx->storage_columns, ctx->storage_snapshot->object_columns, /*with_subcolumns=*/ false);
 }
 
 
