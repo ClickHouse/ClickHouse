@@ -749,28 +749,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::READ_COLUMN)
         {
             read_columns.emplace_back(command.column_name);
-            /// Check if the type of this column is changed and there are projections that
-            /// have this column in the primary key. We should rebuild such projections.
-
-            /// TODO: implement this in MutateTask
-
-            // if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
-            // {
-            //     const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
-            //     if (column && command.data_type && !column->type->equals(*command.data_type))
-            //     {
-            //         for (const auto & projection : metadata_snapshot->getProjections())
-            //         {
-            //             const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
-            //             if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
-            //             {
-            //                 for (const auto & col : projection.required_columns)
-            //                     dependencies.emplace(col, ColumnDependency::PROJECTION);
-            //                 materialized_projections.insert(projection.name);
-            //             }
-            //         }
-            //     }
-            // }
         }
         // else
         // {

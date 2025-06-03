@@ -44,6 +44,7 @@
 #include "Analyzer/Utils.h"
 #include "Columns/ColumnsCommon.h"
 #include "Core/Names.h"
+#include "Core/SettingsEnums.h"
 #include "QueryPipeline/QueryPipelineBuilder.h"
 #include "Storages/ColumnsDescription.h"
 #include "Storages/MergeTree/MergeTreeDataPartTTLInfo.h"
@@ -146,7 +147,7 @@ struct MutationContext
 
     String mrk_extension;
 
-    NameSet dropped_projections;
+    std::set<ProjectionDescriptionRawPtr> projections_to_drop;
     std::set<ProjectionDescriptionRawPtr> projections_to_build;
     std::set<ProjectionDescriptionRawPtr> projections_to_hardlink;
     std::map<ProjectionDescriptionRawPtr, MutationCommands> projections_to_mutate;
@@ -156,9 +157,6 @@ struct MutationContext
 
     NameSet ttls_to_calculate;
     NameSet ttls_to_materialize;
-    /// TODO: handle ttls to drop data.
-    NameSet table_ttls_to_drop_data;
-    NameSet column_ttls_to_drop_data;
 
     NameSet dropped_statistics;
     std::set<ColumnStatisticsPartPtr> statistics_to_build;
@@ -322,24 +320,53 @@ enum class DependencyType
 
 struct MutatedData
 {
+    using LWDProjectionMode = LightweightMutationProjectionMode;
+    LWDProjectionMode lwd_projection_mode;
+
+    explicit MutatedData(MergeTreeSettingsPtr settings)
+        : lwd_projection_mode((*settings)[MergeTreeSetting::lightweight_mutation_projection_mode])
+    {
+    }
+
     NameSet updated_columns;
     bool has_delete_command = false;
     bool has_lightweight_delete = false;
 
+    enum class Action
+    {
+        Skip,
+        Drop,
+        Rebuild,
+    };
+
+    Action getDependencyAction(const Names & required_columns, DependencyType type) const
+    {
+        if (type == DependencyType::PROJECTION && has_lightweight_delete)
+        {
+            switch (lwd_projection_mode)
+            {
+                case LWDProjectionMode::DROP: return Action::Drop;
+                case LWDProjectionMode::REBUILD: return Action::Rebuild;
+                default: return Action::Skip;
+            }
+        }
+
+        return isAnyColumnMutated(required_columns) ? Action::Rebuild : Action::Skip;
+    }
+
     bool needRebuildDependency(const Names & required_columns, DependencyType type) const
     {
-        if (has_delete_command)
-            return true;
-
-        if (type == DependencyType::PROJECTION && has_lightweight_delete)
-            return true;
-
-        return std::ranges::any_of(required_columns, [&](const auto & column) { return updated_columns.contains(column); });
+        return getDependencyAction(required_columns, type) == Action::Rebuild;
     }
 
     bool isColumnMutated(const String & column_name) const
     {
         return has_delete_command || updated_columns.contains(column_name);
+    }
+
+    bool isAnyColumnMutated(const Names & columns) const
+    {
+        return has_delete_command || std::ranges::any_of(columns, [&](const auto & column) { return updated_columns.contains(column); });
     }
 };
 
@@ -353,25 +380,32 @@ static void analyzeProjectionCommands(MutationContext & ctx, const MutatedData &
             ctx.required_readonly_columns.insert(column);
     };
 
+    NameSet modfied_columns;
     const auto & projections = ctx.metadata_snapshot->getProjections();
 
     for (const auto & command : ctx.commands_for_part)
     {
         if (command.type == MutationCommand::DROP_PROJECTION)
         {
-            ctx.dropped_projections.insert(command.projection_name);
             ctx.for_file_renames.push_back(command);
+            ctx.projections_to_drop.insert(&projections.get(command.projection_name));
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
             if (!ctx.source_part->hasProjection(command.projection_name))
                 add_projection_to_build(projections.get(command.projection_name));
         }
+        else if (command.type == MutationCommand::READ_COLUMN)
+        {
+            auto column_in_part = ctx.source_part->tryGetColumn(command.column_name);
+            if (column_in_part && command.data_type && !column_in_part->type->equals(*command.data_type))
+                modfied_columns.insert(command.column_name);
+        }
     }
 
     for (const auto & projection : projections)
     {
-        if (ctx.dropped_projections.contains(projection.name) || !ctx.source_part->hasProjection(projection.name))
+        if (ctx.projections_to_drop.contains(&projection) || !ctx.source_part->hasProjection(projection.name))
             continue;
 
          /// Always rebuild broken projections.
@@ -382,8 +416,34 @@ static void analyzeProjectionCommands(MutationContext & ctx, const MutatedData &
             continue;
         }
 
-        if (mutated_data.needRebuildDependency(projection.required_columns, DependencyType::PROJECTION))
+        /// Check if the type of this column is changed and there are projections that
+        /// have this column in the primary key. We should rebuild such projections.
+        const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
+        bool modified_pk_column = std::ranges::any_of(pk_columns, [&](const auto & pk_column) { return modfied_columns.contains(pk_column); });
+
+        if (modified_pk_column)
+        {
             add_projection_to_build(projection);
+            continue;
+        }
+
+        auto action = mutated_data.getDependencyAction(projection.required_columns, DependencyType::PROJECTION);
+
+        if (action == MutatedData::Action::Rebuild)
+        {
+            add_projection_to_build(projection);
+        }
+        else if (action == MutatedData::Action::Drop)
+        {
+            MutationCommand command =
+            {
+                .type = MutationCommand::Type::DROP_PROJECTION,
+                .projection_name = projection.name
+            };
+
+            ctx.projections_to_drop.insert(&projection);
+            ctx.for_file_renames.push_back(command);
+        }
     }
 }
 
@@ -503,19 +563,10 @@ static void analyzeTTLCommands(MutationContext & ctx, MutatedData & mutated_data
 
     auto analyze_ttl = [&](const TTLDescription & ttl, const String & ttl_name, bool is_column_ttl)
     {
-        if (recalculate_only)
+        if (recalculate_only || drop_only)
         {
             add_required_columns(ttl);
             ctx.ttls_to_calculate.insert(ttl_name);
-        }
-        else if (drop_only)
-        {
-            if (is_column_ttl)
-                ctx.column_ttls_to_drop_data.insert(ttl_name);
-            else
-                ctx.table_ttls_to_drop_data.insert(ttl_name);
-
-            add_required_columns(ttl);
         }
         else
         {
@@ -575,7 +626,7 @@ static void analyzeTTLCommands(MutationContext & ctx, MutatedData & mutated_data
 
 MutatedData analyzeDataCommands(MutationContext & ctx)
 {
-    MutatedData mutated_data;
+    MutatedData mutated_data(ctx.data->getSettings());
     const auto & table_columns = ctx.metadata_snapshot->getColumns();
 
     for (const auto & command : ctx.commands_for_part)
@@ -622,7 +673,7 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
     return mutated_data;
 }
 
-void addReadingOfReadonlyColumns(MutationContext & ctx)
+void addReadonlyColumns(MutationContext & ctx)
 {
     const auto & all_columns = ctx.metadata_snapshot->getColumns();
     for (const auto & column_name : ctx.required_readonly_columns)
@@ -673,7 +724,7 @@ static MutationContext::Mode analyzeCommandsForSomeColumnsMode(MutationContext &
     for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         ctx.for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
 
-    addReadingOfReadonlyColumns(ctx);
+    addReadonlyColumns(ctx);
     return mutated_data.has_delete_command ? MutationContext::Mode::AllColumns : MutationContext::Mode::SomeColumns;
 }
 
@@ -691,7 +742,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     NameSet dropped_columns;
     // bool need_mutate_columns = !mutated_data.updated_columns.empty() || mutated_data.has_delete_command;
 
-    addReadingOfReadonlyColumns(ctx);
+    addReadonlyColumns(ctx);
 
     for (const auto & command : ctx.commands_for_part)
     {
@@ -2310,6 +2361,20 @@ bool MutateTask::execute()
 
 void MutateTask::setDataPartPromise()
 {
+    const auto ttl = ctx->new_data_part->ttl_infos.table_ttl;
+    /// If part is expired according to TTL, create a new empty part.
+    if (ttl.max && ttl.max <= ctx->time_of_mutation)
+    {
+        MergeTreePartInfo part_info = ctx->new_data_part->info;
+        part_info.level += 1;
+
+        MergeTreePartition partition = ctx->new_data_part->partition;
+        std::string part_name = ctx->new_data_part->getNewName(part_info);
+
+        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(part_info, partition, part_name, ctx->txn);
+        ctx->new_data_part = std::move(mutable_empty_part);
+    }
+
     // The `new_data_part` is a shared pointer and must be moved to allow
     // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.
     //
@@ -2625,6 +2690,9 @@ bool MutateTask::prepare()
         MutationHelpers::addTransformToBuildIndices(ctx->mutating_pipeline_builder, ctx->indices_to_build, ctx->context);
 
         std::set<ProjectionDescriptionRawPtr> projections_to_skip;
+
+        for (const auto & projection : ctx->projections_to_drop)
+            projections_to_skip.insert(projection);
 
         for (const auto & projection : ctx->projections_to_build)
             projections_to_skip.insert(projection);
