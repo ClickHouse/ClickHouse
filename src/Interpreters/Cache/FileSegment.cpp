@@ -157,6 +157,24 @@ size_t FileSegment::getReservedSize() const
     return reserved_size;
 }
 
+size_t FileSegment::getSize(FileSegment::SizeAlignment alignment) const
+{
+    size_t size = getReservedSize();
+    switch (alignment)
+    {
+        case FileSegment::SizeAlignment::ALIGNED:
+            return getKeyMetadata()->alignFileSize(size);
+        case FileSegment::SizeAlignment::NOT_ALIGNED:
+            return size;
+        case FileSegment::SizeAlignment::DEFAULT_ALIGNMENT:
+            auto locked_key = getKeyMetadata();
+            chassert(locked_key);
+            return locked_key->useRealDiskSize() ? locked_key->alignFileSize(size) : size;
+    }
+    chassert(false);
+    return 0;
+}
+
 FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
 {
     auto lk = lock();
@@ -730,6 +748,7 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     return desired_size - downloaded_size;
 }
 
+
 void FileSegment::complete(bool allow_background_download)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
@@ -932,8 +951,8 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             return;
 
         const auto & entry = it->getEntry();
-        if (download_state != State::DOWNLOADING && entry->size != reserved_size)
-            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size.load(), reserved_size.load()));
+        if (download_state != State::DOWNLOADING && entry->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED) != reserved_size)
+            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED), reserved_size.load()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
