@@ -612,7 +612,7 @@ bool ColumnsDescription::hasSubcolumn(const String & column_name) const
     /// Check for dynamic subcolumns
     auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
     auto it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns() && !dynamic_subcolumn_name.empty())
     {
         if (auto /*dynamic_subcolumn_type*/ _ = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
             return true;

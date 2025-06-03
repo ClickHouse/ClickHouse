@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 
 #include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#include <Client/BuzzHouse/Generator/RandomSettings.h>
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
@@ -22,6 +23,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
     std::shared_ptr<SQLDatabase> db,
     const uint32_t tname,
     const bool can_shuffle,
+    const bool is_deterministic,
     std::vector<ColumnPathChain> & entries)
 {
     const String str_tname = getTableName(db, tname);
@@ -43,7 +45,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
                 "{}{} {} {}NULL",
                 first ? "" : ", ",
                 entry.getBottomName(),
-                columnTypeAsString(rg, tp),
+                columnTypeAsString(rg, is_deterministic, tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
             chassert(entry.path.size() == 1);
             first = false;
@@ -57,6 +59,155 @@ bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
     return performQuery(fmt::format("DROP TABLE IF EXISTS {};", getTableName(t.db, t.tname)));
+}
+
+void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, CreateTable & newt)
+{
+    TableEngine & te = const_cast<TableEngine &>(newt.engine());
+    const auto & teng = te.engine();
+
+    if (te.has_setting_values() && rg.nextSmallNumber() < 10)
+    {
+        /// Swap table settings
+        const auto & allSettings = allTableSettings.at(teng);
+        const auto & svs = te.setting_values();
+
+        for (int i = 0; i < svs.other_values_size() + 1; i++)
+        {
+            SetValue & sv = const_cast<SetValue &>(i == 0 ? svs.set_value() : svs.other_values(i - 1));
+
+            if (allSettings.find(sv.property()) != allSettings.end())
+            {
+                const CHSetting & chs = allSettings.at(sv.property());
+
+                if (!chs.changes_behavior && !chs.oracle_values.empty() && rg.nextSmallNumber() < 8)
+                {
+                    if (chs.oracle_values.size() == 2)
+                    {
+                        const String & fval = *chs.oracle_values.begin();
+
+                        sv.set_value(sv.value() == fval ? *std::next(chs.oracle_values.begin(), 1) : fval);
+                    }
+                    else
+                    {
+                        sv.set_value(rg.pickRandomly(chs.oracle_values));
+                    }
+                }
+            }
+        }
+    }
+    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+    {
+        if (te.has_partition_by() && rg.nextSmallNumber() < 5)
+        {
+            /// Remove partition by
+            te.clear_partition_by();
+        }
+        if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
+        {
+            /// Remove primary key or order by clause
+            if (rg.nextBool())
+            {
+                te.clear_primary_key();
+            }
+            else
+            {
+                te.clear_order();
+            }
+        }
+        if (te.has_order())
+        {
+            /// Swap ASC/DESC
+            for (int i = 0; i < te.order().exprs_size(); i++)
+            {
+                if (rg.nextSmallNumber() < 9)
+                {
+                    TableKeyExpr & tke = const_cast<TableKeyExpr &>(te.order().exprs(i));
+
+                    tke.set_asc_desc((!tke.has_asc_desc() || tke.asc_desc() == AscDesc::ASC) ? AscDesc::DESC : AscDesc::ASC);
+                }
+            }
+        }
+    }
+    else if (teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog && rg.nextSmallNumber() < 5)
+    {
+        /// Swap engine if others are equivalent
+        static const std::vector<TableEngineValues> & logEngines
+            = {TableEngineValues::StripeLog, TableEngineValues::Log, TableEngineValues::TinyLog};
+
+        te.set_engine(rg.pickRandomly(logEngines));
+    }
+    if (newt.has_table_def())
+    {
+        const TableDef & def = newt.table_def();
+
+        for (int i = 0; i < def.other_defs_size() + 1; i++)
+        {
+            if (i == 0 || def.other_defs(i - 1).has_col_def())
+            {
+                ColumnDef & cdef = const_cast<ColumnDef &>(i == 0 ? def.col_def() : def.other_defs(i - 1).col_def());
+                TopTypeName & ttn = const_cast<TopTypeName &>(cdef.type().type());
+
+                if (cdef.has_codecs() && rg.nextBool())
+                {
+                    /// Clear codecs
+                    cdef.clear_codecs();
+                }
+                if (cdef.has_stats() && rg.nextBool())
+                {
+                    /// Clear statistics
+                    cdef.clear_stats();
+                }
+                /// Remove LowCardinality property
+                if (ttn.has_nullable_lcard() && rg.nextBool())
+                {
+                    ttn.set_allocated_nullable(ttn.release_nullable_lcard());
+                }
+                else if (ttn.has_non_nullable_lcard() && rg.nextBool())
+                {
+                    ttn.set_allocated_non_nullable(ttn.release_non_nullable_lcard());
+                }
+                if (cdef.has_setting_values())
+                {
+                    if (rg.nextBool())
+                    {
+                        /// Clear all settings, so far none changes behavior
+                        cdef.clear_setting_values();
+                    }
+                    else
+                    {
+                        const auto & allSettings = allTableSettings.at(teng);
+                        const auto & svs = cdef.setting_values();
+
+                        for (int j = 0; j < svs.other_values_size() + 1; j++)
+                        {
+                            SetValue & sv = const_cast<SetValue &>(j == 0 ? svs.set_value() : svs.other_values(j - 1));
+
+                            if (allSettings.find(sv.property()) != allSettings.end())
+                            {
+                                const CHSetting & chs = allSettings.at(sv.property());
+
+                                chassert(!chs.changes_behavior);
+                                if (!chs.oracle_values.empty() && rg.nextSmallNumber() < 8)
+                                {
+                                    sv.set_value(rg.pickRandomly(chs.oracle_values));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (newt.has_cluster() && rg.nextSmallNumber() < 4)
+    {
+        newt.clear_cluster();
+    }
+    else if (!fc.clusters.empty() && rg.nextSmallNumber() < 4)
+    {
+        newt.clear_cluster();
+        newt.mutable_cluster()->set_cluster(rg.pickRandomly(fc.clusters));
+    }
 }
 
 bool ClickHouseIntegratedDatabase::performCreatePeerTable(
@@ -97,6 +248,10 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             {
                 t.db->setName(est.mutable_database());
             }
+            if (rg.nextMediumNumber() < 91)
+            {
+                this->swapTableDefinitions(rg, newt);
+            }
 
             CreateTableToString(buf, newt);
             res &= performQuery(buf + ";");
@@ -104,7 +259,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
     }
     else if (res)
     {
-        res &= performIntegration(rg, is_clickhouse_integration ? t.db : nullptr, t.tname, false, entries);
+        res &= performIntegration(rg, is_clickhouse_integration ? t.db : nullptr, t.tname, false, t.is_deterministic, entries);
     }
     return res;
 }
@@ -239,8 +394,114 @@ bool MySQLIntegration::performQuery(const String & query)
     return true;
 }
 
-String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) const
+String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_deterministic, SQLType * tp) const
 {
+    if (!is_deterministic && rg.nextSmallNumber() < 4)
+    {
+        /// Use a random MySQL type
+        const uint32_t nopt = rg.nextMediumNumber();
+
+        if (nopt < 76)
+        {
+            static const std::vector<String> & baseTypes
+                = {"TINYINT",
+                   "SMALLINT",
+                   "MEDIUMINT",
+                   "INT",
+                   "INTEGER",
+                   "BIGINT",
+                   "TINYINT UNSIGNED",
+                   "SMALLINT UNSIGNED",
+                   "MEDIUMINT UNSIGNED",
+                   "INT UNSIGNED",
+                   "INTEGER UNSIGNED",
+                   "BIGINT UNSIGNED",
+                   "SERIAL",
+                   "FLOAT",
+                   "REAL",
+                   "DOUBLE",
+                   "DOUBLE PRECISION",
+                   "FIXED",
+                   "DEC",
+                   "DECIMAL",
+                   "NUMERIC",
+                   "TINYBLOB",
+                   "BLOB",
+                   "MEDIUMBLOB",
+                   "LONGBLOB",
+                   "TINYTEXT",
+                   "TEXT",
+                   "MEDIUMTEXT",
+                   "LONGTEXT",
+                   "DATE",
+                   "TIME",
+                   "DATETIME",
+                   "TIMESTAMP",
+                   "YEAR",
+                   "GEOMETRY",
+                   "POINT",
+                   "LINESTRING",
+                   "POLYGON",
+                   "MULTIPOINT",
+                   "MULTILINESTRING",
+                   "MULTIPOLYGON",
+                   "GEOMETRYCOLLECTION",
+                   "JSON",
+                   "BOOL",
+                   "BOOLEAN"};
+            return rg.pickRandomly(baseTypes);
+        }
+        else if (nopt < 81)
+        {
+            /// Bit type
+            std::uniform_int_distribution<uint32_t> lengths(1, 64);
+
+            return fmt::format("BIT({})", lengths(rg.generator));
+        }
+        else if (nopt < 86)
+        {
+            /// Decimal/Numeric
+            std::uniform_int_distribution<uint32_t> precisions(0, 65);
+            const uint32_t precision = precisions(rg.generator);
+            std::uniform_int_distribution<uint32_t> scales(UINT32_C(0), std::min(UINT32_C(30), precision));
+            static const std::vector<String> & baseTypes = {"FIXED", "DEC", "DECIMAL", "NUMERIC"};
+
+            return fmt::format("{}({},{})", rg.pickRandomly(baseTypes), precision, scales(rg.generator));
+        }
+        else if (nopt < 91)
+        {
+            /// Character types
+            std::uniform_int_distribution<uint32_t> lengths(1, 65535);
+            static const std::vector<String> & baseTypes = {"CHAR", "VARCHAR", "BINARY", "VARBINARY"};
+
+            return fmt::format("{}({})", rg.pickRandomly(baseTypes), lengths(rg.generator));
+        }
+        else if (nopt < 96)
+        {
+            /// Date/time with precision
+            std::uniform_int_distribution<uint32_t> precisions(0, 6);
+            static const std::vector<String> & baseTypes = {"TIME", "TIMESTAMP", "DATETIME"};
+
+            return fmt::format("{}({})", rg.pickRandomly(baseTypes), precisions(rg.generator));
+        }
+        else
+        {
+            /// Set/enum types
+            String desc;
+            std::uniform_int_distribution<uint32_t> number_values(1, 64);
+            const uint32_t nvalues = number_values(rg.generator);
+
+            for (uint32_t i = 0; i < nvalues; i++)
+            {
+                if (i > 0)
+                {
+                    desc += ", ";
+                }
+                desc += "'value_" + std::to_string(i + 1) + "'";
+            }
+            return fmt::format("{}({})", rg.nextBool() ? "ENUM" : "SET", desc);
+        }
+    }
     return tp->MySQLtypeName(rg, false);
 }
 #else
@@ -357,8 +618,69 @@ bool PostgreSQLIntegration::performQuery(const String & query)
     }
 }
 
-String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) const
+String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_deterministic, SQLType * tp) const
 {
+    if (!is_deterministic && rg.nextSmallNumber() < 4)
+    {
+        /// Use a random PostgreSQL type
+        String baseType;
+        const uint32_t nopt = rg.nextMediumNumber();
+
+        if (nopt < 81)
+        {
+            static const std::vector<String> & baseTypes
+                = {"SMALLINT",  "INTEGER",   "BIGINT",   "NUMERIC", "DECIMAL", "REAL",    "DOUBLE PRECISION", "SMALLSERIAL", "SERIAL",
+                   "BIGSERIAL", "MONEY",     "TEXT",     "BPCHAR",  "BYTEA",   "TIME",    "TIMESTAMP",        "DATE",        "BOOLEAN",
+                   "POINT",     "LINE",      "LSEG",     "BOX",     "PATH",    "POLYGON", "CIRCLE",           "CIDR",        "INET",
+                   "MACADDR",   "MACADDR8",  "UUID",     "XML",     "JSON",    "JSONB",   "int4range",        "int8range",   "numrange",
+                   "tsrange",   "tstzrange", "daterange"};
+            baseType = rg.pickRandomly(baseTypes);
+        }
+        else if (nopt < 86)
+        {
+            /// Character types
+            std::uniform_int_distribution<uint32_t> lengths(1, 255);
+            static const std::vector<String> & prefixes = {"", "VAR", "BP"};
+
+            baseType = fmt::format("{}CHAR({})", rg.pickRandomly(prefixes), lengths(rg.generator));
+        }
+        else if (nopt < 91)
+        {
+            /// Numeric/Decimal
+            std::uniform_int_distribution<uint32_t> precisions(0, 38);
+            const uint32_t precision = precisions(rg.generator);
+            std::uniform_int_distribution<uint32_t> scales(0, precision);
+
+            baseType = fmt::format("{}({},{})", rg.nextBool() ? "NUMERIC" : "DECIMAL", precision, scales(rg.generator));
+        }
+        else if (nopt < 96)
+        {
+            /// Bit types
+            std::uniform_int_distribution<uint32_t> lengths(1, 64);
+
+            baseType = fmt::format("BIT{}({})", rg.nextBool() ? " VARYING" : "", lengths(rg.generator));
+        }
+        else
+        {
+            /// Time(stamp) with timezone
+            std::uniform_int_distribution<uint32_t> lengths(0, 6);
+
+            baseType
+                = fmt::format("TIME{}({}){}", rg.nextBool() ? "STAMP" : "", lengths(rg.generator), rg.nextBool() ? " WITH TIME ZONE" : "");
+        }
+
+        if (rg.nextSmallNumber() < 3)
+        {
+            /// Generate array type
+            const uint32_t ndimensions = rg.nextMediumNumber() < 81 ? 1 : (rg.nextMediumNumber() % 4) + 1;
+
+            for (uint32_t i = 0; i < ndimensions; i++)
+            {
+                baseType += "[]";
+            }
+        }
+        return baseType;
+    }
     return tp->PostgreSQLtypeName(rg, false);
 }
 
@@ -440,8 +762,40 @@ bool SQLiteIntegration::performQuery(const String & query)
     return true;
 }
 
-String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) const
+String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_deterministic, SQLType * tp) const
 {
+    if (!is_deterministic && rg.nextSmallNumber() < 4)
+    {
+        /// Use a random SQLite type
+        const uint32_t nopt = rg.nextMediumNumber();
+
+        if (nopt < 91)
+        {
+            static const std::vector<String> & baseTypes
+                = {"TEXT",    "CLOB", "STRING",   "NUMERIC", "DECIMAL",          "MONEY",  "BOOLEAN",
+                   "TIME",    "DATE", "DATETIME", "INT",     "INTEGER",          "BIGINT", "SMALLINT",
+                   "TINYINT", "REAL", "DOUBLE",   "FLOAT",   "DOUBLE PRECISION", "BLOB",   "BINARY",
+                   "BYTEA"};
+            return rg.pickRandomly(baseTypes);
+        }
+        else if (nopt < 96)
+        {
+            /// Decimal
+            std::uniform_int_distribution<uint32_t> precisions(0, 20);
+            const uint32_t precision = precisions(rg.generator);
+            std::uniform_int_distribution<uint32_t> scales(UINT32_C(0), precision);
+
+            return fmt::format("DECIMAL({},{})", precision, scales(rg.generator));
+        }
+        else
+        {
+            /// Character types
+            std::uniform_int_distribution<uint32_t> lengths(1, 65535);
+            static const std::vector<String> & baseTypes = {"CHARACTER", "VARCHAR", "NCHAR"};
+
+            return fmt::format("{}({})", rg.pickRandomly(baseTypes), lengths(rg.generator));
+        }
+    }
     return tp->SQLitetypeName(rg, false);
 }
 #else
@@ -461,7 +815,7 @@ void RedisIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, c
 }
 
 bool RedisIntegration::performIntegration(
-    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t, const bool, std::vector<ColumnPathChain> &)
+    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t, const bool, const bool, std::vector<ColumnPathChain> &)
 {
     return true;
 }
@@ -943,6 +1297,7 @@ bool MongoDBIntegration::performIntegration(
     std::shared_ptr<SQLDatabase>,
     const uint32_t tname,
     const bool can_shuffle,
+    const bool,
     std::vector<ColumnPathChain> & entries)
 {
     try
@@ -1152,7 +1507,7 @@ void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore *
 }
 
 bool MinIOIntegration::performIntegration(
-    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t tname, const bool, std::vector<ColumnPathChain> &)
+    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t tname, const bool, const bool, std::vector<ColumnPathChain> &)
 {
     return sendRequest(sc.database + "/file" + std::to_string(tname));
 }
@@ -1199,27 +1554,27 @@ void ExternalIntegrations::createExternalDatabaseTable(
     switch (dc)
     {
         case IntegrationCall::MySQL:
-            next_calls_succeeded.emplace_back(mysql->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(mysql->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             mysql->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::PostgreSQL:
-            next_calls_succeeded.emplace_back(postresql->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(postresql->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             postresql->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::SQLite:
-            next_calls_succeeded.emplace_back(sqlite->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(sqlite->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             sqlite->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::MongoDB:
-            next_calls_succeeded.emplace_back(mongodb->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(mongodb->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             mongodb->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::Redis:
-            next_calls_succeeded.emplace_back(redis->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(redis->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             redis->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::MinIO:
-            next_calls_succeeded.emplace_back(minio->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(minio->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             minio->setEngineDetails(rg, b, tname, te);
             break;
     }
@@ -1403,9 +1758,10 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return;
     }
-    if (fc.processServerQuery(fmt::format(
-            "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-            fc.fuzz_out.generic_string())))
+    if (fc.processServerQuery(
+            fmt::format(
+                "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                fc.fuzz_out.generic_string())))
     {
         std::ifstream infile(fc.fuzz_out);
         while (std::getline(infile, buf) && buf.size() > 1)
