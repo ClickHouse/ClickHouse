@@ -136,10 +136,10 @@ struct AresChannelRAII
 
     ~AresChannelRAII()
     {
+        ares_destroy(channel);
+
         free(dns_state.poll_fds);
         free(dns_state.ares_fds);
-
-        ares_destroy(channel);
     }
 
     dnsstate_t & getDNSState()
