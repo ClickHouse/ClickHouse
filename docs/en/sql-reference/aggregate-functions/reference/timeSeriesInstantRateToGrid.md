@@ -18,7 +18,7 @@ Arguments:
 - `value` - value of the time series corresponding to the `timestamp`
 
 Return value:
-`irate` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there is no sample for a particular grid point.
+`irate` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the instant rate value for a particular grid point.
 
 Example:
 The following query calculates `irate` values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210]:
