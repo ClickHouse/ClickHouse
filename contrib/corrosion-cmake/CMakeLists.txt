@@ -27,12 +27,20 @@ function(set_rust_target)
     endif ()
 endfunction()
 
+# Keep in sync with toolchain in docker images
+# (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
+set(Rust_TOOLCHAIN "nightly-2024-12-01")
+set(Rust_ERROR_MESSAGE "Cannot find ${Rust_TOOLCHAIN} Rust toolchain. You can install it with 'rustup toolchain install ${Rust_TOOLCHAIN}'")
+
 if (NOT ENABLE_LIBRARIES)
   set(DEFAULT_ENABLE_RUST FALSE)
 elseif (NOT DEFINED ENABLE_RUST)
   set_rust_target()
   list (APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
   find_package(Rust)
+  if (NOT Rust_FOUND)
+    message(${RECONFIGURE_MESSAGE_LEVEL} "${Rust_ERROR_MESSAGE}")
+  endif()
   set(DEFAULT_ENABLE_RUST ${Rust_FOUND})
 else()
   set(DEFAULT_ENABLE_RUST TRUE)
@@ -42,6 +50,14 @@ option(ENABLE_RUST "Enable rust" ${DEFAULT_ENABLE_RUST})
 if(NOT ENABLE_RUST)
   message(STATUS "Not using rust")
   return()
+endif()
+
+# Try to find proper rust toolchain one more time in case of ENABLE_RUST already installed to give sensible error
+find_package(Rust)
+if (DEFINED ENABLE_RUST)
+  if (NOT Rust_FOUND)
+    message(${RECONFIGURE_MESSAGE_LEVEL} "${Rust_ERROR_MESSAGE}")
+  endif()
 endif()
 
 # FindRust.cmake
