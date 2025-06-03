@@ -467,7 +467,7 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
 
     /// Save before filtering to calculate how many rows/granules were skipped.
     size_t rows_before_filter = num_rows;
-    ProfileEvents::increment(ProfileEvents::GranulesSkippedByPrewhereReaders, countSkippededGranules(filter));
+    ProfileEvents::increment(ProfileEvents::GranulesSkippedByPrewhereReaders, countSkippedGranules(filter));
 
     filterColumns(columns, filter);
 
@@ -487,7 +487,7 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
     LOG_TEST(log, "ReadResult::applyFilter() num_rows after: {}", num_rows);
 }
 
-size_t MergeTreeRangeReader::ReadResult::countSkippededGranules(const FilterWithCachedCount & filter) const
+size_t MergeTreeRangeReader::ReadResult::countSkippedGranules(const FilterWithCachedCount & filter) const
 {
     if (rows_per_granule.empty() || filter.size() < total_rows_per_granule)
         return 0;
