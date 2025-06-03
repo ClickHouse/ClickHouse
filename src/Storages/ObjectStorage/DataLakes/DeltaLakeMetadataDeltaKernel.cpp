@@ -73,9 +73,6 @@ DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// So we add partition columns to read schema and put it together into format_header.
     /// Partition values will be added to result data right after data is read.
 
-    for (const auto & [column_name, column_type] : table_snapshot->getTableSchema())
-        info.format_header.insert({column_type->createColumn(), column_type, column_name});
-
     const auto & physical_names_map = table_snapshot->getPhysicalNamesMap();
     auto get_physical_name = [&](const std::string & column_name)
     {
@@ -97,15 +94,14 @@ DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         return it->second;
     };
 
+    for (const auto & [column_name, column_type] : table_snapshot->getTableSchema())
+        info.format_header.insert({column_type->createColumn(), column_type, get_physical_name(column_name)});
+
     /// Update requested columns to reference actual physical column names.
     if (!physical_names_map.empty())
     {
         for (auto & [column_name, _] : info.requested_columns)
             column_name = get_physical_name(column_name);
-
-        for (auto & [column, type, column_name] : info.format_header)
-            column_name = get_physical_name(column_name);
-
     }
     return info;
 }

@@ -48,14 +48,17 @@ class ExpressionVisitorData
 {
 private:
     LoggerPtr log = getLogger("DeltaLakeExpressionVisitor");
-    /// A counter for expression tree nodes' ids.
+    /// A counter for expression node lists,
+    /// which represent an intermidiate parsing result.
     size_t list_counter = 0;
-    /// Const literal counter for const column names.
+    /// Counter used to form const column names
+    /// as temporary names for constant columns at first.
+    /// Actual names will be assigned to them once the result expression is formed.
     size_t literal_counter = 0;
     /// Result expression schema.
     const DB::NamesAndTypesList & schema;
 
-    /// Result parsing result.
+    /// Final parsing result.
     DB::ActionsDAG dag;
     /// Intermediate parsing result.
     std::map<size_t, DB::ActionsDAG::NodeRawConstPtrs> node_lists;
@@ -63,20 +66,56 @@ private:
     std::exception_ptr visitor_exception;
 
 public:
+    /// `schema` is the expression schema of result expression.
     explicit ExpressionVisitorData(const DB::NamesAndTypesList & schema_) : schema(schema_) {}
 
+    /// Get result of a parsed expression.
     DB::ActionsDAG getResult()
     {
+        /// In the process of parsing `node_lists` can have size > 1,
+        /// but once parsing is finished -
+        /// it must have been formed into a single list with a single element.
+        if (node_lists.size() != 1)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR,
+                "Unexpected size of a result expression: {}",
+                node_lists.size());
+        }
+        if (node_lists[0].size() != 1)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR,
+                "Unexpected size of a result expression at root node: {}",
+                node_lists[0].size());
+        }
+
+        const auto & nodes = node_lists[0][0]->children;
+        if (nodes.size() != schema.size())
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR,
+                "Unexpected size of expression list: {} (expected: {})",
+                nodes.size(), schema.size());
+        }
+
         /// Finalize the result in outputs.
         auto schema_it = schema.begin();
-        for (const auto & node : node_lists[0][0]->children)
+        for (const auto & node : nodes)
         {
+            /// During parsing we assigned temporary const_{i} names
+            /// to constant expressions,
+            /// because we do not know their names at the moment of parsing,
+            /// but once the result expression is formed -
+            /// its schema must conform with `schema` passed to constructor of ExpressionVisitorData
+            /// (only nullability of types can differ,
+            /// because when we parse non-null values, they are assigned non-nullable types).
+            /// So we substitute constant column names here.
             if (node->type == DB::ActionsDAG::ActionType::COLUMN)
             {
                 const_cast<DB::ActionsDAG::Node *>(node)->result_name = schema_it->name;
-                LOG_TEST(log, "NAME CH: {} ({})", schema_it->name, fmt::join(schema.getNames(), ", "));
             }
-            LOG_TEST(log, "NAME: {}", node->result_name);
+            /// Form the outputs.
             dag.addOrReplaceInOutputs(*node);
             ++schema_it;
         }
@@ -85,19 +124,23 @@ public:
 
     const LoggerPtr & logger() const { return log; }
 
+    /// Get (the first) exception, which happened during parsing.
     std::exception_ptr getException() const { return visitor_exception; }
 
+    /// Set parsing expression.
     void setException(std::exception_ptr exception)
     {
         if (!visitor_exception)
             visitor_exception = exception;
     }
 
+    /// Generate next list id (for intermidiate parsing result).
     size_t nextListID()
     {
         return list_counter++;
     }
 
+    /// Add literal (constant) value to the list by `list_id`.
     void addLiteral(size_t list_id, DB::Field value, DB::DataTypePtr type)
     {
         chassert(type);
@@ -113,6 +156,7 @@ public:
         LOG_TEST(log, "Added list id {}", list_id);
     }
 
+    /// Add identifier (column name) node to the list by `list_id`.
     void addIdentifier(size_t list_id, const std::string & name)
     {
         std::string column_name;
@@ -141,6 +185,10 @@ public:
         LOG_TEST(log, "Added list id {}", list_id);
     }
 
+    /// Add function node to the list by `list_id`.
+    /// `child_list_id` is the id of the list which contains function arguments.
+    /// So we will extract that child list, remove it from node_lists
+    /// and insert back as a part of FunctionNode.
     void addFunction(size_t list_id, size_t child_list_id, DB::FunctionOverloadResolverPtr function)
     {
         auto it = node_lists.find(child_list_id);
@@ -160,6 +208,11 @@ public:
         LOG_TEST(log, "Added list id {}", list_id);
     }
 
+    /// Once a list by id `list_id` is fully formed
+    /// and if this list fully contains literal (constant) arguments,
+    /// we might use this list as whole to construct Array or Tuple elements.
+    /// In this case we need to extract this list from the node_lists and remove it,
+    /// as afterwards it will be inserted as a part of Array(Tuple)Literal via addLiteral().
     template <typename ValueContainer>
     std::pair<ValueContainer, DB::DataTypes> extractLiteralList(size_t list_id)
     {
