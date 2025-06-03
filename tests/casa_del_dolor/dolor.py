@@ -208,6 +208,7 @@ is_private_binary = False
 with open(current_server, "r+") as f:
     mm = mmap.mmap(f.fileno(), 0)
     is_private_binary = mm.find(b"s3_with_keeper")
+    mm.close()
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 cluster = ClickHouseCluster(__file__)
