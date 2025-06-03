@@ -622,6 +622,16 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
     return mutated_data;
 }
 
+void addReadingOfReadonlyColumns(MutationContext & ctx)
+{
+    const auto & all_columns = ctx.metadata_snapshot->getColumns();
+    for (const auto & column_name : ctx.required_readonly_columns)
+    {
+        if (all_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
+            ctx.for_interpreter.push_back({.type = MutationCommand::Type::READ_COLUMN, .column_name = column_name});
+    }
+}
+
 static MutationContext::Mode analyzeCommandsForSomeColumnsMode(MutationContext & ctx, const AlterConversionsPtr & alter_conversions)
 {
     auto mutated_data = analyzeDataCommands(ctx);
@@ -663,9 +673,7 @@ static MutationContext::Mode analyzeCommandsForSomeColumnsMode(MutationContext &
     for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         ctx.for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
 
-    for (const auto & column_name : ctx.required_readonly_columns)
-        ctx.for_interpreter.push_back({.type = MutationCommand::Type::READ_COLUMN, .column_name = column_name});
-
+    addReadingOfReadonlyColumns(ctx);
     return mutated_data.has_delete_command ? MutationContext::Mode::AllColumns : MutationContext::Mode::SomeColumns;
 }
 
@@ -682,6 +690,8 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
 
     NameSet dropped_columns;
     bool need_mutate_columns = !mutated_data.updated_columns.empty() || mutated_data.has_delete_command;
+
+    addReadingOfReadonlyColumns(ctx);
 
     for (const auto & command : ctx.commands_for_part)
     {
