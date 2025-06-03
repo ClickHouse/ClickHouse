@@ -1,16 +1,8 @@
 #pragma once
 #include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Core/ColumnNumbers.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnVariant.h>
-#include <Columns/ColumnDynamic.h>
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -26,10 +18,7 @@ class FunctionIsNull : public IFunction
 public:
     static constexpr auto name = "isNull";
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionIsNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
-    }
+    static FunctionPtr create(ContextPtr context);
 
     explicit FunctionIsNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 

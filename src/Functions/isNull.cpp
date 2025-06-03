@@ -2,13 +2,11 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 #include "isNull.h"
@@ -18,6 +16,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+}
+
+FunctionPtr FunctionIsNull::create(ContextPtr context)
+{
+    return std::make_shared<FunctionIsNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
 }
 
 ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
