@@ -1,6 +1,7 @@
 import argparse
 import atexit
 import logging
+import mmap
 import os
 import pathlib
 import random
@@ -30,7 +31,7 @@ os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_port
 from integration.helpers.cluster import ClickHouseCluster
 from integration.helpers.postgres_utility import get_postgres_conn
 from generators import BuzzHouseGenerator
-from properties import modify_server_settings_with_random_properties
+from properties import modify_server_settings
 
 
 def ordered_pair(value):
@@ -58,6 +59,20 @@ parser.add_argument(
     default=80,
     choices=range(0, 101),
     help="Probability to set server properties",
+)
+parser.add_argument(
+    "--add-disk-settings-prob",
+    type=int,
+    default=80,
+    choices=range(0, 101),
+    help="Probability to set random disks",
+)
+parser.add_argument(
+    "--max-disks",
+    type=int,
+    default=5,
+    choices=range(1, 51),
+    help="Maximum number of disks to generate",
 )
 parser.add_argument(
     "--change-server-version-prob",
@@ -135,6 +150,12 @@ parser.add_argument(
     "--with-minio", type=bool, default=True, help="With MinIO integration"
 )
 parser.add_argument(
+    "--with-nginx", type=bool, default=False, help="With Nginx integration"
+)
+parser.add_argument(
+    "--with-azurite", type=bool, default=False, help="With Azure integration"
+)
+parser.add_argument(
     "--with-sqlite", type=bool, default=False, help="With SQLite integration"
 )
 parser.add_argument(
@@ -172,13 +193,6 @@ if seed == 0:
 random.seed(seed)
 logger.info(f"Using seed: {seed}")
 
-# Use random server settings sometimes
-server_settings = args.server_config
-modified_server_settings = False
-if server_settings is not None and random.randint(1, 100) <= args.server_settings_prob:
-    modified_server_settings = True
-    server_settings = modify_server_settings_with_random_properties(server_settings)
-
 # Start the cluster, by using one the server binaries
 server_path = os.path.join(tempfile.gettempdir(), "clickhouse")
 try:
@@ -189,7 +203,24 @@ current_server = random.choice(args.server_binaries)
 os.symlink(current_server, server_path)
 os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 
+# Find if private binary is being used
+is_private_binary = False
+with open(current_server, "r+") as f:
+    mm = mmap.mmap(f.fileno(), 0)
+    is_private_binary = mm.find(b"s3_with_keeper")
+
+logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 cluster = ClickHouseCluster(__file__)
+
+# Use random server settings sometimes
+server_settings = args.server_config
+modified_server_settings = False
+if server_settings is not None:
+    modified_server_settings, server_settings = modify_server_settings(
+        args, cluster, is_private_binary, server_settings
+    )
+
+
 servers = []
 for i in range(0, len(args.replica_values)):
     servers.append(
@@ -200,6 +231,8 @@ for i in range(0, len(args.replica_values)):
             stay_alive=True,
             keeper_required_feature_flags=["multi_read"],
             with_minio=args.with_minio,
+            with_nginx=args.with_nginx,
+            with_azurite=args.with_azurite,
             with_postgres=args.with_postgresql,
             with_mysql8=args.with_mysql,
             with_mongo=args.with_mongodb,
