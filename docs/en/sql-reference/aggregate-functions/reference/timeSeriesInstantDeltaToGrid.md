@@ -11,7 +11,7 @@ Parameters:
 - `start timestamp` - specifies start of the grid
 - `end timestamp` - specifies end of the grid
 - `grid step` - specifies step of the grid in seconds
-- `window` - specified the maximum "staleness" in seconds of the considered samples
+- `staleness` - specified the maximum "staleness" in seconds of the considered samples
 
 Arguments:
 - `timestamp` - timestamp of the sample
