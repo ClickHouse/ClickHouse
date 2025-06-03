@@ -354,13 +354,13 @@ def add_single_disk(
 
             if enc_algorithm == "aes_128_ctr":
                 key_xml = ET.SubElement(next_disk, "key")
-                key_xml.text = f"{i}234567812345678"
+                key_xml.text = f"{i % 10}234567812345678"
             else:
                 key_hex_xml = ET.SubElement(next_disk, "key_hex")
                 key_hex_xml.text = (
-                    f"{i}09105c600c12066f82f1a4dbb41a08e4A4348C8387ADB6A"
+                    f"{i % 10}09105c600c12066f82f1a4dbb41a08e4A4348C8387ADB6A"
                     if enc_algorithm == "aes_192_ctr"
-                    else f"{i}09105c600c12066f82f1a4dbb41a08e4A4348C8387ADB6AB827410C4EF71CA5"
+                    else f"{i % 10}09105c600c12066f82f1a4dbb41a08e4A4348C8387ADB6AB827410C4EF71CA5"
                 )
 
 
@@ -377,6 +377,7 @@ def modify_server_settings(
     # Add disk configurations
     if (
         root.find("storage_configuration") is None
+        and args.max_disks > 0
         and random.randint(1, 100) <= args.add_disk_settings_prob
     ):
         modified = True
@@ -415,7 +416,7 @@ def modify_server_settings(
                 object_storages,
             )
         # Add policies sometimes
-        if random.randint(1, 100) <= 70:
+        if random.randint(1, 100) <= 70 and args.max_disks > 0:
             policies_element = ET.SubElement(storage_config, "policies")
             number_policies = random.randint(1, args.max_disks)
             disk_permutations = list(itertools.permutations(range(0, number_disks)))

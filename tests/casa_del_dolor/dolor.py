@@ -71,7 +71,7 @@ parser.add_argument(
     "--max-disks",
     type=int,
     default=5,
-    choices=range(1, 51),
+    choices=range(0, 51),
     help="Maximum number of disks to generate",
 )
 parser.add_argument(
