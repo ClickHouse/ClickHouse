@@ -26,7 +26,7 @@ node = cluster.add_instance(
 
 def get_client():
     client = flight.FlightClient(f"grpc+tls://{node.ip_address}:8888", disable_server_verification=True)
-    token = client.authenticate_basic_token("default", "")
+    token = client.authenticate_basic_token("user1", "qwe123")
     options = flight.FlightCallOptions(headers=[token])
     return client, options
 
