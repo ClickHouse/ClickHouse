@@ -142,6 +142,15 @@ ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
         window_definition->frame_end_offset = window_definition->children.back();
     }
 
+    if (hasAlias())
+    {
+        auto window_list_element = std::make_shared<ASTWindowListElement>();
+        window_list_element->name = getAlias();
+        window_list_element->children.push_back(window_definition);
+        window_list_element->definition = window_list_element->children.back();
+        return window_list_element;
+    }
+
     return window_definition;
 }
 
