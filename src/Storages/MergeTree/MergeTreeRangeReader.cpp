@@ -496,10 +496,8 @@ size_t MergeTreeRangeReader::ReadResult::countSkippedGranules(const FilterWithCa
     size_t row_offset = 0;
     const auto & filter_data = filter.getData();
 
-    for (size_t granule_idx = 0; granule_idx < rows_per_granule.size(); ++granule_idx)
+    for (const auto & num_rows_in_granule : rows_per_granule)
     {
-        size_t num_rows_in_granule = rows_per_granule[granule_idx];
-
         if (row_offset + num_rows_in_granule > filter_data.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Filter size mismatch: expected at least {} rows, got {}",
