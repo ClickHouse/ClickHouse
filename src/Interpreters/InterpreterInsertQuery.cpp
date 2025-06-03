@@ -32,7 +32,6 @@
 #include <Processors/Transforms/CheckConstraintsTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
@@ -230,42 +229,64 @@ Block InterpreterInsertQuery::getSampleBlock(
     bool allow_virtuals,
     bool allow_materialized)
 {
-    Block table_sample_physical = metadata_snapshot->getSampleBlock();
-    Block table_sample_virtuals;
-    if (allow_virtuals)
-        table_sample_virtuals = table->getVirtualsHeader();
-
+    std::vector<size_t> missing_positions;
     Block table_sample_insertable = metadata_snapshot->getSampleBlockInsertable();
-    Block res;
-    for (const auto & current_name : names)
-    {
-        if (res.has(current_name))
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} in table {} specified more than once", current_name, table->getStorageID().getNameForLogs());
 
-        /// Column is not ordinary or ephemeral
-        if (!table_sample_insertable.has(current_name))
+    ColumnsWithTypeAndName res{names.size()};
+    std::unordered_set<String> inserted_names;
+
+    for (size_t i = 0; i < names.size(); i++)
+    {
+        const auto & current_name = names[i];
+        if (!inserted_names.insert(current_name).second)
+            throw Exception(
+                ErrorCodes::DUPLICATE_COLUMN,
+                "Column {} in table {} specified more than once",
+                current_name,
+                table->getStorageID().getNameForLogs());
+
+        const ColumnWithTypeAndName * insertable_col = table_sample_insertable.findByName(current_name);
+        if (!insertable_col)
+            missing_positions.emplace_back(i);
+        else
+            res[i] = *insertable_col;
+    }
+
+    if (!missing_positions.empty())
+    {
+        Block table_sample_physical = metadata_snapshot->getSampleBlock();
+        Block table_sample_virtuals;
+        if (allow_virtuals)
+            table_sample_virtuals = table->getVirtualsHeader();
+
+        /// Columns are not ordinary or ephemeral
+        for (auto pos : missing_positions)
         {
-            /// Column is materialized
+            const auto & current_name = names[pos];
+
             if (table_sample_physical.has(current_name))
             {
+                /// Column is materialized
                 if (!allow_materialized)
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column", current_name);
-                res.insert(ColumnWithTypeAndName(table_sample_physical.getByName(current_name).type, current_name));
+                res[pos] = table_sample_physical.getByName(current_name);
             }
             else if (table_sample_virtuals.has(current_name))
             {
-                res.insert(ColumnWithTypeAndName(table_sample_virtuals.getByName(current_name).type, current_name));
+                res[pos] = table_sample_virtuals.getByName(current_name);
             }
             else
             {
                 /// The table does not have a column with that name
-                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column {} in table {}",
-                    current_name, table->getStorageID().getNameForLogs());
+                throw Exception(
+                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                    "No such column {} in table {}",
+                    current_name,
+                    table->getStorageID().getNameForLogs());
             }
         }
-        else
-            res.insert(ColumnWithTypeAndName(table_sample_insertable.getByName(current_name).type, current_name));
     }
+
     return res;
 }
 
@@ -398,12 +419,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
     {
         return std::make_shared<ExpressionTransform>(in_header, actions);
-    });
-
-    /// We need to convert Sparse columns to full if the destination storage doesn't support them.
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-    {
-        return std::make_shared<MaterializingTransform>(in_header, !table->supportsSparseSerialization());
     });
 
     pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr

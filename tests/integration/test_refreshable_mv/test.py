@@ -424,8 +424,13 @@ def do_test_backup(to_table):
 
     assert node1.query(tables_exist_query) == "2\n"
     assert node2.query(tables_exist_query) == "2\n"
-    node1.query(f'SYSTEM SYNC REPLICA re.{target}')
-    node2.query(f'SYSTEM SYNC REPLICA re.{target}')
+    if not to_table:
+        # Inner tables are not backed up, wait for first refresh.
+        node1.query(f'SYSTEM WAIT VIEW re.{target}')
+        node2.query(f'SYSTEM WAIT VIEW re.{target}')
+    else:
+        node1.query(f'SYSTEM SYNC REPLICA re.{target}')
+        node2.query(f'SYSTEM SYNC REPLICA re.{target}')
     assert node1.query(f'SELECT * FROM re.{target}') == '1\n'
     assert node2.query(f'SELECT * FROM re.{target}') == '1\n'
 
