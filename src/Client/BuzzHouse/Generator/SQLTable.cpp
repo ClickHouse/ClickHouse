@@ -1124,7 +1124,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
-        if (b.isAnyS3Engine() || (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared))
+        if (b.isAnyS3Engine() || (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TableEngineOption::TShared))
         {
             svs = svs ? svs : te->mutable_setting_values();
             if (b.isAnyS3Engine())
@@ -1142,7 +1142,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                 }
             }
             else if (
-                b.toption.has_value() && b.toption.value() == TableEngineOption::TShared
+                b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TableEngineOption::TShared
                 && (!fc.storage_policies.empty() || !fc.disks.empty()))
             {
                 /// Requires storage setting

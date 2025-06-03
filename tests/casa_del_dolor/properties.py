@@ -25,7 +25,10 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
 
 def file_size_value():
     def gen():
-        return str(threshold_generator(0.05, 0.3, 0, 100)()) + random.choice(["ki", "Mi", "Gi"])
+        return str(threshold_generator(0.05, 0.3, 0, 100)()) + random.choice(
+            ["ki", "Mi", "Gi"]
+        )
+
     return gen
 
 
@@ -219,7 +222,6 @@ cache_storage_properties = {
     "cache_on_write_operations": lambda: random.randint(0, 1),
     "cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "enable_bypass_cache_with_threshold": lambda: random.randint(0, 1),
-    "enable_cache_hits_threshold": lambda: random.randint(0, 1),
     "enable_filesystem_query_cache_limit": lambda: random.randint(0, 1),
     "keep_free_space_elements_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "keep_free_space_remove_batch": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
@@ -228,7 +230,7 @@ cache_storage_properties = {
     "load_metadata_threads": lambda: random.randint(0, multiprocessing.cpu_count()),
     "max_elements": threshold_generator(0.2, 0.2, 0, 10000000),
     "max_file_segment_size": file_size_value(),
-    "max_size_ratio_to_total_space": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    # "max_size_ratio_to_total_space": threshold_generator(0.2, 0.2, 0.0, 1.0), cannot be specified with `max_size` at the same time
     "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "slru_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "write_cache_per_user_id_directory": lambda: random.randint(0, 1),
@@ -284,7 +286,7 @@ def add_single_disk(
         # Set disk metadata type
         if random.randint(1, 100) <= 70:
             possible_metadata_types = (
-                ["local", "plain", "plain_rewritable", "web"]
+                ["local", "plain", "web"]
                 if object_storage_type == "web"
                 else ["local", "plain", "plain_rewritable"]
             )
@@ -314,9 +316,9 @@ def add_single_disk(
             endpoint_xml.text = f"http://nginx:80/data{i}/"
         elif object_storage_type == "local":
             path_xml = ET.SubElement(next_disk, "path")
-            path_xml.text = f"/disk{i}/"
+            path_xml.text = f"disk{i}/"
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
-            allowed_path_xml.text = f"/disk{i}/"
+            allowed_path_xml.text = f"disk{i}/"
 
         # Add a endpoint_subpath
         if metadata_type == "plain_rewritable" and random.randint(1, 100) <= 70:
@@ -333,12 +335,12 @@ def add_single_disk(
             add_settings_from_dict(object_storages_properties[dict_entry], next_disk)
     elif disk_type in ("cache", "encrypted"):
         disk_xml = ET.SubElement(next_disk, "disk")
-        disk_xml.text = f"disk{random.choice(range(0, i + 1))}"
+        disk_xml.text = f"disk{random.choice(range(0, i))}"
         if disk_type == "cache" or random.randint(1, 2) == 1:
             path_xml = ET.SubElement(next_disk, "path")
-            path_xml.text = f"/disk{i}/"
+            path_xml.text = f"disk{i}/"
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
-            allowed_path_xml.text = f"/disk{i}/"
+            allowed_path_xml.text = f"disk{i}/"
 
         if disk_type == "cache":
             max_size_xml = ET.SubElement(next_disk, "max_size")
