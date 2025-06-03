@@ -107,9 +107,6 @@ bool HiveCatalog::tryGetTableMetadata(const std::string & namespace_name, const 
     Apache::Hadoop::Hive::Table table;
 
     {
-        /// Somehow API of apache::thrift::transport::TBufferBase is not thread-safe.
-        /// Database Datalake can call this function from multiple threads, so we need to protect
-        /// access to the client.
         std::lock_guard lock(client_mutex);
         client.get_table(table, namespace_name, table_name);
     }
