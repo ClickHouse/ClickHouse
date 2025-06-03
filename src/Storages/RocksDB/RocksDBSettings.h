@@ -1,36 +1,39 @@
 #pragma once
 
-#include <Core/BaseSettingsFwdMacros.h>
-#include <Core/SettingsFields.h>
+#include <Core/BaseSettings.h>
+#include <Core/Defines.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/unit.h>
+#include <Common/NamePrompter.h>
+
+
+namespace Poco::Util
+{
+class AbstractConfiguration;
+}
+
 
 namespace DB
 {
 class ASTStorage;
-struct RocksDBSettingsImpl;
-class SettingsChanges;
+struct Settings;
 
-/// List of available types supported in RocksDBSettings object
-#define ROCKSDB_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
-    M(CLASS_NAME, Bool) \
-    M(CLASS_NAME, UInt64)
 
-ROCKSDB_SETTINGS_SUPPORTED_TYPES(RocksDBSettings, DECLARE_SETTING_TRAIT)
+/** StorageEmbeddedRocksdb table settings
+  */
 
-struct RocksDBSettings
+#define ROCKSDB_SETTINGS(M, ALIAS) \
+    M(Bool, optimize_for_bulk_insert, true, "Table is optimized for bulk insertions (insert pipeline will create SST files and import to rocksdb database instead of writing to memtables)", 0) \
+    M(UInt64, bulk_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, "Size of block for bulk insert, if it's smaller than query setting min_insert_block_size_rows then it will be overridden by min_insert_block_size_rows", 0) \
+
+#define LIST_OF_ROCKSDB_SETTINGS(M, ALIAS) ROCKSDB_SETTINGS(M, ALIAS)
+
+DECLARE_SETTINGS_TRAITS(RockDBSettingsTraits, LIST_OF_ROCKSDB_SETTINGS)
+
+struct RocksDBSettings : public BaseSettings<RockDBSettingsTraits>, public IHints<2>
 {
-    RocksDBSettings();
-    RocksDBSettings(const RocksDBSettings & settings);
-    RocksDBSettings(RocksDBSettings && settings) noexcept;
-    ~RocksDBSettings();
-
-    ROCKSDB_SETTINGS_SUPPORTED_TYPES(RocksDBSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
-
-    void applyChanges(const SettingsChanges & changes);
-    void loadFromQuery(const ASTStorage & storage_def);
-
-    static bool hasBuiltin(std::string_view name);
-
-private:
-    std::unique_ptr<RocksDBSettingsImpl> impl;
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context);
+    std::vector<String> getAllRegisteredNames() const override;
 };
+
 }

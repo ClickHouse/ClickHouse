@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <Common/FieldVisitors.h>
 #include <Common/NaNUtils.h>
 #include <base/demangle.h>
@@ -59,7 +58,7 @@ public:
 
     T operator() (const Float64 & x) const
     {
-        if constexpr (!is_floating_point<T>)
+        if constexpr (!std::is_floating_point_v<T>)
         {
             if (!isFinite(x))
             {
@@ -70,7 +69,7 @@ public:
                 /// Conversion of infinite values to integer is undefined.
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
             }
-            if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+            else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
             {
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
             }
@@ -89,7 +88,7 @@ public:
     template <typename U>
     T operator() (const DecimalField<U> & x) const
     {
-        if constexpr (is_floating_point<T>)
+        if constexpr (std::is_floating_point_v<T>)
             return x.getValue().template convertTo<T>() / x.getScaleMultiplier().template convertTo<T>();
         else
             return (x.getValue() / x.getScaleMultiplier()).template convertTo<T>();
@@ -130,7 +129,6 @@ extern template class FieldVisitorConvertToNumber<Int128>;
 extern template class FieldVisitorConvertToNumber<UInt128>;
 extern template class FieldVisitorConvertToNumber<Int256>;
 extern template class FieldVisitorConvertToNumber<UInt256>;
-//extern template class FieldVisitorConvertToNumber<BFloat16>;
 extern template class FieldVisitorConvertToNumber<Float32>;
 extern template class FieldVisitorConvertToNumber<Float64>;
 

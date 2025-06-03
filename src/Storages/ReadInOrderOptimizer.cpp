@@ -7,19 +7,14 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/TreeCNFConverter.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_respect_aliases;
-}
 
 namespace ErrorCodes
 {
@@ -269,7 +264,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(
     /// Currently we only support alias column without any function wrapper,
     /// i.e.: `order by aliased_column` can have this optimization, but `order by function(aliased_column)` can not.
     /// This suits most cases.
-    if (context->getSettingsRef()[Setting::optimize_respect_aliases] && !aliased_columns.empty())
+    if (context->getSettingsRef().optimize_respect_aliases && !aliased_columns.empty())
     {
         SortDescription aliases_sort_description = required_sort_description;
         ManyExpressionActions aliases_actions = elements_actions;

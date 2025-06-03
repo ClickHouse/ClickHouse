@@ -1,19 +1,15 @@
+#include <memory>
 #include <Columns/ColumnString.h>
-#include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Processors/Port.h>
 #include <base/map.h>
-
-#include <memory>
 
 
 namespace DB
@@ -63,7 +59,7 @@ public:
     {
         auto col_str = ColumnString::create();
         ColumnString::Chars & vec = col_str->getChars();
-        WriteBufferFromVector<ColumnString::Chars> buffer(vec);
+        WriteBufferFromVector buffer(vec);
         ColumnString::Offsets & offsets = col_str->getOffsets();
         offsets.resize(input_rows_count);
 
@@ -145,7 +141,8 @@ public:
                 std::make_shared<FunctionFormatRow<no_newline>>(name_col->getValue<String>(), std::move(arguments_column_names), context),
                 collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }

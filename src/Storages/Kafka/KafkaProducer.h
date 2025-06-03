@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <Storages/IMessageProducer.h>
 #include <cppkafka/cppkafka.h>
+
+#include <list>
 
 #include <Common/CurrentMetrics.h>
 
@@ -30,7 +32,6 @@ public:
 
     void start(const ContextPtr &) override {}
     void finish() override;
-    void cancel() noexcept override;
 
 private:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaProducers};

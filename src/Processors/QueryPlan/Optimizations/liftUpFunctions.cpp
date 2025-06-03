@@ -17,11 +17,11 @@ namespace ErrorCodes
 namespace
 {
 
-const DB::Header & getChildOutputHeader(DB::QueryPlan::Node & node)
+const DB::DataStream & getChildOutputStream(DB::QueryPlan::Node & node)
 {
     if (node.children.size() != 1)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Node \"{}\" is expected to have only one child.", node.step->getName());
-    return node.children.front()->step->getOutputHeader();
+    return node.children.front()->step->getOutputStream();
 }
 
 }
@@ -43,7 +43,7 @@ static bool areNodesConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & node
     return true;
 }
 
-size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -80,17 +80,17 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     std::swap(node_with_needed.children, child_node->children);
     child_node->children = {&node_with_needed};
 
-    node_with_needed.step = std::make_unique<ExpressionStep>(getChildOutputHeader(node_with_needed), std::move(needed_for_sorting));
+    node_with_needed.step = std::make_unique<ExpressionStep>(getChildOutputStream(node_with_needed), std::move(needed_for_sorting));
     node_with_needed.step->setStepDescription(child_step->getStepDescription());
     // Sorting (parent_node) -> so far the origin Expression (child_node) -> NeededCalculations (node_with_needed)
 
     std::swap(parent_step, child_step);
     // so far the origin Expression (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 
-    sorting_step->updateInputHeader(getChildOutputHeader(*child_node));
+    sorting_step->updateInputStream(getChildOutputStream(*child_node));
 
     auto description = parent_step->getStepDescription();
-    parent_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting));
+    parent_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputStream(), std::move(unneeded_for_sorting));
     parent_step->setStepDescription(description + " [lifted up part]");
     // UneededCalculations (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 

@@ -1,6 +1,5 @@
 #include <base/getThreadId.h>
 #include <base/defines.h> /// THREAD_SANITIZER
-#include <base/scope_guard.h>
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
 #include <Common/Fiber.h>
@@ -64,7 +63,8 @@ static size_t getStackSize(void ** out_address)
             /// Most likely procfs is not mounted.
             return 0;
         }
-        throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_getattr_np");
+        else
+            throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_getattr_np");
     }
 #   endif
 

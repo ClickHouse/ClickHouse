@@ -83,11 +83,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     template <typename Source>
     ColumnPtr executeForSource(const ColumnPtr & column_offset, const ColumnPtr & column_length,
                           bool column_offset_const, bool column_length_const,
@@ -158,15 +153,8 @@ public:
                 bool all_ascii = isAllASCII(col->getChars().data(), col->getChars().size());
                 if (all_ascii)
                     return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, StringSource(*col), input_rows_count);
-                return executeForSource(
-                    column_offset,
-                    column_length,
-                    column_offset_const,
-                    column_length_const,
-                    offset,
-                    length,
-                    UTF8StringSource(*col),
-                    input_rows_count);
+                else
+                    return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, UTF8StringSource(*col), input_rows_count);
             }
 
             if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
@@ -175,15 +163,8 @@ public:
                 bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(str_ref.data), str_ref.size);
                 if (all_ascii)
                     return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, ConstSource<StringSource>(*col_const), input_rows_count);
-                return executeForSource(
-                    column_offset,
-                    column_length,
-                    column_offset_const,
-                    column_length_const,
-                    offset,
-                    length,
-                    ConstSource<UTF8StringSource>(*col_const),
-                    input_rows_count);
+                else
+                    return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
             }
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
         }

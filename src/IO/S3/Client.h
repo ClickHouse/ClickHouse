@@ -40,6 +40,11 @@ struct ServerSideEncryptionKMSConfig
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
+namespace MockS3
+{
+    struct Client;
+}
+
 namespace DB::S3
 {
 
@@ -165,16 +170,6 @@ public:
         /// NOLINTNEXTLINE(google-runtime-int)
         long GetMaxAttempts() const override;
 
-        /// Sometimes [1] GCS may suggest to use Rewrite over CopyObject, i.e.:
-        ///
-        ///     AWSError 'InternalError': Copy spanning locations and/or storage classes could not complete within 30 seconds. Please use the Rewrite method in the JSON API (https://cloud.google.com/storage/docs/json_api/v1/objects/rewrite) instead.
-        ///
-        /// Note, that GCS may return other errors (like EntityTooLarge), but
-        /// those are not retriable by default S3 RetryStrategy.
-        ///
-        ///   [1]: https://github.com/ClickHouse/ClickHouse/issues/59660
-        static bool useGCSRewrite(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error);
-
     private:
         uint32_t maxRetries;
         uint32_t scaleFactor;
@@ -224,10 +219,9 @@ public:
     ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
     ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
 
-    std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
+private:
+    friend struct ::MockS3::Client;
 
-protected:
-    // visible for testing
     Client(size_t max_redirects_,
            ServerSideEncryptionKMSConfig sse_kms_config_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
@@ -235,7 +229,6 @@ protected:
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
            const ClientSettings & client_settings_);
 
-private:
     Client(
         const Client & other, const PocoHTTPClientConfiguration & client_configuration);
 
@@ -271,19 +264,14 @@ private:
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
     std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
 
+    std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
-    /// Returns true if a specified error means that the credentials used are expired or may have changed.
-    bool checkIfCredentialsChanged(const Aws::S3::S3Error & error) const;
-
     template <typename RequestResult>
     RequestResult processRequestResult(RequestResult && outcome) const;
-
-    void sleepAfterNetworkError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
-    void slowDownAfterNetworkError() const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
@@ -304,9 +292,6 @@ private:
     mutable std::shared_ptr<ClientCache> cache;
 
     const size_t max_redirects;
-
-    /// S3 requests must wait until this time because some s3 request fails with a retryable network error.
-    mutable std::atomic<UInt64> next_time_to_retry_after_network_error = 0;
 
     const ServerSideEncryptionKMSConfig sse_kms_config;
 
@@ -336,7 +321,6 @@ public:
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
         unsigned int s3_retry_attempts,
-        bool s3_slow_all_threads_after_network_error,
         bool enable_s3_requests_logging,
         bool for_disk_s3,
         const ThrottlerPtr & get_request_throttler,

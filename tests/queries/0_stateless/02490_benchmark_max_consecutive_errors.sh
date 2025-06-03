@@ -11,6 +11,5 @@ if [ "$RES" -eq 10 ]
 then
     echo "$RES"
 else
-    echo "$RES"
     cat "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}.log"
 fi

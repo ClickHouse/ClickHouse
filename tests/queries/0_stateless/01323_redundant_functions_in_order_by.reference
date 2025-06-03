@@ -64,7 +64,7 @@ QUERY id: 0
         LIST id: 11, nodes: 1
           SORT id: 12, sort_direction: ASCENDING, with_fill: 0
             EXPRESSION
-              COLUMN id: 13, column_name: number, result_type: UInt64, source_id: 8
+              COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
   SETTINGS enable_analyzer=1
 SELECT groupArray(x)
 FROM
@@ -98,7 +98,7 @@ QUERY id: 0
         LIST id: 11, nodes: 1
           SORT id: 12, sort_direction: ASCENDING, with_fill: 0
             EXPRESSION
-              COLUMN id: 13, column_name: number, result_type: UInt64, source_id: 8
+              COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
   SETTINGS enable_analyzer=1
 SELECT groupArray(x)
 FROM
@@ -137,10 +137,10 @@ QUERY id: 0
               FUNCTION id: 13, function_name: exp, function_type: ordinary, result_type: Float64
                 ARGUMENTS
                   LIST id: 14, nodes: 1
-                    COLUMN id: 15, column_name: number, result_type: UInt64, source_id: 8
-          SORT id: 16, sort_direction: ASCENDING, with_fill: 0
+                    COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
+          SORT id: 15, sort_direction: ASCENDING, with_fill: 0
             EXPRESSION
-              COLUMN id: 17, column_name: number, result_type: UInt64, source_id: 8
+              COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
   SETTINGS enable_analyzer=1
 SELECT
     key,
@@ -225,10 +225,10 @@ QUERY id: 0
     LIST id: 5, nodes: 2
       SORT id: 6, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
-          COLUMN id: 7, column_name: key, result_type: UInt64, source_id: 3
-      SORT id: 8, sort_direction: ASCENDING, with_fill: 0
+          COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
-          COLUMN id: 9, column_name: a, result_type: UInt8, source_id: 3
+          COLUMN id: 4, column_name: a, result_type: UInt8, source_id: 3
   SETTINGS enable_analyzer=1
 SELECT
     key,
@@ -251,17 +251,17 @@ QUERY id: 0
     LIST id: 5, nodes: 2
       SORT id: 6, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
-          COLUMN id: 7, column_name: key, result_type: UInt64, source_id: 3
-      SORT id: 8, sort_direction: ASCENDING, with_fill: 0
+          COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
-          FUNCTION id: 9, function_name: exp, function_type: ordinary, result_type: Float64
+          FUNCTION id: 8, function_name: exp, function_type: ordinary, result_type: Float64
             ARGUMENTS
-              LIST id: 10, nodes: 1
-                FUNCTION id: 11, function_name: plus, function_type: ordinary, result_type: UInt64
+              LIST id: 9, nodes: 1
+                FUNCTION id: 10, function_name: plus, function_type: ordinary, result_type: UInt64
                   ARGUMENTS
-                    LIST id: 12, nodes: 2
-                      COLUMN id: 13, column_name: key, result_type: UInt64, source_id: 3
-                      COLUMN id: 14, column_name: a, result_type: UInt8, source_id: 3
+                    LIST id: 11, nodes: 2
+                      COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
+                      COLUMN id: 4, column_name: a, result_type: UInt8, source_id: 3
   SETTINGS enable_analyzer=1
 QUERY id: 0
   PROJECTION COLUMNS
@@ -273,18 +273,18 @@ QUERY id: 0
     TABLE id: 3, alias: __table1, table_name: default.test
   GROUP BY
     LIST id: 4, nodes: 1
-      COLUMN id: 5, column_name: key, result_type: UInt64, source_id: 3
+      COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
   ORDER BY
-    LIST id: 6, nodes: 2
-      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+    LIST id: 5, nodes: 2
+      SORT id: 6, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
-          FUNCTION id: 8, function_name: avg, function_type: aggregate, result_type: Float64
+          FUNCTION id: 7, function_name: avg, function_type: aggregate, result_type: Float64
             ARGUMENTS
-              LIST id: 9, nodes: 1
-                COLUMN id: 10, column_name: a, result_type: UInt8, source_id: 3
-      SORT id: 11, sort_direction: ASCENDING, with_fill: 0
+              LIST id: 8, nodes: 1
+                COLUMN id: 9, column_name: a, result_type: UInt8, source_id: 3
+      SORT id: 10, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
-          COLUMN id: 12, column_name: key, result_type: UInt64, source_id: 3
+          COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
   SETTINGS enable_analyzer=1
 QUERY id: 0
   PROJECTION COLUMNS

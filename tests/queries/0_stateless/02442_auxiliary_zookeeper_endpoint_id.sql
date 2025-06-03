@@ -1,5 +1,4 @@
--- Tags: no-fasttest, no-shared-merge-tree
--- no-shared-merge-tree -- shared merge tree doesn't support aux zookeepers
+-- Tags: no-fasttest
 
 drop table if exists t1_r1 sync;
 drop table if exists t1_r2 sync;

@@ -1,6 +1,6 @@
 import difflib
-import logging
 import time
+import logging
 from io import IOBase
 
 
@@ -182,28 +182,3 @@ def csv_compare(result, expected):
             mismatch.append("+[%d]=%s" % (i, csv_result.lines[i]))
 
     return "\n".join(mismatch)
-
-
-def wait_condition(func, condition, max_attempts=10, delay=0.1):
-    attempts = 0
-    result = None
-    while attempts < max_attempts:
-        result = func()
-        if condition(result):
-            return result
-        attempts += 1
-        if attempts < max_attempts:
-            time.sleep(delay)
-
-    raise Exception(
-        f"Function did not satisfy condition after {max_attempts} attempts. Last result:\n{result}"
-    )
-
-
-def get_retry_number(request, fallback=1):
-    retry_number = getattr(request.node, "callspec", None)
-    if retry_number is not None:
-        retry_number = retry_number.params.get("__pytest_repeat_step_number", fallback)
-    else:
-        retry_number = fallback
-    return retry_number

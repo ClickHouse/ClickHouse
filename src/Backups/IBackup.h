@@ -1,12 +1,10 @@
 #pragma once
 
-#include <ctime>
-#include <memory>
-#include <optional>
-
 #include <Core/Types.h>
 #include <Disks/WriteMode.h>
 #include <IO/WriteSettings.h>
+#include <memory>
+#include <optional>
 
 
 namespace DB
@@ -17,7 +15,6 @@ struct BackupFileInfo;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class SeekableReadBuffer;
-class ReadBufferFromFileBase;
 
 /// Represents a backup, i.e. a storage of BackupEntries which can be accessed by their names.
 /// A backup can be either incremental or non-incremental. An incremental backup doesn't store
@@ -35,7 +32,6 @@ public:
     {
         READ,
         WRITE,
-        UNLOCK, /// unlock a lightweight backup
     };
 
     /// Returns whether the backup was opened for reading or writing.
@@ -82,9 +78,6 @@ public:
     /// The following is always true: `getNumReadBytes() <= getTotalSize()`.
     virtual UInt64 getNumReadBytes() const = 0;
 
-    /// Checks if a specified directory exists.
-    virtual bool directoryExists(const String & directory) const = 0;
-
     /// Returns names of entries stored in a specified directory in the backup.
     /// If `directory` is empty or '/' the functions returns entries in the backup's root.
     virtual Strings listFiles(const String & directory, bool recursive) const = 0;
@@ -111,8 +104,8 @@ public:
     virtual SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const = 0;
 
     /// Reads an entry from the backup.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const = 0;
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const SizeAndChecksum & size_and_checksum) const = 0;
+    virtual std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const = 0;
+    virtual std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Copies a file from the backup to a specified destination disk. Returns the number of bytes written.
     virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const = 0;
@@ -128,13 +121,8 @@ public:
     /// Finalizes writing the backup, should be called after all entries have been successfully written.
     virtual void finalizeWriting() = 0;
 
-    /// Sets that a non-retriable error happened while the backup was being written which means that
-    /// the backup is most likely corrupted and it can't be finalized.
-    /// This function is called while handling an exception or if the backup was cancelled.
-    virtual bool setIsCorrupted() noexcept = 0;
-
-    /// Try to remove all files copied to the backup. Could be used after setIsCorrupted().
-    virtual bool tryRemoveAllFiles() noexcept = 0;
+    /// Try to remove all files copied to the backup. Used after an exception or it the backup was cancelled.
+    virtual void tryRemoveAllFiles() = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

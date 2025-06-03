@@ -10,18 +10,16 @@ ClickHouse works 100-1000x faster than traditional database management systems, 
 
 For more information and documentation see https://clickhouse.com/.
 
+<!-- This is not related to the docker official library, remove it before commit to https://github.com/docker-library/docs -->
 ## Versions
 
 -	The `latest` tag points to the latest release of the latest stable branch.
 -	Branch tags like `22.2` point to the latest release of the corresponding branch.
--	Full version tags like `22.2.3` and `22.2.3.5` point to the corresponding release.
-<!-- docker-official-library:off -->
-<!-- This is not related to the docker official library, remove it before commit to https://github.com/docker-library/docs -->
+-	Full version tags like `22.2.3.5` point to the corresponding release.
 -	The tag `head` is built from the latest commit to the default branch.
 -	Each tag has optional `-alpine` suffix to reflect that it's built on top of `alpine`.
-<!-- REMOVE UNTIL HERE -->
-<!-- docker-official-library:on -->
 
+<!-- REMOVE UNTIL HERE -->
 ### Compatibility
 
 -	The amd64 image requires support for [SSE3 instructions](https://en.wikipedia.org/wiki/SSE3). Virtually all x86 CPUs after 2005 support SSE3.
@@ -43,20 +41,20 @@ By default, starting above server instance will be run as the `default` user wit
 ### connect to it from a native client
 
 ```bash
-docker run -it --rm --network=container:some-clickhouse-server --entrypoint clickhouse-client %%IMAGE%%
+docker run -it --rm --link some-clickhouse-server:clickhouse-server --entrypoint clickhouse-client %%IMAGE%% --host clickhouse-server
 # OR
 docker exec -it some-clickhouse-server clickhouse-client
 ```
 
-More information about the [ClickHouse client](https://clickhouse.com/docs/interfaces/cli/).
+More information about the [ClickHouse client](https://clickhouse.com/docs/en/interfaces/cli/).
 
 ### connect to it using curl
 
 ```bash
-echo "SELECT 'Hello, ClickHouse!'" | docker run -i --rm --network=container:some-clickhouse-server buildpack-deps:curl curl 'http://localhost:8123/?query=' -s --data-binary @-
+echo "SELECT 'Hello, ClickHouse!'" | docker run -i --rm --link some-clickhouse-server:clickhouse-server buildpack-deps:curl curl 'http://clickhouse-server:8123/?query=' -s --data-binary @-
 ```
 
-More information about the [ClickHouse HTTP Interface](https://clickhouse.com/docs/interfaces/http/).
+More information about the [ClickHouse HTTP Interface](https://clickhouse.com/docs/en/interfaces/http/).
 
 ### stopping / removing the container
 
@@ -67,13 +65,11 @@ docker rm some-clickhouse-server
 
 ### networking
 
-> ⚠️ Note: the predefined user `default` does not have the network access unless the password is set, see "How to create default database and user on starting" and "Managing `default` user" below
-
 You can expose your ClickHouse running in docker by [mapping a particular port](https://docs.docker.com/config/containers/container-networking/) from inside the container using host ports:
 
 ```bash
-docker run -d -p 18123:8123 -p19000:9000 -e CLICKHOUSE_PASSWORD=changeme --name some-clickhouse-server --ulimit nofile=262144:262144 %%IMAGE%%
-echo 'SELECT version()' | curl 'http://localhost:18123/?password=changeme' --data-binary @-
+docker run -d -p 18123:8123 -p19000:9000 --name some-clickhouse-server --ulimit nofile=262144:262144 %%IMAGE%%
+echo 'SELECT version()' | curl 'http://localhost:18123/' --data-binary @-
 ```
 
 `22.6.3.35`
@@ -86,8 +82,6 @@ echo 'SELECT version()' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 `22.6.3.35`
-
-> ⚠️ Note: the user `default` in the example above is available only for the localhost requests
 
 ### Volumes
 
@@ -125,9 +119,9 @@ Read more in [knowledge base](https://clickhouse.com/docs/knowledgebase/configur
 
 ## Configuration
 
-The container exposes port 8123 for the [HTTP interface](https://clickhouse.com/docs/interfaces/http_interface/) and port 9000 for the [native client](https://clickhouse.com/docs/interfaces/tcp/).
+The container exposes port 8123 for the [HTTP interface](https://clickhouse.com/docs/en/interfaces/http_interface/) and port 9000 for the [native client](https://clickhouse.com/docs/en/interfaces/tcp/).
 
-ClickHouse configuration is represented with a file "config.xml" ([documentation](https://clickhouse.com/docs/operations/configuration_files/))
+ClickHouse configuration is represented with a file "config.xml" ([documentation](https://clickhouse.com/docs/en/operations/configuration_files/))
 
 ### Start server instance with custom configuration
 
@@ -156,16 +150,6 @@ Sometimes you may want to create a user (user named `default` is used by default
 
 ```bash
 docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 -e CLICKHOUSE_PASSWORD=password -p 9000:9000/tcp %%IMAGE%%
-```
-
-#### Managing `default` user
-
-The user `default` has disabled network access by default in the case none of `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, or `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` are set.
-
-There's a way to make `default` user insecurely available by setting environment variable `CLICKHOUSE_SKIP_USER_SETUP` to 1:
-
-```bash
-docker run --rm -e CLICKHOUSE_SKIP_USER_SETUP=1 -p 9000:9000/tcp %%IMAGE%%
 ```
 
 ## How to extend this image

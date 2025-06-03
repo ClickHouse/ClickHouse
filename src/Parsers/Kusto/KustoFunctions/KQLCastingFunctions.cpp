@@ -3,6 +3,7 @@
 #include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 
+#include <format>
 #include <Poco/String.h>
 #include <Common/re2.h>
 
@@ -16,7 +17,7 @@ bool ToBool::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto param = getArgument(function_name, pos);
-    out = fmt::format(
+    out = std::format(
         "multiIf(toString({0}) = 'true', true, "
         "toString({0}) = 'false', false, toInt64OrNull(toString({0})) != 0)",
         param,
@@ -32,7 +33,7 @@ bool ToDateTime::convertImpl(String & out, IParser::Pos & pos)
 
     const auto param = getArgument(function_name, pos);
 
-    out = fmt::format("parseDateTime64BestEffortOrNull(toString({0}),9,'UTC')", param);
+    out = std::format("parseDateTime64BestEffortOrNull(toString({0}),9,'UTC')", param);
     return true;
 }
 
@@ -43,7 +44,7 @@ bool ToDouble::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto param = getArgument(function_name, pos);
-    out = fmt::format("toFloat64OrNull(toString({0}))", param);
+    out = std::format("toFloat64OrNull(toString({0}))", param);
     return true;
 }
 
@@ -54,7 +55,7 @@ bool ToInt::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto param = getArgument(function_name, pos);
-    out = fmt::format("toInt32OrNull(toString({0}))", param);
+    out = std::format("toInt32OrNull(toString({0}))", param);
     return true;
 }
 
@@ -65,7 +66,7 @@ bool ToLong::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto param = getArgument(function_name, pos);
-    out = fmt::format("toInt64OrNull(toString({0}))", param);
+    out = std::format("toInt64OrNull(toString({0}))", param);
     return true;
 }
 
@@ -76,7 +77,7 @@ bool ToString::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto param = getArgument(function_name, pos);
-    out = fmt::format("ifNull(toString({0}), '')", param);
+    out = std::format("ifNull(toString({0}), '')", param);
     return true;
 }
 bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
@@ -99,7 +100,7 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         try
         {
             auto result = kqlCallToExpression("time", {arg}, pos.max_depth, pos.max_backtracks);
-            out = fmt::format("{}", result);
+            out = std::format("{}", result);
         }
         catch (...)
         {
@@ -107,7 +108,7 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         }
     }
     else
-        out = fmt::format("{}", arg);
+        out = std::format("{}", arg);
 
     return true;
 }
@@ -147,7 +148,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
         else
             scale = std::stoi(res.substr(exponential_pos + 1, res.length()));
 
-        out = fmt::format("toDecimal128({}::String,{})", res, scale);
+        out = std::format("toDecimal128({}::String,{})", res, scale);
     }
     else
     {
@@ -160,7 +161,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
         if (scale < 0)
             out = "NULL";
         else
-            out = fmt::format("toDecimal128({}::String,{})", res, scale);
+            out = std::format("toDecimal128({}::String,{})", res, scale);
     }
 
     return true;

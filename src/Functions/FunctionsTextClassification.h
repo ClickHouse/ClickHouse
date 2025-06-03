@@ -6,16 +6,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context_fwd.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_nlp_functions;
-}
-
 /// Functions for text classification with different result types
 
 namespace ErrorCodes
@@ -33,7 +29,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
+        if (!context->getSettingsRef().allow_experimental_nlp_functions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Natural language processing function '{}' is experimental. "
                             "Set `allow_experimental_nlp_functions` setting to enable it", name);
@@ -82,7 +78,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
+        if (!context->getSettingsRef().allow_experimental_nlp_functions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Natural language processing function '{}' is experimental. "
                             "Set `allow_experimental_nlp_functions` setting to enable it", name);

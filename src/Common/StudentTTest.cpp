@@ -162,7 +162,9 @@ std::pair<bool, std::string> StudentTTest::compareAndReport(size_t confidence_le
         out << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;
         return {false, out.str()};
     }
-
-    out << "No difference proven at " << confidence_level[confidence_level_index] << "% confidence";
-    return {true, out.str()};
+    else
+    {
+        out << "No difference proven at " << confidence_level[confidence_level_index] <<  "% confidence";
+        return {true, out.str()};
+    }
 }

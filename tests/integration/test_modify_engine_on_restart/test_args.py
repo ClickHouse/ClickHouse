@@ -1,7 +1,6 @@
 import pytest
-
-from helpers.cluster import ClickHouseCluster
 from test_modify_engine_on_restart.common import check_flags_deleted, set_convert_flags
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 ch1 = cluster.add_instance(

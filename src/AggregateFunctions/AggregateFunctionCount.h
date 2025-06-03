@@ -1,15 +1,9 @@
 #pragma once
 
-#include "config.h"
-
-#if USE_EMBEDDED_COMPILER
-#    include <llvm/IR/IRBuilder.h>
-#    include <DataTypes/Native.h>
-#endif
-
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 
+#include <array>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
@@ -17,6 +11,13 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/assert_cast.h>
+
+#include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#endif
 
 
 namespace DB

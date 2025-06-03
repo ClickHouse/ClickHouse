@@ -5,7 +5,6 @@
 #   include <Formats/ProtobufWriter.h>
 #   include <Formats/ProtobufSerializer.h>
 #   include <Formats/ProtobufSchemas.h>
-#   include <Processors/Port.h>
 
 namespace DB
 {
@@ -62,7 +61,6 @@ void registerOutputFormatProtobufList(FormatFactory & factory)
                 settings.protobuf.output_nullables_with_google_wrappers,
                 settings.protobuf.google_protos_path);
         });
-    factory.markOutputFormatNotTTYFriendly("ProtobufList");
 }
 
 }

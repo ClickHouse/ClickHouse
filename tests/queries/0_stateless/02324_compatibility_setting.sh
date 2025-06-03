@@ -26,10 +26,3 @@ $CLICKHOUSE_CLIENT --compatibility=21.5 -q "select value from system.settings wh
 echo "21.6"
 $CLICKHOUSE_CLIENT --compatibility=21.6 -q "select value from system.settings where name='async_socket_for_remote'"
 
-echo "use_concurrency_control"
-echo "23.3"
-$CLICKHOUSE_CLIENT --compatibility=23.3 -q "select value from system.settings where name='use_concurrency_control'"
-echo "24.10"
-$CLICKHOUSE_CLIENT --compatibility=24.10 -q "select value from system.settings where name='use_concurrency_control'"
-echo "24.12"
-$CLICKHOUSE_CLIENT --compatibility=24.12 -q "select value from system.settings where name='use_concurrency_control'"

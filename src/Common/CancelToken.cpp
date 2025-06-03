@@ -1,5 +1,4 @@
 #include <Common/CancelToken.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -122,9 +121,11 @@ bool CancelToken::wait(UInt32 * address, UInt32 value)
         {
             if (s == canceled)
                 break; // Signaled; futex "release" has been done by the signaling thread
-
-            s = state.load();
-            continue; // To avoid race (may lead to futex destruction) we have to wait for signaling thread to finish
+            else
+            {
+                s = state.load();
+                continue; // To avoid race (may lead to futex destruction) we have to wait for signaling thread to finish
+            }
         }
         if (state.compare_exchange_strong(s, 0))
             return true; // There was no cancellation; futex "released"
@@ -142,7 +143,8 @@ void CancelToken::raise()
         throw DB::Exception::createRuntime(
             std::exchange(exception_code, 0),
             std::exchange(exception_message, {}));
-    throw DB::Exception(ErrorCodes::THREAD_WAS_CANCELED, "Thread was canceled");
+    else
+        throw DB::Exception(ErrorCodes::THREAD_WAS_CANCELED, "Thread was canceled");
 }
 
 void CancelToken::notifyOne(UInt32 * address)

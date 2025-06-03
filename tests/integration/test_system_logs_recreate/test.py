@@ -3,7 +3,6 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -27,13 +26,11 @@ def test_system_logs_recreate():
     system_logs = [
         # enabled by default
         "query_log",
-        "query_metric_log",
         "query_thread_log",
         "part_log",
         "trace_log",
         "metric_log",
         "error_log",
-        "latency_log",
     ]
 
     try:

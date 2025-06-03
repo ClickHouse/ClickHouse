@@ -5,7 +5,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/ReadBuffer.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

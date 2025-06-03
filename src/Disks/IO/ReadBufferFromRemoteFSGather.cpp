@@ -11,6 +11,20 @@
 
 using namespace DB;
 
+
+namespace
+{
+    bool withFileCache(const ReadSettings & settings)
+    {
+        return settings.remote_fs_cache && settings.enable_filesystem_cache;
+    }
+
+    bool withPageCache(const ReadSettings & settings, bool with_file_cache)
+    {
+        return settings.page_cache && !with_file_cache && settings.use_page_cache_for_disks_without_file_cache;
+    }
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -18,19 +32,34 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
+size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size)
+{
+    /// Only when cache is used we could download bigger portions of FileSegments than what we actually gonna read within particular task.
+    if (!withFileCache(settings))
+        return settings.remote_fs_buffer_size;
+
+    /// Buffers used for prefetch and pre-download better to have enough size, but not bigger than the whole file.
+    return std::min<size_t>(std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE), file_size);
+}
+
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
+    const std::string & cache_path_prefix_,
     const ReadSettings & settings_,
-    bool use_external_buffer_,
-    size_t buffer_size)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size, nullptr, 0)
+    std::shared_ptr<FilesystemCacheLog> cache_log_,
+    bool use_external_buffer_)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : chooseBufferSizeForRemoteReading(
+        settings_, getTotalSize(blobs_to_read_)), nullptr, 0)
     , settings(settings_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
+    , cache_path_prefix(cache_path_prefix_)
+    , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
     , query_id(CurrentThread::getQueryId())
     , use_external_buffer(use_external_buffer_)
-    , with_file_cache(settings.enable_filesystem_cache)
+    , with_file_cache(withFileCache(settings))
+    , with_page_cache(withPageCache(settings, with_file_cache))
     , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
     if (!blobs_to_read.empty())
@@ -39,13 +68,71 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
 
 SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object, size_t start_offset)
 {
+    if (current_buf && !with_file_cache)
+    {
+        appendUncachedReadInfo();
+    }
+
     current_object = object;
-    auto buf = read_buffer_creator(/* restricted_seek */true, object);
+    const auto & object_path = object.remote_path;
+
+    std::unique_ptr<ReadBufferFromFileBase> buf;
+
+    if (with_file_cache)
+    {
+        auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
+        buf = std::make_unique<CachedOnDiskReadBufferFromFile>(
+            object_path,
+            cache_key,
+            settings.remote_fs_cache,
+            FileCache::getCommonUser(),
+            [=, this]() { return read_buffer_creator(/* restricted_seek */true, object); },
+            settings,
+            query_id,
+            object.bytes_size,
+            /* allow_seeks */false,
+            /* use_external_buffer */true,
+            /* read_until_position */std::nullopt,
+            cache_log);
+    }
+
+    /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
+    /// former doesn't support seeks.
+    if (with_page_cache && !buf)
+    {
+        auto inner = read_buffer_creator(/* restricted_seek */false, object);
+        auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_path };
+        buf = std::make_unique<CachedInMemoryReadBufferFromFile>(
+            cache_key, settings.page_cache, std::move(inner), settings);
+    }
+
+    if (!buf)
+        buf = read_buffer_creator(/* restricted_seek */true, object);
 
     if (read_until_position > start_offset && read_until_position < start_offset + object.bytes_size)
         buf->setReadUntilPosition(read_until_position - start_offset);
 
     return buf;
+}
+
+void ReadBufferFromRemoteFSGather::appendUncachedReadInfo()
+{
+    if (!cache_log || current_object.remote_path.empty())
+        return;
+
+    FilesystemCacheLogElement elem
+    {
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+        .query_id = query_id,
+        .source_file_path = current_object.remote_path,
+        .file_segment_range = { 0, current_object.bytes_size },
+        .cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
+        .file_segment_key = {},
+        .file_segment_offset = {},
+        .file_segment_size = current_object.bytes_size,
+        .read_from_cache_attempted = false,
+    };
+    cache_log->add(std::move(elem));
 }
 
 void ReadBufferFromRemoteFSGather::initialize()
@@ -191,6 +278,12 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
     return file_offset_of_buffer_end;
 }
 
+ReadBufferFromRemoteFSGather::~ReadBufferFromRemoteFSGather()
+{
+    if (!with_file_cache)
+        appendUncachedReadInfo();
+}
+
 bool ReadBufferFromRemoteFSGather::isSeekCheap()
 {
     return !current_buf || current_buf->isSeekCheap();
@@ -204,19 +297,11 @@ bool ReadBufferFromRemoteFSGather::isContentCached(size_t offset, size_t size)
     if (current_buf)
     {
         /// offset should be adjusted the same way as we do it in initialize()
-        for (size_t i = 0; i < blobs_to_read.size(); ++i)
-        {
-            const auto & blob = blobs_to_read[i];
-            if (i == current_buf_idx)
-            {
-                if (offset + size <= blob.bytes_size)
-                    return current_buf->isContentCached(offset, size);
-                return false;
-            }
-            if (offset < blob.bytes_size)
-                return false;
-            offset -= blob.bytes_size;
-        }
+        for (const auto & blob : blobs_to_read)
+            if (offset >= blob.bytes_size)
+                offset -= blob.bytes_size;
+
+        return current_buf->isContentCached(offset, size);
     }
 
     return false;

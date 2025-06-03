@@ -1,10 +1,8 @@
-#include <memory>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Sources/NullSource.h>
@@ -20,13 +18,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsUInt64 max_rows_to_read_leaf;
-    extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsOverflowMode read_overflow_mode_leaf;
-}
 
 namespace ErrorCodes
 {
@@ -253,8 +244,7 @@ protected:
 
         /// Find the data range.
         /// If data left is small, shrink block size.
-        RangesPos start;
-        RangesPos end;
+        RangesPos start, end;
         auto block_size = findRanges(start, end, base_block_size);
 
         if (!block_size)
@@ -356,11 +346,8 @@ private:
 namespace
 {
 /// Whether we should push limit down to scan.
-bool shouldPushdownLimit(const SelectQueryInfo & query_info, UInt64 limit_length)
+bool shouldPushdownLimit(SelectQueryInfo & query_info, UInt64 limit_length)
 {
-    if (!query_info.query)
-        return false;
-
     const auto & query = query_info.query->as<ASTSelectQuery &>();
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
@@ -383,33 +370,22 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
             size -= static_cast<UInt64>(range_size);
             continue;
         }
-        if (range_size == size)
+        else if (range_size == size)
         {
             last_range_idx = i;
             break;
         }
-
-        auto & range = ranges[i];
-        range.size = static_cast<UInt128>(size);
-        last_range_idx = i;
-        break;
+        else
+        {
+            auto & range = ranges[i];
+            range.size = static_cast<UInt128>(size);
+            last_range_idx = i;
+            break;
+        }
     }
 
     /// delete the additional ranges
     ranges.erase(ranges.begin() + (last_range_idx + 1), ranges.end());
-}
-
-/// This is idealogically wrong. We should only get it from the query plan optimization.
-std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, const ContextPtr & context)
-{
-    if (!query_info.query)
-        return {};
-
-    auto limit_length_and_offset = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
-    if (!shouldPushdownLimit(query_info, limit_length_and_offset.first))
-        return {};
-
-    return limit_length_and_offset.first + limit_length_and_offset.second;
 }
 
 }
@@ -423,24 +399,24 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(
-        storage_snapshot_->getSampleBlockForColumns(column_names_),
+        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
         column_names_,
         query_info_,
         storage_snapshot_,
         context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
+    , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
+    , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
     , query_info_limit(query_info.trivial_limit)
     , storage_limits(query_info.storage_limits)
 {
     storage_snapshot->check(column_names);
     chassert(column_names.size() == 1);
     chassert(storage->as<StorageSystemNumbers>() != nullptr);
-
-    limit = getLimitFromQueryInfo(query_info_, context);
 }
 
 
@@ -450,8 +426,8 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        assert(output_header != std::nullopt);
-        pipe = Pipe(std::make_shared<NullSource>(*output_header));
+        assert(output_stream != std::nullopt);
+        pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
     }
 
     /// Add storage limits.
@@ -463,11 +439,6 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
-}
-
-QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
-{
-    return std::make_unique<ReadFromSystemNumbersStep>(column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);
 }
 
 Pipe ReadFromSystemNumbersStep::makePipe()
@@ -488,8 +459,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     chassert(numbers_storage.step != UInt64{0});
 
     /// Build rpn of query filters
-    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag ? filter_actions_dag->getOutputs().front() : nullptr, context);
-    KeyCondition condition(inverted_dag, context, column_names, key_expression);
+    KeyCondition condition(filter_actions_dag ? &*filter_actions_dag : nullptr, context, column_names, key_expression);
 
     if (condition.extractPlainRanges(ranges))
     {
@@ -558,13 +528,16 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader(numbers_storage.column_name)));
             return pipe;
         }
+        const auto & limit_length = limit_length_and_offset.first;
+        const auto & limit_offset = limit_length_and_offset.second;
 
         UInt128 total_size = sizeOfRanges(intersected_ranges);
+        UInt128 query_limit = limit_length + limit_offset;
 
         /// limit total_size by query_limit
-        if (limit && *limit < total_size)
+        if (should_pushdown_limit && query_limit < total_size)
         {
-            total_size = *limit;
+            total_size = query_limit;
             /// We should shrink intersected_ranges for case:
             ///     intersected_ranges: [1, 4], [7, 100]; query_limit: 2
             shrinkRanges(intersected_ranges, total_size);
@@ -641,15 +614,15 @@ void ReadFromSystemNumbersStep::checkLimits(size_t rows)
 {
     const auto & settings = context->getSettingsRef();
 
-    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+    if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
     {
-        const auto limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
+        const auto limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
         limits.check(rows, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
 
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
+    if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
     {
-        const auto leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
+        const auto leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
         leaf_limits.check(rows, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
 }

@@ -1,11 +1,9 @@
 ---
-description: 'Overview of network interfaces, drivers, and tools for connecting to
-  ClickHouse'
-keywords: ['clickhouse', 'network', 'interfaces', 'http', 'tcp', 'grpc', 'command-line',
-  'client', 'jdbc', 'odbc', 'driver']
-sidebar_label: 'Overview'
-slug: /interfaces/overview
-title: 'Drivers and Interfaces'
+slug: /en/interfaces/overview
+sidebar_label: Overview
+sidebar_position: 1
+keywords: [clickhouse, network, interfaces, http, tcp, grpc, command-line, client, jdbc, odbc, driver]
+description: ClickHouse provides three network interfaces
 ---
 
 # Drivers and Interfaces

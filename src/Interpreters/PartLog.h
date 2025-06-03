@@ -1,14 +1,12 @@
 #pragma once
 
-#include <Core/NamesAndAliases.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/UUID.h>
-#include <Interpreters/SystemLog.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Interpreters/SystemLog.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
+#include <Core/UUID.h>
 #include <Storages/MergeTree/MergeType.h>
-
+#include <Storages/MergeTree/MergeAlgorithm.h>
 
 namespace ProfileEvents
 {
@@ -28,8 +26,6 @@ struct PartLogElement
         REMOVE_PART = 4,
         MUTATE_PART = 5,
         MOVE_PART = 6,
-        MERGE_PARTS_START = 7,
-        MUTATE_PART_START = 8,
     };
 
     /// Copy of MergeAlgorithm since values are written to disk.
@@ -139,7 +135,7 @@ public:
 
     static PartLogEntries createPartLogEntries(const MutableDataPartsVector & parts, UInt64 elapsed_ns, ProfileCountersSnapshotPtr profile_counters = {});
 
-    /// Add a record about creation of a new part.
+    /// Add a record about creation of new part.
     static bool addNewPart(ContextPtr context, const PartLogEntry & part,
                            const ExecutionStatus & execution_status = {});
 

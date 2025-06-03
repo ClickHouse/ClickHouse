@@ -10,16 +10,16 @@ namespace DB
 {
 namespace
 {
-    void formatKeyType(const QuotaKeyType & key_type, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatKeyType(const QuotaKeyType & key_type, const IAST::FormatSettings & settings)
     {
         const auto & type_info = QuotaKeyTypeInfo::get(key_type);
         if (key_type == QuotaKeyType::NONE)
         {
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT KEYED" << (settings.hilite ? IAST::hilite_none : "");
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT KEYED" << (settings.hilite ? IAST::hilite_none : "");
             return;
         }
 
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " KEYED BY " << (settings.hilite ? IAST::hilite_none : "");
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " KEYED BY " << (settings.hilite ? IAST::hilite_none : "");
 
         if (!type_info.base_types.empty())
         {
@@ -27,49 +27,49 @@ namespace
             for (const auto & base_type : type_info.base_types)
             {
                 if (std::exchange(need_comma, true))
-                    ostr << ", ";
-                ostr << QuotaKeyTypeInfo::get(base_type).name;
+                    settings.ostr << ", ";
+                settings.ostr << QuotaKeyTypeInfo::get(base_type).name;
             }
             return;
         }
 
-        ostr << type_info.name;
+        settings.ostr << type_info.name;
     }
 
 
-    void formatNames(const Strings & names, WriteBuffer & ostr)
+    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
     {
-        ostr << " ";
+        settings.ostr << " ";
         bool need_comma = false;
         for (const String & name : names)
         {
             if (std::exchange(need_comma, true))
-                ostr << ", ";
-            ostr << backQuoteIfNeed(name);
+                settings.ostr << ", ";
+            settings.ostr << backQuoteIfNeed(name);
         }
     }
 
 
-    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
                       << backQuote(new_name);
     }
 
 
-    void formatLimit(QuotaType quota_type, QuotaValue max_value, WriteBuffer & ostr)
+    void formatLimit(QuotaType quota_type, QuotaValue max_value, const IAST::FormatSettings & settings)
     {
         const auto & type_info = QuotaTypeInfo::get(quota_type);
-        ostr << " " << type_info.name << " = " << type_info.valueToString(max_value);
+        settings.ostr << " " << type_info.name << " = " << type_info.valueToString(max_value);
     }
 
 
-    void formatIntervalWithLimits(const ASTCreateQuotaQuery::Limits & limits, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatIntervalWithLimits(const ASTCreateQuotaQuery::Limits & limits, const IAST::FormatSettings & settings)
     {
         auto interval_kind = IntervalKind::fromAvgSeconds(limits.duration.count());
         Int64 num_intervals = limits.duration.count() / interval_kind.toAvgSeconds();
 
-        ostr << (settings.hilite ? IAST::hilite_keyword : "")
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "")
                       << " FOR"
                       << (limits.randomize_interval ? " RANDOMIZED" : "")
                       << " INTERVAL"
@@ -81,7 +81,7 @@ namespace
 
         if (limits.drop)
         {
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NO LIMITS" << (settings.hilite ? IAST::hilite_none : "");
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NO LIMITS" << (settings.hilite ? IAST::hilite_none : "");
         }
         else
         {
@@ -94,7 +94,7 @@ namespace
             }
             if (limit_found)
             {
-                ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX" << (settings.hilite ? IAST::hilite_none : "");
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX" << (settings.hilite ? IAST::hilite_none : "");
                 bool need_comma = false;
                 for (auto quota_type : collections::range(QuotaType::MAX))
                 {
@@ -102,33 +102,33 @@ namespace
                     if (limits.max[quota_type_i])
                     {
                         if (std::exchange(need_comma, true))
-                            ostr << ",";
-                        formatLimit(quota_type, *limits.max[quota_type_i], ostr);
+                            settings.ostr << ",";
+                        formatLimit(quota_type, *limits.max[quota_type_i], settings);
                     }
                 }
             }
             else
-                ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TRACKING ONLY" << (settings.hilite ? IAST::hilite_none : "");
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TRACKING ONLY" << (settings.hilite ? IAST::hilite_none : "");
         }
     }
 
-    void formatIntervalsWithLimits(const std::vector<ASTCreateQuotaQuery::Limits> & all_limits, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatIntervalsWithLimits(const std::vector<ASTCreateQuotaQuery::Limits> & all_limits, const IAST::FormatSettings & settings)
     {
         bool need_comma = false;
         for (const auto & limits : all_limits)
         {
             if (need_comma)
-                ostr << ",";
+                settings.ostr << ",";
             need_comma = true;
 
-            formatIntervalWithLimits(limits, ostr, settings);
+            formatIntervalWithLimits(limits, settings);
         }
     }
 
-    void formatToRoles(const ASTRolesOrUsersSet & roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormatSettings & settings)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
-        roles.format(ostr, settings);
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
+        roles.format(settings);
     }
 }
 
@@ -150,44 +150,44 @@ ASTPtr ASTCreateQuotaQuery::clone() const
 }
 
 
-void ASTCreateQuotaQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     if (attach)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH QUOTA" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH QUOTA" << (settings.hilite ? hilite_none : "");
     }
     else
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER QUOTA" : "CREATE QUOTA")
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER QUOTA" : "CREATE QUOTA")
                       << (settings.hilite ? hilite_none : "");
     }
 
     if (if_exists)
-        ostr << (settings.hilite ? hilite_keyword : "") << " IF EXISTS" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF EXISTS" << (settings.hilite ? hilite_none : "");
     else if (if_not_exists)
-        ostr << (settings.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (settings.hilite ? hilite_none : "");
     else if (or_replace)
-        ostr << (settings.hilite ? hilite_keyword : "") << " OR REPLACE" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " OR REPLACE" << (settings.hilite ? hilite_none : "");
 
-    formatNames(names, ostr);
+    formatNames(names, settings);
 
     if (!storage_name.empty())
-        ostr << (settings.hilite ? IAST::hilite_keyword : "")
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "")
                     << " IN " << (settings.hilite ? IAST::hilite_none : "")
                     << backQuoteIfNeed(storage_name);
 
-    formatOnCluster(ostr, settings);
+    formatOnCluster(settings);
 
     if (!new_name.empty())
-        formatRenameTo(new_name, ostr, settings);
+        formatRenameTo(new_name, settings);
 
     if (key_type)
-        formatKeyType(*key_type, ostr, settings);
+        formatKeyType(*key_type, settings);
 
-    formatIntervalsWithLimits(all_limits, ostr, settings);
+    formatIntervalsWithLimits(all_limits, settings);
 
     if (roles && (!roles->empty() || alter))
-        formatToRoles(*roles, ostr, settings);
+        formatToRoles(*roles, settings);
 }
 
 

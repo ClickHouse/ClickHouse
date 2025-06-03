@@ -32,14 +32,14 @@ std::unique_ptr<IAsynchronousReader> createThreadPoolReader(
     {
         case FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
         {
-            auto pool_size = config.getUInt("threadpool_remote_fs_reader_pool_size", 250);
-            auto queue_size = config.getUInt("threadpool_remote_fs_reader_queue_size", 1000000);
+            auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 250);
+            auto queue_size = config.getUInt(".threadpool_remote_fs_reader_queue_size", 1000000);
             return std::make_unique<ThreadPoolRemoteFSReader>(pool_size, queue_size);
         }
         case FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
         {
-            auto pool_size = config.getUInt("threadpool_local_fs_reader_pool_size", 100);
-            auto queue_size = config.getUInt("threadpool_local_fs_reader_queue_size", 1000000);
+            auto pool_size = config.getUInt(".threadpool_local_fs_reader_pool_size", 100);
+            auto queue_size = config.getUInt(".threadpool_local_fs_reader_queue_size", 1000000);
             return std::make_unique<ThreadPoolReader>(pool_size, queue_size);
         }
         case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:

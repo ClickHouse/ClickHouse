@@ -3,16 +3,9 @@
 #include <memory>
 #include <string>
 
-#include <Common/Arena.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
-#include <Common/MemoryTracker.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressionCodecEncrypted.h>
 #include <Compression/ICompressionCodec.h>
+#include <Compression/CompressionCodecEncrypted.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <Interpreters/Context.h>
 #include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
@@ -20,26 +13,11 @@
 #include <Poco/NumericString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include "Common/Exception.h"
 
 inline DB::CompressionCodecPtr getCompressionCodecEncrypted(DB::EncryptionMethod Method)
 {
     return std::make_shared<DB::CompressionCodecEncrypted>(Method);
-}
-
-using namespace DB;
-ContextMutablePtr context;
-extern "C" int LLVMFuzzerInitialize(int *, char ***)
-{
-    if (context)
-        return true;
-
-    static SharedContextHolder shared_context = Context::createShared();
-    context = Context::createGlobal(shared_context.get());
-    context->makeGlobalContext();
-
-    MainThreadStatus::getInstance();
-
-    return 0;
 }
 
 namespace
@@ -296,11 +274,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
     try
     {
-        total_memory_tracker.resetCounters();
-        total_memory_tracker.setHardLimit(1_GiB);
-        CurrentThread::get().memory_tracker.resetCounters();
-        CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
-
         XMLGenerator generator(data, size);
 
         generator.generate();

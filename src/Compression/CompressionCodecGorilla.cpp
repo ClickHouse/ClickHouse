@@ -1,6 +1,5 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
-#include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
@@ -347,10 +346,9 @@ UInt8 getDataBytesSize(const IDataType * column_type)
     size_t max_size = column_type->getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Codec Gorilla is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-        column_type->getName());
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+            column_type->getName());
 }
 
 }
@@ -359,7 +357,7 @@ UInt8 getDataBytesSize(const IDataType * column_type)
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-    setCodecDescription("Gorilla", {std::make_shared<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
+    setCodecDescription("Gorilla");
 }
 
 uint8_t CompressionCodecGorilla::getMethodByte() const

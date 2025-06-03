@@ -6,13 +6,12 @@
 namespace DB::Parquet
 {
 
-/// Returns number of bytes written. The template must be explicitly instantiated below.
+/// Returns number of bytes written.
 template <typename T>
 size_t serializeThriftStruct(const T & obj, WriteBuffer & out);
 
 extern template size_t serializeThriftStruct<parquet::format::PageHeader>(const parquet::format::PageHeader &, WriteBuffer & out);
 extern template size_t serializeThriftStruct<parquet::format::ColumnChunk>(const parquet::format::ColumnChunk &, WriteBuffer & out);
 extern template size_t serializeThriftStruct<parquet::format::FileMetaData>(const parquet::format::FileMetaData &, WriteBuffer & out);
-extern template size_t serializeThriftStruct<parquet::format::BloomFilterHeader>(const parquet::format::BloomFilterHeader &, WriteBuffer & out);
 
 }

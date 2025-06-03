@@ -40,21 +40,22 @@ void checkFinalInferredType(
                     "of the settings allow_experimental_object_type/input_format_json_read_objects_as_strings",
                     name,
                     rows_read);
-            throw Exception(
-                ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
-                "Cannot determine type for column '{}' by first {} rows "
-                "of data, most likely this column contains only Nulls or empty Arrays/Maps. "
-                "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
-                name,
-                rows_read,
-                hints_parsing_error);
+            else
+                throw Exception(
+                    ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
+                    "Cannot determine type for column '{}' by first {} rows "
+                    "of data, most likely this column contains only Nulls or empty Arrays/Maps. "
+                    "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
+                    name,
+                    rows_read,
+                    hints_parsing_error);
         }
 
         type = default_type;
     }
 
     if (settings.schema_inference_make_columns_nullable == 1)
-        type = makeNullableRecursively(type, settings);
+        type = makeNullableRecursively(type);
 }
 
 void ISchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)

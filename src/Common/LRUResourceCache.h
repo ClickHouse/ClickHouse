@@ -230,12 +230,14 @@ private:
                     queue.splice(queue.end(), queue, it->second.queue_iterator);
                     return it->second.value;
                 }
-                if (it->second.reference_count > 0)
+                else if (it->second.reference_count > 0)
                     return nullptr;
-
-                // should not reach here
-                LOG_ERROR(getLogger("LRUResourceCache"), "element is in invalid status.");
-                abort();
+                else
+                {
+                    // should not reach here
+                    LOG_ERROR(getLogger("LRUResourceCache"), "element is in invalid status.");
+                    abort();
+                }
             }
             ++misses;
             auto & token = insert_tokens[key];

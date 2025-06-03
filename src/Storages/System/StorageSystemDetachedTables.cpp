@@ -9,7 +9,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
@@ -64,8 +63,9 @@ protected:
         const auto access = context->getAccess();
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
+        size_t database_idx = 0;
         size_t rows_count = 0;
-        for (; database_idx < databases->size(); ++database_idx)
+        for (; database_idx < databases->size() && rows_count < max_block_size; ++database_idx)
         {
             database_name = databases->getDataAt(database_idx).toString();
             database = DatabaseCatalog::instance().tryGetDatabase(database_name);
@@ -92,18 +92,12 @@ protected:
                 fillResultColumnsByDetachedTableIterator(result_columns);
                 ++rows_count;
             }
-
-             if (rows_count == max_block_size)
-             {
-                if (!detached_tables_it->isValid())
-                    ++database_idx;
-                break;
-             }
         }
 
-        if (databases->size() == database_idx)
+        if (databases->size() == database_idx && (!detached_tables_it || !detached_tables_it->isValid()))
+        {
             done = true;
-
+        }
         const UInt64 num_rows = result_columns.at(0)->size();
         return Chunk(std::move(result_columns), num_rows);
     }
@@ -118,7 +112,6 @@ private:
     bool done = false;
     DatabasePtr database;
     std::string database_name;
-    size_t database_idx{};
 
     void fillResultColumnsByDetachedTableIterator(MutableColumns & result_columns) const
     {
@@ -216,7 +209,7 @@ ReadFromSystemDetachedTables::ReadFromSystemDetachedTables(
     Block sample_block,
     std::vector<UInt8> columns_mask_,
     size_t max_block_size_)
-    : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+    : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
     , columns_mask(std::move(columns_mask_))
     , max_block_size(max_block_size_)
 {
@@ -238,7 +231,7 @@ void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pip
 {
     auto pipe = Pipe(std::make_shared<DetachedTablesBlockSource>(
         std::move(columns_mask),
-        getOutputHeader(),
+        getOutputStream().header,
         max_block_size,
         std::move(filtered_databases_column),
         std::move(filtered_tables_column),

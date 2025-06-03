@@ -1,9 +1,8 @@
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB

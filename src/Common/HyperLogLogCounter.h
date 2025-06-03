@@ -9,10 +9,12 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Core/Defines.h>
 
 #include <bit>
 #include <cmath>
-#include <string>
+#include <cstring>
 
 
 namespace DB
@@ -50,7 +52,8 @@ struct LogLUT
     {
         if (x <= M)
             return log_table[x];
-        return log(static_cast<double>(x));
+        else
+            return log(static_cast<double>(x));
     }
 
 private:
@@ -336,18 +339,30 @@ public:
 
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
-            in.readStrict(denominator_copy.data(), denom_size);
+            in.readStrict(denominator_copy.begin(), denom_size);
 
             for (size_t i = 0; i < denominator_copy.size(); i += (sizeof(UInt32) / sizeof(char)))
             {
                 UInt32 * cur = reinterpret_cast<UInt32 *>(&denominator_copy[i]);
                 DB::transformEndianness<std::endian::native, std::endian::little>(*cur);
             }
-            memcpy(reinterpret_cast<char *>(&denominator), denominator_copy.data(), denom_size);
+            memcpy(reinterpret_cast<char *>(&denominator), denominator_copy.begin(), denom_size);
 
             in.readStrict(reinterpret_cast<char *>(&zeros), sizeof(ZerosCounterType));
             DB::transformEndianness<std::endian::native, std::endian::little>(zeros);
         }
+    }
+
+    void readAndMerge(DB::ReadBuffer & in)
+    {
+        typename RankStore::Reader reader(in);
+        while (reader.next())
+        {
+            const auto & data = reader.get();
+            update(data.first, data.second);
+        }
+
+        in.ignore(sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
     }
 
     static void skip(DB::ReadBuffer & in)
@@ -365,14 +380,14 @@ public:
 
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
-            memcpy(denominator_copy.data(), reinterpret_cast<const char *>(&denominator), denom_size);
+            memcpy(denominator_copy.begin(), reinterpret_cast<const char *>(&denominator), denom_size);
 
             for (size_t i = 0; i < denominator_copy.size(); i += (sizeof(UInt32) / sizeof(char)))
             {
                 UInt32 * cur = reinterpret_cast<UInt32 *>(&denominator_copy[i]);
                 DB::transformEndianness<std::endian::little, std::endian::native>(*cur);
             }
-            out.write(denominator_copy.data(), denom_size);
+            out.write(denominator_copy.begin(), denom_size);
 
             auto zeros_copy = zeros;
             DB::transformEndianness<std::endian::little, std::endian::native>(zeros_copy);
@@ -460,11 +475,11 @@ private:
     {
         if ((mode == HyperLogLogMode::Raw) || ((mode == HyperLogLogMode::BiasCorrected) && BiasEstimator::isTrivial()))
             return raw_estimate;
-        if (mode == HyperLogLogMode::LinearCounting)
+        else if (mode == HyperLogLogMode::LinearCounting)
             return applyLinearCorrection(raw_estimate);
-        if ((mode == HyperLogLogMode::BiasCorrected) && !BiasEstimator::isTrivial())
+        else if ((mode == HyperLogLogMode::BiasCorrected) && !BiasEstimator::isTrivial())
             return applyBiasCorrection(raw_estimate);
-        if (mode == HyperLogLogMode::FullFeatured)
+        else if (mode == HyperLogLogMode::FullFeatured)
         {
             static constexpr double pow2_32 = 4294967296.0;
 
@@ -477,7 +492,8 @@ private:
 
             return fixed_estimate;
         }
-        throw Poco::Exception("Internal error", DB::ErrorCodes::LOGICAL_ERROR);
+        else
+            throw Poco::Exception("Internal error", DB::ErrorCodes::LOGICAL_ERROR);
     }
 
     double applyCorrection(double raw_estimate) const

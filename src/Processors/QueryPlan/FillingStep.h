@@ -11,7 +11,7 @@ class FillingStep : public ITransformingStep
 {
 public:
     FillingStep(
-        const Header & input_header_,
+        const DataStream & input_stream_,
         SortDescription sort_description_,
         SortDescription fill_description_,
         InterpolateDescriptionPtr interpolate_description_,
@@ -24,10 +24,10 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const SortDescription & getSortDescription() const override { return sort_description; }
+    const SortDescription & getSortDescription() const { return sort_description; }
 
 private:
-    void updateOutputHeader() override;
+    void updateOutputStream() override;
 
     SortDescription sort_description;
     SortDescription fill_description;

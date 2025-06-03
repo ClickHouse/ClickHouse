@@ -31,15 +31,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool formatdatetime_f_prints_scale_number_of_digits;
-    extern const SettingsBool formatdatetime_f_prints_single_zero;
-    extern const SettingsBool formatdatetime_format_without_leading_zeros;
-    extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
-    extern const SettingsBool formatdatetime_e_with_space_padding;
-}
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -342,28 +333,6 @@ private:
             return mysqlISO8601Date(dest, source, timezone);
         }
 
-        size_t mysqlDayOfMonthWithSpacePadding(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
-        {
-            auto day = ToDayOfMonthImpl::execute(source, timezone);
-            if (day < 10)
-                dest[1] = '0' + day;
-            else
-                writeNumber2(dest, day);
-            return 2;
-        }
-
-        size_t mysqlDayOfMonthWithoutSpacePadding(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
-        {
-            auto day = ToDayOfMonthImpl::execute(source, timezone);
-            if (day < 10)
-            {
-                dest[0] = '0' + day;
-                return 1;
-            }
-            writeNumber2(dest, day);
-            return 2;
-        }
-
         size_t mysqlISO8601DateWithSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             size_t total_bytes = mysqlISO8601Date(dest, source, timezone);
@@ -390,7 +359,8 @@ private:
                 dest[0] = '0' + month;
                 return 1;
             }
-            return writeNumber2(dest, month);
+            else
+                return writeNumber2(dest, month);
         }
 
         static size_t monthOfYearText(char * dest, Time source, bool abbreviate, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -483,7 +453,8 @@ private:
                 dest[0] = '0' + hour;
                 return 1;
             }
-            return writeNumber2(dest, hour);
+            else
+                return writeNumber2(dest, hour);
         }
 
         size_t mysqlHour12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -502,7 +473,8 @@ private:
                 dest[0] = '0' + hour;
                 return 1;
             }
-            return writeNumber2(dest, hour);
+            else
+                return writeNumber2(dest, hour);
         }
 
         size_t mysqlMinute(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -571,48 +543,29 @@ private:
             return writeNumber2(dest, ToSecondImpl::execute(source, timezone));
         }
 
-        /// Always prints six digits (as specified by MySQL documentation)
         size_t mysqlFractionalSecond(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
-        {
-            /// Truncate to buffer size == 6 if more than 6 digits are passed in.
-            while (scale > 6)
-            {
-                --scale;
-                fractional_second /= 10;
-            }
-
-            for (UInt32 i = scale; i > 0 && fractional_second > 0; --i)
-            {
-                dest[i - 1] += fractional_second % 10;
-                fractional_second /= 10;
-            }
-            return 6;
-        }
-
-        /// Prints the number of digits that were specified by the scale of the DateTime64. Legacy.
-        size_t mysqlFractionalSecondScaleNumDigits(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
             if (scale == 0)
                 scale = 6;
 
-            for (UInt32 i = scale; i > 0; --i)
+            for (Int64 i = scale, value = fractional_second; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
-                fractional_second /= 10;
+                dest[i - 1] += value % 10;
+                value /= 10;
             }
             return scale;
         }
 
-        /// Same as mysqlFractionalSecondScaleNumDigits but prints a single zero if the value has no fractional seconds. Legacy.
+        /// Same as mysqlFractionalSecond but prints a single zero if the value has no fractional seconds
         size_t mysqlFractionalSecondSingleZero(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
             if (scale == 0)
                 scale = 1;
 
-            for (UInt32 i = scale; i > 0; --i)
+            for (Int64 i = scale, value = fractional_second; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
-                fractional_second /= 10;
+                dest[i - 1] += value % 10;
+                value /= 10;
             }
             return scale;
         }
@@ -645,10 +598,6 @@ private:
             {
                 *dest = '-';
                 offset = -offset;
-            }
-            else
-            {
-                *dest = '+';
             }
 
             writeNumber2(dest + 1, offset / 3600);
@@ -694,9 +643,11 @@ private:
             auto year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
             if (min_represent_digits == 2)
                 return writeNumberWithPadding(dest, std::abs(year) % 100, 2);
-
-            year = year <= 0 ? std::abs(year - 1) : year;
-            return writeNumberWithPadding(dest, year, min_represent_digits);
+            else
+            {
+                year = year <= 0 ? std::abs(year - 1) : year;
+                return writeNumberWithPadding(dest, year, min_represent_digits);
+            }
         }
 
         static size_t jodaDayOfWeek1Based(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -720,7 +671,8 @@ private:
                 auto two_digit_year = year % 100;
                 return writeNumberWithPadding(dest, two_digit_year, 2);
             }
-            return writeNumberWithPadding(dest, year, min_represent_digits);
+            else
+                return writeNumberWithPadding(dest, year, min_represent_digits);
         }
 
         static size_t jodaWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -842,12 +794,11 @@ private:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
     }
 
-    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros, bool mysql_e_with_space_padding)
+    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros)
     {
         static constexpr std::array variable_width_formatter = {'W'};
         static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
         static constexpr std::array variable_width_formatter_leading_zeros = {'c', 'l', 'k'};
-        static constexpr std::array variable_width_formatter_e_with_space_padding = {'e'};
 
         for (size_t i = 0; i < format.size(); ++i)
         {
@@ -870,13 +821,6 @@ private:
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }
-                    if (!mysql_e_with_space_padding)
-                    {
-                        if (std::any_of(
-                                variable_width_formatter_e_with_space_padding.begin(), variable_width_formatter_e_with_space_padding.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
                     else
                     {
                         if (std::any_of(
@@ -896,9 +840,7 @@ private:
 
     const bool mysql_M_is_month_name;
     const bool mysql_f_prints_single_zero;
-    const bool mysql_f_prints_scale_number_of_digits;
     const bool mysql_format_ckl_without_leading_zeros;
-    const bool mysql_e_with_space_padding;
 
 public:
     static constexpr auto name = Name::name;
@@ -906,11 +848,9 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
 
     explicit FunctionFormatDateTimeImpl(ContextPtr context)
-        : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
-        , mysql_f_prints_single_zero(context->getSettingsRef()[Setting::formatdatetime_f_prints_single_zero])
-        , mysql_f_prints_scale_number_of_digits(context->getSettingsRef()[Setting::formatdatetime_f_prints_scale_number_of_digits])
-        , mysql_format_ckl_without_leading_zeros(context->getSettingsRef()[Setting::formatdatetime_format_without_leading_zeros])
-        , mysql_e_with_space_padding(context->getSettingsRef()[Setting::formatdatetime_e_with_space_padding])
+        : mysql_M_is_month_name(context->getSettingsRef().formatdatetime_parsedatetime_m_is_month_name)
+        , mysql_f_prints_single_zero(context->getSettingsRef().formatdatetime_f_prints_single_zero)
+        , mysql_format_ckl_without_leading_zeros(context->getSettingsRef().formatdatetime_format_without_leading_zeros)
     {
     }
 
@@ -982,30 +922,26 @@ public:
             {
                 return castColumn(arguments[0], result_type);
             }
-
-            if (!castType(
-                    arguments[0].type.get(),
-                    [&](const auto & type)
+            else
+            {
+                if (!castType(arguments[0].type.get(), [&](const auto & type)
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
                         if (!(res = executeType<FromDataType>(arguments, result_type, input_rows_count)))
-                            throw Exception(
-                                ErrorCodes::ILLEGAL_COLUMN,
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                                 "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64.",
-                                arguments[0].column->getName(),
-                                getName());
+                                arguments[0].column->getName(), getName());
                         return true;
                     }))
-            {
-                if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-                      || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-                      || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-                      || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of function {}, must be Integer or DateTime.",
-                        arguments[0].column->getName(),
-                        getName());
+                {
+                    if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
+                        || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
+                        || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
+                        || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Illegal column {} of function {}, must be Integer or DateTime.",
+                            arguments[0].column->getName(), getName());
+                }
             }
         }
         else
@@ -1064,9 +1000,7 @@ public:
         ///   column rows are NOT populated with the template and left uninitialized. We run the normal instructions for formatters AND
         ///   instructions that copy literal characters before/between/after formatters. As a result, each byte of each result row is
         ///   written which is obviously slow.
-        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL)
-            ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name, mysql_format_ckl_without_leading_zeros, mysql_e_with_space_padding)
-            : false;
+        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name, mysql_format_ckl_without_leading_zeros) : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
         std::vector<Instruction<T>> instructions;
@@ -1310,25 +1244,13 @@ public:
                         break;
                     }
 
-                    // Day of month
+                    // Day of month, space-padded ( 1-31)  23
                     case 'e':
                     {
-                        if (mysql_e_with_space_padding)
-                        {
-                            /// Space-padded ( 1-31)
-                            Instruction<T> instruction;
-                            instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthWithSpacePadding);
-                            instructions.push_back(std::move(std::move(instruction)));
-                            out_template += " 0";
-                        }
-                        else
-                        {
-                            /// Not space-padded (1-31)
-                            Instruction<T> instruction;
-                            instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthWithoutSpacePadding);
-                            instructions.push_back(std::move(std::move(instruction)));
-                            out_template += "00";
-                        }
+                        Instruction<T> instruction;
+                        instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthSpacePadded);
+                        instructions.push_back(std::move(std::move(instruction)));
+                        out_template += " 0";
                         break;
                     }
 
@@ -1366,22 +1288,10 @@ public:
                         }
                         else
                         {
-                            if (mysql_f_prints_scale_number_of_digits)
-                            {
-                                /// Print as many digits as specified by scale. Legacy behavior.
-                                Instruction<T> instruction;
-                                instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecondScaleNumDigits);
-                                instructions.push_back(std::move(instruction));
-                                out_template += String(scale == 0 ? 6 : scale, '0');
-                            }
-                            else
-                            {
-                                /// Unconditionally print six digits (independent of scale). This is what MySQL does, may it live long and prosper.
-                                Instruction<T> instruction;
-                                instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
-                                instructions.push_back(std::move(instruction));
-                                out_template += String(6, '0');
-                            }
+                            Instruction<T> instruction;
+                            instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
+                            instructions.push_back(std::move(instruction));
+                            out_template += String(scale == 0 ? 6 : scale, '0');
                         }
                         break;
                     }
@@ -1748,18 +1658,20 @@ public:
                     Int64 count = numLiteralChars(cur_token + 1, end);
                     if (count == -1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No closing single quote for literal");
-
-                    for (Int64 i = 1; i <= count; i++)
+                    else
                     {
-                        Instruction<T> instruction;
-                        std::string_view literal(cur_token + i, 1);
-                        instruction.setJodaFunc(std::bind_front(&Instruction<T>::template jodaLiteral<decltype(literal)>, literal));
-                        instructions.push_back(std::move(instruction));
-                        ++reserve_size;
-                        if (*(cur_token + i) == '\'')
-                            i += 1;
+                        for (Int64 i = 1; i <= count; i++)
+                        {
+                            Instruction<T> instruction;
+                            std::string_view literal(cur_token + i, 1);
+                            instruction.setJodaFunc(std::bind_front(&Instruction<T>::template jodaLiteral<decltype(literal)>, literal));
+                            instructions.push_back(std::move(instruction));
+                            ++reserve_size;
+                            if (*(cur_token + i) == '\'')
+                                i += 1;
+                        }
+                        pos += count + 2;
                     }
-                    pos += count + 2;
                 }
             }
             else

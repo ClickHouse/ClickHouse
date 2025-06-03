@@ -28,7 +28,7 @@ class TaskTracker;
 class WriteBufferFromAzureBlobStorage : public WriteBufferFromFileBase
 {
 public:
-    using AzureClientPtr = std::shared_ptr<const AzureBlobStorage::ContainerClient>;
+    using AzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
 
     WriteBufferFromAzureBlobStorage(
         AzureClientPtr blob_container_client_,
@@ -60,11 +60,8 @@ private:
     void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
 
-    /// Returns true if not a single byte was written to the buffer
-    bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
-
     LoggerPtr log;
-    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 
@@ -87,13 +84,12 @@ private:
 
     char fake_buffer_when_prefinalized[1] = {};
 
-    bool first_buffer = true;
+    bool first_buffer=true;
 
     size_t total_size = 0;
     size_t hidden_size = 0;
 
     std::unique_ptr<TaskTracker> task_tracker;
-    bool check_objects_after_upload = false;
 
     std::deque<PartData> detached_part_data;
 };

@@ -86,7 +86,7 @@
         let map = L.map('space', {
             crs: L.CRS.Simple,
             center: [-512, 512],
-            maxBounds: [[512, -512], [-1536, 1536]],
+            maxBounds: [[128, -128], [-1152, 1152]],
             zoom: 0,
         });
 
@@ -103,17 +103,9 @@
                     (zoom_factor * (tile_x + {x:UInt16} * 1024))::UInt16 AS x,
                     (zoom_factor * (tile_y + {y:UInt16} * 1024))::UInt16 AS y,
 
-                    hilbertEncode(x, y) DIV 2 AS addr,
+                    mortonEncode(x, y) AS addr,
 
-                    replaceOne(
-                        replaceRegexpOne(
-                            demangle(addressToSymbol(addr)),
-                            '^([\\w\\*]+ )+', -- simple return types
-                            ''),
-                        '(anonymous namespace)::',
-                        '') AS full_name,
-
-                    extract(full_name, '(?:(?:DB|std|__1|detail|impl_?)::)?(\\w+)') AS name,
+                    extract(demangle(addressToSymbol(addr)), '^[^<]+') AS name,
                     (empty(name) ? 0 : sipHash64(name)) AS hash,
                     hash MOD 256 AS r, hash DIV 256 MOD 256 AS g, hash DIV 65536 MOD 256 AS b
 
@@ -233,33 +225,14 @@
             }
         }
 
-        function hilbertEncode(x, y) {
-            let xn = BigInt(x);
-            let yn = BigInt(y);
-
-            let res = 0n;
-
-            for (let shift = 0n; shift < 16n; ++shift) {
-                const mask = 1n << (15n - shift);
-                const x_bit = (xn & mask) > 0n ? 1n : 0n;
-                const y_bit = (yn & mask) > 0n ? 1n : 0n;
-
-                res += mask * mask * ((3n * y_bit) ^ x_bit);
-
-                if (x_bit == 0n) {
-                    if (y_bit == 1n) {
-                        xn = mask - 1n - xn;
-                        yn = mask - 1n - yn;
-                    }
-                    [xn, yn] = [yn, xn];
-                }
-            }
-
-            return res;
-        }
-
         function showPopup(x, y) {
-            let addr_int = hilbertEncode(x, y) / 2n;
+            const xn = BigInt(x);
+            const yn = BigInt(y);
+            let addr_int = 0n;
+            for (let bit = 0n; bit < 16n; ++bit) {
+                addr_int |= ((xn >> bit) & 1n) << (bit * 2n);
+                addr_int |= ((yn >> bit) & 1n) << (1n + bit * 2n);
+            }
 
             current_requested_addr = addr_int;
 

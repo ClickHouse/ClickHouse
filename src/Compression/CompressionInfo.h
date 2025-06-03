@@ -4,10 +4,10 @@
 
 /** Common defines for compression */
 
-constexpr uint64_t DBMS_MAX_COMPRESSED_SIZE = 0x40000000ULL;    /// 1GB
+#define DBMS_MAX_COMPRESSED_SIZE 0x40000000ULL    /// 1GB
 
 /** one byte for method, 4 bytes for compressed size, 4 bytes for uncompressed size */
-constexpr uint8_t COMPRESSED_BLOCK_HEADER_SIZE = 9;
+#define COMPRESSED_BLOCK_HEADER_SIZE 9
 
 namespace DB
 {

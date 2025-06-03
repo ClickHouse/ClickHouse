@@ -1,8 +1,6 @@
-#include <Common/assert_cast.h>
 #include <Processors/Formats/Impl/CustomSeparatedRowInputFormat.h>
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/Operators.h>
@@ -45,8 +43,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         with_types_,
         format_settings_,
         std::make_unique<CustomSeparatedFormatReader>(*buf_, ignore_spaces_, format_settings_),
-        format_settings_.custom.try_detect_header,
-        format_settings_.custom.allow_variable_number_of_columns)
+        format_settings_.custom.try_detect_header)
     , buf(std::move(buf_)), ignore_spaces(ignore_spaces_)
 {
     /// In case of CustomSeparatedWithNames(AndTypes) formats and enabled setting input_format_with_names_use_header we don't know
@@ -207,7 +204,7 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
     std::vector<String> values;
     skipRowStartDelimiter();
 
-    if (columns == 0 || format_settings.custom.allow_variable_number_of_columns)
+    if (columns == 0 || allowVariableNumberOfColumns())
     {
         do
         {
@@ -231,7 +228,7 @@ void CustomSeparatedFormatReader::skipRow()
 
     /// If the number of columns in row is unknown,
     /// we should check for end of row after each field.
-    if (columns == 0 || format_settings.custom.allow_variable_number_of_columns)
+    if (columns == 0 || allowVariableNumberOfColumns())
     {
         bool first = true;
         do

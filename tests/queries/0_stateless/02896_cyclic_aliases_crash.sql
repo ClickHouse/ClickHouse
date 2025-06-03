@@ -6,7 +6,7 @@ SELECT
     val + 1 as prev,
     val + prev as val
 FROM ( SELECT 1 as val )
-; -- { serverError CYCLIC_ALIASES, UNKNOWN_IDENTIFIER, TOO_DEEP_RECURSION }
+; -- { serverError CYCLIC_ALIASES, TOO_DEEP_RECURSION }
 
 
 SELECT

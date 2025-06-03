@@ -1,18 +1,18 @@
 #pragma once
 
-#include <atomic>
 #include <unordered_map>
 #include <IO/WriteSettings.h>
+#include <Core/Block.h>
 #include <base/types.h>
 #include <base/defines.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/ColumnSize.h>
-#include <Storages/IStorage_fwd.h>
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -21,10 +21,11 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Storages/MergeTree/IPartMetadataManager.h>
+
 
 namespace zkutil
 {
@@ -35,9 +36,7 @@ namespace zkutil
 namespace DB
 {
 
-class Block;
 struct ColumnSize;
-class DeserializationPrefixesCache;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
 class IReservation;
@@ -51,9 +50,6 @@ class MergeTreeTransaction;
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
-class PrimaryIndexCache;
-using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
-
 enum class DataPartRemovalState : uint8_t
 {
     NOT_ATTEMPTED,
@@ -62,9 +58,7 @@ enum class DataPartRemovalState : uint8_t
     NOT_REACHED_REMOVAL_TIME,
     HAS_SKIPPED_MUTATION_PARENT,
     EMPTY_PART_COVERS_OTHER_PARTS,
-    REMOVE,
-    REMOVE_ROLLED_BACK,
-    REMOVE_RETRY,
+    REMOVED,
 };
 
 /// Description of the data part.
@@ -75,15 +69,20 @@ public:
 
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
+    using ValueSizeMap = std::map<std::string, double>;
+    using VirtualFields = std::unordered_map<String, Field>;
+
+    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using Index = Columns;
-    using IndexPtr = std::shared_ptr<const Index>;
+    using Index = std::shared_ptr<const Columns>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
+
+    using uint128 = IPartMetadataManager::uint128;
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
@@ -93,10 +92,23 @@ public:
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
-    virtual bool isStoredOnReadonlyDisk() const = 0;
-    virtual bool isStoredOnRemoteDisk() const = 0;
-    virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
+    virtual MergeTreeReaderPtr getReader(
+        const NamesAndTypesList & columns_,
+        const StorageSnapshotPtr & storage_snapshot,
+        const MarkRanges & mark_ranges,
+        const VirtualFields & virtual_fields,
+        UncompressedCache * uncompressed_cache,
+        MarkCache * mark_cache,
+        const AlterConversionsPtr & alter_conversions,
+        const MergeTreeReaderSettings & reader_settings_,
+        const ValueSizeMap & avg_value_size_hints_,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
+    virtual bool isStoredOnDisk() const = 0;
+
+    virtual bool isStoredOnRemoteDisk() const = 0;
+
+    virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
@@ -112,10 +124,10 @@ public:
     bool hasSecondaryIndex(const String & index_name) const;
 
     /// Return information about column size on disk for all columns in part
-    ColumnSize getTotalColumnsSize() const;
+    ColumnSize getTotalColumnsSize() const { return total_columns_size; }
 
     /// Return information about secondary indexes size on disk for all indexes in part
-    IndexSize getTotalSecondaryIndicesSize() const;
+    IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
 
     virtual std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
@@ -133,18 +145,12 @@ public:
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_);
 
-    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_) { columns_substreams = columns_substreams_; }
-
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
-    void setMetadataVersion(int32_t metadata_version_) noexcept { metadata_version = metadata_version_; }
-    void writeMetadataVersion(ContextPtr local_context, int32_t metadata_version, bool sync);
 
     const NamesAndTypesList & getColumns() const { return columns; }
     const ColumnsDescription & getColumnsDescription() const { return columns_description; }
     const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return columns_description_with_collected_nested; }
-    const ColumnsSubstreams & getColumnsSubstreams() const { return columns_substreams; }
-    StorageMetadataPtr getMetadataSnapshot() const;
 
     NameAndTypePair getColumn(const String & name) const;
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
@@ -160,27 +166,19 @@ public:
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
+    /// Throws an exception if part is not stored in on-disk format.
+    void assertOnDisk() const;
+
     void remove();
 
     ColumnsStatistics loadStatistics() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
-    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version = true);
+    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
+    void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
     void loadRowsCountFileForUnexpectedPart();
-
-    /// Loads marks and saves them into mark cache for specified columns.
-    virtual void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const = 0;
-
-    /// Removes marks from cache for all columns in part.
-    virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
-
-    /// Removes data related to data part from mark and primary index caches.
-    void clearCaches();
-
-    /// Returns true if data related to data part may be stored in mark and primary index caches.
-    bool mayStoreDataInCaches() const;
 
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
@@ -215,7 +213,7 @@ public:
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
     UInt128 getPartBlockIDHash() const;
-    String getNewPartBlockID(std::string_view token) const;
+    String getZeroLevelPartBlockID(std::string_view token) const;
 
     void setName(const String & new_name);
 
@@ -295,20 +293,19 @@ public:
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(MergeTreeDataPartState new_state) const;
-    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state.load(std::memory_order_relaxed); }
+    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state; }
 
-    static std::string_view stateString(MergeTreeDataPartState state);
-    std::string_view stateString() const { return stateString(state.load(std::memory_order_relaxed)); }
+    static constexpr std::string_view stateString(MergeTreeDataPartState state) { return magic_enum::enum_name(state); }
+    constexpr std::string_view stateString() const { return stateString(state); }
 
     String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
 
     /// Returns true if state of part is one of affordable_states
     bool checkState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
     {
-        auto current_state = state.load(std::memory_order_relaxed);
         for (auto affordable_state : affordable_states)
         {
-            if (current_state == affordable_state)
+            if (state == affordable_state)
                 return true;
         }
         return false;
@@ -321,7 +318,7 @@ public:
 
     /// Amount of rows between marks
     /// As index always loaded into memory
-    MergeTreeIndexGranularityPtr index_granularity;
+    MergeTreeIndexGranularity index_granularity;
 
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
@@ -343,11 +340,11 @@ public:
         {
         }
 
-        void load(const IMergeTreeDataPart & part);
+        void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, IDataPartStorage & part_storage, Checksums & checksums) const;
         [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
@@ -371,24 +368,15 @@ public:
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
 
-    /// The number of temporary projection block.
-    /// It is set while rebuilding projections in merges or mutations.
-    std::optional<UInt64> temp_projection_block_number;
-
-    IndexPtr getIndex() const;
-    IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
-    void moveIndexToCache(PrimaryIndexCache & index_cache);
-    void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
-
-    void setIndex(Columns index_columns);
+    Index getIndex() const;
+    void setIndex(const Columns & cols_);
+    void setIndex(Columns && cols_);
     void unloadIndex();
     bool isIndexLoaded() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
-    UInt64 getIndexGranularityBytes() const;
-    UInt64 getIndexGranularityAllocatedBytes() const;
     UInt64 getMarksCount() const;
     UInt64 getIndexSizeFromFile() const;
 
@@ -405,7 +393,7 @@ public:
     auto getFilesChecksums() const { return checksums.files; }
 
     /// Moves a part to detached/ directory and adds prefix to its name
-    void renameToDetached(const String & prefix, bool ignore_error = false);
+    void renameToDetached(const String & prefix);
 
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
@@ -435,13 +423,9 @@ public:
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample = std::nullopt) const;
+    void calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
-
-    /// This method ignores current tmp prefix of part and returns
-    /// the name of part when it was or will be in Active state.
-    String getRelativePathOfActivePart() const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -475,7 +459,6 @@ public:
 
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
-    bool areChecksumsLoaded() const { return !checksums.empty(); }
 
     void setBrokenReason(const String & message, int code) const;
 
@@ -573,10 +556,6 @@ public:
     /// This one is about removing file with version of part's metadata (columns, pk and so on)
     void removeMetadataVersion();
 
-    /// Read a file associated to a part
-    std::unique_ptr<ReadBuffer> readFile(const String & file_name) const;
-    std::unique_ptr<ReadBuffer> readFileIfExists(const String & file_name) const;
-
     static std::optional<String> getStreamNameOrHash(
         const String & name,
         const IMergeTreeDataPart::Checksums & checksums);
@@ -617,23 +596,19 @@ protected:
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
     mutable std::mutex index_mutex;
-    mutable IndexPtr index;
-
-private:
-    /// Columns and secondary indices sizes can be calculated lazily on first request.
-    mutable std::mutex columns_and_secondary_indices_sizes_mutex;
-    mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
+    mutable Index index TSA_GUARDED_BY(index_mutex);
+    mutable bool index_loaded TSA_GUARDED_BY(index_mutex) = false;
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
-    mutable ColumnSize total_columns_size;
+    ColumnSize total_columns_size;
+
     /// Size for each column, calculated once in calcuateColumnSizesOnDisk
-    mutable ColumnSizeByName columns_sizes;
+    ColumnSizeByName columns_sizes;
 
-    mutable ColumnSize total_secondary_indices_size;
+    ColumnSize total_secondary_indices_size;
 
-    mutable IndexSizeByName secondary_index_sizes;
+    IndexSizeByName secondary_index_sizes;
 
-protected:
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
     UInt64 bytes_on_disk{0};
@@ -642,10 +617,6 @@ protected:
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
 
-    /// List of substreams in order of serialization/deserialization for each column.
-    /// Used only in Compact parts.
-    ColumnsSubstreams columns_substreams;
-
     const Type part_type;
 
     /// Not null when it's a projection part.
@@ -653,6 +624,8 @@ protected:
     String parent_part_name;
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
+
+    mutable PartMetadataManagerPtr metadata_manager;
 
     void removeIfNeeded();
 
@@ -674,13 +647,15 @@ protected:
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
 
+    void initializePartMetadataManager();
+
     void initializeIndexGranularityInfo();
 
     virtual void doCheckConsistency(bool require_part_metadata) const;
 
 private:
     String mutable_name;
-    mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};
+    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
@@ -702,22 +677,24 @@ private:
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
+    static void appendFilesOfUUID(Strings & files);
 
     /// Reads columns names and types from columns.txt
-    void loadColumns(bool require, bool load_metadata_version);
+    void loadColumns(bool require);
 
-    /// Reads columns substreams from columns_substreams.txt (only in Compact parts).
-    void loadColumnsSubstreams();
+    static void appendFilesOfColumns(Strings & files);
+
+    static void appendFilesOfChecksums(Strings & files);
 
     /// Loads marks index granularity into memory
     virtual void loadIndexGranularity();
 
-    /// Loads the index file.
-    std::shared_ptr<Index> loadIndex() const;
+    virtual void appendFilesOfIndexGranularity(Strings & files) const;
 
-    /// Optimize index. Drop useless columns from suffix of primary key.
-    template <typename Columns>
-    void optimizeIndexColumns(size_t marks_count, Columns & index_columns) const;
+    /// Loads the index file.
+    void loadIndex() const TSA_REQUIRES(index_mutex);
+
+    void appendFilesOfIndex(Strings & files) const;
 
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
@@ -727,14 +704,20 @@ private:
     /// if load_existing_rows_count_for_old_parts and exclude_deleted_rows_for_part_size_in_merge are both enabled.
     void loadExistingRowsCount();
 
+    static void appendFilesOfRowsCount(Strings & files);
+
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
 
+    static void appendFilesOfTTLInfos(Strings & files);
+
     void loadPartitionAndMinMaxIndex();
 
-    void calculateColumnsSizesOnDisk(std::optional<Block> columns_sample = std::nullopt) const;
+    void calculateColumnsSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
 
-    void calculateSecondaryIndicesSizesOnDisk() const;
+    void calculateSecondaryIndicesSizesOnDisk();
+
+    void appendFilesOfPartitionAndMinMaxIndex(Strings & files) const;
 
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without
@@ -747,6 +730,10 @@ private:
     template <typename Writer>
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
 
+    static void appendFilesOfDefaultCompressionCodec(Strings & files);
+
+    static void appendFilesOfMetadataVersion(Strings & files);
+
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
@@ -756,14 +743,8 @@ private:
 
     void checkConsistencyBase() const;
 
-    /// Returns the name of projection for projection part, empty string for regular part.
-    String getProjectionName() const;
-
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;
-
-    /// If it's true then data related to this part is cleared from mark and index caches.
-    mutable std::atomic_bool cleared_data_in_caches = false;
 };
 
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
@@ -773,6 +754,7 @@ bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
+std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);
 
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;

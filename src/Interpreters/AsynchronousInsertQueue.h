@@ -3,12 +3,11 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/Chunk.h>
 #include <Poco/Logger.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
-#include <Common/SettingsChanges.h>
 #include <Common/ThreadPool.h>
+#include <Processors/Chunk.h>
 
 #include <future>
 #include <shared_mutex>
@@ -61,7 +60,7 @@ public:
     void flushAll();
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
-    PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context);
+    PushResult pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
 
     /// This method should be called manually because it's not flushed automatically in dtor
@@ -118,7 +117,8 @@ private:
         {
             if (std::holds_alternative<Block>(*this))
                 return DataKind::Preprocessed;
-            return DataKind::Parsed;
+            else
+                return DataKind::Parsed;
         }
 
         bool empty() const
@@ -147,7 +147,6 @@ private:
             const String format;
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
-            NameToNameMap query_parameters;
 
             Entry(
                 DataChunk && chunk_,
@@ -261,7 +260,7 @@ private:
 
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
-    PushResult pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context);
+    PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context);
 
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,
@@ -288,8 +287,10 @@ private:
 
     template <typename LogFunc>
     static Chunk processPreprocessedEntries(
+        const InsertQuery & key,
         const InsertDataPtr & data,
         const Block & header,
+        const ContextPtr & insert_context,
         LogFunc && add_to_async_insert_log);
 
     template <typename E>

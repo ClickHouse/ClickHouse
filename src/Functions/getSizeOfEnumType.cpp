@@ -45,7 +45,7 @@ public:
 
         if (which.isEnum8())
             return std::make_shared<DataTypeUInt8>();
-        if (which.isEnum16())
+        else if (which.isEnum16())
             return std::make_shared<DataTypeUInt16>();
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Enum", getName());
@@ -67,9 +67,10 @@ private:
     {
         if (const auto * type8 = checkAndGetDataType<DataTypeEnum8>(data_type.get()))
             return DataTypeUInt8().createColumnConst(input_rows_count, type8->getValues().size());
-        if (const auto * type16 = checkAndGetDataType<DataTypeEnum16>(data_type.get()))
+        else if (const auto * type16 = checkAndGetDataType<DataTypeEnum16>(data_type.get()))
             return DataTypeUInt16().createColumnConst(input_rows_count, type16->getValues().size());
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Enum", getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Enum", getName());
     }
 };
 

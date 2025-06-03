@@ -1,20 +1,18 @@
 ---
-description: 'Overview of nested data structures in ClickHouse'
-sidebar_label: 'Nested(Name1 Type1, Name2 Type2, ...)'
+slug: /en/sql-reference/data-types/nested-data-structures/nested
 sidebar_position: 57
-slug: /sql-reference/data-types/nested-data-structures/nested
-title: 'Nested'
+sidebar_label: Nested(Name1 Type1, Name2 Type2, ...)
 ---
 
 # Nested
 
-## Nested(name1 Type1, Name2 Type2, ...) {#nestedname1-type1-name2-type2-}
+## Nested(name1 Type1, Name2 Type2, ...)
 
 A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../../sql-reference/statements/create/table.md) query. Each table row can correspond to any number of rows in a nested data structure.
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE test.visits
 (
     CounterID UInt32,
@@ -37,15 +35,15 @@ CREATE TABLE test.visits
 ) ENGINE = CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
 ```
 
-This example declares the `Goals` nested data structure, which contains data about conversions (goals reached). Each row in the 'visits' table can correspond to zero or any number of conversions.
+This example declares the `Goals` nested data structure, which contains data about conversions (goals reached). Each row in the ‘visits’ table can correspond to zero or any number of conversions.
 
-When [flatten_nested](/operations/settings/settings#flatten_nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported.
+When [flatten_nested](../../../operations/settings/settings.md#flatten-nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported.
 
 In most cases, when working with a nested data structure, its columns are specified with column names separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 
 Example:
 
-```sql
+``` sql
 SELECT
     Goals.ID,
     Goals.EventTime
@@ -54,7 +52,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+``` text
 ┌─Goals.ID───────────────────────┬─Goals.EventTime───────────────────────────────────────────────────────────────────────────┐
 │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
 │ [1073752]                      │ ['2014-03-17 00:28:25']                                                                   │
@@ -71,9 +69,9 @@ LIMIT 10
 
 It is easiest to think of a nested data structure as a set of multiple column arrays of the same length.
 
-The only place where a SELECT query can specify the name of an entire nested data structure instead of individual columns is the ARRAY JOIN clause. For more information, see "ARRAY JOIN clause". Example:
+The only place where a SELECT query can specify the name of an entire nested data structure instead of individual columns is the ARRAY JOIN clause. For more information, see “ARRAY JOIN clause”. Example:
 
-```sql
+``` sql
 SELECT
     Goal.ID,
     Goal.EventTime
@@ -83,7 +81,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+``` text
 ┌─Goal.ID─┬──────Goal.EventTime─┐
 │ 1073752 │ 2014-03-17 16:38:10 │
 │  591325 │ 2014-03-17 16:38:48 │
@@ -98,7 +96,7 @@ LIMIT 10
 └─────────┴─────────────────────┘
 ```
 
-You can't perform SELECT for an entire nested data structure. You can only explicitly list individual columns that are part of it.
+You can’t perform SELECT for an entire nested data structure. You can only explicitly list individual columns that are part of it.
 
 For an INSERT query, you should pass all the component column arrays of a nested data structure separately (as if they were individual column arrays). During insertion, the system checks that they have the same length.
 

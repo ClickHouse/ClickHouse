@@ -1,21 +1,19 @@
 #pragma once
 
 #include <QueryPipeline/BlockIO.h>
-#include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ThreadStatus.h>
-#include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
 {
 
 class Chain;
-class ReadBuffer;
+class ThreadStatus;
 
-class ParallelReplicasReadingCoordinator;
-using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
+struct ThreadStatusesHolder;
+using ThreadStatusesHolderPtr = std::shared_ptr<ThreadStatusesHolder>;
 
 /** Interprets the INSERT query.
   */
@@ -43,12 +41,19 @@ public:
     /// It not explicit names were specified, return nullopt.
     std::optional<Names> getInsertColumnNames() const;
 
+    Chain buildChain(
+        const StoragePtr & table,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Names & columns,
+        ThreadStatusesHolderPtr thread_status_holder = {},
+        std::atomic_uint64_t * elapsed_counter_ms = nullptr,
+        bool check_access = false);
+
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
     StoragePtr getTable(ASTInsertQuery & query);
-
     static Block getSampleBlock(
         const ASTInsertQuery & query,
         const StoragePtr & table,
@@ -57,20 +62,14 @@ public:
         bool no_destination = false,
         bool allow_materialized = false);
 
-
     bool supportsTransactions() const override { return true; }
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer);
+    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
 
-    static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
+    bool shouldAddSquashingFroStorage(const StoragePtr & table) const;
 
 private:
-    static Block getSampleBlock(
-        const Names & names,
-        const StoragePtr & table,
-        const StorageMetadataPtr & metadata_snapshot,
-        bool allow_virtuals,
-        bool allow_materialized);
+    static Block getSampleBlockImpl(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, bool no_destination, bool allow_materialized);
 
     ASTPtr query_ptr;
     const bool allow_materialized;
@@ -78,18 +77,25 @@ private:
     bool no_destination = false;
     const bool async_insert;
 
-    size_t max_threads = 0;
-    size_t max_insert_threads = 0;
-
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 
+    std::pair<std::vector<Chain>, std::vector<Chain>> buildPreAndSinkChains(size_t presink_streams, size_t sink_streams, StoragePtr table, const StorageMetadataPtr & metadata_snapshot, const Block & query_sample_block);
+
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
-    QueryPipeline addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
 
-    std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
-    std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
-    buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table);
+    Chain buildSink(
+        const StoragePtr & table,
+        const StorageMetadataPtr & metadata_snapshot,
+        ThreadStatusesHolderPtr thread_status_holder,
+        ThreadGroupPtr running_group,
+        std::atomic_uint64_t * elapsed_counter_ms);
+
+    Chain buildPreSinkChain(
+        const Block & subsequent_header,
+        const StoragePtr & table,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Block & query_sample_block);
 };
 
 

@@ -4,14 +4,14 @@
 
 namespace DB
 {
-void ASTDatabaseOrNone::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTDatabaseOrNone::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     if (none)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
         return;
     }
-    ostr << backQuoteIfNeed(database_name);
+    settings.ostr << backQuoteIfNeed(database_name);
 }
 
 }
