@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 
-#include <Common/assert_cast.h>
 #include <Common/futex.h>
 #include <Formats/FormatParserGroup.h>
 
@@ -9,7 +8,7 @@ namespace DB::Parquet
 
 ParserGroupExt::Limits ParserGroupExt::getLimitsPerReader(const FormatParserGroup & parser_group, double fraction)
 {
-    const ParserGroupExt & ext = *assert_cast<const ParserGroupExt *>(parser_group.opaque.get());
+    const ParserGroupExt & ext = *static_cast<const ParserGroupExt *>(parser_group.opaque.get());
     size_t n = parser_group.num_streams.load(std::memory_order_relaxed);
     fraction /= std::max(n, size_t(1));
     return Limits {

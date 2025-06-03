@@ -86,38 +86,19 @@ struct ParserGroupExt
 enum class ReadStage
 {
     NotStarted = 0,
+
     BloomFilterHeader,
     BloomFilterBlocksOrDictionary,
     ColumnIndexAndOffsetIndex,
+
     PrewhereOffsetIndex,
     PrewhereData,
+
     MainOffsetIndex, // "main" means columns that are not in prewhere
     MainData,
-    Deliver,
-    Deallocated,
-};
 
-/// Subsequence of ReadStage-s relevant to a whole RowGroup.
-/// Each such stage transition is a barrier synchronizing all columns of the row group.
-/// E.g. bloom filters have two stages in ReadStage but one stage here because the two stages
-/// (read header, then read blocks) need to happen sequentially within each column; then, after all
-/// columns finish both stages, some row-group-level work needs to happen (applying KeyCondition
-/// using all columns' bloom filters at once) before any column can proceed to the next stage.
-enum class RowGroupReadStage
-{
-    NotStarted = 0,
-    BloomAndDictionaryFilters,
-    ColumnIndex,
-    Subgroups,
-    Deallocated,
-};
-
-enum class RowSubgroupReadStage
-{
-    NotStarted = 0,
-    Prewhere,
-    MainColumns,
     Deliver,
+
     Deallocated,
 };
 
@@ -136,11 +117,9 @@ struct MemoryUsageDiff
 {
     ReadStage cur_stage;
     std::array<ssize_t, size_t(ReadStage::Deallocated)> by_stage {};
+    /// Bit mask saying which ReadStage-s may have new tasks that can be scheduled to thread pool.
+    UInt64 stages_to_schedule = 0;
     bool finalized = false;
-    /// True if we may have unblocked some tasks by means other then freeing memory
-    /// (specifically, we advanced first_incomplete_row_group or delivery_ptr).
-    bool retry_scheduling_for_all_stages = false;
-    bool retry_scheduling_for_cur_stage = false;
 
     explicit MemoryUsageDiff(ReadStage cur_stage_) : cur_stage(cur_stage_) {}
     MemoryUsageDiff() = delete;
@@ -163,6 +142,15 @@ struct MemoryUsageDiff
     {
         chassert(!finalized);
         by_stage.at(size_t(stage)) -= ssize_t(amount);
+    }
+
+    void scheduleAllStages()
+    {
+        stages_to_schedule = ~0ul;
+    }
+    void scheduleStage(ReadStage stage)
+    {
+        stages_to_schedule |= 1ul << size_t(stage);
     }
 };
 

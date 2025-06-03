@@ -48,6 +48,7 @@ namespace DB::Parquet
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
 //  * cache FileMetaData in something like SchemaCache
 //  * TSA
+//  * test with tsan
 //  * research reading only requested tuple elements automatically (supportsSubcolumns, supportsDynamicSubcolumns, supportsOptimizationToSubcolumns?)
 //  * use dictionary page instead of bloom filter when possible
 //  * test performance with prewhere i%2=0, to have lots of range skips
@@ -59,6 +60,7 @@ namespace DB::Parquet
 //     - prewhere with expression string equal to some (weird) column name in the file
 //     - prewhere with expression that's just a (UInt8) column name, present or not present in select
 //     - prewhere condition that uses no columns (e.g. rand()%2=0)
+//     - prewhere condition that uses all columns (e.g. select x prewhere x%2=0)
 //     - no columns to read outside prewhere
 //     - no columns to read, but not trivial count either
 //     - ROW POLICY, with and without prewhere, with old and new reader
@@ -77,6 +79,7 @@ namespace DB::Parquet
 //    memory budget; but also think about memory locality - is it worse than for simple solution?
 //    is there a way to make it better or to support simple solution as special case?
 //  * lazy materialization (not feasible because of unaligned pages?)
+//  * add prewhere check next to addNumRowsToCache calls, in addition to key condition check
 
 /// Components of this parquet reader implementation:
 ///  * Prefetcher is responsible for coalescing nearby short reads into bigger reads.
@@ -350,7 +353,7 @@ struct Reader
 
         Columns output; // parallel to extended_sample_block
 
-        std::atomic<RowSubgroupReadStage> stage {RowSubgroupReadStage::NotStarted};
+        std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
     };
 
@@ -372,13 +375,13 @@ struct Reader
         /// Fields below are used only by ReadManager.
 
         /// Indexes of the first subgroup that didn't finish
-        /// {prewhere, reading remainig columns, delivering final chunk}.
+        /// {prewhere, reading main columns, delivering final chunk}.
         /// delivery_ptr <= read_ptr <= prewhere_ptr <= subgroups.size()
         std::atomic<size_t> prewhere_ptr {0};
         std::atomic<size_t> read_ptr {0};
         std::atomic<size_t> delivery_ptr {0};
 
-        std::atomic<RowGroupReadStage> stage {RowGroupReadStage::NotStarted};
+        std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
     };
 
