@@ -1,5 +1,6 @@
-#include "WebUIRequestHandler.h"
-#include "IServer.h"
+#include <Server/HTTPResponseHeaderWriter.h>
+#include <Server/IServer.h>
+#include <Server/WebUIRequestHandler.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -26,8 +27,10 @@ INCBIN(resource_merges_html, SOURCE_DIR "/programs/server/merges.html");
 namespace DB
 {
 
-static void handle(HTTPServerRequest & request, HTTPServerResponseBase & response, std::string_view html)
+static void handle(HTTPServerRequest & request, HTTPServerResponseBase & response, std::string_view html,
+                   std::unordered_map<String, String> http_response_headers_override = {})
 {
+    applyHTTPResponseHeaders(response, http_response_headers_override);
     response.setContentType("text/html; charset=UTF-8");
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
@@ -41,7 +44,7 @@ static void handle(HTTPServerRequest & request, HTTPServerResponseBase & respons
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
-    handle(request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize}, http_response_headers_override);
 }
 
 void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
@@ -59,28 +62,28 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
     static re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js)";
     RE2::Replace(&html, lz_string_url, "/js/lz-string.js");
 
-    handle(request, response, html);
+    handle(request, response, html, http_response_headers_override);
 }
 
 void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
-    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize}, http_response_headers_override);
 }
 
 void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
-    handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize}, http_response_headers_override);
 }
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     if (request.getURI() == "/js/uplot.js")
     {
-        handle(request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize});
+        handle(request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize}, http_response_headers_override);
     }
     else if (request.getURI() == "/js/lz-string.js")
     {
-        handle(request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize});
+        handle(request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize}, http_response_headers_override);
     }
     else
     {
@@ -90,7 +93,7 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         wb->finalize();
     }
 
-    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize}, http_response_headers_override);
 }
 
 }

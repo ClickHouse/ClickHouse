@@ -19,7 +19,8 @@ public:
         IServer & server_,
         const PrometheusRequestHandlerConfig & config_,
         const AsynchronousMetrics & async_metrics_,
-        std::shared_ptr<PrometheusMetricsWriter> metrics_writer_);
+        std::shared_ptr<PrometheusMetricsWriter> metrics_writer_,
+        std::unordered_map<String, String> response_headers_ = {});
     ~PrometheusRequestHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
@@ -50,6 +51,7 @@ private:
     String http_method;
     std::unique_ptr<WriteBufferFromHTTPServerResponseBase> write_buffer_from_response;
     bool send_stacktrace = false;
+    std::unordered_map<String, String> response_headers;
 };
 
 }
