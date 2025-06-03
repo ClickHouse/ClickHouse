@@ -63,22 +63,30 @@ ${CLICKHOUSE_CLIENT} -q "
   SYSTEM FLUSH LOGS query_log;
 
   -- 52503 which is 43 * number of granules, 10000000
-  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders']
+  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders'],
+          ProfileEvents['GranulesSkippedByPrewhereReaders'], ProfileEvents['GranulesReadByPrewhereReaders'],
+          ProfileEvents['RowsSkippedByPrewhereReaders']
     FROM system.query_log
    WHERE current_database=currentDatabase() AND query_id = '$query_id_1' and type = 'QueryFinish';
 
   -- 52503, 10052503 which is the sum of 10000000 from the first prewhere step plus 52503 from the second
-  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders']
+  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders'],
+            ProfileEvents['GranulesSkippedByPrewhereReaders'], ProfileEvents['GranulesReadByPrewhereReaders'],
+            ProfileEvents['RowsSkippedByPrewhereReaders']
     FROM system.query_log
    WHERE current_database=currentDatabase() AND query_id = '$query_id_2' and type = 'QueryFinish';
 
   -- 26273 the same as query #1 but twice less data (43 * ceil((52503 / 43) / 2)), 10000000
-  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders']
+  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders'],
+            ProfileEvents['GranulesSkippedByPrewhereReaders'], ProfileEvents['GranulesReadByPrewhereReaders'],
+            ProfileEvents['RowsSkippedByPrewhereReaders']
     FROM system.query_log
    WHERE current_database=currentDatabase() AND query_id = '$query_id_3' and type = 'QueryFinish';
 
   -- 0, 10052503
-  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders']
+  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders'],
+            ProfileEvents['GranulesSkippedByPrewhereReaders'], ProfileEvents['GranulesReadByPrewhereReaders'],
+            ProfileEvents['RowsSkippedByPrewhereReaders']
     FROM system.query_log
    WHERE current_database=currentDatabase() AND query_id = '$query_id_4' and type = 'QueryFinish';
 "

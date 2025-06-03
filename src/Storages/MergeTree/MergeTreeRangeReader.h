@@ -286,8 +286,8 @@ public:
         /// Applies the filter to the columns and updates num_rows.
         void applyFilter(const FilterWithCachedCount & filter);
 
-        /// Counts the number of granules that were dropped by the filter to estimate the performance of prewhere readers.
-        size_t countDroppedGranules(const FilterWithCachedCount & filter) const;
+        /// Counts the number of granules that were skipped by the filter to estimate the performance of prewhere readers.
+        size_t countSkippededGranules(const FilterWithCachedCount & filter) const;
 
         /// Verifies that columns and filter sizes match.
         /// The checks might be non-trivial so it make sense to have the only in debug builds.

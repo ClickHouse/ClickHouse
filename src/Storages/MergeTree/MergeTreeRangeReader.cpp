@@ -32,9 +32,9 @@ namespace ProfileEvents
 {
     extern const Event RowsReadByMainReader;
     extern const Event RowsReadByPrewhereReaders;
-    extern const Event GranulesDroppedByPrewhereReaders;
+    extern const Event GranulesSkippedByPrewhereReaders;
     extern const Event GranulesReadByPrewhereReaders;
-    extern const Event RowsDroppedByPrewhereReaders;
+    extern const Event RowsSkippedByPrewhereReaders;
 }
 
 namespace DB
@@ -465,9 +465,9 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
 
     LOG_TEST(log, "ReadResult::applyFilter() num_rows before: {}", num_rows);
 
-    /// Save before filtering to calculate how many rows/granules were dropped.
+    /// Save before filtering to calculate how many rows/granules were skipped.
     size_t rows_before_filter = num_rows;
-    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrewhereReaders, countDroppedGranules(filter));
+    ProfileEvents::increment(ProfileEvents::GranulesSkippedByPrewhereReaders, countSkippededGranules(filter));
 
     filterColumns(columns, filter);
 
@@ -482,35 +482,42 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
 
     num_rows = filter.countBytesInFilter();
 
-    ProfileEvents::increment(ProfileEvents::RowsDroppedByPrewhereReaders, rows_before_filter - num_rows);
+    ProfileEvents::increment(ProfileEvents::RowsSkippedByPrewhereReaders, rows_before_filter - num_rows);
 
     LOG_TEST(log, "ReadResult::applyFilter() num_rows after: {}", num_rows);
 }
 
-size_t MergeTreeRangeReader::ReadResult::countDroppedGranules(const FilterWithCachedCount & filter) const
+size_t MergeTreeRangeReader::ReadResult::countSkippededGranules(const FilterWithCachedCount & filter) const
 {
     if (rows_per_granule.empty() || filter.size() < total_rows_per_granule)
         return 0;
 
-    size_t dropped_granules = 0;
+    size_t skipped_granules = 0;
     size_t row_offset = 0;
     const auto & filter_data = filter.getData();
 
     for (size_t granule_idx = 0; granule_idx < rows_per_granule.size(); ++granule_idx)
     {
         size_t num_rows_in_granule = rows_per_granule[granule_idx];
-        bool granule_contains_passing_rows = std::any_of(
+
+        if (row_offset + num_rows_in_granule > filter_data.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Filter size mismatch: expected at least {} rows, got {}",
+                row_offset + num_rows_in_granule, filter_data.size());
+
+        /// Count granules where ALL rows are filtered out. We don't count partially filtered granules.
+        bool has_any_rows_passing_filter = std::any_of(
             filter_data.begin() + row_offset,
             filter_data.begin() + row_offset + num_rows_in_granule,
             [](UInt8 value) { return value != 0; });
 
-        if (!granule_contains_passing_rows && num_rows_in_granule > 0)
-            ++dropped_granules;
+        if (!has_any_rows_passing_filter && num_rows_in_granule > 0)
+            ++skipped_granules;
 
         row_offset += num_rows_in_granule;
     }
 
-    return dropped_granules;
+    return skipped_granules;
 }
 
 void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules)
