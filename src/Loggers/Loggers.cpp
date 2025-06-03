@@ -403,3 +403,10 @@ void Loggers::flushTextLogs()
     if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
         async->flushTextLogs();
 }
+
+void Loggers::stopLogging()
+{
+    if (split)
+        split->close();
+    split.reset();
+}

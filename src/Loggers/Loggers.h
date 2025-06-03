@@ -29,6 +29,8 @@ public:
 
     virtual ~Loggers() = default;
 
+    void stopLogging();
+
 protected:
     virtual bool allowTextLog() const { return true; }
 
