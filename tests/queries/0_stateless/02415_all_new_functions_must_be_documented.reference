@@ -99,7 +99,6 @@ base58Encode
 basename
 bin
 bitPositionsToArray
-bitmapAnd
 bitmaskToArray
 bitmaskToList
 blockNumber
