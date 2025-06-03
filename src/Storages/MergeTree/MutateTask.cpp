@@ -562,7 +562,7 @@ static void analyzeTTLCommands(MutationContext & ctx, MutatedData & mutated_data
 
     auto analyze_ttl = [&](const TTLDescription & ttl, const String & ttl_name, bool is_column_ttl)
     {
-        if (recalculate_only || drop_only)
+        if (recalculate_only || drop_only || ttl.mode == TTLMode::RECOMPRESS || ttl.mode == TTLMode::MOVE)
         {
             add_required_columns(ttl);
             ctx.ttls_to_calculate.insert(ttl_name);
