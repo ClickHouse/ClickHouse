@@ -13,6 +13,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
 #include "getSchemaFromSnapshot.h"
 #include "PartitionPruner.h"
 #include "KernelUtils.h"
@@ -341,7 +342,6 @@ private:
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
-    bool,
     LoggerPtr log_)
     : helper(helper_)
     , object_storage(object_storage_)
