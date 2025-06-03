@@ -26,6 +26,21 @@ namespace DB::ErrorCodes
 namespace Iceberg
 {
 
+String FileContentTypeToString(FileContentType type)
+{
+    switch (type)
+    {
+        case FileContentType::DATA:
+            return "data";
+        case FileContentType::POSITIONAL_DELETE:
+            return "position_deletes";
+        case FileContentType::EQUALITY_DELETE:
+            return "equality_deletes";
+        case FileContentType::DELETION_VECTOR:
+            return "deletion_vector";
+    }
+}
+
 namespace
 {
     /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
@@ -106,15 +121,16 @@ namespace
 
 }
 
-const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles() const
+const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles(FileContentType content_type) const
 {
-    return files;
+    if (content_type == FileContentType::DATA)
+        return data_files;
+    else if (content_type == FileContentType::POSITIONAL_DELETE)
+        return position_deletes_files;
+    else
+        throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_METHOD, "Unsupported content type: {}", static_cast<int>(content_type));
 }
 
-const std::vector<ManifestFileEntry> & ManifestFileContent::getPositionDeletesFiles() const
-{
-        return position_deletes_files;
-}
 
 Int32 ManifestFileContent::getSchemaId() const
 {
@@ -163,6 +179,7 @@ ManifestFileContent::ManifestFileContent(
     partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
     partition_key_ast->children.push_back(partition_key_ast->arguments);
 
+
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -172,7 +189,10 @@ ManifestFileContent::ManifestFileContent(
         /// we use column internal number as it's name.
         auto numeric_column_name = DB::backQuote(DB::toString(source_id));
         DB::NameAndTypePair manifest_file_column_characteristics = schema_processor.getFieldCharacteristics(schema_id, source_id);
-        auto partition_ast = getASTFromTransform(partition_specification_field->getValue<String>(f_transform), numeric_column_name);
+        auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
+        auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
+        common_partition_specification.emplace_back(source_id, transform_name, partition_name);
+        auto partition_ast = getASTFromTransform(transform_name, numeric_column_name);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
             continue;
@@ -190,7 +210,7 @@ ManifestFileContent::ManifestFileContent(
         if (format_version_ > 1)
         {
             content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
-            if (content_type == FileContentType::EQUALITY_DELETES)
+            if (content_type == FileContentType::EQUALITY_DELETE)
                 throw Exception(
                     ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: equality deletes are not supported");
         }
@@ -283,8 +303,6 @@ ManifestFileContent::ManifestFileContent(
             }
         }
 
-        DataFileEntry file = DataFileEntry{file_path_key, file_path};
-
         Int64 added_sequence_number = 0;
         if (format_version_ > 1)
         {
@@ -312,11 +330,21 @@ ManifestFileContent::ManifestFileContent(
         switch (content_type)
         {
             case FileContentType::DATA:
-                this->files.emplace_back(status, added_sequence_number, file, partition_key_value, columns_infos);
+                this->data_files.emplace_back(
+                    file_path_key, file_path, status, added_sequence_number, partition_key_value, columns_infos, DataFileSpecificInfo{});
                 break;
-            case FileContentType::POSITION_DELETES:
-            {
-                this->position_deletes_files.emplace_back(status, added_sequence_number, file, partition_key_value, columns_infos);
+            case FileContentType::POSITIONAL_DELETE: {
+                this->position_deletes_files.emplace_back(
+                    file_path_key,
+                    file_path,
+                    status,
+                    added_sequence_number,
+                    partition_key_value,
+                    columns_infos,
+                    PositionalDeleteFileSpecificInfo{
+                        .reference_file_path
+                        = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
+                              .safeGet<String>()});
                 break;
             }
             default:
@@ -354,14 +382,14 @@ size_t ManifestFileContent::getSizeInMemory() const
     if (partition_key_description)
         total_size += sizeof(DB::KeyDescription);
     total_size += column_ids_which_have_bounds.size() * sizeof(Int32);
-    total_size += files.capacity() * sizeof(ManifestFileEntry);
+    total_size += data_files.capacity() * sizeof(ManifestFileEntry);
     return total_size;
 }
 
 std::optional<Int64> ManifestFileContent::getRowsCountInAllDataFilesExcludingDeleted() const
 {
     Int64 result = 0;
-    for (const auto & file : files)
+    for (const auto & file : data_files)
     {
         /// Have at least one column with rows count
         bool found = false;
@@ -385,7 +413,7 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllDataFilesExcludingDel
 std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFiles() const
 {
     Int64 result = 0;
-    for (const auto & file : files)
+    for (const auto & file : data_files)
     {
         /// Have at least one column with bytes count
         bool found = false;

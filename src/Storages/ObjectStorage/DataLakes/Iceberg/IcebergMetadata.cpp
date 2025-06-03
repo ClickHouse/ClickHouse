@@ -143,7 +143,7 @@ public:
             if (current_index >= data_files.size())
                 return nullptr;
 
-            auto key = data_files[current_index].file.file_name;
+            auto key = data_files[current_index].file_name;
             auto object_metadata = object_storage->getObjectMetadata(key);
 
             if (callback)
@@ -688,9 +688,9 @@ void IcebergMetadata::initializeDataFiles(ManifestListPtr manifest_list_ptr) con
 {
     for (const auto & manifest_file_content : *manifest_list_ptr)
     {
-        for (const auto & data_file_path : manifest_file_content->getFiles())
+        for (const auto & data_file_path : manifest_file_content->getFiles(FileContentType::DATA))
         {
-            manifest_file_by_data_file.emplace(data_file_path.file.file_name, manifest_file_content);
+            manifest_file_by_data_file.emplace(data_file_path.file_name, manifest_file_content);
         }
     }
 }
@@ -860,31 +860,29 @@ ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 
     return create_fn();
 }
 
-std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
+std::vector<Iceberg::ManifestFileEntry>
+IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType file_content_type) const
 {
-    if (!relevant_snapshot)
-        return {};
-
+    std::optional<std::vector<Iceberg::ManifestFileEntry>> & cached_files = (file_content_type == FileContentType::DATA)
+        ? cached_unprunned_files_for_last_processed_snapshot
+        : cached_unprunned_position_deletes_files_for_last_processed_snapshot;
     bool use_partition_pruning = filter_dag && getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning];
+    if (!use_partition_pruning && cached_files.has_value())
+        return cached_files.value();
 
-    if (!use_partition_pruning && cached_unprunned_files_for_last_processed_snapshot.has_value())
-        return cached_unprunned_files_for_last_processed_snapshot.value();
-
-    std::vector<Iceberg::ManifestFileEntry> data_files;
+    std::vector<Iceberg::ManifestFileEntry> files;
     for (const auto & manifest_file_ptr : *(relevant_snapshot->manifest_list))
     {
         ManifestFilesPruner pruner(
-            schema_processor, relevant_snapshot_schema_id,
-            use_partition_pruning ? filter_dag : nullptr,
-            *manifest_file_ptr, getContext());
-        const auto & data_files_in_manifest = manifest_file_ptr->getFiles();
-        for (const auto & manifest_file_entry : data_files_in_manifest)
+            schema_processor, relevant_snapshot_schema_id, use_partition_pruning ? filter_dag : nullptr, *manifest_file_ptr, getContext());
+        const auto & files_in_manifest = manifest_file_ptr->getFiles(file_content_type);
+        for (const auto & manifest_file_entry : files_in_manifest)
         {
             if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
             {
                 if (!pruner.canBePruned(manifest_file_entry))
                 {
-                    data_files.push_back(manifest_file_entry);
+                    files.push_back(manifest_file_entry);
                 }
             }
         }
@@ -892,36 +890,22 @@ std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getDataFiles(const Acti
 
     if (!use_partition_pruning)
     {
-        cached_unprunned_files_for_last_processed_snapshot = data_files;
-        return cached_unprunned_files_for_last_processed_snapshot.value();
+        cached_files = files;
+        return cached_files.value();
     }
 
-    return data_files;
+    return files;
 }
 
-std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getPositionDeletesFiles() const
+
+std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
 {
-    if (!relevant_snapshot)
-        return {};
+    return getFilesImpl(filter_dag, FileContentType::DATA);
+}
 
-    if (cached_unprunned_position_deletes_files_for_last_processed_snapshot.has_value())
-        return cached_unprunned_position_deletes_files_for_last_processed_snapshot.value();
-
-    std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
-    for (const auto & manifest_file_ptr : *(relevant_snapshot->manifest_list))
-    {
-        const auto & data_files_in_manifest = manifest_file_ptr->getPositionDeletesFiles();
-        for (const auto & manifest_file_entry : data_files_in_manifest)
-        {
-            if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
-            {
-                position_deletes_files.push_back(manifest_file_entry);
-            }
-        }
-    }
-
-    cached_unprunned_position_deletes_files_for_last_processed_snapshot = position_deletes_files;
-    return cached_unprunned_position_deletes_files_for_last_processed_snapshot.value();
+std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getPositionDeletesFiles(const ActionsDAG * filter_dag) const
+{
+    return getFilesImpl(filter_dag, FileContentType::POSITIONAL_DELETE);
 }
 
 std::optional<size_t> IcebergMetadata::totalRows() const
@@ -991,7 +975,7 @@ ObjectIterator IcebergMetadata::iterate(
     FileProgressCallback callback,
     size_t /* list_batch_size */) const
 {
-    return std::make_shared<IcebergKeysIterator>(getDataFiles(filter_dag), getPositionDeletesFiles(), object_storage, callback);
+    return std::make_shared<IcebergKeysIterator>(getDataFiles(filter_dag), getPositionDeletesFiles(filter_dag), object_storage, callback);
 }
 
 bool IcebergMetadata::hasDataTransformer(const ObjectInfoPtr & object_info) const

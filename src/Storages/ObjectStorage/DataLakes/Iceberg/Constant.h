@@ -39,7 +39,8 @@ DEFINE_ICEBERG_FIELD(time);
 DEFINE_ICEBERG_FIELD(timestamp);
 DEFINE_ICEBERG_FIELD(timestamptz);
 DEFINE_ICEBERG_FIELD(type)
-DEFINE_ICEBERG_FIELD(transform);
+DEFINE_ICEBERG_FIELD(partition_transform);
+DEFINE_ICEBERG_FIELD(partition_name);
 DEFINE_ICEBERG_FIELD(uuid);
 DEFINE_ICEBERG_FIELD(value);
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
@@ -66,4 +67,5 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, column_sizes);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, null_value_counts);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, lower_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, upper_bounds);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
 }

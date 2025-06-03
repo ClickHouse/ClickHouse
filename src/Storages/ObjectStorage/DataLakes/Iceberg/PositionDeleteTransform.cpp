@@ -40,11 +40,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
     for (const auto & position_deletes_object : iceberg_object_info->position_deletes_objects)
     {
-        /// If the deletes object is older than the data object, skip it.
-        if (position_deletes_object.added_sequence_number < iceberg_object_info->data_object.added_sequence_number)
-            continue;
-
-        auto object_path = position_deletes_object.file.file_name;
+        auto object_path = position_deletes_object.file_name;
         auto object_metadata = object_storage->getObjectMetadata(object_path);
         auto object_info = std::make_shared<ObjectInfo>(object_path, object_metadata);
 

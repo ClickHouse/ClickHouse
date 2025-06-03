@@ -28,17 +28,12 @@ enum class ManifestEntryStatus : uint8_t
 enum class FileContentType : uint8_t
 {
     DATA = 0,
-    POSITION_DELETES = 1,
-    EQUALITY_DELETES = 2,
+    POSITIONAL_DELETE = 1,
+    EQUALITY_DELETE = 2,
+    DELETION_VECTOR = 3,
 };
 
-struct DataFileEntry
-{
-    // It's the original string in the Iceberg metadata
-    String file_path_key;
-    // It's a processed file path to be used by Object Storage
-    String file_name;
-};
+String FileContentTypeToString(FileContentType type);
 
 struct ColumnInfo
 {
@@ -48,15 +43,32 @@ struct ColumnInfo
     std::optional<DB::Range> hyperrectangle;
 };
 
+struct DataFileSpecificInfo
+{
+};
+
+struct PositionalDeleteFileSpecificInfo
+{
+    std::optional<String> reference_file_path;
+};
+
+using IcebergFileSpecificInfo = std::variant<DataFileSpecificInfo, PositionalDeleteFileSpecificInfo>;
+
 /// Description of Data file in manifest file
 struct ManifestFileEntry
 {
+    // It's the original string in the Iceberg metadata
+    String file_path_key;
+    // It's a processed file path to be used by Object Storage
+    String file_name;
+
     ManifestEntryStatus status;
     Int64 added_sequence_number;
 
-    DataFileEntry file;
     DB::Row partition_key_value;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
+
+    IcebergFileSpecificInfo specific_info;
 };
 
 /**
@@ -85,6 +97,14 @@ struct ManifestFileEntry
  * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  */
 
+struct PartitionEntry
+{
+    Int32 source_id;
+    String transform_name;
+    String partition_name;
+};
+using PartitionEntries = std::vector<PartitionEntry>;
+
 class ManifestFileContent
 {
 public:
@@ -99,8 +119,7 @@ public:
         const std::string & table_location,
         DB::ContextPtr context);
 
-    const std::vector<ManifestFileEntry> & getFiles() const;
-    const std::vector<ManifestFileEntry> & getPositionDeletesFiles() const;
+    const std::vector<ManifestFileEntry> & getFiles(FileContentType content_type) const;
     Int32 getSchemaId() const;
 
     bool hasPartitionKey() const;
@@ -121,9 +140,10 @@ private:
 
     Int32 schema_id;
     Poco::JSON::Object::Ptr schema_object;
+    PartitionEntries common_partition_specification;
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
-    std::vector<ManifestFileEntry> files;
+    std::vector<ManifestFileEntry> data_files;
     // Partition level deletes files
     std::vector<ManifestFileEntry> position_deletes_files;
 

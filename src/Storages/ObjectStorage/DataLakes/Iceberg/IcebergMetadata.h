@@ -29,12 +29,13 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
         Iceberg::ManifestFileEntry data_object_,
         std::optional<ObjectMetadata> metadata_ = std::nullopt,
         const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_ = {})
-        : RelativePathWithMetadata(data_object_.file.file_name, std::move(metadata_))
+        : RelativePathWithMetadata(data_object_.file_name, std::move(metadata_))
         , data_object(data_object_)
     {
         for (const auto & position_deletes_object : position_deletes_objects_)
         {
-            if (position_deletes_object.partition_key_value == data_object.partition_key_value)
+            if ((position_deletes_object.partition_key_value == data_object.partition_key_value)
+                && (position_deletes_object.added_sequence_number < data_object.added_sequence_number))
                 position_deletes_objects.push_back(position_deletes_object);
         }
     }
@@ -43,7 +44,7 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
     std::vector<Iceberg::ManifestFileEntry> position_deletes_objects;
 
     // Return the path in the Iceberg metadata
-    std::string getIcebergDataPath() const { return data_object.file.file_path_key; }
+    std::string getIcebergDataPath() const { return data_object.file_path_key; }
 };
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
 
@@ -154,7 +155,7 @@ private:
 
     std::vector<Iceberg::ManifestFileEntry> getDataFiles(const ActionsDAG * filter_dag) const;
 
-    std::vector<Iceberg::ManifestFileEntry> getPositionDeletesFiles() const;
+    std::vector<Iceberg::ManifestFileEntry> getPositionDeletesFiles(const ActionsDAG * filter_dag) const;
 
     void updateSnapshot();
 
@@ -174,6 +175,8 @@ private:
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
+
+    std::vector<Iceberg::ManifestFileEntry> getFilesImpl(const ActionsDAG * filter_dag, Iceberg::FileContentType file_content_type) const;
 };
 }
 
