@@ -49,7 +49,7 @@ class ExpressionVisitorData
 private:
     LoggerPtr log = getLogger("DeltaLakeExpressionVisitor");
     /// A counter for expression node lists,
-    /// which represent an intermidiate parsing result.
+    /// which represent an intermediate parsing result.
     size_t list_counter = 0;
     /// Counter used to form const column names
     /// as temporary names for constant columns at first.
@@ -134,7 +134,7 @@ public:
             visitor_exception = exception;
     }
 
-    /// Generate next list id (for intermidiate parsing result).
+    /// Generate next list id (for intermediate parsing result).
     size_t nextListID()
     {
         return list_counter++;
