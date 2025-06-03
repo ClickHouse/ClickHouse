@@ -60,19 +60,20 @@ public:
     }
 
 private:
-    /// Called when the cache is full, and we evict some cells as per the cache policy.
-    void onEviction(const EvictionDetails & details) override
+    /// Called for each individual item being evicted from cache
+    /// Returns the number of marks in this specific file
+    size_t onValueRemoval(const MappedPtr & mappedPtr) override
     {
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, details.total_weight_loss);
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks,
-            /// Sum up the total number of marks across all evicted cache entries
-            std::accumulate(details.evicted_values.begin(), details.evicted_values.end(), 0ULL,
-            [](size_t sum, const MappedPtr & ptr)
-            {
-                return sum + std::static_pointer_cast<MarksInCompressedFile>(ptr)->getNumberOfMarks();
-            }));
-        /// number of files evicted from the cache is same as number of evicted values as both are tied together as a cell in the cache
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles, details.evicted_values.size());
+        auto marks_in_compressed_file = std::static_pointer_cast<MarksInCompressedFile>(mappedPtr);
+        return marks_in_compressed_file->getNumberOfMarks();
+    }
+
+    /// Called when cache overflow occurs with aggregate eviction stats
+    void onEviction(const EvictionStats& stats) override
+    {
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, stats.total_weight_loss);
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks, stats.total_evicted_marks_num);
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles, stats.total_evicted_files_num);
     }
 };
 

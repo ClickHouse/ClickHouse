@@ -24,6 +24,8 @@ public:
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
     using typename Base::OnEvictionFunction;
+    using typename Base::OnRemoveFunction;
+    using typename Base::EvictionStats;
 
     /** Initialize SLRUCachePolicy with max_size_in_bytes and max_protected_size.
       * max_protected_size shows how many of the most frequently used entries will not be evicted after a sequential scan.
@@ -36,7 +38,8 @@ public:
         size_t max_size_in_bytes_,
         size_t max_count_,
         double size_ratio_,
-        OnEvictionFunction on_eviction_function_)
+        OnEvictionFunction on_eviction_function_,
+        OnRemoveFunction on_remove_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
         , max_protected_size(calculateMaxProtectedSize(max_size_in_bytes_, size_ratio_))
@@ -45,6 +48,7 @@ public:
         , current_size_in_bytes_metric(size_in_bytes_metric_)
         , count_metric(count_metric_)
         , on_eviction_function(on_eviction_function_)
+        , on_remove_function(on_remove_function_)
     {
     }
 
@@ -271,6 +275,7 @@ private:
 
     WeightFunction weight_function;
     OnEvictionFunction on_eviction_function;
+    OnRemoveFunction on_remove_function;
 
     static size_t calculateMaxProtectedSize(size_t max_size_in_bytes, double size_ratio)
     {
@@ -283,7 +288,7 @@ private:
         const size_t old_size = cells.size();
 
         size_t current_weight_lost = 0;
-        std::vector<MappedPtr> evicted_values; // vector to store evicted values on account of overflow
+        EvictionStats eviction_stats{0, 0, 0};
         size_t queue_size = queue.size();
 
         std::function<bool()> need_remove;
@@ -327,7 +332,11 @@ private:
             else
             {
                 current_weight_lost += cell.size;
-                evicted_values.push_back(cell.value); // Store the evicted value
+                eviction_stats.total_weight_loss += cell.size;
+                // Get item-specific count from callback (e.g., number of marks)
+                eviction_stats.total_evicted_marks_num += on_remove_function(cell.value);
+                ++eviction_stats.total_evicted_files_num;
+
                 cells.erase(it);
                 queue.pop_front();
             }
@@ -335,9 +344,10 @@ private:
             --queue_size;
         }
 
-        if (!is_protected)
+        // Call eviction callback only for actual evictions from probationary queue
+        if (!is_protected && eviction_stats.total_evicted_files_num > 0)
         {
-            on_eviction_function(current_weight_lost, evicted_values);
+            on_eviction_function(eviction_stats);
         }
 
         if (current_size_in_bytes > (1ull << 63))

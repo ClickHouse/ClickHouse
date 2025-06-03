@@ -22,6 +22,8 @@ public:
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
     using typename Base::OnEvictionFunction;
+    using typename Base::OnRemoveFunction;
+    using typename Base::EvictionStats;
 
     /** Initialize LRUCachePolicy with max_size_in_bytes and max_count.
      *  max_size_in_bytes == 0 means the cache accepts no entries.
@@ -32,13 +34,15 @@ public:
         CurrentMetrics::Metric count_metric_,
         size_t max_size_in_bytes_,
         size_t max_count_,
-        OnEvictionFunction on_eviction_function_)
+        OnEvictionFunction on_eviction_function_,
+        OnRemoveFunction on_remove_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
         , max_count(max_count_)
         , current_size_in_bytes_metric(size_in_bytes_metric_)
         , count_metric(count_metric_)
         , on_eviction_function(on_eviction_function_)
+        , on_remove_function(on_remove_function_)
     {
     }
 
@@ -222,6 +226,7 @@ private:
 
     WeightFunction weight_function;
     OnEvictionFunction on_eviction_function;
+    OnRemoveFunction on_remove_function;
 
     void removeOverflow()
     {
@@ -230,7 +235,7 @@ private:
 
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
-        std::vector<MappedPtr> evicted_values; // vector to store evicted values on account of overflow
+        EvictionStats eviction_stats{0, 0, 0};
 
         while ((current_size_in_bytes > max_size_in_bytes || (max_count != 0 && queue_size > max_count)) && (queue_size > 0))
         {
@@ -244,14 +249,18 @@ private:
 
             current_size_in_bytes -= cell.size;
             current_weight_lost += cell.size;
-            evicted_values.push_back(cell.value); // Store the evicted value
+            /// Get item-specific count from callback (e.g., number of marks)
+            eviction_stats.total_evicted_marks_num += on_remove_function(cell.value);
+            ++eviction_stats.total_evicted_files_num;
 
             cells.erase(it);
             queue.pop_front();
             --queue_size;
         }
 
-        on_eviction_function(current_weight_lost, evicted_values);
+        /// Call eviction callback with accumulated stats
+        if (eviction_stats.total_evicted_files_num > 0)
+            on_eviction_function(eviction_stats);
 
         if (current_size_in_bytes > (1ull << 63))
             std::terminate(); // Queue became inconsistent

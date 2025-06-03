@@ -26,7 +26,7 @@ public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-    using OnEvictionFunction = std::function<void(size_t, std::vector<MappedPtr>&)>;
+    using OnRemoveFunction = std::function<size_t(const MappedPtr &)>;  // For per-item callback
 
     struct KeyMapped
     {
@@ -34,11 +34,14 @@ public:
         MappedPtr mapped;
     };
 
-    struct EvictionDetails
+    struct EvictionStats
     {
         size_t total_weight_loss;
-        std::vector<MappedPtr> evicted_values; // vector to store evicted values on account of overflow
+        size_t total_evicted_marks_num;
+        size_t total_evicted_files_num;
     };
+
+    using OnEvictionFunction = std::function<void(const EvictionStats &)>;  // Receives aggregate stats
 
     explicit ICachePolicy(CachePolicyUserQuotaPtr user_quotas_) : user_quotas(std::move(user_quotas_)) {}
     virtual ~ICachePolicy() = default;

@@ -94,6 +94,8 @@ public:
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
     using typename Base::OnEvictionFunction;
+    using typename Base::OnRemoveFunction;
+    using typename Base::EvictionStats;
 
     explicit TTLCachePolicy(CurrentMetrics::Metric size_in_bytes_metric_, CurrentMetrics::Metric count_metric_, CachePolicyUserQuotaPtr quotas_)
         : Base(std::move(quotas_))
