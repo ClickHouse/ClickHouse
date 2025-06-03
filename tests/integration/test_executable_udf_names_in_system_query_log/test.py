@@ -70,14 +70,11 @@ def check_executable_udf_functions(functions):
     node.query(execute_udf, query_id=query_id)
     node.query("SYSTEM FLUSH LOGS")
 
-    used_functions = set(map(repr, functions))
-    if len(functions) > 1:
-        used_functions.add("\'concat\'")
-
-    query_result = node.query("SELECT used_functions FROM system.query_log "
+    used_executable_user_defined_functions = set(map(repr, functions))
+    query_result = node.query("SELECT used_executable_user_defined_functions FROM system.query_log "
                               "WHERE type = \'QueryFinish\' AND query_id = \'{}\'".format(query_id))
     query_result = set(query_result[1:len(query_result) - 2].split(','))
-    assert query_result == used_functions
+    assert query_result == used_executable_user_defined_functions
 
 
 def test_executable_function_single(started_cluster):

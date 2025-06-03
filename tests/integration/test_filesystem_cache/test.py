@@ -300,7 +300,7 @@ def test_custom_cached_disk(non_shared_cluster):
         DROP TABLE IF EXISTS test SYNC;
         CREATE TABLE test (a Int32)
         ENGINE = MergeTree() ORDER BY tuple()
-        SETTINGS disk = disk(type = cache, path = 'kek', max_size = 1, disk = 'hdd_blob');
+        SETTINGS disk = disk(type = cache, path = 'kek', max_size = 10, disk = 'hdd_blob');
         """
     )
 
@@ -322,7 +322,7 @@ def test_custom_cached_disk(non_shared_cluster):
         f"""
     CREATE TABLE test (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached', path = 'kek', max_size = 1, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached', path = 'kek', max_size = 10, disk = 'hdd_blob');
     """
     )
 
@@ -358,7 +358,7 @@ def test_custom_cached_disk(non_shared_cluster):
         f"""
     CREATE TABLE test2 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached2', path = 'kek2', max_size = 1, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached2', path = 'kek2', max_size = 10, disk = 'hdd_blob');
     """
     )
 
@@ -378,7 +378,7 @@ def test_custom_cached_disk(non_shared_cluster):
         f"""
     CREATE TABLE test3 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached3', path = 'kek3', max_size = 1, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached3', path = 'kek3', max_size = 10, disk = 'hdd_blob');
     """
     )
 
@@ -393,7 +393,7 @@ def test_custom_cached_disk(non_shared_cluster):
         f"""
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/kek4', max_size = 1, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/kek4', max_size = 10, disk = 'hdd_blob');
     """
     )
 
@@ -401,7 +401,7 @@ def test_custom_cached_disk(non_shared_cluster):
         f"""
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/var/lib/clickhouse/custom_caches/kek4', max_size = 1, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/var/lib/clickhouse/custom_caches/kek4', max_size = 10, disk = 'hdd_blob');
     """
     )
 
@@ -507,14 +507,16 @@ def test_force_filesystem_cache_on_merges(cluster):
 def test_system_sync_filesystem_cache(cluster):
     node = cluster.instances["node"]
     node.query(
-        """
+        f"""
 DROP TABLE IF EXISTS test;
+SYSTEM DROP FILESYSTEM CACHE;
 
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
             max_size = '10Gi',
-            path = "test_system_sync_filesystem_cache",
+            path = "test_system_sync_filesystem_cache_{uuid.uuid4()}",
+            cache_policy = 'lru',
             disk = hdd_blob),
         min_bytes_for_wide_part = 10485760;
     """
@@ -528,7 +530,7 @@ INSERT INTO test SELECT 1, 'test';
     """
     )
 
-    query_id = "system_sync_filesystem_cache_1"
+    query_id = f"system_sync_filesystem_cache_1_{uuid.uuid4()}"
     node.query(
         "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
         query_id=query_id,
@@ -556,7 +558,7 @@ INSERT INTO test SELECT 1, 'test';
     node.query("SELECT * FROM test FORMAT Null")
     assert key not in node.query("SYSTEM SYNC FILESYSTEM CACHE")
 
-    query_id = "system_sync_filesystem_cache_2"
+    query_id = f"system_sync_filesystem_cache_2_{uuid.uuid4()}"
     node.query(
         "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
         query_id=query_id,
@@ -575,6 +577,7 @@ INSERT INTO test SELECT 1, 'test';
     cache_path = node.query(
         f"SELECT cache_path FROM system.filesystem_cache WHERE key = '{key}' and file_segment_range_begin = {offset}"
     )
+    assert len(cache_path) > 0
 
     node.exec_in_container(["bash", "-c", f"echo -n 'fff' > {cache_path}"])
 
