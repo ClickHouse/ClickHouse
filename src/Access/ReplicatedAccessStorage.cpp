@@ -323,7 +323,7 @@ bool ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zooke
     {
         LOG_WARNING(
             getLogger(),
-            "Although uuid entity was founded, name entity doesn't exist. Data partially removed. Need to remove uuid entity.");
+            "Although uuid entity was found, name entity doesn't exist. Data partially removed. Need to remove uuid entity.");
     }
 
     /// If this fails, then we'll just retry from the start.
