@@ -163,6 +163,7 @@ void ArrowBlockInputFormat::prepareReader()
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
         getPort().getHeader(),
         "Arrow",
+        format_settings,
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
@@ -212,6 +213,7 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
         *schema,
         file_reader ? file_reader->metadata() : nullptr,
         stream ? "ArrowStream" : "Arrow",
+        format_settings,
         format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0,
         false,
