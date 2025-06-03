@@ -1198,7 +1198,7 @@ namespace
         constexpr size_t num_kill_check_tries = 1000;
         constexpr size_t kill_check_delay_ms = 100;
         fmt::print("Will terminate forcefully (pid = {}).\n", pid);
-        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, signal_name))
+        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, "kill"))
             return 0;
 
         if (!isRunning(pid_file))
