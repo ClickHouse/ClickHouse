@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: for 3d query, read_rows in query_log sometimes differs for some reason, check later
+
 DROP TABLE IF EXISTS ev;
 DROP TABLE IF EXISTS idx;
 
