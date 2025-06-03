@@ -98,7 +98,7 @@ If `func` is not specified, it returns the number of non-zero elements in the ar
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayCount>();
+    factory.registerFunction<FunctionArrayCount>(documentation);
 }
 
 }

@@ -7,14 +7,32 @@ strip = true
 inherits = "release"
 lto = true
 
+[source.vendored-sources]
+directory = "@RUST_VENDOR_DIR@"
+
 [source.crates-io]
 registry = 'sparse+https://index.crates.io/'
 replace-with = 'vendored-sources'
 
-[source."git+https://github.com/azat-rust/tuikit.git?rev=e1994c0e03ff02c49cf1471f0cc3cbf185ce0104"]
-git = "https://github.com/azat-rust/tuikit.git"
+[source."git+https://github.com/ClickHouse/tuikit.git?rev=e1994c0e03ff02c49cf1471f0cc3cbf185ce0104"]
+git = "https://github.com/ClickHouse/tuikit.git"
 rev = "e1994c0e03ff02c49cf1471f0cc3cbf185ce0104"
 replace-with = "vendored-sources"
 
-[source.vendored-sources]
-directory = "@RUST_VENDOR_DIR@"
+# chdig
+[source."git+https://github.com/azat-rust/clickhouse-rs?branch=next"]
+git = "https://github.com/azat-rust/clickhouse-rs"
+branch = "next"
+replace-with = "vendored-sources"
+[source."git+https://github.com/azat-rust/cursive-flexi-logger-view?branch=next"]
+git = "https://github.com/azat-rust/cursive-flexi-logger-view"
+branch = "next"
+replace-with = "vendored-sources"
+[source."git+https://github.com/azat-rust/cursive?branch=next"]
+git = "https://github.com/azat-rust/cursive"
+branch = "next"
+replace-with = "vendored-sources"
+[source."git+https://github.com/azat-rust/cursive_table_view?branch=next"]
+git = "https://github.com/azat-rust/cursive_table_view"
+branch = "next"
+replace-with = "vendored-sources"
