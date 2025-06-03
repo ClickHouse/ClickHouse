@@ -133,8 +133,8 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
             {
                 validateNamedCollection<>(*named_collection, {"datasource"}, {"schema", "table"});
                 connection_string = named_collection->get<String>("datasource");
-                schema_name = named_collection->get<String>("schema");
-                remote_table_name = named_collection->get<String>("table");
+                schema_name = named_collection->getOrDefault<String>("schema", "");
+                remote_table_name = named_collection->getOrDefault<String>("table", "");
             }
             else
             {
