@@ -1,15 +1,11 @@
 #pragma once
 
-#include <unordered_map>
-#include <vector>
-
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-
 
 namespace DB
 {
@@ -43,6 +39,35 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     void merge(const RangesInDataPartsDescription & other);
 };
 
+struct PartOffsetRange
+{
+    size_t begin;
+    size_t end;
+};
+
+struct PartOffsetRanges : public std::vector<PartOffsetRange>
+{
+    /// Tracks the total number of rows to determine if using the projection index is worthwhile.
+    size_t total_rows = 0;
+
+    /// Used to determine whether offsets can fit in 32-bit or require 64-bit.
+    size_t max_part_offset = 0;
+
+    /// Returns true if the ranges collectively cover the full range [0, total_rows)
+    bool isContiguousFullRange() const { return total_rows == max_part_offset + 1; }
+
+    /// Checks if the given offset falls within any of the stored ranges.
+    /// Each range is treated as a half-open interval: [begin, end)
+    bool contains(UInt64 offset) const
+    {
+        for (const auto & range : *this)
+        {
+            if (offset >= range.begin && offset < range.end)
+                return true;
+        }
+        return false;
+    }
+};
 
 /// A vehicle which transports additional information to optimize searches
 struct RangesInDataPartReadHints
@@ -60,6 +85,9 @@ struct RangesInDataPart
     MarkRanges ranges;
     MarkRanges exact_ranges;
     RangesInDataPartReadHints read_hints;
+
+    /// Offset ranges from parent part, used during projection index reading.
+    PartOffsetRanges parent_ranges;
 
     RangesInDataPart(
         const DataPartPtr & data_part_,

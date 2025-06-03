@@ -72,4 +72,19 @@ private:
     std::vector<BlockAndProgress> chunks;
 };
 
+class MergeTreeProjectionIndexSelectAlgorithm : public IMergeTreeSelectAlgorithm
+{
+public:
+    void preparePartToRead(const RangesInDataPart * part_) { part = part_; }
+
+    String getName() const override { return "ProjectionIndex"; }
+    bool needNewTask(const MergeTreeReadTask & task) const override { return task.isFinished(); }
+
+    MergeTreeReadTaskPtr getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task) override;
+    MergeTreeReadTask::BlockAndProgress readFromTask(MergeTreeReadTask & task) override { return task.read(); }
+
+private:
+    const RangesInDataPart * part = nullptr;
+};
+
 }

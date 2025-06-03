@@ -64,6 +64,22 @@ struct UsefulSkipIndexes
     std::vector<std::vector<size_t>> per_part_index_orders;
 };
 
+/// Contains parts each from different projection index
+using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+
+struct ProjectionIndexReadInfo
+{
+    ProjectionDescriptionRawPtr projection;
+    PrewhereInfoPtr prewhere_info;
+};
+using ProjectionIndexReadInfos = std::vector<ProjectionIndexReadInfo>;
+
+struct ProjectionIndexReadDescription
+{
+    ProjectionIndexReadRangesByIndex read_ranges;
+    ProjectionIndexReadInfos read_infos;
+};
+
 struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
 
@@ -272,6 +288,10 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
+    const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
+
+    ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
+
 private:
     MergeTreeReaderSettings reader_settings;
 
@@ -398,6 +418,8 @@ private:
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
+
+    ProjectionIndexReadDescription projection_index_read_desc;
 };
 
 }
