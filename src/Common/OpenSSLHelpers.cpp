@@ -14,6 +14,7 @@
 #include <openssl/x509v3.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Common/Crypto/KeyPair.h>
 
 namespace DB
 {
@@ -113,6 +114,34 @@ bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::strin
     return result == 1;
 }
 
+std::string calculateHMACwithSHA256(std::string to_sign, EVP_PKEY * pkey)
+{
+    size_t signature_length = 0;
+
+    EVP_MD_CTX * context(EVP_MD_CTX_create());
+    const EVP_MD * digest = EVP_get_digestbyname("SHA256");
+    if (!digest || EVP_DigestInit_ex(context, digest, nullptr) != 1
+        || EVP_DigestSignInit(context, nullptr, digest, nullptr, pkey) != 1
+        || EVP_DigestSignUpdate(context, to_sign.c_str(), to_sign.size()) != 1
+        || EVP_DigestSignFinal(context, nullptr, &signature_length) != 1)
+    {
+        EVP_MD_CTX_destroy(context);
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error forming SHA256 digest: {}", getOpenSSLErrors());
+    }
+
+    std::vector<unsigned char> signature_bytes(signature_length);
+    if (EVP_DigestSignFinal(context, &signature_bytes.front(), &signature_length) != 1)
+    {
+        EVP_MD_CTX_destroy(context);
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error finalizing SHA256 digest: {}", getOpenSSLErrors());
+    }
+
+    EVP_MD_CTX_destroy(context);
+
+    std::string signature = { signature_bytes.begin(), signature_bytes.end() };
+    return base64Encode(signature, /*url_encoding*/ true, /*no_padding*/ true);
+}
+
 std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::string & data)
 {
     std::vector<uint8_t> result(EVP_MAX_MD_SIZE);
@@ -173,43 +202,6 @@ std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<u
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_KDF_derive failed");
 
     return derived_key;
-}
-
-std::string calculateHMACwithSHA256(std::string to_sign, const Poco::Crypto::RSAKey & key)
-{
-    EVP_PKEY * pkey = EVP_PKEY_new();
-
-    auto * rsa = key.impl()->getRSA();
-    /// No need to free pkey, it is owned by key.impl()
-    if (EVP_PKEY_assign_RSA(pkey, rsa) != 1)
-    {
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error converting RSA key to an EVP_PKEY structure: {}", getOpenSSLErrors());
-    }
-
-    size_t signature_length = 0;
-
-    EVP_MD_CTX * context(EVP_MD_CTX_create());
-    const EVP_MD * digest = EVP_get_digestbyname("SHA256");
-    if (!digest || EVP_DigestInit_ex(context, digest, nullptr) != 1
-        || EVP_DigestSignInit(context, nullptr, digest, nullptr, pkey) != 1
-        || EVP_DigestSignUpdate(context, to_sign.c_str(), to_sign.size()) != 1
-        || EVP_DigestSignFinal(context, nullptr, &signature_length) != 1)
-    {
-        EVP_MD_CTX_destroy(context);
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error forming SHA256 digest: {}", getOpenSSLErrors());
-    }
-
-    std::vector<unsigned char> signature_bytes(signature_length);
-    if (EVP_DigestSignFinal(context, &signature_bytes.front(), &signature_length) != 1)
-    {
-        EVP_MD_CTX_destroy(context);
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error finalizing SHA256 digest: {}", getOpenSSLErrors());
-    }
-
-    EVP_MD_CTX_destroy(context);
-
-    std::string signature = { signature_bytes.begin(), signature_bytes.end() };
-    return base64Encode(signature, /*url_encoding*/ true, /*no_padding*/ true);
 }
 
 std::string generateCSR(std::vector<std::string> domain_names, std::string pkey)

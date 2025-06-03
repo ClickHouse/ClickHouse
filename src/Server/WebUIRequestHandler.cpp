@@ -1,4 +1,5 @@
 #include <Server/WebUIRequestHandler.h>
+#include <Server/HTTPResponseHeaderWriter.h>
 
 #include <incbin.h>
 
@@ -7,13 +8,14 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Util/LayeredConfiguration.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #if USE_SSL
 #include <Server/ACME/Client.h>
 #endif
+
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 
 /// Embedded HTML pages

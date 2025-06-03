@@ -4,15 +4,16 @@
 
 #if USE_SSL
 
-#include <openssl/ssl.h>
 
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
 #include <Common/Crypto/KeyPair.h>
+#include <Common/Crypto/X509Certificate.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Crypto/X509Certificate.h>
+#include <openssl/x509v3.h>
+#include <openssl/ssl.h>
 
 #include <chrono>
 #include <string>
@@ -20,15 +21,6 @@
 #include <list>
 #include <unordered_map>
 #include <mutex>
-
-#include <Poco/Logger.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <openssl/ssl.h>
-#include <openssl/x509v3.h>
-#include <Poco/Crypto/RSAKey.h>
-#include <Poco/Crypto/X509Certificate.h>
-#include <Common/MultiVersion.h>
-#include <Common/Logger.h>
 
 
 namespace DB
@@ -53,7 +45,7 @@ public:
         std::string hash;
 
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
-        Data(Poco::Crypto::EVPPKey, Poco::Crypto::X509Certificate::List, std::string hash);
+        Data(KeyPair, X509Certificate::List, std::string hash);
     };
 
     struct File

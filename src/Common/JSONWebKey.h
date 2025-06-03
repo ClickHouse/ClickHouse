@@ -1,12 +1,14 @@
 #pragma once
 
 #include "config.h"
+#include <string>
 
 #if USE_SSL
-#include <Poco/Crypto/RSAKey.h>
 
 namespace DB
 {
+
+class KeyPair;
 
 struct JSONWebKey
 {
@@ -15,7 +17,7 @@ struct JSONWebKey
     std::string kty;
 
     std::string toString() const;
-    static JSONWebKey fromRSAKey(const Poco::Crypto::RSAKey &);
+    static JSONWebKey fromRSAKey(const KeyPair &);
 };
 
 }

@@ -3,12 +3,12 @@
 #include "config.h"
 
 #if USE_SSL
+#include <Common/Crypto/KeyPair.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <Common/ProxyConfiguration.h>
 #include <Common/logger_useful.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Poco/Crypto/EVPPKey.h>
-#include <Poco/Crypto/RSAKey.h>
-#include <Poco/Crypto/X509Certificate.h>
+
 #include <Poco/JSON/Parser.h>
 
 #include <boost/core/noncopyable.hpp>
@@ -91,7 +91,7 @@ public:
         const Poco::URI directory_url;
         const std::string contact_email;
 
-        const std::shared_ptr<Poco::Crypto::RSAKey> private_key;
+        const std::shared_ptr<KeyPair> private_key;
     };
 
     explicit API(Configuration);

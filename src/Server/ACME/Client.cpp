@@ -16,14 +16,9 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/Base64Encoder.h>
-#include <Poco/Crypto/CryptoStream.h>
-#include <Poco/Crypto/ECKey.h>
-#include <Poco/Crypto/RSADigestEngine.h>
-#include <Poco/Crypto/RSAKey.h>
-#include <Poco/Crypto/RSAKeyImpl.h>
-#include <Poco/Crypto/X509Certificate.h>
 #include <Poco/DateTimeFormat.h>
 #include <Poco/DateTimeFormatter.h>
+#include <Poco/DateTimeParser.h>
 #include <Poco/DigestEngine.h>
 #include <Poco/File.h>
 #include <Poco/JSON/Parser.h>
@@ -37,7 +32,6 @@
 #include <Poco/URI.h>
 #include <Server/CertificateReloader.h>
 #include <Server/ACME/Client.h>
-#include <Poco/Crypto/EVPPKey.h>
 
 #include <fmt/core.h>
 #include <fmt/ranges.h>
@@ -45,7 +39,6 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
-#include <sstream>
 
 
 namespace DB
@@ -100,13 +93,10 @@ std::optional<VersionedCertificate> Client::requestCertificate() const
         return std::nullopt;
     }
 
-    std::istringstream pkey_stream(pkey);  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    std::istringstream certificate_stream(certificate);  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-
     return VersionedCertificate
     {
-        .private_key = Poco::Crypto::EVPPKey(nullptr, &pkey_stream),
-        .certificate = Poco::Crypto::X509Certificate::readPEM(certificate_stream),
+        .private_key = KeyPair::fromBuffer(pkey),
+        .certificate = X509Certificate::fromBuffer(certificate),
         .version = sipHash128String(pkey + certificate)
     };
 }
@@ -194,13 +184,16 @@ void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & c
                 break;
             }
 
-            std::istringstream cert_stream(pem_certificate); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            auto x509_certificate = Poco::Crypto::X509Certificate(cert_stream);
+            auto x509_certificate_list = X509Certificate::fromBuffer(pem_certificate);
+            auto & x509_certificate = x509_certificate_list.front();
 
-            LOG_TRACE(log, "Certificate for domain {} expires on {}", domain, Poco::DateTimeFormatter::format(x509_certificate.expiresOn(), Poco::DateTimeFormat::ISO8601_FORMAT));
+            LOG_TRACE(log, "Certificate for domain {} expires on {}", domain, x509_certificate.expiresOn());
 
+            int tzd;
+            auto expiration_date = Poco::DateTimeParser::parse("%y%m%d%H%M%S", x509_certificate.expiresOn(), tzd);
             auto best_before = Poco::Timestamp() + Poco::Timespan(refresh_certificates_before * Poco::Timespan::SECONDS);
-            if (x509_certificate.expiresOn() < best_before)
+
+            if (expiration_date < best_before)
             {
                 LOG_INFO(log, "Certificate for domain {} expires soon, initiating refresh", domain);
                 need_refresh = true;
@@ -262,8 +255,8 @@ void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & c
 
         if (order_data.status == "ready")
         {
-            auto key = Poco::Crypto::RSAKey(Poco::Crypto::RSAKey::KL_4096, Poco::Crypto::RSAKey::EXP_LARGE);
-            auto pkey = key.impl()->getPrivateInPEM();
+            auto key = KeyPair::generateRSA(4096, RSA_F4);
+            auto pkey = key.privateKey();
 
             for (const auto & domain : domains)
             {
@@ -378,8 +371,9 @@ void Client::refresh_key_fn()
         {
             LOG_INFO(log, "Generating new RSA private key for ACME account");
 
-            auto rsa_key = Poco::Crypto::RSAKey(Poco::Crypto::RSAKey::KL_4096, Poco::Crypto::RSAKey::EXP_LARGE);
-            private_key = rsa_key.impl()->getPrivateInPEM();
+            auto rsa_key = KeyPair::generateRSA(4096, RSA_F4);
+            private_key = rsa_key.privateKey();
+
             zk->createIfNotExists(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "account_private_key", private_key);
 
             refresh_key_task->schedule();
@@ -398,8 +392,7 @@ void Client::refresh_key_fn()
 
     {
         std::lock_guard key_lock(private_acme_key_mutex);
-        std::istringstream private_key_stream(private_key); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        private_acme_key = std::make_shared<Poco::Crypto::RSAKey>(nullptr, &private_key_stream, "");
+        private_acme_key = std::make_shared<KeyPair>(KeyPair::fromBuffer(private_key));
     }
 
     LOG_TEST(log, "ACME private key successfully loaded");

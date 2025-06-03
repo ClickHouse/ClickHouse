@@ -155,14 +155,16 @@ void CertificateReloader::tryLoadACMECertificate(SSL_CTX * ctx, const std::strin
             return;
         }
 
-        auto [pkey, certificate, hash] = key_certificate_pair.value();
-
         auto current_version = it->data.get();
-        if (current_version && current_version->hash == hash)
+        if (current_version && current_version->hash == key_certificate_pair->version)
             return;
 
         LOG_DEBUG(log, "Reloading ACME certificate and key.");
-        it->data.set(std::make_unique<const Data>(pkey, certificate, hash));
+        it->data.set(std::make_unique<const Data>(
+            std::move(key_certificate_pair->private_key),
+            std::move(key_certificate_pair->certificate),
+            key_certificate_pair->version
+        ));
         LOG_INFO(log, "Reloaded ACME certificate and key.");
     }
     catch (...)
@@ -236,8 +238,8 @@ CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std
 {
 }
 
-CertificateReloader::Data::Data(Poco::Crypto::EVPPKey _pkey, Poco::Crypto::X509Certificate::List _certs_chain, std::string _hash)
-    : certs_chain(_certs_chain), key(_pkey), hash(_hash)
+CertificateReloader::Data::Data(KeyPair _pkey, X509Certificate::List _certs_chain, std::string _hash)
+    : certs_chain(std::move(_certs_chain)), key(std::move(_pkey)), hash(_hash)
 {
 }
 

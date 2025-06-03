@@ -5,14 +5,13 @@
 #if USE_SSL
 #include <boost/core/noncopyable.hpp>
 
+#include <Common/Crypto/KeyPair.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <Common/JSONWebKey.h>
 #include <Common/Logger.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Poco/Crypto/EVPPKey.h>
-#include <Poco/Crypto/RSAKey.h>
-#include <Poco/Crypto/X509Certificate.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
@@ -36,8 +35,8 @@ static constexpr auto REFRESH_TASK_IN_A_SECOND = 1000;
 
 struct VersionedCertificate
 {
-    Poco::Crypto::EVPPKey private_key;
-    Poco::Crypto::X509Certificate::List certificate;
+    KeyPair private_key;
+    X509Certificate::List certificate;
 
     std::string version;
 };
@@ -70,7 +69,7 @@ private:
     std::string acme_hostname;
     std::string contact_email;
 
-    std::shared_ptr<Poco::Crypto::RSAKey> private_acme_key;
+    std::shared_ptr<KeyPair> private_acme_key;
     std::mutex private_acme_key_mutex;
 
     BackgroundSchedulePoolTaskHolder authentication_task;

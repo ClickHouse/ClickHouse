@@ -9,7 +9,10 @@
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/StreamCopier.h>
 
 
 namespace DB
@@ -110,7 +113,12 @@ std::string API::formatJWSRequestData(const Poco::URI & url, const std::string &
     std::string protected_enc = base64Encode(protected_data, /*url_encoding*/ true, /*no_padding*/ true);
 
     auto payload_enc = base64Encode(payload, /*url_encoding*/ true, /*no_padding*/ true);
-    std::string signature = calculateHMACwithSHA256(fmt::format("{}.{}", protected_enc, payload_enc), *configuration.private_key);
+
+    EVP_PKEY * pkey = static_cast<EVP_PKEY*>(*configuration.private_key);
+    std::string signature = calculateHMACwithSHA256(
+        fmt::format("{}.{}", protected_enc, payload_enc),
+        pkey
+    );
 
     return
         R"({"protected":")" + protected_enc

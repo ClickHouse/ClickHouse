@@ -7,8 +7,9 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/Crypto/KeyPair.h>
 
-#include <Common/logger_useful.h>
+#include <string>
 
 namespace DB
 {
@@ -26,7 +27,7 @@ std::string JSONWebKey::toString() const
     return fmt::format(R"({{"e":"{}","kty":"{}","n":"{}"}})", e, kty, n);
 }
 
-JSONWebKey JSONWebKey::fromRSAKey(const Poco::Crypto::RSAKey & key)
+JSONWebKey JSONWebKey::fromRSAKey(const KeyPair & key)
 {
     auto e = key.encryptionExponent();
     auto n = key.modulus();
