@@ -14,6 +14,7 @@ namespace DB
 
 class KeyCondition;
 struct QueryIdHolder;
+class VectorSimilarityIndexCache;
 
 /** Executes SELECT queries on data from the merge tree.
   */
