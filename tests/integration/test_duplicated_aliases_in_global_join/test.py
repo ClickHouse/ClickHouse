@@ -26,6 +26,8 @@ def started_cluster():
 def test_duplicated_alias_in_join(started_cluster):
     
     for node in [node1, node2]:
+        node.query(f"DROP TABLE t1 IF EXISTS")
+        node.query(f"DROP TABLE t2 IF EXISTS")
         node.query(f"create table t1 ( a Int32 ) engine=MergeTree order by a as select number from numbers(4)")
         node.query(f"create table t2 ( a Int32 ) engine=MergeTree order by a as select number from numbers(4)")
 
