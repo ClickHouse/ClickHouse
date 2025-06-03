@@ -2217,63 +2217,70 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     if (format_version != MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         return {};
 
+    auto detached_parts = getDetachedParts();
+
     const MergeTreePartInfo actual_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
-
-    for (const DiskPtr & disk : getStoragePolicy()->getDisks())
+    auto partition_id = actual_part_info.getPartitionId();
+    std::erase_if(detached_parts, [&partition_id](const DetachedPartInfo & detached_part_info)
     {
-        for (const auto it = disk->iterateDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME); it->isValid(); it->next())
-        {
-            const auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version);
+        return !detached_part_info.valid_name || !detached_part_info.prefix.empty() || (!partition_id.empty() && detached_part_info.getPartitionId() != partition_id);
+    });
 
-            if (!part_info || part_info->getPartitionId() != actual_part_info.getPartitionId())
-                continue;
-
-            const auto part_old_name = part_info->getPartNameV1();
-            const auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
-
-            {
-                auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name, getReadSettings())
+    std::erase_if(detached_parts, [&](const DetachedPartInfo & detached_part_info)
+    {
+        const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
+        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / detached_part_info.dir_name, getReadSettings())
                     .withPartFormatFromDisk()
                     .build();
 
-                try
-                {
-                    part->loadChecksums(true);
-                } catch (const Exception&)
-                {
-                    /// This method throws if the part does not have a checksums.txt
-                    /// Such parts are scipped
-                    continue;
-                }
-
-                if (entry.part_checksum != part->checksums.getTotalChecksumHex())
-                    continue;
-            }
-
-            const auto part_tmp_name = "attaching_" + part_old_name;
-            disk->moveFile(
-                fs::path(relative_data_path) / DETACHED_DIR_NAME / part_old_name,
-                fs::path(relative_data_path) / DETACHED_DIR_NAME / part_tmp_name);
-
-            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_tmp_name, getReadSettings())
-                .withPartFormatFromDisk()
-                .build();
-
-            part->loadColumnsChecksumsIndexes(
-                /* require_columns_checksums = */ true,
-                /* check_consistency = */ true,
-                /* load_metadata_version = */ false);
-
-            auto metadata_version = getInMemoryMetadataPtr()->getMetadataVersion();
-            part->writeMetadataVersion(getContext(), metadata_version, (*getSettings())[MergeTreeSetting::fsync_after_insert]);
-            part->setMetadataVersion(metadata_version);
-            part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
-
-            return part;
+        try
+        {
+            part->loadChecksums(true);
         }
+        catch (...)
+        {
+            tryLogCurrentException(log,
+                fmt::format("data race is possible when reading checksums.txt from detached part or part does not have a file checksums.txt, part {} is ignored", detached_part_info.dir_name));
+            return true;
+        }
+
+        return entry.part_checksum != part->checksums.getTotalChecksumHex();
+    });
+
+    if (detached_parts.empty())
+        return {};
+
+    auto & detached_part_info = detached_parts.front();
+    const auto part_tmp_name = "attaching_" + detached_part_info.dir_name;
+
+    try
+    {
+        detached_part_info.disk->moveFile(
+            fs::path(relative_data_path) / DETACHED_DIR_NAME / detached_part_info.dir_name,
+            fs::path(relative_data_path) / DETACHED_DIR_NAME / part_tmp_name);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("data race is possible when moving detached part, part {} is ignored", detached_part_info.dir_name));
+        return {};
     }
 
-    return {};
+    const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
+    auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_tmp_name, getReadSettings())
+        .withPartFormatFromDisk()
+        .build();
+
+    part->loadColumnsChecksumsIndexes(
+        /* require_columns_checksums = */ true,
+        /* check_consistency = */ true,
+        /* load_metadata_version = */ false);
+
+    auto metadata_version = getInMemoryMetadataPtr()->getMetadataVersion();
+    part->writeMetadataVersion(getContext(), metadata_version, (*getSettings())[MergeTreeSetting::fsync_after_insert]);
+    part->setMetadataVersion(metadata_version);
+    part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
+
+    return part;
 }
 
 bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
