@@ -102,13 +102,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-enum class ExecuteTTLType : uint8_t
-{
-    NONE = 0,
-    MATERIALIZE = 1,
-    RECALCULATE= 2,
-};
-
 struct MutationContext
 {
     MergeTreeData * data;
@@ -170,6 +163,13 @@ struct MutationContext
     NameSet dropped_statistics;
     std::set<ColumnStatisticsPartPtr> statistics_to_build;
 
+    enum class Mode
+    {
+        AllColumns,
+        SomeColumns,
+    };
+
+    Mode execution_mode = Mode::AllColumns;
     NameSet required_readonly_columns;
 
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
@@ -494,9 +494,11 @@ static void analyzeTTLCommands(MutationContext & ctx, MutatedData & mutated_data
 
     auto add_required_columns = [&](const TTLDescription & ttl)
     {
-        auto required_columns = ttl.expression_columns.getNames();
-        for (const auto & column : required_columns)
-            ctx.required_readonly_columns.insert(column);
+        for (const auto & column : ttl.expression_columns)
+            ctx.required_readonly_columns.insert(column.name);
+
+        for (const auto & column : ttl.where_expression_columns)
+            ctx.required_readonly_columns.insert(column.name);
     };
 
     auto analyze_ttl = [&](const TTLDescription & ttl, const String & ttl_name, bool is_column_ttl)
@@ -595,27 +597,32 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
             ctx.for_interpreter.push_back(command);
             mutated_data.has_delete_command = true;
         }
-        else if (command.type == MutationCommand::UPDATE || command.type == MutationCommand::DELETE)
+        else if (command.type == MutationCommand::DELETE)
+        {
+            ctx.for_interpreter.push_back(command);
+            addUsedIdentifiers(command.predicate, ctx.context, ctx.required_readonly_columns);
+            mutated_data.has_delete_command = true;
+        }
+        else if (command.type == MutationCommand::UPDATE)
         {
             ctx.for_interpreter.push_back(command);
             addUsedIdentifiers(command.predicate, ctx.context, ctx.required_readonly_columns);
 
             for (const auto & [column_name, ast] : command.column_to_update_expression)
             {
+                if (column_name == RowExistsColumn::name)
+                    mutated_data.has_lightweight_delete = true;
+
                 mutated_data.updated_columns.insert(column_name);
                 addUsedIdentifiers(ast, ctx.context, ctx.required_readonly_columns);
             }
-
-            if (command.type == MutationCommand::DELETE)
-                mutated_data.has_delete_command = true;
         }
     }
 
-    mutated_data.has_lightweight_delete = mutated_data.updated_columns.contains(RowExistsColumn::name);
     return mutated_data;
 }
 
-static void analyzeCommandsForSomeColumnsMode(MutationContext & ctx, const AlterConversionsPtr & alter_conversions)
+static MutationContext::Mode analyzeCommandsForSomeColumnsMode(MutationContext & ctx, const AlterConversionsPtr & alter_conversions)
 {
     auto mutated_data = analyzeDataCommands(ctx);
 
@@ -654,15 +661,12 @@ static void analyzeCommandsForSomeColumnsMode(MutationContext & ctx, const Alter
     /// can be deduced based on difference between part's schema and table schema.
 
     for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
-    {
         ctx.for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
-    }
 
-    for (const auto & column : ctx.required_readonly_columns)
-    {
-        if (part_columns.has(column))
-            ctx.for_interpreter.push_back({.type = MutationCommand::Type::READ_COLUMN, .column_name = column});
-    }
+    for (const auto & column_name : ctx.required_readonly_columns)
+        ctx.for_interpreter.push_back({.type = MutationCommand::Type::READ_COLUMN, .column_name = column_name});
+
+    return mutated_data.has_delete_command ? MutationContext::Mode::AllColumns : MutationContext::Mode::SomeColumns;
 }
 
 static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterConversionsPtr & alter_conversions)
@@ -740,6 +744,14 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
         }
     }
 
+    for (const auto & column_name : ctx.required_readonly_columns)
+    {
+        ctx.for_interpreter.push_back({.type = MutationCommand::Type::READ_COLUMN, .column_name = column_name});
+        affected_columns.emplace(column_name);
+    }
+
+    // bool has_data_mutation = !mutated_data.updated_columns.empty() || mutated_data.has_delete_command;
+
     /// If it's compact part, then we don't need to actually remove files
     /// from disk we just don't read dropped columns
     for (const auto & column : part_columns)
@@ -796,10 +808,19 @@ static void analyzeCommands(MutationContext & ctx, const AlterConversionsPtr & a
     if (haveMutationsOfDynamicColumns(ctx.source_part, ctx.commands_for_part) || !isWidePart(ctx.source_part) || !isFullPartStorage(ctx.source_part->getDataPartStorage()))
     {
         analyzeCommandsForAllColumnsMode(ctx, alter_conversions);
+        ctx.execution_mode = MutationContext::Mode::AllColumns;
     }
     else
     {
-        analyzeCommandsForSomeColumnsMode(ctx, alter_conversions);
+        ctx.execution_mode = analyzeCommandsForSomeColumnsMode(ctx, alter_conversions);
+
+        if (ctx.execution_mode == MutationContext::Mode::AllColumns)
+        {
+            auto all_columns = ctx.metadata_snapshot->getColumns().getAllPhysical();
+
+            for (const auto & column : all_columns)
+                ctx.for_interpreter.emplace_back(MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+        }
     }
 }
 
@@ -2581,10 +2602,7 @@ bool MutateTask::prepare()
     /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
     /// rewriting the whole part.
 
-    if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
-        || !isWidePart(ctx->source_part)
-        || !isFullPartStorage(ctx->source_part->getDataPartStorage())
-        || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
+    if (ctx->execution_mode == MutationContext::Mode::AllColumns)
     {
         for (const auto & projection : ctx->projections_to_hardlink)
             ctx->projections_to_build.insert(projection);
