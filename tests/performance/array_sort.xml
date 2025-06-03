@@ -1,0 +1,4 @@
+<test>
+    <query>select arraySort(array(rand(), rand(), rand(), rand(), rand())) from numbers(100000000) format Null</query>
+    <query>select arraySort(array(if(number % 2 = 0, rand(), null), rand(), rand(), rand(), rand())) from numbers(100000000) format Null</query>
+</test>

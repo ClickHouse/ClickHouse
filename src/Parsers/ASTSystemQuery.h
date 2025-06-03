@@ -28,11 +28,12 @@ public:
         DROP_UNCOMPRESSED_CACHE,
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
-        DROP_SKIPPING_INDEX_CACHE,
+        DROP_VECTOR_SIMILARITY_INDEX_CACHE,
         DROP_MMAP_CACHE,
         DROP_QUERY_CONDITION_CACHE,
         DROP_QUERY_CACHE,
         DROP_COMPILED_EXPRESSION_CACHE,
+        DROP_ICEBERG_METADATA_CACHE,
         DROP_FILESYSTEM_CACHE,
         DROP_DISTRIBUTED_CACHE,
         DROP_DISTRIBUTED_CACHE_CONNECTIONS,
@@ -106,8 +107,10 @@ public:
         WAIT_VIEW,
         START_VIEW,
         START_VIEWS,
+        START_REPLICATED_VIEW,
         STOP_VIEW,
         STOP_VIEWS,
+        STOP_REPLICATED_VIEW,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
@@ -126,6 +129,7 @@ public:
 
     ASTPtr database;
     ASTPtr table;
+    bool if_exists = false;
     ASTPtr query_settings;
 
     String getDatabase() const;

@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileGK
+description: 'Computes the quantile of a numeric data sequence using the Greenwald-Khanna
+  algorithm.'
 sidebar_position: 175
-title: "quantileGK"
-description: "Computes the quantile of a numeric data sequence using the Greenwald-Khanna algorithm."
+slug: /sql-reference/aggregate-functions/reference/quantileGK
+title: 'quantileGK'
 ---
 
 # quantileGK
@@ -13,7 +14,7 @@ Computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric dat
 
 **Syntax**
 
-``` sql
+```sql
 quantileGK(accuracy, level)(expr)
 ```
 
@@ -41,7 +42,7 @@ Type:
 
 **Example**
 
-``` sql
+```sql
 SELECT quantileGK(1, 0.25)(number + 1)
 FROM numbers(1000)
 

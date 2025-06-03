@@ -1,6 +1,9 @@
 ---
+description: 'Guide to backing up and restoring ClickHouse databases and tables'
+sidebar_label: 'Backup and Restore'
+sidebar_position: 10
 slug: /operations/backup
-description: In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data.
+title: 'Backup and Restore'
 ---
 
 # Backup and Restore
@@ -20,9 +23,8 @@ description: In order to effectively mitigate possible human errors, you should 
   DATABASE database_name [AS database_name_in_backup]
     [EXCEPT TABLES ...] |
   TEMPORARY TABLE table_name [AS table_name_in_backup] |
-  VIEW view_name [AS view_name_in_backup]
-  ALL TEMPORARY TABLES [EXCEPT ...] |
-  ALL [EXCEPT ...] } [,...]
+  VIEW view_name [AS view_name_in_backup] |
+  ALL [EXCEPT {TABLES|DATABASES}...] } [,...]
   [ON CLUSTER 'cluster_name']
   TO|FROM File('<path>/<filename>') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')
   [SETTINGS base_backup = File('<path>/<filename>') | Disk(...) | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')]

@@ -4,11 +4,16 @@
 
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <QueryPipeline/BlockIO.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/defines.h>
 #include <Interpreters/QueryFlags.h>
 
+
+namespace zkutil
+{
+class ZooKeeper;
+}
 
 namespace DB
 {
@@ -18,6 +23,9 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
+
+class ZooKeeperMetadataTransaction;
+using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
 struct ReplicaInfo
 {
@@ -105,6 +113,8 @@ private:
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     static bool looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
+    /// For Replicated database will return ATTACH for MVs with inner table
+    ASTPtr tryGetCreateOrAttachTableQuery(const String & name, ContextPtr context) const;
 
     struct
     {
@@ -127,7 +137,9 @@ private:
     std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
                                                                size_t max_retries, UInt32 & max_log_ptr) const;
 
+    ASTPtr parseQueryFromMetadata(const String & table_name, const String & query, const String & description) const;
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query) const;
+    ASTPtr parseQueryFromMetadataOnDisk(const String & table_name) const;
     String readMetadataFile(const String & table_name) const;
 
     ClusterPtr getClusterImpl(bool all_groups = false) const;
@@ -151,8 +163,6 @@ private:
     void assertDigestInTransactionOrInline(const ContextPtr & local_context, const ZooKeeperMetadataTransactionPtr & txn) TSA_REQUIRES(metadata_mutex);
 
     /// For debug purposes only, don't use in production code
-    void dumpLocalTablesForDebugOnly(const ContextPtr & local_context) const;
-    void dumpTablesInZooKeeperForDebugOnly() const;
     void tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const;
 
     void waitDatabaseStarted() const override;
@@ -168,7 +178,7 @@ private:
     String replica_path;
     DatabaseReplicatedSettings db_settings;
 
-    zkutil::ZooKeeperPtr getZooKeeper() const;
+    ZooKeeperPtr getZooKeeper() const;
 
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;

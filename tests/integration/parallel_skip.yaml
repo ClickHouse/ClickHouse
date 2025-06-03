@@ -28,6 +28,7 @@
 - test_merge_tree_s3/
 - test_mysql_database_engine/
 - test_parts_delete_zookeeper/
+- test_postgresql_replica_database_engine/
 - test_profile_max_sessions_for_user/
 - test_quorum_inserts_parallel/
 - test_random_inserts/
@@ -35,11 +36,13 @@
 - test_replicated_database/
 - test_replicated_fetches_timeouts/
 - test_replicated_merge_tree_wait_on_shutdown/
+- test_server_overload/
 - test_server_reload/
 - test_storage_kafka/
 - test_storage_kerberized_kafka/
 - test_storage_rabbitmq/
 - test_storage_s3/
+- test_storage_s3_queue/
 - test_system_flush_logs/
 - test_system_logs/
 - test_system_metrics/

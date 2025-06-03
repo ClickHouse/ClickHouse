@@ -1,10 +1,11 @@
 ---
-title: JSONColumnsWithMetadata
-slug: /interfaces/formats/JSONColumnsWithMetadata
-keywords: [JSONColumnsWithMetadata]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the JSONColumnsWithMetadata format'
+input_format: true
+keywords: ['JSONColumnsWithMetadata']
+output_format: true
+slug: /interfaces/formats/JSONColumnsWithMetadata
+title: 'JSONColumnsWithMetadata'
 ---
 
 | Input | Output | Alias |

@@ -17,6 +17,7 @@
           y
         Parts: 2/3
         Granules: 6/10
+        Search algorithm: generic exclusion search
       Skip
         Name: t_minmax
         Description: minmax GRANULARITY 2
@@ -107,6 +108,7 @@
         Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-Inf, 2]))
         Parts: 1/1
         Granules: 1/1
+        Search algorithm: generic exclusion search
     ReadFromMergeTree (default.test_index)
     Indexes:
       MinMax
@@ -126,11 +128,17 @@
           y
         Parts: 2/3
         Granules: 6/10
+        Search algorithm: generic exclusion search
       Skip
         Name: t_minmax
         Description: minmax GRANULARITY 2
         Parts: 1/2
         Granules: 3/6
+      Skip
+        Name: t_set
+        Description: set GRANULARITY 2
+        Parts: 1/1
+        Granules: 2/3
 -----------------
               "Node Type": "ReadFromMergeTree",
               "Node Id": "ReadFromMergeTree_0",
@@ -168,6 +176,15 @@
                   "Selected Parts": 1,
                   "Initial Granules": 6,
                   "Selected Granules": 3
+                },
+                {
+                  "Type": "Skip",
+                  "Name": "t_set",
+                  "Description": "set GRANULARITY 2",
+                  "Initial Parts": 1,
+                  "Selected Parts": 1,
+                  "Initial Granules": 3,
+                  "Selected Granules": 2
                 }
               ]
             }
@@ -204,3 +221,4 @@
         Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-Inf, 2]))
         Parts: 1/1
         Granules: 1/1
+        Search algorithm: generic exclusion search

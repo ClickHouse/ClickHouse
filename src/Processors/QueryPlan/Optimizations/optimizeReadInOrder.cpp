@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -424,10 +425,12 @@ SortingInputOrder buildInputOrderFromSortDescription(
         if (sort_column_description.collator)
             break;
 
-        /// Since sorting key columns are always sorted with NULLS LAST, reading in order
-        /// supported only for ASC NULLS LAST ("in order"), and DESC NULLS FIRST ("reverse")
-        const auto column_is_nullable = sorting_key.data_types[next_sort_key]->isNullable();
-        if (column_is_nullable && sort_column_description.nulls_direction != sort_column_description.direction)
+        /// Since sorting key columns are always sorted with
+        // ASC NULLS LAST ("in order") or DESC NULLS FIRST ("reverse")
+        /// supported only this direction, other cases are represented as nulls_direction==-1
+        /// Also actual for floating point values NaN.
+        const auto column_is_nullable = sorting_key.data_types[next_sort_key]->isNullable() || isFloat(*sorting_key.data_types[next_sort_key]);
+        if (column_is_nullable && sort_column_description.nulls_direction == -1)
             break;
 
         /// Direction for current sort key.

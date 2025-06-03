@@ -1,20 +1,21 @@
 ---
-description: "System database providing an almost standardized DBMS-agnostic view on metadata of database objects."
+description: 'System database providing an almost standardized DBMS-agnostic view
+  on metadata of database objects.'
+keywords: ['system database', 'information_schema']
 slug: /operations/system-tables/information_schema
-title: "INFORMATION_SCHEMA"
-keywords: ["system database", "information_schema"]
+title: 'INFORMATION_SCHEMA'
 ---
 
 `INFORMATION_SCHEMA` (or: `information_schema`) is a system database which provides a (somewhat) standardized, [DBMS-agnostic view](https://en.wikipedia.org/wiki/Information_schema) on metadata of database objects. The views in `INFORMATION_SCHEMA` are generally inferior to normal system tables but tools can use them to obtain basic information in a cross-DBMS manner. The structure and content of views in `INFORMATION_SCHEMA` is supposed to evolves in a backwards-compatible way, i.e. only new functionality is added but existing functionality is not changed or removed. In terms of internal implementation, views in `INFORMATION_SCHEMA` usually map to to normal system tables like [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) and [system.tables](../../operations/system-tables/tables.md).
 
-``` sql
+```sql
 SHOW TABLES FROM INFORMATION_SCHEMA;
 
 -- or:
 SHOW TABLES FROM information_schema;
 ```
 
-``` text
+```text
 ┌─name────────────────────┐
 │ COLUMNS                 │
 │ KEY_COLUMN_USAGE        │
@@ -80,7 +81,7 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 SELECT table_catalog,
        table_schema,
        table_name,
@@ -115,7 +116,7 @@ FORMAT Vertical;
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
 table_catalog:            default
@@ -161,7 +162,7 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 SELECT catalog_name,
        schema_name,
        schema_owner,
@@ -177,7 +178,7 @@ FORMAT Vertical;
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
 catalog_name:                  INFORMATION_SCHEMA
@@ -204,10 +205,9 @@ Columns:
     - `FOREIGN TABLE`
     - `LOCAL TEMPORARY`
     - `SYSTEM VIEW`
-- `table_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total
-  number of rows. NULL if it could not be determined.
-- `data_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The size of
-  the data on-disk. NULL if it could not be determined.
+- `table_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total number of rows. NULL if it could not be determined.
+- `data_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The size of the data on-disk. NULL if it could not be determined.
+- `index_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total size of the primary key, secondary indexes, and all marks.
 - `table_collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table default collation. Always `utf8mb4_0900_ai_ci`.
 - `table_comment` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The comment used when creating the table.
 
@@ -215,7 +215,7 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 SELECT table_catalog, 
        table_schema, 
        table_name, 
@@ -231,7 +231,7 @@ FORMAT Vertical;
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
 table_catalog:   default
@@ -265,7 +265,7 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 CREATE VIEW v (n Nullable(Int32), f Float64) AS SELECT n, f FROM t;
 CREATE MATERIALIZED VIEW mv ENGINE = Null AS SELECT * FROM system.one;
 SELECT table_catalog,
@@ -286,7 +286,7 @@ FORMAT Vertical;
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
 table_catalog:              default

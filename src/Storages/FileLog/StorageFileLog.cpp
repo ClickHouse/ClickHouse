@@ -18,6 +18,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
+#include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/FileLogSource.h>
@@ -38,7 +39,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsMilliseconds stream_poll_timeout_ms;
     extern const SettingsBool use_concurrency_control;
@@ -124,7 +125,11 @@ private:
         if (file_log.file_infos.file_names.empty())
         {
             LOG_WARNING(file_log.log, "There is a idle table named {}, no files need to parse.", getName());
-            return Pipe{};
+            Header header;
+            auto column_names_and_types = storage_snapshot->getColumnsByNames(GetColumnsOptions::All, column_names);
+            for (const auto & [name, type] : column_names_and_types)
+                header.insert(ColumnWithTypeAndName(type, name));
+            return Pipe(std::make_unique<NullSource>(header));
         }
 
         auto modified_context = Context::createCopy(file_log.filelog_context);
@@ -175,7 +180,7 @@ StorageFileLog::StorageFileLog(
     , path(path_)
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
-    , log(getLogger("StorageFileLog (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
     , disk(getContext()->getStoragePolicy("default")->getDisks().at(0))
     , milliseconds_to_wait((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds())
 {
@@ -634,7 +639,7 @@ bool StorageFileLog::checkDependencies(const StorageID & table_id)
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     if (view_ids.empty())
-        return true;
+        return false;
 
     for (const auto & view_id : view_ids)
     {
@@ -645,10 +650,6 @@ bool StorageFileLog::checkDependencies(const StorageID & table_id)
         // If it materialized view, check it's target table
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-
-        // Check all its dependencies
-        if (!checkDependencies(view_id))
             return false;
     }
 

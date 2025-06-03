@@ -194,6 +194,12 @@ bool FileSegment::isDownloaded() const
     return download_state == State::DOWNLOADED;
 }
 
+time_t FileSegment::getFinishedDownloadTime() const
+{
+    auto lk = lock();
+    return download_finished_time;
+}
+
 String FileSegment::getCallerId()
 {
     if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
@@ -428,20 +434,24 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
 
-        if (downloaded_size == 0 && fs::exists(file_segment_path))
+        if (fs::exists(file_segment_path))
         {
-            fs::remove(file_segment_path);
-        }
-        else if (is_no_space_left_error)
-        {
-            const auto file_size = fs::file_size(file_segment_path);
+            if (downloaded_size == 0)
+            {
+                fs::remove(file_segment_path);
+            }
+            else if (is_no_space_left_error)
+            {
+                const auto file_size = fs::file_size(file_segment_path);
 
-            chassert(downloaded_size <= file_size);
-            chassert(reserved_size >= file_size);
-            chassert(file_size <= range().size());
+                LOG_TRACE(log, "Failed to write to file: no space left on device "
+                          "(file size: {}, downloaded size: {}, reserved size: {})",
+                          file_size, downloaded_size.load(), reserved_size.load());
 
-            if (downloaded_size != file_size)
-                downloaded_size = file_size;
+                chassert(downloaded_size <= file_size && file_size <= reserved_size);
+                if (downloaded_size != file_size)
+                    downloaded_size = file_size;
+            }
         }
 
         throw;
@@ -586,6 +596,7 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
         return;
 
     download_state = State::DOWNLOADED;
+    download_finished_time = timeInSeconds(std::chrono::system_clock::now());
 
     if (cache_writer)
     {
@@ -1048,6 +1059,7 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
         .state = file_segment->download_state,
         .size = file_segment->range().size(),
         .downloaded_size = file_segment->downloaded_size,
+        .download_finished_time = file_segment->download_finished_time,
         .cache_hits = file_segment->hits_count,
         .references = static_cast<uint64_t>(file_segment.use_count()),
         .is_unbound = file_segment->is_unbound,
@@ -1117,9 +1129,12 @@ void FileSegment::increasePriority()
     if (it)
     {
         if (auto cache_lock = cache->tryLockCache())
-            hits_count = it->increasePriority(cache_lock);
+            it->increasePriority(cache_lock);
         else
             ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
+
+        /// Used only for system.filesystem_cache.
+        ++hits_count;
     }
 }
 

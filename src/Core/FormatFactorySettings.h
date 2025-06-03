@@ -3,6 +3,8 @@
 /// This header exists so we can share it between multiple setting objects that include format settings
 
 #include <Core/SettingsObsoleteMacros.h>
+#include <Core/SettingsFields.h>
+#include <Core/Defines.h>
 
 // clang-format off
 #if defined(__CLION_IDE__)
@@ -171,7 +173,7 @@ Avoid reordering rows when reading from Parquet files. Usually makes it much slo
     DECLARE(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_bloom_filter_push_down, false, R"(
+    DECLARE(Bool, input_format_parquet_bloom_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
@@ -270,7 +272,10 @@ Ignore extra columns in TSV input (if file has more columns than expected) and t
 Ignore extra columns in CustomSeparated input (if file has more columns than expected) and treat missing fields in CustomSeparated input as default values
 )", 0) \
     DECLARE(Bool, input_format_json_compact_allow_variable_number_of_columns, false, R"(
-Ignore extra columns in JSONCompact(EachRow) input (if file has more columns than expected) and treat missing fields in JSONCompact(EachRow) input as default values
+Allow variable number of columns in rows in JSONCompact/JSONCompactEachRow input formats.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
+
+Disabled by default.
 )", 0) \
     DECLARE(Bool, input_format_tsv_detect_header, true, R"(
 Automatically detect header with names and types in TSV format
@@ -281,7 +286,7 @@ Automatically detect header with names and types in CustomSeparated format
     DECLARE(Bool, input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference, false, R"(
 Skip columns with unsupported types while schema inference for format Parquet
 )", 0) \
-    DECLARE(UInt64, input_format_parquet_max_block_size, DEFAULT_BLOCK_SIZE, R"(
+    DECLARE(NonZeroUInt64, input_format_parquet_max_block_size, DEFAULT_BLOCK_SIZE, R"(
 Max block size for parquet reader.
 )", 0) \
     DECLARE(UInt64, input_format_parquet_prefer_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
@@ -491,7 +496,12 @@ When enabled, during parsing JSON object into JSON type duplicated paths will be
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
 )", 0) \
     DECLARE(Bool, input_format_json_empty_as_default, false, R"(
-Treat empty fields in JSON input as default values.
+When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
 )", 0) \
     DECLARE(Bool, input_format_try_infer_integers, true, R"(
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
@@ -515,7 +525,18 @@ When input_format_try_infer_datetimes is enabled, infer only DateTime64 but not 
 Try to infer floats in exponential notation while schema inference in text formats (except JSON, where exponent numbers are always inferred)
 )", 0) \
     DECLARE(Bool, output_format_markdown_escape_special_characters, false, R"(
-Escape special characters in Markdown
+When enabled, escape special characters in Markdown.
+
+[Common Mark](https://spec.commonmark.org/0.30/#example-12) defines the following special characters that can be escaped by \:
+
+```
+! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
+```
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
 )", 0) \
     DECLARE(Bool, input_format_protobuf_flatten_google_wrappers, false, R"(
 Enable Google wrappers for regular non-nested columns, e.g. google.protobuf.StringValue 'str' for String column 'str'. For Nullable columns empty wrappers are recognized as defaults, and missing as nulls
@@ -565,6 +586,8 @@ Possible values:
 - `'best_effort'` — Enables extended parsing.
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
 
 - `'basic'` — Use basic parser.
 
@@ -635,6 +658,10 @@ Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.
 )", 0) \
     DECLARE(String, bool_false_representation, "false", R"(
 Text to represent false bool value in TSV/CSV/Vertical/Pretty formats.
+)", 0) \
+    \
+    DECLARE(Bool, allow_special_bool_values_inside_variant, false, R"(
+Allows to parse Bool values inside Variant type from special text bool values like "on", "off", "enable", "disable", etc.
 )", 0) \
     \
     DECLARE(Bool, input_format_values_interpret_expressions, true, R"(
@@ -862,37 +889,6 @@ Enabled by default.
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow) format.
 Column type should be String. If value is empty, default names `row_{i}`will be used for object names.
-
-### input_format_json_compact_allow_variable_number_of_columns {#input_format_json_compact_allow_variable_number_of_columns}
-
-Allow variable number of columns in rows in JSONCompact/JSONCompactEachRow input formats.
-Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
-
-Disabled by default.
-
-### output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
-
-When enabled, escape special characters in Markdown.
-
-[Common Mark](https://spec.commonmark.org/0.30/#example-12) defines the following special characters that can be escaped by \:
-
-```
-! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
-```
-
-Possible values:
-
-+ 0 — Disable.
-+ 1 — Enable.
-
-### input_format_json_empty_as_default {#input_format_json_empty_as_default}
-
-When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
-
-Possible values:
-
-+ 0 — Disable.
-+ 1 — Enable.
 )", 0) \
     \
     DECLARE(UInt64, output_format_pretty_max_rows, 1000, R"(
@@ -925,6 +921,11 @@ Output the pending block in pretty formats if more than the specified number of 
 )", 0) \
     DECLARE(UInt64Auto, output_format_pretty_color, "auto", R"(
 Use ANSI escape sequences in Pretty formats. 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
+)", 0) \
+    DECLARE(UInt64Auto, output_format_pretty_glue_chunks, "auto", R"(
+If the data rendered in Pretty formats arrived in multiple chunks, even after a delay, but the next chunk has the same column widths as the previous, use ANSI escape sequences to move back to the previous line and overwrite the footer of the previous chunk to continue it with the data of the new chunk. This makes the result more visually pleasant.
+
+0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
 )", 0) \
     DECLARE(String, output_format_pretty_grid_charset, "UTF-8", R"(
 Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default one).
@@ -991,7 +992,7 @@ Do Parquet encoding in multiple threads. Requires output_format_parquet_use_cust
     DECLARE(UInt64, output_format_parquet_data_page_size, 1024 * 1024, R"(
 Target page size in bytes, before compression.
 )", 0) \
-    DECLARE(UInt64, output_format_parquet_batch_size, 1024, R"(
+    DECLARE(NonZeroUInt64, output_format_parquet_batch_size, 1024, R"(
 Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_page_index, true, R"(
@@ -1313,6 +1314,14 @@ Set the quoting rule for identifiers in SHOW CREATE query
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
+    DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
+Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
+0 means no limit in bytes.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
+Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types
+)", 0) \
+
 
 // End of FORMAT_FACTORY_SETTINGS
 

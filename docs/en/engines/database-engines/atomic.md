@@ -1,9 +1,11 @@
 ---
-slug: /engines/database-engines/atomic
-sidebar_label: Atomic
+description: 'The `Atomic` engine supports non-blocking `DROP TABLE` and `RENAME TABLE`
+  queries, and atomic `EXCHANGE TABLES`queries. The `Atomic` database engine is used
+  by default.'
+sidebar_label: 'Atomic'
 sidebar_position: 10
-title: "Atomic"
-description: "The `Atomic` engine supports non-blocking `DROP TABLE` and `RENAME TABLE` queries, and atomic `EXCHANGE TABLES`queries. The `Atomic` database engine is used by default."
+slug: /engines/database-engines/atomic
+title: 'Atomic'
 ---
 
 # Atomic 

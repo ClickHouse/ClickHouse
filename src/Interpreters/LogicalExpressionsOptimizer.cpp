@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 
 LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(const ASTFunction * or_function_,
-    const IAST::Hash & expression_, const std::string & alias_)
+    const IASTHash & expression_, const std::string & alias_)
     : or_function(or_function_), expression(expression_), alias(alias_)
 {
 }

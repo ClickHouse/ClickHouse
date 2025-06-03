@@ -1,10 +1,14 @@
 ---
-description: "System table containing formation about global settings for the server, which are specified in `config.xml`."
+description: 'System table containing formation about global settings for the server,
+  which are specified in `config.xml`.'
+keywords: ['system table', 'server_settings']
 slug: /operations/system-tables/server_settings
-title: "system.server_settings"
-keywords: ["system table", "server_settings"]
+title: 'system.server_settings'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.server_settings
 
 <SystemTableCloud/>
 
@@ -30,13 +34,13 @@ Columns:
 
 The following example shows how to get information about server settings which name contains `thread_pool`.
 
-``` sql
+```sql
 SELECT *
 FROM system.server_settings
 WHERE name LIKE '%thread_pool%'
 ```
 
-``` text
+```text
 ┌─name──────────────────────────────────────────┬─value─┬─default─┬─changed─┬─description─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─type───┬─changeable_without_restart─┬─is_obsolete─┐
 │ max_thread_pool_size                          │ 10000 │ 10000   │       0 │ The maximum number of threads that could be allocated from the OS and used for query execution and background operations.                           │ UInt64 │                         No │           0 │
 │ max_thread_pool_free_size                     │ 1000  │ 1000    │       0 │ The maximum number of threads that will always stay in a global thread pool once allocated and remain idle in case of insufficient number of tasks. │ UInt64 │                         No │           0 │
@@ -60,7 +64,7 @@ whether settings in configuration files are loaded correctly and are in use.
 
 <!-- -->
 
-``` sql
+```sql
 SELECT * FROM system.server_settings WHERE changed AND name='max_thread_pool_size'
 ```
 

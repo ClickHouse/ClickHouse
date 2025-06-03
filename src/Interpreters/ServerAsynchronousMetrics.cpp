@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 
 #include <Databases/IDatabase.h>
 
@@ -66,7 +67,7 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     bool update_jemalloc_epoch_,
     bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, global_context_)
     , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
@@ -144,16 +145,20 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     {
         auto caches = FileCacheFactory::instance().getAll();
         size_t total_bytes = 0;
+        size_t max_bytes = 0;
         size_t total_files = 0;
 
         for (const auto & [_, cache_data] : caches)
         {
             total_bytes += cache_data->cache->getUsedCacheSize();
+            max_bytes += cache_data->cache->getMaxCacheSize();
             total_files += cache_data->cache->getFileSegmentsNum();
         }
 
         new_values["FilesystemCacheBytes"] = { total_bytes,
             "Total bytes in the `cache` virtual filesystem. This cache is hold on disk." };
+        new_values["FilesystemCacheCapacity"] = { max_bytes,
+            "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
     }
@@ -217,6 +222,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["FilesystemLogsPathUsedINodes"] = { stat.f_files - stat.f_favail,
             "The number of used inodes on the volume where ClickHouse logs path is mounted." };
     }
+
 
     /// Free and total space on every configured disk.
     {
@@ -305,6 +311,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
         size_t total_primary_key_bytes_memory = 0;
         size_t total_primary_key_bytes_memory_allocated = 0;
+        size_t total_index_granularity_bytes_in_memory = 0;
+        size_t total_index_granularity_bytes_in_memory_allocated = 0;
 
         for (const auto & db : databases)
         {
@@ -327,12 +335,10 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
                 if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
                 {
-                    const auto & settings = getContext()->getSettingsRef();
-
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
 
-                    size_t bytes = table_merge_tree->totalBytes(settings).value();
-                    size_t rows = table_merge_tree->totalRows(settings).value();
+                    size_t bytes = table_merge_tree->totalBytes(getContext()).value();
+                    size_t rows = table_merge_tree->totalRows(getContext()).value();
                     size_t parts = table_merge_tree->getActivePartsCount();
 
                     total_number_of_bytes += bytes;
@@ -353,6 +359,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     {
                         total_primary_key_bytes_memory += part->getIndexSizeInBytes();
                         total_primary_key_bytes_memory_allocated += part->getIndexSizeInAllocatedBytes();
+                        total_index_granularity_bytes_in_memory += part->getIndexGranularityBytes();
+                        total_index_granularity_bytes_in_memory_allocated += part->getIndexGranularityAllocatedBytes();
                     }
                 }
 
@@ -416,6 +424,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
         new_values["TotalPrimaryKeyBytesInMemory"] = { total_primary_key_bytes_memory, "The total amount of memory (in bytes) used by primary key values (only takes active parts into account)." };
         new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
+        new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granulas (only takes active parts into account)." };
+        new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
     }
 
 #if USE_NURAFT
@@ -437,9 +447,10 @@ void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
         asynchronous_metric_log->addValues(new_values);
 }
 
-void ServerAsynchronousMetrics::updateDetachedPartsStats()
+void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 {
     DetachedPartsStats current_values{};
+    MutationStats current_mutation_stats{};
 
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
@@ -464,11 +475,35 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
 
                     ++current_values.count;
                 }
+
+                // mutation status
+                const auto max_pending_mutations_execution_time_sec = static_cast<std::chrono::seconds::rep>(getContext()->getMaxPendingMutationsExecutionTimeToWarn());
+                for (const auto & mutation_status : table_merge_tree->getMutationsStatus())
+                {
+                    if (!mutation_status.is_done)
+                    {
+                        ++current_mutation_stats.pending_mutations;
+                        // Check if the pending mutation is over the setting max_pending_mutations_execution_time_to_warn
+                        // The aim here is to warn the user about mutations that are pending for a very long time (default is 24 hours)
+                        {
+                            if (!mutation_status.parts_to_do_names.empty())
+                            {
+                                auto mutation_create_time = std::chrono::system_clock::from_time_t(mutation_status.create_time);
+                                auto current_time = std::chrono::system_clock::now();
+                                const auto time_elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(current_time - mutation_create_time).count();
+
+                                if (time_elapsed_sec > max_pending_mutations_execution_time_sec)
+                                    ++current_mutation_stats.pending_mutations_over_execution_time;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
     detached_parts_stats = current_values;
+    mutation_stats = current_mutation_stats;
 }
 
 void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
@@ -486,7 +521,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
             heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
-        updateDetachedPartsStats();
+        updateMutationAndDetachedPartsStats();
 
         watch.stop();
 
@@ -507,12 +542,33 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
                  watch.elapsedSeconds());
 
     }
+
+    {
+        Duration max_update_delay{0};
+        size_t failed_counter = 0;
+        const auto & external_dictionaries = getContext()->getExternalDictionariesLoader();
+
+        for (const auto & load_result : external_dictionaries.getLoadResults())
+        {
+            if (load_result.error_count > 0 && load_result.last_successful_update_time.time_since_epoch().count() > 0)
+            {
+                max_update_delay = std::max(max_update_delay, std::chrono::duration_cast<Duration>(current_time - load_result.last_successful_update_time));
+            }
+            failed_counter += load_result.error_count;
+        }
+        new_values["DictionaryMaxUpdateDelay"] = {
+            std::chrono::duration_cast<std::chrono::seconds>(max_update_delay).count(), "The maximum delay (in seconds) of dictionary update"};
+        new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Sum of sequantially failed updates in all dictionaries"};
+    }
+
     new_values["AsynchronousHeavyMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics)." };
 
     new_values["AsynchronousHeavyMetricsUpdateInterval"] = { heavy_update_interval, "Heavy (tables related) metrics update interval" };
 
     new_values["NumberOfDetachedParts"] = { detached_parts_stats.count, "The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed." };
     new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };
+    new_values["NumberOfPendingMutations"] = { mutation_stats.pending_mutations, "The total number of mutations that are in left to be mutated." };
+    new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
 }
 
 }

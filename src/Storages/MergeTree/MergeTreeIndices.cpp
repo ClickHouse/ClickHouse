@@ -143,26 +143,24 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("vector_similarity", vectorSimilarityIndexCreator);
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
-    /// ------
-    /// TODO: remove this block at the end of 2024.
-    /// Index types 'annoy' and 'usearch' are no longer supported as of June 2024. Their successor is index type 'vector_similarity'.
-    /// To support loading tables with old indexes during a transition period, register dummy indexes which allow load/attaching but
-    /// throw an exception when the user attempts to use them.
-    registerCreator("annoy", legacyVectorSimilarityIndexCreator);
-    registerValidator("annoy", legacyVectorSimilarityIndexValidator);
-    registerCreator("usearch", legacyVectorSimilarityIndexCreator);
-    registerValidator("usearch", legacyVectorSimilarityIndexValidator);
-    /// ------
 
-    registerCreator("inverted", fullTextIndexCreator);
-    registerValidator("inverted", fullTextIndexValidator);
+    registerCreator("text", ginIndexCreator);
+    registerValidator("text", ginIndexValidator);
 
     /// ------
-    /// TODO: remove this block at the end of 2024.
     /// Index type 'inverted' was renamed to 'full_text' in May 2024.
-    /// To support loading tables with old indexes during a transition period, register full-text indexes under their old name.
-    registerCreator("full_text", fullTextIndexCreator);
-    registerValidator("full_text", fullTextIndexValidator);
+    /// Index type 'full_text' was renamed to 'gin' in April 2025.
+    /// Index type 'gin' was renamed to 'text' in May 2025.
+    ///
+    /// To support loading tables with old indexes during a transition period, register these legacy indexes.
+    ///
+    /// TODO: remove this block one year after text indexes became GA.
+    registerCreator("full_text", ginIndexCreator);
+    registerValidator("full_text", ginIndexValidator);
+    registerCreator("inverted", ginIndexCreator);
+    registerValidator("inverted", ginIndexValidator);
+    registerCreator("gin", ginIndexCreator);
+    registerValidator("gin", ginIndexValidator);
     /// ------
 }
 

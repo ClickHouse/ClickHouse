@@ -1,8 +1,9 @@
 ---
-slug: /operations/named-collections
+description: 'Documentation for Named collections'
+sidebar_label: 'Named collections'
 sidebar_position: 69
-sidebar_label: "Named collections"
-title: "Named collections"
+slug: /operations/named-collections
+title: 'Named collections'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -51,7 +52,7 @@ In the above example:
 
 ### Permissions to create named collections with DDL {#permissions-to-create-named-collections-with-ddl}
 
-To manage named collections with DDL a user must have the `named_control_collection` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
+To manage named collections with DDL a user must have the `named_collection_control` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
 
 ```xml title='/etc/clickhouse-server/users.d/user_default.xml'
 <clickhouse>
@@ -571,11 +572,11 @@ BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
 </clickhouse>
 ```
 
-## Named collections for accessing MongoDB Table and Dictionary
+## Named collections for accessing MongoDB Table and Dictionary {#named-collections-for-accessing-mongodb-table-and-dictionary}
 
 For the description of parameters see [mongodb](../sql-reference/table-functions/mongodb.md).
 
-### DDL example
+### DDL example {#ddl-example-5}
 
 ```sql
 CREATE NAMED COLLECTION mymongo AS
@@ -588,7 +589,7 @@ collection = 'my_collection',
 options = 'connectTimeoutMS=10000'
 ```
 
-### XML example
+### XML example {#xml-example-5}
 
 ```xml
 <clickhouse>
@@ -606,7 +607,7 @@ options = 'connectTimeoutMS=10000'
 </clickhouse>
 ```
 
-#### MongoDB table
+#### MongoDB table {#mongodb-table}
 
 ```sql
 CREATE TABLE mytable(log_type VARCHAR, host VARCHAR, command VARCHAR) ENGINE = MongoDB(mymongo, options='connectTimeoutMS=10000&compressors=zstd')
@@ -621,7 +622,7 @@ SELECT count() FROM mytable;
 The DDL overrides the named collection setting for options.
 :::
 
-#### MongoDB Dictionary
+#### MongoDB Dictionary {#mongodb-dictionary}
 
 ```sql
 CREATE DICTIONARY dict

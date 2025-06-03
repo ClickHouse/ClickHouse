@@ -61,16 +61,16 @@ NATSSource::NATSSource(
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
 {
-    storage.incrementReader();
 }
 
 
 NATSSource::~NATSSource()
 {
-    storage.decrementReader();
-
     if (!consumer)
         return;
+
+    if (unsubscribe_on_destroy)
+        consumer->unsubscribe();
 
     storage.pushConsumer(consumer);
 }
@@ -94,8 +94,12 @@ Chunk NATSSource::generate()
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::rabbitmq_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
-        if (consumer)
+
+        if (consumer && !consumer->isSubscribed())
+        {
             consumer->subscribe();
+            unsubscribe_on_destroy = true;
+        }
     }
 
     if (!consumer || is_finished)

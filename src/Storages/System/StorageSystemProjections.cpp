@@ -12,8 +12,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/queryToString.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -150,7 +148,7 @@ protected:
                     // 'query' column
                     if (column_mask[src_index++])
                     {
-                        res_columns[res_index++]->insert(serializeAST(*projection.definition_ast->children.at(0)));
+                        res_columns[res_index++]->insert(projection.definition_ast->children.at(0)->formatForLogging());
                     }
                 }
             }

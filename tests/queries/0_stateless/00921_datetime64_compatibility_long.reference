@@ -136,22 +136,22 @@ Code: 43
 SELECT date_trunc(\'year\', N, \'Asia/Istanbul\')
 Code: 43
 "Date","2019-01-01"
-"Date","2019-01-01"
+"Date32","2019-01-01"
 ------------------------------------------
 SELECT date_trunc(\'month\', N, \'Asia/Istanbul\')
 Code: 43
 "Date","2019-09-01"
-"Date","2019-09-01"
+"Date32","2019-09-01"
 ------------------------------------------
 SELECT date_trunc(\'day\', N, \'Asia/Istanbul\')
 "DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
 "DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
+"DateTime64(0, 'Asia/Istanbul')","2019-09-16 00:00:00"
 ------------------------------------------
 SELECT date_trunc(\'minute\', N, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
-"DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
+"DateTime64(0, 'Asia/Istanbul')","2019-09-16 19:20:00"
 ------------------------------------------
 SELECT toTime(N, \'Asia/Istanbul\')
 Code: 43

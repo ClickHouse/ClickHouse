@@ -104,6 +104,7 @@ namespace
         const Flags & getTableEngineFlags() const { return all_flags_for_target[TABLE_ENGINE]; }
         const Flags & getSourceFlags() const { return all_flags_for_target[SOURCE]; }
         const Flags & getUserNameFlags() const { return all_flags_for_target[USER_NAME]; }
+        const Flags & getDefinerFlags() const { return all_flags_for_target[DEFINER]; }
         const Flags & getNamedCollectionFlags() const { return all_flags_for_target[NAMED_COLLECTION]; }
         const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
         const Flags & getAllFlagsGrantableOnGlobalWithParameterLevel() const { return getGlobalWithParameterFlags(); }
@@ -125,7 +126,8 @@ namespace
             NAMED_COLLECTION = 5,
             USER_NAME = 6,
             TABLE_ENGINE = 7,
-            SOURCE = 8,
+            DEFINER = 8,
+            SOURCE = 9,
         };
 
         struct Node;
@@ -304,7 +306,7 @@ namespace
                 collectAllFlags(child.get());
 
             all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
-            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION] | all_flags_for_target[USER_NAME] | all_flags_for_target[TABLE_ENGINE] | all_flags_for_target[SOURCE];
+            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION] | all_flags_for_target[USER_NAME] | all_flags_for_target[TABLE_ENGINE] | all_flags_for_target[DEFINER] | all_flags_for_target[SOURCE];
             all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
         }
 
@@ -399,6 +401,10 @@ std::unordered_map<AccessFlags::ParameterType, AccessFlags> AccessFlags::splitIn
     if (user_flags)
         result.emplace(ParameterType::USER_NAME, user_flags);
 
+    auto definer_flags = AccessFlags::allDefinerFlags() & *this;
+    if (definer_flags)
+        result.emplace(ParameterType::DEFINER, definer_flags);
+
     auto table_engine_flags = AccessFlags::allTableEngineFlags() & *this;
     if (table_engine_flags)
         result.emplace(ParameterType::TABLE_ENGINE, table_engine_flags);
@@ -408,7 +414,7 @@ std::unordered_map<AccessFlags::ParameterType, AccessFlags> AccessFlags::splitIn
         result.emplace(ParameterType::SOURCE, source_flags);
 
 
-    auto other_flags = (~named_collection_flags & ~user_flags & ~table_engine_flags & ~source_flags) & *this;
+    auto other_flags = (~named_collection_flags & ~user_flags & ~definer_flags & ~table_engine_flags & ~source_flags) & *this;
     if (other_flags)
         result.emplace(ParameterType::NONE, other_flags);
 
@@ -426,6 +432,9 @@ AccessFlags::ParameterType AccessFlags::getParameterType() const
 
     if (AccessFlags::allUserNameFlags().contains(*this))
         return AccessFlags::USER_NAME;
+
+    if (AccessFlags::allDefinerFlags().contains(*this))
+        return AccessFlags::DEFINER;
 
     /// All flags refer to TABLE ENGINE access type.
     if (AccessFlags::allTableEngineFlags().contains(*this))
@@ -454,6 +463,7 @@ AccessFlags AccessFlags::allColumnFlags() { return Helper::instance().getColumnF
 AccessFlags AccessFlags::allDictionaryFlags() { return Helper::instance().getDictionaryFlags(); }
 AccessFlags AccessFlags::allNamedCollectionFlags() { return Helper::instance().getNamedCollectionFlags(); }
 AccessFlags AccessFlags::allUserNameFlags() { return Helper::instance().getUserNameFlags(); }
+AccessFlags AccessFlags::allDefinerFlags() { return Helper::instance().getDefinerFlags(); }
 AccessFlags AccessFlags::allTableEngineFlags() { return Helper::instance().getTableEngineFlags(); }
 AccessFlags AccessFlags::allSourceFlags() { return Helper::instance().getSourceFlags(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalLevel(); }
