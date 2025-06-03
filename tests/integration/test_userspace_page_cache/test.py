@@ -37,11 +37,10 @@ def test_basics(started_cluster):
     )
 
     # Check that page cache is initially ~empty.
-    node.query("system reload asynchronous metrics;")
     assert (
         int(
             node.query(
-                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
+                "select value from system.metrics where metric = 'PageCacheBytes'"
             )
         )
         < 4000000
@@ -53,7 +52,7 @@ def test_basics(started_cluster):
         "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1",
         query_id=query_id,
     )
-    node.query("system flush logs; system reload asynchronous metrics;")
+    node.query("system flush logs")
     # Don't check that number of hits is zero - it's usually not.
     assert (
         int(
@@ -66,7 +65,7 @@ def test_basics(started_cluster):
     assert (
         int(
             node.query(
-                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
+                "select value from system.metrics where metric = 'PageCacheBytes'"
             )
         )
         > 4000000
@@ -93,7 +92,7 @@ def test_basics(started_cluster):
         "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1, read_from_page_cache_if_exists_otherwise_bypass_cache=1",
         query_id=query_id,
     )
-    node.query("system flush logs; system reload asynchronous metrics;")
+    node.query("system flush logs")
     assert (
         int(
             node.query(
@@ -105,7 +104,7 @@ def test_basics(started_cluster):
     assert (
         int(
             node.query(
-                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
+                "select value from system.metrics where metric = 'PageCacheBytes'"
             )
         )
         < 4000000
@@ -117,7 +116,7 @@ def test_basics(started_cluster):
         "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1",
         query_id=query_id,
     )
-    node.query("system flush logs; system reload asynchronous metrics;")
+    node.query("system flush logs")
     assert (
         int(
             node.query(
@@ -129,7 +128,7 @@ def test_basics(started_cluster):
     assert (
         int(
             node.query(
-                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
+                "select value from system.metrics where metric = 'PageCacheBytes'"
             )
         )
         > 4000000
@@ -179,10 +178,9 @@ def test_size_adjustment(started_cluster):
         "insert into a select * from numbers(400000000);"
         "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1;"
     )
-    node.query("system reload asynchronous metrics")
     initial_cache_size = int(
         node.query(
-            "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
+            "select value from system.metrics where metric = 'PageCacheBytes'"
         )
     )
     assert initial_cache_size > 50000000
@@ -196,11 +194,10 @@ def test_size_adjustment(started_cluster):
     # (There used to be a check here that system.query_log shows high enough memory usage for the previous
     #  query, but it was flaky because log flush sometimes hits memory limit and fails.)
 
-    node.query("system reload asynchronous metrics;")
     assert (
         int(
             node.query(
-                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
+                "select value from system.metrics where metric = 'PageCacheBytes'"
             )
         )
         < 50000000

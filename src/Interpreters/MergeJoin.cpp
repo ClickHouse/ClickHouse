@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
-
+#include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Core/SortCursor.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -17,6 +17,12 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric MergeJoinBlocksCacheBytes;
+    extern const Metric MergeJoinBlocksCacheCount;
+}
 
 namespace DB
 {
@@ -609,8 +615,8 @@ void MergeJoin::mergeInMemoryRightBlocks()
         /*increase_sort_description_compile_attempts=*/false,
         /*max_bytes_before_remerge_*/0,
         /*remerge_lowered_memory_bytes_ratio_*/0,
-        /*min_external_sort_block_bytes_*/0,
-        /*max_bytes_before_external_sort_*/0,
+        /*max_bytes_in_block_before_external_sort_*/0,
+        /*max_bytes_in_query_before_external_sort_*/0,
         /*tmp_data_*/nullptr,
         /*min_free_disk_space_*/0));
 
@@ -650,7 +656,7 @@ void MergeJoin::mergeFlushedRightBlocks()
     if (!memory_limit && rows_limit)
         memory_limit = right_blocks.bytes * rows_limit / right_blocks.row_count;
 
-    cached_right_blocks = std::make_unique<Cache>(memory_limit);
+    cached_right_blocks = std::make_unique<Cache>(CurrentMetrics::MergeJoinBlocksCacheBytes, CurrentMetrics::MergeJoinBlocksCacheCount, memory_limit);
 }
 
 bool MergeJoin::saveRightBlock(Block && block)
