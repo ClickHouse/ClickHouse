@@ -278,8 +278,11 @@ bool analyzeProjectionCandidate(
         auto it = created_projections.find(candidate.projection->name);
         if (it != created_projections.end() && !it->second->is_broken)
         {
-            projection_parts.push_back(
-                RangesInDataPart(it->second, part_with_ranges.part_index_in_query, part_with_ranges.part_starting_offset_in_query));
+            projection_parts.push_back(RangesInDataPart(
+                it->second,
+                part_with_ranges.data_part,
+                part_with_ranges.part_index_in_query,
+                part_with_ranges.part_starting_offset_in_query));
         }
         else
         {

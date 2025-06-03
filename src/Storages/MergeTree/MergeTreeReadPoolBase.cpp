@@ -141,20 +141,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         MergeTreeReadTaskInfo read_task_info;
 
         read_task_info.data_part = part_with_ranges.data_part;
-
-        const auto & data_part = read_task_info.data_part;
-        /// TODO(ab): Hold parent part in RangesInDataParts during projection analysis
-        if (data_part->isProjectionPart())
-        {
-            read_task_info.parent_part = data_part->storage.getPartIfExists(
-                data_part->getParentPartName(),
-                {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
-
-            if (!read_task_info.parent_part)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Did not find parent part {} for projection part {}",
-                            data_part->getParentPartName(), data_part->getDataPartStorage().getFullPath());
-        }
-
+        read_task_info.parent_part = part_with_ranges.parent_part;
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
         read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
         read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, getContext());
