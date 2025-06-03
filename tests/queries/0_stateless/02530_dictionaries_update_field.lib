@@ -1,25 +1,13 @@
 #!/usr/bin/env bash
-# Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# NOTE: dictionaries will be updated according to server TZ, not session, so prohibit it's randomization
-$CLICKHOUSE_CLIENT --session_timezone '' -q "
-    CREATE TABLE table_for_update_field_dictionary
-    (
-        key UInt64,
-        value String,
-        last_insert_time DateTime
-    )
-    ENGINE = TinyLog
-"
 
-layouts=(
-    flat
-)
-for layout in "${layouts[@]}"; do
+function run_test_with_layout()
+{
+    local layout=$1
     for custom_query in "" "custom"; do
         if [[ $custom_query == custom ]]; then
             dictionary_name="dict_${layout}_custom"
@@ -72,8 +60,9 @@ for layout in "${layouts[@]}"; do
         done
 
         $CLICKHOUSE_CLIENT --query "DROP DICTIONARY $dictionary_name"
-
     done
-done
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS table_for_update_field_dictionary"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS table_for_update_field_dictionary"
+}
+
+# vi: ft=bash

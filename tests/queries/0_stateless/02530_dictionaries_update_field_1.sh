@@ -16,8 +16,7 @@ $CLICKHOUSE_CLIENT --session_timezone '' -q "
         value String,
         last_insert_time DateTime
     )
-    ENGINE = MergeTree()
-    ORDER BY tuple()
+    ENGINE = TinyLog
 "
 
-run_test_with_layout "hashed"
+run_test_with_layout "flat"
