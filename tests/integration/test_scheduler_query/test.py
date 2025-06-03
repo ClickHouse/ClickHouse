@@ -7,12 +7,11 @@ import time
 
 import pytest
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance(
+node: ClickHouseInstance = cluster.add_instance(
     "node",
     stay_alive=True,
     main_configs=[],
@@ -44,17 +43,19 @@ def clear_workloads_and_resources():
     yield
 
 
-def assert_profile_event(node, query_id, profile_event, check):
+def assert_profile_event(node, query_id, profile_event, check) -> None:
     assert check(
         int(
             node.query(
-                f"select ProfileEvents['{profile_event}'] from system.query_log where current_database = currentDatabase() and query_id = '{query_id}' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
+                f"select ProfileEvents['{profile_event}'] from system.query_log where "
+                "current_database = currentDatabase() and query_id = '{query_id}' and "
+                "type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
             )
         )
     )
 
 
-def test_create():
+def test_create() -> None:
     node.query(
         f"""
         create resource query (query);
@@ -66,40 +67,28 @@ def test_create():
     """
     )
 
-    def do_checks():
+    def do_checks() -> None:
+        common_select_part = "select count() from system.scheduler where path ilike"
+
+        assert node.query(f"{common_select_part} '%/admin/%' and type='fifo'") == "1\n"
+
         assert (
-            node.query(
-                f"select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
-            )
+            node.query(f"{common_select_part} '%/admin' and type='unified' and priority=0") == "1\n"
+        )
+
+        assert node.query(f"{common_select_part} '%/production/%' and type='fifo'") == "1\n"
+
+        assert (
+            node.query(f"{common_select_part} '%/production' and type='unified' and weight=9")
             == "1\n"
         )
+
+        assert node.query(f"{common_select_part} '%/development/%' and type='fifo'") == "1\n"
+
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin' and type='unified' and priority=0"
-            )
-            == "1\n"
-        )
-        assert (
-            node.query(
-                f"select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
-            )
-            == "1\n"
-        )
-        assert (
-            node.query(
-                f"select count() from system.scheduler where path ilike '%/production' and type='unified' and weight=9"
-            )
-            == "1\n"
-        )
-        assert (
-            node.query(
-                f"select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
-            )
-            == "1\n"
-        )
-        assert (
-            node.query(
-                f"select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='query' and max_requests=20"
+                f"{common_select_part} '%/all/%' and type='inflight_limit' and "
+                "resource='query' and max_requests=20"
             )
             == "1\n"
         )
@@ -110,31 +99,38 @@ def test_create():
 
 
 class QueryPool:
-    def __init__(self, num_queries, workload):
-        self.num_queries = num_queries
-        self.workload = workload
+    def __init__(self, num_queries: int, workload: str) -> None:
+        self.num_queries: int = num_queries
+        self.workload: str = workload
+        self.stop_event: threading.Event = threading.Event()
+        self.threads: list[threading.Thread] = []
+        self.stopped: bool = True
 
-    def start(self):
-        self.stop_event = threading.Event()
-        self.threads = []
-        def query_thread(stop_event, workload, max_threads=2):
-            while not stop_event.is_set():
+    def start(self) -> None:
+        assert self.stopped, "Pool is already running"
+
+        def query_thread() -> None:
+            while not self.stop_event.is_set():
                 node.query(
-                    f"select count(*) from numbers_mt(100000000) settings workload='{workload}', max_threads={max_threads}"
+                    f"select count(*) from numbers_mt(100000000) settings "
+                    f"workload='{self.workload}', max_threads=2"
                 )
 
-        for i in range(self.num_queries):
-            self.threads.append(threading.Thread(target=query_thread, args=(self.stop_event, self.workload)))
+        for _ in range(self.num_queries):
+            self.threads.append(threading.Thread(target=query_thread, args=()))
         for thread in self.threads:
             thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
         self.stop_event.set()
         for thread in self.threads:
             thread.join()
+        self.threads.clear()
+        self.stop_event = threading.Event()
+        self.stopped = True
 
 
-def test_max_concurrent_queries():
+def test_max_concurrent_queries() -> None:
     node.query(
         f"""
         create resource query (query);
@@ -146,47 +142,47 @@ def test_max_concurrent_queries():
     """
     )
 
-    def concurrent_queries():
+    def concurrent_queries() -> int:
         return int(
             node.query(
                 f"select value from system.metrics where name='ConcurrentQueryAcquired'"
             ).strip()
         )
 
-    def check_metrics(limit):
-        for i in range(3):
-            assert(concurrent_queries() <= limit)
+    def check_metrics(limit: int) -> None:
+        for _ in range(10):
+            assert concurrent_queries() <= limit
             time.sleep(0.1)
         while concurrent_queries() < limit:
             time.sleep(0.1)
 
-    def inflight_queries(workload):
+    def inflight_queries(workload) -> int:
         return int(
             node.query(
-                f"select inflight_requests from system.scheduler where path='/all/semaphore' and resource='query'"
+                f"select inflight_requests from system.scheduler where "
+                f"path='/all/semaphore' and resource='query'"
             ).strip()
         )
 
-    def check_scheduler(workload, limit):
-        for i in range(3):
-            assert(inflight_queries(workload) <= limit)
+    def check_scheduler(workload, limit: int) -> None:
+        for _ in range(10):
+            assert inflight_queries(workload) <= limit
             time.sleep(0.1)
         while inflight_queries(workload) < limit:
             time.sleep(0.1)
 
-
-    admin = QueryPool(6, 'admin')
-    production = QueryPool(6, 'production')
-    development = QueryPool(6, 'development')
+    admin = QueryPool(6, "admin")
+    production = QueryPool(6, "production")
+    development = QueryPool(6, "development")
 
     production.start()
     check_metrics(4)
-    check_scheduler('production', 4)
+    check_scheduler("production", 4)
     production.stop()
 
     development.start()
     check_metrics(2)
-    check_scheduler('development', 2)
+    check_scheduler("development", 2)
     development.stop()
 
     production.start()
@@ -194,8 +190,7 @@ def test_max_concurrent_queries():
     check_metrics(4)
     admin.start()
     check_metrics(6)
-    check_scheduler('admin', 6)
+    check_scheduler("admin", 6)
     production.stop()
     development.stop()
     admin.stop()
-
