@@ -463,7 +463,7 @@ TEST_P(TwoLevelHashSetMergingFixture, MergeWithSingleLevelSet)
     else
         ASSERT_EQ(two_level.find(0), nullptr);
 
-    for (size_t elem = 1; elem < set_size; ++elem)
+    for (size_t elem = 1; elem < set_size + 1; ++elem)
         ASSERT_NE(two_level.find(elem), nullptr);
 
     for (size_t elem = 42; elem < set_size + 42; ++elem)
