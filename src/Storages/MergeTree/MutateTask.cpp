@@ -681,7 +681,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     auto part_columns = ctx.source_part->getColumnsDescription();
 
     NameSet dropped_columns;
-    NameSet affected_columns;
+    bool need_mutate_columns = !mutated_data.updated_columns.empty() || mutated_data.has_delete_command;
 
     for (const auto & command : ctx.commands_for_part)
     {
@@ -691,12 +691,16 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
         if (!has_column && !has_nested_column)
             continue;
 
-        if (command.type == MutationCommand::Type::READ_COLUMN)
+        if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
-            affected_columns.emplace(command.column_name);
-            ctx.for_interpreter.push_back(command);
+            need_mutate_columns = true;
         }
-        else if (command.type == MutationCommand::Type::RENAME_COLUMN || command.type == MutationCommand::Type::DROP_COLUMN)
+        else if (command.type == MutationCommand::Type::READ_COLUMN)
+        {
+            ctx.for_interpreter.push_back(command);
+            need_mutate_columns = true;
+        }
+        else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
             if (has_nested_column)
             {
@@ -704,15 +708,14 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
                 chassert(!nested.empty());
 
                 for (const auto & nested_column : nested)
-                    affected_columns.emplace(nested_column.name);
+                    dropped_columns.emplace(nested_column.name);
             }
             else
             {
-                affected_columns.emplace(command.column_name);
+                dropped_columns.emplace(command.column_name);
             }
 
-            if (command.type == MutationCommand::Type::DROP_COLUMN)
-                dropped_columns.emplace(command.column_name);
+            need_mutate_columns = true;
         }
     }
 
@@ -744,61 +747,57 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
         }
     }
 
-    for (const auto & column_name : ctx.required_readonly_columns)
+    if (need_mutate_columns)
     {
-        ctx.for_interpreter.push_back({.type = MutationCommand::Type::READ_COLUMN, .column_name = column_name});
-        affected_columns.emplace(column_name);
-    }
-
-    // bool has_data_mutation = !mutated_data.updated_columns.empty() || mutated_data.has_delete_command;
-
-    /// If it's compact part, then we don't need to actually remove files
-    /// from disk we just don't read dropped columns
-    for (const auto & column : part_columns)
-    {
-        if (dropped_columns.contains(column.name))
+        /// If it's compact part, then we don't need to actually remove files from disk we just don't read dropped columns
+        for (const auto & column : part_columns)
         {
-            /// Not needed for compact parts (not executed), added here only to produce correct
-            /// set of columns for new part and their serializations
-            ctx.for_file_renames.push_back(
+            if (dropped_columns.contains(column.name))
             {
-                .type = MutationCommand::Type::DROP_COLUMN,
-                .column_name = column.name,
-            });
-        }
-        else if (!affected_columns.contains(column.name))
-        {
-            const auto & part = ctx.source_part;
-            const auto & metadata_snapshot = ctx.metadata_snapshot;
-
-            if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name))
-            {
-                /// We cannot add the column because there's no such column in table.
-                /// It's okay if the column was dropped. It may also absent in dropped_columns
-                /// if the corresponding MUTATE_PART entry was not created yet or was created separately from current MUTATE_PART.
-                /// But we don't know for sure what happened.
-                auto part_metadata_version = part->getMetadataVersion();
-                auto table_metadata_version = metadata_snapshot->getMetadataVersion();
-
-                bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
-                if (part_metadata_version < table_metadata_version || allow_equal_versions)
+                /// Not needed for compact parts (not executed), added here only to produce correct
+                /// set of columns for new part and their serializations
+                ctx.for_file_renames.push_back(
                 {
-                    LOG_WARNING(ctx.log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
-                                        "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
-                                part_metadata_version, part->storage.getStorageID().getNameForLogs(), table_metadata_version);
-                    continue;
+                    .type = MutationCommand::Type::DROP_COLUMN,
+                    .column_name = column.name,
+                });
+            }
+            else
+            {
+                const auto & part = ctx.source_part;
+                const auto & metadata_snapshot = ctx.metadata_snapshot;
+
+                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name))
+                {
+                    /// We cannot add the column because there's no such column in table.
+                    /// It's okay if the column was dropped. It may also absent in dropped_columns
+                    /// if the corresponding MUTATE_PART entry was not created yet or was created separately from current MUTATE_PART.
+                    /// But we don't know for sure what happened.
+                    auto part_metadata_version = part->getMetadataVersion();
+                    auto table_metadata_version = metadata_snapshot->getMetadataVersion();
+
+                    bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
+                    if (part_metadata_version < table_metadata_version || allow_equal_versions)
+                    {
+                        LOG_WARNING(ctx.log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
+                                            "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
+                                    part_metadata_version, part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+                        continue;
+                    }
+
+                    /// StorageMergeTree does not have metadata version
+                    if (part->storage.supportsReplication())
+                    {
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
+                                        "in table {} with metadata version {}",
+                                        part->name, part_metadata_version, column.name,
+                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+                    }
                 }
 
-                /// StorageMergeTree does not have metadata version
-                if (part->storage.supportsReplication())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
-                                    "in table {} with metadata version {}",
-                                    part->name, part_metadata_version, column.name,
-                                    part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+                ctx.for_interpreter.emplace_back(
+                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
             }
-
-            ctx.for_interpreter.emplace_back(
-                MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
         }
     }
 }
