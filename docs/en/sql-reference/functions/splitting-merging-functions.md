@@ -21,7 +21,7 @@ splitByChar(separator, s[, max_substrings]))
 
 **Arguments**
 
-- `separator` — The separator must be a single-byte character. [String](../data-types/string.md).
+- `separator` — The separator which should contain exactly one character. [String](../data-types/string.md).
 - `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. If `max_substrings` > 0, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible.
 

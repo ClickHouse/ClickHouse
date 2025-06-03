@@ -23,8 +23,8 @@ using namespace DB;
 
 namespace ProfileEvents
 {
-    extern const Event IcebergPartitionPrunedFiles;
-    extern const Event IcebergMinMaxIndexPrunedFiles;
+    extern const Event IcebergPartitionPrunnedFiles;
+    extern const Event IcebergMinMaxIndexPrunnedFiles;
 }
 
 
@@ -145,10 +145,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     {
         partition_key = &manifest_file.getPartitionKeyDescription();
         if (transformed_dag != nullptr)
-        {
-            ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-            partition_key_condition.emplace(inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
-        }
+            partition_key_condition.emplace(transformed_dag.get(), context, partition_key->column_names, partition_key->expression, true /* single_point */);
     }
 
     if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
@@ -166,8 +163,7 @@ ManifestFilesPruner::ManifestFilesPruner(
                 ExpressionActionsPtr expression = std::make_shared<ExpressionActions>(
                     ActionsDAG({name_and_type}), ExpressionActionsSettings(context));
 
-                ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-                min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type.name}, expression));
+                min_max_key_conditions.emplace(used_column_id, KeyCondition(transformed_dag.get(), context, {name_and_type.name}, expression));
             }
         }
     }
@@ -191,7 +187,7 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 
         if (!can_be_true)
         {
-            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles);
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
             return true;
         }
     }
@@ -207,7 +203,7 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
         auto hyperrectangle = entry.columns_infos.at(column_id).hyperrectangle;
         if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
-            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);
+            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunnedFiles);
             return true;
         }
     }

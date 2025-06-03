@@ -108,8 +108,6 @@ public:
             && current_metadata->supportsSchemaEvolution();
     }
 
-    IDataLakeMetadata * getExternalMetadata() const override { return current_metadata.get(); }
-
     ColumnsDescription updateAndGetCurrentSchema(
         ObjectStoragePtr object_storage,
         ContextPtr context) override
@@ -120,8 +118,6 @@ public:
     }
 
     bool supportsFileIterator() const override { return true; }
-
-    bool supportsWrites() const override { return current_metadata->supportsWrites(); }
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -146,8 +142,6 @@ public:
         return {};
     }
 #endif
-
-    void modifyFormatSettings(FormatSettings & settings) const override { current_metadata->modifyFormatSettings(settings); }
 
 private:
     DataLakeMetadataPtr current_metadata;

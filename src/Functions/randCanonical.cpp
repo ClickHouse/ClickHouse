@@ -53,7 +53,7 @@ The function generates pseudo random results with independent and identically di
 Non-deterministic. Return type is Float64.
         )",
         .examples{{"randCanonical", "SELECT randCanonical()", ""}},
-        .category = FunctionDocumentation::Category::RandomNumber});
+        .category{"Random Numbers"}});
 }
 
 }
