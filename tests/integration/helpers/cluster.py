@@ -34,7 +34,7 @@ try:
     import asyncio
     import ssl
 
-    #import cassandra.cluster
+    import cassandra.cluster
     import nats
     import psycopg2
     import pymongo
