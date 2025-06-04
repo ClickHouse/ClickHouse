@@ -873,7 +873,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     Possible values:
 
-    - Positive integer.
+    - Positive double.
     - `0` — Writing of random allocations and de-allocations in the `system.trace_log` system table is disabled.
     )", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_min_allocation_size, 0, R"(Collect random allocations of size greater or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
