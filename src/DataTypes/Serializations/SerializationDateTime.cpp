@@ -415,12 +415,34 @@ void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     time_t x = 0;
     if (checkChar('\'', istr)) /// Cases: '18:36:48' or '493808'
     {
-        readTimeText(x, istr, settings, time_zone, utc_time_zone);
-        assertChar('\'', istr);
+        try
+        {
+            readTimeText(x, istr, settings, time_zone, utc_time_zone);
+            assertChar('\'', istr);
+        }
+        catch (const Exception &)
+        {
+            throw;
+        }
+        catch (...)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time value");
+        }
     }
     else
     {
-        readAsIntText(x, istr);
+        try
+        {
+            readAsIntText(x, istr);
+        }
+        catch (const Exception &)
+        {
+            throw;
+        }
+        catch (...)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse Time value as number");
+        }
     }
 
     /// It's important to do this at the end - for exception safety.
