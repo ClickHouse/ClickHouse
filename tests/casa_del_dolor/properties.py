@@ -173,7 +173,9 @@ object_storages_properties = {
     "local": {},
     "s3": {
         "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024 * 1024),
-        "object_metadata_cache_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024 * 1024),
+        "object_metadata_cache_size": threshold_generator(
+            0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
+        ),
         "s3_check_objects_after_upload": lambda: random.randint(0, 1),
         "s3_max_inflight_parts_for_one_file": threshold_generator(0.2, 0.2, 0, 16),
         "s3_max_get_burst": threshold_generator(0.2, 0.2, 0, 100),
@@ -199,7 +201,9 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
         ),
         "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024 * 1024),
-        "min_upload_part_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024 * 1024),
+        "min_upload_part_size": threshold_generator(
+            0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
+        ),
         "skip_access_check": lambda: random.randint(0, 1),
         "thread_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()),
         "use_native_copy": lambda: random.randint(0, 1),
@@ -224,7 +228,9 @@ cache_storage_properties = {
     "enable_bypass_cache_with_threshold": lambda: random.randint(0, 1),
     "enable_filesystem_query_cache_limit": lambda: random.randint(0, 1),
     "keep_free_space_elements_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "keep_free_space_remove_batch": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024 * 1024),
+    "keep_free_space_remove_batch": threshold_generator(
+        0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
+    ),
     "keep_free_space_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "load_metadata_asynchronously": lambda: random.randint(0, 1),
     "load_metadata_threads": lambda: random.randint(0, multiprocessing.cpu_count()),
@@ -238,7 +244,9 @@ cache_storage_properties = {
 
 policy_properties = {
     "load_balancing": lambda: random.choice(["round_robin", "least_used"]),
-    "max_data_part_size_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024 * 1024),
+    "max_data_part_size_bytes": threshold_generator(
+        0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
+    ),
     "move_factor": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "perform_ttl_move_on_insert": lambda: random.randint(0, 1),
     "prefer_not_to_merge": lambda: random.randint(0, 1),
@@ -267,15 +275,17 @@ def add_single_disk(
     next_disk: ET.Element,
     backups_element: ET.Element,
     disk_type: str,
-    created_disks_types: list[str],
+    created_disks_types: list[tuple[int, str]],
     object_storages: list[str],
-) -> str:
+) -> tuple[int, str]:
     prev_disk = 0
     if disk_type in ("cache", "encrypted"):
-        prev_disk = random.choice(range(0, i))
+        iter_prev_disk = prev_disk = random.choice(range(0, i))
 
         # Cannot create encrypted disk on web storage
-        if created_disks_types[prev_disk] == "web" and disk_type == "encrypted":
+        while created_disks_types[iter_prev_disk][1] in ("cache", "encrypted"):
+            iter_prev_disk = created_disks_types[iter_prev_disk][0]
+        if created_disks_types[iter_prev_disk][1] == "web" and disk_type == "encrypted":
             disk_type = "cache"
 
     # Add a single disk
@@ -374,7 +384,7 @@ def add_single_disk(
                     if enc_algorithm == "aes_192_ctr"
                     else f"{i % 10}09105c600c12066f82f1a4dbb41a08e4A4348C8387ADB6AB827410C4EF71CA5"
                 )
-    return final_type
+    return (prev_disk, final_type)
 
 
 def modify_server_settings(
@@ -420,7 +430,7 @@ def modify_server_settings(
                 if i == 0
                 else ["object_storage", "cache", "encrypted"]
             )
-            next_created_disk_type = add_single_disk(
+            next_created_disk_pair = add_single_disk(
                 i,
                 args,
                 cluster,
@@ -430,7 +440,7 @@ def modify_server_settings(
                 created_disks_types,
                 object_storages,
             )
-            created_disks_types.append(next_created_disk_type)
+            created_disks_types.append(next_created_disk_pair)
         # Add policies sometimes
         if random.randint(1, 100) <= 70 and args.max_disks > 0:
             policies_element = ET.SubElement(storage_config, "policies")
