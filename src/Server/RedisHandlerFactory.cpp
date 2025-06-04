@@ -1,4 +1,5 @@
 #include <Poco/Util/LayeredConfiguration.h>
+#include <memory>
 
 #include "RedisHandlerFactory.h"
 #include "RedisHandler.h"
@@ -11,6 +12,7 @@ namespace DB
     RedisHandlerFactory::RedisHandlerFactory(IServer &_server) :
         server(_server), logger(&Poco::Logger::get("RedisHandlerFactory"))
     {
+        config = std::make_shared<RedisProtocol::Config>();
         parse_config();
     }
 
@@ -22,7 +24,7 @@ namespace DB
 
     void RedisHandlerFactory::parse_config()
     {
-        config.enable_ssl = server.config().getBool("redis.enable_ssl");
+        config->enable_ssl = server.config().getBool("redis.enable_ssl");
 
         Poco::Util::AbstractConfiguration::Keys keys;
         server.config().keys("redis.db", keys);
@@ -95,7 +97,7 @@ namespace DB
                     break;
                 }
             }
-            config.db_mapping[db_num] = std::move(description);
+            config->db_mapping[db_num] = std::move(description);
         }
     }
 }

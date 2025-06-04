@@ -1,48 +1,30 @@
-<?xml version="1.0"?>
 <clickhouse>
-    <tcp_port>9000</tcp_port>
-        <postgresql_port>6432</postgresql_port>
-
         <profiles>
-        <default></default>
-    </profiles>
+                <default></default>
+	</profiles>
+        <listen_host>127.0.0.1</listen_host>
+        <tcp_port>9000</tcp_port>
 
-        <users>
-                <default>
-                                <password>123</password>
-                </default>
+        <max_concurrent_queries>500</max_concurrent_queries>
+        <path>./clickhouse/</path>
+        <users_config>users.xml</users_config>
 
-                <user_with_sha256>
-                                <password_scram_sha256_hex>04e7a70338d7af7bb6142fe7e19fef46d9b605f3e78b932a60e8200ef9154976</password_scram_sha256_hex>
-                                <profile>default</profile>
-                                <quota>default</quota>
-                </user_with_sha256>
-        </users>
-
-        <openSSL>
-                <server> <!-- Used for https server AND secure tcp port -->
-                        <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
-                                <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
-                                <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
-                        <!-- openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 -->
-                                <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
-                                <verificationMode>none</verificationMode>
-                                <loadDefaultCAFile>true</loadDefaultCAFile>
-                                <cacheSessions>true</cacheSessions>
-                                <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>
-                                <preferServerCiphers>true</preferServerCiphers>
-                </server>
-        </openSSL>
-        <redis>
+	<redis>
                 <port>9006</port>
                 <enable_ssl>false</enable_ssl>
                 <db>
-                        <_0>
-                                <db_type>hash</db_type>
-                                <clickhouse_db>databse</clickhouse_db>
-                <clickhouse_table>table</clickhouse_table>
-                <key_column>column</key_column>
-                        </_0>
+                <_0>
+                        <db_type>hash</db_type>
+                        <clickhouse_db>default</clickhouse_db>
+                        <clickhouse_table>name_surname_map</clickhouse_table>
+                        <key_column>name</key_column>
+                </_0>
+                <_1>
+                        <db_type>string</db_type>
+                        <clickhouse_db>default</clickhouse_db>
+                        <clickhouse_table>name_surname_map</clickhouse_table>
+                        <key_column>name</key_column>
+                </_1>
                 </db>
         </redis>
 </clickhouse>

@@ -21,6 +21,6 @@ namespace DB
 
         IServer &server;
         Poco::Logger *logger;
-        RedisProtocol::Config config;
+        RedisProtocol::ConfigPtr config;
     };
 }

@@ -94,6 +94,7 @@ namespace DB
             void writeError(const String & s)
             {
                 writeDataType(DataType::ERROR);
+                writeString("ERR ", *buf);
                 writeString(s, *buf);
                 writeCRLF();
             }
@@ -118,6 +119,13 @@ namespace DB
             {
                 writeDataType(DataType::ARRAY);
                 writeString(std::to_string(num), *buf);
+                writeCRLF();
+            }
+
+            void writeNil()
+            {
+                writeDataType(DataType::BULK_STRING);
+                writeString("-1", *buf);
                 writeCRLF();
             }
 

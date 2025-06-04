@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include "IO/WriteBuffer.h"
 #include "RedisProtocolReaderWriter.h"
 
@@ -26,7 +27,7 @@ namespace DB
                 writer.writeError(error);
             }
         private:
-            const String & error;
+            const String error;
         };
 
         class NilResponse : public IResponse
@@ -51,7 +52,50 @@ namespace DB
             }
 
         private:
-            const String & str;
+            const String str;
+        };
+
+        class BulkStringResponse : public IResponse
+        {
+        public:
+            explicit BulkStringResponse(const String & str_) : str(str_) {}
+
+            void serialize(WriteBuffer & out) final
+            {
+                Writer writer(&out);
+                if (str.size() == 0)
+                {
+                    writer.writeNil();
+                    return;
+                }
+                writer.writeBulkString(str);
+            }
+        private:
+            const String str;
+        };
+
+        class ArrayResponse : public IResponse
+        {
+        public:
+            explicit ArrayResponse(const std::vector<String> & values_) : values(values_) {}
+
+            void serialize(WriteBuffer & out) final
+            {
+                Writer writer(&out);
+                writer.writeArray(values.size());
+                for (const auto & value : values)
+                {
+                    if (value.size() == 0)
+                    {
+                        writer.writeNil();
+                        continue;
+                    }
+                    writer.writeBulkString(value);
+                }
+            }
+
+        private:
+            const std::vector<String> & values;
         };
     }
 }

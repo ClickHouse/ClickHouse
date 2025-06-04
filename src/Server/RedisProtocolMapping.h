@@ -5,6 +5,7 @@
 
 #include "Common/Exception.h"
 #include "Databases/IDatabase.h"
+#include "Storages/IStorage_fwd.h"
 #include "base/types.h"
 
 namespace DB
@@ -12,6 +13,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int INVALID_STATE;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace RedisProtocol
@@ -49,10 +52,9 @@ namespace RedisProtocol
 
         virtual ~RedisClickHouseMapping() = default;
 
-        DBType getType()
-        {
-            return type;
-        }
+        DBType getType() { return type; }
+
+        StoragePtr getTable() { return table; }
 
     protected:
         DBType type;
@@ -60,12 +62,15 @@ namespace RedisProtocol
         String key_column;
     };
 
+    using MappingPtr = std::shared_ptr<RedisClickHouseMapping>;
+
     class RedisStringMapping : public RedisClickHouseMapping
     {
     public:
         RedisStringMapping(DBType type_, StoragePtr table_, String key_column_, String value_column_)
             : RedisClickHouseMapping(type_, table_, key_column_), value_column(value_column_) {}
 
+        String getValueColumnName() { return value_column; }
     private:
         String value_column;
     };
@@ -91,5 +96,7 @@ namespace RedisProtocol
         bool enable_ssl;
         std::map<UInt32, MapDescription> db_mapping;
     };
+
+    using ConfigPtr = std::shared_ptr<Config>;
 }
 }

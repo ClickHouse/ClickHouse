@@ -21,15 +21,18 @@ class TCPServer;
 class RedisHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    RedisHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, RedisProtocol::Config & config_);
+    RedisHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, RedisProtocol::ConfigPtr config_);
 
     void run() final;
 
 private:
 
-    bool process_request();
+    bool processRequest();
 
-    void init_db(UInt32 db_);
+    void initDB(UInt32 db_);
+    void isDBSet() const;
+
+    std::vector<std::string> getValueByKey(const String & key);
 
     IServer & server;
     TCPServer & tcp_server;
@@ -37,9 +40,9 @@ private:
     std::shared_ptr<WriteBufferFromPocoSocket> out;
     std::unique_ptr<Session> session;
 
-    RedisProtocol::Config config;
+    RedisProtocol::ConfigPtr config;
     UInt32 db = RedisProtocol::DB_MAX_NUM;
-    std::map<UInt32, std::unique_ptr<RedisProtocol::RedisClickHouseMapping>> redis_click_house_mapping;
+    std::map<UInt32, RedisProtocol::MappingPtr> redis_click_house_mapping;
 
     Poco::Logger * log = &Poco::Logger::get("RedisHandler");
 };
