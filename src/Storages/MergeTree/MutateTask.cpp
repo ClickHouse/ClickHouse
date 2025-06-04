@@ -229,7 +229,6 @@ struct MutationContext
     NameSet projections_to_drop;
     std::set<ProjectionDescriptionRawPtr> projections_to_build;
     std::set<ProjectionDescriptionRawPtr> projections_to_hardlink;
-    std::map<ProjectionDescriptionRawPtr, MutationCommands> projections_to_mutate;
 
     NameSet dropped_indices;
     std::set<MergeTreeIndexPtr> indices_to_build;
@@ -317,76 +316,6 @@ static void addUsedIdentifiers(const ASTPtr & ast, const ContextPtr & context, N
     auto ast_identifiers = collectIdentifiersFullNames(query_tree);
     std::move(ast_identifiers.begin(), ast_identifiers.end(), std::inserter(identifiers, identifiers.end()));
 }
-
-// static std::pair<bool, bool> canMutateProjection(const MutationCommand & command, const NameSet & sort_columns, const ContextPtr & context)
-// {
-//     if (command.type == MutationCommand::MATERIALIZE_COLUMN || command.type == MutationCommand::APPLY_DELETED_MASK)
-//         return {true, false};
-
-//     if (command.type != MutationCommand::DELETE && command.type == MutationCommand::UPDATE)
-//         return {false, false};
-
-//     for (const auto & [column_name, expr] : command.column_to_update_expression)
-//     {
-//         if (sort_columns.contains(column_name))
-//             return {true, false};
-//     }
-
-//     if (projection.type == ProjectionDescription::Type::Aggregate)
-//     {
-//         bool has_only_lightweight_delete = updates.size() == 1 && updates.contains(RowExistsColumn::name);
-
-//         if (!updates.empty() && !has_only_lightweight_delete)
-//             return false;
-
-//         NameSet used_columns;
-
-//         if (command.predicate)
-//             addUsedIdentifiers(command.predicate, context, used_columns);
-
-//         for (const auto & [column_name, ast] : command.column_to_update_expression)
-//             addUsedIdentifiers(ast, context, used_columns);
-
-//         for (const auto & used_column : used_columns)
-//         {
-//             if (!sort_columns_set.contains(used_column))
-//                 return false;
-//         }
-
-//         return true;
-//     }
-
-//     if (projection.type == ProjectionDescription::Type::Normal)
-//     {
-//         for (const auto & column_name : updated_columns)
-//         {
-//             if (sort_columns_set.contains(column_name))
-//                 return false;
-//         }
-
-//         return true;
-//     }
-
-//     return false;
-// }
-
-// std::optional<MutationCommands> getMutationCommandsForProjection(const ProjectionDescription & projection, const MutationCommands & commands)
-// {
-//     MutationCommands result;
-//     auto sort_columns = projection.metadata->getSortingKeyColumns();
-//     NameSet sort_columns_set(sort_columns.begin(), sort_columns.end());
-
-//     for (const auto & command : commands)
-//     {
-//         if (command.type == MutationCommand::MATERIALIZE_COLUMN || command.type == MutationCommand::APPLY_DELETED_MASK)
-//             return {};
-
-//         if (command.type == MutationCommand::DELETE || command.type == MutationCommand::UPDATE)
-//         {co
-//             auto [can_mutate, is_aggregate] = canMutateProjection(command, sort_columns_set, context);
-//         }
-//     }
-// }
 
 static void analyzeProjectionCommands(MutationContext & ctx)
 {
@@ -2356,25 +2285,8 @@ bool MutateTask::execute()
             if (task->executeStep())
                 return true;
 
-            state = State::NEED_EXECUTE_PROJECTIONS;
-            return true;
-        }
-        case State::NEED_EXECUTE_PROJECTIONS:
-        {
-            if (projection_tasks_it == projection_tasks.end())
-            {
-                setDataPartPromise();
-                return false;
-            }
-
-            if ((*projection_tasks_it)->execute())
-                return true;
-
-            auto projection_part = (*projection_tasks_it)->getFuture().get();
-            ctx->new_data_part->addProjectionPart(projection_part->name, std::move(projection_part));
-
-            ++projection_tasks_it;
-            return true;
+            setDataPartPromise();
+            return false;
         }
     }
 
@@ -2690,11 +2602,6 @@ bool MutateTask::prepare()
 
     if (ctx->execution_mode == MutationContext::Mode::AllColumns)
     {
-        for (const auto & [projection, _] : ctx->projections_to_mutate)
-            ctx->projections_to_build.insert(projection);
-
-        ctx->projections_to_mutate.clear();
-
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
         /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
@@ -2712,9 +2619,6 @@ bool MutateTask::prepare()
             projections_to_skip.push_back(projection + ".proj");
 
         for (const auto & projection : ctx->projections_to_build)
-            projections_to_skip.push_back(projection->getDirectoryName());
-
-        for (const auto & [projection, _] : ctx->projections_to_mutate)
             projections_to_skip.push_back(projection->getDirectoryName());
 
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
@@ -2739,32 +2643,6 @@ bool MutateTask::prepare()
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
         task = std::make_unique<MutateSomePartColumnsTask>(ctx);
 
-        for (const auto & [projection, projection_commands] : ctx->projections_to_mutate)
-        {
-            MergeTreeData::DataPartsVector source_parts{ctx->source_part};
-            auto projection_future_part = std::make_shared<FutureMergedMutatedPart>(std::move(source_parts));
-            projection_future_part->name = projection->name;
-            projection_future_part->part_info = {"all", 0, 0, 0};
-
-            auto projection_task = std::make_unique<MutateTask>(
-                projection_future_part,
-                projection->metadata,
-                std::make_shared<MutationCommands>(projection_commands),
-                ctx->mutate_entry,
-                ctx->time_of_mutation,
-                ctx->context,
-                ctx->space_reservation,
-                *ctx->holder,
-                ctx->txn,
-                *ctx->data,
-                *ctx->mutator,
-                *ctx->merges_blocker,
-                ctx->need_prefix);
-
-            projection_tasks.push_back(std::move(projection_task));
-        }
-
-        projection_tasks_it = projection_tasks.begin();
         ProfileEvents::increment(ProfileEvents::MutationSomePartColumns);
     }
 

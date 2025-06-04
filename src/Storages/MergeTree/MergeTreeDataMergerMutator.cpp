@@ -513,23 +513,6 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
     return MergeSelectorChoice{std::move(parts), MergeType::Regular, final};
 }
 
-std::expected<SinglePartMutationChoise, SelectMergeFailure> MergeTreeDataMergerMutator::selectSinglePartToMutate(
-    const PartsCollectorPtr & parts_collector,
-    const MergePredicatePtr & merge_predicate,
-    const MergeSelectorApplier & selector,
-    const std::optional<PartitionIdsHint> & partitions_hint)
-{
-    UNUSED(parts_collector);
-    UNUSED(merge_predicate);
-    UNUSED(selector);
-    UNUSED(partitions_hint);
-
-    return std::unexpected(SelectMergeFailure{
-        .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-        .explanation = PreformattedMessage::create("There is no part to mutate"),
-    });
-}
-
 /// parts should be sorted.
 MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     FutureMergedMutatedPartPtr future_part,
