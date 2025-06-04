@@ -273,10 +273,10 @@ Chunk StorageObjectStorageSource::generate()
                 const auto * object_with_partition_columns_info = dynamic_cast<const ObjectInfoWithPartitionColumns *>(object_info.get());
                 if (object_with_partition_columns_info)
                 {
-                    object_with_partition_columns_info->apply(
-                        chunk,
-                        read_from_format_info.source_header.getNamesAndTypesList(),
-                        read_from_format_info.requested_columns.getNames());
+                    const auto requested_columns = read_from_format_info.requested_columns.getNames();
+                    const auto chunk_schema = read_from_format_info.format_header.getNamesAndTypesList().filter(requested_columns);
+
+                    object_with_partition_columns_info->apply(chunk, chunk_schema, requested_columns);
                 }
                 else
                 {

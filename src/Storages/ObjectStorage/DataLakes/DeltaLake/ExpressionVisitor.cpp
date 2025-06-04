@@ -115,8 +115,11 @@ public:
             {
                 const_cast<DB::ActionsDAG::Node *>(node)->result_name = schema_it->name;
             }
+
             /// Form the outputs.
             dag.addOrReplaceInOutputs(*node);
+            LOG_TEST(log, "Added output: {}", node->result_name);
+
             ++schema_it;
         }
         return std::move(dag);
@@ -659,17 +662,26 @@ void ParsedExpression::apply(
     const DB::NamesAndTypesList & chunk_schema,
     const DB::Names & columns)
 {
+    LoggerPtr log = getLogger("DeltaLakeParsedExpression");
+
     auto nodes = dag.findInOutputs(columns);
+    LOG_TEST(log, "Nodes number: {}", nodes.size());
+
     size_t current_chunk_pos = 0;
     for (const auto & node : nodes)
     {
+        LOG_TEST(log, "Node name: {}, type: {}", node->result_name, node->result_type->getTypeId());
         switch (node->type)
         {
             case DB::ActionsDAG::ActionType::COLUMN:
             {
                 auto name_and_type = schema.tryGetByName(node->result_name);
                 if (!name_and_type.has_value())
-                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Not found column {} in schema", node->result_name);
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::LOGICAL_ERROR,
+                        "Not found column {} in schema", node->result_name);
+                }
 
                 auto column = name_and_type->type->createColumnConst(
                     chunk.getNumRows(),
@@ -685,13 +697,29 @@ void ParsedExpression::apply(
             case DB::ActionsDAG::ActionType::INPUT:
             {
                 size_t pos = chunk_schema.getPosByName(node->result_name);
-                if (pos != current_chunk_pos)
+                if (pos == chunk_schema.size())
                 {
                     throw DB::Exception(
                         DB::ErrorCodes::LOGICAL_ERROR,
+                        "Not found column {} in chunk schema {} (expression schema: {})",
+                        node->result_name, fmt::join(chunk_schema.getNames(), ", "),
+                        fmt::join(schema.getNames(), ", "));
+                }
+                if (pos != current_chunk_pos)
+                {
+                    DB::WriteBufferFromOwnString wb;
+                    DB::SerializedSetsRegistry registry;
+                    dag.serialize(wb, registry);
+
+                    throw DB::Exception(
+                        DB::ErrorCodes::LOGICAL_ERROR,
                         "Position mismatch, column {} position in schema: {}, "
-                        "current chunk position: {} (schema: {})",
-                        node->result_name, pos, current_chunk_pos, fmt::join(chunk_schema.getNames(), ", "));
+                        "current chunk position: {} "
+                        "(requested_columns: {}, chunk schema: {}, expression schema: {}, dag: {})",
+                        node->result_name, pos, current_chunk_pos,
+                        fmt::join(columns, ", "),
+                        fmt::join(chunk_schema.getNames(), ", "), fmt::join(schema.getNames(), ", "),
+                        wb.str());
                 }
                 break;
             }

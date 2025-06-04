@@ -223,10 +223,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     )
     print(complex_data)
     assert complex_data[0] == "2024-10-01"
-    if use_delta_kernel == "1":
-        assert complex_data[1] == "2024-10-01 00:12:00.000" #FIXME
-    else:
-        assert complex_data[1] == "2024-10-01 00:12:00.000000"
+    assert complex_data[1] == "2024-10-01 00:12:00.000000"
     assert complex_data[2] == "[42,123,77]"
     assert complex_data[3] == "{7:'v7',5:'v5'}"
     assert complex_data[4] == "(34,'hello')"
