@@ -4,7 +4,7 @@ botocore==1.23.34
 certifi==2025.4.26
 chardet==4.0.0
 colorama==0.4.4
-cryptography==43.0.1
+cryptography==44.0.1
 dbus-python==1.2.18
 distro==1.7.0
 docutils==0.17.1

@@ -307,12 +307,12 @@ bool DatabaseDataLake::isTableExist(const String & name, ContextPtr /* context_ 
     return getCatalog()->existsTable(namespace_name, table_name);
 }
 
-StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context_) const
+StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context_)  const
 {
-    return tryGetTableImpl(name, context_, false);
+    return tryGetTableImpl(name, context_, false, false);
 }
 
-StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight) const
+StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg) const
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
@@ -324,6 +324,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     auto [namespace_name, table_name] = parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
+        return nullptr;
+
+    if (ignore_if_not_iceberg && !table_metadata.isDefaultReadableTable())
         return nullptr;
 
     if (!lightweight && !table_metadata.isDefaultReadableTable())
@@ -446,7 +449,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool /* skip_not_loaded */) const
+    bool skip_not_loaded) const
 {
     Tables tables;
     auto catalog = getCatalog();
@@ -467,12 +470,11 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
             futures.emplace_back(promises.back()->get_future());
 
             pool.scheduleOrThrow(
-                [this, table_name, &tables, &mutex, context_, promise=promises.back()]() mutable
+                [this, table_name, skip_not_loaded, context_, promise=promises.back()]() mutable
                 {
                     try
                     {
-                        auto storage = tryGetTable(table_name, context_);
-
+                        auto storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
                         promise->set_value(storage);
                     }
                     catch (...)
@@ -510,7 +512,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool /*skip_not_loaded*/) const
+    bool skip_not_loaded) const
 {
     Tables tables;
     auto catalog = getCatalog();
@@ -518,7 +520,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
-    std::vector<std::shared_ptr<std::promise<StoragePtr>>>> promises;
+    std::vector<std::shared_ptr<std::promise<StoragePtr>>> promises;
     std::vector<std::future<StoragePtr>> futures;
 
     for (const auto & table_name : iceberg_tables)
@@ -539,12 +541,12 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
             futures.emplace_back(promises.back()->get_future());
 
             pool.scheduleOrThrow(
-                [this, table_name, &tables, &mutex, context_, promise = promises.back()] mutable
+                [this, table_name, skip_not_loaded, context_, promise = promises.back()] mutable
                 {
                     StoragePtr storage = nullptr;
                     try
                     {
-                        storage = tryGetTableImpl(table_name, context_, true);
+                        storage = tryGetTableImpl(table_name, context_, true, skip_not_loaded);
                     }
                     catch (...)
                     {
@@ -555,6 +557,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
         }
         catch (...)
         {
+            promises.back()->set_value(nullptr);
             tryLogCurrentException(log, "Failed to schedule task into pool");
         }
     }
