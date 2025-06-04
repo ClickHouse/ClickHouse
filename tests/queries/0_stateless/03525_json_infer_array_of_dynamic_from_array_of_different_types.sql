@@ -1,3 +1,5 @@
+set enable_analyzer=1;
+
 desc format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
 select a, toTypeName(a), arrayMap(x -> dynamicType(x), a) from format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
 desc format(JSONEachRow, '{"a" : [42, "hello"]}');

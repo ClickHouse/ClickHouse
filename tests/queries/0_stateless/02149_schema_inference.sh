@@ -192,11 +192,11 @@ $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'CustomSeparated') $CUST
 echo "Template"
 
 echo -e "<result_before_delimiter>
-\${data}<result_after_delimiter>" > $SCHEMADIR/resultset_format_02149
+\${data}<result_after_delimiter>" > $SCHEMADIR/resultset_format_$CLICKHOUSE_TEST_UNIQUE_NAME
 
-echo -e "<row_before_delimiter>\${column_1:CSV}<field_delimiter_1>\${column_2:CSV}<field_delimiter_2>\${column_3:CSV}<row_after_delimiter>" > $SCHEMADIR/row_format_02149
+echo -e "<row_before_delimiter>\${column_1:CSV}<field_delimiter_1>\${column_2:CSV}<field_delimiter_2>\${column_3:CSV}<row_after_delimiter>" > $SCHEMADIR/row_format_$CLICKHOUSE_TEST_UNIQUE_NAME
 
-TEMPLATE_SETTINGS="SETTINGS format_template_rows_between_delimiter='<row_between_delimiter>\n', format_template_row='row_format_02149', format_template_resultset='resultset_format_02149', input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
+TEMPLATE_SETTINGS="SETTINGS format_template_rows_between_delimiter='<row_between_delimiter>\n', format_template_row='row_format_$CLICKHOUSE_TEST_UNIQUE_NAME', format_template_resultset='resultset_format_$CLICKHOUSE_TEST_UNIQUE_NAME', input_format_json_infer_array_of_dynamic_from_array_of_different_types=0"
 
 echo -e "<result_before_delimiter>
 <row_before_delimiter>42.42<field_delimiter_1>\"Some string 1\"<field_delimiter_2>\"[([1, 2, 3], 'String 1'), ([1], 'String 1')]\"<row_after_delimiter>
@@ -209,7 +209,7 @@ echo -e "<result_before_delimiter>
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Template') $TEMPLATE_SETTINGS"
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Template') $TEMPLATE_SETTINGS"
 
-echo -e "<row_before_delimiter>\${column_1:Quoted}<field_delimiter_1>\${column_2:Quoted}<field_delimiter_2>\${column_3:Quoted}<row_after_delimiter>" > $SCHEMADIR/row_format_02149
+echo -e "<row_before_delimiter>\${column_1:Quoted}<field_delimiter_1>\${column_2:Quoted}<field_delimiter_2>\${column_3:Quoted}<row_after_delimiter>" > $SCHEMADIR/row_format_$CLICKHOUSE_TEST_UNIQUE_NAME
 
 echo -e "<result_before_delimiter>
 <row_before_delimiter>42.42<field_delimiter_1>'Some string 1'<field_delimiter_2>[([1, 2, 3], 'String 1'), ([1], 'String 1')]<row_after_delimiter>
@@ -222,7 +222,7 @@ echo -e "<result_before_delimiter>
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Template') $TEMPLATE_SETTINGS"
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Template') $TEMPLATE_SETTINGS"
 
-echo -e "<row_before_delimiter>\${column_1:JSON}<field_delimiter_1>\${column_2:JSON}<field_delimiter_2>\${column_3:JSON}<row_after_delimiter>" > $SCHEMADIR/row_format_02149
+echo -e "<row_before_delimiter>\${column_1:JSON}<field_delimiter_1>\${column_2:JSON}<field_delimiter_2>\${column_3:JSON}<row_after_delimiter>" > $SCHEMADIR/row_format_$CLICKHOUSE_TEST_UNIQUE_NAME
 
 echo -e "<result_before_delimiter>
 <row_before_delimiter>42.42<field_delimiter_1>\"Some string 1\"<field_delimiter_2>[[[1, 2, 3], \"String 1\"], [[1], \"String 1\"]]<row_after_delimiter>
@@ -244,5 +244,5 @@ $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'MsgPack') settings input_format_
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'MsgPack') settings input_format_msgpack_number_of_columns=6"
 
 
-rm $SCHEMADIR/resultset_format_02149 $SCHEMADIR/row_format_02149
+rm $SCHEMADIR/resultset_format_$CLICKHOUSE_TEST_UNIQUE_NAME $SCHEMADIR/row_format_$CLICKHOUSE_TEST_UNIQUE_NAME
 rm $DATA_FILE
