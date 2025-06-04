@@ -10,6 +10,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -23,7 +24,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
-
 
 namespace DB
 {
@@ -83,6 +83,7 @@ public:
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForNothing() const override { return false; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
@@ -122,23 +123,24 @@ public:
 
         for_conditions([&](const ColumnWithTypeAndName & arg)
         {
+            const auto& arg_type = recursiveRemoveLowCardinality(arg.type);
             const IDataType * nested_type;
-            if (arg.type->isNullable())
+            if (arg_type->isNullable())
             {
-                if (arg.type->onlyNull())
+                if (arg_type->onlyNull())
                     return;
 
-                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg.type);
+                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg_type);
                 nested_type = nullable_type.getNestedType().get();
             }
             else
             {
-                nested_type = arg.type.get();
+                nested_type = arg_type.get();
             }
 
             if (!WhichDataType(nested_type).isUInt8())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument (condition) of function {}. "
-                    "Must be UInt8.", arg.type->getName(), getName());
+                    "Must be UInt8.", arg_type->getName(), getName());
         });
 
         DataTypes types_of_branches;
