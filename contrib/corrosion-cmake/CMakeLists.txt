@@ -77,7 +77,7 @@ if (USE_MUSL)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -D_LIBCPP_HAS_MUSL_LIBC=1")
 endif ()
 
-if(CCACHE_EXECUTABLE MATCHES "/chcache$")
+if(CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
     set(RUSTCWRAPPER "${CCACHE_EXECUTABLE}")
 else()
@@ -86,22 +86,13 @@ endif()
 
 # Note that RUSTFLAGS_CPU is defined in cpu_features.cmake
 set(RUSTFLAGS ${RUSTFLAGS_CPU})
+if (CMAKE_OSX_DEPLOYMENT_TARGET)
+    list(APPEND RUSTFLAGS "-C" "link-arg=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+endif()
 
 # Otherwise /usr/bin/ld will not be able to link our openssl build (built with lld) to openssl rust wrapper (built ld)
 if (LINKER_NAME MATCHES "lld")
     list(APPEND RUSTFLAGS "-C" "link-arg=-fuse-ld=lld")
-endif()
-
-if (CMAKE_OSX_SYSROOT)
-    list(APPEND RUSTFLAGS "-C" "link-arg=-isysroot")
-    list(APPEND RUSTFLAGS "-C" "link-arg=${CMAKE_OSX_SYSROOT}")
-elseif(CMAKE_SYSROOT)
-    list(APPEND RUSTFLAGS "-C" "link-arg=--sysroot")
-    list(APPEND RUSTFLAGS "-C" "link-arg=${CMAKE_SYSROOT}")
-endif()
-
-if (TOOLCHAIN_PATH)
-    list(APPEND RUSTFLAGS "-C" "link-arg=--gcc-toolchain=${TOOLCHAIN_PATH}")
 endif()
 
 set(RUST_CARGO_BUILD_STD "")
@@ -165,14 +156,11 @@ function(clickhouse_config_crate_flags target_name)
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
-    if (CMAKE_OSX_SYSROOT)
-        corrosion_set_env_vars(${target_name} "SDKROOT=${CMAKE_OSX_SYSROOT}")
-    endif()
 
-    # sccache seems to be broken and mixes up builds
-    if (NOT "${RUSTCWRAPPER}" STREQUAL "")
-       corrosion_set_env_vars(${target_name} "CARGO_BUILD_RUSTC_WRAPPER=${RUSTCWRAPPER}")
-    endif()
+    # Disabled because sccache seems to be broken and mixes up builds
+    # if (NOT "${RUSTCWRAPPER}" STREQUAL "")
+    #    corrosion_set_env_vars(${target_name} "CARGO_BUILD_RUSTC_WRAPPER=${RUSTCWRAPPER}")
+    # endif()
 
     if (NOT "${RUST_CARGO_BUILD_STD}" STREQUAL "")
         corrosion_set_cargo_flags(${target_name} "${RUST_CARGO_BUILD_STD}")

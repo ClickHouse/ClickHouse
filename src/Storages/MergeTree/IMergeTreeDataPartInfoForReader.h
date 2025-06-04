@@ -1,7 +1,6 @@
 #pragma once
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ColumnsDescription.h>
 #include <Core/NamesAndTypes.h>
 
@@ -45,8 +44,6 @@ public:
     virtual const ColumnsDescription & getColumnsDescription() const = 0;
 
     virtual const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const = 0;
-
-    virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
     virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
 

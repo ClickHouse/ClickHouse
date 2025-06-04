@@ -19,7 +19,6 @@ Header: name String
             Condition: (name in [\'Alice\', \'Alice\'])
             Parts: 1/3
             Granules: 1/3
-            Search algorithm: generic exclusion search
       Filter (( + Change column names to column identifiers))
       Header: __table2.name String
         ReadFromMergeTree (default.users2)
@@ -31,7 +30,6 @@ Header: name String
             Condition: (name in [\'Alice\', \'Alice\'])
             Parts: 1/3
             Granules: 1/3
-            Search algorithm: generic exclusion search
 SELECT '--';
 --
 EXPLAIN header = 1, indexes = 1
@@ -53,7 +51,6 @@ Header: name String
             Condition: (name in [\'Alice\', \'Alice\'])
             Parts: 1/3
             Granules: 1/3
-            Search algorithm: generic exclusion search
       Filter (( + Change column names to column identifiers))
       Header: __table2.name String
         ReadFromMergeTree (default.users2)
@@ -65,7 +62,6 @@ Header: name String
             Condition: (name in [\'Alice\', \'Alice\'])
             Parts: 1/3
             Granules: 1/3
-            Search algorithm: generic exclusion search
 SELECT '--';
 --
 EXPLAIN header = 1, indexes = 1
@@ -87,7 +83,6 @@ Header: name String
             Condition: (name in [\'Alice\', \'Alice\'])
             Parts: 1/3
             Granules: 1/3
-            Search algorithm: generic exclusion search
       Filter (( + Change column names to column identifiers))
       Header: __table2.name String
         ReadFromMergeTree (default.users2)
@@ -99,4 +94,3 @@ Header: name String
             Condition: (name in [\'Alice\', \'Alice\'])
             Parts: 1/3
             Granules: 1/3
-            Search algorithm: generic exclusion search

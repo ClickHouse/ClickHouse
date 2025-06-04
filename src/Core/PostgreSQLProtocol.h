@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>
@@ -140,6 +141,7 @@ enum class ColumnType : Int32
     INT4 = 23,
     FLOAT4 = 700,
     FLOAT8 = 701,
+    BPCHAR = 1042,
     VARCHAR = 1043,
     DATE = 1082,
     NUMERIC = 1700,

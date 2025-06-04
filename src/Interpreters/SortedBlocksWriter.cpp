@@ -389,6 +389,9 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
         blocks.swap(tmp_blocks);
     }
 
+    if (blocks.size() == 1)
+        return blocks[0];
+
     return concatenateBlocks(blocks);
 }
 
