@@ -72,7 +72,7 @@ SELECT * FROM (
         SELECT lead
         FROM window2
         SETTINGS max_threads = 20
-) WHERE explain LIKE '%Resize%';
+) WHERE explain LIKE '%Resize%' LIMIT 3;
 
 DROP TABLE empty;
 
