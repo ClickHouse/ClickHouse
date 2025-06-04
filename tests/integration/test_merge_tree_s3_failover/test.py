@@ -220,7 +220,7 @@ def test_move_failover(cluster):
         node.query(
             """
         SELECT count(*) FROM system.part_log
-        WHERE event_type='MovePart' AND table='s3_failover_test' AND database=currentDatabase()
+        WHERE event_type='MovePart' AND table_uuid=(select uuid from system.tables where name='s3_failover_test' and database=currentDatabase()) AND database=currentDatabase()
         """
         )
         == "2\n"
@@ -230,7 +230,7 @@ def test_move_failover(cluster):
     exception = node.query(
         """
         SELECT exception FROM system.part_log
-        WHERE event_type='MovePart' AND table='s3_failover_test' AND notEmpty(exception) AND database=currentDatabase()
+        WHERE event_type='MovePart' AND table_uuid=(select uuid from system.tables where name='s3_failover_test' and database=currentDatabase()) AND notEmpty(exception) AND database=currentDatabase()
         ORDER BY event_time
         LIMIT 1
         """
