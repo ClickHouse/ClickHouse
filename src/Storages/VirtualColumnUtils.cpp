@@ -193,8 +193,8 @@ std::string_view findHivePartitioningInPath(const String & path)
 
     // All keys and values are string_view over 'path', so starts and ends must be inside 'path'
     auto kv = key_values.begin();
-    auto start = kv->first.data();
-    auto end = kv->second.data() + kv->second.size();
+    const auto * start = kv->first.data();
+    const auto * end = kv->second.data() + kv->second.size();
     ++kv;
     while (kv != key_values.end())
     {

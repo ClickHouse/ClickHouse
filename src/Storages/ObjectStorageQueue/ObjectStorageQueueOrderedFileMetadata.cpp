@@ -202,7 +202,6 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByHive(
     Strings paths;
     for (const auto & hive_partition : hives)
     {
-        std::string file_path;
         std::filesystem::path node_path = processed_node_path_;
         node_path /= hive_partition;
         paths.push_back(node_path.string());
@@ -550,17 +549,17 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(Coordin
     prepareProcessedRequests(requests, zk_client, processed_node_path, /* ignore_if_exists */false);
 }
 
-void ObjectStorageQueueOrderedFileMetadata::prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & file_name)
+void ObjectStorageQueueOrderedFileMetadata::prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & file_map)
 {
     std::string hive_part(getHivePart(node_metadata.file_path));
     std::filesystem::path node_path = processed_node_path;
     node_path /= hive_part;
 
-    auto file_info = file_name.find(node_path.string());
-    if (file_info == file_name.end())
+    auto file_info = file_map.find(node_path.string());
+    if (file_info == file_map.end())
     {
         const auto zk_client = getZooKeeper();
-        file_name[node_path.string()] = {zk_client->exists(node_path), node_metadata.file_path};
+        file_map[node_path.string()] = {zk_client->exists(node_path), node_metadata.file_path};
     }
     else
     {
