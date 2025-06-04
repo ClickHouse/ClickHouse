@@ -3,6 +3,7 @@
         <default>
           <enable_filesystem_cache_on_write_operations>1</enable_filesystem_cache_on_write_operations>
           <enable_filesystem_cache>1</enable_filesystem_cache>
+          <filesystem_cache_name>s3_cache</filesystem_cache_name>
         </default>
     </profiles>
 </clickhouse>
