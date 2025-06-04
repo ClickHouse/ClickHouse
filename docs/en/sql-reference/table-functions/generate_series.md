@@ -6,25 +6,11 @@ title: 'generate_series (generateSeries)'
 description: 'Returns a table with the single `generate_series` column (UInt64) that contains integers from start to stop inclusively.'
 ---
 
-# generate_series Table Function
+# generate_series (generateSeries) Table Function
 
-Alias: `generateSeries`
+`generate_series(START, STOP)` (alias: `generateSeries`) - Returns a table with the single 'generate_series' column (UInt64) that contains integers from start to stop inclusively.
 
-## Syntax {#syntax}
-
-Returns a table with the single 'generate_series' column (`UInt64`) that contains integers from start to stop inclusively:
-
-```sql
-generate_series(START, STOP)
-```
-
-Returns a table with the single 'generate_series' column (`UInt64`) that contains integers from start to stop inclusively with spacing between values given by `STEP`:
-
-```sql
-generate_series(START, STOP, STEP)
-```
-
-## Examples {#examples}
+`generate_series(START, STOP, STEP)` - Returns a table with the single 'generate_series' column (UInt64) that contains integers from start to stop inclusively with spacing between values given by STEP. 
 
 The following queries return tables with the same content but different column names:
 
@@ -37,5 +23,5 @@ And the following queries return tables with the same content but different colu
 
 ```sql
 SELECT * FROM numbers(10, 11) WHERE number % 3 == (10 % 3);
-SELECT * FROM generate_series(10, 20, 3);
+SELECT * FROM generate_series(10, 20, 3) ;
 ```

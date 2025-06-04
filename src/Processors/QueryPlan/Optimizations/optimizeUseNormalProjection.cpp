@@ -10,7 +10,6 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {

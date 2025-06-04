@@ -165,7 +165,6 @@ class CHServer:
                 --profile-seconds 10 \
                 {test_file}",
             verbose=True,
-            strip=False,
         )
         duration = sw.duration
         if res != 0:
@@ -319,7 +318,7 @@ def main():
             f"cp ./programs/server/config.xml {perf_right_config}",
             f"cp ./programs/server/users.xml {perf_right_config}",
             f"cp -r --dereference ./programs/server/config.d {perf_right_config}",
-            f"cp ./tests/performance/scripts/config/config.d/*xml {perf_right_config}/config.d/",
+            # f"cp ./tests/performance/scripts/config/config.d/*.xml {perf_right_config}/config.d/",
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             # f"cp -r ./tests/performance {perf_right}",
