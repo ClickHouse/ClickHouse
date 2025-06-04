@@ -963,7 +963,9 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         }
     }
     else if (
-        te->has_engine() && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine() || b.isRedisEngine()))
+        te->has_engine()
+        && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine() || b.isRedisEngine()
+            || b.isExternalDistributedEngine()))
     {
         IntegrationCall next = IntegrationCall::MinIO;
 
@@ -986,6 +988,10 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         else if (b.isRedisEngine())
         {
             next = IntegrationCall::Redis;
+        }
+        else if (b.isExternalDistributedEngine())
+        {
+            next = (b.sub == TableEngineValues::PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
         }
         else
         {
@@ -1707,9 +1713,17 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(URL);
         }
+        if (connections.hasMySQLConnection() || connections.hasPostgreSQLConnection())
+        {
+            this->ids.emplace_back(ExternalDistributed);
+        }
     }
 
     b.teng = static_cast<TableEngineValues>(rg.pickRandomly(this->ids));
+    if (b.isExternalDistributedEngine())
+    {
+        b.sub = (!connections.hasMySQLConnection() || rg.nextBool()) ? TableEngineValues::PostgreSQL : TableEngineValues::MySQL;
+    }
     this->ids.clear();
 }
 

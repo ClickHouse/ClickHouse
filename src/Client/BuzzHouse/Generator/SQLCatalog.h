@@ -148,7 +148,7 @@ public:
     std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption;
-    TableEngineValues teng = TableEngineValues::Null;
+    TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     String file_comp;
     InOutFormat file_format;
@@ -179,9 +179,15 @@ public:
 
     bool isRocksEngine() const { return teng == TableEngineValues::EmbeddedRocksDB; }
 
-    bool isMySQLEngine() const { return teng == TableEngineValues::MySQL; }
+    bool isMySQLEngine() const
+    {
+        return teng == TableEngineValues::MySQL || (isExternalDistributedEngine() && sub == TableEngineValues::MySQL);
+    }
 
-    bool isPostgreSQLEngine() const { return teng == TableEngineValues::PostgreSQL; }
+    bool isPostgreSQLEngine() const
+    {
+        return teng == TableEngineValues::PostgreSQL || (isExternalDistributedEngine() && sub == TableEngineValues::PostgreSQL);
+    }
 
     bool isSQLiteEngine() const { return teng == TableEngineValues::SQLite; }
 
@@ -219,14 +225,20 @@ public:
 
     bool isKeeperMapEngine() const { return teng == TableEngineValues::KeeperMap; }
 
+    bool isExternalDistributedEngine() const { return teng == TableEngineValues::ExternalDistributed; }
+
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
             || isMongoDBEngine() || isAnyS3Engine() || isAnyAzureEngine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergS3Engine()
-            || isMergeEngine() || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine();
+            || isMergeEngine() || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine()
+            || isExternalDistributedEngine();
     }
 
-    bool isAnotherRelationalDatabaseEngine() const { return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine(); }
+    bool isAnotherRelationalDatabaseEngine() const
+    {
+        return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isExternalDistributedEngine();
+    }
 
     bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::None; }
 

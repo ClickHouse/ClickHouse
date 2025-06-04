@@ -3140,6 +3140,7 @@ enum TableEngineValues {
     AzureQueue = 34;
     URL = 35;
     KeeperMap = 36;
+    ExternalDistributed = 37;
 }
 
 enum TableEngineOption {

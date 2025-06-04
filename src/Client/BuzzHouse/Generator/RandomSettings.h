@@ -153,7 +153,8 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
        {AzureBlobStorage, {}},
        {AzureQueue, {}},
        {URL, {}},
-       {KeeperMap, {}}};
+       {KeeperMap, {}},
+       {ExternalDistributed, {}}};
 
 const std::unordered_map<String, CHSetting> backupSettings
     = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
