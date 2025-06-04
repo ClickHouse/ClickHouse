@@ -40,15 +40,23 @@ private:
         {
             auto current = nodes_to_process.back();
             nodes_to_process.pop_back();
-            auto it = node_to_scope_map.find(current);
 
-            if (it != node_to_scope_map.end() && current != current_scope->scope_node)
+            auto current_node_type = current->getNodeType();
+
+            /// Change scope if expression is a QueryNode.
+            /// Columns in these subqueries can appear from table expressions
+            /// that are registered in the child scope.
+            if (current_node_type == QueryTreeNodeType::QUERY)
             {
-                visitExpression(current, &it->second);
-                continue;
+                auto it = node_to_scope_map.find(current);
+                if (it != node_to_scope_map.end() && current != current_scope->scope_node)
+                {
+                    visitExpression(current, &it->second);
+                    continue;
+                }
             }
 
-            if (current->getNodeType() == QueryTreeNodeType::COLUMN)
+            if (current_node_type == QueryTreeNodeType::COLUMN)
             {
                 if (checkCorrelatedColumn(current_scope, current))
                     correlated_columns.push_back(current);
@@ -57,12 +65,7 @@ private:
             for (const auto & child : current->getChildren())
             {
                 if (child)
-                {
-                    if (child->getNodeType() == QueryTreeNodeType::QUERY)
-                        visitExpression(child, &node_to_scope_map.at(child));
-                    else
-                        nodes_to_process.push_back(child);
-                }
+                    nodes_to_process.push_back(child);
             }
         }
     }
