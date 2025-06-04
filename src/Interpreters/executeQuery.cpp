@@ -68,6 +68,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 
 #include <IO/CompressionMethod.h>
 

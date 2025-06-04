@@ -280,7 +280,7 @@ bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableD
         case PeerTableDatabase::SQLite:
             return performQuery(query);
         case PeerTableDatabase::None:
-            return fc.processServerQuery(query);
+            return fc.processServerQuery(false, query);
     }
 }
 
@@ -293,8 +293,8 @@ void MySQLIntegration::closeMySQLConnection(MYSQL * mysql)
     }
 }
 
-std::unique_ptr<MySQLIntegration> MySQLIntegration::testAndAddMySQLConnection(
-    const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const String & server)
+std::unique_ptr<MySQLIntegration>
+MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const String & server)
 {
     MYSQL * mcon = nullptr;
 
@@ -506,7 +506,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
 }
 #else
 std::unique_ptr<MySQLIntegration>
-MySQLIntegration::testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, const bool, const String &)
+MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCredentials &, const bool, const String &)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with MySQL connector, skipping MySQL integration");
     return nullptr;
@@ -523,7 +523,7 @@ void PostgreSQLIntegration::closePostgreSQLConnection(pqxx::connection * psql)
 }
 
 std::unique_ptr<PostgreSQLIntegration>
-PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log)
+PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log)
 {
     String connection_str;
     bool has_something = false;
@@ -686,7 +686,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const boo
 
 #else
 std::unique_ptr<PostgreSQLIntegration>
-PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials &, const bool)
+PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials &, const bool)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with PostgreSQL connector, skipping PostgreSQL integration");
     return nullptr;
@@ -702,12 +702,13 @@ void SQLiteIntegration::closeSQLiteConnection(sqlite3 * sqlite)
     }
 }
 
-std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
+std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
 {
     sqlite3 * scon = nullptr;
-    const std::filesystem::path spath = fcc.db_file_path / "sqlite.db";
+    const std::filesystem::path client_spath = fcc.client_file_path / "sqlite.db";
+    const std::filesystem::path server_spath = fcc.server_file_path / "sqlite.db";
 
-    if (sqlite3_open(spath.c_str(), &scon) != SQLITE_OK)
+    if (sqlite3_open(client_spath.c_str(), &scon) != SQLITE_OK)
     {
         if (scon)
         {
@@ -723,7 +724,7 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
     else
     {
         LOG_INFO(fcc.log, "Connected to SQLite");
-        return std::make_unique<SQLiteIntegration>(fcc, scc, SQLiteUniqueKeyPtr(scon, closeSQLiteConnection), spath);
+        return std::make_unique<SQLiteIntegration>(fcc, scc, SQLiteUniqueKeyPtr(scon, closeSQLiteConnection), server_spath);
     }
 }
 
@@ -799,7 +800,7 @@ String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool is
     return tp->SQLitetypeName(rg, false);
 }
 #else
-std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials &)
+std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(FuzzConfig & fcc, const ServerCredentials &)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with SQLite connector, skipping SQLite integration");
     return nullptr;
@@ -821,7 +822,7 @@ bool RedisIntegration::performIntegration(
 }
 
 #if defined USE_MONGODB && USE_MONGODB
-std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
+std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
 {
     String connection_str = "mongodb://";
 
@@ -1345,7 +1346,7 @@ bool MongoDBIntegration::performIntegration(
     return true;
 }
 #else
-std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials &)
+std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegration(FuzzConfig & fcc, const ServerCredentials &)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with MongoDB connector, skipping MongoDB integration");
     return nullptr;
@@ -1512,7 +1513,7 @@ bool MinIOIntegration::performIntegration(
     return sendRequest(sc.database + "/file" + std::to_string(tname));
 }
 
-ExternalIntegrations::ExternalIntegrations(const FuzzConfig & fcc)
+ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     : fc(fcc)
 {
     if (fc.mysql_server.has_value())
@@ -1679,7 +1680,7 @@ bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String
     }
 }
 
-std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDatabase pt) const
+std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDatabase pt, const bool server) const
 {
     switch (pt)
     {
@@ -1692,7 +1693,7 @@ std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDa
         case PeerTableDatabase::SQLite:
             return sqlite->sc.user_files_dir / "fuzz.data";
         case PeerTableDatabase::None:
-            return fc.fuzz_out;
+            return server ? fc.fuzz_server_out : fc.fuzz_client_out;
     }
 }
 
@@ -1700,9 +1701,11 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
 {
     String buf;
     std::error_code ec;
-    const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
+    const std::filesystem::path client_out_path = this->getDatabaseDataDir(pt, false);
+    const std::filesystem::path server_out_path = this->getDatabaseDataDir(pt, true);
+
     res.metrics.clear();
-    if (!std::filesystem::remove(out_path, ec) && ec)
+    if (!std::filesystem::remove(client_out_path, ec) && ec)
     {
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return false;
@@ -1714,9 +1717,9 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
                 "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64, c2 UInt64') SELECT query_duration_ms, "
                 "memory_usage, read_bytes FROM system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER "
                 "BY event_time_microseconds DESC LIMIT 1;",
-                out_path.generic_string())))
+                server_out_path.generic_string())))
     {
-        std::ifstream infile(out_path);
+        std::ifstream infile(client_out_path);
         if (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
@@ -1753,17 +1756,18 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
     String replaced;
     std::error_code ec;
 
-    if (!std::filesystem::remove(fc.fuzz_out, ec) && ec)
+    if (!std::filesystem::remove(fc.fuzz_client_out, ec) && ec)
     {
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return;
     }
     if (fc.processServerQuery(
+            false,
             fmt::format(
                 "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                fc.fuzz_out.generic_string())))
+                fc.fuzz_server_out.generic_string())))
     {
-        std::ifstream infile(fc.fuzz_out);
+        std::ifstream infile(fc.fuzz_client_out);
         while (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')

@@ -27,6 +27,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/ReplacingSortedTransform.h>
@@ -1649,6 +1650,11 @@ public:
                     header, input_streams_count, sort_description, merging_params.is_deleted_column, merging_params.version_column,
                     merge_block_size_rows, merge_block_size_bytes, rows_sources_write_buf, blocks_are_granules_size,
                     cleanup);
+                break;
+
+            case MergeTreeData::MergingParams::Coalescing:
+                merged_transform = std::make_shared<CoalescingSortedTransform>(
+                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes);
                 break;
 
             case MergeTreeData::MergingParams::Graphite:
