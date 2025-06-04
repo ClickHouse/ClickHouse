@@ -15,20 +15,54 @@ OK
 OK
 1
 ===== MaterializedView =====
+create test_mv_1
+create test_mv_2
 OK
+create test_mv_3
+create test_mv_data
+create test_mv_4
+create test_mv_5
+grand select on test_mv_5 to user2
+alter table test_mv_5
+select from test_mv_5 as user2
+show create table test_mv_5
 1
+grand select on test_mv_1 to user2
+grand select on test_mv_3 to user2
+grand select on test_mv_4 to user2
+select from test_mv_1 as user2
 0
+select from test_mv_3 as user2
 0
+revoke select on test_mv_data from user1
+select from test_mv_4 as user2
 OK
+insert into test_table
 OK
+insert into test_table with materialized_views_ignore_errors=1
 OK
+grant insert on test_mv_data to user1
+grant select on test_mv_data to user1
+inseet into test_table
+select from test_mv_4 as user2
 2
+revote select on test_table from user1
+select from test_mv_4
 OK
+insert into test_table
 OK
+create tables
+insert into source
 OK
+grant insert on source to user2
+insert into source as user2
+select from destination1
 100
+select from destination2
 100
+alter table test_table
 OK
+create view
 Syntax error
 ===== TestGrants =====
 OK

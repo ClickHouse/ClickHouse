@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
@@ -509,7 +510,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
         });
     }
 
-    LOG_INFO(log, "Selected {} parts from {} to {}", parts.size(), parts.front().name, parts.back().name);
+    LOG_TRACE(log, "Selected {} parts from {} to {}", parts.size(), parts.front().name, parts.back().name);
     return MergeSelectorChoice{std::move(parts), MergeType::Regular, final};
 }
 
@@ -649,7 +650,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                     new_data_part->name, replaced_parts[i]->name, parts[i]->name);
     }
 
-    LOG_INFO(log, "Merged {} parts: [{}, {}] -> {}", parts.size(), parts.front()->name, parts.back()->name, new_data_part->name);
+    LOG_TRACE(log, "Merged {} parts: [{}, {}] -> {}", parts.size(), parts.front()->name, parts.back()->name, new_data_part->name);
     return new_data_part;
 }
 

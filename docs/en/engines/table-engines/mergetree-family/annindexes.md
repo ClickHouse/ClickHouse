@@ -6,8 +6,7 @@ slug: /engines/table-engines/mergetree-family/annindexes
 title: 'Exact and Approximate Nearest Neighbor Search'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 
 # Exact and Approximate Nearest Neighbor Search
 
@@ -70,8 +69,7 @@ returns
 
 ## Approximate Nearest Neighbor Search {#approximate-nearest-neighbor-search}
 
-<ExperimentalBadge/>
-<PrivatePreviewBadge/>
+<BetaBadge/>
 
 ClickHouse provides a special "vector similarity" index to perform approximate nearest neighbor search.
 
@@ -358,7 +356,7 @@ The current size of the vector similarity index cache is shown in [system.metric
 ```sql
 SELECT metric, value
 FROM system.metrics
-WHERE metric = 'VectorSimilarityIndexCacheSize'
+WHERE metric = 'VectorSimilarityIndexCacheBytes'
 ```
 
 The cache hits and misses for a query with some query id can be obtained from [system.query_log](../../../operations/system-tables/query_log.md):

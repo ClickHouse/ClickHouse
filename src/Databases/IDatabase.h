@@ -2,6 +2,7 @@
 
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/QueryFlags.h>
 #include <Parsers/IAST_fwd.h>
@@ -424,6 +425,9 @@ public:
 
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
+
+    /// Get the disk storing metedata files of the tables
+    virtual DiskPtr getDisk() const;
 
     virtual ~IDatabase();
 

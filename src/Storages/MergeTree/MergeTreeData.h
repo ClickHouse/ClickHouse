@@ -368,6 +368,7 @@ public:
             Replacing           = 5,
             Graphite            = 6,
             VersionedCollapsing = 7,
+            Coalescing          = 8,
         };
 
         Mode mode;
@@ -1160,7 +1161,7 @@ public:
     /// Overridden in StorageReplicatedMergeTree
     virtual MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
-    /// Check shared data usage on other replicas for detached/freezed part
+    /// Check shared data usage on other replicas for detached/frozen part
     /// Remove local files and remote files if needed
     virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name);
 
