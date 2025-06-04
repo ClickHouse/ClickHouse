@@ -30,7 +30,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 
-
 namespace DB
 {
 namespace DatabaseDataLakeSetting
@@ -43,12 +42,11 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString storage_endpoint;
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
-
-
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
     extern const DatabaseDataLakeSettingsString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString region;
 }
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_database_iceberg;
@@ -351,7 +349,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             args[0] = std::make_shared<ASTLiteral>(table_endpoint);
     }
 
-
     /// We either fetch storage credentials from catalog
     /// or get storage credentials from database engine arguments
     /// in CREATE query (e.g. in `args`).
@@ -578,8 +575,6 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
         }
         future_index++;
     }
-
-
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
