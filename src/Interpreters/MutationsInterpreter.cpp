@@ -73,6 +73,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int ILLEGAL_STATISTICS;
 }
 
 
@@ -1127,6 +1128,19 @@ void MutationsInterpreter::validate()
     const auto & storage_columns = source.getStorageSnapshot(metadata_snapshot, context)->metadata->getColumns();
     for (const auto & command : commands)
     {
+        if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
+        {
+            for (const auto & column_name : command.statistics_columns)
+            {
+                auto column = storage_columns.tryGetColumnDescription(GetColumnsOptions::AllPhysical, column_name);
+                if (!column)
+                    throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "There is no column {} in table", column_name);
+
+                if (column->statistics.empty())
+                    throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Column {} doesn't have statistics", column_name);
+            }
+        }
+
         for (const auto & [column_name, _] : command.column_to_update_expression)
         {
             auto column = storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name);
