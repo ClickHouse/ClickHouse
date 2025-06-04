@@ -1938,7 +1938,7 @@ def test_cluster_function(started_cluster, new_analyzer):
     write_deltalake(path, table, storage_options=storage_options)
 
     table_function = f"""
-deltaLake(
+deltaLakeCluster(cluster,
         'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
         '{minio_access_key}',
         '{minio_secret_key}',
