@@ -2272,6 +2272,12 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
             break;
         case QueryLogFactories::TableFunction:
             query_factories_info.table_functions.emplace(created_object);
+            break;
+        case QueryLogFactories::ExecutableUserDefinedFunction:
+            query_factories_info.executable_user_defined_functions.emplace(created_object);
+            break;
+        case QueryLogFactories::SQLUserDefinedFunction:
+            query_factories_info.sql_user_defined_functions.emplace(created_object);
     }
 }
 
@@ -3423,7 +3429,6 @@ MarkCachePtr Context::getMarkCache() const
 
 void Context::clearMarkCache() const
 {
-    /// Get local shared pointer to the cache
     MarkCachePtr cache = getMarkCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
