@@ -1065,9 +1065,12 @@ inline void writeTimeText(const LocalTime & local_time, WriteBuffer & buf)
     if (local_time.negative())
         buf.write("-", 1);
 
+    if (local_time.hour() > 99)
+        buf.write(std::to_string('0' + ((local_time.hour() / 100) % 10)).c_str(), 1); // H   - if we have a 3-digit hour
+    if (local_time.hour() > 9)
+        buf.write(std::to_string('0' + ((local_time.hour() / 10) % 10)).c_str(), 1); // H   - if we have a ≥ 2-digit hour
+
     char buffer[9] = {
-        static_cast<char>('0' + ((local_time.hour() / 100) % 10)), // H
-        static_cast<char>('0' + ((local_time.hour() / 10) % 10)),  // H
         static_cast<char>('0' + (local_time.hour() % 10)),         // H
         delimiter1,
         static_cast<char>('0' + (local_time.minute() / 10)),      // M
