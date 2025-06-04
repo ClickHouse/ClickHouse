@@ -54,6 +54,14 @@ struct PositionalDeleteFileSpecificInfo
 
 using IcebergFileSpecificInfo = std::variant<DataFileSpecificInfo, PositionalDeleteFileSpecificInfo>;
 
+struct PartitionEntry
+{
+    Int32 source_id;
+    String transform_name;
+    String partition_name;
+};
+using PartitionEntries = std::vector<PartitionEntry>;
+
 /// Description of Data file in manifest file
 struct ManifestFileEntry
 {
@@ -66,6 +74,7 @@ struct ManifestFileEntry
     Int64 added_sequence_number;
 
     DB::Row partition_key_value;
+    PartitionEntries common_partition_specification;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
     IcebergFileSpecificInfo specific_info;
@@ -96,14 +105,6 @@ struct ManifestFileEntry
  * │      1 │ 2252246380142525104 │ ('/iceberg_data/db/table_name/data/a=2/00000-1-c9535a00-2f4f-405c-bcfa-6d4f9f477235-00003.parquet','PARQUET',(2),1,631,67108864,[(1,46),(2,48)],[(1,1),(2,1)],[(1,0),(2,0)],[],[(1,'\0\0\0\0\0\0\0'),(2,'3')],[(1,'\0\0\0\0\0\0\0'),(2,'3')],NULL,[4],0) │
  * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  */
-
-struct PartitionEntry
-{
-    Int32 source_id;
-    String transform_name;
-    String partition_name;
-};
-using PartitionEntries = std::vector<PartitionEntry>;
 
 class ManifestFileContent
 {
@@ -154,6 +155,11 @@ private:
 /// Once manifest file is constructed. It's unchangeable.
 using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
 
+bool operator<(const PartitionEntries & lhs, const PartitionEntries & rhs);
+bool operator<(const DB::Row & lhs, const DB::Row & rhs);
+
+
+std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs);
 }
 
 #endif

@@ -38,8 +38,7 @@ public:
 
     String getName() const override { return "IcebergPositionDeleteTransform"; }
 
-    static size_t getDeleteFilenameColumnIndex(const std::shared_ptr<IInputFormat> & delete_source);
-    static size_t getDeletePositionColumnIndex(const std::shared_ptr<IInputFormat> & delete_source);
+    static size_t getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name);
 
 private:
     void initializeDeleteSources();

@@ -1,3 +1,4 @@
+#include <compare>
 #include "config.h"
 
 #if USE_AVRO
@@ -331,7 +332,14 @@ ManifestFileContent::ManifestFileContent(
         {
             case FileContentType::DATA:
                 this->data_files.emplace_back(
-                    file_path_key, file_path, status, added_sequence_number, partition_key_value, columns_infos, DataFileSpecificInfo{});
+                    file_path_key,
+                    file_path,
+                    status,
+                    added_sequence_number,
+                    partition_key_value,
+                    common_partition_specification,
+                    columns_infos,
+                    DataFileSpecificInfo{});
                 break;
             case FileContentType::POSITIONAL_DELETE: {
                 this->position_deletes_files.emplace_back(
@@ -340,6 +348,7 @@ ManifestFileContent::ManifestFileContent(
                     status,
                     added_sequence_number,
                     partition_key_value,
+                    common_partition_specification,
                     columns_infos,
                     PositionalDeleteFileSpecificInfo{
                         .reference_file_path
@@ -433,6 +442,35 @@ std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFiles() const
     return result;
 }
 
+std::strong_ordering operator<=>(const PartitionEntry & lhs, const PartitionEntry & rhs)
+{
+    return std::tie(lhs.source_id, lhs.transform_name, lhs.partition_name)
+        <=> std::tie(rhs.source_id, rhs.transform_name, rhs.partition_name);
+}
+
+template <typename A>
+bool less(const std::vector<A> & lhs, const std::vector<A> & rhs)
+{
+    if (lhs.size() != rhs.size())
+        return lhs.size() < rhs.size();
+    return std::lexicographical_compare(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), [](const A & a, const A & b) { return a < b; });
+}
+
+bool operator<(const PartitionEntries & lhs, const PartitionEntries & rhs)
+{
+    return less(lhs, rhs);
+}
+
+bool operator<(const DB::Row & lhs, const DB::Row & rhs)
+{
+    return less(lhs, rhs);
+}
+
+std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs)
+{
+    return std::tie(lhs.common_partition_specification, lhs.partition_key_value, lhs.added_sequence_number)
+        <=> std::tie(rhs.common_partition_specification, rhs.partition_key_value, rhs.added_sequence_number);
+}
 }
 
 #endif

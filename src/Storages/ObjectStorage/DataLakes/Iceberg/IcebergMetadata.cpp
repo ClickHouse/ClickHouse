@@ -888,6 +888,8 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
         }
     }
 
+    std::sort(files.begin(), files.end());
+
     if (!use_partition_pruning)
     {
         cached_files = files;

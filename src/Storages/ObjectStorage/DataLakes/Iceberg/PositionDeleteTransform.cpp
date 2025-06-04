@@ -4,17 +4,18 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
-#include <Core/Settings.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/ReadSchemaUtils.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <IO/CompressionMethod.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Processors/Formats/ISchemaReader.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#    include <Core/Settings.h>
+#    include <Formats/FormatFactory.h>
+#    include <Formats/ReadSchemaUtils.h>
+#    include <IO/CompressionMethod.h>
+#    include <IO/ReadBufferFromFileBase.h>
+#    include <Interpreters/Context.h>
+#    include <Interpreters/ExpressionAnalyzer.h>
+#    include <Parsers/ASTFunction.h>
+#    include <Parsers/ASTIdentifier.h>
+#    include <Parsers/ASTLiteral.h>
+#    include <Processors/Formats/ISchemaReader.h>
+#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB
 {
@@ -83,30 +84,17 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
     }
 }
 
-size_t IcebergPositionDeleteTransform::getDeleteFilenameColumnIndex(const std::shared_ptr<IInputFormat> & delete_source)
+size_t IcebergPositionDeleteTransform::getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name)
 {
     const auto & delete_header = delete_source->getOutputs().back().getHeader();
     for (size_t i = 0; i < delete_header.getNames().size(); ++i)
     {
-        if (delete_header.getNames()[i] == filename_column_name)
+        if (delete_header.getNames()[i] == column_name)
         {
             return i;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find column {} in chunk", filename_column_name);
-}
-
-size_t IcebergPositionDeleteTransform::getDeletePositionColumnIndex(const std::shared_ptr<IInputFormat> & delete_source)
-{
-    const auto & delete_header = delete_source->getOutputs().back().getHeader();
-    for (size_t i = 0; i < delete_header.getNames().size(); ++i)
-    {
-        if (delete_header.getNames()[i] == positions_column_name)
-        {
-            return i;
-        }
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find column {} in chunk", positions_column_name);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find column {} in chunk", column_name);
 }
 
 void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
@@ -148,8 +136,8 @@ void IcebergBitmapPositionDeleteTransform::initialize()
             if (!delete_chunk)
                 break;
 
-            int position_index = getDeletePositionColumnIndex(delete_source);
-            int filename_index = getDeleteFilenameColumnIndex(delete_source);
+            int position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
+            int filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::filename_column_name);
 
             auto position_column = delete_chunk.getColumns()[position_index];
             auto filename_column = delete_chunk.getColumns()[filename_index];

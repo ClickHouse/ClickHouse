@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include "config.h"
 
 #if USE_AVRO
@@ -32,16 +33,17 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
         : RelativePathWithMetadata(data_object_.file_name, std::move(metadata_))
         , data_object(data_object_)
     {
-        for (const auto & position_deletes_object : position_deletes_objects_)
-        {
-            if ((position_deletes_object.partition_key_value == data_object.partition_key_value)
-                && (position_deletes_object.added_sequence_number < data_object.added_sequence_number))
-                position_deletes_objects.push_back(position_deletes_object);
-        }
+        auto beg_it = std::lower_bound(position_deletes_objects_.begin(), position_deletes_objects_.end(), data_object_);
+        auto end_it = std::upper_bound(position_deletes_objects_.begin(), position_deletes_objects_.end(), data_object_, 
+            [](const Iceberg::ManifestFileEntry & lhs, const Iceberg::ManifestFileEntry & rhs)
+            {
+                return std::tie(lhs.common_partition_specification, lhs.partition_key_value) < std::tie(rhs.common_partition_specification, rhs.partition_key_value);
+            });
+        position_deletes_objects = std::span<const Iceberg::ManifestFileEntry>{beg_it, end_it};
     }
 
     const Iceberg::ManifestFileEntry data_object;
-    std::vector<Iceberg::ManifestFileEntry> position_deletes_objects;
+    std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
 
     // Return the path in the Iceberg metadata
     std::string getIcebergDataPath() const { return data_object.file_path_key; }
