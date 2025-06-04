@@ -1242,6 +1242,8 @@ private:
     mutable IndexSizeByName secondary_index_sizes;
 
 protected:
+    void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
+
     void resetColumnSizes()
     {
         column_sizes.clear();

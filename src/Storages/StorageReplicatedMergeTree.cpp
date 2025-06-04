@@ -2270,15 +2270,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
         .withPartFormatFromDisk()
         .build();
 
-    part->loadColumnsChecksumsIndexes(
-        /* require_columns_checksums = */ true,
-        /* check_consistency = */ true,
-        /* load_metadata_version = */ false);
-
-    auto metadata_version = getInMemoryMetadataPtr()->getMetadataVersion();
-    part->writeMetadataVersion(getContext(), metadata_version, (*getSettings())[MergeTreeSetting::fsync_after_insert]);
-    part->setMetadataVersion(metadata_version);
-    part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
+    loadPartAndFixMetadataImpl(part, getContext());
 
     return part;
 }
