@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: use-rocksdb
+# Tags: use-rocksdb, no-parallel
+# Tag no-parallel - broken PG database may affect tests, reading system.tablesg
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
