@@ -1,3 +1,4 @@
+#include <memory>
 #include <stack>
 
 #include <Common/JSONBuilder.h>
@@ -6,7 +7,7 @@
 #include <IO/WriteBuffer.h>
 
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -700,14 +701,15 @@ void QueryPlan::replaceNode(Node * node, QueryPlanPtr plan)
 {
     const auto & header = node->step->getOutputHeader();
     const auto & plan_header = plan->getCurrentHeader();
+
     if (!blocksHaveEqualStructure(header, plan_header))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
-            node->step->getName(),
-            plan->root->step->getName(),
-            plan_header.dumpStructure(),
-            header.dumpStructure());
+    {
+        auto converting_dag = ActionsDAG::makeConvertingActions(
+            plan_header.getColumnsWithTypeAndName(), header.getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
+
+        auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
+        plan->addStep(std::move(expression));
+    }
 
     nodes.splice(nodes.end(), std::move(plan->nodes));
 
