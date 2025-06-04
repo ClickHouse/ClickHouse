@@ -62,7 +62,7 @@ possible_properties = {
     "background_schedule_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
-    "backup_threads": lambda: random.randint(0, multiprocessing.cpu_count()),
+    "backup_threads": lambda: random.randint(1, multiprocessing.cpu_count()),
     "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     # "cannot_allocate_thread_fault_injection_probability": threshold_generator(0.2, 0.2, 0.0, 1.0), the server may not start
     "cgroup_memory_watcher_hard_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -267,14 +267,24 @@ def add_single_disk(
     next_disk: ET.Element,
     backups_element: ET.Element,
     disk_type: str,
+    created_disks_types: list[str],
     object_storages: list[str],
-):
+) -> str:
+    prev_disk = 0
+    if disk_type in ("cache", "encrypted"):
+        prev_disk = random.choice(range(0, i))
+
+        # Cannot create encrypted disk on web storage
+        if created_disks_types[prev_disk] == "web" and disk_type == "encrypted":
+            disk_type = "cache"
+
     # Add a single disk
     disk_type_xml = ET.SubElement(next_disk, "type")
     disk_type_xml.text = disk_type
 
     allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
     allowed_disk_xml.text = f"disk{i}"
+    final_type = disk_type
 
     if disk_type == "object_storage":
         metadata_type = "local"
@@ -292,6 +302,7 @@ def add_single_disk(
             metadata_type = random.choice(possible_metadata_types)
             metadata_xml = ET.SubElement(next_disk, "metadata_type")
             metadata_xml.text = metadata_type
+        final_type = metadata_type
 
         # Add endpoint info
         if object_storage_type in ("s3", "s3_with_keeper"):
@@ -334,7 +345,7 @@ def add_single_disk(
             add_settings_from_dict(object_storages_properties[dict_entry], next_disk)
     elif disk_type in ("cache", "encrypted"):
         disk_xml = ET.SubElement(next_disk, "disk")
-        disk_xml.text = f"disk{random.choice(range(0, i))}"
+        disk_xml.text = f"disk{prev_disk}"
         if disk_type == "cache" or random.randint(1, 2) == 1:
             path_xml = ET.SubElement(next_disk, "path")
             path_xml.text = f"disk{i}/"
@@ -363,6 +374,7 @@ def add_single_disk(
                     if enc_algorithm == "aes_192_ctr"
                     else f"{i % 10}09105c600c12066f82f1a4dbb41a08e4A4348C8387ADB6AB827410C4EF71CA5"
                 )
+    return final_type
 
 
 def modify_server_settings(
@@ -390,6 +402,7 @@ def modify_server_settings(
 
         allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
         allowed_disk_xml.text = "default"
+        created_disks_types = []
 
         object_storages = ["local"]
         if args.with_minio:
@@ -407,15 +420,17 @@ def modify_server_settings(
                 if i == 0
                 else ["object_storage", "cache", "encrypted"]
             )
-            add_single_disk(
+            next_created_disk_type = add_single_disk(
                 i,
                 args,
                 cluster,
                 ET.SubElement(disk_element, f"disk{i}"),
                 backups_element,
                 random.choice(possible_types),
+                created_disks_types,
                 object_storages,
             )
+            created_disks_types.append(next_created_disk_type)
         # Add policies sometimes
         if random.randint(1, 100) <= 70 and args.max_disks > 0:
             policies_element = ET.SubElement(storage_config, "policies")
@@ -456,7 +471,7 @@ def modify_server_settings(
                 new_element.text = str(generator())
 
     if modified:
-        ET.indent(tree, space="    ", level=0) # indent tree
+        ET.indent(tree, space="    ", level=0)  # indent tree
         temp_path = None
         # Create a temporary file
         with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as temp_file:
