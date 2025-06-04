@@ -30,7 +30,7 @@ Decimal64 normalizeParameter(const std::string & function_name, const std::strin
     {
         auto value = parameter_field.safeGet<DecimalField<Decimal64>>();
         auto value_scale_multiplier = value.getScaleMultiplier();
-        return (value.getValue() * target_scale_multiplier) / value_scale_multiplier;
+        return (Decimal128(value.getValue()) * Decimal128(target_scale_multiplier)) / Decimal128(value_scale_multiplier);
     }
     else if (parameter_field.getType() == Field::Types::Decimal32)
     {
