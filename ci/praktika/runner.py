@@ -14,6 +14,7 @@ from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
+from .native_jobs import _is_praktika_job
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
@@ -119,12 +120,7 @@ class Runner:
                 print("Update Job and Workflow Report")
                 HtmlRunnerHooks.pre_run(workflow, job)
 
-        if job.requires and job.name not in (
-            Settings.CI_CONFIG_JOB_NAME,
-            Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
-            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-            Settings.FINISH_WORKFLOW_JOB_NAME,
-        ):
+        if job.requires and not _is_praktika_job(job.name):
             print("Download required artifacts")
             required_artifacts = []
             # praktika service jobs do not require any of artifacts and excluded in if to not upload "hacky" artifact report.
@@ -140,18 +136,7 @@ class Runner:
                 else:
                     if (
                         requires_artifact_name
-                        in [
-                            job.name
-                            for job in workflow.jobs
-                            if job.name
-                            not in (
-                                Settings.CI_CONFIG_JOB_NAME,
-                                Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
-                                Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-                                Settings.FINISH_WORKFLOW_JOB_NAME,
-                            )
-                            and job.provides
-                        ]
+                        in [job.name for job in workflow.jobs if job.provides]
                         and Settings.ENABLE_ARTIFACTS_REPORT
                     ):
                         print(
@@ -247,6 +232,12 @@ class Runner:
                     job.run_in_docker,
                     RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
                 )
+                if Utils.is_arm():
+                    docker_tag += "_arm"
+                elif Utils.is_amd():
+                    docker_tag += "_amd"
+                else:
+                    raise RuntimeError("Unsupported CPU architecture")
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
             Shell.check(

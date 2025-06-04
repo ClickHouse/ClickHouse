@@ -34,11 +34,13 @@ public:
     bool isTableExist(const String & name, ContextPtr context) const override;
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
+    /// skip_not_loaded flag ignores all non-iceberg tables
     DatabaseTablesIteratorPtr getTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
         bool skip_not_loaded) const override;
 
+    /// skip_not_loaded flag ignores all non-iceberg tables
     DatabaseTablesIteratorPtr getLightweightTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
@@ -77,7 +79,7 @@ private:
 
     /// Can return nullptr in case of *expected* issues with response from catalog. Sometimes
     /// catalogs can produce completely unexpected responses. In such cases this function may throw.
-    StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool lightweight) const;
+    StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg) const;
 };
 
 }
