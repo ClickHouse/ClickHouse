@@ -152,6 +152,7 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_number"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_offset"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_disk_name"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
@@ -804,7 +805,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(RandomGenerator & rg, co
     }
 }
 
-void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b)
+void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
 {
     /// Shared and Replicated MergeTree are to be used with cluster
     if (!fc.clusters.empty() && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
@@ -1123,7 +1124,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
-        if (b.isAnyS3Engine() || (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared))
+        if (b.isAnyS3Engine() || (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TableEngineOption::TShared))
         {
             svs = svs ? svs : te->mutable_setting_values();
             if (b.isAnyS3Engine())
@@ -1141,7 +1142,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                 }
             }
             else if (
-                b.toption.has_value() && b.toption.value() == TableEngineOption::TShared
+                b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TableEngineOption::TShared
                 && (!fc.storage_policies.empty() || !fc.disks.empty()))
             {
                 /// Requires storage setting
@@ -1595,7 +1596,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.emplace_back(Null);
     this->ids.emplace_back(Set);
     this->ids.emplace_back(Join);
-    this->ids.emplace_back(Memory);
+    if (fc.allow_memory_tables)
+    {
+        this->ids.emplace_back(Memory);
+    }
     this->ids.emplace_back(StripeLog);
     this->ids.emplace_back(Log);
     this->ids.emplace_back(TinyLog);
@@ -1658,7 +1662,6 @@ static const std::vector<TableEngineValues> likeEngs
        TableEngineValues::Null,
        TableEngineValues::Set,
        TableEngineValues::Join,
-       TableEngineValues::Memory,
        TableEngineValues::StripeLog,
        TableEngineValues::Log,
        TableEngineValues::TinyLog,
@@ -1679,7 +1682,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     SQLBase::setDeterministic(rg, next);
     this->allow_not_deterministic = !next.is_deterministic;
     this->enforce_final = next.is_deterministic;
-    next.is_temp = rg.nextMediumNumber() < 11;
+    next.is_temp = fc.allow_memory_tables && rg.nextMediumNumber() < 11;
     ct->set_is_temp(next.is_temp);
 
     const auto tableLikeLambda
@@ -2108,7 +2111,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         svs = svs ? svs : layout->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
         const String ncache = "cache" + std::to_string(this->cache_counter++);
-        const std::filesystem::path & nfile = fc.db_file_path / ncache;
+        const std::filesystem::path & nfile = fc.server_file_path / ncache;
 
         sv->set_property("PATH");
         sv->set_value("'" + nfile.generic_string() + "'");
