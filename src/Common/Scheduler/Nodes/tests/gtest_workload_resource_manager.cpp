@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <memory>
@@ -8,6 +9,8 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 
+#include <Common/EventRateMeter.h>
+#include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
@@ -30,6 +33,15 @@
 #include <Parsers/ParserDropWorkloadQuery.h>
 #include <Parsers/ParserDropResourceQuery.h>
 
+#if 0
+#include <iostream>
+#include <base/getThreadId.h>
+#define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<void*>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
+#else
+#include <base/defines.h>
+#define DBG_PRINT(...) UNUSED(__VA_ARGS__)
+#endif
+
 using namespace DB;
 
 namespace CurrentMetrics
@@ -37,6 +49,8 @@ namespace CurrentMetrics
     extern const Metric QueryPipelineExecutorThreads;
     extern const Metric QueryPipelineExecutorThreadsActive;
     extern const Metric QueryPipelineExecutorThreadsScheduled;
+    extern const Metric ConcurrencyControlAcquired;
+    extern const Metric ConcurrencyControlPreempted;
 }
 class WorkloadEntityTestStorage : public WorkloadEntityStorageBase
 {
@@ -422,6 +436,183 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
     t.wait(); // Wait for threads to finish before destructing locals
 }
 
+class ThreadMetrics
+{
+public:
+    ThreadMetrics() = default;
+    ThreadMetrics(ThreadMetrics && other) noexcept
+        : last_update_ns(other.last_update_ns)
+        , consumed(other.consumed.load(std::memory_order_relaxed))
+    {}
+
+    ThreadMetrics & operator=(ThreadMetrics && other) noexcept
+    {
+        last_update_ns = other.last_update_ns;
+        consumed.store(other.consumed.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        return *this;
+    }
+
+    void start()
+    {
+        UNUSED(padding);
+        last_update_ns = clock_gettime_ns(CLOCK_THREAD_CPUTIME_ID);
+        consumed = 0;
+    }
+
+    // Make sure that it is called periodically from the same thread as start()
+    void update()
+    {
+        UInt64 now = clock_gettime_ns(CLOCK_THREAD_CPUTIME_ID);
+        consumed.fetch_add(now - last_update_ns, std::memory_order_relaxed);
+        last_update_ns = now;
+    }
+
+    UInt64 takeConsumed()
+    {
+        return consumed.exchange(0, std::memory_order_relaxed);
+    }
+
+private:
+    UInt64 last_update_ns = 0;
+    std::atomic<UInt64> consumed{0};
+    char padding[64]; // to avoid false sharing
+};
+
+class ThreadMetricsGroup : public boost::noncopyable
+{
+public:
+    explicit ThreadMetricsGroup(size_t size = 0)
+        : metrics(size)
+    {}
+
+    void resize(size_t size)
+    {
+        metrics.resize(size);
+    }
+
+    void start(size_t thread_num)
+    {
+        metrics[thread_num].start();
+    }
+
+    void update(size_t thread_num)
+    {
+        metrics[thread_num].update();
+    }
+
+    UInt64 takeConsumed()
+    {
+        UInt64 total_consumed = 0;
+        for (auto & metric : metrics)
+            total_consumed += metric.takeConsumed();
+        return total_consumed;
+    }
+
+private:
+    std::vector<ThreadMetrics> metrics;
+};
+
+class ThreadMetricsTester
+{
+public:
+    static double now()
+    {
+        return static_cast<double>(clock_gettime_ns());
+    }
+
+    struct Assertion
+    {
+        ThreadMetricsGroup * group;
+        double share;
+        EventRateMeter consumed{now(), 120'000'000 /*ns*/};
+
+        void init(double now_ns)
+        {
+            group->takeConsumed(); // Reset consumed value before starting
+            consumed.reset(now_ns);
+        }
+
+        UInt64 process(double now_ns)
+        {
+            UInt64 consumed_ns = group->takeConsumed();
+            consumed.add(now_ns, static_cast<double>(consumed_ns));
+            return consumed_ns;
+        }
+    };
+
+    /// Waits for share of group to stabilize on given value
+    ThreadMetricsTester & expectShare(ThreadMetricsGroup * group, double share)
+    {
+        assertions.emplace_back(Assertion{group, share});
+        return *this;
+    }
+
+    /// Makes sure that checks are done only when total CPUs is not less than given value.
+    /// If there is not enough CPUs, we skip assertions.
+    /// This is useful for CI environment where number of CPUs can be very low.
+    ThreadMetricsTester & assumeCPUs(double cpus)
+    {
+        assume_cpus = cpus;
+        return *this;
+    }
+
+    void check()
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(12)); // Skip to avoid measurements during transition period
+
+        double start_ns = now();
+        for (auto & assertion : assertions)
+            assertion.init(start_ns);
+
+        // We check infinite time to avoid flakiness.
+        // CI environment is very unstable and it can take a lot of time to reach the expected shares.
+        bool passed = false;
+        EventRateMeter cpu_usage(now(), 120'000'000 /*ns*/);
+        UInt64 cpu_assumption_fail_count = 0;
+        while (!passed)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(24)); // Sleep to allow threads to consume resources
+            double now_ns = now();
+            double total_consumed_delta = 0;
+            for (auto & assertion : assertions)
+                total_consumed_delta += assertion.process(now_ns);
+            cpu_usage.add(now_ns, total_consumed_delta);
+            double consumed_cpus = cpu_usage.rate(now_ns);
+            DBG_PRINT("[{} ns] Total consumed delta: {:.2f} ns, CPU usage: {:.2f} cpus", now_ns - start_ns, total_consumed_delta, consumed_cpus);
+            if (consumed_cpus < assume_cpus * 0.9) // Allow some margin of error
+            {
+                cpu_assumption_fail_count++;
+                if (cpu_assumption_fail_count > 10)
+                {
+                    DBG_PRINT("CPUs ({}/{}) is not enough for assertions, skipping checks", consumed_cpus, assume_cpus);
+                    return; // Skip checks if we do not have enough CPUs
+                }
+            }
+            else
+            {
+                passed = true;
+                for (auto & assertion : assertions)
+                {
+                    double actual_share = assertion.consumed.rate(now_ns) / consumed_cpus;
+                    if (std::abs(actual_share - assertion.share) / assertion.share > 0.1)
+                    {
+                        passed = false;
+                        DBG_PRINT("Assertion failed: expected share {:.2f}, actual share {:.2f}, total cpus {:.2f}", assertion.share, actual_share, consumed_cpus);
+                    }
+                    else
+                    {
+                        DBG_PRINT("Assertion passed: expected share {:.2f}, actual share {:.2f}, total cpus {:.2f}", assertion.share, actual_share, consumed_cpus);
+                    }
+                }
+            }
+        }
+    }
+
+private:
+    std::vector<Assertion> assertions;
+    double assume_cpus = 0.0;
+};
+
 // It emulates how PipelineExecutor interacts with CPU scheduler
 struct TestQuery {
     ResourceTest & t;
@@ -435,13 +626,21 @@ struct TestQuery {
     size_t threads_finished = 0;
     size_t active_threads = 0;
     size_t started_threads = 0;
-    size_t renewing_threads = 0; // They might be just reporting consumption or being preempted
     bool query_is_finished = false;
     UInt64 work_left = UInt64(-1);
     String name;
 
+    // Only used if preemption is enabled
+    struct ThreadStatus
+    {
+        bool is_active = false;
+    };
+    std::vector<ThreadStatus> threads;
+
     ThreadFromGlobalPool * master_thread = nullptr;
     std::unique_ptr<ThreadPool> pool;
+
+    ThreadMetricsGroup metrics;
 
     static constexpr int us_per_work = 10;
 
@@ -456,10 +655,20 @@ struct TestQuery {
             master_thread->join();
     }
 
+    AcquiredSlotPtr trySpawn()
+    {
+        {
+            std::unique_lock lock{mutex};
+            if (query_is_finished)
+                return {};
+        }
+        return slots->tryAcquire();
+    }
+
     bool controlConcurrency(ISlotLease * cpu_lease)
     {
         // upscale if possible
-        while (auto slot = slots->tryAcquire())
+        while (auto slot = trySpawn())
         {
             t.async(*pool, [this, my_slot = std::move(slot)] mutable
             {
@@ -469,11 +678,7 @@ struct TestQuery {
 
         // preemption and downscaling
         if (cpu_lease)
-        {
-            onRenewalStart();
-            SCOPE_EXIT({ onRenewalStop(); });
             return cpu_lease->renew();
-        }
         else
             return true;
     }
@@ -481,6 +686,7 @@ struct TestQuery {
     void finish()
     {
         std::unique_lock lock{mutex};
+        DBG_PRINT("=== FINISHED ===");
         query_is_finished = true;
         cv.notify_all();
     }
@@ -506,13 +712,6 @@ struct TestQuery {
         cv.wait(lock, [=, this] () { return started_threads >= thread_num_to_wait; });
     }
 
-    // Wait until number of renewing threads is not less than specified
-    void waitRenewingThreads(size_t thread_num_to_wait)
-    {
-        std::unique_lock lock{mutex};
-        cv.wait(lock, [=, this] () { return renewing_threads >= thread_num_to_wait; });
-    }
-
     // Wait until resource request is enqueued
     void waitEnqueued()
     {
@@ -528,34 +727,50 @@ struct TestQuery {
     }
 
     // Returns unique thread number
-    size_t onThreadStart()
+    size_t onThreadStart(ISlotLease * cpu_lease)
     {
-        std::scoped_lock lock{mutex};
+        std::unique_lock lock{mutex};
+
+        // We cannot start more threads than max_threads
+        cv.wait(lock, [=, this] { return active_threads < max_threads; });
+
         active_threads++;
         started_threads++;
         cv.notify_all();
-        return started_threads - 1;
+
+        // We could reuse thread numbers if preemption (and downscaling) are enabled, otherwise do not reuse
+        if (cpu_lease)
+        {
+            // Iterate through all thread and find the first free thread number
+            size_t thread_num = 0;
+            while (thread_num < max_threads && threads[thread_num].is_active)
+                thread_num++;
+            chassert(thread_num < max_threads);
+            threads[thread_num].is_active = true;
+            return thread_num;
+        }
+        else
+        {
+            return started_threads - 1;
+        }
     }
 
-    void onThreadStop()
+    void onThreadStop(ISlotLease * cpu_lease, size_t thread_num)
     {
         std::scoped_lock lock{mutex};
         active_threads--;
-    }
-
-    // Returns unique thread number
-    void onRenewalStart()
-    {
-        std::scoped_lock lock{mutex};
-        renewing_threads++;
         cv.notify_all();
-    }
-
-    void onRenewalStop()
-    {
-        std::scoped_lock lock{mutex};
-        renewing_threads--;
-        cv.notify_all();
+        if (cpu_lease)
+        {
+            chassert(thread_num < max_threads);
+            chassert(threads[thread_num].is_active);
+            threads[thread_num].is_active = false;
+            DBG_PRINT("Thread {} finished", thread_num);
+        }
+        else
+        {
+            DBG_PRINT("Thread {} finished (no preemption)", thread_num);
+        }
     }
 
     // Returns true iff query should continue execution
@@ -579,7 +794,8 @@ struct TestQuery {
         volatile uint64_t count = 0;
         while (std::chrono::steady_clock::now() < deadline) {
             count = count + 1; // CPU-intensive work
-            if (count % 1024 == 0) {
+            metrics.update(thread_num);
+            if (count % 128 == 0) {
                 std::unique_lock lock2{mutex};
                 if (predicate())
                     return false;
@@ -593,13 +809,14 @@ struct TestQuery {
     {
         chassert(self_slot);
 
-        // If we use lease instead of a plain slot then, start consumption to track lease expiry time
         ISlotLease * cpu_lease = dynamic_cast<ISlotLease *>(self_slot.get());
+        const size_t thread_num = onThreadStart(cpu_lease);
+        SCOPE_EXIT({ onThreadStop(cpu_lease, thread_num); });
+
+        // Start consumption and metrics for this thread
         if (cpu_lease)
             cpu_lease->startConsumption();
-
-        size_t thread_num = onThreadStart();
-        SCOPE_EXIT({ onThreadStop(); });
+        metrics.start(thread_num);
 
         setThreadName(fmt::format("name.{}", name, thread_num).c_str());
         while (true)
@@ -643,6 +860,8 @@ struct TestQuery {
         max_threads = max_threads_;
         if (runtime_us != UInt64(-1))
             work_left = runtime_us / us_per_work;
+        threads.resize(max_threads);
+        metrics.resize(max_threads);
         pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, max_threads);
         master_thread = t.async(workload, t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName(),
             [&, type, workload] (ResourceLink master_link, ResourceLink worker_link)
@@ -651,6 +870,7 @@ struct TestQuery {
                 slots = allocateCPUSlots(type, master_link, worker_link);
                 threadFunc(slots->acquire());
 
+                // TODO(serxa): this is not needed any longer. we do pool->wait(). Remove and check tests.
                 // We have to keep this thread alive even when threadFunc() is finished
                 // because `slots` keep references to ProfileEvent stored in thread-local storage.
                 // PipelineExecutor master thread does similar thing by joining all additional threads during finalize.
@@ -934,10 +1154,21 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingIndependentPools)
     t.wait();
 }
 
-TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingSmoke)
+auto getAcquired()
+{
+    return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlAcquired);
+}
+
+auto getPreempted()
+{
+    return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingPreemption)
 {
     ResourceTest t;
 
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
     t.query("CREATE WORKLOAD A IN all");
     t.query("CREATE WORKLOAD B IN all");
@@ -947,16 +1178,115 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingSmoke)
     // (b) resource request canceling works as expected
     for (int iteration = 0; iteration < 4; ++iteration)
     {
+        DBG_PRINT("--- Start #{} ---", iteration);
         std::vector<TestQueryPtr> queries;
         for (int query = 0; query < 2; query++)
             queries.push_back(std::make_shared<TestQuery>(t));
 
+        DBG_PRINT("--- Q0 ---");
         queries[0]->start(TestQuery::AllocateLeaseNoDownscale, "A", 8);
         queries[0]->waitStartedThreads(8);
+        while (getAcquired() < 8) std::this_thread::yield(); // Wait Q0 to upscale to all 8 threads
+        DBG_PRINT("--- Q1 ---");
         queries[1]->start(TestQuery::AllocateLeaseNoDownscale, "B", 8);
-        queries[0]->waitRenewingThreads(4);
-        queries[1]->waitRenewingThreads(4);
+        DBG_PRINT("--- Wait preemption ---");
+        while (getAcquired() < 8 || getPreempted() < 4) std::this_thread::yield(); // Wait 4 threads of Q0 to became preempted
+        DBG_PRINT("--- Stop ---");
     }
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingFairness)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    DBG_PRINT("--- Start ---");
+    std::vector<TestQueryPtr> queries;
+    for (int query = 0; query < 2; query++)
+        queries.push_back(std::make_shared<TestQuery>(t));
+
+    queries[0]->start(TestQuery::AllocateLeaseNoDownscale, "A", 8);
+    queries[1]->start(TestQuery::AllocateLeaseNoDownscale, "B", 8);
+    ThreadMetricsTester()
+        .expectShare(&queries[0]->metrics, 0.5)
+        .expectShare(&queries[1]->metrics, 0.5)
+        .check();
+    DBG_PRINT("--- Stop ---");
+
+    queries.clear();
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingWeights)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all SETTINGS weight = 3");
+
+    DBG_PRINT("--- Start ---");
+    std::vector<TestQueryPtr> queries;
+    for (int query = 0; query < 2; query++)
+        queries.push_back(std::make_shared<TestQuery>(t));
+
+    queries[0]->start(TestQuery::AllocateLeaseNoDownscale, "A", 8);
+    queries[1]->start(TestQuery::AllocateLeaseNoDownscale, "B", 8);
+    ThreadMetricsTester()
+        .expectShare(&queries[0]->metrics, 0.25)
+        .expectShare(&queries[1]->metrics, 0.75)
+        .check();
+    DBG_PRINT("--- Stop ---");
+
+    queries.clear();
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingMaxMinFairness)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 10");
+    t.query("CREATE WORKLOAD A IN all SETTINGS weight = 6");
+    t.query("CREATE WORKLOAD B IN all");
+    t.query("CREATE WORKLOAD C IN all");
+    t.query("CREATE WORKLOAD D IN all SETTINGS weight = 2");
+
+    DBG_PRINT("--- Start ---");
+    std::vector<TestQueryPtr> queries;
+    for (int query = 0; query < 4; query++)
+        queries.push_back(std::make_shared<TestQuery>(t));
+
+    queries[0]->start(TestQuery::AllocateLeaseNoDownscale, "A", 2);
+    queries[1]->start(TestQuery::AllocateLeaseNoDownscale, "B", 8);
+    queries[2]->start(TestQuery::AllocateLeaseNoDownscale, "C", 8);
+    queries[3]->start(TestQuery::AllocateLeaseNoDownscale, "D", 8);
+
+    // Check max-min fair allocation
+    // A: guaranteed share is 6/10, but it uses only 2/10 threads, so 8 threads left for others
+    // B: fair share is 2/10
+    // C: fair share is 2/10
+    // D: fair share is 4/10
+    ThreadMetricsTester()
+        .expectShare(&queries[0]->metrics, 2.0 / 10.0)
+        .expectShare(&queries[1]->metrics, 2.0 / 10.0)
+        .expectShare(&queries[2]->metrics, 2.0 / 10.0)
+        .expectShare(&queries[3]->metrics, 4.0 / 10.0)
+        .assumeCPUs(10.0) // in CI environment we can have less CPU in total and A workload will have greater share
+        .check();
+    DBG_PRINT("--- Stop ---");
+
+    queries.clear();
 
     t.wait();
 }

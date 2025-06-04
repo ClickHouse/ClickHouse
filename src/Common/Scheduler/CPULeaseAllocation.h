@@ -137,15 +137,14 @@ private:
     /// otherwise the thread should be stopped (timeout during lease renewal).
     bool renew(Lease & lease);
 
+    /// Preemption. Block CPU consumption: waits for a slot to be granted to this thread.
+    bool waitForGrant(std::unique_lock<std::mutex> & lock, size_t thread_num);
+
     /// Accounts consumed resource
     void consume(std::unique_lock<std::mutex> & lock, ResourceCost delta_ns);
 
     /// Enqueue a resource request to the scheduler if necessary.
     void schedule(std::unique_lock<std::mutex> & lock);
-
-    /// Wake renewing thread waiting for a granted slot.
-    /// Returns true if wake was successful or false if there is no thread to wake.
-    bool resumePreemptedThread(std::unique_lock<std::mutex> & lock);
 
     /// Thread stops and completely releases its lease.
     void release(Lease & lease);
@@ -192,6 +191,7 @@ private:
     } threads;
 
     /// Resource accounting
+    std::atomic_bool acquirable{false}; // Tracks `(granted > 0 || exception) && !shutdown` value that could be read w/o locking mutex
     SlotCount allocated = 0; /// Current number of allocated (granted and acquired) slots
     Int64 granted = 0; /// Allocated but not acquired slots (might be negative if acquired more than allocated)
     ResourceCost consumed_ns = 0; /// Real consumption accumulated from renew() calls
