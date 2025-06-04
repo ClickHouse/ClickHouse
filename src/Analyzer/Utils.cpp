@@ -251,11 +251,11 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
 }
 
 bool checkCorrelatedColumn(
-    IdentifierResolveScope * scope_to_check,
+    const IdentifierResolveScope * scope_to_check,
     const QueryTreeNodePtr & column
 )
 {
-    auto * current_scope = scope_to_check;
+    const auto * current_scope = scope_to_check;
     chassert(column->getNodeType() == QueryTreeNodeType::COLUMN);
     auto * column_node = column->as<ColumnNode>();
     auto column_source = column_node->getColumnSource();
