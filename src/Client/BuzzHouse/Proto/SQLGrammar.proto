@@ -2533,6 +2533,35 @@ message S3Func {
     optional string fcomp = 8;
 }
 
+message AzureBlobStorageFunc {
+    enum FName {
+        azureBlobStorage = 1;
+        azureBlobStorageCluster = 2;
+    }
+    required FName fname = 1;
+    optional Cluster cluster = 2;
+    required string connection_string = 3;
+    required string container = 4;
+    required string blobpath = 5;
+    optional string user = 6;
+    optional string password = 7;
+    optional InOutFormat format = 8;
+    optional string fcomp = 9;
+    optional Expr structure = 10;
+}
+
+message URLFunc {
+    enum FName {
+        url = 1;
+        urlCluster = 2;
+    }
+    required FName fname = 1;
+    optional Cluster cluster = 2;
+    required string uurl = 3;
+    optional InOutFormat format = 4;
+    optional Expr structure = 5;
+}
+
 message SQLTableFuncCall {
     required SQLTableFunc func = 1;
     repeated SQLFuncArg args = 2;
@@ -2585,6 +2614,8 @@ message TableFunction {
         GenerateRandomFunc grandom = 14;
         ValuesStatement values = 15;
         ExprSchemaTable dictionary = 16;
+        AzureBlobStorageFunc azure = 17;
+        URLFunc url = 18;
     }
 }
 

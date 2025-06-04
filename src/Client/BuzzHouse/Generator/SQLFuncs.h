@@ -1310,6 +1310,8 @@ const std::vector<CHFunction> CHFuncs = {
 
 const std::vector<CHFunction> CHTableFuncs = {
     /// Table Functions
+    CHFunction(SQLTableFunc::TFazureBlobStorage, 0, 0, 3, 8),
+    CHFunction(SQLTableFunc::TFazureBlobStorageCluster, 0, 0, 4, 9),
     CHFunction(SQLTableFunc::TFcluster, 0, 0, 2, 4),
     CHFunction(SQLTableFunc::TFclusterAllReplicas, 0, 0, 2, 4),
     CHFunction(SQLTableFunc::TFdictionary, 0, 0, 1, 1),

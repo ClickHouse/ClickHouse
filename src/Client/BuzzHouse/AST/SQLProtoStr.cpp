@@ -1965,6 +1965,80 @@ CONV_FN(S3Func, sfunc)
     ret += ")";
 }
 
+CONV_FN(AzureBlobStorageFunc, azure)
+{
+    ret += AzureBlobStorageFunc_FName_Name(azure.fname());
+    ret += "(";
+    if (azure.has_cluster() && azure.fname() == AzureBlobStorageFunc_FName_azureBlobStorageCluster)
+    {
+        ClusterToString(ret, false, azure.cluster());
+        ret += ", ";
+    }
+    ret += "'";
+    ret += azure.connection_string();
+    ret += "', '";
+    ret += azure.container();
+    ret += "', '";
+    ret += azure.blobpath();
+    ret += "'";
+    if (azure.has_user())
+    {
+        ret += ", '";
+        ret += azure.user();
+        ret += "'";
+    }
+    if (azure.has_password())
+    {
+        ret += ", '";
+        ret += azure.password();
+        ret += "'";
+    }
+    if (azure.has_format())
+    {
+        ret += ", '";
+        ret += InOutFormat_Name(azure.format()).substr(6);
+        ret += "'";
+    }
+    if (azure.has_fcomp())
+    {
+        ret += ", '";
+        ret += azure.fcomp();
+        ret += "'";
+    }
+    if (azure.has_structure())
+    {
+        ret += ", ";
+        ExprToString(ret, azure.structure());
+    }
+    ret += ")";
+}
+
+CONV_FN(URLFunc, url)
+{
+    ret += URLFunc_FName_Name(url.fname());
+    ret += "(";
+    if (url.has_cluster() && url.fname() == URLFunc_FName_urlCluster)
+    {
+        ClusterToString(ret, false, url.cluster());
+        ret += ", ";
+    }
+    ret += "'";
+    ret += url.uurl();
+    ret += "'";
+    if (url.has_format())
+    {
+        ret += ", '";
+        ret += InOutFormat_Name(url.format()).substr(6);
+        ret += "'";
+    }
+    if (url.has_structure())
+    {
+        ret += ", ";
+        ExprToString(ret, url.structure());
+    }
+    ret += ")";
+}
+
 CONV_FN(SQLTableFuncCall, sfc)
 {
     ret += SQLTableFunc_Name(sfc.func()).substr(2);
@@ -2135,6 +2209,12 @@ CONV_FN(TableFunction, tf)
             ret += "dictionary(";
             FlatExprSchemaTableToString(ret, tf.dictionary(), ".");
             ret += ")";
+            break;
+        case TableFunctionType::kAzure:
+            AzureBlobStorageFuncToString(ret, tf.azure());
+            break;
+        case TableFunctionType::kUrl:
+            URLFuncToString(ret, tf.url());
             break;
         default:
             ret += "numbers(10)";
