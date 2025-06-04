@@ -1,9 +1,12 @@
-#include <Parsers/Access/ParserUserNameWithHost.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IParserBase.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace DB
@@ -11,31 +14,37 @@ namespace DB
 
 namespace
 {
-    bool parseUserNameWithHost(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTUserNameWithHost> & ast)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
+bool parseUserNameWithHost(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTUserNameWithHost> & ast_)
+{
+    return IParserBase::wrapParseImpl(
+        pos,
+        [&]
         {
-            String base_name;
-            if (!parseIdentifierOrStringLiteral(pos, expected, base_name))
-                return false;
-
+            ASTPtr name_ast;
             String host_pattern;
-            if (ParserToken{TokenType::At}.ignore(pos, expected))
-            {
-                if (!parseIdentifierOrStringLiteral(pos, expected, host_pattern))
-                    return false;
 
-                boost::algorithm::trim(host_pattern);
-                if (host_pattern == "%")
-                    host_pattern.clear();
+            if (ParserIdentifier(/*allow_query_parameter_=*/true).parse(pos, name_ast, expected))
+            {
+                if (ParserToken{TokenType::At}.ignore(pos, expected))
+                    if (!parseIdentifierOrStringLiteral(pos, expected, host_pattern) || host_pattern.empty())
+                        return false;
+            }
+            else if (ParserStringLiteral{}.parse(pos, name_ast, expected))
+            {
+                if (name_ast->as<ASTLiteral &>().value.safeGet<String>().empty())
+                    return false;
+            }
+            else
+            {
+                return false;
             }
 
-            ast = std::make_shared<ASTUserNameWithHost>();
-            ast->base_name = std::move(base_name);
-            ast->host_pattern = std::move(host_pattern);
+            boost::algorithm::trim(host_pattern);
+
+            ast_ = std::make_shared<ASTUserNameWithHost>(std::move(name_ast), std::move(host_pattern));
             return true;
         });
-    }
+}
 }
 
 
@@ -52,7 +61,7 @@ bool ParserUserNameWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
 bool ParserUserNamesWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::vector<std::shared_ptr<ASTUserNameWithHost>> names;
+    ASTs names;
 
     auto parse_single_name = [&]
     {
@@ -68,7 +77,7 @@ bool ParserUserNamesWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         return false;
 
     auto result = std::make_shared<ASTUserNamesWithHost>();
-    result->names = std::move(names);
+    result->children = std::move(names);
     node = result;
     return true;
 }
