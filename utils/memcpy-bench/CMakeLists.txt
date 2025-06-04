@@ -1,4 +1,3 @@
-# memcpy_jart.S contains position dependent code
 if (NOT OS_LINUX OR NOT ARCH_AMD64)
     message (STATUS "Not building memcpy-bench due to PIC enabled or not Linux or not x86")
     return ()
