@@ -34,7 +34,7 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 | `structure`       | Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                |
 | `compression`     | The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.                                                                                                       |
 
-# Returned value {#returned_value}
+## Returned value {#returned_value}
 
 A table for reading or writing data in a file.
 

@@ -9,7 +9,7 @@ title: 'deltaLake'
 
 # deltaLake Table Function
 
-Provides a read-only table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3 or Azure Blob Storage.
+Provides a read-only table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system.
 
 ## Syntax {#syntax}
 
@@ -21,6 +21,8 @@ deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure]
 deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
 
 deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+deltaLakeLocal(path, [,format])
 ```
 
 ## Arguments {#arguments}

@@ -22,6 +22,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSetOperationMode union_default_mode;
+    extern const SettingsBool log_queries;
 }
 
 namespace ErrorCodes
@@ -106,6 +107,10 @@ UserDefinedSQLFunctionFactory & UserDefinedSQLFunctionFactory::instance()
     return result;
 }
 
+UserDefinedSQLFunctionFactory::UserDefinedSQLFunctionFactory()
+    : global_context(Context::getGlobalContextInstance())
+{}
+
 void UserDefinedSQLFunctionFactory::checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name))
@@ -184,12 +189,30 @@ bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr &
 
 ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().get(function_name);
+    ASTPtr ast = global_context->getUserDefinedSQLObjectsStorage().get(function_name);
+
+    if (ast && CurrentThread::isInitialized())
+    {
+        auto query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
+    }
+
+    return ast;
 }
 
 ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().tryGet(function_name);
+    ASTPtr ast = global_context->getUserDefinedSQLObjectsStorage().tryGet(function_name);
+
+    if (ast && CurrentThread::isInitialized())
+    {
+        auto query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
+    }
+
+    return ast;
 }
 
 bool UserDefinedSQLFunctionFactory::has(const String & function_name) const
