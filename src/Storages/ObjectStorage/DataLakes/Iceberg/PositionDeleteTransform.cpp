@@ -1,3 +1,4 @@
+#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -41,9 +42,15 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
     for (const auto & position_deletes_object : iceberg_object_info->position_deletes_objects)
     {
+        Iceberg::PositionalDeleteFileSpecificInfo specific_info
+            = std::get<Iceberg::PositionalDeleteFileSpecificInfo>(position_deletes_object.specific_info);
+        if (specific_info.reference_file_path.has_value() && specific_info.reference_file_path != iceberg_data_path)
+            continue; // Skip position deletes that do not match the data file path.
+
         auto object_path = position_deletes_object.file_name;
         auto object_metadata = object_storage->getObjectMetadata(object_path);
         auto object_info = std::make_shared<ObjectInfo>(object_path, object_metadata);
+
 
         Block initial_header;
         {
@@ -130,12 +137,8 @@ void IcebergBitmapPositionDeleteTransform::initialize()
     auto iceberg_data_path = iceberg_object_info->getIcebergDataPath();
     for (auto & delete_source : delete_sources)
     {
-        while (true)
+        while (auto delete_chunk = delete_source->read())
         {
-            auto delete_chunk = delete_source->read();
-            if (!delete_chunk)
-                break;
-
             int position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
             int filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::filename_column_name);
 

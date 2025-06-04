@@ -38,13 +38,12 @@ public:
 
     String getName() const override { return "IcebergPositionDeleteTransform"; }
 
-    static size_t getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name);
-
 private:
     void initializeDeleteSources();
 
 protected:
     LoggerPtr log = getLogger("IcebergPositionDeleteTransform");
+    static size_t getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name);
 
     Block header;
     IcebergDataObjectInfoPtr iceberg_object_info;
@@ -84,7 +83,6 @@ public:
 
     String getName() const override { return "IcebergBitmapPositionDeleteTransform"; }
 
-protected:
     void transform(Chunk & chunk) override;
 
 private:

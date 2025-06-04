@@ -4,7 +4,6 @@
 
 #include <string>
 #include <string_view>
-#include <vector>
 
 #if USE_AVRO
 

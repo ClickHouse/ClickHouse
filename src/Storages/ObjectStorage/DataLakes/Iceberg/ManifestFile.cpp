@@ -37,8 +37,6 @@ String FileContentTypeToString(FileContentType type)
             return "position_deletes";
         case FileContentType::EQUALITY_DELETE:
             return "equality_deletes";
-        case FileContentType::DELETION_VECTOR:
-            return "deletion_vector";
     }
 }
 
@@ -180,7 +178,6 @@ ManifestFileContent::ManifestFileContent(
     partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
     partition_key_ast->children.push_back(partition_key_ast->arguments);
 
-
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -213,7 +210,7 @@ ManifestFileContent::ManifestFileContent(
             content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
             if (content_type == FileContentType::EQUALITY_DELETE)
                 throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: equality deletes are not supported");
+                    ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: files of content type {} are not supported", content_type);
         }
         const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>());
 
@@ -337,7 +334,7 @@ ManifestFileContent::ManifestFileContent(
                     status,
                     added_sequence_number,
                     partition_key_value,
-                    common_partition_specification,
+                    &common_partition_specification,
                     columns_infos,
                     DataFileSpecificInfo{});
                 break;
@@ -348,7 +345,7 @@ ManifestFileContent::ManifestFileContent(
                     status,
                     added_sequence_number,
                     partition_key_value,
-                    common_partition_specification,
+                    &common_partition_specification,
                     columns_infos,
                     PositionalDeleteFileSpecificInfo{
                         .reference_file_path
@@ -392,6 +389,7 @@ size_t ManifestFileContent::getSizeInMemory() const
         total_size += sizeof(DB::KeyDescription);
     total_size += column_ids_which_have_bounds.size() * sizeof(Int32);
     total_size += data_files.capacity() * sizeof(ManifestFileEntry);
+    total_size += position_deletes_files.capacity() * sizeof(ManifestFileEntry);
     return total_size;
 }
 
@@ -442,7 +440,7 @@ std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFiles() const
     return result;
 }
 
-std::strong_ordering operator<=>(const PartitionEntry & lhs, const PartitionEntry & rhs)
+std::strong_ordering operator<=>(const PartitionSpecsEntry & lhs, const PartitionSpecsEntry & rhs)
 {
     return std::tie(lhs.source_id, lhs.transform_name, lhs.partition_name)
         <=> std::tie(rhs.source_id, rhs.transform_name, rhs.partition_name);
@@ -456,7 +454,7 @@ bool less(const std::vector<A> & lhs, const std::vector<A> & rhs)
     return std::lexicographical_compare(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), [](const A & a, const A & b) { return a < b; });
 }
 
-bool operator<(const PartitionEntries & lhs, const PartitionEntries & rhs)
+bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs)
 {
     return less(lhs, rhs);
 }
@@ -468,8 +466,8 @@ bool operator<(const DB::Row & lhs, const DB::Row & rhs)
 
 std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs)
 {
-    return std::tie(lhs.common_partition_specification, lhs.partition_key_value, lhs.added_sequence_number)
-        <=> std::tie(rhs.common_partition_specification, rhs.partition_key_value, rhs.added_sequence_number);
+    return std::tie(*lhs.common_partition_specification, lhs.partition_key_value, lhs.added_sequence_number)
+        <=> std::tie(*rhs.common_partition_specification, rhs.partition_key_value, rhs.added_sequence_number);
 }
 }
 

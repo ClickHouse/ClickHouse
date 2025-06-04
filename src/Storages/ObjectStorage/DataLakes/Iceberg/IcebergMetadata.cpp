@@ -1,3 +1,4 @@
+#include "Common/Exception.h"
 #include "Disks/ObjectStorages/StoredObject.h"
 #include "config.h"
 
@@ -114,52 +115,6 @@ readJSON(const String & metadata_file_path, ObjectStoragePtr object_storage, con
 
 
 }
-
-class IcebergKeysIterator : public IObjectIterator
-{
-public:
-    IcebergKeysIterator(
-        std::vector<Iceberg::ManifestFileEntry> && data_files_,
-        std::vector<Iceberg::ManifestFileEntry> && position_deletes_files_,
-        ObjectStoragePtr object_storage_,
-        IDataLakeMetadata::FileProgressCallback callback_)
-        : data_files(data_files_)
-        , position_deletes_files(position_deletes_files_)
-        , object_storage(object_storage_)
-        , callback(callback_)
-    {
-    }
-
-    size_t estimatedKeysCount() override
-    {
-        return data_files.size();
-    }
-
-    ObjectInfoPtr next(size_t) override
-    {
-        while (true)
-        {
-            size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-            if (current_index >= data_files.size())
-                return nullptr;
-
-            auto key = data_files[current_index].file_name;
-            auto object_metadata = object_storage->getObjectMetadata(key);
-
-            if (callback)
-                callback(FileProgress(0, object_metadata.size_bytes));
-
-            return std::make_shared<IcebergDataObjectInfo>(data_files[current_index], std::move(object_metadata), position_deletes_files);
-        }
-    }
-
-private:
-    std::vector<Iceberg::ManifestFileEntry> data_files;
-    std::vector<ManifestFileEntry> position_deletes_files;
-    ObjectStoragePtr object_storage;
-    std::atomic<size_t> index = 0;
-    IDataLakeMetadata::FileProgressCallback callback;
-};
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
@@ -905,7 +860,7 @@ std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getDataFiles(const Acti
     return getFilesImpl(filter_dag, FileContentType::DATA);
 }
 
-std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getPositionDeletesFiles(const ActionsDAG * filter_dag) const
+std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getPositionalDeleteFiles(const ActionsDAG * filter_dag) const
 {
     return getFilesImpl(filter_dag, FileContentType::POSITIONAL_DELETE);
 }
@@ -977,7 +932,9 @@ ObjectIterator IcebergMetadata::iterate(
     FileProgressCallback callback,
     size_t /* list_batch_size */) const
 {
-    return std::make_shared<IcebergKeysIterator>(getDataFiles(filter_dag), getPositionDeletesFiles(filter_dag), object_storage, callback);
+    /*There is no need to prune positional delete files because we will anyway read only files which correspond to data files partitioning (and they are already prunned).*/
+    return std::make_shared<IcebergKeysIterator>(
+        *this, getDataFiles(filter_dag), getPositionalDeleteFiles(nullptr), object_storage, callback);
 }
 
 bool IcebergMetadata::hasDataTransformer(const ObjectInfoPtr & object_info) const
@@ -999,30 +956,81 @@ std::shared_ptr<ISimpleTransform> IcebergMetadata::getDataTransformer(
     if (!iceberg_object_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The object info is not IcebergDataObjectInfo");
 
-    String delete_object_format;
-    String delete_object_compression_method;
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
     {
-        auto configuration_ptr = configuration.lock();
-        if (!configuration_ptr)
-        {
-            delete_object_format = "parquet";
-            delete_object_compression_method = "auto";
-
-            LOG_WARNING(
-                log,
-                "Configuration is expired. Will use {} as the format and {} as the compression method for the delete objects",
-                delete_object_format,
-                delete_object_compression_method);
-        }
-
-        delete_object_format = configuration_ptr->format;
-        delete_object_compression_method = configuration_ptr->compression_method;
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg configuration has expired");
     }
+
+    String delete_object_format = configuration_ptr->format;
+    String delete_object_compression_method = configuration_ptr->compression_method;
 
     return std::make_shared<IcebergBitmapPositionDeleteTransform>(
         header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
 }
 
+
+IcebergDataObjectInfo::IcebergDataObjectInfo(
+    const IcebergMetadata & iceberg_metadata,
+    Iceberg::ManifestFileEntry data_object_,
+    std::optional<ObjectMetadata> metadata_,
+    const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_)
+    : RelativePathWithMetadata(data_object_.file_name, std::move(metadata_))
+    , data_object(data_object_)
+{
+    auto beg_it = std::lower_bound(position_deletes_objects_.begin(), position_deletes_objects_.end(), data_object_);
+    auto end_it = std::upper_bound(
+        position_deletes_objects_.begin(),
+        position_deletes_objects_.end(),
+        data_object_,
+        [](const Iceberg::ManifestFileEntry & lhs, const Iceberg::ManifestFileEntry & rhs)
+        {
+            return std::tie(lhs.common_partition_specification, lhs.partition_key_value)
+                < std::tie(rhs.common_partition_specification, rhs.partition_key_value);
+        });
+    position_deletes_objects = std::span<const Iceberg::ManifestFileEntry>{beg_it, end_it};
+    if (!position_deletes_objects.empty() && iceberg_metadata.configuration.lock()->format != "Parquet")
+    {
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
+            iceberg_metadata.configuration.lock()->format);
+    }
+};
+
+IcebergKeysIterator::IcebergKeysIterator(
+    const IcebergMetadata & iceberg_metadata_,
+    std::vector<Iceberg::ManifestFileEntry> && data_files_,
+    std::vector<Iceberg::ManifestFileEntry> && position_deletes_files_,
+    ObjectStoragePtr object_storage_,
+    IDataLakeMetadata::FileProgressCallback callback_)
+    : iceberg_metadata(iceberg_metadata_)
+    , data_files(data_files_)
+    , position_deletes_files(position_deletes_files_)
+    , object_storage(object_storage_)
+    , callback(callback_)
+{
+}
+
+
+ObjectInfoPtr IcebergKeysIterator::next(size_t)
+{
+    while (true)
+    {
+        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+        if (current_index >= data_files.size())
+            return nullptr;
+
+        auto key = data_files[current_index].file_name;
+        auto object_metadata = object_storage->getObjectMetadata(key);
+
+        if (callback)
+            callback(FileProgress(0, object_metadata.size_bytes));
+
+        return std::make_shared<IcebergDataObjectInfo>(
+            iceberg_metadata, data_files[current_index], std::move(object_metadata), position_deletes_files);
+    }
+}
 }
 
 #endif

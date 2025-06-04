@@ -29,8 +29,7 @@ enum class FileContentType : uint8_t
 {
     DATA = 0,
     POSITIONAL_DELETE = 1,
-    EQUALITY_DELETE = 2,
-    DELETION_VECTOR = 3,
+    EQUALITY_DELETE = 2
 };
 
 String FileContentTypeToString(FileContentType type);
@@ -54,13 +53,13 @@ struct PositionalDeleteFileSpecificInfo
 
 using IcebergFileSpecificInfo = std::variant<DataFileSpecificInfo, PositionalDeleteFileSpecificInfo>;
 
-struct PartitionEntry
+struct PartitionSpecsEntry
 {
     Int32 source_id;
     String transform_name;
     String partition_name;
 };
-using PartitionEntries = std::vector<PartitionEntry>;
+using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
 /// Description of Data file in manifest file
 struct ManifestFileEntry
@@ -74,7 +73,7 @@ struct ManifestFileEntry
     Int64 added_sequence_number;
 
     DB::Row partition_key_value;
-    PartitionEntries common_partition_specification;
+    PartitionSpecification * common_partition_specification;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
     IcebergFileSpecificInfo specific_info;
@@ -106,7 +105,7 @@ struct ManifestFileEntry
  * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  */
 
-class ManifestFileContent
+class ManifestFileContent : public boost::noncopyable
 {
 public:
     explicit ManifestFileContent(
@@ -137,11 +136,15 @@ public:
 
     bool hasBoundsInfoInManifests() const;
     const std::set<Int32> & getColumnsIDsWithBounds() const;
+
+    ManifestFileContent(ManifestFileContent &&) = delete;
+    ManifestFileContent & operator=(ManifestFileContent &&) = delete;
+
 private:
 
     Int32 schema_id;
     Poco::JSON::Object::Ptr schema_object;
-    PartitionEntries common_partition_specification;
+    PartitionSpecification common_partition_specification;
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
     std::vector<ManifestFileEntry> data_files;
@@ -155,7 +158,7 @@ private:
 /// Once manifest file is constructed. It's unchangeable.
 using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
 
-bool operator<(const PartitionEntries & lhs, const PartitionEntries & rhs);
+bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);
 
 
