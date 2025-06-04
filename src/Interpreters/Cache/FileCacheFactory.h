@@ -68,6 +68,8 @@ private:
     CacheByName caches_by_name;
 };
 
+/// Get default path prefix for non-disk caches.
+/// For disk we have a similar method in registerDiskCache.
 std::string getPathPrefixForRelativeCachePath(ContextPtr context);
 
 }
