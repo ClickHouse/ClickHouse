@@ -1,0 +1,3 @@
+[1mINSERT INTO[0m [1mFUNCTION[0m [0;33ms3([0m'https://a_path_to_s3/bucket_name/test.parquet', 'access_key', 'secret_key', 'Parquet'[0;33m)[0m [1mPARTITION BY[0m [0;33mrand([0m[0;33m)[0m[1;33m % [0m10 [1mSELECT[0m *[1m
+FROM[0m [0;36mTestTable[0m[1m
+LIMIT [0m10

@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Interpreters/Context.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -83,6 +84,18 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 std::string StorageObjectStorageCluster::getName() const
 {
     return configuration->getEngineName();
+}
+
+std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
+{
+    configuration->update(object_storage, query_context);
+    return configuration->totalRows();
+}
+
+std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
+{
+    configuration->update(object_storage, query_context);
+    return configuration->totalBytes();
 }
 
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(

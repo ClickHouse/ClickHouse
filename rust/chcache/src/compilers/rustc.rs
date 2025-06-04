@@ -143,7 +143,7 @@ impl Compiler for RustC {
         if let Some(index) = stripped_args.iter().position(|x| x.contains("linker=")) {
             let linker = stripped_args[index].replace("linker=", "");
             assert!(!linker.is_empty());
-            assert!(linker.ends_with("clang"));
+            assert!(linker.ends_with("clang") || linker.ends_with("clang++"));
 
             clang_linker_version = Some(ClangLike::compiler_version(linker));
             stripped_args.remove(index);

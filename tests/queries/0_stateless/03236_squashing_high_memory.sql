@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-asan, no-tsan, no-msan, no-ubsan
+-- Tags: no-fasttest, no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-random-merge-tree-settings
 -- reason: test requires too many rows to read
 
 SET max_rows_to_read = '501G';

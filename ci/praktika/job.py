@@ -92,7 +92,7 @@ class Job:
                 == len(timeout)
                 == len(provides)
                 == len(requires)
-            ), f"Parametrization lists must be of the same size [{len(parameter)}, {len(runs_on)}, {len(timeout)}, {len(provides)}, {len(requires)}]"
+            ), f"Parametrization lists for job [{self.name}] must be of the same size [{len(parameter)}, {len(runs_on)}, {len(timeout)}, {len(provides)}, {len(requires)}]"
 
             res = []
             for parameter_, runs_on_, timeout_, provides_, requires_ in zip(

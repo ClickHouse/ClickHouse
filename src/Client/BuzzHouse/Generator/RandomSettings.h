@@ -36,6 +36,12 @@ const auto threadSetting = CHSetting(
     {"0", "1", std::to_string(std::thread::hardware_concurrency())},
     false);
 
+const auto probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);
+
+const auto trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
+
+const auto trueOrFalseSettingNoOracle = CHSetting(trueOrFalse, {}, false);
+
 extern std::unordered_map<String, CHSetting> hotSettings;
 
 extern std::unordered_map<String, CHSetting> serverSettings;
@@ -94,6 +100,7 @@ const std::unordered_map<String, CHSetting> s3QueueTableSettings
             {},
             false)},
        {"enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
+       {"parallel_inserts", CHSetting(trueOrFalse, {}, false)},
        {"processing_threads_num", threadSetting}};
 
 const std::unordered_map<String, CHSetting> distributedTableSettings
@@ -107,7 +114,8 @@ const std::unordered_map<String, CHSetting> distributedTableSettings
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 const std::unordered_map<String, CHSetting> mergeTreeColumnSettings
-    = {{"min_compress_block_size", CHSetting(highRange, {}, false)}, {"max_compress_block_size", CHSetting(highRange, {}, false)}};
+    = {{"min_compress_block_size", CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)},
+       {"max_compress_block_size", CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)}};
 
 const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings
     = {{MergeTree, mergeTreeColumnSettings},
@@ -169,6 +177,6 @@ extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSettin
 
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);
-void loadSystemTables(const FuzzConfig & fc);
+void loadSystemTables(FuzzConfig & fc);
 
 }

@@ -52,7 +52,7 @@ public:
 
     std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
-    bool noPushingToViews() const override { return true; }
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -77,7 +77,6 @@ public:
     bool prefersLargeBlocks() const override { return false; }
 
     void pushConsumer(KafkaConsumerPtr consumer);
-    KafkaConsumerPtr popConsumer();
     KafkaConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const auto & getFormatName() const { return format_name; }
@@ -164,6 +163,7 @@ private:
 
     bool streamToViews();
 
+    void cleanConsumersByTTL();
     void cleanConsumers();
 };
 

@@ -238,7 +238,9 @@ String getBuildIDFromProgramHeaders(dl_phdr_info * info)
 
         std::string_view view(reinterpret_cast<const char *>(info->dlpi_addr + phdr.p_vaddr), phdr.p_memsz);
         __msan_unpoison(view.data(), view.size());
-        return Elf::getBuildID(view.data(), view.size());
+        String build_id = Elf::getBuildID(view.data(), view.size());
+        if (!build_id.empty()) // there may be multiple PT_NOTE segments
+            return build_id;
     }
     return {};
 }
@@ -316,22 +318,22 @@ void collectSymbolsFromELF(
     dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols,
     std::vector<SymbolIndex::Object> & objects,
-    String & build_id)
+    String & self_build_id)
 {
     String object_name;
-    String our_build_id;
+    String build_id;
 
 #if defined (USE_MUSL)
     object_name = "/proc/self/exe";
-    our_build_id = Elf(object_name).getBuildID();
-    build_id = our_build_id;
+    build_id = Elf(object_name).getBuildID();
+    self_build_id = build_id;
 #else
     /// MSan does not know that the program segments in memory are initialized.
     __msan_unpoison(info, sizeof(*info));
     __msan_unpoison_string(info->dlpi_name);
 
     object_name = info->dlpi_name;
-    our_build_id = getBuildIDFromProgramHeaders(info);
+    build_id = getBuildIDFromProgramHeaders(info);
 
     /// If the name is empty and there is a non-empty build-id - it's main executable.
     /// Find a elf file for the main executable and set the build-id.
@@ -339,14 +341,15 @@ void collectSymbolsFromELF(
     {
         object_name = "/proc/self/exe";
 
-        if (our_build_id.empty())
-            our_build_id = Elf(object_name).getBuildID();
-
         if (build_id.empty())
-            build_id = our_build_id;
+            build_id = Elf(object_name).getBuildID();
+
+        if (self_build_id.empty())
+            self_build_id = build_id;
     }
 #endif
 
+    /// Note: we load ELF from file; this doesn't work for vdso because it's only present in memory.
     std::error_code ec;
     std::filesystem::path canonical_path = std::filesystem::canonical(object_name, ec);
 
@@ -405,9 +408,10 @@ void collectSymbolsFromELF(
 
     String file_build_id = object.elf->getBuildID();
 
-    if (our_build_id != file_build_id)
+    if (build_id != file_build_id)
     {
-        /// If debug info doesn't correspond to our binary, fallback to the info in our binary.
+        /// If the separate debuginfo binary doesn't correspond to the loaded binary, fallback to
+        /// the info in the loaded binary.
         if (object_name != canonical_path)
         {
             object_name = canonical_path;
@@ -415,7 +419,7 @@ void collectSymbolsFromELF(
 
             /// But it can still be outdated, for example, if executable file was deleted from filesystem and replaced by another file.
             file_build_id = object.elf->getBuildID();
-            if (our_build_id != file_build_id)
+            if (build_id != file_build_id)
                 return;
         }
         else
@@ -445,7 +449,7 @@ int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
     collectSymbolsFromProgramHeaders(info, data.symbols);
-    collectSymbolsFromELF(info, data.symbols, data.objects, data.build_id);
+    collectSymbolsFromELF(info, data.symbols, data.objects, data.self_build_id);
 
     /* Continue iterations */
     return 0;
@@ -499,10 +503,10 @@ const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
 String SymbolIndex::getBuildIDHex() const
 {
     String build_id_hex;
-    build_id_hex.resize(data.build_id.size() * 2);
+    build_id_hex.resize(data.self_build_id.size() * 2);
 
     char * pos = build_id_hex.data();
-    for (auto c : data.build_id)
+    for (auto c : data.self_build_id)
     {
         writeHexByteUppercase(c, pos);
         pos += 2;

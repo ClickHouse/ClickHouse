@@ -5,6 +5,16 @@
 
 namespace DB
 {
+namespace
+{
+struct NameBase64Decode
+{
+    static constexpr auto name = "base64URLDecode";
+};
+
+using Base64DecodeImpl = BaseXXDecode<Base64DecodeTraits<Base64Variant::URL>, NameBase64Decode, BaseXXDecodeErrorHandling::ThrowException>;
+using FunctionBase64Decode = FunctionBaseXXConversion<Base64DecodeImpl>;
+}
 
 REGISTER_FUNCTION(Base64URLDecode)
 {
@@ -16,7 +26,7 @@ REGISTER_FUNCTION(Base64URLDecode)
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
 
-    factory.registerFunction<FunctionBase64Conversion<Base64Decode<Base64Variant::URL>>>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionBase64Decode>({description, syntax, arguments, returned_value, examples, introduced_in, category});
 }
 
 }

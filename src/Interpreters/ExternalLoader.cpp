@@ -755,6 +755,7 @@ private:
                 result.exception = exception;
                 result.loading_start_time = loading_start_time;
                 result.last_successful_update_time = last_successful_update_time;
+                result.error_count = error_count;
                 result.loading_duration = loadingDuration();
                 result.config = config;
                 return result;
@@ -1290,8 +1291,18 @@ scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderC
     auto * ptr = repository.get();
     String name = ptr->getName();
 
-    config_files_reader->addConfigRepository(std::move(repository));
-    reloadConfig(name);
+    /// Avoid leaving dangling repository in case of reloadConfig() fails
+    /// (it can be possible in case of CANNOT_SCHEDULE_TASK)
+    try
+    {
+        config_files_reader->addConfigRepository(std::move(repository));
+        reloadConfig(name);
+    }
+    catch (...)
+    {
+        config_files_reader->removeConfigRepository(ptr);
+        throw;
+    }
 
     return [this, ptr, name]()
     {

@@ -84,4 +84,7 @@ public:
 
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);
 
+/// Checks type of any nested type is DataTypeAggregateFunction.
+bool hasAggregateFunctionType(const DataTypePtr & type);
+
 }

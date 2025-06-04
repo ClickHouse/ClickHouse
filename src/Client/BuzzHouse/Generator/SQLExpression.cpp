@@ -194,9 +194,10 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             il->set_int_lit(rg.nextRandomInt64());
             if (complex && rg.nextSmallNumber() < 9)
             {
-                il->set_integers(static_cast<Integers>(
-                    (rg.nextRandomUInt32() % static_cast<uint32_t>(Integers::Int - Integers::UInt256))
-                    + static_cast<uint32_t>(Integers::Int8)));
+                il->set_integers(
+                    static_cast<Integers>(
+                        (rg.nextRandomUInt32() % static_cast<uint32_t>(Integers::Int - Integers::UInt256))
+                        + static_cast<uint32_t>(Integers::Int8)));
             }
         }
         else
@@ -209,6 +210,13 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
                 il->set_integers(static_cast<Integers>(integers_range(rg.generator)));
             }
         }
+    }
+    else if (noption < 251)
+    {
+        const SQLType * tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
+        lv->set_no_quote_str(
+            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+        delete tp;
     }
     else if (noption < 301)
     {
@@ -276,9 +284,11 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     }
     else if (noption < 801)
     {
-        std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal_MAX));
+        SpecialVal * val = lv->mutable_special_val();
+        std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
 
-        lv->set_special_val(static_cast<SpecialVal>(special_range(rg.generator)));
+        val->set_val(static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator)));
+        val->set_paren(complex && rg.nextBool());
         nested_prob = 3;
     }
     else if (noption < 951)
@@ -290,7 +300,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     }
     else
     {
-        lv->set_special_val(SpecialVal::VAL_NULL);
+        lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL);
     }
     addFieldAccess(rg, expr, nested_prob);
 }
@@ -357,22 +367,27 @@ void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * e
     }
     else
     {
-        const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
-        const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
-        const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
-
-        this->levels[this->current_level].inside_aggregate = false;
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
-
         this->current_level++;
         this->levels[this->current_level] = QueryLevel(this->current_level);
+
+        if (rg.nextBool())
+        {
+            /// Make the subquery correlated
+            for (const auto & rel : this->levels[this->current_level - 1].rels)
+            {
+                this->levels[this->current_level].rels.push_back(rel);
+            }
+            if (rg.nextBool())
+            {
+                for (const auto & gcol : this->levels[this->current_level - 1].gcols)
+                {
+                    this->levels[this->current_level].gcols.push_back(gcol);
+                }
+            }
+        }
         this->generateSelect(
             rg, true, false, 1, std::numeric_limits<uint32_t>::max(), eq->mutable_inner_query()->mutable_select()->mutable_sel());
         this->current_level--;
-
-        this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
-        this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
-        this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
     }
 }
 
@@ -536,21 +551,17 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
 {
     SQLRelation rel("");
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
-    const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
-    const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
-    const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
     for (const auto & entry : this->levels)
     {
         levels_backup[entry.first] = entry.second;
     }
     this->levels.clear();
-    this->levels[this->current_level].inside_aggregate = false;
-    this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
 
+    this->levels[this->current_level] = QueryLevel(this->current_level);
     for (uint32_t i = 0; i < nparams; i++)
     {
-        const String buf = String(1, 'a' + i);
+        const String buf = "p" + std::to_string(i);
         lexpr->add_args()->set_column(buf);
         rel.cols.emplace_back(SQLRelationCol("", {buf}));
     }
@@ -562,9 +573,6 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     {
         this->levels[entry.first] = entry.second;
     }
-    this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
-    this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
-    this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
 }
 
 void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, SQLFuncCall * func_call)
@@ -662,6 +670,17 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
                     this->generateExpression(rg, func_call->add_args()->mutable_expr());
                     this->width++;
                     generated_params++;
+                    break;
+                case SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_Resample:
+                    this->generateExpression(rg, func_call->add_params());
+                    this->width++;
+                    this->generateExpression(rg, func_call->add_params());
+                    this->width++;
+                    this->generateExpression(rg, func_call->add_params());
+                    this->width++;
+                    this->generateExpression(rg, func_call->add_args()->mutable_expr());
+                    this->width++;
+                    generated_params += 4;
                     break;
                 default:
                     break;

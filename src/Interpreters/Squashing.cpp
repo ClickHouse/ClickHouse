@@ -19,7 +19,6 @@ Squashing::Squashing(Block header_, size_t min_block_size_rows_, size_t min_bloc
     , min_block_size_bytes(min_block_size_bytes_)
     , header(header_)
 {
-    LOG_TEST(getLogger("Squashing"), "header columns {}", header.columns());
 }
 
 Chunk Squashing::flush()

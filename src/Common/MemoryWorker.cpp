@@ -64,7 +64,7 @@ Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
     return metrics;
 }
 
-uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list<std::string_view> keys, bool * warnings_printed)
+uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list<std::string_view> keys, std::initializer_list<std::string_view> optional_keys, bool * warnings_printed)
 {
     uint64_t sum = 0;
     uint64_t found_mask = 0;
@@ -79,9 +79,10 @@ uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list
         {
             std::string dummy;
             readStringUntilNewlineInto(dummy, buf);
-            buf.ignore();
+            buf.tryIgnore(1); /// skip EOL (if not EOF)
             continue;
         }
+
         if (print_warnings && (found_mask & (1l << (it - keys.begin()))))
         {
             *warnings_printed = true;
@@ -93,16 +94,18 @@ uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list
         uint64_t value = 0;
         readIntText(value, buf);
         sum += value;
+        buf.tryIgnore(1); /// skip EOL (if not EOF)
     }
-    if (found_mask != (1l << keys.size()) - 1)
+
+    /// Did we see all keys?
+    for (const auto * it = keys.begin(); it != keys.end(); ++it)
     {
-        for (const auto * it = keys.begin(); it != keys.end(); ++it)
+        if (print_warnings
+                && !(found_mask & (1l << (it - keys.begin())))
+                && std::find(optional_keys.begin(), optional_keys.end(), *it) == optional_keys.end())
         {
-            if (print_warnings && (!(found_mask & (1l << (it - keys.begin())))))
-            {
-                *warnings_printed = true;
-                LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
-            }
+            *warnings_printed = true;
+            LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
         }
     }
     return sum;
@@ -116,7 +119,7 @@ struct CgroupsV1Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         buf.rewind();
-        return readMetricsFromStatFile(buf, {"rss"}, &warnings_printed);
+        return readMetricsFromStatFile(buf, {"rss"}, {}, &warnings_printed);
     }
 
     std::string dumpAllStats() override
@@ -140,7 +143,7 @@ struct CgroupsV2Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
-        return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"}, &warnings_printed);
+        return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"}, {"kernel"}, &warnings_printed);
     }
 
     std::string dumpAllStats() override

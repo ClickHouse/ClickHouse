@@ -369,6 +369,7 @@ public:
       */
     bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header) const;
 
+    struct ActionsForFilterPushDown;
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
     /// Otherwise, return actions which inputs are from available_inputs.
@@ -386,11 +387,12 @@ public:
     /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
-    std::optional<ActionsDAG> splitActionsForFilterPushDown(
+    std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
         const std::string & filter_name,
         bool removes_filter,
         const Names & available_inputs,
-        const ColumnsWithTypeAndName & all_inputs);
+        const ColumnsWithTypeAndName & all_inputs,
+        bool allow_non_deterministic_functions);
 
     struct ActionsForJOINFilterPushDown;
 
@@ -474,7 +476,7 @@ private:
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    static std::optional<ActionsDAG> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+    static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 
     void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };
@@ -484,6 +486,13 @@ struct ActionsDAG::SplitResult
     ActionsDAG first;
     ActionsDAG second;
     std::unordered_map<const Node *, const Node *> split_nodes_mapping;
+};
+
+struct ActionsDAG::ActionsForFilterPushDown
+{
+    ActionsDAG dag;
+    size_t filter_pos;
+    bool remove_filter;
 };
 
 struct ActionsDAG::ActionsForJOINFilterPushDown

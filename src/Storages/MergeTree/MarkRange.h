@@ -32,6 +32,13 @@ struct MarkRange
 
 struct MarkRanges : public std::deque<MarkRange>
 {
+    enum class SearchAlgorithm : uint8_t
+    {
+        Unknown,
+        BinarySearch,
+        GenericExclusionSearch,
+    };
+
     using std::deque<MarkRange>::deque; /// NOLINT(modernize-type-traits)
 
     size_t getNumberOfMarks() const;
@@ -40,6 +47,8 @@ struct MarkRanges : public std::deque<MarkRange>
     void serialize(WriteBuffer & out) const;
     String describe() const;
     void deserialize(ReadBuffer & in);
+
+    SearchAlgorithm search_algorithm = {SearchAlgorithm::Unknown};
 };
 
 /** Get max range.end from ranges.

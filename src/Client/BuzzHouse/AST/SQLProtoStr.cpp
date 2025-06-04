@@ -404,6 +404,168 @@ CONV_FN(IntLiteral, int_val)
     }
 }
 
+CONV_FN(SpecialVal, val)
+{
+    if (val.paren())
+    {
+        ret += "(";
+    }
+    switch (val.val())
+    {
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL:
+            ret += "NULL";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE:
+            ret += "TRUE";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_FALSE:
+            ret += "FALSE";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO:
+            ret += "0";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ONE:
+            ret += "1";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MINUS_ONE:
+            ret += "-1";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_STRING:
+            ret += "''";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_ARRAY:
+            ret += "[]";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_TUPLE:
+            ret += "()";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_MAP:
+            ret += "map()";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_JSON:
+            ret += "'{}'::JSON";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MINUS_ZERO_FP:
+            ret += "-0.0";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_PLUS_ZERO_FP:
+            ret += "+0.0";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO_FP:
+            ret += "0.0";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_INF:
+            ret += "inf";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_PLUS_INF:
+            ret += "+inf";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MINUS_INF:
+            ret += "-inf";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NAN:
+            ret += "nan";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_PLUS_NAN:
+            ret += "+nan";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MINUS_NAN:
+            ret += "-nan";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_HAPPY:
+            ret += "'😂'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TEN_HAPPY:
+            ret += "'😂😂😂😂😂😂😂😂😂😂'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT32:
+            ret += std::to_string(std::numeric_limits<int32_t>::min());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT32:
+            ret += std::to_string(std::numeric_limits<int32_t>::max());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT64:
+            ret += std::to_string(std::numeric_limits<int64_t>::min());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT64:
+            ret += std::to_string(std::numeric_limits<int64_t>::max());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT128:
+            ret += "-170141183460469231731687303715884105728";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT128:
+            ret += "170141183460469231731687303715884105727";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT256:
+            ret += "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT256:
+            ret += "57896044618658097711785492504343953926634992332820282019728792003956564819967";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT32:
+            ret += std::to_string(std::numeric_limits<uint32_t>::max());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT64:
+            ret += std::to_string(std::numeric_limits<uint64_t>::max());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT128:
+            ret += "340282366920938463463374607431768211455";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT256:
+            ret += "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE:
+            ret += "'1970-01-01'::Date";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATE:
+            ret += "'2149-06-06'::Date";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE32:
+            ret += "'1900-01-01'::Date32";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATE32:
+            ret += "'2299-12-31'::Date32";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_TIME:
+            ret += "'-999:59:59'::Time";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_TIME:
+            ret += "'999:59:59'::Time";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_TIME64:
+            ret += "'000:00:00'::Time64";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_TIME64:
+            ret += "'999:59:59.99999999'::Time64";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATETIME:
+            ret += "'1970-01-01 00:00:00'::DateTime";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATETIME:
+            ret += "'2106-02-07 06:28:15'::DateTime";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATETIME64:
+            ret += "'1900-01-01 00:00:00'::DateTime64";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATETIME64:
+            ret += "'2299-12-31 23:59:59.99999999'::DateTime64";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL_CHAR:
+            ret += "'\\0'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_DEFAULT:
+            ret += "DEFAULT";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_STAR:
+            ret += "*";
+            break;
+    }
+    if (val.paren())
+    {
+        ret += ")";
+    }
+}
+
 CONV_FN(LiteralValue, lit_val)
 {
     using LitValType = LiteralValue::LitValOneofCase;
@@ -440,151 +602,9 @@ CONV_FN(LiteralValue, lit_val)
             ConvertToSQLString(ret, lit_val.string_lit());
             ret += '\'';
             break;
-        case LitValType::kSpecialVal: {
-            switch (lit_val.special_val())
-            {
-                case SpecialVal::VAL_NULL:
-                    ret += "NULL";
-                    break;
-                case SpecialVal::VAL_TRUE:
-                    ret += "TRUE";
-                    break;
-                case SpecialVal::VAL_FALSE:
-                    ret += "FALSE";
-                    break;
-                case SpecialVal::VAL_ZERO:
-                    ret += "0";
-                    break;
-                case SpecialVal::VAL_ONE:
-                    ret += "1";
-                    break;
-                case SpecialVal::VAL_MINUS_ONE:
-                    ret += "(-1)";
-                    break;
-                case SpecialVal::VAL_EMPTY_STRING:
-                    ret += "''";
-                    break;
-                case SpecialVal::VAL_EMPTY_ARRAY:
-                    ret += "[]";
-                    break;
-                case SpecialVal::VAL_EMPTY_TUPLE:
-                    ret += "()";
-                    break;
-                case SpecialVal::VAL_EMPTY_MAP:
-                    ret += "map()";
-                    break;
-                case SpecialVal::VAL_EMPTY_JSON:
-                    ret += "'{}'::JSON";
-                    break;
-                case SpecialVal::VAL_MINUS_ZERO_FP:
-                    ret += "(-0.0)";
-                    break;
-                case SpecialVal::VAL_PLUS_ZERO_FP:
-                    ret += "+0.0";
-                    break;
-                case SpecialVal::VAL_ZERO_FP:
-                    ret += "0.0";
-                    break;
-                case SpecialVal::VAL_INF:
-                    ret += "inf";
-                    break;
-                case SpecialVal::VAL_PLUS_INF:
-                    ret += "+inf";
-                    break;
-                case SpecialVal::VAL_MINUS_INF:
-                    ret += "(-inf)";
-                    break;
-                case SpecialVal::VAL_NAN:
-                    ret += "nan";
-                    break;
-                case SpecialVal::VAL_PLUS_NAN:
-                    ret += "+nan";
-                    break;
-                case SpecialVal::VAL_MINUS_NAN:
-                    ret += "(-nan)";
-                    break;
-                case SpecialVal::VAL_HAPPY:
-                    ret += "'😂'";
-                    break;
-                case SpecialVal::VAL_TEN_HAPPY:
-                    ret += "'😂😂😂😂😂😂😂😂😂😂'";
-                    break;
-                case SpecialVal::MIN_INT32:
-                    ret += "(";
-                    ret += std::to_string(std::numeric_limits<int32_t>::min());
-                    ret += ")";
-                    break;
-                case SpecialVal::MAX_INT32:
-                    ret += std::to_string(std::numeric_limits<int32_t>::max());
-                    break;
-                case SpecialVal::MIN_INT64:
-                    ret += "(";
-                    ret += std::to_string(std::numeric_limits<int64_t>::min());
-                    ret += ")";
-                    break;
-                case SpecialVal::MAX_INT64:
-                    ret += std::to_string(std::numeric_limits<int64_t>::max());
-                    break;
-                case SpecialVal::MIN_INT128:
-                    ret += "(-170141183460469231731687303715884105728)";
-                    break;
-                case SpecialVal::MAX_INT128:
-                    ret += "170141183460469231731687303715884105727";
-                    break;
-                case SpecialVal::MIN_INT256:
-                    ret += "(-57896044618658097711785492504343953926634992332820282019728792003956564819968)";
-                    break;
-                case SpecialVal::MAX_INT256:
-                    ret += "57896044618658097711785492504343953926634992332820282019728792003956564819967";
-                    break;
-                case SpecialVal::MAX_UINT32:
-                    ret += std::to_string(std::numeric_limits<uint32_t>::max());
-                    break;
-                case SpecialVal::MAX_UINT64:
-                    ret += std::to_string(std::numeric_limits<uint64_t>::max());
-                    break;
-                case SpecialVal::MAX_UINT128:
-                    ret += "340282366920938463463374607431768211455";
-                    break;
-                case SpecialVal::MAX_UINT256:
-                    ret += "115792089237316195423570985008687907853269984665640564039457584007913129639935";
-                    break;
-                case SpecialVal::MIN_DATE:
-                    ret += "'1970-01-01'::Date";
-                    break;
-                case SpecialVal::MAX_DATE:
-                    ret += "'2149-06-06'::Date";
-                    break;
-                case SpecialVal::MIN_DATE32:
-                    ret += "'1900-01-01'::Date32";
-                    break;
-                case SpecialVal::MAX_DATE32:
-                    ret += "'2299-12-31'::Date32";
-                    break;
-                case SpecialVal::MIN_DATETIME:
-                    ret += "'1970-01-01 00:00:00'::DateTime";
-                    break;
-                case SpecialVal::MAX_DATETIME:
-                    ret += "'2106-02-07 06:28:15'::DateTime";
-                    break;
-                case SpecialVal::MIN_DATETIME64:
-                    ret += "'1900-01-01 00:00:00'::DateTime64";
-                    break;
-                case SpecialVal::MAX_DATETIME64:
-                    ret += "'2299-12-31 23:59:59.99999999'::DateTime64";
-                    break;
-                case SpecialVal::VAL_NULL_CHAR:
-                    ret += "'\\0'";
-                    break;
-                case SpecialVal::VAL_DEFAULT:
-                    ret += "DEFAULT";
-                    break;
-                case SpecialVal::VAL_STAR:
-                    ret += "*";
-                    break;
-            }
-        }
-        break;
+        case LitValType::kSpecialVal:
+            SpecialValToString(ret, lit_val.special_val());
+            break;
         default:
             ret += "1";
     }
@@ -722,6 +742,18 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
         case BottomTypeNameType::kDates:
             ret += Dates_Name(btn.dates());
             break;
+        case BottomTypeNameType::kTimes: {
+            const TimeTp & tt = btn.times();
+
+            ret += Times_Name(tt.type());
+            if (tt.has_precision())
+            {
+                ret += "(";
+                ret += std::to_string(tt.precision() % UINT32_C(10));
+                ret += ")";
+            }
+        }
+        break;
         case BottomTypeNameType::kDatetimes: {
             const DateTimeTp & dt = btn.datetimes();
             const bool has_precision = dt.has_precision();
@@ -2096,6 +2128,19 @@ CONV_FN(JoinedTableOrFunction, jtf)
     {
         ret += " AS ";
         TableToString(ret, jtf.table_alias());
+    }
+    if (jtf.col_aliases_size())
+    {
+        ret += "(";
+        for (int i = 0; i < jtf.col_aliases_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ColumnToString(ret, 1, jtf.col_aliases(i));
+        }
+        ret += ")";
     }
     if (jtf.final())
     {
@@ -3575,16 +3620,85 @@ CONV_FN(DictionaryColumn, dc)
     }
 }
 
+CONV_FN(DictionarySourceDetails, dsd)
+{
+    bool has_something = false;
+
+    ret += DictionarySourceDetails_DictionarySourceType_Name(dsd.source());
+    ret += "(";
+    if (dsd.has_est())
+    {
+        const String & separator = dsd.source() == DictionarySourceDetails::MONGODB ? "' COLLECTION '" : "' TABLE '";
+
+        ret += "DB ";
+        FlatExprSchemaTableToString(ret, dsd.est(), separator);
+        has_something = true;
+    }
+    if (dsd.has_host())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "HOST '";
+        ret += dsd.host();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.has_port())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "PORT '";
+        ret += dsd.port();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.has_user())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "USER '";
+        ret += dsd.user();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.has_password())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "PASSWORD '";
+        ret += dsd.password();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.source() == DictionarySourceDetails::REDIS && dsd.has_redis_storage())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "STORAGE_TYPE '";
+        ret += DictionarySourceDetails_RedisStorageType_Name(dsd.redis_storage());
+        ret += "'";
+    }
+    ret += ")";
+}
+
 CONV_FN(DictionarySource, ds)
 {
     ret += " SOURCE(";
     using DictionarySourceType = DictionarySource::DictionarySourceOneofCase;
     switch (ds.dictionary_source_oneof_case())
     {
-        case DictionarySourceType::kEst:
-            ret += "CLICKHOUSE(DB ";
-            FlatExprSchemaTableToString(ret, ds.est(), "' TABLE '");
-            ret += ")";
+        case DictionarySourceType::kSource:
+            DictionarySourceDetailsToString(ret, ds.source());
             break;
         default:
             ret += "NULL()";
@@ -4479,9 +4593,6 @@ CONV_FN(BackupRestoreElement, backup)
     {
         case BackupType::kBobject:
             BackupRestoreObjectToString(ret, backup.bobject());
-            break;
-        case BackupType::kAllTemporary:
-            ret += "ALL TEMPORARY TABLES";
             break;
         default:
             ret += "ALL";

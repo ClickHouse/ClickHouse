@@ -2,11 +2,10 @@
 #include <Storages/IStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
-
-class Context;
 
 class StorageObjectStorageCluster : public IStorageCluster
 {
@@ -28,6 +27,9 @@ public:
         const ActionsDAG::Node * predicate, const ContextPtr & context, size_t number_of_replicas) const override;
 
     String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
+
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
 private:
     void updateQueryToSendIfNeeded(

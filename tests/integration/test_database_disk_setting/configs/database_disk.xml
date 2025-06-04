@@ -1,0 +1,24 @@
+<clickhouse>
+    <custom_local_disks_base_directory>/var/lib/clickhouse/disks/</custom_local_disks_base_directory>
+    <database_disk>
+        <disk>global_db_disk</disk>
+    </database_disk>
+    <storage_configuration>
+        <disks>
+            <global_db_disk>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/global_db_disk/</path>
+            </global_db_disk>
+            <db_disk>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/db_disk/</path>
+            </db_disk>
+            <s3>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </s3>
+        </disks>
+    </storage_configuration>
+</clickhouse>

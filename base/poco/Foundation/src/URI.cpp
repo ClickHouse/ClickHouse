@@ -690,7 +690,7 @@ void URI::encodePath(std::string & encodedStr) const
     if (_enable_url_encoding)
         encode(_path, RESERVED_PATH, encodedStr);
     else
-        encodedStr = _path;
+        encodedStr = encodedStr + _path;
 }
 
 void URI::decodePath(const std::string & encodedStr)

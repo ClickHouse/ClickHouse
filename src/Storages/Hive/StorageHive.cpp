@@ -23,6 +23,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Parsers/ASTExpressionList.h>
@@ -62,7 +63,7 @@ namespace Setting
 {
     extern const SettingsBool input_format_parquet_case_insensitive_column_matching;
     extern const SettingsBool input_format_orc_case_insensitive_column_matching;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsMaxThreads max_threads;
 }

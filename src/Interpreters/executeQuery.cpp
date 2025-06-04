@@ -68,6 +68,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -130,7 +131,7 @@ namespace Setting
     extern const SettingsBool log_query_settings;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -389,6 +390,8 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.used_functions = factories_info.functions;
         element.used_storages = factories_info.storages;
         element.used_table_functions = factories_info.table_functions;
+        element.used_executable_user_defined_functions = factories_info.executable_user_defined_functions;
+        element.used_sql_user_defined_functions = factories_info.sql_user_defined_functions;
     }
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();

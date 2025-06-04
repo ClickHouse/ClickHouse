@@ -34,10 +34,12 @@ std::filesystem::path normalizeDirectoryPath(const std::filesystem::path & path)
 
 MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
-    : object_storage(object_storage_), storage_path_prefix(std::move(storage_path_prefix_))
+    : object_storage(object_storage_)
+    , storage_path_prefix(std::move(storage_path_prefix_))
+    , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
 {
     if (object_metadata_cache_size)
-        object_metadata_cache.emplace(object_metadata_cache_size);
+        object_metadata_cache.emplace(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
@@ -47,7 +49,7 @@ MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction(
 
 const std::string & MetadataStorageFromPlainObjectStorage::getPath() const
 {
-    return storage_path_prefix;
+    return storage_path_full;
 }
 
 bool MetadataStorageFromPlainObjectStorage::existsFile(const std::string & path) const

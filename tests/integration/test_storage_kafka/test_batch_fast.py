@@ -2269,8 +2269,6 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         )
 
         # init PartitionManager (it starts container) earlier
-        pm = PartitionManager()
-
         instance.query(
             """
             CREATE MATERIALIZED VIEW test.consumer TO test.view AS
@@ -2283,11 +2281,14 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         # the tricky part here is that disconnect should happen after write prefix, but before write suffix
         # we have 0.25 (sleepEachRow) * 20 ( Rows ) = 5 sec window after "Polled batch of 20 messages"
         # while materialized view is working to inject zookeeper failure
-        pm.drop_instance_zk_connections(instance)
-        instance.wait_for_log_line(
-            "Error.*(Connection loss|Coordination::Exception).*while pushing to view"
-        )
-        pm.heal_all()
+        with PartitionManager() as pm:
+            pm.drop_instance_zk_connections(instance)
+            instance.wait_for_log_line(
+                "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
+                timeout=60,
+                look_behind_lines=500
+            )
+
         instance.wait_for_log_line("Committed offset 22")
 
         result = instance.query(

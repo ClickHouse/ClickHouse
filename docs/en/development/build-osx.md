@@ -47,6 +47,11 @@ cmake --build build
 # The resulting binary will be created at: build/programs/clickhouse
 ```
 
+:::note
+If you are running into `ld: archive member '/' not a mach-o file in ...` errors during linking, you may need
+to use llvm-ar by setting flag `-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar`.
+:::
+
 ## Caveats {#caveats}
 
 If you intend to run `clickhouse-server`, make sure to increase the system's `maxfiles` variable.

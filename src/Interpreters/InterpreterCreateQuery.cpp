@@ -230,23 +230,23 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                             db_num_limit, db_count);
     }
 
-    auto db_disk = getContext()->getDatabaseDisk();
+    auto default_db_disk = getContext()->getDatabaseDisk();
 
     /// Will write file with database metadata, if needed.
     String database_name_escaped = escapeForFileName(database_name);
     fs::path metadata_dir_path("metadata");
     fs::path store_dir_path("store");
-    db_disk->createDirectories(metadata_dir_path);
+    default_db_disk->createDirectories(metadata_dir_path);
     fs::path metadata_file_tmp_path = metadata_dir_path / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = metadata_dir_path / (database_name_escaped + ".sql");
 
     fs::path metadata_path;
     if (!create.storage && create.attach)
     {
-        if (!db_disk->existsFile(metadata_file_path))
+        if (!default_db_disk->existsFile(metadata_file_path))
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
         /// Short syntax: try read database definition from file
-        auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), metadata_file_path);
+        auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), default_db_disk, metadata_file_path);
         create = ast->as<ASTCreateQuery &>();
         if (create.table || !create.storage)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Metadata file {} contains incorrect CREATE DATABASE query", metadata_file_path.string());
@@ -293,7 +293,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         metadata_path = store_dir_path / DatabaseCatalog::getPathForUUID(create.uuid);
 
-        if (!create.attach && db_disk->existsDirectory(metadata_path) && !db_disk->isDirectoryEmpty(metadata_path))
+        if (!create.attach && default_db_disk->existsDirectory(metadata_path) && !default_db_disk->isDirectoryEmpty(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
     }
     else
@@ -327,7 +327,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialized_postgresql to use it");
     }
 
-    bool need_write_metadata = !create.attach || !db_disk->existsFile(metadata_file_path);
+    bool need_write_metadata = !create.attach || !default_db_disk->existsFile(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
     auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 
@@ -356,11 +356,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         String statement = statement_buf.str();
 
         /// Needed to make database creation retriable if it fails after the file is created
-        db_disk->removeFileIfExists(metadata_file_tmp_path);
+        default_db_disk->removeFileIfExists(metadata_file_tmp_path);
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         writeMetadataFile(
-            db_disk,
+            default_db_disk,
             /*file_path=*/metadata_file_tmp_path,
             /*content=*/statement,
             /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
@@ -393,7 +393,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (need_write_metadata)
         {
             /// Prevents from overwriting metadata of detached database
-            db_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
+            default_db_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
             renamed = true;
         }
     }
@@ -401,8 +401,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (renamed)
         {
-            assert(db_disk->existsFile(metadata_file_path));
-            db_disk->removeFileIfExists(metadata_file_path);
+            assert(default_db_disk->existsFile(metadata_file_path));
+            default_db_disk->removeFileIfExists(metadata_file_path);
         }
         if (added)
             DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
@@ -793,14 +793,16 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
 
                 const auto & settings = getContext()->getSettingsRef();
-                if (index_desc.type == GIN_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
+                if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental full-text index feature is disabled. Enable the setting 'allow_experimental_full_text_index' to use it");
                 /// ---
-                /// Temporary checks during a transition period. Remove this block one year after GIN indexes became GA.
+                /// Temporary checks during a transition period. Remove this block one year after text indexes became GA.
                 if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
-                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'full_text' index type is deprecated. Please use the 'gin' index type instead");
+                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'full_text' index type is deprecated. Please use the 'text' index type instead");
                 if (index_desc.type == INVERTED_INDEX_NAME && !settings[Setting::allow_experimental_inverted_index])
-                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'inverted' index type is deprecated. Please use the 'gin' index type instead");
+                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'inverted' index type is deprecated. Please use the 'text' index type instead");
+                if (index_desc.type == GIN_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
+                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'gin' index type is deprecated. Please use the 'text' index type instead");
                 /// ---
                 if (index_desc.type == "vector_similarity" && !settings[Setting::allow_experimental_vector_similarity_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental vector similarity index feature is disabled. Enable the setting 'allow_experimental_vector_similarity_index' to use it");
@@ -1565,7 +1567,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         /// Set replicated or not replicated MergeTree engine in metadata and query
         if (create.attach_as_replicated.has_value())
+        {
+            if (database->isTableExist(create.getTable(), getContext()))
+                throw Exception(
+                    ErrorCodes::TABLE_ALREADY_EXISTS,
+                    "Table {}.{} already exists",
+                    backQuoteIfNeed(create.getDatabase()),
+                    backQuoteIfNeed(create.getTable()));
             convertMergeTreeTableIfPossible(create_query, database, create.attach_as_replicated.value());
+        }
 
         if (!create.is_dictionary && create_query.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -2532,7 +2542,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
 
     /// Save new metadata
-    auto db_disk = getContext()->getDatabaseDisk();
+    auto db_disk = database->getDisk();
     String table_metadata_path = database->getObjectMetadataPath(create.getTable());
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = DB::getObjectDefinitionFromCreateQuery(create.clone());

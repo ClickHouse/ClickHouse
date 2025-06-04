@@ -1293,6 +1293,7 @@ let in_flight = false;
 async function post()
 {
     ++request_num;
+    document.body.scrollTo(0, 0);
     let query = query_area.value;
     in_flight = true;
     let run = document.getElementById('run');
@@ -1513,7 +1514,7 @@ document.addEventListener('keydown', e => {
 function transposeTableIfNeeded()
 {
     let table = document.getElementById('data-table');
-    if (table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
+    if (Object.keys(header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
 
     let heads = table.tHead.childNodes;
     let values = table.rows[0]?.cells;
