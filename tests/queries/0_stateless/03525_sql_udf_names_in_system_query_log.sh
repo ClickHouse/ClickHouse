@@ -11,10 +11,9 @@ check_sql_udf_functions() {
 
     # In order for the test to run in parallel,
     # we add the name of the database to the function name, because it has a random value.
-    suffix=$(${CLICKHOUSE_CLIENT} -q "SELECT current_database()")
     funcs=""
     for func in ${@}; do
-        funcs+="${func}_${suffix} "
+        funcs+="${func}_${CLICKHOUSE_DATABASE} "
     done
 
     for func in ${funcs}; do
