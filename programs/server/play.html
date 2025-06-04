@@ -1354,8 +1354,10 @@ function runBtnInnerText()
 async function post()
 {
     ++request_num;
+    document.body.scrollTo(0, 0);
     const query = extractQuery(query_area);
     let promise = Promise.resolve();
+
     if (!query.userSelected) {
         in_animation = true;
         const initialStart = query_area.selectionStart
@@ -1594,7 +1596,7 @@ document.addEventListener('keydown', e => {
 function transposeTableIfNeeded()
 {
     let table = document.getElementById('data-table');
-    if (table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
+    if (Object.keys(header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
 
     let heads = table.tHead.childNodes;
     let values = table.rows[0]?.cells;
