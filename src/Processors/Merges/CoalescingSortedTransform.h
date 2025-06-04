@@ -5,21 +5,19 @@
 
 namespace ProfileEvents
 {
-    extern const Event SummingSortedMilliseconds;
+    extern const Event CoalescingSortedMilliseconds;
 }
 
 namespace DB
 {
 
-/// Implementation of IMergingTransform via SummingSortedAlgorithm.
-class SummingSortedTransform final : public IMergingTransform<SummingSortedAlgorithm>
+class CoalescingSortedTransform final : public IMergingTransform<SummingSortedAlgorithm>
 {
 public:
 
-    SummingSortedTransform(
+    CoalescingSortedTransform(
         const Block & header, size_t num_inputs,
         SortDescription description_,
-        /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & partition_and_sorting_required_columns,
         const Names & partition_key_columns,
         size_t max_block_size_rows,
@@ -34,15 +32,15 @@ public:
             partition_key_columns,
             max_block_size_rows,
             max_block_size_bytes,
-            "sumWithOverflow")
+            "last_value")
     {
     }
 
-    String getName() const override { return "SummingSortedTransform"; }
+    String getName() const override { return "CoalescingSortedTransform"; }
 
     void onFinish() override
     {
-        logMergedStats(ProfileEvents::SummingSortedMilliseconds, "Summed sorted", getLogger("SummingSortedTransform"));
+        logMergedStats(ProfileEvents::CoalescingSortedMilliseconds, "Coalescing sorted", getLogger("CoalescingSortedTransform"));
     }
 };
 
