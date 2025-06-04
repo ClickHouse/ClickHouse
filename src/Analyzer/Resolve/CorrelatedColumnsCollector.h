@@ -74,4 +74,4 @@ private:
     QueryTreeNodes correlated_columns;
 };
 
-} // namespace DB
+}
