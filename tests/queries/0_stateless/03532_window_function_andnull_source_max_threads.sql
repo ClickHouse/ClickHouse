@@ -44,7 +44,7 @@ CREATE TABLE empty (n UInt64) ENGINE = MergeTree() ORDER BY n;
 --                                            (Expression)
 --                                            Resize × 2 20 → 1
 --                                              .....
-SELECT * FROM (
+SELECT trimLeft(explain) FROM (
     EXPLAIN PIPELINE
         WITH
             nums AS
