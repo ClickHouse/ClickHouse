@@ -17,18 +17,23 @@ SELECT timeSeriesInstantDeltaToGrid(10, 120, 10, 10)(timestamps, values) FROM ts
 SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 10)(timestamps, values) FROM (SELECT * FROM ts_data WHERE length(timestamps) = length(values));
 SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 10)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesResampleToGridWithStalenessIf(10, 120, 10, 10)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
+SELECT timeSeriesResampleToGridWithStalenessIf(10, 120, 10, 10)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
 
 SELECT timeSeriesRateToGrid(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesRateToGridIf(10, 120, 10, 60)(timestamps, values, toNullable(true)) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesRateToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
 
 SELECT timeSeriesDeltaToGrid(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesDeltaToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
+SELECT timeSeriesDeltaToGridIf(10, 120, 10, 60)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
 
 SELECT timeSeriesInstantRateToGrid(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesInstantRateToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
+SELECT timeSeriesInstantRateToGridIf(10, 120, 10, 60)(timestamps, values, if(length(timestamps) = length(values), true, NULL)) FROM ts_data;
 
 SELECT timeSeriesInstantDeltaToGrid(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesInstantDeltaToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
+SELECT timeSeriesInstantDeltaToGridIf(10, 120, 10, 60)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
 
 
 SELECT * FROM ts_data_nullable WHERE value IS NULL AND id < 5;
