@@ -188,16 +188,30 @@ public:
         Arena *,
         ssize_t if_argument_pos) const override
     {
-        const UInt8 * flags_data = nullptr;
+        const UInt8 * include_flags_data = nullptr;
         if (if_argument_pos >= 0)
         {
             const auto & flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             if (row_end > flags.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "row_end {} is greater than flags column size {}", row_end, flags.size());
 
-            flags_data = flags.data();
+            include_flags_data = flags.data();
         }
 
+        addBatchSinglePlaceWithFlags<true>(row_begin, row_end, place, columns, include_flags_data);
+    }
+
+    /// `flag_value_to_include` parameter determines which rows are included into result.
+    /// E.g. if we pass null_map as flags_data and then we want to include rows where null flag is false
+    /// or we can pass boolean condition column and include rows where the flag is true
+    template <bool flag_value_to_include>
+    void addBatchSinglePlaceWithFlags(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * flags_data) const
+    {
         if (Traits::array_agruments)
         {
             const auto & timestamp_column = typeid_cast<const ColumnArray &>(*columns[0]);
@@ -216,7 +230,7 @@ public:
                     const auto timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
                     const auto value_array_size = value_offsets[i] - previous_value_offset;
 
-                    if (flags_data[i])
+                    if (flags_data[i] == flag_value_to_include)
                     {
                         /// Check that timestamp and value arrays have the same size for the selected rows
                         if (timestamp_array_size != value_array_size)
@@ -264,7 +278,10 @@ public:
 
             if (flags_data)
             {
-                addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end);
+                if constexpr (flag_value_to_include)
+                    addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end);
+                else
+                    addManyNotNull(place, timestamp_data, value_data, flags_data, row_begin, row_end);
             }
             else
             {
@@ -283,26 +300,20 @@ public:
         ssize_t if_argument_pos)
         const override
     {
-        /// Nullable(Array) is not a valid type so we only handle non-array arguments here
-        if (Traits::array_agruments)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected call to addBatchSinglePlaceNotNull with array arguments");
+        const UInt8 * exclude_flags_data = null_map;    /// By default exclude using null_map
+        std::unique_ptr<UInt8[]> combined_exclude_flags;
 
-        const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
         if (if_argument_pos >= 0)
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
             const auto * if_flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            auto final_flags = std::make_unique<UInt8[]>(row_end);
+            combined_exclude_flags = std::make_unique<UInt8[]>(row_end);
             for (size_t i = row_begin; i < row_end; ++i)
-                final_flags[i] = (!null_map[i]) & !!if_flags[i];
+                combined_exclude_flags[i] = (!!null_map[i]) | !if_flags[i]; /// Exclude if NULL or if condition is false
+            exclude_flags_data = combined_exclude_flags.get();
+        }
 
-            addManyConditional(place, timestamp_column.getData().data(), value_column.getData().data(), final_flags.get(), row_begin, row_end);
-        }
-        else
-        {
-            addManyNotNull(place, timestamp_column.getData().data(), value_column.getData().data(), null_map, row_begin, row_end);
-        }
+        addBatchSinglePlaceWithFlags<false>(row_begin, row_end, place, columns, exclude_flags_data);
     }
 
     void addManyDefaults(
