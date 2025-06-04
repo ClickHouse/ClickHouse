@@ -163,8 +163,8 @@ void QueryOracle::insertOnTableOrCluster(
         /// If the table is set on cluster, always insert to all replicas/shards
         ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
 
-        cdf->set_cname(ClusterFunc::clusterAllReplicas);
-        cdf->set_ccluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
+        cdf->set_all_replicas(true);
+        cdf->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
         t.setName(cdf->mutable_tof()->mutable_est(), true);
         if (rg.nextSmallNumber() < 4)
         {
@@ -241,6 +241,7 @@ void QueryOracle::generateExportQuery(
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
     }
     ff->set_path(snfile.generic_string());
+    ff->set_fname(FileFunc_FName::FileFunc_FName_file);
 
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     if (!can_test_query_success && rg.nextSmallNumber() < 3)
@@ -488,6 +489,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             outf = OutFormat::OUT_CSV;
         }
         ff->set_outformat(outf);
+        ff->set_fname(FileFunc_FName::FileFunc_FName_file);
         sel = ins->mutable_select();
     }
 

@@ -233,7 +233,17 @@ void StatementGenerator::setTableRemote(
         bool first = true;
         const ServerCredentials & sc = fc.minio_server.value();
         S3Func * sfunc = tfunc->mutable_s3();
+        const std::optional<String> & cluster = t.getCluster();
 
+        if (use_cluster && cluster.has_value())
+        {
+            sfunc->set_fname(S3Func_FName::S3Func_FName_s3Cluster);
+            sfunc->mutable_cluster()->set_cluster(cluster.value());
+        }
+        else
+        {
+            sfunc->set_fname(S3Func_FName::S3Func_FName_s3);
+        }
         sfunc->set_resource(
             "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
             + (t.isS3QueueEngine() ? "/" : "") + (rg.nextBool() ? "*" : ""));
@@ -282,8 +292,8 @@ void StatementGenerator::setTableRemote(
         {
             ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
 
-            cdf->set_cname(ClusterFunc::clusterAllReplicas);
-            cdf->set_ccluster(cluster.value());
+            cdf->set_all_replicas(true);
+            cdf->mutable_cluster()->set_cluster(cluster.value());
             t.setName(cdf->mutable_tof()->mutable_est(), true);
             if (rg.nextSmallNumber() < 4)
             {
@@ -667,11 +677,10 @@ bool StatementGenerator::joinedTableOrFunction(
         const uint32_t recurse = 10 * static_cast<uint32_t>(can_recurse);
         const uint32_t pspace = remote_table + remote_view + remote_dictionary + recurse;
         std::uniform_int_distribution<uint32_t> ndist(1, pspace);
-        std::uniform_int_distribution<uint32_t> cdf_range(1, static_cast<uint32_t>(ClusterFunc::CName_MAX));
         const uint32_t nopt2 = ndist(rg.generator);
 
-        cdf->set_cname(static_cast<ClusterFunc_CName>(cdf_range(rg.generator)));
-        cdf->set_ccluster(rg.pickRandomly(fc.clusters));
+        cdf->set_all_replicas(rg.nextBool());
+        cdf->mutable_cluster()->set_cluster(rg.pickRandomly(fc.clusters));
         if (remote_table && nopt2 < (remote_table + 1))
         {
             t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();

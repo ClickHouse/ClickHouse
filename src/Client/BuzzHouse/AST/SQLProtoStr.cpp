@@ -87,10 +87,14 @@ CONV_FN(Function, func)
     ret += func.function();
 }
 
-CONV_FN(Cluster, clust)
+void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
-    ret += " ON CLUSTER '";
-    ret += clust.cluster();
+    if (clause)
+    {
+        ret += " ON CLUSTER ";
+    }
+    ret += "'";
+    ret += cl.cluster();
     ret += "'";
 }
 
@@ -1744,7 +1748,14 @@ CONV_FN(JoinClause, jc)
 
 CONV_FN(FileFunc, ff)
 {
-    ret += "file('";
+    ret += FileFunc_FName_Name(ff.fname());
+    ret += "(";
+    if (ff.has_cluster() && ff.fname() == FileFunc_FName_fileCluster)
+    {
+        ClusterToString(ret, false, ff.cluster());
+        ret += ", ";
+    }
+    ret += "'";
     ret += ff.path();
     ret += "', '";
     if (ff.has_informat())
@@ -1928,7 +1939,14 @@ CONV_FN(SQLiteFunc, sfunc)
 
 CONV_FN(S3Func, sfunc)
 {
-    ret += "s3('";
+    ret += S3Func_FName_Name(sfunc.fname());
+    ret += "(";
+    if (sfunc.has_cluster() && sfunc.fname() == S3Func_FName_s3Cluster)
+    {
+        ClusterToString(ret, false, sfunc.cluster());
+        ret += ", ";
+    }
+    ret += "'";
     ret += sfunc.resource();
     ret += "', '";
     ret += sfunc.user();
@@ -1993,10 +2011,14 @@ CONV_FN(ClusterFunc, cluster)
 {
     const TableOrFunction & tof = cluster.tof();
 
-    ret += ClusterFunc_CName_Name(cluster.cname());
-    ret += "('";
-    ret += cluster.ccluster();
-    ret += "', ";
+    ret += "cluster";
+    if (cluster.all_replicas())
+    {
+        ret += "AllReplicas";
+    }
+    ret += "(";
+    ClusterToString(ret, false, cluster.cluster());
+    ret += ", ";
     TableOrFunctionToString(ret, true, tof);
     if (tof.has_est() && cluster.has_sharding_key())
     {
@@ -2606,7 +2628,7 @@ CONV_FN(CreateDatabase, create_database)
     DatabaseToString(ret, create_database.database());
     if (create_database.has_cluster())
     {
-        ClusterToString(ret, create_database.cluster());
+        ClusterToString(ret, true, create_database.cluster());
     }
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
@@ -2623,7 +2645,7 @@ CONV_FN(CreateFunction, create_function)
     FunctionToString(ret, create_function.function());
     if (create_function.has_cluster())
     {
-        ClusterToString(ret, create_function.cluster());
+        ClusterToString(ret, true, create_function.cluster());
     }
     ret += " AS ";
     LambdaExprToString(ret, create_function.lexpr());
@@ -3072,7 +3094,7 @@ CONV_FN(CreateTable, create_table)
     ExprSchemaTableToString(ret, create_table.est());
     if (create_table.has_cluster())
     {
-        ClusterToString(ret, create_table.cluster());
+        ClusterToString(ret, true, create_table.cluster());
     }
     ret += " ";
     if (create_table.has_table_def())
@@ -3148,7 +3170,7 @@ CONV_FN(Drop, dt)
     }
     if (dt.has_cluster())
     {
-        ClusterToString(ret, dt.cluster());
+        ClusterToString(ret, true, dt.cluster());
     }
     if (dt.sync())
     {
@@ -3280,7 +3302,7 @@ CONV_FN(LightDelete, del)
     ExprSchemaTableToString(ret, del.est());
     if (del.has_cluster())
     {
-        ClusterToString(ret, del.cluster());
+        ClusterToString(ret, true, del.cluster());
     }
     if (del.has_single_partition())
     {
@@ -3318,7 +3340,7 @@ CONV_FN(Truncate, trunc)
     }
     if (trunc.has_cluster())
     {
-        ClusterToString(ret, trunc.cluster());
+        ClusterToString(ret, true, trunc.cluster());
     }
     if (trunc.sync())
     {
@@ -3399,7 +3421,7 @@ CONV_FN(OptimizeTable, ot)
     ExprSchemaTableToString(ret, ot.est());
     if (ot.has_cluster())
     {
-        ClusterToString(ret, ot.cluster());
+        ClusterToString(ret, true, ot.cluster());
     }
     if (ot.has_single_partition())
     {
@@ -3457,7 +3479,7 @@ CONV_FN(Exchange, et)
     SQLObjectNameToString(ret, et.object2());
     if (et.has_cluster())
     {
-        ClusterToString(ret, et.cluster());
+        ClusterToString(ret, true, et.cluster());
     }
     if (et.has_setting_values())
     {
@@ -3544,7 +3566,7 @@ CONV_FN(CreateView, create_view)
     ExprSchemaTableToString(ret, create_view.est());
     if (create_view.has_cluster())
     {
-        ClusterToString(ret, create_view.cluster());
+        ClusterToString(ret, true, create_view.cluster());
     }
     if (materialized)
     {
@@ -3769,7 +3791,7 @@ CONV_FN(CreateDictionary, create_dictionary)
     ExprSchemaTableToString(ret, create_dictionary.est());
     if (create_dictionary.has_cluster())
     {
-        ClusterToString(ret, create_dictionary.cluster());
+        ClusterToString(ret, true, create_dictionary.cluster());
     }
     ret += " (";
     DictionaryColumnToString(ret, create_dictionary.col());
@@ -4168,7 +4190,7 @@ CONV_FN(Alter, alter)
     SQLObjectNameToString(ret, alter.object());
     if (alter.has_cluster())
     {
-        ClusterToString(ret, alter.cluster());
+        ClusterToString(ret, true, alter.cluster());
     }
     ret += " ";
     AlterItemToString(ret, alter.alter());
@@ -4192,7 +4214,7 @@ CONV_FN(Attach, at)
     SQLObjectNameToString(ret, at.object());
     if (at.has_cluster())
     {
-        ClusterToString(ret, at.cluster());
+        ClusterToString(ret, true, at.cluster());
     }
     if (at.sobject() != SQLObject::DATABASE && at.has_as_replicated())
     {
@@ -4215,7 +4237,7 @@ CONV_FN(Detach, dt)
     SQLObjectNameToString(ret, dt.object());
     if (dt.has_cluster())
     {
-        ClusterToString(ret, dt.cluster());
+        ClusterToString(ret, true, dt.cluster());
     }
     if (dt.permanently())
     {
@@ -4279,7 +4301,7 @@ static void SystemCommandOnCluster(String & ret, const String & desc, const Syst
     ret += desc;
     if (cmd.has_cluster())
     {
-        ClusterToString(ret, cmd.cluster());
+        ClusterToString(ret, true, cmd.cluster());
     }
     ret += " ";
     ExprSchemaTableToString(ret, est);
@@ -4313,7 +4335,7 @@ CONV_FN(SystemCommand, cmd)
             ret += "RELOAD FUNCTION";
             if (cmd.has_cluster())
             {
-                ClusterToString(ret, cmd.cluster());
+                ClusterToString(ret, true, cmd.cluster());
             }
             ret += " ";
             FunctionToString(ret, cmd.reload_function());
@@ -4415,7 +4437,7 @@ CONV_FN(SystemCommand, cmd)
             ret += "SYNC DATABASE REPLICA";
             if (cmd.has_cluster())
             {
-                ClusterToString(ret, cmd.cluster());
+                ClusterToString(ret, true, cmd.cluster());
             }
             ret += " ";
             DatabaseToString(ret, cmd.sync_replicated_database());
@@ -4552,7 +4574,7 @@ CONV_FN(SystemCommand, cmd)
     }
     if (can_set_cluster && cmd.has_cluster())
     {
-        ClusterToString(ret, cmd.cluster());
+        ClusterToString(ret, true, cmd.cluster());
     }
 }
 
@@ -4629,7 +4651,7 @@ CONV_FN(BackupRestore, backup)
     }
     if (backup.has_cluster())
     {
-        ClusterToString(ret, backup.cluster());
+        ClusterToString(ret, true, backup.cluster());
     }
     ret += " ";
     ret += command == BackupRestore_BackupCommand_BACKUP ? "TO" : "FROM";
@@ -4676,7 +4698,7 @@ CONV_FN(Rename, ren)
     SQLObjectNameToString(ret, ren.new_object());
     if (ren.has_cluster())
     {
-        ClusterToString(ret, ren.cluster());
+        ClusterToString(ret, true, ren.cluster());
     }
     if (ren.has_setting_values())
     {

@@ -2443,13 +2443,19 @@ enum FileCompression {
 }
 
 message FileFunc {
-    required string path = 1;
-    oneof file_func_oneof {
-        InFormat informat = 2;
-        OutFormat outformat = 3;
+    enum FName {
+        file = 1;
+        fileCluster = 2;
     }
-    optional Expr structure = 4;
-    optional FileCompression fcomp = 5;
+    required FName fname = 1;
+    optional Cluster cluster = 2;
+    required string path = 3;
+    oneof file_func_oneof {
+        InFormat informat = 4;
+        OutFormat outformat = 5;
+    }
+    optional Expr structure = 6;
+    optional FileCompression fcomp = 7;
 }
 
 message FormatFunc {
@@ -2513,12 +2519,18 @@ message SQLiteFunc {
 }
 
 message S3Func {
-    required string resource = 1;
-    required string user = 2;
-    required string password = 3;
-    required InOutFormat format = 4;
-    required Expr structure = 5;
-    optional string fcomp = 6;
+    enum FName {
+        s3 = 1;
+        s3Cluster = 2;
+    }
+    required FName fname = 1;
+    optional Cluster cluster = 2;
+    required string resource = 3;
+    required string user = 4;
+    required string password = 5;
+    required InOutFormat format = 6;
+    required Expr structure = 7;
+    optional string fcomp = 8;
 }
 
 message SQLTableFuncCall {
@@ -2532,12 +2544,8 @@ message MergeFunc {
 }
 
 message ClusterFunc {
-    enum CName {
-        cluster = 1;
-        clusterAllReplicas = 2;
-    }
-    required CName cname = 1;
-    required string ccluster = 2;
+    optional bool all_replicas = 1;
+    required Cluster cluster = 2;
     required TableOrFunction tof = 3;
     optional string sharding_key = 4;
 }
