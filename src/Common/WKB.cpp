@@ -1,6 +1,7 @@
 #include <variant>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
+#include "Core/Field.h"
 #include <Functions/geometryConverters.h>
 #include <base/types.h>
 
@@ -13,6 +14,26 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+String getGeometricObjectTypeName(const GeometricObject & object)
+{
+    if (std::holds_alternative<CartesianPoint>(object))
+        return "Point";
+    else if (std::holds_alternative<LineString<CartesianPoint>>(object))
+        return "LineString";
+    else if (std::holds_alternative<MultiLineString<CartesianPoint>>(object))
+        return "MultiLineString";
+    else if (std::holds_alternative<Polygon<CartesianPoint>>(object))
+        return "Polygon";
+    else if (std::holds_alternative<MultiPolygon<CartesianPoint>>(object))
+        return "Polygon";
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometric object");
+}
+
 }
 
 inline CartesianPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
@@ -39,6 +60,21 @@ inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endia
     return line;
 }
 
+inline Ring<CartesianPoint> readRingWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+{
+    UInt32 num_points;
+    readBinaryEndian(num_points, in_buffer, endian_to_read);
+
+    Ring<CartesianPoint> ring;
+    ring.reserve(num_points);
+
+    for (UInt32 i = 0; i < num_points; ++i)
+    {
+        ring.push_back(readPointWKB(in_buffer, endian_to_read));
+    }
+    return ring;
+}
+
 inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
     UInt32 num_rings;
@@ -49,20 +85,10 @@ inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endia
         polygon.inners().reserve(num_rings - 1);
     for (UInt32 i = 0; i < num_rings; ++i)
     {
-        auto parsed_points = readLineWKB(in_buffer, endian_to_read);
         if (i == 0)
-        {
-            polygon.outer().reserve(parsed_points.size());
-            for (auto && point : parsed_points)
-                polygon.outer().push_back(point);
-        }
+            polygon.outer() = readRingWKB(in_buffer, endian_to_read);
         else
-        {
-            polygon.inners().push_back({});
-            polygon.inners().back().reserve(parsed_points.size());
-            for (auto && point : parsed_points)
-                polygon.inners().back().push_back(point);
-        }
+            polygon.inners().push_back(readRingWKB(in_buffer, endian_to_read));
     }
     return polygon;
 }
@@ -81,7 +107,7 @@ MultiLineString<CartesianPoint> readMultiLineStringWKB(ReadBuffer & in_buffer, s
     {
         auto current_line = parseWKBFormat(in_buffer);
         if (!std::holds_alternative<LineString<CartesianPoint>>(current_line))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MultiLineString contains an internal type that differs from LineString");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MultiLineString contains an internal type {} that differs from LineString", getGeometricObjectTypeName(current_line));
         multiline.push_back(std::get<LineString<CartesianPoint>>(current_line));
     }
     return multiline;
@@ -99,7 +125,7 @@ MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, std::en
     {
         auto current_polygon = parseWKBFormat(in_buffer);
         if (!std::holds_alternative<Polygon<CartesianPoint>>(current_polygon))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MultiPolygon contains an internal type that differs from Polygon");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MultiPolygon contains an internal type {} that differs from Polygon", getGeometricObjectTypeName(current_polygon));
         multipolygon.push_back(std::get<Polygon<CartesianPoint>>(current_polygon));
     }
     return multipolygon;

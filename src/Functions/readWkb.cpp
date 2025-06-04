@@ -3,18 +3,15 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
-#include <Common/Exception.h>
-#include <Common/WKB.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <Common/Exception.h>
+#include <Common/WKB.h>
 
 #include <memory>
-#include <string>
-#include <type_traits>
-#include <variant>
-
 
 namespace DB
 {
@@ -27,7 +24,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 namespace
 {
 
-template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
+template <class ReturnDataTypeName, class Geometry, class Serializer, class NameHolder>
 class FunctionReadWKB : public IFunction
 {
 public:
@@ -35,10 +32,7 @@ public:
 
     static constexpr const char * name = NameHolder::name;
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -52,7 +46,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
         }
 
-        return DataTypeFactory::instance().get(DataTypeName().getName());
+        return DataTypeFactory::instance().get(ReturnDataTypeName().getName());
     }
 
     ColumnPtr
@@ -72,7 +66,10 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReadWKB<DataTypeName, Geometry, Serializer, NameHolder>>(); }
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionReadWKB<ReturnDataTypeName, Geometry, Serializer, NameHolder>>();
+    }
 
 private:
     template <typename T>
@@ -82,7 +79,7 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto str = column.getDataAt(i);
-            ReadBuffer in_buffer(const_cast<char*>(str.data), str.size, 0);
+            ReadBufferFromString in_buffer(std::string_view(str.data, str.size));
 
             auto object = parseWKBFormat(in_buffer);
             auto boost_object = std::get<Geometry>(object);

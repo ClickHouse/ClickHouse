@@ -6,7 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include "Functions/geometryConverters.h"
+#include <Functions/geometryConverters.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -151,6 +151,19 @@ inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer)
     return ls;
 }
 
+inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer)
+{
+    Ring<CartesianPoint> ring;
+    readOpenBracket(in_buffer);
+    while (true)
+    {
+        ring.push_back(parseWKTPoint(in_buffer));
+        if (readItemEnding(in_buffer))
+            break;
+    }
+    return ring;
+}
+
 inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
 {
     Polygon<CartesianPoint> poly;
@@ -158,21 +171,15 @@ inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
     bool should_complete_outer = true;
     while (true)
     {
-        auto parsed_line = parseWKTLine(in_buffer);
+        auto parsed_line = parseWKTRing(in_buffer);
         if (should_complete_outer)
         {
             should_complete_outer = false;
-
-            poly.outer().reserve(parsed_line.size());
-            for (auto&& point : parsed_line)
-                poly.outer().push_back(point);
+            poly.outer() = std::move(parsed_line);
         }
         else
         {
-            poly.inners().push_back({});
-            poly.inners().back().reserve(parsed_line.size());
-            for (auto&& point : parsed_line)
-                poly.inners().back().push_back(point);
+            poly.inners().push_back(std::move(parsed_line));
         }
         if (readItemEnding(in_buffer))
             break;
