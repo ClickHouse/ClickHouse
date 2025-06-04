@@ -100,6 +100,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -4324,11 +4325,14 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
     }
 }
 
-MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
+void MergeTreeData::PartsTemporaryRename::rollBackAll()
 {
     // TODO what if server had crashed before this destructor was called?
     if (!renamed)
         return;
+
+    std::exception_ptr first_exception;
+
     for (const auto & [old_name, new_name, disk] : old_and_new_names)
     {
         if (old_name.empty())
@@ -4342,7 +4346,28 @@ MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+
+            if(!first_exception)
+                first_exception = std::current_exception();
         }
+    }
+
+    old_and_new_names.clear();
+    renamed = false;
+
+    if (first_exception)
+        std::rethrow_exception(first_exception);
+}
+
+MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
+{
+    try
+    {
+        rollBackAll();
+    }
+    catch (...)
+    {
+        /* no op, exception is logged already */
     }
 }
 

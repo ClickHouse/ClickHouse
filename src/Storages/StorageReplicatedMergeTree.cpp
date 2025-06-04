@@ -2250,28 +2250,60 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     if (detached_parts.empty())
         return {};
 
-    auto & detached_part_info = detached_parts.front();
-
-    rename_parts.addPart(detached_part_info.dir_name, "attaching_" + detached_part_info.dir_name, detached_part_info.disk);
-
-    try
+    for (auto & detached_part_info : detached_parts)
     {
-        rename_parts.tryRenameAll();
+        chassert(rename_parts.old_and_new_names.empty());
+        rename_parts.addPart(detached_part_info.dir_name, "attaching_" + detached_part_info.dir_name, detached_part_info.disk);
+
+        try
+        {
+            rename_parts.tryRenameAll();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("data race is possible when moving detached part, part {} is ignored", detached_part_info.dir_name));
+            rename_parts.rollBackAll();
+            continue;
+        }
+
+        const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
+        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_name, getReadSettings())
+            .withPartFormatFromDisk()
+            .build();
+
+        try
+        {
+            loadPartAndFixMetadataImpl(part, getContext());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("part is broken, part {} is ignored", detached_part_info.dir_name));
+
+            try
+            {
+                auto broke_name = "broken_" + detached_part_info.dir_name;
+                detached_part_info.disk->moveFile(
+                    fs::path(relative_data_path) / DETACHED_DIR_NAME / rename_parts.old_and_new_names.front().new_name,
+                    fs::path(relative_data_path) / DETACHED_DIR_NAME / broke_name);
+
+                rename_parts.old_and_new_names.front().old_name.clear();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("fail to move broken part {}", detached_part_info.dir_name));
+            }
+
+            // if part is moved to broke sucsesfully than rollBackAll is no op
+            // otherwise try to move it back, more likely the same exception would be thrown
+            rename_parts.rollBackAll();
+            continue;
+        }
+
+        return part;
+
     }
-    catch (...)
-    {
-        tryLogCurrentException(log, fmt::format("data race is possible when moving detached part, part {} is ignored", detached_part_info.dir_name));
-        return {};
-    }
 
-    const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
-    auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_name, getReadSettings())
-        .withPartFormatFromDisk()
-        .build();
-
-    loadPartAndFixMetadataImpl(part, getContext());
-
-    return part;
+    return {};
 }
 
 bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)

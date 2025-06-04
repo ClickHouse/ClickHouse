@@ -338,6 +338,8 @@ public:
         /// Renames part from old_name to new_name
         void tryRenameAll();
 
+        void rollBackAll();
+
         /// Renames all added parts from new_name to old_name if old name is not empty
         ~PartsTemporaryRename();
 
