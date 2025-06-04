@@ -833,65 +833,37 @@ static void analyzeCommands(MutationContext & ctx, const AlterConversionsPtr & a
 }
 
 /// Get the columns list of the resulting part in the same order as storage_columns.
-static std::pair<NamesAndTypesList, SerializationInfoByName>
-getColumnsForNewDataPart(
-    MergeTreeData::DataPartPtr source_part,
-    const Block & updated_header,
-    NamesAndTypesList storage_columns,
-    const SerializationInfoByName & serialization_infos,
-    const MutationCommands & commands_for_interpreter,
-    const MutationCommands & commands_for_removes)
+static std::pair<NamesAndTypesList, SerializationInfoByName> getColumnsForNewDataPart(const MutationContext & ctx)
 {
-    MutationCommands all_commands;
-    all_commands.insert(all_commands.end(), commands_for_interpreter.begin(), commands_for_interpreter.end());
-    all_commands.insert(all_commands.end(), commands_for_removes.begin(), commands_for_removes.end());
-
     NameSet removed_columns;
     NameToNameMap renamed_columns_to_from;
     NameToNameMap renamed_columns_from_to;
-    ColumnsDescription part_columns(source_part->getColumns());
-    NamesAndTypesList system_columns;
+    const auto & part_columns = ctx.source_part->getColumnsDescription();
 
-    bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
-
-    bool deleted_mask_updated = false;
-    bool has_delete_command = false;
-
-    NameSet storage_columns_set;
-    for (const auto & [name, _] : storage_columns)
-        storage_columns_set.insert(name);
-
-    for (const auto & command : all_commands)
+    for (const auto & command : ctx.for_file_renames)
     {
-        if (command.type == MutationCommand::UPDATE)
-        {
-            for (const auto & [column_name, _] : command.column_to_update_expression)
-            {
-                if (column_name == RowExistsColumn::name
-                    && supports_lightweight_deletes
-                    && !storage_columns_set.contains(RowExistsColumn::name))
-                    deleted_mask_updated = true;
-            }
-        }
-
-        if (command.type == MutationCommand::DELETE || command.type == MutationCommand::APPLY_DELETED_MASK)
-            has_delete_command = true;
-
-        /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
             continue;
 
         if (command.type == MutationCommand::DROP_COLUMN)
+        {
             removed_columns.insert(command.column_name);
-
-        if (command.type == MutationCommand::RENAME_COLUMN)
+        }
+        else if (command.type == MutationCommand::RENAME_COLUMN)
         {
             renamed_columns_to_from.emplace(command.rename_to, command.column_name);
             renamed_columns_from_to.emplace(command.column_name, command.rename_to);
         }
     }
 
-    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
+    NamesAndTypesList storage_columns = ctx.storage_columns;
+    NameSet storage_columns_set = storage_columns.getNameSet();
+
+    bool deleted_mask_updated = ctx.mutated_data.has_lightweight_delete
+        && ctx.source_part->supportLightweightDeleteMutate()
+        && !storage_columns_set.contains(RowExistsColumn::name);
+
+    auto persistent_virtuals = ctx.data->getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
 
     for (const auto & [name, type] : persistent_virtuals)
     {
@@ -900,7 +872,7 @@ getColumnsForNewDataPart(
 
         bool need_column = false;
         if (name == RowExistsColumn::name)
-            need_column = deleted_mask_updated || (part_columns.has(name) && !has_delete_command);
+            need_column = deleted_mask_updated || (part_columns.has(name) && !ctx.mutated_data.affects_all_columns);
         else
             need_column = part_columns.has(name);
 
@@ -912,6 +884,8 @@ getColumnsForNewDataPart(
     }
 
     SerializationInfoByName new_serialization_infos;
+    const auto & serialization_infos = ctx.source_part->getSerializationInfos();
+
     for (const auto & [name, old_info] : serialization_infos)
     {
         auto it = renamed_columns_from_to.find(name);
@@ -923,19 +897,19 @@ getColumnsForNewDataPart(
 
         /// In compact part we read all columns and all of them are in @updated_header.
         /// But in wide part we must keep serialization infos for columns that are not touched by mutation.
-        if (!updated_header.has(new_name))
+        if (!ctx.updated_header.has(new_name))
         {
-            if (isWidePart(source_part))
+            if (isWidePart(ctx.source_part))
                 new_serialization_infos.emplace(new_name, old_info);
             continue;
         }
 
         auto old_type = part_columns.getPhysical(name).type;
-        auto new_type = updated_header.getByName(new_name).type;
+        auto new_type = ctx.updated_header.getByName(new_name).type;
 
         SerializationInfo::Settings settings
         {
-            .ratio_of_defaults_for_sparse = (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            .ratio_of_defaults_for_sparse = (*ctx.data->getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
             .choose_kind = false
         };
 
@@ -954,19 +928,19 @@ getColumnsForNewDataPart(
     }
 
     /// In compact parts we read all columns, because they all stored in a single file
-    if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
-        return {updated_header.getNamesAndTypesList(), new_serialization_infos};
+    if (ctx.execution_mode == MutationContext::Mode::AllColumns)
+        return {ctx.updated_header.getNamesAndTypesList(), new_serialization_infos};
 
-    const auto & source_columns = source_part->getColumns();
+    const auto & source_columns = ctx.source_part->getColumns();
     std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
     for (const auto & it : source_columns)
         source_columns_name_to_type[it.name] = it.type;
 
     for (auto it = storage_columns.begin(); it != storage_columns.end();)
     {
-        if (updated_header.has(it->name))
+        if (ctx.updated_header.has(it->name))
         {
-            auto updated_type = updated_header.getByName(it->name).type;
+            auto updated_type = ctx.updated_header.getByName(it->name).type;
             if (updated_type != it->type)
                 it->type = updated_type;
             ++it;
@@ -1008,7 +982,7 @@ getColumnsForNewDataPart(
                         ErrorCodes::LOGICAL_ERROR,
                         "Incorrect mutation commands, trying to rename column {} to {}, "
                         "but part {} already has column {}",
-                        renamed_columns_to_from[it->name], it->name, source_part->name, it->name);
+                        renamed_columns_to_from[it->name], it->name, ctx.source_part->name, it->name);
 
                 /// Column was renamed and no other column renamed to it's name
                 /// or column is dropped.
@@ -1018,7 +992,6 @@ getColumnsForNewDataPart(
                 }
                 else
                 {
-
                     if (was_removed)
                     { /// DROP COLUMN xxx, RENAME COLUMN yyy TO xxx
                         auto renamed_from = renamed_columns_to_from.at(it->name);
@@ -1164,7 +1137,6 @@ static NameSet collectFilesToSkip(
         auto new_stream_counts = getStreamCounts(new_part, source_part->checksums, new_part->getColumns().getNames());
         auto source_updated_stream_counts = getStreamCounts(source_part, source_part->checksums, updated_header.getNames());
         auto new_updated_stream_counts = getStreamCounts(new_part, source_part->checksums, updated_header.getNames());
-
 
         /// Skip all modified files in new part.
         for (const auto & [stream_name, _] : new_updated_stream_counts)
@@ -1907,24 +1879,10 @@ private:
         MutationHelpers::addTransformToBuildTTLs(builder, *ctx);
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
-        bool has_delete = false;
-
-        for (auto & command_for_interpreter : ctx->for_interpreter)
-        {
-            if (command_for_interpreter.type == MutationCommand::DELETE
-                || command_for_interpreter.type == MutationCommand::APPLY_DELETED_MASK)
-            {
-                has_delete = true;
-                break;
-            }
-        }
-
-        bool has_ttl = !ctx->ttls_to_materialize.empty() || !ctx->ttls_to_calculate.empty();
-
         MergeTreeIndexGranularityPtr index_granularity_ptr;
 
         /// Reuse source part granularity if mutation does not change number of rows
-        if (!has_delete && !has_ttl)
+        if (!ctx->mutated_data.affects_all_columns)
         {
             index_granularity_ptr = ctx->source_part->index_granularity;
         }
@@ -1960,7 +1918,6 @@ private:
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
     }
-
 
     void finalize()
     {
@@ -2178,7 +2135,6 @@ private:
             part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
         }
     }
-
 
     void finalize()
     {
@@ -2569,9 +2525,7 @@ bool MutateTask::prepare()
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
-    auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(
-        ctx->source_part, ctx->updated_header, ctx->storage_columns,
-        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames);
+    auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(*ctx);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
