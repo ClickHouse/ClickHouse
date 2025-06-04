@@ -462,7 +462,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     }
     else
     {
-        rmt->restoreMetadataInZooKeeper(/* zookeeper_retries_info = */ {});
+        rmt->restoreMetadataInZooKeeper(/* zookeeper_retries_info = */ {}, false);
         LOG_INFO
         (
             log,

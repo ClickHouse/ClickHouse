@@ -24,7 +24,7 @@ def started_cluster():
 
 def test_recovery_with_flag(started_cluster):
 
-    ch_node.query("DROP TABLE IF EXISTS test_recovery_with_flag")
+    ch_node.query("DROP TABLE IF EXISTS test_recovery_with_flag SYNC")
     ch_node.query(
         """CREATE TABLE test_recovery_with_flag
         (
@@ -35,6 +35,8 @@ def test_recovery_with_flag(started_cluster):
     """
     )
 
+    ch_node.query("SELECT count() FROM test_recovery_with_flag")
+
     is_readonly = ch_node.query(
         "SELECT is_readonly FROM system.replicas WHERE table = 'test_recovery_with_flag'"
     )
@@ -44,8 +46,10 @@ def test_recovery_with_flag(started_cluster):
 
     zk = cluster.get_kazoo_client("zoo1")
     zk.delete("/clickhouse", recursive=True)
+    zk.stop()
 
     ch_node.start_clickhouse()
+    ch_node.query("SELECT count() FROM test_recovery_with_flag")
 
     is_readonly = ch_node.query(
         "SELECT is_readonly FROM system.replicas WHERE table = 'test_recovery_with_flag'"
@@ -59,10 +63,11 @@ def test_recovery_with_flag(started_cluster):
     )
 
     ch_node.start_clickhouse()
+    ch_node.query("SELECT count() FROM test_recovery_with_flag")
 
     is_readonly = ch_node.query(
-        "SELECT is_readonly FROM system.replicas WHERE table = 'test_recovery_with_flag'"
+        "SELECT is_readonly, zookeeper_exception FROM system.replicas WHERE table = 'test_recovery_with_flag'"
     )
-    assert is_readonly == "0\n"
+    assert is_readonly == "0\t\n"
 
-    ch_node.query("DROP TABLE IF EXISTS test_recovery_with_flag")
+    ch_node.query("DROP TABLE IF EXISTS test_recovery_with_flag SYNC")
