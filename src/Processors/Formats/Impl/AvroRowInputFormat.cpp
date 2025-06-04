@@ -6,6 +6,7 @@
 #include <Core/Field.h>
 
 #include <Common/CacheBase.h>
+#include <Common/CurrentMetrics.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/HTTPCommon.h>
@@ -19,13 +20,13 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include "DataTypes/DataTypeLowCardinality.h"
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
-#include "DataTypes/DataTypeVariant.h"
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
@@ -53,6 +54,14 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric AvroSchemaCacheBytes;
+    extern const Metric AvroSchemaCacheCells;
+    extern const Metric AvroSchemaRegistryCacheBytes;
+    extern const Metric AvroSchemaRegistryCacheCells;
+}
 
 namespace DB
 {
@@ -1040,7 +1049,7 @@ size_t AvroRowInputFormat::countRows(size_t max_block_size)
 
 #define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
 /// Cache of Schema Registry URL -> SchemaRegistry
-static CacheBase<std::string, ConfluentSchemaRegistry> schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
+static CacheBase<std::string, ConfluentSchemaRegistry> schema_registry_cache(CurrentMetrics::AvroSchemaRegistryCacheBytes, CurrentMetrics::AvroSchemaRegistryCacheCells, SCHEMA_REGISTRY_CACHE_MAX_SIZE);
 
 static std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
 {
