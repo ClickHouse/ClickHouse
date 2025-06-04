@@ -779,7 +779,6 @@ Chunk StorageJoin::getChunkByKeys(const std::vector<Field> & keys, const Names &
     Block filtered_block;
     for (const auto & name: column_names)
     {
-        std::cerr << "cur_sample_block.has(name): " << cur_sample_block.has(name) << std::endl;
         if (cur_sample_block.has(name))
         {
             filtered_block.insert(cur_sample_block.getByName(name));

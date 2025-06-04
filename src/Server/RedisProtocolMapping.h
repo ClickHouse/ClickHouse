@@ -13,8 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int INVALID_STATE;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace RedisProtocol

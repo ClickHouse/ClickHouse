@@ -25,6 +25,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_STATE;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int INVALID_CONFIG_PARAMETER;
+}
+
 RedisHandler::RedisHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, RedisProtocol::ConfigPtr config_)
     : Poco::Net::TCPServerConnection(socket_), server(server_), tcp_server(tcp_server_), config(config_)
 {

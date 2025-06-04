@@ -14,6 +14,7 @@
 
 namespace DB
 {
+
 class ReadBufferFromPocoSocket;
 class Session;
 class TCPServer;

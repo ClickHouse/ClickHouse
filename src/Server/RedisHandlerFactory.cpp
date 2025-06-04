@@ -9,6 +9,11 @@
 
 namespace DB
 {
+    namespace ErrorCodes
+    {
+        extern const int INVALID_CONFIG_PARAMETER;
+    }
+
     RedisHandlerFactory::RedisHandlerFactory(IServer &_server) :
         server(_server), logger(&Poco::Logger::get("RedisHandlerFactory"))
     {

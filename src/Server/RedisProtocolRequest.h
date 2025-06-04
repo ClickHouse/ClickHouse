@@ -14,7 +14,6 @@ namespace DB
         extern const int BAD_ARGUMENTS;
         extern const int UNKNOWN_PACKET_FROM_CLIENT;
         extern const int UNEXPECTED_PACKET_FROM_CLIENT;
-        extern const int NOT_IMPLEMENTED;
     }
 
     namespace RedisProtocol
@@ -297,7 +296,8 @@ namespace DB
             {
                 Reader reader(&in);
                 keys.reserve(request.getCommandLen() - 1);
-                for (Int64 i = 1; i < request.getCommandLen(); ++i) {
+                for (Int64 i = 1; i < request.getCommandLen(); ++i)
+                {
                     keys.push_back(reader.readBulkString());
                 }
             }
