@@ -38,6 +38,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LeaderElection.h>
@@ -2279,28 +2280,33 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
         {
             tryLogCurrentException(log, fmt::format("part is broken, part {} is ignored", detached_part_info.dir_name));
 
-            try
+            if (isRetryableException(std::current_exception()))
             {
-                auto broke_name = "broken_" + detached_part_info.dir_name;
-                detached_part_info.disk->moveFile(
-                    fs::path(relative_data_path) / DETACHED_DIR_NAME / rename_parts.old_and_new_names.front().new_name,
-                    fs::path(relative_data_path) / DETACHED_DIR_NAME / broke_name);
-
-                rename_parts.old_and_new_names.front().old_name.clear();
+                tryLogCurrentException(log, fmt::format("unable to load part {}, however it does not look as broken, ignore it", detached_part_info.dir_name));
             }
-            catch (...)
+            else
             {
-                tryLogCurrentException(log, fmt::format("fail to move broken part {}", detached_part_info.dir_name));
+                tryLogCurrentException(log, fmt::format("part {} is broken, try to rename it as broken and ignore", detached_part_info.dir_name));
+                try
+                {
+                    part->renameToDetached("broken", /* ignore_error*/ false);
+                    rename_parts.old_and_new_names.front().old_name.clear();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("fail to rename part {} with broken prefix", detached_part_info.dir_name));
+                }
             }
 
-            // if part is moved to broke sucsesfully than rollBackAll is no op
-            // otherwise try to move it back, more likely the same exception would be thrown
+            // if isRetryableException(std::current_exception()) = true then we move part just back to previous place
+            // if isRetryableException(std::current_exception()) = false then we move part with prefix broken_ to exclude it from next attempts
+            // if part is moved with prefix broken_ successfully than rollBackAll is no op
+            // otherwise try to move it back, more likely the same exception would be thrown, that exception would be propagated
             rename_parts.rollBackAll();
             continue;
         }
 
         return part;
-
     }
 
     return {};

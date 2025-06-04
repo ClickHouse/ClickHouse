@@ -4347,7 +4347,7 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
-            if(!first_exception)
+            if (!first_exception)
                 first_exception = std::current_exception();
         }
     }
