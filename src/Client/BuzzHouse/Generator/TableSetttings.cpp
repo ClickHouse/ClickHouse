@@ -326,7 +326,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {AzureQueue, {}},
          {URL, {}},
          {KeeperMap, {}},
-         {ExternalDistributed, {}}});
+         {ExternalDistributed, {}},
+         {MaterializedPostgreSQL, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},

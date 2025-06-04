@@ -191,7 +191,9 @@ public:
 
     bool isPostgreSQLEngine() const
     {
-        return teng == TableEngineValues::PostgreSQL || (isExternalDistributedEngine() && sub == TableEngineValues::PostgreSQL);
+        return teng == TableEngineValues::PostgreSQL || teng == TableEngineValues::MaterializedPostgreSQL
+            || (isExternalDistributedEngine()
+                && (sub == TableEngineValues::PostgreSQL || sub == TableEngineValues::MaterializedPostgreSQL));
     }
 
     bool isSQLiteEngine() const { return teng == TableEngineValues::SQLite; }
@@ -232,17 +234,20 @@ public:
 
     bool isExternalDistributedEngine() const { return teng == TableEngineValues::ExternalDistributed; }
 
+    bool isMaterializedPostgreSQLEngine() const { return teng == TableEngineValues::MaterializedPostgreSQL; }
+
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
             || isMongoDBEngine() || isAnyS3Engine() || isAnyAzureEngine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergS3Engine()
             || isMergeEngine() || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine()
-            || isExternalDistributedEngine();
+            || isMaterializedPostgreSQLEngine() || isExternalDistributedEngine();
     }
 
     bool isAnotherRelationalDatabaseEngine() const
     {
-        return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isExternalDistributedEngine();
+        return isMySQLEngine() || isPostgreSQLEngine() || isMaterializedPostgreSQLEngine() || isSQLiteEngine()
+            || isExternalDistributedEngine();
     }
 
     bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::None; }

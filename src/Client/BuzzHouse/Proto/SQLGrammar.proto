@@ -3141,6 +3141,7 @@ enum TableEngineValues {
     URL = 35;
     KeeperMap = 36;
     ExternalDistributed = 37;
+    MaterializedPostgreSQL = 38;
 }
 
 enum TableEngineOption {

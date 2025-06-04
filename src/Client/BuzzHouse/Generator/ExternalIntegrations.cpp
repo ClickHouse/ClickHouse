@@ -585,7 +585,7 @@ void PostgreSQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
     te->add_params()->set_svalue("test");
-    if (!b.isExternalDistributedEngine() && rg.nextSmallNumber() < 4)
+    if (!b.isExternalDistributedEngine() && !b.isMaterializedPostgreSQLEngine() && rg.nextSmallNumber() < 4)
     {
         te->add_params()->set_svalue("ON CONFLICT DO NOTHING");
     }

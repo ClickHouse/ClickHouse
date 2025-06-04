@@ -187,6 +187,11 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_shard_num"}));
         }
+        else if (t.isMaterializedPostgreSQLEngine())
+        {
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_version"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sign"}));
+        }
     }
     if (rel_name.empty())
     {
@@ -967,16 +972,20 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     }
     else if (
         te->has_engine()
-        && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine() || b.isRedisEngine()
-            || b.isExternalDistributedEngine()))
+        && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isMaterializedPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine()
+            || b.isRedisEngine() || b.isExternalDistributedEngine()))
     {
         IntegrationCall next = IntegrationCall::MinIO;
 
-        if (b.isMySQLEngine())
+        if (b.isExternalDistributedEngine())
+        {
+            next = (b.sub == TableEngineValues::PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
+        }
+        else if (b.isMySQLEngine())
         {
             next = IntegrationCall::MySQL;
         }
-        else if (b.isPostgreSQLEngine())
+        else if (b.isPostgreSQLEngine() || b.isMaterializedPostgreSQLEngine())
         {
             next = IntegrationCall::PostgreSQL;
         }
@@ -991,10 +1000,6 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         else if (b.isRedisEngine())
         {
             next = IntegrationCall::Redis;
-        }
-        else if (b.isExternalDistributedEngine())
-        {
-            next = (b.sub == TableEngineValues::PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
         }
         else
         {
@@ -1160,7 +1165,8 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             te->add_params()->set_num(keys_limit_dist(rg.generator));
         }
     }
-    if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine() || b.isKeeperMapEngine()) && add_pkey && !entries.empty())
+    if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine())
+        && add_pkey && !entries.empty())
     {
         columnPathRef(rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
     }
@@ -1596,13 +1602,14 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
 void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b)
 {
     chassert(this->ids.empty());
-    if (b.is_deterministic && b.teng != TableEngineValues::Set)
+    if (b.is_deterministic && b.teng != TableEngineValues::Set && b.teng != TableEngineValues::ExternalDistributed)
     {
         if (b.teng != TableEngineValues::MySQL && connections.hasMySQLConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::MySQL));
         }
-        if (b.teng != TableEngineValues::PostgreSQL && connections.hasPostgreSQLConnection())
+        if (b.teng != TableEngineValues::PostgreSQL && b.teng != TableEngineValues::MaterializedPostgreSQL
+            && connections.hasPostgreSQLConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::PostgreSQL));
         }
@@ -1694,6 +1701,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         if (connections.hasPostgreSQLConnection())
         {
             this->ids.emplace_back(PostgreSQL);
+            this->ids.emplace_back(MaterializedPostgreSQL);
         }
         if (connections.hasSQLiteConnection())
         {
@@ -1799,7 +1807,9 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         {
             getNextPeerTableDatabase(rg, next);
         }
-        added_pkey |= (!next.isMergeTreeFamily() && !next.isRocksEngine() && !next.isKeeperMapEngine() && !next.isRedisEngine());
+        added_pkey
+            |= (!next.isMergeTreeFamily() && !next.isRocksEngine() && !next.isKeeperMapEngine() && !next.isRedisEngine()
+                && !next.isMaterializedPostgreSQLEngine());
         const bool add_version_to_replacing = next.teng == TableEngineValues::ReplacingMergeTree && !next.hasPostgreSQLPeer()
             && !next.hasSQLitePeer() && rg.nextSmallNumber() < 4;
         uint32_t added_cols = 0;
