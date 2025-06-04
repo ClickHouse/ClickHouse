@@ -82,8 +82,8 @@ The query cache can be cleared using statement `SYSTEM DROP QUERY CACHE`. The co
 "QueryCacheHits" and "QueryCacheMisses" in system table [system.events](system-tables/events.md). Both counters are only updated for
 `SELECT` queries which run with setting `use_query_cache = true`, other queries do not affect "QueryCacheMisses". Field `query_cache_usage`
 in system table [system.query_log](system-tables/query_log.md) shows for each executed query whether the query result was written into or
-read from the query cache. Asynchronous metrics "QueryCacheEntries" and "QueryCacheBytes" in system table
-[system.asynchronous_metrics](system-tables/asynchronous_metrics.md) show how many entries / bytes the query cache currently contains.
+read from the query cache. Metrics `QueryCacheEntries` and `QueryCacheBytes` in system table
+[system.metrics](system-tables/metrics.md) show how many entries / bytes the query cache currently contains.
 
 The query cache exists once per ClickHouse server process. However, cache results are by default not shared between users. This can be
 changed (see below) but doing so is not recommended for security reasons.
