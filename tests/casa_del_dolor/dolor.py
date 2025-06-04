@@ -170,6 +170,12 @@ parser.add_argument(
 parser.add_argument(
     "--storage-limit", type=str, default="", help="Set a storage limit, e.g. '1g'"
 )
+parser.add_argument(
+    "--add-keeper-map-prefix",
+    type=bool,
+    default=True,
+    help="Add 'keeper_map_path_prefix' server setting",
+)
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):

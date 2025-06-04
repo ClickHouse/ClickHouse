@@ -459,6 +459,11 @@ def modify_server_settings(
         allowed_path_xml2 = ET.SubElement(backups_element, "allowed_path")
         allowed_path_xml2.text = "/var/lib/clickhouse/user_files/"
 
+    if args.add_keeper_map_prefix:
+        modified = True
+        new_element = ET.SubElement(root, "keeper_map_path_prefix")
+        new_element.text = "/keeper_map_tables"
+
     # Select random properties to the XML
     if random.randint(1, 100) <= args.server_settings_prob:
         selected_props = sample_from_dict(

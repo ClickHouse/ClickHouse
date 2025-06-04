@@ -1089,10 +1089,6 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         }
         this->remote_entries.clear();
     }
-    if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine()) && add_pkey && !entries.empty())
-    {
-        columnPathRef(rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
-    }
     else if (te->has_engine() && b.isDictionaryEngine())
     {
         const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(hasTableOrView<SQLDictionary>(b)));
@@ -1141,6 +1137,20 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             b.file_comp = rg.pickRandomly(URLCompress);
             te->add_params()->set_svalue(b.file_comp);
         }
+    }
+    else if (te->has_engine() && b.isKeeperMapEngine())
+    {
+        te->add_params()->set_svalue(fc.keeper_map_path_prefix);
+        if (rg.nextBool())
+        {
+            std::uniform_int_distribution<uint64_t> keys_limit_dist(0, 8192);
+
+            te->add_params()->set_num(keys_limit_dist(rg.generator));
+        }
+    }
+    if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine() || b.isKeeperMapEngine()) && add_pkey && !entries.empty())
+    {
+        columnPathRef(rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
     }
     if (te->has_engine())
     {
@@ -1647,6 +1657,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             this->ids.emplace_back(Distributed);
         }
     }
+    if (has_dictionaries)
+    {
+        this->ids.emplace_back(Dictionary);
+    }
     if (!b.is_deterministic)
     {
         this->ids.emplace_back(Merge);
@@ -1654,6 +1668,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(GenerateRandom);
         }
+    }
+    if (fc.keeper_map_path_prefix != "")
+    {
+        this->ids.emplace_back(KeeperMap);
     }
     if (use_external_integrations)
     {
@@ -1761,7 +1779,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         {
             getNextPeerTableDatabase(rg, next);
         }
-        added_pkey |= (!next.isMergeTreeFamily() && !next.isRocksEngine() && !next.isRedisEngine());
+        added_pkey |= (!next.isMergeTreeFamily() && !next.isRocksEngine() && !next.isKeeperMapEngine() && !next.isRedisEngine());
         const bool add_version_to_replacing = next.teng == TableEngineValues::ReplacingMergeTree && !next.hasPostgreSQLPeer()
             && !next.hasSQLitePeer() && rg.nextSmallNumber() < 4;
         uint32_t added_cols = 0;

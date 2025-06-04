@@ -94,6 +94,8 @@ class BuzzHouseGenerator(Generator):
                 "user": "devstoreaccount1",
                 "password": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
             }
+        if args.add_keeper_map_prefix:
+            buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
 
         with open(self.temp.name, "w") as file2:
             file2.write(json.dumps(buzz_config))

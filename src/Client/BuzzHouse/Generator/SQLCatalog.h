@@ -217,6 +217,8 @@ public:
 
     bool isURLEngine() const { return teng == TableEngineValues::URL; }
 
+    bool isKeeperMapEngine() const { return teng == TableEngineValues::KeeperMap; }
+
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()

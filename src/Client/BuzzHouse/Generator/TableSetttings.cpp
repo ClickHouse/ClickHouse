@@ -324,7 +324,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {GenerateRandom, {}},
          {AzureBlobStorage, {}},
          {AzureQueue, {}},
-         {URL, {}}});
+         {URL, {}},
+         {KeeperMap, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},

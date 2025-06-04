@@ -3139,6 +3139,7 @@ enum TableEngineValues {
     AzureBlobStorage = 33;
     AzureQueue = 34;
     URL = 35;
+    KeeperMap = 36;
 }
 
 enum TableEngineOption {
