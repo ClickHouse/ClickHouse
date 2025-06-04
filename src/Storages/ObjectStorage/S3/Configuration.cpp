@@ -176,8 +176,6 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
     keys = {url.key};
 
-    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty() || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
-
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
         s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
@@ -195,7 +193,11 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             getMaxNumberOfArguments(with_structure),
             getSignatures(with_structure));
 
-    S3::S3AuthSettings auth_settings;
+    const auto & config = context->getConfigRef();
+    s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
+
+    s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, context->getSettingsRef()[Setting::s3_validate_request_settings]);
+
     std::unordered_map<std::string_view, size_t> engine_args_to_idx;
     bool no_sign_request = false;
 
@@ -374,32 +376,26 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         compression_method = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["compression_method"]], "compression_method");
 
     if (engine_args_to_idx.contains("access_key_id"))
-        auth_settings[S3AuthSetting::access_key_id] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");
+        s3_settings->auth_settings[S3AuthSetting::access_key_id] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");
 
     if (engine_args_to_idx.contains("secret_access_key"))
-        auth_settings[S3AuthSetting::secret_access_key] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["secret_access_key"]], "secret_access_key");
+        s3_settings->auth_settings[S3AuthSetting::secret_access_key] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["secret_access_key"]], "secret_access_key");
 
     if (engine_args_to_idx.contains("session_token"))
-        auth_settings[S3AuthSetting::session_token] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["session_token"]], "session_token");
+        s3_settings->auth_settings[S3AuthSetting::session_token] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["session_token"]], "session_token");
 
     if (no_sign_request)
-        auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
+        s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
 
-    static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
-    auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
+    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty() || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+    s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
 
-    const auto & config = context->getConfigRef();
-    s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
-
-    s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
         s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
-
-    s3_settings->auth_settings.updateIfChanged(auth_settings);
 
     keys = {url.key};
 }
