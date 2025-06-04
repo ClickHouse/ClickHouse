@@ -2212,7 +2212,7 @@ String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataP
         (*getSettings())[MergeTreeSetting::use_minimalistic_checksums_in_zookeeper]);
 }
 
-MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry & entry) const
+MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry & entry, PartsTemporaryRename & rename_parts) const
 {
     if (format_version != MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         return {};
@@ -2251,13 +2251,12 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
         return {};
 
     auto & detached_part_info = detached_parts.front();
-    const auto part_tmp_name = "attaching_" + detached_part_info.dir_name;
+
+    rename_parts.addPart(detached_part_info.dir_name, "attaching_" + detached_part_info.dir_name, detached_part_info.disk);
 
     try
     {
-        detached_part_info.disk->moveFile(
-            fs::path(relative_data_path) / DETACHED_DIR_NAME / detached_part_info.dir_name,
-            fs::path(relative_data_path) / DETACHED_DIR_NAME / part_tmp_name);
+        rename_parts.tryRenameAll();
     }
     catch (...)
     {
@@ -2266,7 +2265,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     }
 
     const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
-    auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_tmp_name, getReadSettings())
+    auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_name, getReadSettings())
         .withPartFormatFromDisk()
         .build();
 
@@ -2327,7 +2326,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     {
         ProfileEventsScope profile_events_scope;
 
-        if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry))
+        PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
+        if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry, renamed_parts))
         {
             LOG_TRACE(log, "Found valid local part for {}, preparing the transaction", part->name);
 
@@ -2337,6 +2337,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
             transaction.renameParts();
             checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
+
+            chassert(renamed_parts.renamed && renamed_parts.old_and_new_names.size() == 1);
+            renamed_parts.old_and_new_names.front().old_name.clear();
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
