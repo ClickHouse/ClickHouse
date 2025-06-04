@@ -754,7 +754,7 @@ public:
     bool getThrowOnUnknownWorkload() const;
     void setThrowOnUnknownWorkload(bool value);
     bool getCPUSlotPreemption() const;
-    void setCpuSlotPreemption(bool value);
+    void setCPUSlotPreemption(bool value);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;

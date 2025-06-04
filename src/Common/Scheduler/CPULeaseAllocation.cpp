@@ -4,28 +4,30 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 
 #include <atomic>
 #include <utility>
 
-#if 0
-#include <iostream>
-#include <base/getThreadId.h>
-static std::string formatBitset(const boost::dynamic_bitset<> & bits)
+#if 1
+#define LOG_EVENT(X) LOG_TEST(log, "{} ({}) allocated={} granted={} running={} L:{} P:{} <{}/{}> e:{}", \
+    reinterpret_cast<void*>(this), #X, allocated, granted, threads.running_count, formatBitset(threads.leased), \
+    formatBitset(threads.preempted), consumed_ns, requested_ns, enqueued)
+namespace
 {
-    std::string result;
-    result.reserve(bits.size());
-    for (size_t i = 0; i < bits.size(); ++i)
-        result += bits[i] ? '1' : '0';
-    return result;
+    std::string formatBitset(const boost::dynamic_bitset<> & bits)
+    {
+        std::string result;
+        result.reserve(bits.size());
+        for (size_t i = 0; i < bits.size(); ++i)
+            result += bits[i] ? '1' : '0';
+        return result;
+    }
 }
-#define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<void*>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
-#define DBG_EVENT(X) DBG_PRINT("({}) allocated={} granted={} running={} L:{} P:{} <{}/{}> e:{}", #X, allocated, granted, threads.running_count, formatBitset(threads.leased), formatBitset(threads.preempted), consumed_ns, requested_ns, enqueued)
-#else
-#include <base/defines.h>
-#define DBG_EVENT(X) void(0)
-#endif
 
+#else
+#define LOG_EVENT(X) void(0)
+#endif
 
 namespace ProfileEvents
 {
@@ -78,6 +80,7 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
     , master_link(master_link_)
     , worker_link(worker_link_)
     , settings(std::move(settings_))
+    , log(getLogger("CPULeaseAllocation"))
     , threads(max_threads)
     , requests(max_threads) // NOTE: it should not be reallocated after initialization because we use raw pointers and iterators
     , head(requests.begin())
@@ -119,7 +122,7 @@ CPULeaseAllocation::~CPULeaseAllocation()
         ++tail;
         if (tail == requests.end())
             tail = requests.begin();
-        DBG_EVENT(S);
+        LOG_EVENT(S);
     }
 }
 
@@ -169,7 +172,7 @@ size_t CPULeaseAllocation::upscale()
                 threads.last_running = thread_num;
             else
                 threads.last_running = std::max(threads.last_running, thread_num);
-            DBG_EVENT(U);
+            LOG_EVENT(U);
             return thread_num;
         }
     }
@@ -202,7 +205,7 @@ void CPULeaseAllocation::downscale(size_t thread_num)
         if (granted > 0 && !shutdown)
             acquirable.store(true, std::memory_order_relaxed);
     }
-    DBG_EVENT(D);
+    LOG_EVENT(D);
 }
 
 void CPULeaseAllocation::setPreempted(size_t thread_num)
@@ -228,7 +231,7 @@ void CPULeaseAllocation::setPreempted(size_t thread_num)
     ++granted;
     if (granted > 0 && !shutdown)
         acquirable.store(true, std::memory_order_relaxed);
-    DBG_EVENT(P);
+    LOG_EVENT(P);
 }
 
 void CPULeaseAllocation::resetPreempted(size_t thread_num)
@@ -250,7 +253,7 @@ void CPULeaseAllocation::resetPreempted(size_t thread_num)
 
     // Wake the thread
     threads.wake[thread_num].notify_one();
-    DBG_EVENT(R);
+    LOG_EVENT(R);
 }
 
 void CPULeaseAllocation::failed(const std::exception_ptr & ptr)
@@ -269,7 +272,7 @@ void CPULeaseAllocation::failed(const std::exception_ptr & ptr)
     // Notify destructor that we are detached from the scheduler
     if (shutdown)
         shutdown_cv.notify_one();
-    DBG_EVENT(F);
+    LOG_EVENT(F);
 }
 
 void CPULeaseAllocation::grant()
@@ -291,7 +294,7 @@ void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
     ++granted;
     if (granted > 0 && !shutdown)
         acquirable.store(true, std::memory_order_relaxed);
-    DBG_EVENT(G);
+    LOG_EVENT(G);
     ++head;
     if (head == requests.end())
         head = requests.begin();
@@ -399,7 +402,7 @@ void CPULeaseAllocation::consume(std::unique_lock<std::mutex> & lock, ResourceCo
         ++tail;
         if (tail == requests.end())
             tail = requests.begin();
-        DBG_EVENT(C);
+        LOG_EVENT(C);
         if (!enqueued)
             schedule(lock); // In case if we renew the last slot, otherwise the next request is already scheduled
         // NOTE: we do not finish more than one request per one report to avoid stalling the pipeline for reports larger than quantum
@@ -428,7 +431,7 @@ void CPULeaseAllocation::schedule(std::unique_lock<std::mutex> & lock)
         enqueued = true;
         scheduled_increment.add();
         wait_timer.emplace(CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
-        DBG_EVENT(E);
+        LOG_EVENT(E);
     }
     else // noncompeting slot - provide immediately for free
     {

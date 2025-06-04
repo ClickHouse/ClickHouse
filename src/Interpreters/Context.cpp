@@ -1964,7 +1964,7 @@ bool Context::getCPUSlotPreemption() const
     return shared->cpu_slot_preemption;
 }
 
-void Context::setCpuSlotPreemption(bool value)
+void Context::setCPUSlotPreemption(bool value)
 {
     std::lock_guard lock(shared->mutex);
     shared->cpu_slot_preemption = value;

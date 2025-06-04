@@ -11,6 +11,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ISlotControl.h>
+#include <Common/Logger.h>
 
 #include <condition_variable>
 #include <mutex>
@@ -154,6 +155,7 @@ private:
     const ResourceLink master_link; /// Resource link to use for master thread resource requests
     const ResourceLink worker_link; /// Resource link to use for worker threads resource requests
     const CPULeaseSettings settings;
+    LoggerPtr log;
 
     /// Protects all the fields below
     mutable std::mutex mutex;
