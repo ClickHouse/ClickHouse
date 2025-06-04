@@ -456,6 +456,7 @@ def modify_server_settings(
                 new_element.text = str(generator())
 
     if modified:
+        ET.indent(tree, space="    ", level=0) # indent tree
         temp_path = None
         # Create a temporary file
         with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as temp_file:
