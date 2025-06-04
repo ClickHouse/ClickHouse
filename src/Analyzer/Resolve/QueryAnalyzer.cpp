@@ -296,9 +296,7 @@ std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const Quer
 
 IdentifierResolveScope & QueryAnalyzer::createIdentifierResolveScope(const QueryTreeNodePtr & scope_node, IdentifierResolveScope * parent_scope)
 {
-    auto [it, inserted] = node_to_scope_map.emplace(scope_node, IdentifierResolveScope{scope_node, parent_scope});
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} already has a scope", scope_node->formatASTForErrorMessage());
+    auto [it, _] = node_to_scope_map.emplace(scope_node, IdentifierResolveScope{scope_node, parent_scope});
     return it->second;
 }
 
@@ -2323,7 +2321,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
                 {
                     auto lambda_expression_to_resolve = expression_node->clone();
-                    auto & lambda_scope = createIdentifierResolveScope(expression_node, /*parent_scope=*/&scope);
+                    auto & lambda_scope = createIdentifierResolveScope(lambda_expression_to_resolve, /*parent_scope=*/&scope);
                     node_projection_names = resolveLambda(expression_node, lambda_expression_to_resolve, {node}, lambda_scope);
                     auto & lambda_expression_to_resolve_typed = lambda_expression_to_resolve->as<LambdaNode &>();
                     node = lambda_expression_to_resolve_typed.getExpression();
