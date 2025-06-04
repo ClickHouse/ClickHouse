@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
@@ -52,6 +53,17 @@ void resolveSchemaAndFormat(
     std::string & sample_path,
     const ContextPtr & context)
 {
+    if (format == "auto")
+    {
+        if (configuration->isDataLakeConfiguration())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Format must be already specified for {} storage.",
+                configuration->getTypeName());
+        }
+    }
+
     if (columns.empty())
     {
         if (configuration->isDataLakeConfiguration())

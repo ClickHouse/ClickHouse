@@ -102,7 +102,9 @@ StorageObjectStorage::StorageObjectStorage(
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
     const bool need_resolve_columns_or_format = columns_.empty() || (configuration->format == "auto");
-    const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->withPartitionWildcard();
+    const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
+        && !configuration->withPartitionWildcard()
+        && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
     bool updated_configuration = false;
@@ -156,12 +158,15 @@ StorageObjectStorage::StorageObjectStorage(
         catch (...)
         {
             LOG_WARNING(
-                log, "Failed to list object storage, cannot use hive partitioning. "
-                "Error: {}", getCurrentExceptionMessage(true));
+                log,
+                "Failed to list object storage, cannot use hive partitioning. "
+                "Error: {}",
+                getCurrentExceptionMessage(true));
         }
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns, context, sample_path, format_settings, configuration->isDataLakeConfiguration()));
     setInMemoryMetadata(metadata);
 }
 

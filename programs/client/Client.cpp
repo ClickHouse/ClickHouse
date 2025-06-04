@@ -177,7 +177,13 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
         if (config.has(prefix + ".port"))
             config.setInt("port", config.getInt(prefix + ".port"));
         if (config.has(prefix + ".secure"))
-            config.setBool("secure", config.getBool(prefix + ".secure"));
+        {
+            bool secure = config.getBool(prefix + ".secure");
+            if (secure)
+                config.setBool("secure", true);
+            else
+                config.setBool("no-secure", true);
+        }
         if (config.has(prefix + ".user"))
             config.setString("user", config.getString(prefix + ".user"));
         if (config.has(prefix + ".password"))
