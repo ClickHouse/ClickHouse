@@ -421,9 +421,7 @@ private:
         size_t key_start,
         bool has_only_one_value_since_last_reset,
         bool all_keys_are_const,
-        bool use_compiled_functions,
-        size_t call_time
-    ) const;
+        bool use_compiled_functions) const;
 
     /// For case when there are no keys (all aggregate into one row).
     void executeWithoutKeyImpl(

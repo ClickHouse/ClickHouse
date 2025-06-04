@@ -20,7 +20,6 @@
 #include <memory>
 #include <vector>
 #include <type_traits>
-#include <iostream>
 
 namespace llvm
 {
@@ -430,32 +429,20 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
-        std::cout << "addBatch2 called with place_offset=" << place_offset << std::endl;        
         if (if_argument_pos >= 0)
         {
-            std::cout << "if clause, if_argument_pos=" << if_argument_pos << std::endl;
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = row_begin; i < row_end; ++i)
             {
-                if (i == 30361) {
-                    std::cout << "flags[i], places[i]: " << static_cast<bool>(flags[i]) << ' ' << static_cast<void*>(places[i]) << std::endl;
-                }
-                if (flags[i] && places[i]) {
+                if (flags[i] && places[i])
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
-                }
             }
         }
         else
         {
-            std::cout << "else clause" << std::endl;
-            for (size_t i = row_begin; i < row_end; ++i) {
-                if (i == 30361) {
-                    std::cout << "places[30361]: " << static_cast<void*>(places[i]) << std::endl;
-                }
-                if (places[i]) {
+            for (size_t i = row_begin; i < row_end; ++i)
+                if (places[i])
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
-                }
-            }
         }
     }
 
@@ -504,17 +491,14 @@ public:
         const IColumn ** columns,
         Arena * arena) const override
     {
-        std::cout << "addBatchSparse called" << std::endl;
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto * values = &column_sparse.getValuesColumn();
         auto offset_it = column_sparse.getIterator(row_begin);
 
-        for (size_t i = row_begin; i < row_end; ++i, ++offset_it) {
-            size_t current_row = offset_it.getCurrentRow();
-            if (places[current_row] != nullptr)
-                static_cast<const Derived *>(this)->add(places[current_row] + place_offset,
+        for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
+            if (places[offset_it.getCurrentRow()] != nullptr)
+                static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
                                                         &values, offset_it.getValueIndex(), arena);
-        }
     }
 
     void mergeBatch(
@@ -631,7 +615,6 @@ public:
         Arena * arena)
         const override
     {
-        std::cout << "addBatchArray called" << std::endl;
         size_t current_offset = offsets[static_cast<ssize_t>(row_begin) - 1];
         for (size_t i = row_begin; i < row_end; ++i)
         {
