@@ -13,6 +13,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_NUMBER;
+}
+
+
 SerializationTime64::SerializationTime64(
     UInt32 scale_, const TimezoneMixin & time_zone_)
     : SerializationDecimalBase<Time64>(DecimalUtils::max_precision<Time64>, scale_)

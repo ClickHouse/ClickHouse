@@ -15,6 +15,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_NUMBER;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
