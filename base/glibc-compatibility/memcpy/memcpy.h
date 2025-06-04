@@ -185,6 +185,8 @@ tail:
 
             while (size >= 128)
             {
+                __builtin_prefetch(src + 128, 0 /* rw */, 0 /* locality */);
+                __builtin_prefetch(dst + 128, 1 /* rw */, 0 /* locality */);
                 c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 0);
                 c1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 1);
                 c2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 2);

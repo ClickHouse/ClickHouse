@@ -120,9 +120,6 @@ static void * memcpy_trivial(void * __restrict dst_, const void * __restrict src
     return ret;
 }
 
-extern "C" void * memcpy_jart(void * dst, const void * src, size_t size);
-extern "C" void MemCpy(void * dst, const void * src, size_t size);
-
 void * memcpy_fast_sse(void * dst, const void * src, size_t size);
 void * memcpy_fast_avx(void * dst, const void * src, size_t size);
 void * memcpy_tiny(void * dst, const void * src, size_t size);
@@ -312,11 +309,19 @@ static void * memcpySSE2Unrolled8(void * __restrict destination, const void * __
 
 
 //static __attribute__((__always_inline__, __target__("sse2")))
-__attribute__((__always_inline__)) inline void
-memcpy_my_medium_sse(uint8_t * __restrict & dst, const uint8_t * __restrict & src, size_t & size)
+template <bool prefetch_source, bool prefetch_dest>
+static void * memcpy_my_medium_sse(void * __restrict destination, const void * __restrict source, size_t size)
 {
-    /// Align destination to 16 bytes boundary.
-    size_t padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
+    unsigned char * dst = reinterpret_cast<unsigned char *>(destination);
+    const unsigned char * src = reinterpret_cast<const unsigned char *>(source);
+    size_t padding;
+
+    // small memory copy
+    if (size <= 128)
+        return memcpy_tiny(dst, src, size);
+
+    // align destination to 16 bytes boundary
+    padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
 
     if (padding > 0)
     {
@@ -339,6 +344,10 @@ memcpy_my_medium_sse(uint8_t * __restrict & dst, const uint8_t * __restrict & sr
 
     while (size >= 128)
     {
+        if constexpr (prefetch_source)
+            __builtin_prefetch(src + 128, 0 /* rw */, 0 /* locality */);
+        if constexpr (prefetch_dest)
+            __builtin_prefetch(dst + 128, 1 /* rw */, 0 /* locality */);
         c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 0);
         c1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 1);
         c2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 2);
@@ -360,6 +369,8 @@ memcpy_my_medium_sse(uint8_t * __restrict & dst, const uint8_t * __restrict & sr
 
         size -= 128;
     }
+    memcpy_tiny(dst, src, size);
+    return destination;
 }
 
 __attribute__((__target__("avx")))
@@ -851,11 +862,15 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
 {
     memcpy_type memcpy_libc_old = reinterpret_cast<memcpy_type>(dlsym(RTLD_NEXT, "memcpy"));
 
+    auto sse_disabled_prefetch = memcpy_my_medium_sse<false, false>;
+    auto sse_prefetch_source_only = memcpy_my_medium_sse<true, false>;
+    auto sse_prefetch_dst_only = memcpy_my_medium_sse<false, true>;
+    auto sse_prefetch_both = memcpy_my_medium_sse<true, true>;
+
     VARIANT(1, memcpy)
     VARIANT(2, memcpy_trivial)
     VARIANT(3, memcpy_libc_old)
     VARIANT(4, memcpy_erms)
-    VARIANT(5, MemCpy)
     VARIANT(6, memcpySSE2)
     VARIANT(7, memcpySSE2Unrolled2)
     VARIANT(8, memcpySSE2Unrolled4)
@@ -874,6 +889,11 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     VARIANT(27, __memcpy_avx512_unaligned)
     VARIANT(28, __memcpy_avx512_unaligned_erms)
     VARIANT(29, __memcpy_avx512_no_vzeroupper)
+
+    VARIANT(30, sse_disabled_prefetch)
+    VARIANT(31, sse_prefetch_source_only)
+    VARIANT(32, sse_prefetch_dst_only)
+    VARIANT(33, sse_prefetch_both)
 
     return 0;
 }
