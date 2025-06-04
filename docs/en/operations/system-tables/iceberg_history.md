@@ -7,13 +7,13 @@ title: 'system.iceberg_history'
 
 # system.iceberg_history
 
-Contains snapshot history of iceberg table.
+This system table contain the snapshot history of Iceberg tables existing in ClickHouse. It will be empty if you don't have any Iceberg table in ClickHouse.
 
 Columns:
 
 - `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 
-- `name` ([String](../../sql-reference/data-types/string.md)) — Table name.
+- `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
 
 - `made_current_at` ([DateTime](../../sql-reference/data-types/uuid.md)) — Time when the snapshot was made current snapshot.
 
