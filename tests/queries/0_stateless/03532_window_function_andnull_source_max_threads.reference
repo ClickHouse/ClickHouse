@@ -1,0 +1,7 @@
+  Resize 20 → 20
+            Resize × 20 20 → 1
+                  Resize 20 → 20
+                            Resize × 20 20 → 1
+                                          Resize 1 → 20
+                                            Resize × 2 20 → 1
+                                                                                                                              Resize 1 → 20
