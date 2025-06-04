@@ -91,7 +91,7 @@ StorageObjectStorage::StorageObjectStorage(
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
     ASTPtr partition_by_,
-    bool is_table_function_,
+    bool is_table_function,
     bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
@@ -101,40 +101,43 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
-    update_configuration_on_read = !is_table_function_ || do_lazy_init;
-    bool failed_init = false;
-    auto do_init = [&]()
-    {
-        try
-        {
-            if (configuration->hasExternalDynamicMetadata())
-                configuration->updateAndGetCurrentSchema(object_storage, context);
-            else
-                configuration->update(object_storage, context);
-        }
-        catch (...)
-        {
-            // If we don't have format or schema yet, we can't ignore failed configuration update,
-            // because relevant configuration is crucial for format and schema inference
-            if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
-            {
-                throw;
-            }
-            else
-            {
-                tryLogCurrentException(log);
-                failed_init = true;
-            }
-        }
-    };
+    const bool need_resolve_columns_or_format = columns_.empty() || (configuration->format == "auto");
+    const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->withPartitionWildcard();
+    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
-    if (!do_lazy_init)
-        do_init();
+    bool updated_configuration = false;
+    try
+    {
+        if (!do_lazy_init)
+        {
+            configuration->update(object_storage, context, /* if_not_updated_before */is_table_function);
+            updated_configuration = true;
+        }
+    }
+    catch (...)
+    {
+        // If we don't have format or schema yet, we can't ignore failed configuration update,
+        // because relevant configuration is crucial for format and schema inference
+        if (mode <= LoadingStrictnessLevel::CREATE || need_resolve_columns_or_format)
+        {
+            throw;
+        }
+        tryLogCurrentException(log);
+    }
+
+    /// We always update configuration on read for table engine,
+    /// but this is not needed for table function,
+    /// which exists only for the duration of a single query
+    /// (e.g. read always follows constructor immediately).
+    update_configuration_on_read = !is_table_function || !updated_configuration;
 
     std::string sample_path;
     ColumnsDescription columns{columns_};
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+    if (need_resolve_columns_or_format)
+        resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+    else
+        validateSupportedColumns(columns, *configuration);
+
     configuration->check(context);
 
     StorageInMemoryMetadata metadata;
@@ -144,13 +147,8 @@ StorageObjectStorage::StorageObjectStorage(
 
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
-    if (!failed_init
-        && sample_path.empty()
-        && context->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->withPartitionWildcard())
+    if (updated_configuration && sample_path.empty() && need_resolve_sample_path)
     {
-        if (do_lazy_init)
-            do_init();
         try
         {
             sample_path = getPathSample(context);
@@ -187,7 +185,10 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage_ptr, ContextPtr context)
+void StorageObjectStorage::Configuration::update( ///NOLINT
+    ObjectStoragePtr object_storage_ptr,
+    ContextPtr context,
+    bool /* if_not_updated_before */)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
@@ -205,8 +206,14 @@ IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_c
 
 void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 {
+    configuration->update(object_storage, context_ptr);
+
+    auto columns = configuration->tryGetTableStructureFromMetadata();
+    if (!columns.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No schema in table metadata");
+
     StorageInMemoryMetadata metadata;
-    metadata.setColumns(configuration->updateAndGetCurrentSchema(object_storage, context_ptr));
+    metadata.setColumns(std::move(columns.value()));
     setInMemoryMetadata(metadata);
 }
 
@@ -522,20 +529,6 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
     std::string & sample_path,
     const ContextPtr & context)
 {
-    if (configuration->isDataLakeConfiguration())
-    {
-        if (configuration->hasExternalDynamicMetadata())
-            configuration->updateAndGetCurrentSchema(object_storage, context);
-        else
-            configuration->update(object_storage, context);
-
-        auto table_structure = configuration->tryGetTableStructureFromMetadata();
-        if (table_structure)
-        {
-            return table_structure.value();
-        }
-    }
-
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
     auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);

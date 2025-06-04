@@ -65,6 +65,11 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
+    /// We allow exceptions to be thrown on update(),
+    /// because Cluster engine can only be used as table function,
+    /// so no lazy initialization is allowed.
+    configuration->update(object_storage, context_);
+
     ColumnsDescription columns{columns_};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);

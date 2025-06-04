@@ -128,10 +128,21 @@ ColumnsDescription TableFunctionObjectStorage<
     if (configuration->structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        ColumnsDescription columns;
+
         auto storage = getObjectStorage(context, !is_insert_query);
+        configuration->update(storage, context);
+
         std::string sample_path;
-        resolveSchemaAndFormat(columns, configuration->format, storage, configuration, std::nullopt, sample_path, context);
+        ColumnsDescription columns;
+        resolveSchemaAndFormat(
+            columns,
+            configuration->format,
+            std::move(storage),
+            configuration,
+            /* format_settings */std::nullopt,
+            sample_path,
+            context);
+
         return columns;
     }
     return parseColumnsListFromString(configuration->structure, context);
