@@ -107,7 +107,7 @@ static thread_local bool has_alt_stack = false;
 
 ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
-    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
+    , memory_spill_scheduler(false)
 {}
 
 ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
@@ -172,20 +172,9 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
     return thread_group;
 }
 
-void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
-{
-    chassert(query_id.empty());
-    query_id = std::move(new_query_id);
-}
-
-void ThreadStatus::clearQueryId() noexcept
-{
-    query_id.clear();
-}
-
 const String & ThreadStatus::getQueryId() const
 {
-    return query_id;
+    return query_id_from_query_context;
 }
 
 ContextPtr ThreadStatus::getQueryContext() const

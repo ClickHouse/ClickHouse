@@ -188,7 +188,7 @@ The type of elements in the result array are determined by the type inference ru
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayDifference>(documentation);
+    factory.registerFunction<FunctionArrayDifference>();
 }
 
 }

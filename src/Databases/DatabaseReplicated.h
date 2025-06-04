@@ -4,16 +4,11 @@
 
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <QueryPipeline/BlockIO.h>
-#include <Interpreters/Context_fwd.h>
-#include <base/defines.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/QueryFlags.h>
 
-
-namespace zkutil
-{
-class ZooKeeper;
-}
 
 namespace DB
 {
@@ -23,9 +18,6 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
-
-class ZooKeeperMetadataTransaction;
-using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
 struct ReplicaInfo
 {
@@ -178,7 +170,7 @@ private:
     String replica_path;
     DatabaseReplicatedSettings db_settings;
 
-    ZooKeeperPtr getZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeper() const;
 
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;

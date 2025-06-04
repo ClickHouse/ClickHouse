@@ -30,7 +30,6 @@ Decode a [Base32](https://datatracker.ietf.org/doc/html/rfc4648) encoded string.
             {"empty_string", "SELECT tryBase32Decode('')", ""},
             {"non_base32_characters", "SELECT tryBase32Decode('12345')", ""},
         },
-        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::String});
 }
 }

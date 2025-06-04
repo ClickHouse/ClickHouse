@@ -242,36 +242,12 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
-        stack.pop_back();
-    }
-
-    /// projection optimizations can introduce additional reading step
-    /// so, applying lazy materialization after it, since it's dependent on reading step
-    if (optimization_settings.optimize_lazy_materialization)
-    {
-        chassert(stack.empty());
-        stack.push_back({.node = &root});
-        while (!stack.empty())
+        if (optimization_settings.optimize_lazy_materialization)
         {
-            auto & frame = stack.back();
-
-            if (frame.next_child == 0)
-            {
-                if (optimizeLazyMaterialization(root, stack, nodes, optimization_settings.max_limit_for_lazy_materialization))
-                    break;
-            }
-
-            /// Traverse all children first.
-            if (frame.next_child < frame.node->children.size())
-            {
-                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-                ++frame.next_child;
-                stack.push_back(next_frame);
-                continue;
-            }
-
-            stack.pop_back();
+            optimizeLazyMaterialization(root, stack, nodes, optimization_settings.max_limit_for_lazy_materialization);
         }
+
+        stack.pop_back();
     }
 
     if (optimization_settings.force_use_projection && has_reading_from_mt && applied_projection_names.empty())

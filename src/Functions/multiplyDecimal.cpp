@@ -74,7 +74,7 @@ In case you don't really need controlled precision and/or need fast computation,
     FunctionDocumentation::Argument argument3 = {"result_scale", "Scale of result. Type [Int/UInt](/sql-reference/data-types/int-uint)."};
     FunctionDocumentation::Arguments arguments = {argument1, argument2, argument3};
     FunctionDocumentation::ReturnedValue returned_value = "The result of multiplication with the given scale. Type: [Decimal256](/sql-reference/data-types/decimal).";
-    FunctionDocumentation::Example example1 = {"Usage example", "SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)", "25.2"};
+    FunctionDocumentation::Example example1 = {"", "SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)", "25.2"};
     FunctionDocumentation::Example example2 = {"Difference with regular multiplication", "SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)", R"(
 ┌─multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
 │                                               -26.8609633 │
@@ -83,7 +83,7 @@ In case you don't really need controlled precision and/or need fast computation,
 │                                                         -26.8609 │
 └──────────────────────────────────────────────────────────────────┘
     )"};
-    FunctionDocumentation::Example example3 = {"Decimal overflow", R"(
+    FunctionDocumentation::Example example3 = {"", R"(
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,

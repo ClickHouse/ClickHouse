@@ -28,7 +28,7 @@ REGISTER_FUNCTION(IsNaN)
     FunctionDocumentation::Argument argument1 = {"x", "Argument to evaluate for if it is `NaN`"};
     FunctionDocumentation::Arguments arguments = {argument1};
     FunctionDocumentation::ReturnedValue returned_value = "`1` if `NaN`, otherwise `0`";
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT isNaN(NaN)", "1"}};
+    FunctionDocumentation::Examples examples = {{"", "SELECT isNaN(NaN)", "1"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
