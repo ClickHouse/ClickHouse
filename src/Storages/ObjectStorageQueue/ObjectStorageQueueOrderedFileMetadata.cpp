@@ -209,7 +209,7 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByHive(
     }
 
     auto responses = zk_client->tryGet(paths);
-    
+
     if (responses.size() != hives.size())
         throw Exception(
             ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,

@@ -69,6 +69,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace VirtualColumnUtils
@@ -189,7 +190,7 @@ std::string_view findHivePartitioningInPath(const String & path)
 
     if (key_values.empty())
         return std::string_view();
-    
+
     // All keys and values are string_view over 'path', so starts and ends must be inside 'path'
     auto kv = key_values.begin();
     auto start = kv->first.data();
@@ -212,7 +213,12 @@ std::string_view findHivePartitioningInPath(const String & path)
     return std::string_view(start, end - start);
 }
 
-VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, const ContextPtr & context, const std::string & path, std::optional<FormatSettings> format_settings_)
+VirtualColumnsDescription getVirtualsForFileLikeStorage(
+    ColumnsDescription & storage_columns,
+    const ContextPtr & context,
+    const std::string & path,
+    std::optional<FormatSettings> format_settings_,
+    bool is_data_lake)
 {
     VirtualColumnsDescription desc;
 
@@ -239,7 +245,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
         add_virtual(item, false);
 
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (context->getSettingsRef()[Setting::use_hive_partitioning] && !is_data_lake)
     {
         const auto map = parseHivePartitioningKeysAndValues(path);
         auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
