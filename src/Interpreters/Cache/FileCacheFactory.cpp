@@ -169,10 +169,10 @@ void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfig
 
         checked_paths.emplace(cache_info->config_path);
 
-        FileCacheSettings new_settings;
-        new_settings.loadFromConfig(config, cache_info->config_path);
-
         FileCacheSettings old_settings = cache_info->getSettings();
+
+        FileCacheSettings new_settings;
+        new_settings.loadFromConfig(config, cache_info->config_path, /* cache_path_prefix_if_relative */"/no-op/");
 
         /// `path` setting can never be changed (in applySettingsIfPossilbe below)
         /// but it will differ here even if in fact equal,
@@ -248,8 +248,8 @@ void FileCacheFactory::loadDefaultCaches(const Poco::Util::AbstractConfiguration
         settings.loadFromConfig(
             config,
             config_path,
-            /* default_cache_path */"",
-            getPathPrefixForRelativeCachePath(context));
+            getPathPrefixForRelativeCachePath(context),
+            /* default_cache_path */"");
 
         auto cache = getOrCreate(name, settings, config_path);
         cache->initialize();

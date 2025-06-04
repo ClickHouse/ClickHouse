@@ -167,8 +167,8 @@ void FileCacheSettings::dumpToSystemSettingsColumns(
 void FileCacheSettings::loadFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const std::string & default_cache_path,
-    const std::string & cache_path_prefix_if_relative)
+    const std::string & cache_path_prefix_if_relative,
+    const std::string & default_cache_path)
 {
     if (!config.has(config_prefix))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}' in configuration file.", config_prefix);
@@ -202,11 +202,21 @@ void FileCacheSettings::loadFromConfig(
     validate();
 }
 
-void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
+void FileCacheSettings::loadFromCollection(
+    const NamedCollection & collection,
+    const std::string & cache_path_prefix_if_relative)
 {
     for (const auto & key : collection.getKeys())
     {
         impl->set(key, collection.get<String>(key));
+    }
+
+    if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
+    {
+        if (cache_path_prefix_if_relative.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache path prefix for relative paths was not provided");
+
+        (*this)[FileCacheSetting::path] = fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value;
     }
 
     validate();
@@ -218,6 +228,9 @@ void FileCacheSettings::validate()
 
     if (!settings[FileCacheSetting::path].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
+
+    if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute");
 
     if (!settings[FileCacheSetting::max_size].changed && !settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either `max_size` or `max_size_ratio_to_total_space` must be defined in cache configuration");

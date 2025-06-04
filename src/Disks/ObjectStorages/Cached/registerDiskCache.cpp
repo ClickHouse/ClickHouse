@@ -75,13 +75,13 @@ std::pair<FileCachePtr, FileCacheSettings> getCache(
     const auto cache_path_prefix_if_relative = getPathPrefixForRelativeCachePath(context, is_attach, is_custom_disk);
 
     if (predefined_configuration)
-        file_cache_settings.loadFromCollection(*predefined_configuration);
+        file_cache_settings.loadFromCollection(*predefined_configuration, cache_path_prefix_if_relative);
     else
         file_cache_settings.loadFromConfig(
             config,
             config_prefix,
-            /* default_cache_path */"",
-            cache_path_prefix_if_relative);
+            cache_path_prefix_if_relative,
+            /* default_cache_path */"");
 
     auto cache = FileCacheFactory::instance().getOrCreate(
         cache_name,

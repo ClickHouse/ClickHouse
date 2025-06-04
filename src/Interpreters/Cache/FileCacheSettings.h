@@ -40,10 +40,13 @@ struct FileCacheSettings
     void loadFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const std::string & default_cache_path = "",
-        const std::string & cache_path_prefix_if_relative = "");
+        const std::string & cache_path_prefix_if_relative,
+        const std::string & default_cache_path = "");
 
-    void loadFromCollection(const NamedCollection & collection);
+    void loadFromCollection(
+        const NamedCollection & collection,
+        const std::string & cache_path_prefix_if_relative);
+
     void dumpToSystemSettingsColumns(
         MutableColumnsAndConstraints & params,
         const std::string & cache_name,
