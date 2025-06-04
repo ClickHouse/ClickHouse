@@ -243,6 +243,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 #if USE_ICU
     attach<StorageSystemUnicode>(context, system_database, "unicode", "Contains all unicode codepoints.");
 #endif
+    attach<StorageSystemIcebergHistory>(context, system_database, "iceberg_history", "Displays the history of an iceberg table similar to the Spark history table");
 
     if (has_zookeeper)
     {

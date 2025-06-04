@@ -197,6 +197,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool allow_suspicious_indices;
     extern const MergeTreeSettingsBool allow_summing_columns_in_partition_or_order_key;
+    extern const MergeTreeSettingsBool allow_coalescing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool async_insert;
     extern const MergeTreeSettingsBool check_sample_column_is_correct;
@@ -716,6 +717,7 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::Summing
         || merging_params.mode == MergingParams::Aggregating
         || merging_params.mode == MergingParams::Replacing
+        || merging_params.mode == MergingParams::Coalescing
         || merging_params.mode == MergingParams::Graphite
         || merging_params.mode == MergingParams::VersionedCollapsing;
 }
@@ -1192,7 +1194,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
                         "Version column for MergeTree cannot be specified "
                         "in modes except Replacing or VersionedCollapsing.");
 
-    if (!columns_to_sum.empty() && mode != MergingParams::Summing)
+    if (!columns_to_sum.empty() && mode != MergingParams::Summing && mode != MergingParams::Coalescing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of columns to sum for MergeTree cannot be specified in all modes except Summing.");
 
     /// Check that if the sign column is needed, it exists and is of type Int8.
@@ -1287,7 +1289,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
     if (mode == MergingParams::Collapsing)
         check_sign_column(false, "CollapsingMergeTree");
 
-    if (mode == MergingParams::Summing)
+    if (mode == MergingParams::Summing || mode == MergingParams::Coalescing)
     {
         auto columns_to_sum_sorted = columns_to_sum;
         std::sort(columns_to_sum_sorted.begin(), columns_to_sum_sorted.end());
@@ -1308,10 +1310,12 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
                     column_to_sum);
         }
 
-        auto allow_summing_columns_in_partition_or_order_key = settings[MergeTreeSetting::allow_summing_columns_in_partition_or_order_key];
+        auto allow_columns_in_partition_or_order_key = mode == MergingParams::Summing
+            ? settings[MergeTreeSetting::allow_summing_columns_in_partition_or_order_key]
+            : settings[MergeTreeSetting::allow_coalescing_columns_in_partition_or_order_key];
 
-        /// Check that summing columns are not in partition key.
-        if (!allow_summing_columns_in_partition_or_order_key && metadata.isPartitionKeyDefined())
+        /// Check that summing columns are not in partition key
+        if (!allow_columns_in_partition_or_order_key && metadata.isPartitionKeyDefined())
         {
             auto partition_key_columns = metadata.getPartitionKey().expression->getRequiredColumns();
             std::sort(partition_key_columns.begin(), partition_key_columns.end());
@@ -1327,7 +1331,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
         }
 
         /// Check that summing columns are not in sorting key.
-        if (!allow_summing_columns_in_partition_or_order_key && metadata.isSortingKeyDefined())
+        if (!allow_columns_in_partition_or_order_key && metadata.isSortingKeyDefined())
         {
             auto sorting_key_columns = metadata.getSortingKey().expression->getRequiredColumns();
             std::sort(sorting_key_columns.begin(), sorting_key_columns.end());
@@ -1462,6 +1466,7 @@ String MergeTreeData::MergingParams::getModeName() const
         case Replacing:     return "Replacing";
         case Graphite:      return "Graphite";
         case VersionedCollapsing: return "VersionedCollapsing";
+        case Coalescing:    return "Coalescing";
     }
 }
 
@@ -9448,6 +9453,7 @@ size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
         return 0;
 
     DataPartsVector parts_to_clear;
+    DataPartsVector parts_in_use;
 
     {
         auto parts_lock = lockParts();
@@ -9456,22 +9462,32 @@ size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
         for (const auto & part : parts_range)
         {
             /// Outdated part may be hold by SELECT query and still needs the index.
+            if (!isSharedPtrUnique(part))
+            {
+                parts_in_use.push_back(part);
+                continue;
+            }
+
             /// This check requires lock of index_mutex but if outdated part is unique then there is no
             /// contention on it, so it's relatively cheap and it's ok to check under a global parts lock.
-            if (isSharedPtrUnique(part) && (part->isIndexLoaded() || part->mayStoreDataInCaches()))
-                parts_to_clear.push_back(part);
+            if (!part->isIndexLoaded() && !part->mayStoreDataInCaches())
+                continue;
+
+            parts_to_clear.push_back(part);
         }
     }
 
     for (const auto & part : parts_to_clear)
     {
         auto & part_mut = const_cast<IMergeTreeDataPart &>(*part);
-
         part_mut.unloadIndex();
         part_mut.clearCaches();
-
-        LOG_TEST(log, "Unloaded primary key for outdated part {}", part->name);
     }
+
+    if (!parts_to_clear.empty())
+        LOG_TRACE(log, "Unloaded primary key for outdated parts {}", fmt::join(getPartsNames(parts_to_clear), ", "));
+    if (!parts_in_use.empty())
+        LOG_TRACE(log, "Outdated parts {} may be hold by SELECT query and still need the index", fmt::join(getPartsNames(parts_in_use), ", "));
 
     return parts_to_clear.size();
 }
