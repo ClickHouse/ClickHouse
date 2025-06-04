@@ -71,7 +71,7 @@ SELECT trimLeft(explain) FROM (
             )
         SELECT lead
         FROM window2
-        SETTINGS max_threads = 20
+        SETTINGS max_threads = 20, enable_parallel_repicas=0
 ) WHERE explain LIKE '%Resize%' LIMIT 3;
 
 DROP TABLE empty;
