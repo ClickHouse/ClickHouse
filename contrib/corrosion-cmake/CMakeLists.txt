@@ -53,8 +53,8 @@ if(NOT ENABLE_RUST)
 endif()
 
 # Try to find proper rust toolchain one more time in case of ENABLE_RUST already installed to give sensible error
-find_package(Rust)
 if (DEFINED ENABLE_RUST)
+  find_package(Rust)
   if (NOT Rust_FOUND)
     message(${RECONFIGURE_MESSAGE_LEVEL} "${Rust_ERROR_MESSAGE}")
   endif()
