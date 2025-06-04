@@ -17,6 +17,8 @@
 #include <type_traits>
 #include <typeinfo>
 #include <iostream>
+#include <sstream>
+#include <utility>
 
 namespace DB
 {
@@ -216,6 +218,18 @@ struct HasErase : std::false_type {};
 template <typename T, typename ArgType>
 struct HasErase<T, ArgType, std::void_t<decltype(std::declval<T>().erase(std::declval<ArgType>()))>> : std::true_type {};
 
+template <typename T, typename = void>
+struct HasCompareWithInt64t : std::false_type {};
+
+template <typename T>
+struct HasCompareWithInt64t<T, std::void_t<decltype(std::declval<const T&>() == std::declval<int64_t>())>> : std::true_type {};
+
+template <typename T, typename = void>
+struct HasCout : std::false_type {};
+
+template <typename T>
+struct HasCout<T, std::void_t<decltype(std::declval<std::ostream&>() << std::declval<T>())>> : std::true_type {};
+
 template <typename T>
 struct MakeSignedType
 {
@@ -290,7 +304,7 @@ public:
     }
 
     template <typename Data, typename... Args>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimization(
+    ALWAYS_INLINE std::pair<std::optional<EmplaceResult>, std::vector<int64_t>> emplaceKeyOptimization(
         Data & data,
         size_t row,
         Arena & pool,
@@ -315,9 +329,9 @@ public:
                 data.hasNullKeyData() = true;
 
                 if constexpr (has_mapped)
-                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                    return {EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key), {}};
                 else
-                    return EmplaceResult(!has_null_key);
+                    return {EmplaceResult(!has_null_key), {}};
             }
         }
 
@@ -326,7 +340,7 @@ public:
     }
 
     template <typename Data, typename Compare>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimizationWithHeap(
+    ALWAYS_INLINE std::pair<std::optional<EmplaceResult>, std::vector<int64_t>> emplaceKeyOptimizationWithHeap(
         Data & data,
         size_t row,
         Arena & pool,
@@ -353,9 +367,9 @@ public:
                 data.hasNullKeyData() = true;
 
                 if constexpr (has_mapped)
-                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                    return {EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key), {}};
                 else
-                    return EmplaceResult(!has_null_key);
+                    return {EmplaceResult(!has_null_key), {}};
             }
         }
 
@@ -515,7 +529,7 @@ protected:
     }
 
     template <typename Data, typename KeyHolder, typename Compare>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceImplOptimizationWithHeap(
+    ALWAYS_INLINE std::pair<std::optional<EmplaceResult>, std::vector<int64_t>> emplaceImplOptimizationWithHeap(
         KeyHolder & key_holder,
         Data & data,
         size_t limit_plus_offset_length,
@@ -524,15 +538,32 @@ protected:
         std::vector<typename Data::iterator>& top_keys_heap,
         Compare heap_cmp)
     {
+        std::vector<int64_t> catched;
+        // if constexpr (HasCout<KeyHolder>::value) {
+        //     std::stringstream ss2; ss2 << "qqqq: " << key_holder << std::endl; std::cout << ss2.str() << std::endl;
+        // }
+        std::stringstream ss3; ss3 << "typeid(key_holder).name(): " << typeid(key_holder).name() << std::endl; std::cout << ss3.str() << std::endl;
+        if constexpr (HasCompareWithInt64t<KeyHolder>::value)
+        {
+            if constexpr (HasCout<KeyHolder>::value) {
+                std::stringstream ss2; ss2 << "key_holder: " << key_holder << std::endl; std::cout << ss2.str() << std::endl;
+            }
+            if (key_holder == 4611789366909569002)
+                catched.push_back(4611789366909569002);
+            if (key_holder == 4611834982401952180)
+                catched.push_back(4611834982401952180);
+            if (key_holder == 4611856466334090543)
+                catched.push_back(4611856466334090543);
+        }
         chassert(limit_plus_offset_length > 0);
         if constexpr (consecutive_keys_optimization)
         {
             if (cache.found && cache.check(keyHolderGetKey(key_holder)))
             {
                 if constexpr (has_mapped)
-                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                    return {EmplaceResult(cache.value.second, cache.value.second, false), catched};
                 else
-                    return EmplaceResult(false);
+                    return {EmplaceResult(false), catched};
             }
         }
 
@@ -551,7 +582,7 @@ protected:
                         if (top_keys_heap.size() >= limit_plus_offset_length && // TODO ==
                             compareKeyHolders(top_keys_heap.front()->getKey(), key_holder, optimization_indexes))
                         {
-                            return std::nullopt;
+                            return {std::nullopt, catched};
                         }
                     }
                 } else
@@ -680,28 +711,41 @@ protected:
         }
 
         if constexpr (has_mapped)
-            return EmplaceResult(it->getMapped(), *cached, inserted);
+            return {EmplaceResult(it->getMapped(), *cached, inserted), catched};
         else
-            return EmplaceResult(inserted);
+            return {EmplaceResult(inserted), catched};
     }
 
     template <typename Data, typename KeyHolder>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceImplOptimization(
+    ALWAYS_INLINE std::pair<std::optional<EmplaceResult>, std::vector<int64_t>> emplaceImplOptimization(
         KeyHolder & key_holder,
         Data & data,
         size_t limit_plus_offset_length,
         const std::vector<OptimizationDataOneExpression> & optimization_indexes,
         size_t max_allowable_fill)
     {
+        std::vector<int64_t> catched;
+        if constexpr (HasCompareWithInt64t<KeyHolder>::value)
+        {
+            // if constexpr (HasCout<KeyHolder>::value) {
+            //     std::stringstream ss2; ss2 << "key_holder: " << key_holder << std::endl; std::cout << ss2.str() << std::endl;
+            // }
+            if (key_holder == 4611789366909569002)
+                catched.push_back(4611789366909569002);
+            if (key_holder == 4611834982401952180)
+                catched.push_back(4611834982401952180);
+            if (key_holder == 4611856466334090543)
+                catched.push_back(4611856466334090543);
+        }
         chassert(limit_plus_offset_length > 0);
         if constexpr (consecutive_keys_optimization)
         {
             if (cache.found && cache.check(keyHolderGetKey(key_holder)))
             {
                 if constexpr (has_mapped)
-                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                    return {EmplaceResult(cache.value.second, cache.value.second, false), catched};
                 else
-                    return EmplaceResult(false);
+                    return {EmplaceResult(false), catched};
             }
         }
 
@@ -795,9 +839,9 @@ protected:
         }
 
         if constexpr (has_mapped)
-            return EmplaceResult(it->getMapped(), *cached, inserted);
+            return {EmplaceResult(it->getMapped(), *cached, inserted), catched};
         else
-            return EmplaceResult(inserted);
+            return {EmplaceResult(inserted), catched};
     }
 
     template <typename Data, typename Key>

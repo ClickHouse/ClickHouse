@@ -1085,6 +1085,11 @@ void NO_INLINE Aggregator::executeImplBatch(
     bool use_compiled_functions [[maybe_unused]],
     AggregateDataPtr overflow_row) const
 {
+    auto now = std::chrono::high_resolution_clock::now();
+    auto duration = now.time_since_epoch();
+    size_t call_time = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+    std::stringstream ss0; ss0 << "executeImplBatch " << call_time << ", " << static_cast<void*>(&method.data) << ": called with row_begin, row_end: " << row_begin << ' ' << row_end << std::endl; std::cout << ss0.str() << std::endl;
+
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
 
     /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
@@ -1260,12 +1265,17 @@ void NO_INLINE Aggregator::executeImplBatch(
     }
 
     state.resetCache();
+    std::vector<size_t> indexesqq;
 
     /// For all rows.
+    std::stringstream ss1; ss1 << "executeImplBatch " << call_time << ", " << static_cast<void*>(&method.data) << ": no_more_keys: " << no_more_keys << std::endl; std::cout << ss1.str() << std::endl;
+    bool is_order_by_optimization_applied = params.optimization_indexes != std::nullopt && params.limit_plus_offset_length < (key_end - key_start) / 2;
     if (!no_more_keys)
     {
-        if (params.optimization_indexes != std::nullopt && params.limit_plus_offset_length < (key_end - key_start) / 2)
+        // std::cout << "if1 passed" << std::endl;
+        if (is_order_by_optimization_applied)
         {
+            // std::cout << "if2 passed" << std::endl;
             size_t max_allowable_fill = std::numeric_limits<uint64_t>::max();
             const size_t allowed_times_more = 4; // constant could be changed;
             if (std::numeric_limits<uint64_t>::max() / allowed_times_more >= params.limit_plus_offset_length)
@@ -1276,6 +1286,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 !HasImpls<DataType>::value &&
                 HasConstIterator<DataType>::value)
             {
+                std::stringstream ss2; ss2 << "executeImplBatch " << call_time << ", " << static_cast<void*>(&method.data) << ": if3 passed" << std::endl; std::cout << ss2.str() << std::endl;
                 using Data = decltype(method.data);
                 using DataIterator = typename Data::iterator;
                 std::vector<DataIterator> top_keys_heap;
@@ -1310,7 +1321,17 @@ void NO_INLINE Aggregator::executeImplBatch(
                         }
                     }
 
-                    auto emplace_result = state.emplaceKeyOptimizationWithHeap(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, max_allowable_fill, top_keys_heap, heap_cmp);
+                    auto emplace_result_pair = state.emplaceKeyOptimizationWithHeap(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, max_allowable_fill, top_keys_heap, heap_cmp);
+                    auto emplace_result = emplace_result_pair.first;
+                    if (!emplace_result_pair.second.empty()) {
+                        std::stringstream ss3; ss3 << "executeImplBatch " << call_time << ", " << static_cast<void*>(&method.data) << ": found value!!: ";
+                        for (const auto& value : emplace_result_pair.second) {
+                            ss3 << value << " with index " << i << ' ';
+                            indexesqq.push_back(i);
+                        }
+                        ss3 << "emplace_result.has_value(): " << emplace_result.has_value() << std::endl;
+                        ss3 << std::endl; std::cout << ss3.str() << std::endl;
+                    }
 
                     if (!emplace_result.has_value())
                     {
@@ -1353,6 +1374,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             } else
             {
+                std::stringstream ss2; ss2 << "executeImplBatch " << call_time << ", " << static_cast<void*>(&method.data) << ": if3 not passed" << std::endl; std::cout << ss2.str() << std::endl;
                 for (size_t i = key_start; i < key_end; ++i)
                 {
                     AggregateDataPtr aggregate_data = nullptr;
@@ -1369,7 +1391,17 @@ void NO_INLINE Aggregator::executeImplBatch(
                         }
                     }
 
-                    auto emplace_result = state.emplaceKeyOptimization(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, max_allowable_fill);
+                    auto emplace_result_pair = state.emplaceKeyOptimization(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, max_allowable_fill);
+                    auto emplace_result = emplace_result_pair.first;
+                    if (!emplace_result_pair.second.empty()) {
+                        std::stringstream ss3; ss3 << "executeImplBatch " << call_time << ", " << static_cast<void*>(&method.data) << ": found value!!: ";
+                        for (const auto& value : emplace_result_pair.second) {
+                            ss3 << value << " with index " << i << ' ';
+                            indexesqq.push_back(i);
+                        }
+                        ss3 << "emplace_result.has_value(): " << emplace_result.has_value() << std::endl;
+                        ss3 << std::endl; std::cout << ss3.str() << std::endl;
+                    }
 
                     if (!emplace_result.has_value())
                     {
@@ -1413,6 +1445,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             }
         } else
         {
+            std::stringstream ss2; ss2 << "executeImplBatch " << call_time << ", " << static_cast<void*>(&method.data) << ": if2 not passed" << std::endl; std::cout << ss2.str() << std::endl;
             for (size_t i = key_start; i < key_end; ++i)
             {
                 AggregateDataPtr aggregate_data = nullptr;
@@ -1481,6 +1514,23 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
+    // // shift places to get rid of nullptrs
+    // size_t last_nullptr_index = row_begin;
+    // for (size_t i = row_begin; i < row_end; ++i)
+    //     if (places[i] != nullptr)
+    //     {
+    //         places[last_nullptr_index] = places[i];
+    //         std::cout << "shifted places at " << i << " to " << last_nullptr_index << std::endl;
+    //         ++last_nullptr_index;
+    //     }
+    // row_end = last_nullptr_index;
+
+    if (!indexesqq.empty()) {
+        for (const auto& ind : indexesqq) {
+            std::stringstream ss4; ss4 << "executeImplBatch " << call_time << ", " << static_cast<void*>(&method.data) << ": places[" << ind << "] = " << static_cast<void*>(places[ind]) << std::endl; std::cout << ss4.str() << std::endl;
+        }
+    }
+
     executeAggregateInstructions(
         aggregates_pool,
         row_begin,
@@ -1488,9 +1538,12 @@ void NO_INLINE Aggregator::executeImplBatch(
         aggregate_instructions,
         places,
         key_start,
-        state.hasOnlyOneValueSinceLastReset(),
+        state.hasOnlyOneValueSinceLastReset() && !is_order_by_optimization_applied,
         all_keys_are_const,
-        use_compiled_functions);
+        use_compiled_functions,
+        call_time);
+
+    std::stringstream ss2; ss2 << "executeImplBatch " << call_time << ", " << static_cast<void*>(&method.data) << ": finishing"; std::cout << ss2.str() << std::endl;
 }
 
 void Aggregator::executeAggregateInstructions(
@@ -1502,11 +1555,14 @@ void Aggregator::executeAggregateInstructions(
     size_t key_start,
     bool has_only_one_value_since_last_reset,
     bool all_keys_are_const,
-    bool use_compiled_functions [[maybe_unused]]) const
+    bool use_compiled_functions [[maybe_unused]],
+    size_t call_time) const
 {
+    std::stringstream ss1; ss1 << "executeAggregateInstructions " << call_time << ": called" << std::endl; std::cout << ss1.str() << std::endl;
 #if USE_EMBEDDED_COMPILER
     if (use_compiled_functions)
     {
+        std::stringstream ss2; ss2 << "executeAggregateInstructions " << call_time << ": using compiled functions!" << std::endl; std::cout << ss2.str() << std::endl;
         std::vector<ColumnData> columns_data;
         bool can_optimize_equal_keys_ranges = true;
 
@@ -1532,31 +1588,26 @@ void Aggregator::executeAggregateInstructions(
         }
         else
         {
-            // shift
-            size_t last_nullptr_index = row_begin;
-            for (size_t i = row_begin; i < row_end; ++i)
-                if (places[i] != nullptr)
-                {
-                    std::swap(places[last_nullptr_index], places[i]);
-                    ++last_nullptr_index;
-                }
-            row_end = last_nullptr_index;
             auto add_into_aggregate_states_function = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function;
             add_into_aggregate_states_function(row_begin, row_end, columns_data.data(), places.get());
         }
     }
 #endif
 
+    std::cout << "aggregate_functions.size(): " << aggregate_functions.size() << std::endl;
     /// Add values to the aggregate functions.
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
     {
+        std::cout << i << "-th aggregate function" << std::endl;
 #if USE_EMBEDDED_COMPILER
+        std::cout << "use_compiled_functions, is_aggregate_function_compiled[i]: " << use_compiled_functions << ' ' << is_aggregate_function_compiled[i] << std::endl;
         if (use_compiled_functions && is_aggregate_function_compiled[i])
             continue;
 #endif
 
         AggregateFunctionInstruction * inst = aggregate_instructions + i;
 
+        std::cout << "all_keys_are_const, inst->can_optimize_equal_keys_ranges, has_only_one_value_since_last_reset: " << all_keys_are_const << ' ' << inst->can_optimize_equal_keys_ranges << ' ' << has_only_one_value_since_last_reset;
         if (all_keys_are_const || (inst->can_optimize_equal_keys_ranges && has_only_one_value_since_last_reset))
         {
             ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
@@ -1569,6 +1620,7 @@ void Aggregator::executeAggregateInstructions(
         }
     }
 
+    std::stringstream ss2; ss2 << "executeAggregateInstructions " << call_time << ": finished" << std::endl; std::cout << ss2.str() << std::endl;
 }
 
 
@@ -1631,15 +1683,16 @@ void Aggregator::addBatch(
     AggregateDataPtr * places,
     Arena * arena)
 {
+    std::cout << "addBatch1 called" << std::endl;
     if (inst->offsets)
-        inst->batch_that->addBatchArray(
+        inst->batch_that->addBatchArray( // TODO убедиться, что внутри places корректно используется
             row_begin, row_end, places,
             inst->state_offset,
             inst->batch_arguments,
             inst->offsets,
             arena);
     else if (inst->has_sparse_arguments)
-        inst->batch_that->addBatchSparse(
+        inst->batch_that->addBatchSparse( // TODO убедиться, что внутри places корректно используется
             row_begin, row_end, places,
             inst->state_offset,
             inst->batch_arguments,
