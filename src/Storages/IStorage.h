@@ -102,7 +102,7 @@ public:
     virtual bool isDictionary() const { return false; }
 
     /// Returns true if the metadata of a table can be changed normally by other processes
-    virtual bool hasExternalDynamicMetadata() const { return false; }
+    virtual bool hasExternalDynamicMetadata(ContextPtr) const { return false; }
 
     /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }

@@ -187,7 +187,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage)
         return {};
 
-    if (storage->hasExternalDynamicMetadata())
+    if (storage->hasExternalDynamicMetadata(context))
     {
         storage->updateExternalDynamicMetadata(context);
     }

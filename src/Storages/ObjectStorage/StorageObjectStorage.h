@@ -141,7 +141,7 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
-    bool hasExternalDynamicMetadata() const override;
+    bool hasExternalDynamicMetadata(ContextPtr) const override;
 
     void updateExternalDynamicMetadata(ContextPtr) override;
 

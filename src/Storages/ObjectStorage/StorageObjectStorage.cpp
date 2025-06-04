@@ -199,13 +199,15 @@ void StorageObjectStorage::Configuration::update( ///NOLINT
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
-bool StorageObjectStorage::hasExternalDynamicMetadata() const
+bool StorageObjectStorage::hasExternalDynamicMetadata(ContextPtr query_context) const
 {
+    configuration->update(object_storage, query_context, /* if_not_updated */true);
     return configuration->hasExternalDynamicMetadata();
 }
 
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
+    configuration->update(object_storage, query_context, /* if_not_updated */true);
     return configuration->getExternalMetadata(object_storage, query_context);
 }
 
