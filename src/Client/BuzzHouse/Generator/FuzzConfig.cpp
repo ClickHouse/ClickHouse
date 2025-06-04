@@ -24,6 +24,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     uint32_t port = default_port;
     uint32_t mysql_port = default_mysql_port;
     String hostname = "localhost";
+    String container;
     String unix_socket;
     String user = "test";
     String password;
@@ -33,6 +34,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
 
     static const SettingEntries configEntries
         = {{"hostname", [&](const JSONObjectType & value) { hostname = String(value.getString()); }},
+           {"container", [&](const JSONObjectType & value) { container = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
            {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
            {"unix_socket", [&](const JSONObjectType & value) { unix_socket = String(value.getString()); }},
@@ -54,7 +56,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     }
 
     return std::optional<ServerCredentials>(
-        ServerCredentials(hostname, port, mysql_port, unix_socket, user, password, database, user_files_dir, query_log_file));
+        ServerCredentials(hostname, container, port, mysql_port, unix_socket, user, password, database, user_files_dir, query_log_file));
 }
 
 static PerformanceMetric
@@ -160,6 +162,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"mongodb", [&](const JSONObjectType & value) { mongodb_server = loadServerCredentials(value, "mongodb", 27017); }},
         {"redis", [&](const JSONObjectType & value) { redis_server = loadServerCredentials(value, "redis", 6379); }},
         {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
+        {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
+        {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
         {"disabled_types",
          [&](const JSONObjectType & value)
          {

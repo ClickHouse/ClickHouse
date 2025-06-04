@@ -268,6 +268,80 @@ void StatementGenerator::setTableRemote(
             sfunc->set_fcomp(t.file_comp);
         }
     }
+    else if (table_engine && t.isURLEngine() && rg.nextSmallNumber() < 7)
+    {
+        String buf;
+        bool first = true;
+        const ServerCredentials & sc = fc.http_server.value();
+        URLFunc * sfunc = tfunc->mutable_url();
+        const std::optional<String> & cluster = t.getCluster();
+
+        if (use_cluster && cluster.has_value())
+        {
+            sfunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
+            sfunc->mutable_cluster()->set_cluster(cluster.value());
+        }
+        else
+        {
+            sfunc->set_fname(URLFunc_FName::URLFunc_FName_url);
+        }
+        sfunc->set_uurl("http://" + sc.hostname + ":" + std::to_string(sc.port) + "/file" + std::to_string(t.tname));
+        sfunc->set_format(t.file_format);
+        flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
+        for (const auto & entry : this->remote_entries)
+        {
+            buf += fmt::format(
+                "{}{} {}{}",
+                first ? "" : ", ",
+                entry.getBottomName(),
+                entry.getBottomType()->typeName(true),
+                entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
+            first = false;
+        }
+        this->remote_entries.clear();
+        sfunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
+    }
+    else if (table_engine && t.isAzureEngine() && rg.nextSmallNumber() < 7)
+    {
+        String buf;
+        bool first = true;
+        const ServerCredentials & sc = fc.azurite_server.value();
+        AzureBlobStorageFunc * sfunc = tfunc->mutable_azure();
+        const std::optional<String> & cluster = t.getCluster();
+
+        if (use_cluster && cluster.has_value())
+        {
+            sfunc->set_fname(AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorageCluster);
+            sfunc->mutable_cluster()->set_cluster(cluster.value());
+        }
+        else
+        {
+            sfunc->set_fname(AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorage);
+        }
+        sfunc->set_connection_string(sc.hostname);
+        sfunc->set_container(sc.container);
+        sfunc->set_blobpath("file" + std::to_string(t.tname));
+        sfunc->set_user(sc.user);
+        sfunc->set_password(sc.password);
+        sfunc->set_format(t.file_format);
+        flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
+        for (const auto & entry : this->remote_entries)
+        {
+            buf += fmt::format(
+                "{}{} {}{}",
+                first ? "" : ", ",
+                entry.getBottomName(),
+                entry.getBottomType()->typeName(true),
+                entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
+            first = false;
+        }
+        this->remote_entries.clear();
+        sfunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
+        if (!t.file_comp.empty())
+        {
+            sfunc->set_fcomp(t.file_comp);
+        }
+    }
     else
     {
         RemoteFunc * rfunc = tfunc->mutable_remote();

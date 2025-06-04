@@ -316,10 +316,15 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Hudi, {}},
          {DeltaLake, {}},
          {IcebergS3, {}},
+         {IcebergAzure, {}},
+         {IcebergLocal, {}},
          {Merge, {}},
          {Distributed, distributedTableSettings},
          {Dictionary, {}},
-         {GenerateRandom, {}}});
+         {GenerateRandom, {}},
+         {AzureBlobStorage, {}},
+         {AzureQueue, {}},
+         {URL, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},

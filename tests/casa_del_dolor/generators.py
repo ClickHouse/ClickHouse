@@ -82,6 +82,18 @@ class BuzzHouseGenerator(Generator):
                 "port": cluster.redis_port,
                 "password": "clickhouse",
             }
+        if args.with_nginx:
+            buzz_config["http"] = {
+                "hostname": cluster.nginx_host,
+                "port": cluster.nginx_port,
+            }
+        if args.with_azurite:
+            buzz_config["azurite"] = {
+                "hostname": cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL'],
+                "container": "cont",
+                "user": "devstoreaccount1",
+                "password": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+            }
 
         with open(self.temp.name, "w") as file2:
             file2.write(json.dumps(buzz_config))

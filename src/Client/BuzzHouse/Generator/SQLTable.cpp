@@ -164,7 +164,7 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_exists"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sample_factor"}));
         }
-        else if (t.isAnyS3Engine() || t.isFileEngine())
+        else if (t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isFileEngine() || t.isURLEngine())
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
@@ -173,6 +173,10 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
             if (t.isS3Engine())
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}));
+            }
+            else if (t.isURLEngine())
+            {
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers"}));
             }
         }
         else if (t.isMergeEngine())
@@ -989,10 +993,10 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         }
         connections.createExternalDatabaseTable(rg, next, b, entries, te);
     }
-    else if (te->has_engine() && (b.isAnyS3Engine() || b.isHudiEngine() || b.isDeltaLakeEngine() || b.isIcebergEngine()))
+    else if (te->has_engine() && (b.isAnyS3Engine() || b.isHudiEngine() || b.isDeltaLakeEngine() || b.isIcebergS3Engine()))
     {
         connections.createExternalDatabaseTable(rg, IntegrationCall::MinIO, b, entries, te);
-        if (b.isAnyS3Engine() || b.isIcebergEngine())
+        if (b.isAnyS3Engine() || b.isIcebergS3Engine())
         {
             b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
             te->add_params()->set_in_out(b.file_format);
@@ -1105,6 +1109,37 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
 
             te->add_params()->set_num(string_length_dist(rg.generator));
             te->add_params()->set_num(nested_rows_dist(rg.generator));
+        }
+    }
+    else if (te->has_engine() && b.isAnyAzureEngine())
+    {
+        connections.createExternalDatabaseTable(rg, IntegrationCall::Azurite, b, entries, te);
+        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+        te->add_params()->set_in_out(b.file_format);
+        if (rg.nextSmallNumber() < 4)
+        {
+            static const DB::Strings & AzureCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
+
+            b.file_comp = rg.pickRandomly(AzureCompress);
+            te->add_params()->set_svalue(b.file_comp);
+        }
+        if (rg.nextSmallNumber() < 5)
+        {
+            generateTableKey(rg, b.teng, false, te->mutable_partition_by());
+        }
+    }
+    else if (te->has_engine() && b.isURLEngine())
+    {
+        connections.createExternalDatabaseTable(rg, IntegrationCall::HTTP, b, entries, te);
+        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+        te->add_params()->set_in_out(b.file_format);
+        if (rg.nextSmallNumber() < 4)
+        {
+            static const DB::Strings & URLCompress
+                = {"none", "auto", "gzip", "gz", "deflate", "brotli", "br", "lzma", "xz", "zstd", "zst", "lz4", "bz2", "snappy"};
+
+            b.file_comp = rg.pickRandomly(URLCompress);
+            te->add_params()->set_svalue(b.file_comp);
         }
     }
     if (te->has_engine())
@@ -1645,6 +1680,14 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         if (connections.hasMinIOConnection())
         {
             this->ids.emplace_back(S3);
+        }
+        if (connections.hasAzuriteConnection())
+        {
+            this->ids.emplace_back(AzureBlobStorage);
+        }
+        if (connections.hasHTTPConnection())
+        {
+            this->ids.emplace_back(URL);
         }
     }
 

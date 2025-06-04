@@ -195,11 +195,17 @@ public:
 
     bool isAnyS3Engine() const { return isS3Engine() || isS3QueueEngine(); }
 
+    bool isAzureEngine() const { return teng == TableEngineValues::AzureBlobStorage; }
+
+    bool isAzureQueueEngine() const { return teng == TableEngineValues::AzureQueue; }
+
+    bool isAnyAzureEngine() const { return isAzureEngine() || isAzureQueueEngine(); }
+
     bool isHudiEngine() const { return teng == TableEngineValues::Hudi; }
 
     bool isDeltaLakeEngine() const { return teng == TableEngineValues::DeltaLake; }
 
-    bool isIcebergEngine() const { return teng == TableEngineValues::IcebergS3; }
+    bool isIcebergS3Engine() const { return teng == TableEngineValues::IcebergS3; }
 
     bool isMergeEngine() const { return teng == TableEngineValues::Merge; }
 
@@ -209,11 +215,13 @@ public:
 
     bool isGenerateRandomEngine() const { return teng == TableEngineValues::GenerateRandom; }
 
+    bool isURLEngine() const { return teng == TableEngineValues::URL; }
+
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-            || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine()
-            || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine();
+            || isMongoDBEngine() || isAnyS3Engine() || isAnyAzureEngine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergS3Engine()
+            || isMergeEngine() || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine();
     }
 
     bool isAnotherRelationalDatabaseEngine() const { return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine(); }

@@ -50,7 +50,7 @@ using JSONObjectType = JSONParserImpl::Element;
 class ServerCredentials
 {
 public:
-    String hostname;
+    String hostname, container;
     uint32_t port, mysql_port;
     String unix_socket, user, password, database;
     std::filesystem::path user_files_dir, query_log_file;
@@ -65,6 +65,7 @@ public:
 
     ServerCredentials(
         const String & hostname_,
+        const String & container_,
         const uint32_t port_,
         const uint32_t mysql_port_,
         const String & unix_socket_,
@@ -74,6 +75,7 @@ public:
         const std::filesystem::path & user_files_dir_,
         const std::filesystem::path & query_log_file_)
         : hostname(hostname_)
+        , container(container_)
         , port(port_)
         , mysql_port(mysql_port_)
         , unix_socket(unix_socket_)
@@ -138,7 +140,7 @@ public:
     std::ofstream outf;
     DB::Strings collations, storage_policies, timezones, disks, clusters;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
-        minio_server;
+        minio_server, http_server, azurite_server;
     std::unordered_map<String, PerformanceMetric> metrics;
     std::unordered_set<uint32_t> disallowed_error_codes;
     String host = "localhost";

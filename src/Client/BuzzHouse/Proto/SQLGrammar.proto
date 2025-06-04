@@ -3130,10 +3130,15 @@ enum TableEngineValues {
     Hudi = 24;
     DeltaLake = 25;
     IcebergS3 = 26;
-    Merge = 27;
-    Distributed = 28;
-    Dictionary = 29;
-    GenerateRandom = 30;
+    IcebergAzure = 27;
+    IcebergLocal = 28;
+    Merge = 29;
+    Distributed = 30;
+    Dictionary = 31;
+    GenerateRandom = 32;
+    AzureBlobStorage = 33;
+    AzureQueue = 34;
+    URL = 35;
 }
 
 enum TableEngineOption {
