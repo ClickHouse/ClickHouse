@@ -5,8 +5,33 @@ namespace BuzzHouse
 
 const auto nastyStrings = [](RandomGenerator & rg) { return "'" + rg.pickRandomly(rg.nasty_strings) + "'"; };
 
-std::unordered_map<String, CHSetting> hotSettings
-    = {{"enable_analyzer", CHSetting(trueOrFalse, {"0", "1"}, false)},
+std::unordered_map<String, CHSetting> performanceSettings
+    = {{"allow_aggregate_partitions_independently", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"allow_experimental_query_deduplication", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"allow_hyperscan", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"allow_prefetched_read_pool_for_local_filesystem", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"allow_prefetched_read_pool_for_remote_filesystem", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"allow_push_predicate_when_subquery_contains_with", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"allow_reorder_prewhere_conditions", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"allow_simdjson", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"allow_statistics_optimize", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"compile_aggregate_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"compile_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"compile_sort_description", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"count_distinct_implementation",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"},
+            false)},
+       {"count_distinct_optimization", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"enable_adaptive_memory_spill_scheduler", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"enable_optimize_predicate_expression", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"enable_optimize_predicate_expression_to_final_subquery", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"join_any_take_last_row", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"join_algorithm",
         CHSetting(
             [](RandomGenerator & rg)
@@ -54,35 +79,6 @@ std::unordered_map<String, CHSetting> hotSettings
              "'full_sorting_merge'",
              "'prefer_partial_merge'"},
             false)},
-       {"query_plan_optimize_lazy_materialization", CHSetting(trueOrFalse, {"0", "1"}, false)}};
-
-std::unordered_map<String, CHSetting> performanceSettings
-    = {{"allow_aggregate_partitions_independently", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"allow_experimental_query_deduplication", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"allow_hyperscan", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"allow_prefetched_read_pool_for_local_filesystem", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"allow_prefetched_read_pool_for_remote_filesystem", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"allow_push_predicate_when_subquery_contains_with", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"allow_reorder_prewhere_conditions", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"allow_simdjson", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"allow_statistics_optimize", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"compile_aggregate_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"compile_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"compile_sort_description", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"count_distinct_implementation",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                const DB::Strings & choices = {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"};
-                return rg.pickRandomly(choices);
-            },
-            {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"},
-            false)},
-       {"count_distinct_optimization", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"enable_adaptive_memory_spill_scheduler", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"enable_optimize_predicate_expression", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"enable_optimize_predicate_expression_to_final_subquery", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"join_any_take_last_row", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"low_cardinality_use_single_dictionary_for_part", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"max_bytes_ratio_before_external_group_by", CHSetting(probRange, {"0", "0.1", "0.5", "0.99"}, false)},
        {"max_bytes_ratio_before_external_sort", CHSetting(probRange, {"0", "0.1", "0.5", "0.99"}, false)},
@@ -152,6 +148,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_lift_up_union", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_merge_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_merge_filters", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_optimize_lazy_materialization", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_optimize_prewhere", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_push_down_limit", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_read_in_order", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -214,13 +211,12 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_asynchronous_read_from_io_pool_for_merge_tree", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"allow_changing_replica_until_first_data_packet", CHSetting(trueOrFalse, {}, false)},
     {"allow_introspection_functions", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"allow_special_bool_values_inside_variant", CHSetting(trueOrFalse, {}, false)},
     {"alter_move_to_space_execute_async", CHSetting(trueOrFalse, {}, false)},
     {"alter_partition_verbose_result", CHSetting(trueOrFalse, {}, false)},
     {"alter_sync", CHSetting(zeroOneTwo, {}, false)},
     {"analyze_index_with_space_filling_curves", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"analyzer_compatibility_join_using_top_level_identifier", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    /// {"apply_deleted_mask", CHSetting(trueOrFalse, {}, false)}, gives issue with dump table oracle
+    {"apply_deleted_mask", CHSetting(trueOrFalse, {}, false)},
     {"apply_mutations_on_fly", CHSetting(trueOrFalse, {}, false)},
     {"any_join_distinct_right_table_keys", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"asterisk_include_alias_columns", CHSetting(trueOrFalse, {}, false)},
@@ -272,10 +268,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"decimal_check_overflow", CHSetting(trueOrFalse, {}, false)},
     /// {"deduplicate_blocks_in_dependent_materialized_views", CHSetting(trueOrFalse, {}, false)},
     /// {"describe_compact_output", CHSetting(trueOrFalse, {}, false)},
-    {"distributed_plan_default_reader_bucket_count",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 128)); }, {}, false)},
-    {"distributed_plan_default_shuffle_join_bucket_count",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 128)); }, {}, false)},
     {"describe_extend_object_types", CHSetting(trueOrFalse, {}, false)},
     {"describe_include_subcolumns", CHSetting(trueOrFalse, {}, false)},
     {"describe_include_virtual_columns", CHSetting(trueOrFalse, {}, false)},
@@ -287,7 +279,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"distributed_cache_bypass_connection_pool", CHSetting(trueOrFalse, {}, false)},
     {"distributed_cache_discard_connection_if_unread_data", CHSetting(trueOrFalse, {}, false)},
     {"distributed_cache_fetch_metrics_only_from_current_az", CHSetting(trueOrFalse, {}, false)},
-    {"distributed_cache_read_only_from_current_az", CHSetting(trueOrFalse, {}, false)},
     {"distributed_cache_throw_on_error", CHSetting(trueOrFalse, {}, false)},
     {"distributed_foreground_insert", CHSetting(trueOrFalse, {}, false)},
     {"distributed_group_by_no_merge", CHSetting(zeroOneTwo, {}, false)},
@@ -304,6 +295,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"distributed_push_down_limit", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"do_not_merge_across_partitions_select_final", CHSetting(trueOrFalse, {}, false)},
     {"empty_result_for_aggregation_by_constant_keys_on_empty_set", CHSetting(trueOrFalse, {}, false)},
+    {"enable_analyzer", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"enable_blob_storage_log", CHSetting(trueOrFalse, {}, false)},
     {"enable_early_constant_folding", CHSetting(trueOrFalse, {}, false)},
     {"enable_extended_results_for_datetime_functions", CHSetting(trueOrFalse, {}, false)},
@@ -332,7 +324,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"engine_file_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
     {"engine_url_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
     {"exact_rows_before_limit", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"distributed_plan_execute_locally", CHSetting(trueOrFalse, {}, false)},
     /// {"external_table_functions_use_nulls", CHSetting(trueOrFalse, {}, false)},
     /// {"external_table_strict_query", CHSetting(trueOrFalse, {}, true)},
     {"extremes", CHSetting(trueOrFalse, {}, false)},
@@ -364,15 +355,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"final", CHSetting(trueOrFalse, {}, false)},
     {"flatten_nested", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"force_aggregate_partitions_independently", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"distributed_plan_force_exchange_kind",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"''", "'Persisted'", "'Streaming'"};
-             return rg.pickRandomly(choices);
-         },
-         {"''", "'Persisted'", "'Streaming'"},
-         false)},
     {"force_grouping_standard_compatibility", CHSetting(trueOrFalse, {}, false)},
     {"force_optimize_skip_unused_shards", CHSetting(zeroOneTwo, {}, false)},
     {"force_optimize_skip_unused_shards_nesting", CHSetting(zeroOneTwo, {}, false)},
@@ -534,7 +516,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"log_query_threads", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"log_query_views", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"low_cardinality_max_dictionary_size", CHSetting(highRange, {}, false)},
-    {"make_distributed_plan", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"materialize_skip_indexes_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_statistics_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_ttl_after_modify", CHSetting(trueOrFalse, {}, false)},
@@ -594,7 +575,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"mysql_map_fixed_string_to_text_in_show_columns", CHSetting(trueOrFalse, {}, false)},
     {"mysql_map_string_to_text_in_show_columns", CHSetting(trueOrFalse, {}, false)},
     {"optimize_count_from_files", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"distributed_plan_optimize_exchanges", CHSetting(trueOrFalse, {}, false)},
     {"optimize_extract_common_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_on_insert", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_or_like_chain", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -615,6 +595,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_arrow_string_as_string", CHSetting(trueOrFalse, {}, false)},
     {"output_format_arrow_use_64_bit_indexes_for_dictionary", CHSetting(trueOrFalse, {}, false)},
     {"output_format_arrow_use_signed_indexes_for_dictionary", CHSetting(trueOrFalse, {}, false)},
+    {"output_format_binary_write_json_as_string", CHSetting(trueOrFalse, {}, false)},
+    {"output_format_bson_string_as_string", CHSetting(trueOrFalse, {}, false)},
+    {"output_format_csv_serialize_tuple_into_separate_columns", CHSetting(trueOrFalse, {}, false)},
+    {"output_format_decimal_trailing_zeros", CHSetting(trueOrFalse, {}, false)},
+    {"output_format_enable_streaming", CHSetting(trueOrFalse, {}, false)},
     {"output_format_avro_codec",
      CHSetting(
          [](RandomGenerator & rg)
@@ -624,11 +609,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
-    {"output_format_binary_write_json_as_string", CHSetting(trueOrFalse, {}, false)},
-    {"output_format_bson_string_as_string", CHSetting(trueOrFalse, {}, false)},
-    {"output_format_csv_serialize_tuple_into_separate_columns", CHSetting(trueOrFalse, {}, false)},
-    {"output_format_decimal_trailing_zeros", CHSetting(trueOrFalse, {}, false)},
-    {"output_format_enable_streaming", CHSetting(trueOrFalse, {}, false)},
     {"output_format_json_array_of_rows", CHSetting(trueOrFalse, {}, false)},
     {"output_format_json_escape_forward_slashes", CHSetting(trueOrFalse, {}, false)},
     {"output_format_json_named_tuples_as_objects", CHSetting(trueOrFalse, {}, false)},
@@ -696,7 +676,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {},
          false)},
     {"output_format_pretty_fallback_to_vertical", CHSetting(trueOrFalse, {}, false)},
-    {"output_format_pretty_glue_chunks", CHSetting(trueOrFalse, {}, false)},
     {"output_format_pretty_grid_charset", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'UTF-8'" : "'ASCII'"; }, {}, false)},
     {"output_format_pretty_highlight_digit_groups", CHSetting(trueOrFalse, {}, false)},
     {"output_format_pretty_multiline_fields", CHSetting(trueOrFalse, {}, false)},
@@ -712,12 +691,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     /// {"parallel_replica_offset", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},
     {"parallel_replicas_allow_in_with_subquery", CHSetting(trueOrFalse, {"0", "1"}, false)},
     /// {"parallel_replicas_count", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},
-    {"parallel_replicas_custom_key_range_lower", CHSetting(highRange, {}, false)},
-    {"parallel_replicas_custom_key_range_upper", CHSetting(highRange, {}, false)},
     {"parallel_replicas_for_cluster_engines", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallel_replicas_for_non_replicated_merge_tree", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallel_replicas_index_analysis_only_on_coordinator", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"parallel_replicas_insert_select_local_pipeline", CHSetting(trueOrFalse, {}, false)},
+    {"parallel_replicas_custom_key_range_lower", CHSetting(highRange, {}, false)},
+    {"parallel_replicas_custom_key_range_upper", CHSetting(highRange, {}, false)},
     {"parallel_replicas_local_plan", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallel_replicas_mark_segment_size", CHSetting(highRange, {}, false)},
     {"parallel_replicas_min_number_of_rows_per_replica", CHSetting(highRange, {}, false)},
@@ -729,97 +707,100 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
              return rg.pickRandomly(choices);
          },
          {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"},
-         false)},
-    {"partial_result_on_first_cancel", CHSetting(trueOrFalse, {}, false)},
-    {"postgresql_fault_injection_probability", CHSetting(probRange, {}, false)},
-    {"precise_float_parsing", CHSetting(trueOrFalse, {}, false)},
-    {"print_pretty_type_names", CHSetting(trueOrFalse, {}, false)},
-    {"push_external_roles_in_interserver_queries", CHSetting(trueOrFalse, {}, false)},
-    {"query_cache_compress_entries", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_cache_share_between_users", CHSetting(trueOrFalse, {}, false)},
-    {"query_cache_squash_partial_results", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_use_new_logical_join_step", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"read_from_page_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"read_through_distributed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"regexp_dict_allow_hyperscan", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"regexp_dict_flag_case_insensitive", CHSetting(trueOrFalse, {}, false)},
-    {"regexp_dict_flag_dotall", CHSetting(trueOrFalse, {}, false)},
-    /*{"remote_filesystem_read_method", Gives issues on cloud
-     CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {"'read'", "'threadpool'"}, false)},*/
-    {"reject_expensive_hyperscan_regexps", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"remote_filesystem_read_prefetch", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"replace_running_query", CHSetting(trueOrFalse, {}, false)},
-    {"rows_before_aggregation", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"s3_allow_parallel_part_upload", CHSetting(trueOrFalse, {}, false)},
-    {"s3_check_objects_after_upload", CHSetting(trueOrFalse, {}, false)},
-    {"s3_create_new_file_on_insert", CHSetting(trueOrFalse, {}, false)},
-    {"s3_disable_checksum", CHSetting(trueOrFalse, {}, false)},
-    {"s3_ignore_file_doesnt_exist", CHSetting(trueOrFalse, {}, false)},
-    {"s3_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
-    {"s3_throw_on_zero_files_match", CHSetting(trueOrFalse, {}, false)},
-    {"s3_truncate_on_insert", CHSetting(trueOrFalse, {}, false)},
-    {"s3_use_adaptive_timeouts", CHSetting(trueOrFalse, {}, false)},
-    {"s3_validate_request_settings", CHSetting(trueOrFalse, {}, false)},
-    {"s3queue_enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
-    {"schema_inference_cache_require_modification_time_for_url", CHSetting(trueOrFalse, {}, false)},
-    {"schema_inference_make_json_columns_nullable", CHSetting(trueOrFalse, {}, false)},
-    {"schema_inference_use_cache_for_file", CHSetting(trueOrFalse, {}, false)},
-    {"schema_inference_use_cache_for_s3", CHSetting(trueOrFalse, {}, false)},
-    {"schema_inference_use_cache_for_url", CHSetting(trueOrFalse, {}, false)},
-    {"secondary_indices_enable_bulk_filtering", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"select_sequential_consistency", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"send_logs_level",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"'debug'", "'information'", "'trace'", "'error'", "'test'", "'warning'", "'fatal'", "'none'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
-    {"send_progress_in_http_headers", CHSetting(trueOrFalse, {}, false)},
-    {"serialize_query_plan", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"show_table_uuid_in_table_create_query_if_not_nil", CHSetting(trueOrFalse, {}, false)},
-    {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)},
-    /// {"set_overflow_mode", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'break'" : "'throw'"; }, {}, false)},
-    {"splitby_max_substrings_includes_remaining_string", CHSetting(trueOrFalse, {}, false)},
-    {"storage_file_read_method",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
-    {"stream_like_engine_allow_direct_select", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"system_events_show_zero_values", CHSetting(trueOrFalse, {}, false)},
-    {"throw_on_error_from_cache_on_write_operations", CHSetting(trueOrFalse, {}, false)},
-    {"throw_on_unsupported_query_inside_transaction", CHSetting(trueOrFalse, {}, false)},
-    {"totals_auto_threshold", CHSetting(probRange, {}, false)},
-    {"totals_mode",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices
-                 = {"'before_having'", "'after_having_exclusive'", "'after_having_inclusive'", "'after_having_auto'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
-    {"trace_profile_events", CHSetting(trueOrFalse, {}, false)},
-    {"traverse_shadow_remote_data_paths", CHSetting(trueOrFalse, {}, false)},
-    {"type_json_skip_duplicated_paths", CHSetting(trueOrFalse, {}, false)},
-    {"update_insert_deduplication_token_in_dependent_materialized_views", CHSetting(trueOrFalse, {}, false)},
-    {"use_async_executor_for_materialized_views", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_cache_for_count_from_files", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_client_time_zone", CHSetting(trueOrFalse, {}, false)},
-    {"use_compact_format_in_distributed_parts_names", CHSetting(trueOrFalse, {}, false)},
-    {"use_hedged_requests", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_hive_partitioning", CHSetting(trueOrFalse, {}, false)},
-    {"use_page_cache_for_disks_without_file_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    /*{"use_query_cache",
+         false)}};
+
+/// We need to split the serverSettings because in order to initialize the values for the map it
+/// needs to be able to fit into the stack. Note we may have to split it even more in the future.
+static std::unordered_map<String, CHSetting> serverSettings3
+    = {{"partial_result_on_first_cancel", CHSetting(trueOrFalse, {}, false)},
+       {"postgresql_fault_injection_probability", CHSetting(probRange, {}, false)},
+       {"precise_float_parsing", CHSetting(trueOrFalse, {}, false)},
+       {"print_pretty_type_names", CHSetting(trueOrFalse, {}, false)},
+       {"push_external_roles_in_interserver_queries", CHSetting(trueOrFalse, {}, false)},
+       {"query_cache_compress_entries", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_cache_share_between_users", CHSetting(trueOrFalse, {}, false)},
+       {"query_cache_squash_partial_results", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_use_new_logical_join_step", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"read_from_page_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"read_through_distributed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"regexp_dict_allow_hyperscan", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"regexp_dict_flag_case_insensitive", CHSetting(trueOrFalse, {}, false)},
+       {"regexp_dict_flag_dotall", CHSetting(trueOrFalse, {}, false)},
+       {"remote_filesystem_read_method",
+        CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {"'read'", "'threadpool'"}, false)},
+       {"reject_expensive_hyperscan_regexps", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"remote_filesystem_read_prefetch", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"replace_running_query", CHSetting(trueOrFalse, {}, false)},
+       {"rows_before_aggregation", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"s3_allow_parallel_part_upload", CHSetting(trueOrFalse, {}, false)},
+       {"s3_check_objects_after_upload", CHSetting(trueOrFalse, {}, false)},
+       {"s3_create_new_file_on_insert", CHSetting(trueOrFalse, {}, false)},
+       {"s3_disable_checksum", CHSetting(trueOrFalse, {}, false)},
+       {"s3_ignore_file_doesnt_exist", CHSetting(trueOrFalse, {}, false)},
+       {"s3_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
+       {"s3_throw_on_zero_files_match", CHSetting(trueOrFalse, {}, false)},
+       {"s3_truncate_on_insert", CHSetting(trueOrFalse, {}, false)},
+       {"s3_use_adaptive_timeouts", CHSetting(trueOrFalse, {}, false)},
+       {"s3_validate_request_settings", CHSetting(trueOrFalse, {}, false)},
+       {"s3queue_enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
+       {"schema_inference_cache_require_modification_time_for_url", CHSetting(trueOrFalse, {}, false)},
+       {"schema_inference_make_json_columns_nullable", CHSetting(trueOrFalse, {}, false)},
+       {"schema_inference_use_cache_for_file", CHSetting(trueOrFalse, {}, false)},
+       {"schema_inference_use_cache_for_s3", CHSetting(trueOrFalse, {}, false)},
+       {"schema_inference_use_cache_for_url", CHSetting(trueOrFalse, {}, false)},
+       {"select_sequential_consistency", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"send_logs_level",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices
+                    = {"'debug'", "'information'", "'trace'", "'error'", "'test'", "'warning'", "'fatal'", "'none'"};
+                return rg.pickRandomly(choices);
+            },
+            {},
+            false)},
+       {"send_progress_in_http_headers", CHSetting(trueOrFalse, {}, false)},
+       {"show_table_uuid_in_table_create_query_if_not_nil", CHSetting(trueOrFalse, {}, false)},
+       {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)},
+       /// {"set_overflow_mode", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'break'" : "'throw'"; }, {}, false)},
+       {"splitby_max_substrings_includes_remaining_string", CHSetting(trueOrFalse, {}, false)},
+       {"storage_file_read_method",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
+                return rg.pickRandomly(choices);
+            },
+            {},
+            false)},
+       {"stream_like_engine_allow_direct_select", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"system_events_show_zero_values", CHSetting(trueOrFalse, {}, false)},
+       {"throw_on_error_from_cache_on_write_operations", CHSetting(trueOrFalse, {}, false)},
+       {"throw_on_unsupported_query_inside_transaction", CHSetting(trueOrFalse, {}, false)},
+       {"totals_auto_threshold", CHSetting(probRange, {}, false)},
+       {"totals_mode",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices
+                    = {"'before_having'", "'after_having_exclusive'", "'after_having_inclusive'", "'after_having_auto'"};
+                return rg.pickRandomly(choices);
+            },
+            {},
+            false)},
+       {"trace_profile_events", CHSetting(trueOrFalse, {}, false)},
+       {"traverse_shadow_remote_data_paths", CHSetting(trueOrFalse, {}, false)},
+       {"type_json_skip_duplicated_paths", CHSetting(trueOrFalse, {}, false)},
+       {"update_insert_deduplication_token_in_dependent_materialized_views", CHSetting(trueOrFalse, {}, false)},
+       {"use_async_executor_for_materialized_views", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_cache_for_count_from_files", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_client_time_zone", CHSetting(trueOrFalse, {}, false)},
+       {"use_compact_format_in_distributed_parts_names", CHSetting(trueOrFalse, {}, false)},
+       {"use_hedged_requests", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_hive_partitioning", CHSetting(trueOrFalse, {}, false)},
+       {"use_page_cache_for_disks_without_file_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       /*{"use_query_cache",
         CHSetting(
             [](RandomGenerator & rg)
             {
@@ -830,24 +811,23 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
             },
             {},
             false)},*/
-    {"use_skip_indexes_if_final_exact_mode", CHSetting(trueOrFalse, {"0", "1"}, true)},
-    {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
-    {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
-    {"use_with_fill_by_sorting_prefix", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"validate_experimental_and_suspicious_types_inside_nested_types", CHSetting(trueOrFalse, {}, false)},
-    {"validate_mutation_query", CHSetting(trueOrFalse, {}, false)},
-    {"validate_polygons", CHSetting(trueOrFalse, {}, false)},
-    {"wait_changes_become_visible_after_commit_mode",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"'async'", "'wait'", "'wait_unknown'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
-    /// {"wait_for_async_insert", CHSetting(trueOrFalse, {}, false)},
-    {"write_through_distributed_cache", CHSetting(trueOrFalse, {}, false)}};
+       {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
+       {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
+       {"use_with_fill_by_sorting_prefix", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"validate_experimental_and_suspicious_types_inside_nested_types", CHSetting(trueOrFalse, {}, false)},
+       {"validate_mutation_query", CHSetting(trueOrFalse, {}, false)},
+       {"validate_polygons", CHSetting(trueOrFalse, {}, false)},
+       {"wait_changes_become_visible_after_commit_mode",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'async'", "'wait'", "'wait_unknown'"};
+                return rg.pickRandomly(choices);
+            },
+            {},
+            false)},
+       /// {"wait_for_async_insert", CHSetting(trueOrFalse, {}, false)},
+       {"write_through_distributed_cache", CHSetting(trueOrFalse, {}, false)}};
 
 std::unordered_map<String, CHSetting> queryOracleSettings;
 
@@ -857,23 +837,17 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
 {
     if (!fc.clusters.empty())
     {
-        hotSettings.insert(
-            {{"enable_parallel_replicas", CHSetting(trueOrFalse, {"0", "1"}, false)},
-             {"allow_experimental_parallel_reading_from_replicas", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)}});
-        serverSettings.insert(
-            {{"cluster_for_parallel_replicas",
-              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.clusters) + "'"; }, {}, false)}});
+        performanceSettings.insert({{"enable_parallel_replicas", CHSetting(trueOrFalse, {"0", "1"}, false)}});
     }
-    for (const auto & [key, value] : hotSettings)
-    {
-        chassert(!value.oracle_values.empty());
-        performanceSettings.insert({{key, value}});
-    }
-    for (const auto & setting : performanceSettings)
+    for (auto & setting : performanceSettings)
     {
         serverSettings.insert(setting);
     }
     for (auto & setting : serverSettings2)
+    {
+        serverSettings.emplace(std::move(setting));
+    }
+    for (auto & setting : serverSettings3)
     {
         serverSettings.emplace(std::move(setting));
     }
@@ -887,7 +861,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "join_to_sort_maximum_table_rows",
           "join_to_sort_minimum_perkey_rows",
           "max_joined_block_size_rows",
-          "max_limit_for_vector_search_queries",
           "max_number_of_partitions_for_independent_aggregation",
           "max_rows_to_transfer",
           "min_insert_block_size_rows",
@@ -895,13 +868,11 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "output_format_parquet_batch_size",
           "output_format_parquet_data_page_size",
           "output_format_parquet_row_group_size",
-          "page_cache_lookahead_blocks",
-          "parallel_hash_join_threshold",
           "partial_merge_join_rows_in_right_blocks",
           "query_plan_max_limit_for_lazy_materialization"})
     {
-        performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false)}});
+        performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "65536"}, false)}});
+        serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
     }
     /// Number of bytes values
     for (const auto & entry :
@@ -911,7 +882,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "filesystem_prefetch_min_bytes_for_single_read_task",
           "filesystem_prefetch_step_bytes",
           "group_by_two_level_threshold_bytes",
-          "input_format_max_block_size_bytes",
           "input_format_parquet_local_file_min_bytes_for_seek",
           "input_format_parquet_prefer_block_bytes",
           "max_bytes_before_external_group_by",
@@ -932,30 +902,37 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "min_insert_block_size_bytes_for_materialized_views",
           "output_format_avro_sync_interval",
           "output_format_parquet_row_group_size_bytes",
-          "page_cache_block_size",
           "partial_merge_join_left_table_buffer_bytes",
           "prefer_external_sort_block_bytes",
           "preferred_block_size_bytes",
           "preferred_max_column_in_block_size_bytes",
           "prefetch_buffer_size"})
     {
-        performanceSettings.insert({{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false)}});
+        performanceSettings.insert(
+            {{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "50000000"}, false)}});
+        serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
     }
     /// Block size settings
     for (const auto & entry :
          {"input_format_parquet_max_block_size", "max_block_size", "max_compress_block_size", "min_compress_block_size"})
     {
-        performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "16384", "'10M'"}, false)}});
+        performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "131072"}, false)}});
+        serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)}});
     }
     if (!fc.timezones.empty())
     {
         serverSettings.insert(
             {{"session_timezone", CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.timezones) + "'"; }, {}, false)}});
     }
+    if (!fc.clusters.empty())
+    {
+        serverSettings.insert(
+            {{"allow_experimental_parallel_reading_from_replicas", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
+             {"cluster_for_parallel_replicas",
+              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.clusters) + "'"; }, {}, false)}});
+    }
 
-    for (const auto & [key, value] : serverSettings)
+    for (auto & [key, value] : serverSettings)
     {
         if (!value.oracle_values.empty())
         {
@@ -964,9 +941,9 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
 
     /// Format settings are to be used by the dump oracle when not looking for correctness
-    for (const auto & setting : serverSettings)
+    for (auto & [key, value] : serverSettings)
     {
-        formatSettings.insert(setting);
+        formatSettings.insert({{key, value}});
     }
     formatSettings.insert(
         {{"format_csv_delimiter", CHSetting(nastyStrings, {}, false)},

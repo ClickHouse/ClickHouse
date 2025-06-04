@@ -103,7 +103,11 @@ def main():
     command = f"docker buildx build --platform {platforms} \
                     -t {image_repo}:tmp {image_path} -f {docker_path}/Dockerfile.ubuntu"
 
-    results.append(Result.from_commands_run(name=f"{image_repo}:tmp", command=command))
+    results.append(
+        Result.from_commands_run(
+            name=f"{image_repo}:tmp", command=command, with_log=True
+        )
+    )
 
     Result.create_from(results=results, stopwatch=stopwatch).complete_job()
 

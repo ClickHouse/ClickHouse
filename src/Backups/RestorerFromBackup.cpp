@@ -488,7 +488,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     res_table_info.has_data = table_has_data;
     res_table_info.data_path_in_backup = data_path_in_backup;
 
-    tables_dependencies.addDependencies(table_name, table_dependencies.dependencies);
+    tables_dependencies.addDependencies(table_name, table_dependencies);
 
     if (partitions)
     {
@@ -1003,8 +1003,6 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         create_query_context->setSetting("keeper_max_retries", zookeeper_retries_info.max_retries);
         create_query_context->setSetting("keeper_initial_backoff_ms", zookeeper_retries_info.initial_backoff_ms);
         create_query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
-
-        create_query_context->setUnderRestore(true);
 
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).

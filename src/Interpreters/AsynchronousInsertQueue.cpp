@@ -128,16 +128,15 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
             siphash.update(current_role);
     }
 
-    setting_changes = settings.changes();
-    for (auto it = setting_changes.begin(); it != setting_changes.end(); ++it)
+    auto changes = settings.changes();
+    for (const auto & change : changes)
     {
-        if (settings_to_skip.contains(it->name))
-            it = setting_changes.erase(it);
-        else
-        {
-            siphash.update(it->name);
-            applyVisitor(FieldVisitorHash(siphash), it->value);
-        }
+        if (settings_to_skip.contains(change.name))
+            continue;
+
+        setting_changes.emplace_back(change.name, change.value);
+        siphash.update(change.name);
+        applyVisitor(FieldVisitorHash(siphash), change.value);
     }
 
     hash = siphash.get128();
@@ -386,18 +385,6 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
             *read_buf,
             {.read_no_more = query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
 
-        if (const auto * insert_query = query->as<ASTInsertQuery>())
-        {
-            size_t expected_data_size = 0;
-            if (insert_query->data)
-                expected_data_size += insert_query->end - insert_query->data;
-            if (insert_query->tail)
-                expected_data_size += insert_query->tail->buffer().size();
-
-            expected_data_size = std::min(expected_data_size, size_t{query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
-            bytes.reserve(expected_data_size);
-        }
-
         {
             WriteBufferFromString write_buf(bytes);
             copyData(limit_buf, write_buf);
@@ -423,14 +410,16 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
     return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context));
 }
 
-AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context)
+AsynchronousInsertQueue::PushResult
+AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context)
 {
     query = query->clone();
     preprocessInsertQuery(query, query_context);
     return pushDataChunk(std::move(query), std::move(block), std::move(query_context));
 }
 
-AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context)
+AsynchronousInsertQueue::PushResult
+AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context)
 {
     const auto & settings = query_context->getSettingsRef();
     validateSettings(settings, log);
@@ -957,7 +946,7 @@ try
         throw;
     }
 
-    auto finish_entries = [&](QueryPipeline && pileline_, size_t num_rows, size_t num_bytes)
+    auto finish_entries = [&](size_t num_rows, size_t num_bytes)
     {
         for (const auto & entry : data->entries)
         {
@@ -974,7 +963,9 @@ try
         LOG_DEBUG(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
         queue_shard_flush_time_history.updateWithCurrentTime();
 
-        logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
+        bool pulling_pipeline = false;
+        logQueryFinish(
+            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryResultCacheUsage::None, internal);
     };
 
     try
@@ -991,8 +982,8 @@ try
 
         if (chunk.getNumRows() == 0)
         {
-            pipeline.cancel(); // this just cancels the processors
-            finish_entries(std::move(pipeline), /*num_rows=*/ 0, /*num_bytes=*/ 0);
+            finish_entries(/*num_rows=*/ 0, /*num_bytes=*/ 0);
+            pipeline.cancel();
             return;
         }
 
@@ -1005,7 +996,7 @@ try
         CompletedPipelineExecutor completed_executor(pipeline);
         completed_executor.execute();
 
-        finish_entries(std::move(pipeline), num_rows, num_bytes);
+        finish_entries(num_rows, num_bytes);
     }
     catch (...)
     {

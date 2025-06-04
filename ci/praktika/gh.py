@@ -146,7 +146,6 @@ class GH:
         :param repo:
         :return: True or False in case of error
         """
-        description = description.replace("'", "'\"'\"'")  # escape single quote
         status = cls.convert_to_gh_status(status)
         repo = _Environment.get().REPOSITORY
         command = (

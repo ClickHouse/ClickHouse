@@ -92,7 +92,7 @@ class Job:
                 == len(timeout)
                 == len(provides)
                 == len(requires)
-            ), f"Parametrization lists for job [{self.name}] must be of the same size [{len(parameter)}, {len(runs_on)}, {len(timeout)}, {len(provides)}, {len(requires)}]"
+            ), f"Parametrization lists must be of the same size [{len(parameter)}, {len(runs_on)}, {len(timeout)}, {len(provides)}, {len(requires)}]"
 
             res = []
             for parameter_, runs_on_, timeout_, provides_, requires_ in zip(
@@ -186,20 +186,6 @@ class Job:
                     Utils.raise_with_error(
                         f"Invalid artifact type {type(artifact_name_)} for [{artifact_name_}]"
                     )
-            return res
-
-        def unset_provides(self, artifact_keyword):
-            """
-            removes artifact matching artifact_keyword
-            :param artifact_keyword:
-            :return: copied and modified Job.Config instance
-            """
-            res = copy.deepcopy(self)
-            provides_res = []
-            for artifact in res.provides:
-                if artifact_keyword.lower() not in artifact.lower():
-                    provides_res.append(artifact)
-            res.provides = provides_res
             return res
 
         def set_allow_merge_on_failure(self, value):
