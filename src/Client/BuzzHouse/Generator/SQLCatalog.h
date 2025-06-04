@@ -155,6 +155,11 @@ public:
 
     static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
 
+    static bool supportsFinal(const TableEngineValues teng)
+    {
+        return teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+    }
+
     bool isMergeTreeFamily() const
     {
         return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
@@ -279,11 +284,14 @@ public:
 
     bool supportsFinal() const
     {
-        return (teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
-            || isBufferEngine() || isDistributedEngine();
+        return SQLBase::supportsFinal(teng) || isBufferEngine() || (isDistributedEngine() && SQLBase::supportsFinal(sub));
     }
 
-    bool supportsOptimize() const { return isMergeTreeFamily() || isBufferEngine() || isDistributedEngine(); }
+    bool supportsOptimize() const
+    {
+        return isMergeTreeFamily() || isBufferEngine()
+            || (isDistributedEngine() && (SQLBase::supportsFinal(sub) || sub == TableEngineValues::MergeTree));
+    }
 
     bool hasSignColumn() const
     {

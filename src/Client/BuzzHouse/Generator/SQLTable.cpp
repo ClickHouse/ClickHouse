@@ -922,18 +922,21 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
 
             t.setName(te);
+            b.sub = t.teng;
         }
         else if (buf_view && nopt < (buf_table + buf_view + 1))
         {
             const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(hasTableOrView<SQLView>(b)));
 
             v.setName(te);
+            b.sub = v.teng;
         }
         else if (buf_dictionary && nopt < (buf_table + buf_view + buf_dictionary + 1))
         {
             const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(hasTableOrView<SQLDictionary>(b)));
 
             d.setName(te);
+            b.sub = d.teng;
         }
         else
         {
@@ -1056,12 +1059,14 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             t.setName(te);
             /// For the sharding key
             flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
+            b.sub = t.teng;
         }
         else if (dist_view && nopt < (dist_table + dist_view + 1))
         {
             const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(hasTableOrView<SQLView>(b)));
 
             v.setName(te);
+            b.sub = v.teng;
         }
         else if (dist_dictionary && nopt < (dist_table + dist_view + dist_dictionary + 1))
         {
@@ -1069,6 +1074,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
 
             d.setName(te);
             flatTableColumnPath(to_remote_entries, d.cols, [](const SQLColumn &) { return true; });
+            b.sub = d.teng;
         }
         else
         {
