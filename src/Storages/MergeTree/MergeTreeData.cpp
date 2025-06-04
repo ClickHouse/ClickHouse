@@ -4367,7 +4367,7 @@ MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
     }
     catch (...)
     {
-        /* no op, exception is logged already */
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
