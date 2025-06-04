@@ -31,7 +31,7 @@ FROM (
   GROUP BY a
 );
 
--- Not yet supported
+-- Not yet supported; see the comment in `Planner::buildPlanForQueryNode()`
 --SELECT replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')
 --FROM (
 --   EXPLAIN distributed = 1

@@ -40,7 +40,8 @@ def test_simple_distributed_aggregation_with_parallel_replicas(start_cluster):
         node.query("insert into t select number % 100000 from numbers_mt(1e7)")
         node.query("optimize table t final")
 
-    # when initiator has an old version
+    # The initiator has an old version. If replicas won't recognize that fact, we will get an error like:
+    # "Unknown serialization kind 2: while receiving packet from node1:9000"
     nodes[0].query(
         """
         select sum(a)
@@ -59,7 +60,8 @@ def test_simple_distributed_aggregation_with_parallel_replicas(start_cluster):
         },
     )
 
-    # when initiator has a newer version
+    # The initiator has a newer version. It is totally fine. It only means that some replicas will send columns
+    # with new serialization and some other will use only the old serialization. Still let's check that it works.
     nodes[2].query(
         """
         select sum(a)
@@ -80,4 +82,3 @@ def test_simple_distributed_aggregation_with_parallel_replicas(start_cluster):
 
     for node in nodes:
         node.query("drop table t")
-

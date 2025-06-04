@@ -1944,6 +1944,11 @@ void Planner::buildPlanForQueryNode()
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
 
+    // Not all cases are supported here yet. E.g. for this query:
+    // select * from remote('127.0.0.{1,2}', numbers_mt(1e6)) group by number
+    // we will have `BlocksMarshallingStep` added to the query plan, but not for
+    // select * from remote('127.0.0.{1,2}', numbers_mt(1e6))
+    // because `to_stage` for it will be `QueryProcessingStage::Complete`.
     if (query_context->getSettingsRef()[Setting::enable_parallel_blocks_marshalling]
         && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
         && select_query_options.to_stage != QueryProcessingStage::Complete // Don't do it for INSERT SELECT, for example
