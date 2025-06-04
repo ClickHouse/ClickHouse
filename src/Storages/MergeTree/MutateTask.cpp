@@ -561,7 +561,7 @@ static void analyzeTTLCommands(MutationContext & ctx)
             auto required_columns = ttl.expression_columns.getNames();
             if (ctx.mutated_data.needRebuildDependency(required_columns, DependencyType::TTL))
             {
-                if (!ctx.mutated_data.updated_columns.contains(column_name))
+                if (!ctx.mutated_data.isColumnMutated(column_name))
                     finished = false;
 
                 analyze_ttl(ttl, column_name, true);
