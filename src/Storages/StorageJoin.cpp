@@ -15,6 +15,8 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
+#include "Columns/IColumn_fwd.h"
+#include "Core/Block.h"
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
@@ -27,6 +29,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h>
 #include <filesystem>
+#include <memory>
 
 
 namespace fs = std::filesystem;
@@ -747,6 +750,45 @@ private:
     }
 };
 
+Chunk StorageJoin::getChunkByKeys(const std::vector<Field> & keys, const Names & column_names, ContextPtr context)
+{
+    // for composite key, check that all necessary data has been provided
+    if (keys.size() != key_names.size())
+    {
+       throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mismatched number of keys and join key columns");
+    }
+
+    // Build a single-row key block
+    Block key_block;
+    auto cur_sample_block = getInMemoryMetadataPtr()->getSampleBlock();
+
+    for (size_t i = 0; i < key_names.size(); ++i)
+    {
+        const auto & key_name = key_names[i];
+        const auto & key_value = keys[i];
+
+        const auto & sample_column = cur_sample_block.getColumnOrSubcolumnByName(key_name);
+        auto type = sample_column.type;
+        MutableColumnPtr column = type->createColumn();
+
+        column->insert(key_value);
+
+        key_block.insert({std::move(column), type, key_name});
+    }
+
+    Block filtered_block;
+    for (const auto & name: column_names)
+    {
+        if (cur_sample_block.has(name))
+        {
+            filtered_block.insert(cur_sample_block.getByName(name));
+        }
+    }
+
+    auto result = joinGet(key_block, filtered_block, context);
+    auto row_cnt = result.column->size();
+    return Chunk({std::move(result.column)}, row_cnt);
+}
 
 // TODO: multiple stream read and index read
 Pipe StorageJoin::read(
