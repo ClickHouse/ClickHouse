@@ -21,6 +21,7 @@ def cluster():
             "node",
             main_configs=[
                 "config.d/storage_conf.xml",
+                "config.d/filesystem_caches_path.xml",
             ],
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
@@ -44,6 +45,7 @@ def cluster():
             main_configs=[
                 "config.d/storage_conf.xml",
                 "config.d/force_read_through_cache_for_merges.xml",
+                "config.d/filesystem_caches_path.xml",
             ],
             user_configs=[
                 "users.d/cache_on_write_operations.xml",

@@ -83,10 +83,24 @@ std::pair<FileCachePtr, FileCacheSettings> getCache(
             cache_path_prefix_if_relative,
             /* default_cache_path */"");
 
+    if (!file_cache_settings[FileCacheSetting::path].value.starts_with(cache_path_prefix_if_relative))
+    {
+        /// We allow a different prefix if attach && relative path
+        /// in config for compatibility.
+        if (!is_attach || !file_cache_settings.isPathRelativeInConfig())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Filesystem cache path must lie inside `{}`, but have {}",
+                cache_path_prefix_if_relative, file_cache_settings[FileCacheSetting::path].value);
+        }
+    }
+
     auto cache = FileCacheFactory::instance().getOrCreate(
         cache_name,
         file_cache_settings,
         predefined_configuration ? "" : config_prefix);
+
     return std::pair(cache, file_cache_settings);
 }
 

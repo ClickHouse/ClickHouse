@@ -191,6 +191,7 @@ void FileCacheSettings::loadFromConfig(
             if (cache_path_prefix_if_relative.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache path prefix for relative paths was not provided");
 
+            is_path_relative_in_config = true;
             (*this)[FileCacheSetting::path] = fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value;
         }
     }
@@ -216,6 +217,7 @@ void FileCacheSettings::loadFromCollection(
         if (cache_path_prefix_if_relative.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache path prefix for relative paths was not provided");
 
+        is_path_relative_in_config = true;
         (*this)[FileCacheSetting::path] = fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value;
     }
 
