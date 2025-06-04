@@ -25,12 +25,18 @@ extern const Event KafkaConsumerErrors;
 namespace DB
 {
 
+namespace S3
+{
+std::string tryGetRunningAvailabilityZone();
+}
+
 namespace KafkaSetting
 {
     extern const KafkaSettingsString kafka_security_protocol;
     extern const KafkaSettingsString kafka_sasl_mechanism;
     extern const KafkaSettingsString kafka_sasl_username;
     extern const KafkaSettingsString kafka_sasl_password;
+    extern const KafkaSettingsString kafka_autodetect_client_rack;
 }
 
 namespace ErrorCodes
@@ -358,6 +364,9 @@ void updateGlobalConfiguration(
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
         kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
+
+    if (kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value == "MSK")
+        kafka_config.set("client.rack", S3::tryGetRunningAvailabilityZone());
 
 #if USE_KRB5
     if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
