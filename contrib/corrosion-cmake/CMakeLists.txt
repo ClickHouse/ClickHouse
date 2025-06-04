@@ -54,6 +54,7 @@ endif()
 
 # Try to find proper rust toolchain one more time in case of ENABLE_RUST already installed to give sensible error
 if (DEFINED ENABLE_RUST)
+  list (APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
   find_package(Rust)
   if (NOT Rust_FOUND)
     message(${RECONFIGURE_MESSAGE_LEVEL} "${Rust_ERROR_MESSAGE}")
