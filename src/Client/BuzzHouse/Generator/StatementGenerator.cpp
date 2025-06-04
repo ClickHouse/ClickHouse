@@ -3090,9 +3090,10 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     const uint32_t out_to_disk = 10 * static_cast<uint32_t>(!fc.disks.empty());
     const uint32_t out_to_file = 10;
     const uint32_t out_to_s3 = 10 * static_cast<uint32_t>(connections.hasMinIOConnection());
+    const uint32_t out_to_azure = 10 * static_cast<uint32_t>(connections.hasAzuriteConnection());
     const uint32_t out_to_memory = 5;
     const uint32_t out_to_null = 3;
-    const uint32_t prob_space2 = out_to_disk + out_to_file + out_to_s3 + out_to_memory + out_to_null;
+    const uint32_t prob_space2 = out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + out_to_null;
     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
     const uint32_t nopt2 = next_dist2(rg.generator);
     String backup_file = "backup";
@@ -3133,12 +3134,25 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     else if (out_to_s3 && (nopt2 < out_to_disk + out_to_file + out_to_s3 + 1))
     {
         outf = BackupRestore_BackupOutput_S3;
-        connections.setBackupDetails(backup_file, br);
+        connections.setBackupDetails(IntegrationCall::MinIO, backup_file, br);
     }
-    else if (out_to_memory && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_memory + 1))
+    else if (out_to_azure && (nopt2 < out_to_disk + out_to_file + out_to_s3 + out_to_azure + 1))
+    {
+        outf = BackupRestore_BackupOutput_AzureBlobStorage;
+        connections.setBackupDetails(IntegrationCall::Azurite, backup_file, br);
+    }
+    else if (out_to_memory && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + 1))
     {
         outf = BackupRestore_BackupOutput_Memory;
         br->add_out_params(std::move(backup_file));
+    }
+    else if (out_to_null && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + out_to_null + 1))
+    {
+        outf = BackupRestore_BackupOutput_Null;
+    }
+    else
+    {
+        chassert(0);
     }
     br->set_out(outf);
     if (rg.nextSmallNumber() < 4)

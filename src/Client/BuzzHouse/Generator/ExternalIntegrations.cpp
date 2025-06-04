@@ -1522,6 +1522,15 @@ void AzuriteIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, co
     te->add_params()->set_svalue(sc.password);
 }
 
+void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore * br)
+{
+    br->add_out_params(sc.hostname);
+    br->add_out_params(sc.container);
+    br->add_out_params(filename);
+    br->add_out_params(sc.user);
+    br->add_out_params(sc.password);
+}
+
 bool AzuriteIntegration::performIntegration(
     RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t, const bool, const bool, std::vector<ColumnPathChain> &)
 {
@@ -1705,9 +1714,20 @@ void ExternalIntegrations::dropPeerTableOnRemote(const SQLTable & t)
     }
 }
 
-void ExternalIntegrations::setBackupDetails(const String & filename, BackupRestore * br)
+void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const String & filename, BackupRestore * br)
 {
-    minio->setBackupDetails(filename, br);
+    switch (dc)
+    {
+        case IntegrationCall::MinIO:
+            minio->setBackupDetails(filename, br);
+            break;
+        case IntegrationCall::Azurite:
+            azurite->setBackupDetails(filename, br);
+            break;
+        default:
+            chassert(0);
+            break;
+    }
 }
 
 bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String & query)

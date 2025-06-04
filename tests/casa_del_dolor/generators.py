@@ -90,6 +90,7 @@ class BuzzHouseGenerator(Generator):
         if args.with_azurite:
             buzz_config["azurite"] = {
                 "hostname": cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"],
+                "database": cluster.env_variables["AZURITE_CONNECTION_STRING"], # it's hacking a little
                 "container": "cont",
                 "user": "devstoreaccount1",
                 "password": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",

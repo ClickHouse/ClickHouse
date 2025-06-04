@@ -344,6 +344,8 @@ public:
 
     void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
 
+    void setBackupDetails(const String & filename, BackupRestore * br);
+
     bool performIntegration(
         RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t tname, bool, bool, std::vector<ColumnPathChain> &) override;
 
@@ -444,7 +446,7 @@ public:
 
     void replicateSettings(PeerTableDatabase pt);
 
-    void setBackupDetails(const String & filename, BackupRestore * br);
+    void setBackupDetails(IntegrationCall dc, const String & filename, BackupRestore * br);
 };
 
 }

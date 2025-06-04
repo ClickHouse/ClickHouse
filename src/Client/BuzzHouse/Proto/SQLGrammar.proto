@@ -3842,6 +3842,7 @@ message BackupRestore {
         Memory = 3;
         Null = 4;
         S3 = 5;
+        AzureBlobStorage = 6;
     }
     required BackupOutput out = 5;
     repeated string out_params = 6;
