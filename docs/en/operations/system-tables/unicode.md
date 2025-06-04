@@ -10,18 +10,22 @@ The `system.unicode` table is a virtual table that provides information about Un
 
 Columns
 
+:::note
+The property names of unicode code points in ICU documents are converted to snake case. 
+:::
+
 - `code_point` ([String](../../sql-reference/data-types/string.md)) — The UTF-8 representation of the code point.
 - `code_point_value` ([Int32](../../sql-reference/data-types/int-uint.md)) — The numeric value of the code point.
 - `notation` ([String](../../sql-reference/data-types/string.md)) — The Unicode notation of the code point.
 - Binary Properties ([UInt8](../../sql-reference/data-types/int-uint.md)) - The binary properties of the code point.
-    - `Alphabetic`, `ASCII_Hex_Digit`, `Case_Ignorable`...
+    - `alphabetic`, `ascii_hex_digit`, `case_ignorable`...
 - Enumerated Properties ([Int32](../../sql-reference/data-types/int-uint.md)) - The enumerated properties of the code point.
-    - `Bidi_Class`, `Bidi_Paired_Bracket_Type`, `Block`...
+    - `bidi_class`, `bidi_paired_bracket_type`, `block`...
 - String Properties ([String](../../sql-reference/data-types/string.md)) - The string properties(ASCII String or Unicode String) of the code point
-    - `Case_Folding`, `Decomposition_Mapping`, `Name`...
-- `Numeric_Value` ([Float64](../../sql-reference/data-types/float.md)) - The numeric value of the code point.
-- `Script_Extensions` ([Array(Int32)](../../sql-reference/data-types/array.md)) - The script extensions of the code point.
-- `General_Category_Mask` ([Int32](../../sql-reference/data-types/int-uint.md)) - The general category mask of the code point.
+    - `case_folding`, `decomposition_mapping`, `name`...
+- `numeric_value` ([Float64](../../sql-reference/data-types/float.md)) - The numeric value of the code point.
+- `script_extensions` ([Array(Int32)](../../sql-reference/data-types/array.md)) - The script extensions of the code point.
+- `general_category_mask` ([Int32](../../sql-reference/data-types/int-uint.md)) - The general category mask of the code point.
 
 
 **Example**
@@ -35,124 +39,124 @@ Row 1:
 code_point:                      a
 code_point_value:                97
 notation:                        U+0061
-Alphabetic:                      1
-ASCII_Hex_Digit:                 1
-Bidi_Control:                    0
-Bidi_Mirrored:                   0
-Dash:                            0
-Default_Ignorable_Code_Point:    0
-Deprecated:                      0
-Diacritic:                       0
-Extender:                        0
-Full_Composition_Exclusion:      0
-Grapheme_Base:                   1
-Grapheme_Extend:                 0
-Grapheme_Link:                   0
-Hex_Digit:                       1
-Hyphen:                          0
-ID_Continue:                     1
-ID_Start:                        1
-Ideographic:                     0
-IDS_Binary_Operator:             0
-IDS_Trinary_Operator:            0
-Join_Control:                    0
-Logical_Order_Exception:         0
-Lowercase:                       1
-Math:                            0
-Noncharacter_Code_Point:         0
-Quotation_Mark:                  0
-Radical:                         0
-Soft_Dotted:                     0
-Terminal_Punctuation:            0
-Unified_Ideograph:               0
-Uppercase:                       0
-White_Space:                     0
-XID_Continue:                    1
-XID_Start:                       1
-Case_Sensitive:                  1
-Sentence_Terminal:               0
-Variation_Selector:              0
-NFD_Inert:                       1
-NFKD_Inert:                      1
-NFC_Inert:                       0
-NFKC_Inert:                      0
-Segment_Starter:                 1
-Pattern_Syntax:                  0
-Pattern_White_Space:             0
+alphabetic:                      1
+ascii_hex_digit:                 1
+bidi_control:                    0
+bidi_mirrored:                   0
+dash:                            0
+default_ignorable_code_point:    0
+deprecated:                      0
+diacritic:                       0
+extender:                        0
+full_composition_exclusion:      0
+grapheme_base:                   1
+grapheme_extend:                 0
+grapheme_link:                   0
+hex_digit:                       1
+hyphen:                          0
+id_continue:                     1
+id_start:                        1
+ideographic:                     0
+ids_binary_operator:             0
+ids_trinary_operator:            0
+join_control:                    0
+logical_order_exception:         0
+lowercase:                       1
+math:                            0
+noncharacter_code_point:         0
+quotation_mark:                  0
+radical:                         0
+soft_dotted:                     0
+terminal_punctuation:            0
+unified_ideograph:               0
+uppercase:                       0
+white_space:                     0
+xid_continue:                    1
+xid_start:                       1
+case_sensitive:                  1
+sentence_terminal:               0
+variation_selector:              0
+nfd_inert:                       1
+nfkd_inert:                      1
+nfc_inert:                       0
+nfkc_inert:                      0
+segment_starter:                 1
+pattern_syntax:                  0
+pattern_white_space:             0
 alnum:                           1
 blank:                           0
 graph:                           1
 print:                           1
 xdigit:                          1
-Cased:                           1
-Case_Ignorable:                  0
-Changes_When_Lowercased:         0
-Changes_When_Uppercased:         1
-Changes_When_Titlecased:         1
-Changes_When_Casefolded:         0
-Changes_When_Casemapped:         1
-Changes_When_NFKC_Casefolded:    0
-Emoji:                           0
-Emoji_Presentation:              0
-Emoji_Modifier:                  0
-Emoji_Modifier_Base:             0
-Emoji_Component:                 0
-Regional_Indicator:              0
-Prepended_Concatenation_Mark:    0
-Extended_Pictographic:           0
-Basic_Emoji:                     0
-Emoji_Keycap_Sequence:           0
-RGI_Emoji_Modifier_Sequence:     0
-RGI_Emoji_Flag_Sequence:         0
-RGI_Emoji_Tag_Sequence:          0
-RGI_Emoji_ZWJ_Sequence:          0
-RGI_Emoji:                       0
-IDS_Unary_Operator:              0
-ID_Compat_Math_Start:            0
-ID_Compat_Math_Continue:         0
-Bidi_Class:                      0
-Block:                           1
-Canonical_Combining_Class:       0
-Decomposition_Type:              0
-East_Asian_Width:                4
-General_Category:                2
-Joining_Group:                   0
-Joining_Type:                    0
-Line_Break:                      2
-Numeric_Type:                    0
-Script:                          25
-Hangul_Syllable_Type:            0
-NFD_Quick_Check:                 1
-NFKD_Quick_Check:                1
-NFC_Quick_Check:                 1
-NFKC_Quick_Check:                1
-Lead_Canonical_Combining_Class:  0
-Trail_Canonical_Combining_Class: 0
-Grapheme_Cluster_Break:          0
-Sentence_Break:                  4
-Word_Break:                      1
-Bidi_Paired_Bracket_Type:        0
-Indic_Positional_Category:       0
-Indic_Syllabic_Category:         0
-Vertical_Orientation:            0
-Identifier_Status:               1
-General_Category_Mask:           4
-Numeric_Value:                   0
-Age:                             1.1
-Bidi_Mirroring_Glyph:            a
-Case_Folding:                    a
-ISO_Comment:                     
-Lowercase_Mapping:               a
-Name:                            LATIN SMALL LETTER A
-Simple_Case_Folding:             a
-Simple_Lowercase_Mapping:        a
-Simple_Titlecase_Mapping:        
-Simple_Uppercase_Mapping:        
-Titlecase_Mapping:               
-Unicode_1_Name:                  
-Uppercase_Mapping:               
-Bidi_Paired_Bracket:             
-Script_Extensions:               [25]
+cased:                           1
+case_ignorable:                  0
+changes_when_lowercased:         0
+changes_when_uppercased:         1
+changes_when_titlecased:         1
+changes_when_casefolded:         0
+changes_when_casemapped:         1
+changes_when_nfkc_casefolded:    0
+emoji:                           0
+emoji_presentation:              0
+emoji_modifier:                  0
+emoji_modifier_base:             0
+emoji_component:                 0
+regional_indicator:              0
+prepended_concatenation_mark:    0
+extended_pictographic:           0
+basic_emoji:                     0
+emoji_keycap_sequence:           0
+rgi_emoji_modifier_sequence:     0
+rgi_emoji_flag_sequence:         0
+rgi_emoji_tag_sequence:          0
+rgi_emoji_zwj_sequence:          0
+rgi_emoji:                       0
+ids_unary_operator:              0
+id_compat_math_start:            0
+id_compat_math_continue:         0
+bidi_class:                      0
+block:                           1
+canonical_combining_class:       0
+decomposition_type:              0
+east_asian_width:                4
+general_category:                2
+joining_group:                   0
+joining_type:                    0
+line_break:                      2
+numeric_type:                    0
+script:                          25
+hangul_syllable_type:            0
+nfd_quick_check:                 1
+nfkd_quick_check:                1
+nfc_quick_check:                 1
+nfkc_quick_check:                1
+lead_canonical_combining_class:  0
+trail_canonical_combining_class: 0
+grapheme_cluster_break:          0
+sentence_break:                  4
+word_break:                      1
+bidi_paired_bracket_type:        0
+indic_positional_category:       0
+indic_syllabic_category:         0
+vertical_orientation:            0
+identifier_status:               1
+general_category_mask:           4
+numeric_value:                   0
+age:                             1.1
+bidi_mirroring_glyph:            a
+case_folding:                    a
+iso_comment:                     
+lowercase_mapping:               a
+name:                            LATIN SMALL LETTER A
+simple_case_folding:             a
+simple_lowercase_mapping:        a
+simple_titlecase_mapping:        
+simple_uppercase_mapping:        
+titlecase_mapping:               
+unicode_1_name:                  
+uppercase_mapping:               
+bidi_paired_bracket:             
+script_extensions:               [25]
 
 ```
 

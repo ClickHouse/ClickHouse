@@ -13,6 +13,7 @@
 #include <base/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <Poco/String.h>
 #include <unicode/errorcode.h>
 #include <unicode/umachine.h>
 #include <unicode/uniset.h>
@@ -28,9 +29,9 @@
 namespace DB
 {
 
-std::vector<std::pair<const char *, UProperty>> getPropNames()
+std::vector<std::pair<String, UProperty>> getPropNames()
 {
-    std::vector<std::pair<const char *, UProperty>> properties;
+    std::vector<std::pair<String, UProperty>> properties;
     int i = UCHAR_BINARY_START;
     while (true)
     {
@@ -65,7 +66,7 @@ std::vector<std::pair<const char *, UProperty>> getPropNames()
 
         if (prop_name)
         {
-            properties.emplace_back(prop_name, prop);
+            properties.emplace_back(String(prop_name), prop);
         }
         i ++;
     }
@@ -85,7 +86,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
         const auto & [prop_name, prop] = prop_names[prop_index];
         if (prop >= UCHAR_BINARY_LIMIT)
             break;
-        names_and_types.emplace_back(String(prop_name), std::make_shared<DataTypeUInt8>());
+        names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeUInt8>());
         ++prop_index;
     }
     while (prop_index < prop_names.size())
@@ -94,7 +95,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
         if (prop >= UCHAR_INT_LIMIT)
             break;
 
-        names_and_types.emplace_back(String(prop_name), std::make_shared<DataTypeInt32>());
+        names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeInt32>());
         ++prop_index;
     }
     while (prop_index < prop_names.size())
@@ -102,7 +103,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
         const auto & [prop_name, prop] = prop_names[prop_index];
         if (prop >= UCHAR_MASK_LIMIT)
             break;
-        names_and_types.emplace_back(String(prop_name), std::make_shared<DataTypeInt32>());
+        names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeInt32>());
         ++prop_index;
     }
     while (prop_index < prop_names.size())
@@ -111,7 +112,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
         if (prop >= UCHAR_DOUBLE_LIMIT)
             break;
 
-        names_and_types.emplace_back(String(prop_name), std::make_shared<DataTypeFloat64>());
+        names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeFloat64>());
         ++prop_index;
     }
     while (prop_index < prop_names.size())
@@ -119,7 +120,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
         const auto & [prop_name, prop] = prop_names[prop_index];
         if (prop >= UCHAR_STRING_LIMIT)
             break;
-        names_and_types.emplace_back(String(prop_name), std::make_shared<DataTypeString>());
+        names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeString>());
         ++prop_index;
     }
 
@@ -130,7 +131,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
             break;
         if (prop == UCHAR_SCRIPT_EXTENSIONS)
         {
-            names_and_types.emplace_back(String(prop_name), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
+            names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
         }
 
         // NOT handle UCHAR_IDENTIFIER_TYPE
@@ -176,7 +177,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
         size_t prop_index = 0;
         while (prop_index < prop_names.size())
         {
-            const auto & [prop_name, prop] = prop_names[prop_index];
+            const auto & [_, prop] = prop_names[prop_index];
             if (prop >= UCHAR_BINARY_LIMIT)
                 break;
             assert_cast<ColumnUInt8 &>(*res_columns[index++]).insert(u_hasBinaryProperty(code, prop));
@@ -185,7 +186,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
 
         while (prop_index < prop_names.size())
         {
-            const auto & [prop_name, prop] = prop_names[prop_index];
+            const auto & [_, prop] = prop_names[prop_index];
             if (prop >= UCHAR_INT_LIMIT)
                 break;
 
@@ -196,7 +197,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
 
         while (prop_index < prop_names.size())
         {
-            const auto & [prop_name, prop] = prop_names[prop_index];
+            const auto & [_, prop] = prop_names[prop_index];
             if (prop >= UCHAR_MASK_LIMIT)
                 break;
             // Only handle UCHAR_GENERAL_CATEGORY_MASK
@@ -208,7 +209,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
 
         while (prop_index < prop_names.size())
         {
-            const auto & [prop_name, prop] = prop_names[prop_index];
+            const auto & [_, prop] = prop_names[prop_index];
             if (prop >= UCHAR_DOUBLE_LIMIT)
                 break;
             if (prop == UCHAR_NUMERIC_VALUE)
@@ -228,7 +229,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
         }
         while (prop_index < prop_names.size())
         {
-            const auto & [prop_name, prop] = prop_names[prop_index];
+            const auto & [_, prop] = prop_names[prop_index];
             if (prop >= UCHAR_STRING_LIMIT)
                 break;
 
@@ -292,7 +293,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
 
         while (prop_index < prop_names.size())
         {
-            const auto & [prop_name, prop] = prop_names[prop_index];
+            const auto & [_, prop] = prop_names[prop_index];
             if (prop >= UCHAR_OTHER_PROPERTY_LIMIT)
                 break;
 
