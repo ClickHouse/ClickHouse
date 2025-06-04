@@ -9,11 +9,6 @@ CREATE TABLE idx (a Int32) Engine=MergeTree() ORDER BY a SETTINGS index_granular
 INSERT INTO ev SELECT number, number FROM numbers(10000000);
 INSERT INTO idx SELECT number * 5 FROM numbers(1000);
 
-SET enable_parallel_replicas = 1,
-    max_parallel_replicas = 3,
-    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan=1;
-
 -- test_enable_global_with_statement_performance_1
 WITH 'test' AS u SELECT count() FROM ev WHERE a IN (SELECT a FROM idx) SETTINGS enable_global_with_statement = 1;
 
