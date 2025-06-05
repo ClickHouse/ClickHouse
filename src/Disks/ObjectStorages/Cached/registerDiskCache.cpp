@@ -23,8 +23,21 @@ namespace FileCacheSetting
     extern const FileCacheSettingsString path;
 }
 
-std::string getPathPrefixForRelativeCachePath(const ContextPtr & context, bool is_attach, bool is_custom_disk)
+std::pair<FileCachePtr, FileCacheSettings> getCache(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const ContextPtr & context,
+    const std::string & cache_name,
+    bool is_attach,
+    bool is_custom_disk)
 {
+    FileCacheSettings file_cache_settings;
+    auto predefined_configuration = config.has("cache_name")
+        ? NamedCollectionFactory::instance().tryGet(config.getString("cache_name"))
+        : nullptr;
+
+    std::string cache_path_prefix_if_relative;
+    std::string cache_path_prefix_if_absolute;
     auto config_fs_caches_dir = context->getFilesystemCachesPath();
     if (is_custom_disk)
     {
@@ -45,34 +58,21 @@ std::string getPathPrefixForRelativeCachePath(const ContextPtr & context, bool i
                     "in server configuration file");
             }
             /// Compatibility prefix.
-            return fs::path(context->getPath()) / "caches";
+            cache_path_prefix_if_relative = fs::path(context->getPath()) / "caches";
         }
         else
         {
-            return fs::path(custom_cached_disk_path_prefix);
+            cache_path_prefix_if_relative = cache_path_prefix_if_absolute = fs::path(custom_cached_disk_path_prefix);
         }
     }
-
-    if (!config_fs_caches_dir.empty())
-        return config_fs_caches_dir;
-
-    return fs::path(context->getPath()) / "caches";
-}
-
-std::pair<FileCachePtr, FileCacheSettings> getCache(
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    const ContextPtr & context,
-    const std::string & cache_name,
-    bool is_attach,
-    bool is_custom_disk)
-{
-    FileCacheSettings file_cache_settings;
-    auto predefined_configuration = config.has("cache_name")
-        ? NamedCollectionFactory::instance().tryGet(config.getString("cache_name"))
-        : nullptr;
-
-    const auto cache_path_prefix_if_relative = getPathPrefixForRelativeCachePath(context, is_attach, is_custom_disk);
+    else if (!config_fs_caches_dir.empty())
+    {
+        cache_path_prefix_if_relative = cache_path_prefix_if_absolute = config_fs_caches_dir;
+    }
+    else
+    {
+        cache_path_prefix_if_relative =  fs::path(context->getPath()) / "caches";
+    }
 
     if (predefined_configuration)
         file_cache_settings.loadFromCollection(*predefined_configuration, cache_path_prefix_if_relative);
@@ -83,16 +83,25 @@ std::pair<FileCachePtr, FileCacheSettings> getCache(
             cache_path_prefix_if_relative,
             /* default_cache_path */"");
 
-    if (!file_cache_settings[FileCacheSetting::path].value.starts_with(cache_path_prefix_if_relative))
+    if (file_cache_settings.isPathRelativeInConfig())
     {
-        /// We allow a different prefix if attach && relative path
-        /// in config for compatibility.
-        if (!is_attach || !file_cache_settings.isPathRelativeInConfig())
+        chassert(!cache_path_prefix_if_relative.empty());
+        if (!is_attach && !file_cache_settings[FileCacheSetting::path].value.starts_with(cache_path_prefix_if_relative))
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Filesystem cache path must lie inside `{}`, but have {}",
+                "Filesystem cache relative path must lie inside `{}`, but have {}",
                 cache_path_prefix_if_relative, file_cache_settings[FileCacheSetting::path].value);
+        }
+    }
+    else if (!cache_path_prefix_if_absolute.empty())
+    {
+        if (!is_attach && !file_cache_settings[FileCacheSetting::path].value.starts_with(cache_path_prefix_if_absolute))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Filesystem cache absolute path must lie inside `{}`, but have {}",
+                cache_path_prefix_if_absolute, file_cache_settings[FileCacheSetting::path].value);
         }
     }
 

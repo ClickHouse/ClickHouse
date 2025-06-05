@@ -391,7 +391,7 @@ def test_custom_cached_disk(non_shared_cluster):
         ).strip()
     )
 
-    assert "Filesystem cache path must lie inside" in node.query_and_get_error(
+    assert "Filesystem cache absolute path must lie inside" in node.query_and_get_error(
         f"""
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
