@@ -193,7 +193,7 @@ public:
         return children[correlated_columns_list_index]->as<ListNode &>();
     }
 
-    void addCorrelatedColumn(ColumnNodePtr correlated_column);
+    void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
 
     QueryTreeNodeType getNodeType() const override
     {
