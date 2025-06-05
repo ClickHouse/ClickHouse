@@ -17,9 +17,6 @@ class ASTUseQuery : public IAST
 public:
     IAST * database;
 
-    /// For USE DATABASE <name> case
-    bool has_database_keyword{false};
-
     String getDatabase() const
     {
         String name;
@@ -45,8 +42,6 @@ protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         ostr << (settings.hilite ? hilite_keyword : "") << "USE " << (settings.hilite ? hilite_none : "");
-        if (has_database_keyword)
-            ostr << (settings.hilite ? hilite_keyword : "") << "DATABASE " << (settings.hilite ? hilite_none : "");
         database->format(ostr, settings, state, frame);
     }
 };

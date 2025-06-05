@@ -14,13 +14,10 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_database(Keyword::DATABASE);
     ParserIdentifier name_p{/*allow_query_parameter*/ true};
 
-    bool has_database_keyword = false;
-
     if (!s_use.ignore(pos, expected))
         return false;
 
-    if (s_database.ignore(pos, expected))
-        has_database_keyword = true;
+    s_database.ignore(pos, expected);
 
     ASTPtr database;
     if (!name_p.parse(pos, database, expected))
@@ -28,7 +25,6 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto query = std::make_shared<ASTUseQuery>();
     query->set(query->database, database);
-    query->has_database_keyword = has_database_keyword;
     node = query;
 
     return true;
