@@ -548,6 +548,68 @@ void StatementGenerator::columnPathRef(const ColumnPathChain & entry, ColumnPath
     }
 }
 
+void StatementGenerator::colRefOrExpression(RandomGenerator & rg, const TableEngineValues teng, const ColumnPathChain & entry, Expr * expr)
+{
+    SQLType * tp = entry.getBottomType();
+    const uint32_t datetime_func = 15
+        * static_cast<uint32_t>(hasType<DateType>(false, true, false, tp) || hasType<TimeType>(false, true, false, tp)
+                                || hasType<DateTimeType>(false, true, false, tp));
+    const uint32_t modulo_func = 15 * static_cast<uint32_t>(hasType<IntType>(true, true, false, tp));
+    const uint32_t one_arg_func = 5;
+    const uint32_t hash_func = 10 * static_cast<uint32_t>(teng != TableEngineValues::SummingMergeTree);
+    const uint32_t rand_expr = 15;
+    const uint32_t col_ref = 40;
+    const uint32_t prob_space = datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + col_ref;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+
+    if (datetime_func && nopt < (datetime_func + 1))
+    {
+        /// Use date functions for partitioning/keys
+        SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
+
+        func_call->mutable_func()->set_catalog_func(rg.pickRandomly(datesHash));
+        columnPathRef(entry, func_call->add_args()->mutable_expr());
+    }
+    else if (modulo_func && nopt < (datetime_func + modulo_func + 1))
+    {
+        /// Use modulo function for partitioning/keys
+        BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+
+        columnPathRef(entry, bexpr->mutable_lhs());
+        bexpr->set_op(BinaryOperator::BINOP_PERCENT);
+        bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt32() % (rg.nextBool() ? 1024 : 65536));
+    }
+    else if (one_arg_func && nopt < (datetime_func + modulo_func + one_arg_func + 1))
+    {
+        /// Use any one arg function
+        SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
+
+        func_call->mutable_func()->set_catalog_func(static_cast<SQLFunc>(rg.pickRandomly(this->one_arg_funcs).fnum));
+        columnPathRef(entry, func_call->add_args()->mutable_expr());
+    }
+    else if (hash_func && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + 1))
+    {
+        /// Use hash
+        SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
+
+        func_call->mutable_func()->set_catalog_func(rg.pickRandomly(multicolHash));
+        columnPathRef(entry, func_call->add_args()->mutable_expr());
+    }
+    else if (rand_expr && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + 1))
+    {
+        generateExpression(rg, expr);
+    }
+    else if (col_ref && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + col_ref + 1))
+    {
+        columnPathRef(entry, expr);
+    }
+    else
+    {
+        chassert(0);
+    }
+}
+
 void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngineValues teng, const bool allow_asc_desc, TableKey * tkey)
 {
     if (!entries.empty() && rg.nextSmallNumber() < 7)
@@ -596,50 +658,8 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
                 for (size_t i = 0; i < ocols; i++)
                 {
                     TableKeyExpr * tke = tkey->add_exprs();
-                    Expr * expr = tke->mutable_expr();
-                    const ColumnPathChain & entry = this->entries[i];
-                    SQLType * tp = entry.getBottomType();
 
-                    if ((hasType<DateType>(false, true, false, tp) || hasType<TimeType>(false, true, false, tp)
-                         || hasType<DateTimeType>(false, true, false, tp))
-                        && rg.nextBool())
-                    {
-                        /// Use date functions for partitioning/keys
-                        SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
-
-                        func_call->mutable_func()->set_catalog_func(rg.pickRandomly(datesHash));
-                        columnPathRef(entry, func_call->add_args()->mutable_expr());
-                    }
-                    else if (hasType<IntType>(true, true, false, tp) && rg.nextBool())
-                    {
-                        /// Use modulo function for partitioning/keys
-                        BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
-
-                        columnPathRef(entry, bexpr->mutable_lhs());
-                        bexpr->set_op(BinaryOperator::BINOP_PERCENT);
-                        bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(
-                            rg.nextRandomUInt32() % (rg.nextBool() ? 1024 : 65536));
-                    }
-                    else if (rg.nextMediumNumber() < 4)
-                    {
-                        /// Use any one arg function
-                        SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
-
-                        func_call->mutable_func()->set_catalog_func(static_cast<SQLFunc>(rg.pickRandomly(this->one_arg_funcs).fnum));
-                        columnPathRef(entry, func_call->add_args()->mutable_expr());
-                    }
-                    else if (teng != TableEngineValues::SummingMergeTree && rg.nextMediumNumber() < 6)
-                    {
-                        /// Use hash
-                        SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
-
-                        func_call->mutable_func()->set_catalog_func(rg.pickRandomly(multicolHash));
-                        columnPathRef(entry, func_call->add_args()->mutable_expr());
-                    }
-                    else
-                    {
-                        columnPathRef(entry, expr);
-                    }
+                    colRefOrExpression(rg, teng, this->entries[i], tke->mutable_expr());
                     if (allow_asc_desc && rg.nextSmallNumber() < 3)
                     {
                         tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -1091,7 +1111,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             /// Optional sharding key
             if (!this->remote_entries.empty())
             {
-                columnPathRef(rg.pickRandomly(this->remote_entries), te->add_params()->mutable_cols());
+                colRefOrExpression(rg, b.teng, rg.pickRandomly(this->remote_entries), te->add_params()->mutable_expr());
             }
             else
             {
@@ -1168,7 +1188,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine())
         && add_pkey && !entries.empty())
     {
-        columnPathRef(rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
+        colRefOrExpression(rg, b.teng, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
     }
     if (te->has_engine())
     {
@@ -1454,7 +1474,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         }
         else
         {
-            columnPathRef(this->entries[0], expr);
+            colRefOrExpression(rg, TableEngineValues::Null, this->entries[0], expr);
         }
         entries.clear();
     }

@@ -2985,6 +2985,9 @@ CONV_FN(TableEngineParam, tep)
         case TableEngineParamType::kEst:
             FlatExprSchemaTableToString(ret, tep.est(), ".");
             break;
+        case TableEngineParamType::kExpr:
+            ExprToString(ret, tep.expr());
+            break;
         default:
             ret += "c0";
     }

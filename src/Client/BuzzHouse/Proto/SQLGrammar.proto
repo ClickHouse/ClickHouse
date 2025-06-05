@@ -3164,6 +3164,7 @@ message TableEngineParam {
         ColumnPathList col_list = 11;
         string regexp = 12;
         ExprSchemaTable est = 13;
+        Expr expr = 14;
     }
 }
 
