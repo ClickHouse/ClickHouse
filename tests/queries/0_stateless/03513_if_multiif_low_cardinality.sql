@@ -1,3 +1,6 @@
+SELECT 'With optimize_if_transform_strings_to_enum = 0';
+SET optimize_if_transform_strings_to_enum = 0;
+
 SELECT 'if';
 SELECT if(number % 2 = 0, 'x', 'y') as col, toTypeName(col) FROM numbers(3);
 SELECT if(materialize(number % 2 = 0), 'x', 'y') as col, toTypeName(col) FROM numbers(3);
@@ -145,3 +148,39 @@ SELECT toBool(if(number % 2, 'true', NULL)) as x, toTypeName(x) from numbers(2);
 
 SELECT 'multiIf weirdness';
 SELECT DISTINCT multiIf(materialize(toLowCardinality(0)), 'A', 0 = number, 'B', 'C') AS txt, toTypeName(txt) FROM numbers(15);
+
+
+SELECT 'With optimize_if_transform_strings_to_enum = 1';
+SET optimize_if_transform_strings_to_enum = 1;
+
+SELECT 'if';
+SELECT if(number % 2 = 0, 'x', 'y') as col, toTypeName(col) FROM numbers(3);
+SELECT if(materialize(number % 2 = 0), 'x', 'y') as col, toTypeName(col) FROM numbers(3);
+
+SELECT 'multiIf';
+SELECT multiIf(number % 2 = 0, 'a', number = 1, 'NUM', 'hello') as col, toTypeName(col) FROM numbers(4);
+SELECT multiIf(materialize(number % 2 = 0), 'a', number = 1, 'NUM', 'hello') as col, toTypeName(col) FROM numbers(4);
+
+SELECT 'transform with default';
+SELECT 
+    user_id,
+    country_code,
+    transform(country_code, ['US', 'GB', 'DE'], ['United States', 'United Kingdom', 'Germany'], 'Unknown') AS country_name, toTypeName(country_name)
+FROM (
+    SELECT 
+        number + 100 AS user_id,
+        ['US', 'GB', 'DE', 'FR', 'IT'][number % 5 + 1] AS country_code
+    FROM numbers(10)
+);
+
+SELECT 'transform with default and NULLs';
+SELECT 
+    user_id,
+    country_code,
+    transform(country_code, ['US', 'GB', 'DE', NULL], ['United States', 'United Kingdom', 'Germany', NULL], 'Unknown') AS country_name, toTypeName(country_name)
+FROM (
+    SELECT 
+        number + 100 AS user_id,
+        ['US', 'GB', 'DE', 'FR', 'IT', NULL][number % 5 + 1] AS country_code
+    FROM numbers(10)
+);

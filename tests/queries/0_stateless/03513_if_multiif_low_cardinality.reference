@@ -1,3 +1,4 @@
+With optimize_if_transform_strings_to_enum = 0
 if
 x	LowCardinality(String)
 y	LowCardinality(String)
@@ -188,3 +189,42 @@ true	LowCardinality(Nullable(Bool))
 multiIf weirdness
 B	LowCardinality(String)
 C	LowCardinality(String)
+With optimize_if_transform_strings_to_enum = 1
+if
+x	String
+y	String
+x	String
+x	String
+y	String
+x	String
+multiIf
+a	LowCardinality(String)
+NUM	LowCardinality(String)
+a	LowCardinality(String)
+hello	LowCardinality(String)
+a	LowCardinality(String)
+NUM	LowCardinality(String)
+a	LowCardinality(String)
+hello	LowCardinality(String)
+transform with default
+100	US	United States	String
+101	GB	United Kingdom	String
+102	DE	Germany	String
+103	FR	Unknown	String
+104	IT	Unknown	String
+105	US	United States	String
+106	GB	United Kingdom	String
+107	DE	Germany	String
+108	FR	Unknown	String
+109	IT	Unknown	String
+transform with default and NULLs
+100	US	United States	Nullable(String)
+101	GB	United Kingdom	Nullable(String)
+102	DE	Germany	Nullable(String)
+103	FR	Unknown	Nullable(String)
+104	IT	Unknown	Nullable(String)
+105	US	United States	Nullable(String)
+106	GB	United Kingdom	Nullable(String)
+107	DE	Germany	Nullable(String)
+108	FR	Unknown	Nullable(String)
+109	IT	Unknown	Nullable(String)
