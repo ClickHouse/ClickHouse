@@ -10,14 +10,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # is to be run in parallel to other tests, not to produce .reference.
 # `s3_cache` is used for many tests and for all tests in case of s3-storage run.
 disk_name="s3_cache"
+tabke_name="table_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 $CLICKHOUSE_CLIENT -m --query "
-DROP TABLE IF EXISTS test;
-CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name';
-INSERT INTO test SELECT randomString(10000000);
+DROP TABLE IF EXISTS ${table_name};
+CREATE TABLE ${table_name} (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name';
+INSERT INTO ${table_name} SELECT randomString(10000000);
 "
 
-$CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null"
 
 prev_max_size=$($CLICKHOUSE_CLIENT --query "SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
 $CLICKHOUSE_CLIENT --query "SELECT current_size > 0 FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name' FORMAT TabSeparated"
@@ -29,7 +30,7 @@ sed -i "s|<max_size>$prev_max_size<\/max_size>|<max_size>$new_max_size<\/max_siz
 
 function select {
     while true; do
-        $CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"
+        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null"
     done
 }
 
