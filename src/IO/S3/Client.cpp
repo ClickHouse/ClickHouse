@@ -16,6 +16,7 @@
 
 #include <Poco/Net/NetException.h>
 
+#include <IO/expected404.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
@@ -519,13 +520,13 @@ Model::UploadPartCopyOutcome Client::UploadPartCopy(UploadPartCopyRequest & requ
 Model::DeleteObjectOutcome Client::DeleteObject(DeleteObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::DeleteObjectRequest & req) { return DeleteObject(req); });
+        request, [this](const Model::DeleteObjectRequest & req) { Expected404Scope scope; return DeleteObject(req); });
 }
 
 Model::DeleteObjectsOutcome Client::DeleteObjects(DeleteObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::DeleteObjectsRequest & req) { return DeleteObjects(req); });
+        request, [this](const Model::DeleteObjectsRequest & req) { Expected404Scope scope; return DeleteObjects(req); });
 }
 
 Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & request) const
@@ -729,8 +730,22 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
     if (outcome.IsSuccess() || !isClientForDisk())
         return std::forward<RequestResult>(outcome);
 
+    bool mark_message = true;
+
     if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-        CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
+    {
+        if (Expected404Scope::is404Expected())
+        {
+            mark_message = false;
+        }
+        else
+        {
+            CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
+        }
+    }
+
+    if (!mark_message)
+        return outcome;
 
     String enriched_message = fmt::format(
         "{} {}",
