@@ -1,3 +1,5 @@
+SET parallel_replicas_local_plan=1;
+
 drop table if exists foo;
 
 CREATE TABLE foo (id UInt8, path String) engine = MergeTree ORDER BY (path) SETTINGS index_granularity=1;
