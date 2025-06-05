@@ -506,14 +506,16 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings)
                             .getSaturated(current_settings[Setting::max_execution_time]);
 
+        // In case reading from parallel replicas is allowed, lazy case is not triggered,
+        // so in this case it's required to get only one connection from the pool
         std::vector<ConnectionPoolWithFailover::TryResult> try_results;
         try
         {
             if (my_table_func_ptr)
-                try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, current_settings, PoolMode::GET_MANY);
+                try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, current_settings, PoolMode::GET_ONE);
             else
                 try_results = my_shard.shard_info.pool->getManyChecked(
-                    timeouts, current_settings, PoolMode::GET_MANY,
+                    timeouts, current_settings, PoolMode::GET_ONE,
                     my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName());
         }
         catch (const Exception & ex)
