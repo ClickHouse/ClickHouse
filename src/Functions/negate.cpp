@@ -13,12 +13,12 @@ struct NegateImpl
     using ResultType = std::conditional_t<is_decimal<A>, A, typename NumberTraits::ResultOfNegate<A>::Type>;
     static constexpr const bool allow_string_or_fixed_string = false;
 
-    static ResultType apply(A a)
+    static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
         if constexpr (is_decimal<A>)
             return negateOverflow(a);
 
-        return common::negateIgnoreOverflow(a);
+        return -static_cast<ResultType>(a);
     }
 
 #if USE_EMBEDDED_COMPILER
