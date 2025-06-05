@@ -139,7 +139,7 @@ private:
         TopicPartitionLocks tmp_locks{};
 
         // Quota, how many temporary locks can be taken in current round
-        std::optional<size_t> tmp_locks_quota = std::nullopt;
+        size_t tmp_locks_quota{};
 
         // Searches first in permanent_locks, then in tmp_locks.
         // Returns a pointer to the lock if found; otherwise, returns nullptr.
@@ -255,14 +255,18 @@ private:
     void createReplica();
     void dropReplica();
 
-    // The second number in the pair is the number of active replicas
-    std::pair<TopicPartitionSet, UInt32> getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use);
-    std::pair<TopicPartitions, UInt32> getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions);
+    struct ActiveReplicasInfo
+    {
+        UInt64 active_replica_count{0};
+        bool has_replica_without_locks{false};
+    };
+    std::pair<TopicPartitionSet, ActiveReplicasInfo> getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use);
+    std::pair<TopicPartitions, ActiveReplicasInfo>  getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions);
     std::optional<LockedTopicPartitionInfo> createLocksInfoIfFree(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions
-    void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, std::optional<size_t> & tmp_locks_quota);
-    bool updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks);
+    void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota);
+    void updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks);
 
     // To save commit and intent nodes
     void saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, const std::filesystem::path & keeper_path_to_data, const String & data);
