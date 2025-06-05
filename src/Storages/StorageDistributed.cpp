@@ -542,14 +542,17 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     const QueryTreeNodePtr & expr, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
-    auto expr_ast
-        = expr->toAST({.add_cast_for_constants = false, .fully_qualified_identifiers = false, .qualify_indentifiers_with_database = false});
-    if (!expr_ast)
-        return false;
-    const auto & context = query_info.planner_context->getQueryContext();
-    const auto & syntax_result = TreeRewriter(context).analyze(expr_ast, storage_snapshot->getAllColumnsDescription().getAllPhysical());
-    auto expr_analyzer = ExpressionAnalyzer(expr_ast, syntax_result, context);
-    const auto & expression_dag = expr_analyzer.getActionsDAG(false);
+    /// Get all physical columns as input since both sharding key and analyzed expressions could use any of them
+    ColumnsWithTypeAndName input_columns;
+    for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+        input_columns.emplace_back(nullptr, column.type, column.name);
+
+    /// Use empty correlated columns set since we're analyzing expressions from the main query (projection/group by/limit by),
+    /// not from subqueries, so there are no correlated columns to consider
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    auto [expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(expr, input_columns, query_info.planner_context, empty_correlated_columns_set);
+    correlated_subtrees.assertEmpty("in sharding key expression");
+
     if (expression_dag.hasArrayJoin() || expression_dag.hasStatefulFunctions() || expression_dag.hasNonDeterministic())
         return false;
 
@@ -603,7 +606,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     // GROUP BY
     if (query_info.has_aggregates || query_node.hasGroupBy())
     {
-        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getGroupByNode(), storage_snapshot, query_info))
+        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || query_node.isGroupByWithGroupingSets() || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getGroupByNode(), storage_snapshot, query_info))
             return {};
     }
 
