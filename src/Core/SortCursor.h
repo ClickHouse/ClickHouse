@@ -38,7 +38,7 @@ namespace DB
 {
 
 class Block;
-using IColumnPermutation = PaddedPODArray<size_t>;
+using IColumnPermutation = PaddedPODArray<UInt32>;
 
 /** Cursor allows to compare rows in different blocks (and parts).
   * Cursor moves inside single block.

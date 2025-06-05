@@ -940,7 +940,7 @@ MutableColumnPtr ColumnObjectDeprecated::cloneResized(size_t new_size) const
 void ColumnObjectDeprecated::getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const
 {
     res.resize(num_rows);
-    iota(res.data(), res.size(), size_t(0));
+    iota(res.data(), res.size(), UInt32(0));
 }
 
 void ColumnObjectDeprecated::getExtremes(Field & min, Field & max) const

@@ -18,7 +18,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
-using IColumnPermutation = PaddedPODArray<size_t>;
+using IColumnPermutation = PaddedPODArray<UInt32>;
 
 /// Description of projections for Storage
 struct ProjectionDescription
