@@ -1529,13 +1529,13 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         case IndexType::IDX_text:
             if (rg.nextBool())
             {
-                static const DB::Strings & tokenizerVals = {"default", "f3ngram2", "noop"};
+                static const DB::Strings & tokenizerVals = {"default", "ngram", "noop"};
 
                 idef->add_params()->set_unescaped_sval("tokenizer = '" + rg.pickRandomly(tokenizerVals) + "'");
             }
             if (rg.nextBool())
             {
-                std::uniform_int_distribution<uint32_t> next_dist(0, 8192);
+                std::uniform_int_distribution<uint32_t> next_dist(2, 8);
 
                 idef->add_params()->set_unescaped_sval("ngram_size = " + std::to_string(next_dist(rg.generator)));
             }
