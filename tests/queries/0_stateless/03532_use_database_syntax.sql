@@ -1,6 +1,6 @@
 CREATE DATABASE IF NOT EXISTS d1;
 
-CREATE TABLE d1.t1 (val Int) engine=Memory;
+CREATE TABLE IF NOT EXISTS d1.t1 (val Int) engine=Memory;
 INSERT INTO d1.t1 SELECT 1;
 
 SELECT * FROM t1; -- { serverError UNKNOWN_TABLE }
