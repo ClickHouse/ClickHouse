@@ -96,7 +96,7 @@ subqueryOp
     ;
 
 offsetOp
-    : OFFSET DURATION
+    : OFFSET NUMBER
     ;
 
 vector
@@ -140,8 +140,8 @@ matrixSelector
     ;
 
 offset
-    : instantSelector OFFSET DURATION
-    | matrixSelector OFFSET DURATION
+    : instantSelector OFFSET NUMBER
+    | matrixSelector OFFSET NUMBER
     ;
 
 // Functions
