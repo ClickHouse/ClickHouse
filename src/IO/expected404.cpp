@@ -22,7 +22,7 @@ Expected404Scope::~Expected404Scope()
 
 bool Expected404Scope::is404Expected()
 {
-    return expected_404_scope_count > 0;
+    return expected_404_scope_count != 0;
 }
 
 }

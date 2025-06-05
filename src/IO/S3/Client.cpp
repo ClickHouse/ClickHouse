@@ -730,27 +730,13 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
     if (outcome.IsSuccess() || !isClientForDisk())
         return std::forward<RequestResult>(outcome);
 
-    bool mark_message = true;
-
-    if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-    {
-        if (Expected404Scope::is404Expected())
-        {
-            mark_message = false;
-        }
-        else
-        {
-            CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
-        }
-    }
-
-    if (!mark_message)
-        return outcome;
+    if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY && !Expected404Scope::is404Expected())
+        CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
 
     String enriched_message = fmt::format(
         "{} {}",
         outcome.GetError().GetMessage(),
-        "This error happened for S3 disk.");
+        Expected404Scope::is404Expected() ? "This error is expected for S3 disk."  : "This error happened for S3 disk.");
 
     auto error = outcome.GetError();
     error.SetMessage(enriched_message);
