@@ -86,7 +86,7 @@ std::pair<FileCachePtr, FileCacheSettings> getCache(
     if (file_cache_settings.isPathRelativeInConfig())
     {
         chassert(!cache_path_prefix_if_relative.empty());
-        if (!is_attach && !file_cache_settings[FileCacheSetting::path].value.starts_with(cache_path_prefix_if_relative))
+        if (!is_attach && !pathStartsWith(file_cache_settings[FileCacheSetting::path].value, cache_path_prefix_if_relative))
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -96,7 +96,7 @@ std::pair<FileCachePtr, FileCacheSettings> getCache(
     }
     else if (!cache_path_prefix_if_absolute.empty())
     {
-        if (!is_attach && !file_cache_settings[FileCacheSetting::path].value.starts_with(cache_path_prefix_if_absolute))
+        if (!is_attach && !pathStartsWith(file_cache_settings[FileCacheSetting::path].value, cache_path_prefix_if_absolute))
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
