@@ -37,6 +37,7 @@ set(SRCS
     "${LIBXML2_SOURCE_DIR}/HTMLtree.c"
     "${LIBXML2_SOURCE_DIR}/xmlwriter.c"
     "${LIBXML2_SOURCE_DIR}/xmlsave.c"
+    "${LIBXML2_SOURCE_DIR}/debugXML.c"
 )
 add_library(_libxml2 ${SRCS})
 
