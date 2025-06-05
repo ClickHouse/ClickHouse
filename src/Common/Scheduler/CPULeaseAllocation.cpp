@@ -51,8 +51,8 @@ namespace ErrorCodes
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
-CPULeaseAllocation::Lease::Lease(CPULeaseAllocationPtr && lease_, size_t thread_num_)
-    : parent(std::move(lease_))
+CPULeaseAllocation::Lease::Lease(CPULeaseAllocationPtr && parent_, size_t thread_num_)
+    : parent(std::move(parent_))
     , thread_num(thread_num_)
 {}
 
@@ -226,7 +226,7 @@ void CPULeaseAllocation::setPreempted(size_t thread_num)
         }
     }
 
-    // Preempted thread does not hold the slot, and it becames granted
+    // Preempted thread does not hold the slot, and it becomes granted
     // Note that at this point granted is almost always negative (see consume()), so it would not lead to acquiring more threads
     ++granted;
     if (granted > 0 && !shutdown)

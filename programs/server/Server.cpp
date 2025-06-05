@@ -2083,7 +2083,7 @@ try
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
             global_context->setThrowOnUnknownWorkload(new_server_settings[ServerSetting::throw_on_unknown_workload]);
-            global_context->setCpuSlotPreemption(new_server_settings[ServerSetting::cpu_slot_preemption]);
+            global_context->setCPUSlotPreemption(new_server_settings[ServerSetting::cpu_slot_preemption]);
 
             if (config->has("resources"))
             {
