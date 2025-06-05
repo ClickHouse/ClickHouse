@@ -34,6 +34,9 @@ struct CPULeaseSettings
 
     /// Timeout after which preempted thread should exit
     std::chrono::milliseconds preemption_timeout = default_preemption_timeout;
+
+    /// For debugging purposes, not used in production
+    String workload;
 };
 
 class CPULeaseAllocation;

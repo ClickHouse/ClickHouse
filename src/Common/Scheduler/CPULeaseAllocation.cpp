@@ -10,8 +10,8 @@
 #include <utility>
 
 #if 1
-#define LOG_EVENT(X) LOG_TEST(log, "{} ({}) allocated={} granted={} running={} L:{} P:{} <{}/{}> e:{}", \
-    reinterpret_cast<void*>(this), #X, allocated, granted, threads.running_count, formatBitset(threads.leased), \
+#define LOG_EVENT(X) LOG_TEST(log, "{}:{} ({}) allocated={} granted={} running={} L:{} P:{} <{}/{}> e:{}", \
+    reinterpret_cast<void*>(this), settings.workload, #X, allocated, granted, threads.running_count, formatBitset(threads.leased), \
     formatBitset(threads.preempted), consumed_ns, requested_ns, enqueued)
 namespace
 {
@@ -34,6 +34,9 @@ namespace ProfileEvents
     extern const Event ConcurrencyControlWaitMicroseconds;
     extern const Event ConcurrencyControlPreemptedMicroseconds;
     extern const Event ConcurrencyControlSlotsAcquired;
+    extern const Event ConcurrencyControlPreemptions;
+    extern const Event ConcurrencyControlUpscales;
+    extern const Event ConcurrencyControlDownscales;
 }
 
 namespace CurrentMetrics
@@ -156,6 +159,8 @@ AcquiredSlotPtr CPULeaseAllocation::acquireImpl(std::unique_lock<std::mutex> &)
 
 size_t CPULeaseAllocation::upscale()
 {
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlUpscales);
+
     // New thread take one granted slot
     --granted; // Might became negative, but it is ok because we are going to allocate a slot later
     if (granted <= 0 && !exception)
@@ -182,6 +187,8 @@ size_t CPULeaseAllocation::upscale()
 
 void CPULeaseAllocation::downscale(size_t thread_num)
 {
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
+
     chassert(threads.leased[thread_num]);
     threads.leased.reset(thread_num);
 
@@ -210,6 +217,8 @@ void CPULeaseAllocation::downscale(size_t thread_num)
 
 void CPULeaseAllocation::setPreempted(size_t thread_num)
 {
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlPreemptions);
+
     // Mark the thread as preempted
     chassert(threads.leased[thread_num]);
     chassert(!threads.preempted[thread_num]);

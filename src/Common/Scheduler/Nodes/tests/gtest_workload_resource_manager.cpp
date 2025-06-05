@@ -44,6 +44,12 @@
 
 using namespace DB;
 
+namespace ProfileEvents
+{
+    extern const Event ConcurrencyControlUpscales;
+    extern const Event ConcurrencyControlDownscales;
+}
+
 namespace CurrentMetrics
 {
     extern const Metric QueryPipelineExecutorThreads;
@@ -52,6 +58,7 @@ namespace CurrentMetrics
     extern const Metric ConcurrencyControlAcquired;
     extern const Metric ConcurrencyControlPreempted;
 }
+
 class WorkloadEntityTestStorage : public WorkloadEntityStorageBase
 {
 public:
@@ -835,16 +842,20 @@ struct TestQuery {
         AllocateLeaseNoDownscale, // CpuLeaseAllocation (cpu time fairness + preemption w/o timeout)
     };
 
-    SlotAllocationPtr allocateCPUSlots(AllocationType type, ResourceLink master_link, ResourceLink worker_link)
+    SlotAllocationPtr allocateCPUSlots(AllocationType type, ResourceLink master_link, ResourceLink worker_link, const String & workload)
     {
         std::scoped_lock lock{slots_mutex};
+        CPULeaseSettings settings;
+        settings.workload = workload;
         switch (type) {
             case AllocateSlots:
                 return std::make_shared<CPUSlotsAllocation>(1, max_threads - 1, master_link, worker_link);
             case AllocateLease:
-                return std::make_shared<CPULeaseAllocation>(max_threads, master_link, worker_link);
+                settings.preemption_timeout = std::chrono::milliseconds(12);
+                return std::make_shared<CPULeaseAllocation>(max_threads, master_link, worker_link, settings);
             case AllocateLeaseNoDownscale:
-                return std::make_shared<CPULeaseAllocation>(max_threads, master_link, worker_link, CPULeaseSettings{.preemption_timeout = std::chrono::milliseconds::max()});
+                settings.preemption_timeout = std::chrono::milliseconds::max();
+                return std::make_shared<CPULeaseAllocation>(max_threads, master_link, worker_link, settings);
         }
     }
 
@@ -867,7 +878,7 @@ struct TestQuery {
             [&, type, workload] (ResourceLink master_link, ResourceLink worker_link)
             {
                 setThreadName(workload.c_str());
-                slots = allocateCPUSlots(type, master_link, worker_link);
+                slots = allocateCPUSlots(type, master_link, worker_link, workload);
                 threadFunc(slots->acquire());
 
                 // TODO(serxa): this is not needed any longer. we do pool->wait(). Remove and check tests.
@@ -1164,6 +1175,29 @@ auto getPreempted()
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
 }
 
+struct EventCounter
+{
+    ProfileEvents::Event event;
+    size_t initial_value;
+
+    explicit EventCounter(ProfileEvents::Event event_)
+        : event(event_)
+    {
+        initial_value = getValue();
+    }
+
+    size_t count() const
+    {
+        return getValue() - initial_value;
+    }
+
+private:
+    size_t getValue() const
+    {
+        return ProfileEvents::global_counters[event].load(std::memory_order_relaxed);
+    }
+};
+
 TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingPreemption)
 {
     ResourceTest t;
@@ -1285,6 +1319,83 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingMaxMinFairness)
         .assumeCPUs(10.0) // in CI environment we can have less CPU in total and A workload will have greater share
         .check();
     DBG_PRINT("--- Stop ---");
+
+    queries.clear();
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingDownscaling)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    // Do multiple iterations to check that:
+    // (a) scheduling is memoryless
+    // (b) resource request canceling works as expected
+    for (int iteration = 0; iteration < 4; ++iteration)
+    {
+        DBG_PRINT("--- Start #{} ---", iteration);
+        std::vector<TestQueryPtr> queries;
+        for (int query = 0; query < 2; query++)
+            queries.push_back(std::make_shared<TestQuery>(t));
+
+        DBG_PRINT("--- Q0 ---");
+        queries[0]->start(TestQuery::AllocateLease, "A", 8);
+        queries[0]->waitStartedThreads(8);
+        while (getAcquired() < 8) std::this_thread::yield(); // Wait Q0 to upscale to all 8 threads
+        DBG_PRINT("--- Q1 ---");
+        EventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
+        queries[1]->start(TestQuery::AllocateLease, "B", 8);
+        DBG_PRINT("--- Wait downscaling ---");
+        // Wait 3 threads of Q0 to became preempted and downscaled.
+        // Note that we do not check all 4 thread to be downscaled, due to the fact cpu lease allows
+        // to run one more thread than slots allocated as long as this thread does not consume too much resources.
+        while (downscales.count() < 3) std::this_thread::yield();
+        DBG_PRINT("--- Stop ---");
+    }
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingUpscaling)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    std::vector<TestQueryPtr> queries;
+    for (int query = 0; query < 2; query++)
+        queries.push_back(std::make_shared<TestQuery>(t));
+
+    DBG_PRINT("--- Q0 ---");
+    queries[0]->start(TestQuery::AllocateLease, "A", 8);
+    queries[0]->waitStartedThreads(8);
+
+    for (int iteration = 0; iteration < 4; ++iteration)
+    {
+        while (getAcquired() < 8) std::this_thread::yield(); // Wait Q0 to upscale to all 8 threads
+        DBG_PRINT("--- Q1 ---");
+        EventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
+        queries[1]->start(TestQuery::AllocateLease, "B", 8);
+        DBG_PRINT("--- Wait downscaling ---");
+        // Wait 3 threads of Q0 to became preempted and downscaled.
+        // Note that we do not check all 4 thread to be downscaled, due to the fact cpu lease allows
+        // to run one more thread than slots allocated as long as this thread does not consume too much resources.
+        while (downscales.count() < 3) std::this_thread::yield();
+        DBG_PRINT("--- Wait upscaling ---");
+        EventCounter upscales(ProfileEvents::ConcurrencyControlUpscales);
+        queries[1].reset(); // Release all slots of Q1 to allow Q0 to upscale
+        while (upscales.count() < 3) std::this_thread::yield();
+        queries[1] = std::make_shared<TestQuery>(t); // Recreate Q1 for the next iteration
+    }
 
     queries.clear();
 
