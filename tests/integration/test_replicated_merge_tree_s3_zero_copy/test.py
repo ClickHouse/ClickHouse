@@ -54,15 +54,17 @@ FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
 FILES_OVERHEAD_METADATA_VERSION = 1
+FILES_OVERHEAD_COLUMNS_SUBSTREAMS = 1
 FILES_OVERHEAD_PER_PART_WIDE = (
     FILES_OVERHEAD_PER_COLUMN * 3
     + 2
     + 6
     + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
     + FILES_OVERHEAD_METADATA_VERSION
+    + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
 )
 FILES_OVERHEAD_PER_PART_COMPACT = (
-    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION + 1
+    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
 )
 
 
@@ -116,7 +118,9 @@ def drop_table(cluster):
 def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_part):
     create_table(
         cluster,
-        additional_settings="min_rows_for_wide_part={}, write_marks_for_substreams_in_compact_parts={}".format(min_rows_for_wide_part, 1),
+        additional_settings="min_rows_for_wide_part={}, write_marks_for_substreams_in_compact_parts={}".format(
+            min_rows_for_wide_part, 1
+        ),
     )
 
     all_values = ""
