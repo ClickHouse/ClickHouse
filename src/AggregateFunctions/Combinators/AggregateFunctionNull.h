@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
@@ -8,10 +9,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
-#include <absl/container/inlined_vector.h>
-
-#include <array>
 
 #include "config.h"
 
@@ -459,7 +456,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         /// This container stores the columns we really pass to the nested function.
-        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+        const IColumn * nested_columns[number_of_arguments];
 
         for (size_t i = 0; i < number_of_arguments; ++i)
         {
@@ -479,7 +476,7 @@ public:
         }
 
         this->setFlag(place);
-        this->nested_function->add(this->nestedPlace(place), nested_columns.data(), row_num, arena);
+        this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
     }
 
     void addBatchSinglePlace(
@@ -492,7 +489,7 @@ public:
     {
         /// We are going to merge all the flags into a single one to be able to call the nested batching functions
         std::vector<const UInt8 *> nullable_filters;
-        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+        const IColumn * nested_columns[number_of_arguments];
 
         std::unique_ptr<UInt8[]> final_flags;
         const UInt8 * final_flags_ptr = nullptr;
@@ -578,7 +575,7 @@ public:
 
         this->setFlag(place);
         this->nested_function->addBatchSinglePlaceNotNull(
-            row_begin, row_end, this->nestedPlace(place), nested_columns.data(), final_flags_ptr, arena, -1);
+            row_begin, row_end, this->nestedPlace(place), nested_columns, final_flags_ptr, arena, -1);
     }
 
 

@@ -69,9 +69,16 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
 static void threadFunction(
     PullingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
+    SCOPE_EXIT_SAFE(
+        if (thread_group)
+            CurrentThread::detachFromGroupIfNotDetached();
+    );
+    setThreadName("QueryPullPipeEx");
+
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, "QueryPullPipeEx");
+        if (thread_group)
+            CurrentThread::attachToGroup(thread_group);
 
         data.executor->execute(num_threads, concurrency_control);
     }

@@ -3,10 +3,7 @@
 #include <Storages/StorageValues.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -15,9 +12,9 @@ namespace DB
 StorageValues::StorageValues(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
-    Block res_block_,
+    const Block & res_block_,
     VirtualColumnsDescription virtuals_)
-    : IStorage(table_id_), res_block(std::move(res_block_))
+    : IStorage(table_id_), res_block(res_block_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -71,7 +68,7 @@ Pipe StorageValues::read(
     /// Get only required columns.
     Block block;
     for (const auto & name : column_names)
-        block.insert(res_block.getColumnOrSubcolumnByName(name));
+        block.insert(res_block.getByName(name));
 
     Chunk chunk(block.getColumns(), block.rows());
     return Pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk)));

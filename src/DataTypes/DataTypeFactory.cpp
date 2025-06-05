@@ -17,10 +17,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool log_queries;
-}
 
 namespace ErrorCodes
 {
@@ -123,7 +119,6 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
     String family_name = getAliasToOrName(family_name_param);
 
     const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
-    DataTypePtr data_type;
     if constexpr (nullptr_on_error)
     {
         if (!creator)
@@ -131,7 +126,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
 
         try
         {
-            data_type = (*creator)(parameters);
+            return (*creator)(parameters);
         }
         catch (...)
         {
@@ -141,16 +136,8 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
     else
     {
         assert(creator);
-        data_type = (*creator)(parameters);
+        return (*creator)(parameters);
     }
-
-    auto query_context = CurrentThread::getQueryContext();
-    if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-    {
-        query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, data_type->getName());
-    }
-
-    return data_type;
 }
 
 DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const
@@ -227,10 +214,15 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCr
 template <bool nullptr_on_error>
 const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String & family_name) const
 {
+    ContextPtr query_context;
+    if (CurrentThread::isInitialized())
+        query_context = CurrentThread::get().getQueryContext();
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
         {
+            if (query_context && query_context->getSettingsRef().log_queries)
+                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
             return &it->second;
         }
     }
@@ -241,6 +233,8 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
         DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
         {
+            if (query_context && query_context->getSettingsRef().log_queries)
+                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name_lowercase);
             return &it->second;
         }
     }
@@ -251,7 +245,8 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
     auto hints = this->getHints(family_name);
     if (!hints.empty())
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}. Maybe you meant: {}", family_name, toString(hints));
-    throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
+    else
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
 }
 
 DataTypeFactory::DataTypeFactory()

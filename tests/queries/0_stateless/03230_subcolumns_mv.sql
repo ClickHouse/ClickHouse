@@ -11,14 +11,6 @@ CREATE TABLE rawtable
 ENGINE = MergeTree
 ORDER BY tuple();
 
-CREATE TABLE attributes
-(
-  `AttributeKeys` Array(String),
-  `AttributeValues` Array(String)
-)
-ENGINE = ReplacingMergeTree
-ORDER BY tuple();
-
 CREATE MATERIALIZED VIEW raw_to_attributes_mv TO attributes
 (
   `AttributeKeys` Array(String),
@@ -28,6 +20,14 @@ AS SELECT
   mapKeys(Attributes) AS AttributeKeys,
   mapValues(Attributes) AS AttributeValues
 FROM rawtable;
+
+CREATE TABLE attributes
+(
+  `AttributeKeys` Array(String),
+  `AttributeValues` Array(String)
+)
+ENGINE = ReplacingMergeTree
+ORDER BY tuple();
 
 INSERT INTO rawtable VALUES ({'key1': 'value1', 'key2': 'value2'});
 SELECT * FROM raw_to_attributes_mv ORDER BY AttributeKeys;

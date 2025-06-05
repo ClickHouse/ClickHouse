@@ -33,12 +33,9 @@ struct FillColumnDescription
     DataTypePtr fill_to_type;
     Field fill_step;        /// Default = +1 or -1 according to direction
     std::optional<IntervalKind> step_kind;
-    Field fill_staleness;   /// Default = Null - should not be considered
-    std::optional<IntervalKind> staleness_kind;
 
-    using StepFunction = std::function<void(Field &, Int32 jumps_count)>;
+    using StepFunction = std::function<void(Field &)>;
     StepFunction step_func;
-    StepFunction staleness_step_func;
 };
 
 /// Description of the sorting rule by one column.
@@ -120,7 +117,7 @@ using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumn
 class SortDescription : public std::vector<SortColumnDescription>
 {
 public:
-    /// Can be safely cast into JITSortDescriptionFunc
+    /// Can be safely casted into JITSortDescriptionFunc
     void * compiled_sort_description = nullptr;
     std::shared_ptr<CompiledSortDescriptionFunctionHolder> compiled_sort_description_holder;
     size_t min_count_to_compile_sort_description = 3;
@@ -143,11 +140,4 @@ void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
 std::string dumpSortDescription(const SortDescription & description);
 
 JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description);
-
-class WriteBuffer;
-class ReadBuffer;
-
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out);
-void deserializeSortDescription(SortDescription & sort_description, ReadBuffer & in);
-
 }

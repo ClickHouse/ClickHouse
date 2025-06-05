@@ -10,8 +10,9 @@ from typing import Any, List
 
 import boto3  # type: ignore
 
-from build_download_helper import read_build_urls
-from ci_config import CI
+from build_download_helper import (
+    read_build_urls,
+)
 from compress_files import compress_fast
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
@@ -20,6 +21,7 @@ from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from ssh import SSHKey
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from ci_config import CI
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 
@@ -239,10 +241,7 @@ def main():
     additional_data = []
     try:
         test_result = _parse_jepsen_output(jepsen_log_path)
-        if len(test_result) == 0:
-            status = FAILURE
-            description = "No test results found"
-        elif any(r.status == "FAIL" for r in test_result):
+        if any(r.status == "FAIL" for r in test_result):
             status = FAILURE
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 

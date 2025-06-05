@@ -4,7 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
-#include <Interpreters/KeysNullMap.h>
+#include <Interpreters/AggregationCommon.h>
 
 namespace DB
 {
@@ -16,11 +16,6 @@ namespace ErrorCodes
 namespace ColumnsHashing
 {
 
-struct HashMethodContextSettings
-{
-    size_t max_threads;
-};
-
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.
 /// Is used for caching.
 class HashMethodContext
@@ -28,7 +23,10 @@ class HashMethodContext
 public:
     virtual ~HashMethodContext() = default;
 
-    using Settings = HashMethodContextSettings;
+    struct Settings
+    {
+        size_t max_threads;
+    };
 };
 
 using HashMethodContextPtr = std::shared_ptr<HashMethodContext>;
@@ -163,7 +161,7 @@ public:
 
     FindResultImpl(Mapped * value_, bool found_, size_t off)
         : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off), value(value_) {}
-    Mapped & getMapped() const { return *value; }  /// NOLINT(clang-analyzer-core.uninitialized.UndefReturn)
+    Mapped & getMapped() const { return *value; }
 };
 
 template <bool need_offset>
@@ -182,7 +180,7 @@ public:
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using Cache = LastElementCache<Value, nullable>;
 
-    static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
+    static HashMethodContextPtr createContext(const HashMethodContext::Settings &) { return nullptr; }
 
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)

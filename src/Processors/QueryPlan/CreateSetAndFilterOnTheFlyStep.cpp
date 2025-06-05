@@ -3,7 +3,6 @@
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
-#include <Interpreters/SetWithState.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -98,12 +97,12 @@ CreateSetAndFilterOnTheFlyStep::CrosswiseConnectionPtr CreateSetAndFilterOnTheFl
 }
 
 CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
-    const Header & input_header_,
+    const DataStream & input_stream_,
     const Names & column_names_,
     size_t max_rows_in_set_,
     CrosswiseConnectionPtr crosswise_connection_,
     JoinTableSide position_)
-    : ITransformingStep(input_header_, input_header_, getTraits())
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , column_names(column_names_)
     , max_rows_in_set(max_rows_in_set_)
     , own_set(std::make_shared<SetWithState>(SizeLimits(max_rows_in_set, 0, OverflowMode::BREAK), 0, true))
@@ -114,10 +113,10 @@ CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     if (crosswise_connection == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Crosswise connection is not initialized");
 
-    if (input_headers.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step requires exactly one input stream, got {}", input_headers.size());
+    if (input_streams.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step requires exactly one input stream, got {}", input_streams.size());
 
-    own_set->setHeader(getColumnSubset(input_headers[0], column_names));
+    own_set->setHeader(getColumnSubset(input_streams[0].header, column_names));
 }
 
 void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -192,14 +191,14 @@ void CreateSetAndFilterOnTheFlyStep::describeActions(FormatSettings & settings) 
     settings.out << '\n';
 }
 
-void CreateSetAndFilterOnTheFlyStep::updateOutputHeader()
+void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
 {
-    if (input_headers.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} requires exactly one input stream, got {}", getName(), input_headers.size());
+    if (input_streams.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} requires exactly one input stream, got {}", getName(), input_streams.size());
 
-    own_set->setHeader(getColumnSubset(input_headers[0], column_names));
+    own_set->setHeader(getColumnSubset(input_streams[0].header, column_names));
 
-    output_header = input_headers.front();
+    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
 }
 
 bool CreateSetAndFilterOnTheFlyStep::isColumnPartOfSetKey(const String & column_name) const

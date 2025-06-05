@@ -352,8 +352,10 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
                 column.name = original_column_name;
             return {std::move(column)};
         }
-
-        return {};
+        else
+        {
+            return {};
+        }
     }
 
     if (!nested_table->has(new_column_name_prefix, case_insentive))

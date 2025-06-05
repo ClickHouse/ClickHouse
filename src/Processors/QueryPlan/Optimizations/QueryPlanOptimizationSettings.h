@@ -1,9 +1,6 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ExpressionActionsSettings.h>
-#include <QueryPipeline/SizeLimits.h>
 
 #include <cstddef>
 
@@ -12,111 +9,76 @@ namespace DB
 
 struct Settings;
 
-class PreparedSetsCache;
-using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
-
 struct QueryPlanOptimizationSettings
 {
-    explicit QueryPlanOptimizationSettings(
-        const Settings & from,
-        UInt64 max_entries_for_hash_table_stats_,
-        String initial_query_id_,
-        ExpressionActionsSettings actions_settings_,
-        PreparedSetsCachePtr prepared_sets_cache_);
-
-    explicit QueryPlanOptimizationSettings(ContextPtr from);
-
     /// Allows to globally disable all plan-level optimizations.
-    /// Note: Even if set to 'true', individual optimizations may still be disabled via below settings.
-    bool optimize_plan;
+    /// Note: Even if '= true', individual optimizations may still be disabled via below settings.
+    bool optimize_plan = true;
 
     /// If not zero, throw if too many optimizations were applied to query plan.
     /// It helps to avoid infinite optimization loop.
-    size_t max_optimizations_to_apply;
+    size_t max_optimizations_to_apply = 0;
 
-    /// ------------------------------------------------------
-    /// Enable/disable plan-level optimizations
+    /// If moving-up-of-array-join optimization is enabled.
+    bool lift_up_array_join = true;
 
-    /// --- Zero-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
-    bool remove_redundant_sorting;
+    /// If moving-limit-down optimization is enabled.
+    bool push_down_limit = true;
 
-    /// --- First-pass optimizations
-    bool lift_up_array_join;
-    bool push_down_limit;
-    bool split_filter;
-    bool merge_expressions;
-    bool merge_filters;
-    bool filter_push_down;
-    bool convert_outer_join_to_inner_join;
-    bool execute_functions_after_sorting;
-    bool reuse_storage_ordering_for_window_functions;
-    bool lift_up_union;
-    bool aggregate_partitions_independently;
-    bool remove_redundant_distinct;
-    bool try_use_vector_search;
-    bool convert_join_to_in;
-    bool merge_filter_into_join_condition;
+    /// If split-filter optimization is enabled.
+    bool split_filter = true;
 
-    /// If we can swap probe/build tables in join
-    /// true/false - always/never swap
-    /// nullopt - swap if it's beneficial
-    std::optional<bool> join_swap_table;
+    /// If merge-expressions optimization is enabled.
+    bool merge_expressions = true;
 
-    /// --- Second-pass optimizations
-    bool optimize_prewhere;
-    bool read_in_order;
-    bool distinct_in_order;
-    bool optimize_sorting_by_input_stream_properties;
-    bool aggregation_in_order;
-    bool optimize_projection;
-    bool use_query_condition_cache;
-    bool query_condition_cache_store_conditions_as_plaintext;
+    /// If merge-filters optimization is enabled.
+    bool merge_filters = false;
 
-    /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
-    bool build_sets = true; /// this one doesn't have a corresponding setting
-    bool query_plan_join_shard_by_pk_ranges;
+    /// If filter push down optimization is enabled.
+    bool filter_push_down = true;
 
-    /// ------------------------------------------------------
+    /// If convert OUTER JOIN to INNER JOIN optimization is enabled.
+    bool convert_outer_join_to_inner_join = true;
 
-    /// Other settings related to plan-level optimizations
+    /// If reorder-functions-after-sorting optimization is enabled.
+    bool execute_functions_after_sorting = true;
 
-    bool optimize_use_implicit_projections;
-    bool force_use_projection;
+    /// If window-functions-can-use-storage-sorting optimization is enabled.
+    bool reuse_storage_ordering_for_window_functions = true;
+
+    /// If lifting-unions-up optimization is enabled.
+    bool lift_up_union = true;
+
+    /// if distinct in order optimization is enabled
+    bool distinct_in_order = false;
+
+    /// If read-in-order optimization is enabled
+    bool read_in_order = true;
+
+    /// If aggregation-in-order optimization is enabled
+    bool aggregation_in_order = false;
+
+    /// If removing redundant sorting is enabled, for example, ORDER BY clauses in subqueries
+    bool remove_redundant_sorting = true;
+
+    /// If aggregate-partitions-independently optimization is enabled.
+    bool aggregate_partitions_independently = false;
+
+    /// If remove-redundant-distinct-steps optimization is enabled.
+    bool remove_redundant_distinct = true;
+
+    bool optimize_prewhere = true;
+
+    /// If reading from projection can be applied
+    bool optimize_projection = false;
+    bool force_use_projection = false;
     String force_projection_name;
+    bool optimize_use_implicit_projections = false;
 
-    /// If lazy materialization optimisation is enabled
-    bool optimize_lazy_materialization = false;
-    size_t max_limit_for_lazy_materialization = 0;
+    bool build_sets = true;
 
-    VectorSearchFilterStrategy vector_search_filter_strategy;
-    size_t max_limit_for_vector_search_queries;
-
-    /// Setting needed for Sets (JOIN -> IN optimization)
-
-    SizeLimits network_transfer_limits;
-    size_t use_index_for_in_with_subqueries_max_values;
-    PreparedSetsCachePtr prepared_sets_cache;
-
-    /// This is needed for conversion JoinLogical -> Join
-
-    UInt64 max_entries_for_hash_table_stats;
-    UInt64 max_size_to_preallocate_for_joins;
-    bool collect_hash_table_stats_during_joins;
-    String initial_query_id;
-    std::chrono::milliseconds lock_acquire_timeout;
-    ExpressionActionsSettings actions_settings;
-
-    /// Please, avoid using this
-    ///
-    /// We should not have the number of threads in query plan.
-    /// The information about threads should be available only at the moment we build pipeline.
-    /// Currently, it is used by ConcurrentHashJoin: it requiers the number of threads in ctor.
-    /// It should be relativaly simple to fix, but I will do it later.
-    size_t max_threads;
-
-    bool keep_logical_steps;
-
-    bool is_explain;
+    static QueryPlanOptimizationSettings fromSettings(const Settings & from);
+    static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };
 
 }

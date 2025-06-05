@@ -5,14 +5,17 @@
 #include <atomic>
 #include <memory>
 #include <unordered_map>
+#include <string>
 #include <vector>
-#include <base/types.h>
 #include <boost/noncopyable.hpp>
 
 namespace DB
 {
 
+class WriteBufferFromOwnString;
 class KeeperDispatcher;
+
+using String = std::string;
 
 struct IFourLetterCommand;
 using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
@@ -24,6 +27,7 @@ using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
 struct IFourLetterCommand
 {
 public:
+    using StringBuffer = DB::WriteBufferFromOwnString;
     explicit IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_);
 
     virtual String name() = 0;

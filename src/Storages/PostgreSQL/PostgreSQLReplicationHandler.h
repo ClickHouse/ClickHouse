@@ -1,8 +1,8 @@
 #pragma once
 
 #include "MaterializedPostgreSQLConsumer.h"
+#include "MaterializedPostgreSQLSettings.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/PostgreSQL/Utils.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -10,7 +10,6 @@
 namespace DB
 {
 
-struct MaterializedPostgreSQLSettings;
 class StorageMaterializedPostgreSQL;
 struct SettingChange;
 
@@ -58,8 +57,6 @@ public:
 
     void setSetting(const SettingChange & setting);
 
-    Strings getTableAllowedColumns(const std::string & table_name) const;
-
     void cleanupFunc();
 
 private:
@@ -97,16 +94,13 @@ private:
 
     StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
 
-    template<typename T>
-    PostgreSQLTableStructurePtr fetchTableStructure(T & tx, const String & table_name) const;
+    PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const String & table_name) const;
 
     String doubleQuoteWithSchema(const String & table_name) const;
 
     std::pair<String, String> getSchemaAndTableName(const String & table_name) const;
 
     void assertInitialized() const;
-
-    void execWithRetryAndFaultInjection(postgres::Connection & connection, const std::function<void(pqxx::nontransaction &)> & exec) const;
 
     LoggerPtr log;
 
@@ -144,9 +138,9 @@ private:
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     ConsumerPtr consumer;
 
-    BackgroundSchedulePoolTaskHolder startup_task;
-    BackgroundSchedulePoolTaskHolder consumer_task;
-    BackgroundSchedulePoolTaskHolder cleanup_task;
+    BackgroundSchedulePool::TaskHolder startup_task;
+    BackgroundSchedulePool::TaskHolder consumer_task;
+    BackgroundSchedulePool::TaskHolder cleanup_task;
 
     const UInt64 reschedule_backoff_min_ms;
     const UInt64 reschedule_backoff_max_ms;
@@ -159,8 +153,6 @@ private:
     MaterializedStorages materialized_storages;
 
     bool replication_handler_initialized = false;
-
-    float fault_injection_probability = 0.;
 };
 
 }

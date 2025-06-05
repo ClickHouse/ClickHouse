@@ -7,10 +7,8 @@
 namespace DB
 {
 
-/// Based on the SLRU algorithm implementation.
-/// There are two queues: "protected" and "probationary".
-/// All cache entries which have been accessed only once, would lie in probationary queue.
-/// When entry is accessed more than once, it would go to the protected queue.
+/// Based on the SLRU algorithm implementation, the record with the lowest priority is stored at
+/// the head of the queue, and the record with the highest priority is stored at the tail.
 class SLRUFileCachePriority : public IFileCachePriority
 {
 public:
@@ -72,18 +70,9 @@ public:
 
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
 
-    bool modifySizeLimits(
-        size_t max_size_,
-        size_t max_elements_,
-        double size_ratio_,
-        const CachePriorityGuard::Lock &) override;
-
-    FileCachePriorityPtr copy() const;
+    bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) override;
 
 private:
-    using LRUIterator = LRUFileCachePriority::LRUIterator;
-    using LRUQueue = std::list<Entry>;
-
     double size_ratio;
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;

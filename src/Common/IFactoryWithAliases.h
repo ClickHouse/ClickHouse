@@ -29,9 +29,10 @@ protected:
     {
         if (aliases.contains(name))
             return aliases.at(name);
-        if (String name_lowercase = Poco::toLower(name); case_insensitive_aliases.contains(name_lowercase))
+        else if (String name_lowercase = Poco::toLower(name); case_insensitive_aliases.contains(name_lowercase))
             return case_insensitive_aliases.at(name_lowercase);
-        return name;
+        else
+            return name;
     }
 
     std::unordered_map<String, String> case_insensitive_name_mapping;
@@ -101,7 +102,7 @@ public:
     {
         if (auto it = aliases.find(name); it != aliases.end())
             return it->second;
-        if (auto jt = case_insensitive_aliases.find(Poco::toLower(name)); jt != case_insensitive_aliases.end())
+        else if (auto jt = case_insensitive_aliases.find(Poco::toLower(name)); jt != case_insensitive_aliases.end())
             return jt->second;
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: name '{}' is not alias", getFactoryName(), name);
@@ -120,7 +121,7 @@ public:
         auto it = case_insensitive_name_mapping.find(Poco::toLower(name));
         if (it != case_insensitive_name_mapping.end())
             return it->second;
-        return name;  /// NOLINT(bugprone-return-const-ref-from-parameter)
+        return name;
     }
 
     ~IFactoryWithAliases() override = default;

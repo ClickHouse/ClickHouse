@@ -152,7 +152,7 @@ static void useAliasInsteadOfIdentifier(const ASTPtr & predicate)
     }
 }
 
-static void getConjunctionHashesFrom(const ASTPtr & ast, std::set<IASTHash> & hashes)
+static void getConjunctionHashesFrom(const ASTPtr & ast, std::set<IAST::Hash> & hashes)
 {
     for (const auto & pred : splitConjunctionsAst(ast))
     {
@@ -177,7 +177,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
 
     /// Do not add same conditions twice to avoid extra rewrites with exponential blowup
     /// (e.g. in case of deep complex query with lots of JOINs)
-    std::set<IASTHash> hashes;
+    std::set<IAST::Hash> hashes;
     getConjunctionHashesFrom(subquery.where(), hashes);
     getConjunctionHashesFrom(subquery.having(), hashes);
 

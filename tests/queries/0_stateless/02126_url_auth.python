@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 
-import csv
-import os
 import socket
-import subprocess
+import csv
 import sys
 import tempfile
 import threading
+import os
 import traceback
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import subprocess
 from io import StringIO
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 def is_ipv6(host):

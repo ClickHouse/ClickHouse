@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IKeyValueEntity.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -140,8 +140,6 @@ private:
 
     std::string zk_dropped_path;
     std::string zk_dropped_lock_path;
-    /// used for safe concurrent access to ephemeral dropped lock node
-    std::string zk_dropped_lock_version_path;
 
     std::string zookeeper_name;
 

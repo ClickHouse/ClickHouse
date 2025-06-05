@@ -3,11 +3,14 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <deque>
 
 #include <Common/TypePromotion.h>
 
-#include <city.h>
+#include <DataTypes/IDataType.h>
+
+#include <Parsers/IAST_fwd.h>
+
+#include <Analyzer/Identifier.h>
 
 class SipHash;
 
@@ -16,14 +19,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int UNSUPPORTED_METHOD;
+    extern const int UNSUPPORTED_METHOD;
 }
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class WriteBuffer;
 
@@ -45,9 +42,8 @@ enum class QueryTreeNodeType : uint8_t
     TABLE_FUNCTION,
     QUERY,
     ARRAY_JOIN,
-    CROSS_JOIN,
     JOIN,
-    UNION,
+    UNION
 };
 
 /// Convert query tree node type to string
@@ -67,7 +63,6 @@ const char * toString(QueryTreeNodeType type);
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
-using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
 using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
 using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
 
@@ -91,21 +86,18 @@ public:
       */
     virtual DataTypePtr getResultType() const
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query tree node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
     virtual void convertToNullable()
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query tree node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query node", getNodeTypeName());
     }
 
     struct CompareOptions
     {
         bool compare_aliases = true;
         bool compare_types = true;
-        /// Do not compare the cte name or check the is_cte flag for the query node.
-        /// Calculate a hash as if is_cte is false and cte_name is empty.
-        bool ignore_cte = false;
     };
 
     /** Is tree equal to other tree with node root.
@@ -113,7 +105,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .compare_types = true, .ignore_cte = false }) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .compare_types = true }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
@@ -123,7 +115,7 @@ public:
       * Alias of query tree node is part of query tree hash.
       * Original AST is not part of query tree hash.
       */
-    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .compare_types = true, .ignore_cte = false }) const;
+    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .compare_types = true }) const;
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;

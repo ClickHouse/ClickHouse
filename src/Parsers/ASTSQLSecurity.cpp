@@ -5,33 +5,33 @@
 namespace DB
 {
 
-void ASTSQLSecurity::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSQLSecurity::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (!type)
         return;
 
     if (definer || is_definer_current_user)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "DEFINER" << (settings.hilite ? hilite_none : "");
-        ostr << " = ";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "DEFINER" << (settings.hilite ? hilite_none : "");
+        settings.ostr << " = ";
         if (definer)
-            definer->format(ostr, settings, state, frame);
+            definer->formatImpl(settings, state, frame);
         else
-            ostr << "CURRENT_USER";
-        ostr << " ";
+            settings.ostr << "CURRENT_USER";
+        settings.ostr << " ";
     }
 
-    ostr << (settings.hilite ? hilite_keyword : "") << "SQL SECURITY" << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SQL SECURITY" << (settings.hilite ? hilite_none : "");
     switch (*type)
     {
         case SQLSecurityType::INVOKER:
-            ostr << " INVOKER";
+            settings.ostr << " INVOKER";
             break;
         case SQLSecurityType::DEFINER:
-            ostr << " DEFINER";
+            settings.ostr << " DEFINER";
             break;
         case SQLSecurityType::NONE:
-            ostr << " NONE";
+            settings.ostr << " NONE";
             break;
     }
 }

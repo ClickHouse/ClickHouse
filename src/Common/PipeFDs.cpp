@@ -10,7 +10,6 @@
 #include <fcntl.h>
 #include <algorithm>
 
-
 namespace DB
 {
 

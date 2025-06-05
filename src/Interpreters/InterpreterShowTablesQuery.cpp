@@ -1,19 +1,18 @@
-#include <Access/Common/AccessFlags.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeString.h>
-#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
-#include <Interpreters/executeQuery.h>
-#include <Parsers/ASTShowTablesQuery.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
-#include <Common/Macros.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Access/Common/AccessFlags.h>
 #include <Common/typeid_cast.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -54,12 +53,12 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " ORDER BY name";
 
         if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
+            rewritten_query << " LIMIT " << query.limit_length;
 
         return rewritten_query.str();
     }
 
-    /// SHOW CLUSTERS
+    /// SHOW CLUSTER/CLUSTERS
     if (query.clusters)
     {
         WriteBufferFromOwnString rewritten_query;
@@ -78,21 +77,16 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " ORDER BY cluster";
 
         if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
+            rewritten_query << " LIMIT " << query.limit_length;
 
         return rewritten_query.str();
     }
-
-    /// SHOW CLUSTER
-    if (query.cluster)
+    else if (query.cluster)
     {
         WriteBufferFromOwnString rewritten_query;
-        rewritten_query
-            << "SELECT cluster, shard_num, replica_num, host_name, host_address, port FROM system.clusters";
+        rewritten_query << "SELECT * FROM system.clusters";
 
-        auto cluster_name_expanded = getContext()->getMacros()->expand(query.cluster_str);
-
-        rewritten_query << " WHERE cluster = " << DB::quote << cluster_name_expanded;
+        rewritten_query << " WHERE cluster = " << DB::quote << query.cluster_str;
 
         /// (*)
         rewritten_query << " ORDER BY cluster, shard_num, replica_num, host_name, host_address, port";
@@ -153,7 +147,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " ORDER BY elapsed desc";
 
         if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
+            rewritten_query << " LIMIT " << query.limit_length;
 
         return rewritten_query.str();
     }
@@ -198,13 +192,13 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
             << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
             << DB::quote << query.like;
     else if (query.where_expression)
-        rewritten_query << " AND (" << query.where_expression->formatWithSecretsOneLine() << ")";
+        rewritten_query << " AND (" << query.where_expression << ")";
 
     /// (*)
     rewritten_query << " ORDER BY name ";
 
     if (query.limit_length)
-        rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
+        rewritten_query << " LIMIT " << query.limit_length;
 
     return rewritten_query.str();
 }

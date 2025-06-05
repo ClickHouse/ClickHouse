@@ -134,11 +134,13 @@ public:
                     {
                         return Entry(*item);
                     }
-
-                    expireObject(item->object);
-                    item->object = allocObject();
-                    item->is_expired = false;
-                    return Entry(*item);
+                    else
+                    {
+                        expireObject(item->object);
+                        item->object = allocObject();
+                        item->is_expired = false;
+                        return Entry(*item);
+                    }
                 }
             }
             if (items.size() < max_items)

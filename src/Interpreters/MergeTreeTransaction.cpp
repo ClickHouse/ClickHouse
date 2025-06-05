@@ -5,8 +5,6 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Common/noexcept_scope.h>
 
-#include <fmt/ranges.h>
-
 namespace DB
 {
 
@@ -67,7 +65,7 @@ void MergeTreeTransaction::checkIsNotCancelled() const
     CSN c = csn.load();
     if (c == Tx::RolledBackCSN)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
-    if (c != Tx::UnknownCSN)
+    else if (c != Tx::UnknownCSN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", c);
 }
 
@@ -369,7 +367,7 @@ String MergeTreeTransaction::dumpDescription() const
 
     for (const auto & part : removing_parts)
     {
-        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn.load());
+        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn);
         std::get<1>(storage_to_changes[&(part->storage)]).push_back(std::move(info));
         chassert(!part->version.creation_csn || part->version.creation_csn <= getSnapshot());
     }

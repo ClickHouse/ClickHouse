@@ -1,31 +1,24 @@
 ---
-description: 'Represents the contents of index and marks files of MergeTree tables.
-  It can be used for introspection.'
-sidebar_label: 'mergeTreeIndex'
+slug: /en/sql-reference/table-functions/mergeTreeIndex
 sidebar_position: 77
-slug: /sql-reference/table-functions/mergeTreeIndex
-title: 'mergeTreeIndex'
+sidebar_label: mergeTreeIndex
 ---
 
-# mergeTreeIndex Table Function
+# mergeTreeIndex
 
-Represents the contents of index and marks files of MergeTree tables. It can be used for introspection.
+Represents the contents of index and marks files of MergeTree tables. It can be used for introspection
 
-## Syntax {#syntax}
-
-```sql
+``` sql
 mergeTreeIndex(database, table, [with_marks = true])
 ```
 
-## Arguments {#arguments}
+**Arguments**
 
-| Argument     | Description                                       |
-|--------------|---------------------------------------------------|
-| `database`   | The database name to read index and marks from.   |
-| `table`      | The table name to read index and marks from.      |
-| `with_marks` | Whether include columns with marks to the result. |
+- `database`- The database name to read index and marks from.
+- `table`- The table name to read index and marks from.
+- `with_marks` - Whether include columns with marks to the result.
 
-## Returned value {#returned_value}
+**Returned Value**
 
 A table object with columns with values of primary index of source table, columns with values of marks (if enabled) for all possible files in data parts of source table and virtual columns:
 
@@ -35,7 +28,7 @@ A table object with columns with values of primary index of source table, column
 
 Marks column may contain `(NULL, NULL)` value in case when column is absent in data part or marks for one of its substreams are not written (e.g. in compact parts).
 
-## Usage Example {#usage-example}
+## Usage Example
 
 ```sql
 CREATE TABLE test_table

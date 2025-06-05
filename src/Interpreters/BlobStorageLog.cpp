@@ -1,8 +1,6 @@
 #include <Interpreters/BlobStorageLog.h>
 #include <base/getFQDNOrHostName.h>
 
-#include <Common/DateLUTImpl.h>
-
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -10,8 +8,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDate.h>
-
-#include <Interpreters/Context.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -100,7 +96,6 @@ void BlobStorageLog::prepareTable()
         std::unique_lock lock{prepare_mutex};
         const auto & relative_data_path = merge_tree_table->getRelativeDataPath();
         prefix_to_ignore = normalizePath(relative_data_path);
-        LOG_DEBUG(log, "Will ignore blobs with prefix {}", prefix_to_ignore);
     }
 }
 

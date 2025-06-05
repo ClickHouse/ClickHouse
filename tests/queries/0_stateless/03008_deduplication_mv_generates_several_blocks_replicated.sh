@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-flaky-check
-# Tag no-flaky-check -- not compatible with ThreadFuzzer
+# Tags: long, no-fasttest, no-parallel, no-azure-blob-storage, no-s3-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -37,7 +36,7 @@ for insert_method in "InsertSelect" "InsertValues"; do
                         fi
                         echo "$THIS_RUN"
 
-                        $CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
+                        $CLICKHOUSE_CLIENT --max_insert_block_size 1  -nmq "
                             $(python3 $CURDIR/03008_deduplication.python mv_generates_several_blocks \
                                 --insert-method $insert_method \
                                 --table-engine $ENGINE \

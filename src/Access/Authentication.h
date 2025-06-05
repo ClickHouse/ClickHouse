@@ -2,7 +2,6 @@
 
 #include <Access/AuthenticationData.h>
 #include <Common/Exception.h>
-#include <Interpreters/ClientInfo.h>
 #include <base/types.h>
 
 
@@ -25,9 +24,8 @@ struct Authentication
     /// returned by the authentication server
     static bool areCredentialsValid(
         const Credentials & credentials,
-        const AuthenticationData & authentication_method,
+        const AuthenticationData & auth_data,
         const ExternalAuthenticators & external_authenticators,
-        const ClientInfo & client_info,
         SettingsChanges & settings);
 
     // A signaling class used to communicate requirements for credentials.

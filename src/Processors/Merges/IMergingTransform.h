@@ -1,13 +1,11 @@
 #pragma once
 
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
-
-#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 
 namespace DB
 {
@@ -32,7 +30,7 @@ public:
         UInt64 limit_hint_,
         bool always_read_till_end_);
 
-    OutputPort & getOutputPort();
+    OutputPort & getOutputPort() { return outputs.front(); }
 
     /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
     void addInput();

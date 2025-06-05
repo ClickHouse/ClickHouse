@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT -m --query """
+$CLICKHOUSE_CLIENT -nm --query """
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
@@ -17,17 +17,17 @@ SETTINGS disk = disk(name = 's3_disk', type = cache, max_size = '100Ki', path = 
 
 disk_name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-$CLICKHOUSE_CLIENT -m --query """
+$CLICKHOUSE_CLIENT -nm --query """
 SELECT count() FROM system.disks WHERE name = '$disk_name'
 """
 
-$CLICKHOUSE_CLIENT -m --query """
+$CLICKHOUSE_CLIENT -nm --query """
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = disk(name = '$disk_name', type = cache, max_size = '100Ki', path = ${CLICKHOUSE_TEST_UNIQUE_NAME}, disk = s3_disk);
 """
 
-$CLICKHOUSE_CLIENT -m --query """
+$CLICKHOUSE_CLIENT -nm --query """
 SELECT count() FROM system.disks WHERE name = '$disk_name'
 """

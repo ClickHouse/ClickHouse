@@ -106,9 +106,10 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
     {
         if (aggregate_function_name == "min")
             return "max";
-        if (aggregate_function_name == "max")
+        else if (aggregate_function_name == "max")
             return "min";
-        return aggregate_function_name;
+        else
+            return aggregate_function_name;
     };
 
     if (first_literal && !second_literal)

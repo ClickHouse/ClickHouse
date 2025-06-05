@@ -18,10 +18,12 @@ public:
     bool is_into_outfile_with_stdout = false;
     bool is_outfile_append = false;
     bool is_outfile_truncate = false;
-    ASTPtr format_ast;
+    ASTPtr format;
     ASTPtr settings_ast;
     ASTPtr compression;
     ASTPtr compression_level;
+
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 
     /// Remove 'FORMAT <fmt> and INTO OUTFILE <file>' if exists
     static bool resetOutputASTIfExist(IAST & ast);
@@ -31,9 +33,7 @@ protected:
     void cloneOutputOptions(ASTQueryWithOutput & cloned) const;
 
     /// Format only the query part of the AST (without output options).
-    virtual void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
-
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
+    virtual void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
 };
 
 
@@ -54,9 +54,9 @@ public:
     }
 
 protected:
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
-        ostr << (settings.hilite ? hilite_keyword : "")
+        settings.ostr << (settings.hilite ? hilite_keyword : "")
             << ASTIDAndQueryNames::Query << (settings.hilite ? hilite_none : "");
     }
 };

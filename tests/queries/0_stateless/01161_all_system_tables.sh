@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, long
+# Tags: no-parallel
 # Tag no-parallel: since someone may create table in system database
 
 # Server may ignore some exceptions, but it still print exceptions to logs and (at least in CI) sends Error and Warning log messages to client
@@ -16,12 +16,10 @@ LIMIT=10000
 
 function run_selects()
 {
-    local tables_arr
-
     thread_num=$1
     readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT database || '.' || name FROM system.tables
     WHERE database in ('system', 'information_schema', 'INFORMATION_SCHEMA') and name != 'zookeeper' and name != 'models'
-    AND sipHash64(name || toString($RAND)) % $THREADS = $thread_num AND name NOT LIKE '%\\_sender' AND name NOT LIKE '%\\_watcher' AND name != 'coverage_log'")
+    AND sipHash64(name || toString($RAND)) % $THREADS = $thread_num AND name NOT LIKE '%\\_sender' AND name NOT LIKE '%\\_watcher'")
 
     for t in "${tables_arr[@]}"
     do

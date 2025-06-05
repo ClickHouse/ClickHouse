@@ -1,13 +1,8 @@
 #pragma once
-
-#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-#include <Processors/Port.h>
 
 namespace DB
 {
-
-class Block;
 
 /// Transform which has single input and num_outputs outputs.
 /// Read chunk from input and copy it to all outputs.
@@ -22,7 +17,8 @@ public:
     InputPort & getInputPort() { return inputs.front(); }
 
 private:
-    Port::Data data;
+    Chunk chunk;
+    bool has_data = false;
     std::vector<char> was_output_processed;
 
     Status prepareGenerate();

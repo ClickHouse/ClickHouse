@@ -13,7 +13,9 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
+#include <IO/WriteHelpers.h>
 #include <Access/Common/AccessFlags.h>
+#include <Interpreters/Context.h>
 
 #include <mutex>
 #include <filesystem>
@@ -104,9 +106,11 @@ protected:
                 setResult(result, location, frames);
                 return result;
             }
-            return {object->name};
+            else
+                return {object->name};
         }
-        return {};
+        else
+            return {};
     }
 
     ResultT implCached(uintptr_t addr) const

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
@@ -74,7 +74,7 @@ private:
     size_t no_work_done_count = 0;
 
     /// Scheduling task which assign jobs in background pool
-    BackgroundSchedulePoolTaskHolder holder;
+    BackgroundSchedulePool::TaskHolder holder;
     /// Mutex for thread safety
     std::mutex holder_mutex;
 

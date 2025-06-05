@@ -12,8 +12,7 @@ TEST(Marks, Compression)
 
     auto gen = [&](size_t count, size_t max_x_increment, size_t max_y_increment)
     {
-        size_t x = 0;
-        size_t y = 0;
+        size_t x = 0, y = 0;
         PODArray<MarkInCompressedFile> plain(count);
         for (int i = 0; i < count; ++i)
         {

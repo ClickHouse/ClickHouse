@@ -2,21 +2,25 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
 
 /** materialize(x) - materialize the constant
   */
-template <bool remove_sparse>
 class FunctionMaterialize : public IFunction
 {
 public:
     static constexpr auto name = "materialize";
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionMaterialize<remove_sparse>>();
+        return std::make_shared<FunctionMaterialize>();
+    }
+
+    bool useDefaultImplementationForNulls() const override
+    {
+        return false;
     }
 
     /// Get the function name.
@@ -30,15 +34,7 @@ public:
         return true;
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    bool useDefaultImplementationForNothing() const override { return false; }
-
-    bool useDefaultImplementationForConstants() const override { return false; }
-
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-
-    bool useDefaultImplementationForSparseColumns() const override { return false; }
 
     bool isSuitableForConstantFolding() const override { return false; }
 
@@ -56,10 +52,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        auto res = arguments[0].column->convertToFullColumnIfConst();
-        if constexpr (remove_sparse)
-            res = recursiveRemoveSparse(res);
-        return res;
+        return arguments[0].column->convertToFullColumnIfConst();
     }
 
     bool hasInformationAboutMonotonicity() const override { return true; }

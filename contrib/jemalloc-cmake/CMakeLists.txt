@@ -34,19 +34,9 @@ if (OS_LINUX)
     # avoid spurious latencies and additional work associated with
     # MADV_DONTNEED. See
     # https://github.com/ClickHouse/ClickHouse/issues/11121 for motivation.
-    #
-    # lg_extent_max_active_fit:8 controls how jemalloc reuses memory blocks.
-    # Value 8 means extents can be reused when their size is up to 2^8 (256) times larger than requested.
-    # This enables better hot dirty memory reuse for two-level hashtables with 256 sub-hashtables.
-    # In ClickBench queries (e.g. Q35), these 256 sub-hashtables (16KB each) get reallocated frequently.
-    # Without this setting, when multiple 16KB blocks coalesce into larger blocks (>64*16KB),
-    # they can't be reused for new 16KB requests, causing expensive page faults from MADV_DONTNEED.
-    # Increasing from default 6(64x) to 8(256x) allows these coalesced blocks to be split and reused.
-    # See: https://github.com/ClickHouse/ClickHouse/pull/80245
-    # https://github.com/jemalloc/jemalloc/pull/2842
-    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:false,background_thread:true,lg_extent_max_active_fit:8")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:false,background_thread:true")
 else()
-    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,lg_extent_max_active_fit:8")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000")
 endif()
 # CACHE variable is empty to allow changing defaults without the necessity
 # to purge cache
@@ -173,6 +163,15 @@ target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
 
 # Because our coverage callbacks call malloc, and recursive call of malloc could not work.
 target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})
+
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    target_compile_definitions(_jemalloc PRIVATE
+        -DJEMALLOC_DEBUG=1
+        # Usage examples:
+        # - MALLOC_CONF=log:.
+        # - MALLOC_CONF='log:core.malloc.exit|core.sallocx.entry|core.sdallocx.entry'
+        -DJEMALLOC_LOG=1)
+endif ()
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 

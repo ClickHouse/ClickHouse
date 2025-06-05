@@ -1,5 +1,4 @@
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -33,16 +32,12 @@ def test_attach_without_checksums(start_cluster):
     assert node1.query("SELECT COUNT() FROM test WHERE key % 10 == 0") == "0\n"
     assert node1.query("SELECT COUNT() FROM test") == "0\n"
 
-    data_path = node1.query(
-        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='test'"
-    ).strip()
-
     # to be sure output not empty
     node1.exec_in_container(
         [
             "bash",
             "-c",
-            f'find {data_path}detached -name "checksums.txt" | grep -e ".*" ',
+            'find /var/lib/clickhouse/data/default/test/detached -name "checksums.txt" | grep -e ".*" ',
         ],
         privileged=True,
         user="root",
@@ -52,7 +47,7 @@ def test_attach_without_checksums(start_cluster):
         [
             "bash",
             "-c",
-            f'find {data_path}detached -name "checksums.txt" -delete',
+            'find /var/lib/clickhouse/data/default/test/detached -name "checksums.txt" -delete',
         ],
         privileged=True,
         user="root",

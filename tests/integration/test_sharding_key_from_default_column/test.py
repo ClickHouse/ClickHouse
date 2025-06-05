@@ -1,7 +1,5 @@
-import itertools
-
 import pytest
-
+import itertools
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 

@@ -125,8 +125,6 @@ struct Progress
 
     void incrementElapsedNs(UInt64 elapsed_ns_);
 
-    bool empty() const;
-
     void reset();
 
     ProgressValues getValues() const;

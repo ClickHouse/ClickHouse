@@ -1,7 +1,10 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Core/Defines.h>
 
 namespace DB
 {
@@ -33,7 +36,8 @@ public:
 
         if (locus.index_l == locus.index_r)
             return locus.read(bitset[locus.index_l]);
-        return locus.read(bitset[locus.index_l], bitset[locus.index_r]);
+        else
+            return locus.read(bitset[locus.index_l], bitset[locus.index_r]);
     }
 
     Locus ALWAYS_INLINE operator[](BucketIndex bucket_index)
@@ -119,7 +123,8 @@ public:
 
         if (fits_in_byte)
             return std::make_pair(current_bucket_index - 1, locus.read(value_l));
-        return std::make_pair(current_bucket_index - 1, locus.read(value_l, value_r));
+        else
+            return std::make_pair(current_bucket_index - 1, locus.read(value_l, value_r));
     }
 
 private:
@@ -158,7 +163,8 @@ public:
     {
         if (content_l == content_r)
             return read(*content_l);
-        return read(*content_l, *content_r);
+        else
+            return read(*content_l, *content_r);
     }
 
     Locus ALWAYS_INLINE & operator=(UInt8 content)

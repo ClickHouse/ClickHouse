@@ -2,7 +2,6 @@
 
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Server/HTTP/HTTPResponse.h>
-#include <Common/Exception.h>
 
 #include <Poco/Net/HTTPServerSession.h>
 #include <Poco/Net/HTTPResponse.h>
@@ -14,11 +13,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 
 class HTTPWriteBufferChunked : public WriteBufferFromPocoSocket
@@ -92,9 +86,6 @@ public:
 
     void setChunked(size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
     {
-        if (count() > 0 && count() != offset())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "can't do setChunked on HTTPWriteBuffer, buffer is already in use");
-
         chunked = true;
         resizeIfNeeded(buf_size);
     }
@@ -106,9 +97,6 @@ public:
 
     void setFixedLength(size_t length)
     {
-        if (count() > 0 && count() != offset())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "can't do setFixedLength on HTTPWriteBuffer, buffer is already in use");
-
         chunked = false;
         fixed_length = length;
         count_length = 0;
@@ -120,20 +108,8 @@ public:
         return chunked ? 0 : fixed_length;
     }
 
-    size_t fixedLengthLeft() const
-    {
-        chassert(isFixedLength());
-
-        if (fixed_length <= count_length - offset())
-            return 0;
-        return fixed_length - count_length - offset();
-    }
-
     void setPlain(size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
     {
-        if (count() > 0 && count() != offset())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "can't do setPlain on HTTPWriteBuffer, buffer is already in use");
-
         chunked = false;
         fixed_length = 0;
         count_length = 0;
@@ -149,15 +125,8 @@ protected:
     void finalizeImpl() override
     {
         WriteBufferFromPocoSocket::finalizeImpl();
-
         if (chunked)
             socketSendBytes("0\r\n\r\n", 5);
-    }
-
-    void breakFixedLength()
-    {
-        if (fixed_length > 1)
-            fixed_length -= 1;
     }
 
     void nextImpl() override
@@ -172,8 +141,6 @@ protected:
 
     void nextImplFixedLength()
     {
-        /// Do we drop the data silently???
-
         if (count_length >= fixed_length || offset() == 0)
             return;
 
@@ -209,7 +176,6 @@ protected:
         memory.resize(buf_size);
         set(memory.data(), memory.size(), data_size);
     }
-
 private:
     bool chunked = false;
     size_t fixed_length = 0;
@@ -232,7 +198,7 @@ public:
     ///
     /// Must not be called after beginSend(), sendFile(), sendBuffer()
     /// or redirect() has been called.
-    std::shared_ptr<WriteBuffer> send();
+    std::shared_ptr<WriteBufferFromPocoSocket> send();
 
     /// Sends the response headers to the client
     /// but do not finish headers with \r\n,
@@ -240,7 +206,7 @@ public:
     ///
     /// Must not be called after send(), sendFile(), sendBuffer()
     /// or redirect() has been called.
-    std::pair<std::shared_ptr<WriteBuffer>, std::shared_ptr<WriteBuffer>> beginSend();
+    std::pair<std::shared_ptr<WriteBufferFromPocoSocket>, std::shared_ptr<WriteBufferFromPocoSocket>> beginSend();
 
     /// Override to correctly mark that the data send had been started for
     /// zero-copy response (i.e. replicated fetches).
@@ -288,8 +254,8 @@ private:
     Poco::Net::HTTPServerSession & session;
     HTTPServerRequest * request = nullptr;
     ProfileEvents::Event write_event;
-    std::shared_ptr<WriteBuffer> stream;
-    std::shared_ptr<WriteBuffer> header_stream;
+    std::shared_ptr<WriteBufferFromPocoSocket> stream;
+    std::shared_ptr<WriteBufferFromPocoSocket> header_stream;
     mutable bool send_started = false;
 };
 

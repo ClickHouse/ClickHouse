@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/formatAST.h>
 
 #include <libfuzzer/libfuzzer_macro.h>
 
@@ -29,7 +30,8 @@ DEFINE_BINARY_PROTO_FUZZER(const Sentence& main)
             DB::ASTPtr ast
                 = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, DB::DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-            std::cerr << ast->formatWithSecretsOneLine();
+            DB::WriteBufferFromOStream out(std::cerr, 4096);
+            DB::formatAST(*ast, out);
             std::cerr << std::endl;
         }
         catch (...) {}
