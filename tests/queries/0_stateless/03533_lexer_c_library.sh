@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-clang++ -c -Os -fno-exceptions -fno-rtti -nostdlib -D LEXER_STANDALONE_BUILD "${CUR_DIR}/../../../src/Parsers/Lexer.cpp" -o "${CLICKHOUSE_TMP}/Lexer.o"
+${CXX} -c -Os -fno-exceptions -fno-rtti -nostdlib -D LEXER_STANDALONE_BUILD "${CUR_DIR}/../../../src/Parsers/Lexer.cpp" -o "${CLICKHOUSE_TMP}/Lexer.o"
 
 > main.c echo '
 extern unsigned long clickhouse_lexer_size;
@@ -35,6 +35,6 @@ int main(int argc, char ** argv)
 }
 '
 
-clang main.c "${CLICKHOUSE_TMP}/Lexer.o" -o "${CLICKHOUSE_TMP}/lexer"
+${CC} main.c "${CLICKHOUSE_TMP}/Lexer.o" -o "${CLICKHOUSE_TMP}/lexer"
 
 "${CLICKHOUSE_TMP}/lexer" 'SELECT 1, 2, /* Hello */ "test" AS x'
