@@ -2804,23 +2804,25 @@ CONV_FN(ColumnDef, cdf)
 
 CONV_FN(IndexParam, ip)
 {
-    if (ip.has_ival())
+    using IndexParamType = IndexParam::IndexParamOneofCase;
+    switch (ip.index_param_oneof_case())
     {
-        ret += std::to_string(ip.ival());
-    }
-    else if (ip.has_dval())
-    {
-        ret += std::to_string(ip.dval());
-    }
-    else if (ip.has_sval())
-    {
-        ret += "'";
-        ret += ip.sval();
-        ret += "'";
-    }
-    else
-    {
-        ret += "0";
+        case IndexParamType::kIval:
+            ret += std::to_string(ip.ival());
+            break;
+        case IndexParamType::kDval:
+            ret += std::to_string(ip.dval());
+            break;
+        case IndexParamType::kSval:
+            ret += "'";
+            ret += ip.sval();
+            ret += "'";
+            break;
+        case IndexParamType::kUnescapedSval:
+            ret += ip.unescaped_sval();
+            break;
+        default:
+            ret += "0";
     }
 }
 

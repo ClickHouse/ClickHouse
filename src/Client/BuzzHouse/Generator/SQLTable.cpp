@@ -1526,17 +1526,25 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             idef->add_params()->set_ival(next_dist1(rg.generator));
         }
         break;
-        case IndexType::IDX_gin:
+        case IndexType::IDX_text:
             if (rg.nextBool())
             {
-                std::uniform_int_distribution<uint32_t> next_dist(0, 10);
+                static const DB::Strings & tokenizerVals = {"default", "f3ngram2", "noop"};
 
-                idef->add_params()->set_ival(next_dist(rg.generator));
-                if (rg.nextBool())
-                {
-                    std::uniform_int_distribution<uint32_t> next_dist2(8192, 4194304);
-                    idef->add_params()->set_ival(next_dist2(rg.generator));
-                }
+                idef->add_params()->set_unescaped_sval("tokenizer = '" + rg.pickRandomly(tokenizerVals) + "'");
+            }
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(0, 8192);
+
+                idef->add_params()->set_unescaped_sval("ngram_size = " + std::to_string(next_dist(rg.generator)));
+            }
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(8192, 4194304);
+
+                idef->add_params()->set_unescaped_sval(
+                    "max_rows_per_postings_list = " + std::to_string(rg.nextMediumNumber() < 4 ? 0 : next_dist(rg.generator)));
             }
             break;
         case IndexType::IDX_vector_similarity:
@@ -1545,7 +1553,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             if (rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(0, 4194304);
-                static const DB::Strings QuantitizationVals = {"f64", "f32", "f16", "bf16", "i8"};
+                static const DB::Strings & QuantitizationVals = {"f64", "f32", "f16", "bf16", "i8"};
 
                 idef->add_params()->set_sval(rg.pickRandomly(QuantitizationVals));
                 idef->add_params()->set_ival(next_dist(rg.generator));

@@ -3041,14 +3041,15 @@ enum IndexType {
     IDX_vector_similarity = 5;
     IDX_ngrambf_v1 = 6;
     IDX_tokenbf_v1 = 7;
-    IDX_gin = 8;
+    IDX_text = 8;
 }
 
 message IndexParam {
-    oneof param_oneof {
+    oneof index_param_oneof {
         double dval = 1;
         uint32 ival = 2;
         string sval = 3;
+        string unescaped_sval = 4;
     }
 }
 
