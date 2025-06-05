@@ -1558,7 +1558,11 @@
     <!-- Workload scheduling: if enabled during CPU overloaded periods, long-running queries will downscale to lower number of threads dynamically.
          Ensures more fair CPU resource distribution.
     -->
-    <!-- <cpu_slot_preemption>true</cpu_slot_preemption> -->
+    <!--
+    <cpu_slot_preemption>true</cpu_slot_preemption>
+    <cpu_slot_quantum_ns>10000000</cpu_slot_quantum_ns>
+    <cpu_slot_preemption_timeout_ms>1000</cpu_slot_preemption_timeout_ms>
+    -->
 
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--

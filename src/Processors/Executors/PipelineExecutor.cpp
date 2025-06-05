@@ -42,6 +42,7 @@ namespace Setting
     extern const SettingsBool log_processors_profiles;
     extern const SettingsBool opentelemetry_trace_processors;
     extern const SettingsSeconds max_execution_time;
+    extern const SettingsString workload;
 }
 
 namespace ErrorCodes
@@ -403,7 +404,15 @@ static SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool concurrency_c
             /// Allocate CPU slots through resource scheduler
             if (query_context->getCPUSlotPreemption())
             {
-                return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link);
+                auto quantum_ns = std::max(10uz, query_context->getCPUSlotQuantum());
+                return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link,
+                    CPULeaseSettings
+                    {
+                        .quantum_ns = static_cast<ResourceCost>(quantum_ns),
+                        .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
+                        .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
+                        .workload = query_context->getSettingsRef()[Setting::workload],
+                    });
             }
             else
             {

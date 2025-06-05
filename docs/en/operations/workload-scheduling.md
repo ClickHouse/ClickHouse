@@ -266,8 +266,10 @@ To exclude a query from CPU scheduling set a query setting [use_concurrency_cont
 
 CPU scheduling is not supported for merges and mutations yet.
 
+To provide fair allocations for workload it is necessary to perform preemption and downscaling during query execution. Preemption is enabled with `cpu_slot_preemption` server setting. If it is enabled, every threads renews its CPU slot periodically (according to `cpu_slot_quantum_ns` server setting). Such a renewal could block execution if CPU is overloaded. When execution is blocked for prolonged time (see `cpu_slot_preemption_timeout_ms` server setting), then query scales down and the number of concurrently running threads decreases dynamically. Note that CPU time fairness is guaranteed between workloads, but between queries inside the same workload it might be violated in some corner cases.
+
 :::warning
-Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md#max_threads) but does not guarantee fair CPU time allocation unless server setting `cpu_slot_preemption` is set to `true`, otherwise fairness is provided based on number of CPU slot allocations among competing workloads. It does not imply equal amount of CPU seconds because without preemption CPU slot may be held indefinitely. A thread acquires a slot at the beginning and release when work is done. With preemption enabled thread renews its slot periodically. Such a renewal could block execution if CPU is overloaded. When execution is blocked for prolonged time about 1 second, then query scales down and number of concurrently running threads decreases dynamically. Note that with cpu slot preemption enabled fairness between queries in the same workload is not guaranteed, but fairness is guaranteed between workloads.
+Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md#max_threads) but does not guarantee fair CPU time allocation unless server setting `cpu_slot_preemption` is set to `true`, otherwise fairness is provided based on number of CPU slot allocations among competing workloads. It does not imply equal amount of CPU seconds because without preemption CPU slot may be held indefinitely. A thread acquires a slot at the beginning and release when work is done.
 :::
 
 :::note
@@ -294,3 +296,6 @@ Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default
  - [mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
  - [workload_path](/operations/server-configuration-parameters/settings.md#workload_path) global server setting
  - [workload_zookeeper_path](/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting
+ - [cpu_slot_preemption](/operations/server-configuration-parameters/settings.md#cpu_slot_preemption) global server setting
+ - [cpu_slot_quantum_ns](/operations/server-configuration-parameters/settings.md#cpu_slot_quantum_ns) global server setting
+ - [cpu_slot_preemption_timeout_ms](/operations/server-configuration-parameters/settings.md#cpu_slot_preemption_timeout_ms) global server setting

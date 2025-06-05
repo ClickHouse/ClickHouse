@@ -427,6 +427,8 @@ struct ContextSharedPart : boost::noncopyable
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
+    UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
+    UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
@@ -1964,10 +1966,24 @@ bool Context::getCPUSlotPreemption() const
     return shared->cpu_slot_preemption;
 }
 
-void Context::setCPUSlotPreemption(bool value)
+UInt64 Context::getCPUSlotQuantum() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->cpu_slot_quantum_ns;
+}
+
+UInt64 Context::getCPUSlotPreemptionTimeout() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->cpu_slot_preemption_timeout_ms;
+}
+
+void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms)
 {
     std::lock_guard lock(shared->mutex);
-    shared->cpu_slot_preemption = value;
+    shared->cpu_slot_preemption = cpu_slot_preemption;
+    shared->cpu_slot_quantum_ns = cpu_slot_quantum_ns;
+    shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
 }
 
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const
