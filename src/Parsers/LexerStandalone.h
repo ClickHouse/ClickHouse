@@ -1,3 +1,5 @@
+#pragma once
+
 /// This allows building Lexer without any dependencies or includes for WebAssembly or Emscripten.
 
 #define chassert(...)
