@@ -1992,7 +1992,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
     if (next.hasDatabasePeer())
     {
-        flatTableColumnPath(0, next.cols, [](const SQLColumn &) { return true; });
+        flatTableColumnPath(0, next.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
         connections.createPeerTable(rg, next.peer_table, next, ct, entries);
         entries.clear();
     }

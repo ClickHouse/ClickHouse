@@ -304,7 +304,7 @@ void StatementGenerator::setTableRemote(
                 afunc->set_fcomp(t.file_comp);
             }
         }
-        flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
+        flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & entry : this->remote_entries)
         {
             buf += fmt::format(

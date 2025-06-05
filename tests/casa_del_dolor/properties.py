@@ -237,7 +237,7 @@ cache_storage_properties = {
     "max_elements": threshold_generator(0.2, 0.2, 1, 10000000),
     "max_file_segment_size": file_size_value(),
     # "max_size_ratio_to_total_space": threshold_generator(0.2, 0.2, 0.0, 1.0), cannot be specified with `max_size` at the same time
-    "slru_size_ratio": threshold_generator(0.2, 0.2, 0.0, 0.999),
+    "slru_size_ratio": threshold_generator(0.2, 0.2, 0.001, 0.999),
     "write_cache_per_user_id_directory": lambda: random.randint(0, 1),
 }
 
