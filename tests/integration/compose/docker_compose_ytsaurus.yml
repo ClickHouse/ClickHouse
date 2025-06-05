@@ -1,6 +1,6 @@
 services:
     ytsaurus_backend1:
-        image: ghcr.io/ytsaurus/local:stable
+        image: ghcr.io/ytsaurus/local:stable-24.2
         restart: always
         environment:
             YT_FORCE_IPV4: 1

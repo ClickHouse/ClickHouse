@@ -3,6 +3,14 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 from .yt_helpers import YT_DEFAULT_TOKEN, YT_HOST, YT_PORT, YT_URI, YTsaurusCLI
+from helpers.cluster import is_arm
+
+
+if is_arm():
+    # skip due to no arm support for ytsaurus-backend docker image
+    # https://github.com/ytsaurus/ytsaurus/blob/main/BUILD.md
+    pytestmark = pytest.mark.skip
+
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
