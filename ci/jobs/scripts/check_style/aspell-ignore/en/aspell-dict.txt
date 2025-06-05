@@ -2986,6 +2986,7 @@ timeSeriesDeltaToGrid
 timeSeriesMetrics
 timeSeriesInstantDeltaToGrid
 timeSeriesInstantRateToGrid
+timeSeriesLastTwoSamples
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
 timeSeriesTags
