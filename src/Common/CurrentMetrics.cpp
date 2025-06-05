@@ -432,6 +432,10 @@
     M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
     M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
     M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
+    M(ProtobufSchemaCacheBytes, "Size of the Protobuf schema cache in bytes") \
+    M(ProtobufSchemaCacheCells, "Number of cached Protobuf schemas") \
+    M(ProtobufSchemaRegistryCacheBytes, "Size of the Protobuf schema registry cache in bytes") \
+    M(ProtobufSchemaRegistryCacheCells, "Number of entries in Protobuf schema registry cache") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

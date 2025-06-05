@@ -77,6 +77,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_enable_json_parsing", true, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
             {"allow_experimental_time_series_aggregate_functions", false, false, "New setting to enable experimental timeSeries* aggregate functions."},
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
+            {"format_protobuf_schema_registry_url", "", "", "URL to read schema from confluent protobuf schema registry."},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
