@@ -1,5 +1,5 @@
 blinker==1.4
-cryptography==43.0.1
+cryptography==44.0.1
 dbus-python==1.2.18
 distro==1.7.0
 httplib2==0.20.2

@@ -69,12 +69,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.6",
         {
+            {"output_format_native_use_flattened_dynamic_and_json_serialization", false, false, "Add flattened Dynamic/JSON serializations to Native format"},
             {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
             {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
             {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
             {"input_format_parquet_enable_json_parsing", true, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
-
+            {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -766,6 +767,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
         {
             {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
+            {"allow_coalescing_columns_in_partition_or_order_key", true, false, "New setting to allow coalescing of partition or sorting key columns."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {

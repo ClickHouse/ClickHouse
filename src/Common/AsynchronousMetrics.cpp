@@ -8,6 +8,7 @@
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
+#include <Common/PageCache.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -843,6 +844,22 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             " The large values of this metric are totally normal, and makes only technical sense."};
         new_values["MemoryResident"] = { data.resident,
             "The amount of physical memory used by the server process, in bytes." };
+
+        UInt64 page_cache_bytes = 0;
+        if (context && context->getPageCache())
+            page_cache_bytes = context->getPageCache()->sizeInBytes();
+
+        UInt64 resident_without_page_cache = (data.resident > page_cache_bytes)
+                                          ? (data.resident - page_cache_bytes)
+                                          : 0;
+
+        new_values["MemoryResidentWithoutPageCache"] = {
+            resident_without_page_cache,
+            "The amount of physical memory used by the server process, excluding userspace page cache, in bytes. "
+            "This provides a more accurate view of actual memory usage when userspace page cache is utilized. "
+            "When userspace page cache is disabled, this value equals MemoryResident."
+        };
+
 #if !defined(OS_FREEBSD)
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."

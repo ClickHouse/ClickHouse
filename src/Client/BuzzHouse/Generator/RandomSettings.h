@@ -36,6 +36,12 @@ const auto threadSetting = CHSetting(
     {"0", "1", std::to_string(std::thread::hardware_concurrency())},
     false);
 
+const auto probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);
+
+const auto trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
+
+const auto trueOrFalseSettingNoOracle = CHSetting(trueOrFalse, {}, false);
+
 extern std::unordered_map<String, CHSetting> hotSettings;
 
 extern std::unordered_map<String, CHSetting> serverSettings;
@@ -171,6 +177,6 @@ extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSettin
 
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);
-void loadSystemTables(const FuzzConfig & fc);
+void loadSystemTables(FuzzConfig & fc);
 
 }
