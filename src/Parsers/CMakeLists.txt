@@ -23,3 +23,7 @@ endif()
 if (ENABLE_TESTS)
     add_subdirectory(HiliteComparator)
 endif ()
+
+# Check the standalone build of Lexer
+add_library(lexer Lexer.cpp)
+target_compile_options(lexer PRIVATE -Os -fno-exceptions -fno-rtti -nostdlib -DLEXER_STANDALONE_BUILD)
