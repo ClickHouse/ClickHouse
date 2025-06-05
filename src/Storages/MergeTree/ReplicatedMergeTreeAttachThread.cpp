@@ -155,6 +155,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     if (!metadata_exists)
     {
         LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will stay in readonly mode.", zookeeper_path);
+        storage.has_metadata_in_zookeeper = false;
         return;
     }
 
