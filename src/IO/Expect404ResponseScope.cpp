@@ -1,4 +1,4 @@
-#include "expected404.h"
+#include "Expect404ResponseScope.h"
 #include <Common/CurrentThread.h>
 
 namespace DB
@@ -6,13 +6,13 @@ namespace DB
 
 thread_local size_t expected_404_scope_count = 0;
 
-Expected404Scope::Expected404Scope()
+Expect404ResponseScope::Expect404ResponseScope()
     : initial_thread_id(CurrentThread::get().thread_id)
 {
     ++expected_404_scope_count;
 }
 
-Expected404Scope::~Expected404Scope()
+Expect404ResponseScope::~Expect404ResponseScope()
 {
     // check that instance is destroyed in the same thread
     chassert(initial_thread_id == CurrentThread::get().thread_id);
@@ -20,7 +20,7 @@ Expected404Scope::~Expected404Scope()
     --expected_404_scope_count;
 }
 
-bool Expected404Scope::is404Expected()
+bool Expect404ResponseScope::is404Expected()
 {
     return expected_404_scope_count != 0;
 }

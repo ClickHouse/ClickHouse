@@ -1,7 +1,6 @@
-#include <string_view>
 #include <IO/S3/AWSLogger.h>
 #include <IO/ReadHelpers.h>
-#include <IO/expected404.h>
+#include <IO/Expect404ResponseScope.h>
 #include <Poco/Net/HTTPResponse.h>
 
 #if USE_AWS_S3
@@ -72,9 +71,9 @@ bool startsWith(const char * str, const char * prefix)
 
 bool is404Muted(const char * message)
 {
-    /// This is the way, how to mure scary logs from `AWSXMLClient::BuildAWSError`
+    /// This is the way, how to mute scary logs from `AWSXMLClient::BuildAWSError`
     /// about 404 when 404 is the expected response
-    if (!Expected404Scope::is404Expected())
+    if (!Expect404ResponseScope::is404Expected())
         return false;
 
     static const char * prefix_str = "HTTP response code: ";
@@ -84,15 +83,15 @@ bool is404Muted(const char * message)
         return false;
 
     const char * code_str = message + prefix_len;
-    size_t len = 3;
+    size_t code_len = 3;
 
-    // check that strlen(code_str) >= len
-    for (size_t i = 0; i < len; ++i)
+    // check that strlen(code_str) >= code_len
+    for (size_t i = 0; i < code_len; ++i)
         if (!code_str[i])
             return false;
 
     UInt64 code = 0;
-    if (!tryParse<UInt64>(code, code_str, len))
+    if (!tryParse<UInt64>(code, code_str, code_len))
         return false;
 
     return code == Poco::Net::HTTPResponse::HTTP_NOT_FOUND;

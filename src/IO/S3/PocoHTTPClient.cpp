@@ -16,7 +16,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
-#include <IO/expected404.h>
+#include <IO/Expect404ResponseScope.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -591,7 +591,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
             }
-            else if (Poco::Net::HTTPResponse::HTTP_NOT_FOUND != status_code || !Expected404Scope::is404Expected())
+            else if (Poco::Net::HTTPResponse::HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())
             {
                 /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.
                 LOG_ERROR(log, "Response status: {}, {}", status_code, poco_response.getReason());

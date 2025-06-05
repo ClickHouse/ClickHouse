@@ -90,7 +90,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/expected404.h>
+#include <IO/Expect404ResponseScope.h>
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -2237,7 +2237,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
 
         try
         {
-            Expected404Scope scope;
+            Expect404ResponseScope scope; // 404 is not an error
             part->loadChecksums(true);
         }
         catch (...)
