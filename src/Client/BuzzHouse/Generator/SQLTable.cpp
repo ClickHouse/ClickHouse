@@ -1544,7 +1544,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 std::uniform_int_distribution<uint32_t> next_dist(8192, 4194304);
 
                 idef->add_params()->set_unescaped_sval(
-                    "max_rows_per_postings_list = " + std::to_string(rg.nextMediumNumber() < 4 ? 0 : next_dist(rg.generator)));
+                    "max_rows_per_postings_list = " + std::to_string(rg.nextSmallNumber() < 3 ? 0 : next_dist(rg.generator)));
             }
             break;
         case IndexType::IDX_vector_similarity:
