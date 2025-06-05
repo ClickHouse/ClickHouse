@@ -1,4 +1,4 @@
-#include "MetadataStorageFromPlainObjectStorage.h"
+#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
@@ -10,7 +10,7 @@
 #include <Common/logger_useful.h>
 
 #include <Common/filesystemHelpers.h>
-#include "IO/expected404.h"
+#include <IO/expected404.h>
 
 #include <filesystem>
 
