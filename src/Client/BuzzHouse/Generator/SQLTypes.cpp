@@ -104,7 +104,6 @@ String IntType::MySQLtypeName(RandomGenerator &, const bool) const
         default:
             return fmt::format("BIGINT {}", is_unsigned ? " UNSIGNED" : "");
     }
-    return "";
 }
 
 String IntType::PostgreSQLtypeName(RandomGenerator &, const bool) const
@@ -119,7 +118,6 @@ String IntType::PostgreSQLtypeName(RandomGenerator &, const bool) const
         default:
             return "BIGINT";
     }
-    return "";
 }
 
 String IntType::SQLitetypeName(RandomGenerator &, const bool) const
