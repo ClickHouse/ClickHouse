@@ -17,6 +17,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/GraphiteRollupSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -1395,6 +1396,14 @@ static void addMergingFinal(
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedTransform>(header, num_outputs,
                             sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, merging_params.graphite_params, now);
+
+            case MergeTreeData::MergingParams::Coalescing:
+            {
+                auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
+                required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
+                return std::make_shared<CoalescingSortedTransform>(header, num_outputs,
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0);
+            }
         }
     };
 

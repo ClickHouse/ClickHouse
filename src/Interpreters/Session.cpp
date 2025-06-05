@@ -226,14 +226,18 @@ private:
         std::unique_lock lock{mutex};
         while (!quit)
         {
-            closeSessions(lock);
+            auto closed_sessions = closeSessions(lock);
+            lock.unlock();
+            closed_sessions.clear();
+            lock.lock();
             if (cond.wait_for(lock, close_interval, [this]() -> bool { return quit; }))
                 break;
         }
     }
 
-    void closeSessions(std::unique_lock<std::mutex> & lock)
+    std::vector<std::shared_ptr<NamedSessionData>> closeSessions(std::unique_lock<std::mutex> & lock)
     {
+        std::vector<std::shared_ptr<NamedSessionData>> closed_sessions;
         const auto now = std::chrono::steady_clock::now();
 
         for (auto bucket_it = close_time_buckets.begin(); bucket_it != close_time_buckets.end(); bucket_it = close_time_buckets.erase(bucket_it))
@@ -270,9 +274,12 @@ private:
                 }
 
                 LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, toString(key.first));
+                closed_sessions.push_back(session);
                 sessions.erase(session_it);
             }
         }
+
+        return closed_sessions;
     }
 
     std::mutex mutex;

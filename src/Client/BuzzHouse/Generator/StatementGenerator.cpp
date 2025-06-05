@@ -87,7 +87,10 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
 {
     chassert(this->ids.empty());
     this->ids.emplace_back(DAtomic);
-    this->ids.emplace_back(DMemory);
+    if (fc.allow_memory_tables)
+    {
+        this->ids.emplace_back(DMemory);
+    }
     if (replica_setup)
     {
         this->ids.emplace_back(DReplicated);
@@ -2069,7 +2072,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t reload_dictionaries = 3;
     const uint32_t reload_models = 3;
     const uint32_t reload_functions = 3;
-    const uint32_t reload_function = 8 * static_cast<uint32_t>(!functions.empty());
+    const uint32_t reload_function = 0 * static_cast<uint32_t>(!functions.empty());
     const uint32_t reload_asynchronous_metrics = 3;
     const uint32_t drop_dns_cache = 3;
     const uint32_t drop_mark_cache = 3;
@@ -3125,12 +3128,12 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     else if (out_to_file && (nopt2 < out_to_disk + out_to_file + 1))
     {
         outf = BackupRestore_BackupOutput_File;
-        br->add_out_params((fc.db_file_path / std::move(backup_file)).generic_string());
+        br->add_out_params((fc.server_file_path / std::move(backup_file)).generic_string());
     }
     else if (out_to_s3 && (nopt2 < out_to_disk + out_to_file + out_to_s3 + 1))
     {
         outf = BackupRestore_BackupOutput_S3;
-        connections.setBackupDetails((fc.db_file_path / std::move(backup_file)).generic_string(), br);
+        connections.setBackupDetails(backup_file, br);
     }
     else if (out_to_memory && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_memory + 1))
     {

@@ -99,13 +99,6 @@ base58Encode
 basename
 bin
 bitPositionsToArray
-bitmapAnd
-bitmapAndnot
-bitmapContains
-bitmapHasAll
-bitmapHasAny
-bitmapOr
-bitmapXor
 bitmaskToArray
 bitmaskToList
 blockNumber

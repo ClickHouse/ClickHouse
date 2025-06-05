@@ -3,7 +3,6 @@
 
 #if USE_AVRO
 
-#include <Core/Settings.h>
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
