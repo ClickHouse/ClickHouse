@@ -3073,14 +3073,16 @@ CONV_FN(TableEngine, te)
 {
     if (te.has_engine())
     {
-        const TableEngineValues tengine = te.engine();
+        const TableEngineValues & teng = te.engine();
 
         ret += " ENGINE = ";
-        if (te.has_toption() && tengine >= TableEngineValues::MergeTree && tengine <= TableEngineValues::VersionedCollapsingMergeTree)
+        if (te.has_toption()
+            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+                || teng == TableEngineValues::Set || teng == TableEngineValues::Join))
         {
             ret += TableEngineOption_Name(te.toption()).substr(1);
         }
-        ret += TableEngineValues_Name(tengine);
+        ret += TableEngineValues_Name(teng);
         ret += "(";
         for (int i = 0; i < te.params_size(); i++)
         {

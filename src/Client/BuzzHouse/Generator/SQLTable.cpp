@@ -821,7 +821,8 @@ void StatementGenerator::generateMergeTreeEngineDetails(RandomGenerator & rg, co
             this->filtered_entries.clear();
         }
     }
-    if (te->has_engine() && b.teng == TableEngineValues::SummingMergeTree && rg.nextSmallNumber() < 4)
+    if (te->has_engine() && (b.teng == TableEngineValues::SummingMergeTree || b.teng == TableEngineValues::CoalescingMergeTree)
+        && rg.nextSmallNumber() < 4)
     {
         ColumnPathList * clist = te->add_params()->mutable_col_list();
         const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(4))) + 1;
@@ -922,16 +923,6 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         {
             columnPathRef(entries[i], te->add_params()->mutable_cols());
         }
-        if (supports_cloud_features && rg.nextSmallNumber() < 5)
-        {
-            b.toption = TableEngineOption::TShared;
-            te->set_toption(b.toption.value());
-        }
-    }
-    else if (te->has_engine() && b.isSetEngine() && supports_cloud_features && rg.nextSmallNumber() < 5)
-    {
-        b.toption = TableEngineOption::TShared;
-        te->set_toption(b.toption.value());
     }
     else if (te->has_engine() && b.isBufferEngine())
     {
@@ -1184,6 +1175,11 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
 
             te->add_params()->set_num(keys_limit_dist(rg.generator));
         }
+    }
+    if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && supports_cloud_features && rg.nextSmallNumber() < 5)
+    {
+        b.toption = TableEngineOption::TShared;
+        te->set_toption(b.toption.value());
     }
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine())
         && add_pkey && !entries.empty())
@@ -1672,6 +1668,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     chassert(this->ids.empty());
     this->ids.emplace_back(MergeTree);
     this->ids.emplace_back(ReplacingMergeTree);
+    this->ids.emplace_back(CoalescingMergeTree);
     this->ids.emplace_back(SummingMergeTree);
     this->ids.emplace_back(AggregatingMergeTree);
     this->ids.emplace_back(CollapsingMergeTree);
@@ -1754,17 +1751,18 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     }
 
     b.teng = static_cast<TableEngineValues>(rg.pickRandomly(this->ids));
+    this->ids.clear();
     if (b.isExternalDistributedEngine())
     {
         b.sub = (!connections.hasMySQLConnection() || rg.nextBool()) ? TableEngineValues::PostgreSQL : TableEngineValues::MySQL;
     }
-    this->ids.clear();
 }
 
 static const std::vector<TableEngineValues> likeEngs
     = {/* Deterministic engines */
        TableEngineValues::MergeTree,
        TableEngineValues::ReplacingMergeTree,
+       TableEngineValues::CoalescingMergeTree,
        TableEngineValues::SummingMergeTree,
        TableEngineValues::AggregatingMergeTree,
        TableEngineValues::File,
@@ -1775,6 +1773,7 @@ static const std::vector<TableEngineValues> likeEngs
        TableEngineValues::Log,
        TableEngineValues::TinyLog,
        TableEngineValues::EmbeddedRocksDB,
+       TableEngineValues::KeeperMap,
        /* Not deterministic engines */
        TableEngineValues::Merge,
        TableEngineValues::GenerateRandom};

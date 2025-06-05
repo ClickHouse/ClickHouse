@@ -120,6 +120,7 @@ const std::unordered_map<String, CHSetting> mergeTreeColumnSettings
 const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings
     = {{MergeTree, mergeTreeColumnSettings},
        {ReplacingMergeTree, mergeTreeColumnSettings},
+       {CoalescingMergeTree, mergeTreeColumnSettings},
        {SummingMergeTree, mergeTreeColumnSettings},
        {AggregatingMergeTree, mergeTreeColumnSettings},
        {CollapsingMergeTree, mergeTreeColumnSettings},

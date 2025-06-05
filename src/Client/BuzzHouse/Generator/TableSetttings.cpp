@@ -292,6 +292,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
          {ReplacingMergeTree, mergeTreeTableSettings},
+         {CoalescingMergeTree, mergeTreeTableSettings},
          {SummingMergeTree, mergeTreeTableSettings},
          {AggregatingMergeTree, mergeTreeTableSettings},
          {CollapsingMergeTree, mergeTreeTableSettings},
