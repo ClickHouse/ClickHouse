@@ -101,10 +101,8 @@ String IntType::MySQLtypeName(RandomGenerator &, const bool) const
             return fmt::format("SMALLINT {}", is_unsigned ? " UNSIGNED" : "");
         case 32:
             return fmt::format("INT {}", is_unsigned ? " UNSIGNED" : "");
-        case 64:
-            return fmt::format("BIGINT {}", is_unsigned ? " UNSIGNED" : "");
         default:
-            chassert(0);
+            return fmt::format("BIGINT {}", is_unsigned ? " UNSIGNED" : "");
     }
     return "";
 }
@@ -118,10 +116,8 @@ String IntType::PostgreSQLtypeName(RandomGenerator &, const bool) const
             return "SMALLINT";
         case 32:
             return "INTEGER";
-        case 64:
-            return "BIGINT";
         default:
-            chassert(0);
+            return "BIGINT";
     }
     return "";
 }
