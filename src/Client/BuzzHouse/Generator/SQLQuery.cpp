@@ -1884,14 +1884,14 @@ void StatementGenerator::generateSelect(
         this->levels[this->current_level].allow_aggregates = rg.nextSmallNumber() < 3;
         this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
         if ((allowed_clauses & allow_cte) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && rg.nextMediumNumber() < 13)
+            && rg.nextMediumNumber() < 16)
         {
             /// Add possible CTE expressions referencing columns in the FROM clause
             qctes = qctes ? qctes : sel->mutable_ctes();
             this->addCTEs(rg, allowed_clauses, qctes);
         }
         if ((allowed_clauses & allow_window_clause) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && rg.nextSmallNumber() < 3)
+            && rg.nextMediumNumber() < 16)
         {
             addWindowDefs(rg, ssc);
         }
