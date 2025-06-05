@@ -2,6 +2,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Context.h>
+#include "Common/ProfileEvents.h"
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -19,6 +20,7 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheLockKeyMicroseconds;
     extern const Event FilesystemCacheLockMetadataMicroseconds;
+    extern const Event FilesystemCacheCreatedBaseDirectories;
 }
 
 namespace DB
@@ -127,6 +129,7 @@ bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
         {
             std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
             fs::create_directories(getPath());
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedBaseDirectories);
         }
         catch (const fs::filesystem_error & e)
         {
