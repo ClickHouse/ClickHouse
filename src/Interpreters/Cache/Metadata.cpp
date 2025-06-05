@@ -20,7 +20,7 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheLockKeyMicroseconds;
     extern const Event FilesystemCacheLockMetadataMicroseconds;
-    extern const Event FilesystemCacheCreatedBaseDirectories;
+    extern const Event FilesystemCacheCreatedKeyDirectories;
 }
 
 namespace DB
@@ -129,7 +129,7 @@ bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
         {
             std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
             fs::create_directories(getPath());
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedBaseDirectories);
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedKeyDirectories);
         }
         catch (const fs::filesystem_error & e)
         {
