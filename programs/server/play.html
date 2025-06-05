@@ -1011,6 +1011,20 @@ function queryToColor(str) {
     return 50 + Math.abs(hash % 200);
 }
 
+function toBase64(str) {
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(str);
+    const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
+    return btoa(binary);
+}
+
+function fromBase64(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }
+    const decoder = new TextDecoder();
+    return decoder.decode(bytes);
+}
 
 let row_idx = 0;
 let elapsed_ns = 0;
@@ -1196,7 +1210,7 @@ async function postImpl(posted_request_num, query)
             /// Save server's address in URL if it's not identical to the address of the play UI.
             history_url += '&url=' + encodeURIComponent(server_address);
         }
-        history_url += '#' + window.btoa(query);
+        history_url += '#' + toBase64(query);
 
         if (previous_query == '') {
             history.replaceState(state, title, history_url);
@@ -1286,7 +1300,7 @@ window.onpopstate = function(event) {
 };
 
 if (window.location.hash) {
-    query_area.value = window.atob(window.location.hash.substr(1));
+    query_area.value = fromBase64(window.location.hash.substr(1));
 }
 
 let in_flight = false;
