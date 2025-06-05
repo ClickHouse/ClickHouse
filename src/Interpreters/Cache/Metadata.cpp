@@ -12,6 +12,7 @@ namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
     extern const Metric FilesystemCacheDelayedCleanupElements;
+    extern const Metric FilesystemCacheKeys;
 }
 
 namespace ProfileEvents
@@ -285,6 +286,8 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
 
         it = bucket.emplace(
             key, std::make_shared<KeyMetadata>(key, user, this, is_initial_load)).first;
+
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
     }
 
     it->second->assertAccess(user.user_id);
@@ -392,6 +395,8 @@ CacheMetadata::removeEmptyKey(
 
     locked_key.markAsRemoved();
     auto next_it = bucket.erase(it);
+
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheKeys);
 
     LOG_DEBUG(log, "Key {} is removed from metadata", key);
 
