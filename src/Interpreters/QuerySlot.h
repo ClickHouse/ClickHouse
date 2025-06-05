@@ -17,9 +17,9 @@
 namespace DB
 {
 
-// Represents a slot for a query execution. Every query that participate in workload scheduling should request one from
+// Represents a slot for a query execution. Every query that participates in workload scheduling should request one from
 // the resource scheduler before query execution and hold it until query is finished.
-// Specifined link should point to a queue of some workload within the resource created with:
+// Specified link should point to a queue of some workload within the resource created with:
 //   CREATE RESOURCE query (QUERY)
 class QuerySlot final: private ResourceRequest, public boost::noncopyable
 {

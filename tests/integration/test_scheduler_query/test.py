@@ -149,7 +149,7 @@ def test_max_concurrent_queries() -> None:
             ).strip()
         )
 
-    def check_metrics(limit: int) -> None:
+    def ensure_total_concurrency(limit: int) -> None:
         for _ in range(10):
             assert concurrent_queries() <= limit
             time.sleep(0.1)
@@ -160,11 +160,11 @@ def test_max_concurrent_queries() -> None:
         return int(
             node.query(
                 f"select inflight_requests from system.scheduler where "
-                f"path='/all/semaphore' and resource='query'"
+                f"path like '%/{workload}/semaphore' and resource='query'"
             ).strip()
         )
 
-    def check_scheduler(workload, limit: int) -> None:
+    def ensure_workload_concurrency(workload, limit: int) -> None:
         for _ in range(10):
             assert inflight_queries(workload) <= limit
             time.sleep(0.1)
@@ -176,21 +176,21 @@ def test_max_concurrent_queries() -> None:
     development = QueryPool(6, "development")
 
     production.start()
-    check_metrics(4)
-    check_scheduler("production", 4)
+    ensure_total_concurrency(4)
+    ensure_workload_concurrency("main", 4)
     production.stop()
 
     development.start()
-    check_metrics(2)
-    check_scheduler("development", 2)
+    ensure_total_concurrency(2)
+    ensure_workload_concurrency("development", 2)
     development.stop()
 
     production.start()
     development.start()
-    check_metrics(4)
+    ensure_total_concurrency(4)
     admin.start()
-    check_metrics(6)
-    check_scheduler("admin", 6)
+    ensure_total_concurrency(6)
+    ensure_workload_concurrency("all", 6)
     production.stop()
     development.stop()
     admin.stop()
