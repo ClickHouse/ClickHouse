@@ -87,7 +87,6 @@ public:
         , snapshot(snapshot_)
         , scan(scan_)
         , data_prefix(data_prefix_)
-        , table_schema(table_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
         , object_storage(object_storage_)
@@ -311,7 +310,6 @@ private:
     std::optional<PartitionPruner> pruner;
 
     const std::string data_prefix;
-    const DB::NamesAndTypesList & table_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
     const DB::ObjectStoragePtr object_storage;
