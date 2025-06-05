@@ -556,7 +556,7 @@ void StatementGenerator::colRefOrExpression(RandomGenerator & rg, const TableEng
                                 || hasType<DateTimeType>(false, true, false, tp));
     const uint32_t modulo_func = 15 * static_cast<uint32_t>(hasType<IntType>(true, true, false, tp));
     const uint32_t one_arg_func = 5;
-    const uint32_t hash_func = 10 * static_cast<uint32_t>(teng != TableEngineValues::SummingMergeTree);
+    const uint32_t hash_func = 10 * static_cast<uint32_t>(teng != SummingMergeTree);
     const uint32_t rand_expr = 15;
     const uint32_t col_ref = 40;
     const uint32_t prob_space = datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + col_ref;
@@ -635,7 +635,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
             const size_t ocols = (rg.nextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
 
             std::shuffle(entries.begin(), entries.end(), rg.generator);
-            if (teng != TableEngineValues::SummingMergeTree && rg.nextSmallNumber() < 3)
+            if (teng != SummingMergeTree && rg.nextSmallNumber() < 3)
             {
                 /// Use a single expression for the entire table
                 /// See https://github.com/ClickHouse/ClickHouse/issues/72043 for SummingMergeTree exception
@@ -821,8 +821,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(RandomGenerator & rg, co
             this->filtered_entries.clear();
         }
     }
-    if (te->has_engine() && (b.teng == TableEngineValues::SummingMergeTree || b.teng == TableEngineValues::CoalescingMergeTree)
-        && rg.nextSmallNumber() < 4)
+    if (te->has_engine() && (b.teng == SummingMergeTree || b.teng == CoalescingMergeTree) && rg.nextSmallNumber() < 4)
     {
         ColumnPathList * clist = te->add_params()->mutable_col_list();
         const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(4))) + 1;
@@ -837,8 +836,9 @@ void StatementGenerator::generateMergeTreeEngineDetails(RandomGenerator & rg, co
 
 void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
 {
-    /// Shared and Replicated MergeTree are to be used with cluster
-    if (!fc.clusters.empty() && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
+    /// Replicated MergeTree are to be used with cluster
+    if (!fc.clusters.empty() && (!b.db || !b.db->isSharedDatabase()) && (!b.toption.has_value() || b.toption.value() != TShared)
+        && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
     {
         if (b.db && b.db->cluster.has_value() && rg.nextSmallNumber() < 9)
         {
@@ -990,7 +990,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
 
         if (b.isExternalDistributedEngine())
         {
-            next = (b.sub == TableEngineValues::PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
+            next = (b.sub == PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
         }
         else if (b.isMySQLEngine())
         {
@@ -1178,7 +1178,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     }
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && supports_cloud_features && rg.nextSmallNumber() < 5)
     {
-        b.toption = TableEngineOption::TShared;
+        b.toption = TShared;
         te->set_toption(b.toption.value());
     }
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine())
@@ -1203,7 +1203,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
-        if (b.isAnyS3Engine() || (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TableEngineOption::TShared))
+        if (b.isAnyS3Engine() || (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared))
         {
             svs = svs ? svs : te->mutable_setting_values();
             if (b.isAnyS3Engine())
@@ -1221,7 +1221,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                 }
             }
             else if (
-                b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TableEngineOption::TShared
+                b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
                 && (!fc.storage_policies.empty() || !fc.disks.empty()))
             {
                 /// Requires storage setting
@@ -1470,7 +1470,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         }
         else
         {
-            colRefOrExpression(rg, TableEngineValues::Null, this->entries[0], expr);
+            colRefOrExpression(rg, Null, this->entries[0], expr);
         }
         entries.clear();
     }
@@ -1626,23 +1626,21 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
 void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b)
 {
     chassert(this->ids.empty());
-    if (b.is_deterministic && b.teng != TableEngineValues::Set && b.teng != TableEngineValues::ExternalDistributed)
+    if (b.is_deterministic && b.teng != Set && b.teng != ExternalDistributed)
     {
-        if (b.teng != TableEngineValues::MySQL && connections.hasMySQLConnection())
+        if (b.teng != MySQL && connections.hasMySQLConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::MySQL));
         }
-        if (b.teng != TableEngineValues::PostgreSQL && b.teng != TableEngineValues::MaterializedPostgreSQL
-            && connections.hasPostgreSQLConnection())
+        if (b.teng != PostgreSQL && b.teng != MaterializedPostgreSQL && connections.hasPostgreSQLConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::PostgreSQL));
         }
-        if (b.teng != TableEngineValues::SQLite && connections.hasSQLiteConnection())
+        if (b.teng != SQLite && connections.hasSQLiteConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::SQLite));
         }
-        if (b.teng >= TableEngineValues::MergeTree && b.teng <= TableEngineValues::VersionedCollapsingMergeTree
-            && connections.hasClickHouseExtraServerConnection())
+        if (b.teng >= MergeTree && b.teng <= VersionedCollapsingMergeTree && connections.hasClickHouseExtraServerConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse));
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse)); // give more probability
@@ -1660,12 +1658,12 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
 
     if (noption < 4)
     {
-        b.teng = TableEngineValues::MergeTree;
+        b.teng = MergeTree;
         return;
     }
     if (noption < 9)
     {
-        std::uniform_int_distribution<uint32_t> table_engine(1, TableEngineValues::VersionedCollapsingMergeTree);
+        std::uniform_int_distribution<uint32_t> table_engine(1, VersionedCollapsingMergeTree);
         b.teng = static_cast<TableEngineValues>(table_engine(rg.generator));
         return;
     }
@@ -1685,14 +1683,18 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.emplace_back(Null);
     this->ids.emplace_back(Set);
     this->ids.emplace_back(Join);
-    if (fc.allow_memory_tables)
-    {
-        this->ids.emplace_back(Memory);
-    }
     this->ids.emplace_back(StripeLog);
     this->ids.emplace_back(Log);
     this->ids.emplace_back(TinyLog);
     this->ids.emplace_back(EmbeddedRocksDB);
+    if (fc.allow_memory_tables)
+    {
+        this->ids.emplace_back(Memory);
+    }
+    if (!fc.keeper_map_path_prefix.empty())
+    {
+        this->ids.emplace_back(KeeperMap);
+    }
     if (has_tables || has_views || has_dictionaries)
     {
         this->ids.emplace_back(Buffer);
@@ -1712,10 +1714,6 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(GenerateRandom);
         }
-    }
-    if (!fc.keeper_map_path_prefix.empty())
-    {
-        this->ids.emplace_back(KeeperMap);
     }
     if (use_external_integrations)
     {
@@ -1762,29 +1760,9 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.clear();
     if (b.isExternalDistributedEngine())
     {
-        b.sub = (!connections.hasMySQLConnection() || rg.nextBool()) ? TableEngineValues::PostgreSQL : TableEngineValues::MySQL;
+        b.sub = (!connections.hasMySQLConnection() || rg.nextBool()) ? PostgreSQL : MySQL;
     }
 }
-
-static const std::vector<TableEngineValues> likeEngs
-    = {/* Deterministic engines */
-       TableEngineValues::MergeTree,
-       TableEngineValues::ReplacingMergeTree,
-       TableEngineValues::CoalescingMergeTree,
-       TableEngineValues::SummingMergeTree,
-       TableEngineValues::AggregatingMergeTree,
-       TableEngineValues::File,
-       TableEngineValues::Null,
-       TableEngineValues::Set,
-       TableEngineValues::Join,
-       TableEngineValues::StripeLog,
-       TableEngineValues::Log,
-       TableEngineValues::TinyLog,
-       TableEngineValues::EmbeddedRocksDB,
-       TableEngineValues::KeeperMap,
-       /* Not deterministic engines */
-       TableEngineValues::Merge,
-       TableEngineValues::GenerateRandom};
 
 void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const bool in_parallel, CreateTable * ct)
 {
@@ -1837,8 +1815,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         added_pkey
             |= (!next.isMergeTreeFamily() && !next.isRocksEngine() && !next.isKeeperMapEngine() && !next.isRedisEngine()
                 && !next.isMaterializedPostgreSQLEngine());
-        const bool add_version_to_replacing = next.teng == TableEngineValues::ReplacingMergeTree && !next.hasPostgreSQLPeer()
-            && !next.hasSQLitePeer() && rg.nextSmallNumber() < 4;
+        const bool add_version_to_replacing
+            = next.teng == ReplacingMergeTree && !next.hasPostgreSQLPeer() && !next.hasSQLitePeer() && rg.nextSmallNumber() < 4;
         uint32_t added_cols = 0;
         uint32_t added_idxs = 0;
         uint32_t added_projs = 0;
@@ -1952,9 +1930,9 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         CreateTableAs * cta = ct->mutable_table_as();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(tableLikeLambda));
         const uint32_t limit
-            = rg.nextSmallNumber() < 8 ? 3 : (likeEngs.size() - (next.is_deterministic ? 3 : (fc.allow_infinite_tables ? 1 : 2)));
+            = rg.nextSmallNumber() < 8 ? 3 : (this->likeEngs.size() - (next.is_deterministic ? 3 : (fc.allow_infinite_tables ? 1 : 2)));
         std::uniform_int_distribution<size_t> table_engine(0, limit);
-        TableEngineValues val = likeEngs[table_engine(rg.generator)];
+        TableEngineValues val = this->likeEngs[table_engine(rg.generator)];
 
         next.teng = val;
         te->set_engine(val);

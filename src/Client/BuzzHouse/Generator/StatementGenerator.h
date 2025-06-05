@@ -115,6 +115,7 @@ public:
     uint32_t next_type_mask = std::numeric_limits<uint32_t>::max();
 
 private:
+    std::vector<TableEngineValues> likeEngs;
     ExternalIntegrations & connections;
     const bool supports_cloud_features, replica_setup;
     const size_t deterministic_funcs_limit, deterministic_aggrs_limit;

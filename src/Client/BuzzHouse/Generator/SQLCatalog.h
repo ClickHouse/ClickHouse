@@ -118,7 +118,9 @@ public:
 
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
 
-    bool isReplicatedOrSharedDatabase() const { return deng == DatabaseEngineValues::DReplicated || deng == DatabaseEngineValues::DShared; }
+    bool isSharedDatabase() const { return deng == DatabaseEngineValues::DShared; }
+
+    bool isReplicatedOrSharedDatabase() const { return isReplicatedDatabase() || isSharedDatabase(); }
 
     const std::optional<String> & getCluster() const { return cluster; }
 

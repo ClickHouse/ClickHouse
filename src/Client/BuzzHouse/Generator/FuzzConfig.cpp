@@ -319,7 +319,7 @@ void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, cons
     {
         std::ifstream infile(fuzz_client_out);
         out.clear();
-        while (std::getline(infile, buf))
+        while (std::getline(infile, buf) && !buf.empty())
         {
             out.push_back(buf);
             buf.resize(0);

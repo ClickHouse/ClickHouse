@@ -31,6 +31,35 @@ StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations 
             one_arg_funcs.push_back(next);
         }
     }
+    /* Deterministic engines */
+    likeEngs
+        = {MergeTree,
+           ReplacingMergeTree,
+           CoalescingMergeTree,
+           SummingMergeTree,
+           AggregatingMergeTree,
+           File,
+           Null,
+           Set,
+           Join,
+           StripeLog,
+           Log,
+           TinyLog,
+           EmbeddedRocksDB};
+    if (fc.allow_memory_tables)
+    {
+        likeEngs.emplace_back(Memory);
+    }
+    if (!fc.keeper_map_path_prefix.empty())
+    {
+        likeEngs.emplace_back(KeeperMap);
+    }
+    /* Not deterministic engines */
+    likeEngs.emplace_back(Merge);
+    if (fc.allow_infinite_tables)
+    {
+        likeEngs.emplace_back(GenerateRandom);
+    }
 }
 
 void StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) const
@@ -116,7 +145,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     {
         next.zoo_path_counter = this->zoo_path_counter++;
     }
-    if (!fc.clusters.empty() && rg.nextSmallNumber() < (next.isReplicatedOrSharedDatabase() ? 9 : 4))
+    if (!fc.clusters.empty() && !next.isSharedDatabase() && rg.nextSmallNumber() < (next.isReplicatedDatabase() ? 9 : 4))
     {
         next.cluster = rg.pickRandomly(fc.clusters);
         cd->mutable_cluster()->set_cluster(next.cluster.value());
@@ -246,7 +275,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         else
         {
-            next.teng = TableEngineValues::MergeTree;
+            next.teng = MergeTree;
         }
         const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
         { return t.isAttached() && t.numberOfInsertableColumns() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
