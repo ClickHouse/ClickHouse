@@ -47,7 +47,6 @@ bool ClickHouseIntegratedDatabase::performIntegration(
                 entry.getBottomName(),
                 columnTypeAsString(rg, is_deterministic, tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
-            chassert(entry.path.size() == 1);
             first = false;
         }
         return performQuery(fmt::format("CREATE TABLE {}({});", str_tname, buf));
