@@ -1713,7 +1713,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             this->ids.emplace_back(GenerateRandom);
         }
     }
-    if (fc.keeper_map_path_prefix != "")
+    if (!fc.keeper_map_path_prefix.empty())
     {
         this->ids.emplace_back(KeeperMap);
     }
