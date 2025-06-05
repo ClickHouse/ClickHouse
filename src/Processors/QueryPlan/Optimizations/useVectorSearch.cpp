@@ -229,7 +229,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             {
                 auto & filter_expression = filter_step->getExpression();
                 String output_result_to_delete;
-                for (auto * output_node : filter_expression.getOutputs())
+                for (const auto * output_node : filter_expression.getOutputs())
                 {
                     if (output_node->type == ActionsDAG::ActionType::ALIAS && output_node->children.at(0)->result_name == search_column)
                     {
