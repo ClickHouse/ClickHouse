@@ -177,18 +177,10 @@ public:
         if (has_empty_bound || !isFinite(x) || !isFinite(y))
             return false;
 
-        static thread_local std::vector<PolyBox> hits;
-        hits.clear();
-        hits.reserve(8);
-
-        rtree.query(bgi::contains(Point(x, y)), std::back_inserter(hits));
-
-        for (const auto & h : hits)
+        for (auto it = rtree.qbegin(bgi::contains(Point(x, y))); it != rtree.qend(); ++it)
         {
-            if (polygon_impls[h.second].contains(x, y))
-            {
+            if (polygon_impls[it->second].contains(x, y))
                 return true;
-            }
         }
 
         return false;
