@@ -73,10 +73,11 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
     FunctionDocumentation::Argument argument2 = {"y", "Second integer"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
     FunctionDocumentation::ReturnedValue returned_value = "The least common multiple of `x` and `y`.";
-    FunctionDocumentation::Example example1 = {"", "SELECT lcm(6, 8)", "24"};
+    FunctionDocumentation::Example example1 = {"Usage example", "SELECT lcm(6, 8)", "24"};
     FunctionDocumentation::Examples examples = {example1};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionLCM>(documentation);
 }

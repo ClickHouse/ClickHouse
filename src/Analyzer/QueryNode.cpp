@@ -1,3 +1,4 @@
+#include <memory>
 #include <Analyzer/QueryNode.h>
 
 #include <fmt/core.h>
@@ -34,6 +35,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
@@ -133,6 +135,22 @@ void QueryNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
             return;
     }
     correlated_columns.push_back(correlated_column);
+}
+
+DataTypePtr QueryNode::getResultType() const
+{
+    if (isCorrelated())
+    {
+        if (projection_columns.size() == 1)
+        {
+            return projection_columns[0].type;
+        }
+        else
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Method getResultType is supported only for correlated query node with 1 column, but got {}",
+                projection_columns.size());
+    }
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");
 }
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -303,12 +321,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     }
 }
 
-bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
+bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
     return is_subquery == rhs_typed.is_subquery &&
-        is_cte == rhs_typed.is_cte &&
+        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name)) &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -318,18 +336,26 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
-        cte_name == rhs_typed.cte_name &&
         projection_columns == rhs_typed.projection_columns &&
         settings_changes == rhs_typed.settings_changes;
 }
 
-void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
+void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) const
 {
     state.update(is_subquery);
-    state.update(is_cte);
 
-    state.update(cte_name.size());
-    state.update(cte_name);
+    if (options.ignore_cte)
+    {
+        state.update(false);
+        state.update(size_t(0));
+        state.update(std::string());
+    }
+    else
+    {
+        state.update(is_cte);
+        state.update(cte_name.size());
+        state.update(cte_name);
+    }
 
     state.update(projection_columns.size());
     for (const auto & projection_column : projection_columns)

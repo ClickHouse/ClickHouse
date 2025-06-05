@@ -82,14 +82,15 @@ One use case of this function is reversing IPv4s:
     FunctionDocumentation::Argument argument1 = {"x", "An integer value."};
     FunctionDocumentation::Arguments arguments = {argument1};
     FunctionDocumentation::ReturnedValue returned_value = "x with bytes reversed";
-    FunctionDocumentation::Example example1 = {"", "SELECT byteSwap(3351772109)", "3455829959"};
+    FunctionDocumentation::Example example1 = {"Usage example", "SELECT byteSwap(3351772109)", "3455829959"};
     FunctionDocumentation::Example example2 = {"8-bit", "SELECT byteSwap(54)", "54"};
     FunctionDocumentation::Example example3 = {"16-bit", "SELECT byteSwap(4135)", "10000"};
     FunctionDocumentation::Example example4 = {"32-bit", "SELECT byteSwap(3351772109)", "3455829959"};
     FunctionDocumentation::Example example5 = {"64-bit", "SELECT byteSwap(123294967295)", "18439412204227788800"};
     FunctionDocumentation::Examples examples = {example1, example2, example3, example4, example5};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
     factory.registerFunction<FunctionByteSwap>(documentation,FunctionFactory::Case::Insensitive);
 }
 

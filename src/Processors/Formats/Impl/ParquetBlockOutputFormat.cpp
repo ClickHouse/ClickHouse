@@ -390,7 +390,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
     }
     for (auto & s : columns_to_write)
     {
-        writeColumnChunkBody(s, options, out);
+        writeColumnChunkBody(s, options, format_settings, out);
         finalizeColumnChunkAndWriteFooter(std::move(s), file_state, out);
     }
 
@@ -563,7 +563,7 @@ void ParquetBlockOutputFormat::threadFunction()
             PODArray<char> serialized;
             {
                 auto buf = WriteBufferFromVector<PODArray<char>>(serialized);
-                writeColumnChunkBody(task.state, options, buf);
+                writeColumnChunkBody(task.state, options, format_settings, buf);
             }
 
             lock.lock();
