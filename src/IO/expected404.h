@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include <cstddef>
 
 namespace DB
@@ -15,7 +16,7 @@ public:
 
 private:
     static thread_local size_t expected_404_scope_count;
-    size_t & counter;
+    UInt64 initial_thread_id;
 };
 
 }
