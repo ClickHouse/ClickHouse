@@ -218,6 +218,7 @@ private:
     using RTree = bgi::rtree<PolyBox, bgi::quadratic<max_elements_per_rtree_node>>;
     RTree rtree;
 
+    /// Only becomes true if all polygons have empty bounding box.
     bool has_empty_bound = false;
 
     void build(UInt16 grid_size)
@@ -237,12 +238,16 @@ private:
                 Box box = boost::geometry::return_envelope<Box>(poly);
                 boxes.emplace_back(box, idx);
             }
-            else
-            {
-                has_empty_bound = true;
-            }
 
             ++idx;
+        }
+
+        /// All polygons have empty bounding boxes; skip R-tree building 
+        /// and mark the multipolygon as having an empty bound.
+        if (boxes.empty())
+        {
+            has_empty_bound = true;
+            return;
         }
 
         rtree = RTree(boxes.begin(), boxes.end());
