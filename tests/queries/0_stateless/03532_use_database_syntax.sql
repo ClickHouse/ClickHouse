@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- ^ creates a database
+
 CREATE DATABASE IF NOT EXISTS d1;
 
 CREATE TABLE IF NOT EXISTS d1.t1 (val Int) engine=Memory;
