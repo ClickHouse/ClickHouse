@@ -93,7 +93,7 @@ namespace std
 {
 namespace string
 {
-static constexpr size_t npos = -1;
+constexpr size_t npos = -1;
 }
 
 struct string_view
