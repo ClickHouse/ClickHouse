@@ -187,18 +187,24 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     path_map.iterateSubdirectories(path_from.parent_path().string() + "/", [&](const auto & elem){ subdirs.emplace(elem); });
     for (const auto & subdir : subdirs)
     {
-        auto write_buf = createWriteBuf(path_from / subdir, path_to / subdir, validate_content);
-        writeString((path_to / subdir).string(), *write_buf);
+        auto sub_path_to = path_to / subdir;
+        auto sub_path_from = path_from / subdir;
+
+        auto write_buf = createWriteBuf(sub_path_from, sub_path_to, validate_content);
+        writeString(sub_path_to.string(), *write_buf);
 
         fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
         {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", sub_path_from, sub_path_to);
         });
 
         write_buf->finalize();
 
         /// parent_path() removes the trailing '/'.
-        path_map.moveDirectory((path_from / subdir).parent_path(), (path_to / subdir).parent_path());
+        path_map.moveDirectory(sub_path_from.parent_path(), sub_path_to.parent_path());
+
+        LOG_TEST(
+            getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moved directory '{}' to '{}'", sub_path_from, sub_path_to);
     }
 
     write_finalized = true;
