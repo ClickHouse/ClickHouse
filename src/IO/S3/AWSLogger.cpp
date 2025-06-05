@@ -1,4 +1,8 @@
+#include <string_view>
 #include <IO/S3/AWSLogger.h>
+#include <IO/ReadHelpers.h>
+#include <IO/expected404.h>
+#include <Poco/Net/HTTPResponse.h>
 
 #if USE_AWS_S3
 
@@ -53,13 +57,52 @@ Aws::Utils::Logging::LogLevel AWSLogger::GetLogLevel() const
     return Aws::Utils::Logging::LogLevel::Info;
 }
 
+bool startsWith(const char* str, const char* prefix) {
+    while (*prefix && *str == *prefix)
+    {
+        ++str;
+        ++prefix;
+    }
+    return *prefix == 0;
+}
+
+bool isMuted(const char * message)
+{
+    // this is a way how to mure scary logs from `AWSXMLClient::BuildAWSError` about 404
+    // when 404 is expected responce
+    if (!Expected404Scope::is404Expected())
+        return false;
+
+    static const std::string_view prefix = "HTTP response code: ";
+    if (!startsWith(message, prefix.data()))
+        return false;
+
+    const char * code_str = message + prefix.size();
+    size_t len = 3;
+
+    // chech that strlen(code_str) >= len
+    for (size_t i = 0; i < len; ++i)
+        if (!code_str[i])
+            return false;
+
+    UInt64 code = 0;
+    if (!tryParse<UInt64>(code, code_str, len))
+        return false;
+
+    return code == Poco::Net::HTTPResponse::HTTP_NOT_FOUND;
+}
+
 void AWSLogger::Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) // NOLINT
 {
+    if (isMuted(format_str))
+        return;
     callLogImpl(log_level, tag, format_str); /// FIXME. Variadic arguments?
 }
 
 void AWSLogger::LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream)
 {
+    if (isMuted(message_stream.str().c_str()))
+        return;
     callLogImpl(log_level, tag, message_stream.str().c_str());
 }
 
