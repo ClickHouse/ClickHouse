@@ -17,7 +17,7 @@ A `Tuple(Array(DateTime), Array(Float64))` - a pair of arrays of equal length fr
 
 Example:
 This aggregate function is intended to be used with a Materialized View and Aggregated table that stores re-sampled time series data for grid-aligned timestamps.
-Consider the follwing example table for raw data, and a table for storing re-sampled data:
+Consider the following example table for raw data, and a table for storing re-sampled data:
 
 ```sql
 -- Table for raw data
