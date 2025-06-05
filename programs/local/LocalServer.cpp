@@ -4,6 +4,7 @@
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -1044,7 +1045,7 @@ void LocalServer::addExtraOptions(OptionsDescription & options_description)
 
 void LocalServer::applyCmdSettings(ContextMutablePtr context)
 {
-    context->applySettingsChanges(cmd_settings.changes());
+    context->applySettingsChanges(cmd_settings->changes());
 }
 
 
