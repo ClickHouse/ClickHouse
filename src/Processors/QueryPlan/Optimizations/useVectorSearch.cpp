@@ -79,10 +79,11 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         return no_layers_updated;
     node = node->children.front();
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
+    FilterStep * filter_step = nullptr;
     if (!read_from_mergetree_step)
     {
         /// Do we have a FilterStep on top of ReadFromMergeTree?
-        auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
+        filter_step = typeid_cast<FilterStep *>(node->step.get());
         if (!filter_step)
             return no_layers_updated;
         if (node->children.size() != 1)
@@ -194,7 +195,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         return no_layers_updated;
 
     size_t updated_layers = no_layers_updated;
-    bool optimize_plan = !settings.vector_search_with_rescoring && !additional_filters_present;
+    bool optimize_plan = !settings.vector_search_with_rescoring;
     if (optimize_plan)
     {
         for (const auto & output : expression.getOutputs())
@@ -223,6 +224,23 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             expression.getOutputs().push_back(new_output);
 
             updated_layers = 2;
+            /// need to do same removal of the vector column from the Filter step
+            if (filter_step)
+            {
+                auto & filter_expression = filter_step->getExpression();
+                String output_result_to_delete;
+                for (auto * output_node : filter_expression.getOutputs())
+                {
+                    if (output_node->type == ActionsDAG::ActionType::ALIAS && output_node->children.at(0)->result_name == search_column)
+                    {
+                        output_result_to_delete = output_node->result_name;
+                        break;
+                    }
+                }
+                filter_expression.removeUnusedResult(output_result_to_delete);
+                filter_expression.removeUnusedActions();
+                updated_layers++;
+            }
         }
     }
 

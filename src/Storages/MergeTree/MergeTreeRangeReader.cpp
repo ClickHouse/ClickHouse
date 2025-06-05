@@ -1322,7 +1322,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-void MergeTreeRangeReader::executeActionsForVectorSearchReadHints(ReadResult & result) const
+void MergeTreeRangeReader::executeActionsForVectorSearchReadHints(ReadResult & result, const Block & previous_header) const
 {
     auto before_rows = result.num_rows;
 
@@ -1332,6 +1332,7 @@ void MergeTreeRangeReader::executeActionsForVectorSearchReadHints(ReadResult & r
 
     /// Populate the "_distance" virtual column from the distances we got from vector index
     auto distance_pos = read_sample_block.getPositionByName("_distance");
+    distance_pos += previous_header.columns();
     auto distance_column = IColumn::mutate(std::move(result.columns[distance_pos]));
     auto & distances = typeid_cast<ColumnFloat32 *>(distance_column.get())->getData();
 
@@ -1417,7 +1418,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     result.checkInternalConsistency();
 
     if (merge_tree_reader->data_part_info_for_read->getReadHints().ann_search_results.has_value())
-        executeActionsForVectorSearchReadHints(result);
+        executeActionsForVectorSearchReadHints(result, previous_header);
 
     if (!prewhere_info)
         return;

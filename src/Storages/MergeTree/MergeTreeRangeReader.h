@@ -349,7 +349,7 @@ private:
     void updatePerformanceCounters(size_t num_rows_read);
 
     /// actions before prewhere - like row positioning, filling calculated virtual columns etc, used by vector index
-    void executeActionsForVectorSearchReadHints(ReadResult & result) const;
+    void executeActionsForVectorSearchReadHints(ReadResult & result, const Block & previous_header) const;
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
