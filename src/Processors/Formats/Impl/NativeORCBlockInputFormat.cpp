@@ -1056,7 +1056,7 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
     if (format_settings.orc.filter_push_down && sargs)
     {
-        row_reader_options.searchArgument(sargs);
+        row_reader_options.searchArgument(std::move(sargs));
     }
     stripe_reader = file_reader->createRowReader(row_reader_options);
     ++read_iterator;
