@@ -73,7 +73,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
+    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration())
         sample_path = getPathSample(context_);
 
     if (columns_in_table_or_function_definition.empty())

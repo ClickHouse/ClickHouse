@@ -730,15 +730,19 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
             parents_list[snapshot_id] = 0;
     }
 
-    auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
-
-    /// Add current snapshot-id to ancestors list
-    ancestors.push_back(current_snapshot_id);
-    while (parents_list[current_snapshot_id] != 0)
+    /// For empty table we may have no snapshots
+    if (metadata_object->has(f_current_snapshot_id))
     {
-        ancestors.push_back(parents_list[current_snapshot_id]);
-        current_snapshot_id = parents_list[current_snapshot_id];
+        auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
+        /// Add current snapshot-id to ancestors list
+        ancestors.push_back(current_snapshot_id);
+        while (parents_list[current_snapshot_id] != 0)
+        {
+            ancestors.push_back(parents_list[current_snapshot_id]);
+            current_snapshot_id = parents_list[current_snapshot_id];
+        }
     }
+
 
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
