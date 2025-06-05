@@ -840,6 +840,7 @@ struct TestQuery {
         AllocateSlots, // CpuSlotsAllocation (slot count fairness, no preemption)
         AllocateLease, // CpuLeaseAllocation (cpu time fairness + preemption)
         AllocateLeaseNoDownscale, // CpuLeaseAllocation (cpu time fairness + preemption w/o timeout)
+        AllocateLeaseQuantumX3, // CpuLeaseAllocation (cpu time fairness, preemption, x3 larger resource request cost)
     };
 
     SlotAllocationPtr allocateCPUSlots(AllocationType type, ResourceLink master_link, ResourceLink worker_link, const String & workload)
@@ -847,14 +848,17 @@ struct TestQuery {
         std::scoped_lock lock{slots_mutex};
         CPULeaseSettings settings;
         settings.workload = workload;
+        settings.preemption_timeout = std::chrono::milliseconds(12); // We use smaller timeout to make tests faster
         switch (type) {
             case AllocateSlots:
                 return std::make_shared<CPUSlotsAllocation>(1, max_threads - 1, master_link, worker_link);
             case AllocateLease:
-                settings.preemption_timeout = std::chrono::milliseconds(12);
                 return std::make_shared<CPULeaseAllocation>(max_threads, master_link, worker_link, settings);
             case AllocateLeaseNoDownscale:
                 settings.preemption_timeout = std::chrono::milliseconds::max();
+                return std::make_shared<CPULeaseAllocation>(max_threads, master_link, worker_link, settings);
+            case AllocateLeaseQuantumX3:
+                settings.quantum_ns = CPULeaseSettings::default_quantum_ns * 3;
                 return std::make_shared<CPULeaseAllocation>(max_threads, master_link, worker_link, settings);
         }
     }
@@ -1253,6 +1257,86 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingFairness)
         .check();
     DBG_PRINT("--- Stop ---");
 
+    queries.clear();
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingFairnessIsQuantumIndependent)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    DBG_PRINT("--- Start ---");
+    std::vector<TestQueryPtr> queries;
+    for (int query = 0; query < 2; query++)
+        queries.push_back(std::make_shared<TestQuery>(t));
+
+    queries[0]->start(TestQuery::AllocateLease, "A", 8);
+    queries[1]->start(TestQuery::AllocateLeaseQuantumX3, "B", 8);
+    ThreadMetricsTester()
+        .expectShare(&queries[0]->metrics, 0.5)
+        .expectShare(&queries[1]->metrics, 0.5)
+        .check();
+    DBG_PRINT("--- Stop ---");
+
+    queries.clear();
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingFairnessIsQueryNumberIndependent)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    DBG_PRINT("--- 1xA vs 5xB ---");
+    std::vector<TestQueryPtr> queries;
+    for (int query = 0; query < 6; query++)
+        queries.push_back(std::make_shared<TestQuery>(t));
+    queries[0]->start(TestQuery::AllocateLease, "A", 8);
+    queries[1]->start(TestQuery::AllocateLease, "B", 8);
+    queries[2]->start(TestQuery::AllocateLease, "B", 8);
+    queries[3]->start(TestQuery::AllocateLease, "B", 8);
+    queries[4]->start(TestQuery::AllocateLease, "B", 8);
+    queries[5]->start(TestQuery::AllocateLease, "B", 8);
+    ThreadMetricsTester()
+        .expectShare(&queries[0]->metrics, 0.5)
+        .expectShare(&queries[1]->metrics, 0.1)
+        .expectShare(&queries[2]->metrics, 0.1)
+        .expectShare(&queries[3]->metrics, 0.1)
+        .expectShare(&queries[4]->metrics, 0.1)
+        .expectShare(&queries[5]->metrics, 0.1)
+        .check();
+    DBG_PRINT("--- Stop ---");
+    queries.clear();
+
+    DBG_PRINT("--- 4xA vs 2xB ---");
+    for (int query = 0; query < 6; query++)
+        queries.push_back(std::make_shared<TestQuery>(t));
+    queries[0]->start(TestQuery::AllocateLease, "A", 8);
+    queries[1]->start(TestQuery::AllocateLease, "A", 8);
+    queries[2]->start(TestQuery::AllocateLease, "A", 8);
+    queries[3]->start(TestQuery::AllocateLease, "A", 8);
+    queries[4]->start(TestQuery::AllocateLease, "B", 8);
+    queries[5]->start(TestQuery::AllocateLease, "B", 8);
+    ThreadMetricsTester()
+        .expectShare(&queries[0]->metrics, 0.125)
+        .expectShare(&queries[1]->metrics, 0.125)
+        .expectShare(&queries[2]->metrics, 0.125)
+        .expectShare(&queries[3]->metrics, 0.125)
+        .expectShare(&queries[4]->metrics, 0.25)
+        .expectShare(&queries[5]->metrics, 0.25)
+        .check();
+    DBG_PRINT("--- Stop ---");
     queries.clear();
 
     t.wait();
