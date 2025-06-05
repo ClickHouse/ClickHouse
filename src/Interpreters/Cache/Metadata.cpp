@@ -123,33 +123,39 @@ LockedKeyPtr KeyMetadata::lockNoStateCheck()
 
 bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 {
-    if (!created_base_directory.exchange(true))
+    if (created_base_directory.load())
+        return true;
+
+    std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
+
+    if (created_base_directory.load(std::memory_order_relaxed))
+        return true;
+
+    try
     {
-        try
-        {
-            std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
-            fs::create_directories(getPath());
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedKeyDirectories);
-        }
-        catch (const fs::filesystem_error & e)
-        {
-            created_base_directory = false;
-
-            if (!throw_if_failed &&
-                (e.code() == std::errc::no_space_on_device
-                 || e.code() == std::errc::read_only_file_system
-                 || e.code() == std::errc::permission_denied
-                 || e.code() == std::errc::too_many_files_open
-                 || e.code() == std::errc::operation_not_permitted))
-            {
-                LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
-                          "because no space left on device", key);
-
-                return false;
-            }
-            throw;
-        }
+        fs::create_directories(getPath());
+        created_base_directory.store(true);
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedKeyDirectories);
     }
+    catch (const fs::filesystem_error & e)
+    {
+        created_base_directory = false;
+
+        if (!throw_if_failed &&
+            (e.code() == std::errc::no_space_on_device
+                || e.code() == std::errc::read_only_file_system
+                || e.code() == std::errc::permission_denied
+                || e.code() == std::errc::too_many_files_open
+                || e.code() == std::errc::operation_not_permitted))
+        {
+            LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
+                        "because no space left on device", key);
+
+            return false;
+        }
+        throw;
+    }
+
     return true;
 }
 
