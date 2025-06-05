@@ -298,7 +298,7 @@ def add_single_disk(
 
     if disk_type == "object_storage":
         metadata_type = "local"
-        object_storage_type = random.choice(object_storages)
+        final_type = object_storage_type = random.choice(object_storages)
         object_storage_type_xml = ET.SubElement(next_disk, "object_storage_type")
         object_storage_type_xml.text = object_storage_type
 
@@ -312,7 +312,6 @@ def add_single_disk(
             metadata_type = random.choice(possible_metadata_types)
             metadata_xml = ET.SubElement(next_disk, "metadata_type")
             metadata_xml.text = metadata_type
-        final_type = metadata_type
 
         # Add endpoint info
         if object_storage_type in ("s3", "s3_with_keeper"):
