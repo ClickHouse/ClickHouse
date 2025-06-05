@@ -76,6 +76,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
             {"input_format_parquet_enable_json_parsing", true, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
+            {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
+
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -83,7 +85,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"geotoh3_argument_order", "lon_lat", "lat_lon", "A new setting for legacy behaviour to set lon and lat argument order"},
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
-            {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
             {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
             {"parsedatetime_e_requires_space_padding", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
             {"formatdatetime_e_with_space_padding", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
