@@ -639,7 +639,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true,
-        .source_access_type = AccessType::POSTGRES,
+        .source_access_type = AccessTypeObjects::Source::POSTGRES,
     });
 }
 

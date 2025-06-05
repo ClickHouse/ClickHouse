@@ -219,7 +219,7 @@ void registerStorageSQLite(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true,
-        .source_access_type = AccessType::SQLITE,
+        .source_access_type = AccessTypeObjects::Source::SQLITE,
     });
 }
 

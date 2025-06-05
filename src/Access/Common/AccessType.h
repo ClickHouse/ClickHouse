@@ -1,10 +1,144 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <base/types.h>
-
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+/// This namespace defines objects which can be used as a parameter in global_with_parameter access types.
+/// Each such object should be an enum and have a APPLY_FOR_X(M) macro.
+/// Macro M should be defined as M(name, aliases).
+namespace AccessTypeObjects
+{
+
+/// Represents parameter for the SOURCE access type level. Uses corresponding table engine names as an alias.
+enum class Source : uint8_t
+{
+#define APPLY_FOR_SOURCE(M) \
+    M(FILE, "File") \
+    M(URL, "") \
+    M(REMOTE, "Distributed") \
+    M(MONGO, "MongoDB") \
+    M(REDIS, "Redis") \
+    M(MYSQL, "MySQL") \
+    M(POSTGRES, "PostgreSQL") \
+    M(SQLITE, "SQLite") \
+    M(ODBC, "") \
+    M(JDBC, "") \
+    M(HDFS, "") \
+    M(S3, "") \
+    M(HIVE, "Hive") \
+    M(AZURE, "AzureBlobStorage") \
+    M(KAFKA, "Kafka") \
+    M(NATS, "") \
+    M(RABBITMQ, "RabbitMQ")
+
+#define DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST(name, aliases) name,
+
+    APPLY_FOR_SOURCE(DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST)
+#undef DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST
+};
+
+
+#define ACCESS_TYPE_OBJECT_ADD_TO_MAPPING(name, aliases) \
+        addToMapping(Source::name, #name); \
+        addAliases(Source::name, aliases);
+
+#define ENUM_ACCESS_OBJECT(NAME, M) \
+class EnumHolder##NAME \
+{ \
+public: \
+    static const EnumHolder##NAME & instance() \
+    { \
+        static const EnumHolder##NAME res; \
+        return res; \
+    } \
+    \
+    std::string_view toString(NAME type) const { return entity_enum_to_string[static_cast<size_t>(type)]; } \
+    \
+    NAME fromString(const String & name) const \
+    { \
+        if (auto it = aliases.find(name); it != aliases.end()) \
+            return it->second; \
+        \
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to find AccessTypeObject {} by name {}", #NAME, name); \
+    } \
+    \
+    bool validate(const String & name) const { return aliases.find(name) != aliases.end(); } \
+    \
+    const std::map<String, NAME> & getAliasesMap() const { return aliases; } \
+    \
+private: \
+    EnumHolder##NAME() \
+    { \
+        M(ACCESS_TYPE_OBJECT_ADD_TO_MAPPING) \
+    } \
+    \
+    void addToMapping(NAME type, std::string_view str) \
+    { \
+        String str2{str}; \
+        size_t index = static_cast<size_t>(type); \
+        entity_enum_to_string.resize(std::max(index + 1, entity_enum_to_string. size())); \
+        entity_enum_to_string[index] = str2; \
+    } \
+    \
+    void addAliases(NAME type, std::string_view str) \
+    { \
+        String str2{str}; \
+        std::vector<String> type_aliases; \
+        \
+        boost::split(type_aliases, str2, [](char c) { return c == ','; }); \
+        for (auto & alias : type_aliases) \
+        { \
+            boost::trim(alias); \
+            aliases[alias] = type; \
+        } \
+        \
+        aliases[String{toString(type)}] = type; \
+    } \
+    \
+    std::vector<String> entity_enum_to_string; \
+    std::map<String, NAME> aliases; \
+}; \
+\
+inline auto toString##NAME(NAME type) \
+{ \
+    return EnumHolder##NAME::instance().toString(type); \
+} \
+\
+inline auto fromString##NAME(const String & name) \
+{ \
+    return EnumHolder##NAME::instance().fromString(name); \
+} \
+inline auto unify##NAME(const String & name) \
+{ \
+    return toString##NAME(fromString##NAME(name)); \
+} \
+\
+inline auto & getAliasesMap##NAME() \
+{ \
+    return EnumHolder##NAME::instance().getAliasesMap(); \
+} \
+\
+inline auto validate##NAME(const String & name) \
+{ \
+    return EnumHolder##NAME::instance().validate(name); \
+}
+
+ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
+
+#undef ENUM_ACCESS_OBJECT
+#undef ACCESS_TYPE_OBJECT_ADD_TO_MAPPING
+}
+
 
 /// Represents an access type which can be granted on databases, tables, columns, etc.
 enum class AccessType : uint8_t
@@ -12,7 +146,7 @@ enum class AccessType : uint8_t
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
 /// aliases is a string containing comma-separated list;
-/// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/TABLE_ENGINE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
+/// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/SOURCE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
 /// or specifies that the access type is a GROUP of other access types;
 /// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
 /// NOTE A parent group must be declared AFTER all its children.
@@ -239,27 +373,32 @@ enum class AccessType : uint8_t
     M(demangle, "", GLOBAL, INTROSPECTION) /* allows to execute function demangle() */\
     M(INTROSPECTION, "INTROSPECTION FUNCTIONS", GROUP, ALL) /* allows to execute functions addressToLine(), addressToSymbol(), demangle()*/\
     \
-    M(FILE, "", GLOBAL, SOURCES) \
-    M(URL, "", GLOBAL, SOURCES) \
-    M(REMOTE, "", GLOBAL, SOURCES) \
-    M(MONGO, "", GLOBAL, SOURCES) \
-    M(REDIS, "", GLOBAL, SOURCES) \
-    M(MYSQL, "", GLOBAL, SOURCES) \
-    M(POSTGRES, "", GLOBAL, SOURCES) \
-    M(SQLITE, "", GLOBAL, SOURCES) \
-    M(ODBC, "", GLOBAL, SOURCES) \
-    M(JDBC, "", GLOBAL, SOURCES) \
-    M(HDFS, "", GLOBAL, SOURCES) \
-    M(S3, "", GLOBAL, SOURCES) \
-    M(HIVE, "", GLOBAL, SOURCES) \
-    M(AZURE, "", GLOBAL, SOURCES) \
-    M(KAFKA, "", GLOBAL, SOURCES) \
-    M(NATS, "", GLOBAL, SOURCES) \
-    M(RABBITMQ, "", GLOBAL, SOURCES) \
-    M(SOURCES, "", GROUP, ALL) \
+    M(READ, "SOURCE READ", SOURCE, ALL) \
+    M(WRITE, "SOURCE WRITE", SOURCE, ALL) \
     \
     M(CLUSTER, "", GLOBAL, ALL) /* ON CLUSTER queries */ \
     \
+    /* Deprecated */ \
+    M(FILE, "", GLOBAL, ALL) \
+    M(URL, "", GLOBAL, ALL) \
+    M(REMOTE, "", GLOBAL, ALL) \
+    M(MONGO, "", GLOBAL, ALL) \
+    M(REDIS, "", GLOBAL, ALL) \
+    M(MYSQL, "", GLOBAL, ALL) \
+    M(POSTGRES, "", GLOBAL, ALL) \
+    M(SQLITE, "", GLOBAL, ALL) \
+    M(ODBC, "", GLOBAL, ALL) \
+    M(JDBC, "", GLOBAL, ALL) \
+    M(HDFS, "", GLOBAL, ALL) \
+    M(S3, "", GLOBAL, ALL) \
+    M(HIVE, "", GLOBAL, ALL) \
+    M(AZURE, "", GLOBAL, ALL) \
+    M(KAFKA, "", GLOBAL, ALL) \
+    M(NATS, "", GLOBAL, ALL) \
+    M(RABBITMQ, "", GLOBAL, ALL) \
+    M(SOURCES, "", GLOBAL, ALL) \
+    \
+    /* Consts */ \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
 
@@ -269,6 +408,7 @@ enum class AccessType : uint8_t
     APPLY_FOR_ACCESS_TYPES(DECLARE_ACCESS_TYPE_ENUM_CONST)
 #undef DECLARE_ACCESS_TYPE_ENUM_CONST
 };
+
 
 std::string_view toString(AccessType type);
 

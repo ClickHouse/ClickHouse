@@ -240,7 +240,7 @@ namespace
 
         },
         {
-            .source_access_type = BridgeHelperMixin::getSourceAccessType(),
+            .source_access_type = BridgeHelperMixin::getSourceAccessObject(),
         });
     }
 }

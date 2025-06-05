@@ -570,7 +570,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.comment);
     },
     {
-        .source_access_type = AccessType::MONGO,
+        .source_access_type = AccessTypeObjects::Source::MONGO,
     });
 }
 

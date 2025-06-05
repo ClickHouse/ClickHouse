@@ -1,5 +1,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/AccessType.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -14,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_GRANT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -294,6 +296,44 @@ void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
         database = current_database;
 }
 
+void AccessRightsElement::replaceDeprecated()
+{
+    if (!access_flags)
+        return;
+
+    if (access_flags.toAccessTypes().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceDeprecated() was called on an access element with multiple access flags: {}", access_flags.toString());
+
+    switch (const auto current_access_type = access_flags.toAccessTypes()[0])
+    {
+        case AccessType::FILE:
+        case AccessType::URL:
+        case AccessType::REMOTE:
+        case AccessType::MONGO:
+        case AccessType::REDIS:
+        case AccessType::MYSQL:
+        case AccessType::POSTGRES:
+        case AccessType::SQLITE:
+        case AccessType::ODBC:
+        case AccessType::JDBC:
+        case AccessType::HDFS:
+        case AccessType::S3:
+        case AccessType::HIVE:
+        case AccessType::AZURE:
+        case AccessType::KAFKA:
+        case AccessType::NATS:
+        case AccessType::RABBITMQ:
+            access_flags = AccessType::READ | AccessType::WRITE;
+            parameter = DB::toString(current_access_type);
+            break;
+        case AccessType::SOURCES:
+            access_flags = AccessType::READ | AccessType::WRITE;
+            break;
+        default:
+            break;
+    }
+}
+
 String AccessRightsElement::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElement::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
@@ -327,6 +367,12 @@ void AccessRightsElements::eraseNotGrantable()
         element.eraseNotGrantable();
         return element.empty();
     });
+}
+
+void AccessRightsElements::replaceDeprecated()
+{
+    for (auto & element : *this)
+        element.replaceDeprecated();
 }
 
 void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
