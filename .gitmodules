@@ -375,3 +375,6 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/antlr4-cpp-runtime"]
+	path = contrib/antlr4-cpp-runtime
+	url = https://github.com/antlr/antlr4.git
