@@ -276,7 +276,7 @@ def add_single_disk(
     backups_element: ET.Element,
     disk_type: str,
     created_disks_types: list[tuple[int, str]],
-    object_storages: list[str],
+    is_private_binary: bool,
 ) -> tuple[int, str]:
     prev_disk = 0
     if disk_type in ("cache", "encrypted"):
@@ -300,18 +300,33 @@ def add_single_disk(
     final_type = disk_type
 
     if disk_type == "object_storage":
-        metadata_type = "local"
+        object_storages = ["local"]
+        if args.with_minio:
+            object_storages.append("s3")
+            if is_private_binary:
+                # Increased probability
+                object_storages.extend(
+                    ["s3_with_keeper", "s3_with_keeper", "s3_with_keeper"]
+                )
+        if args.with_azurite:
+            object_storages.append("azure")
+        if args.with_nginx:
+            object_storages.append("web")
         final_type = object_storage_type = random.choice(object_storages)
         object_storage_type_xml = ET.SubElement(next_disk, "object_storage_type")
         object_storage_type_xml.text = object_storage_type
 
         # Set disk metadata type
+        metadata_type = "local"
         if random.randint(1, 100) <= 70:
             possible_metadata_types = (
                 ["local", "plain", "web"]
                 if object_storage_type == "web"
                 else ["local", "plain", "plain_rewritable"]
             )
+            if is_private_binary:
+                # Increased probability
+                possible_metadata_types.extend(["keeper", "keeper", "keeper"])
             metadata_type = random.choice(possible_metadata_types)
             metadata_xml = ET.SubElement(next_disk, "metadata_type")
             metadata_xml.text = metadata_type
@@ -416,16 +431,6 @@ def modify_server_settings(
         allowed_disk_xml.text = "default"
         created_disks_types = []
 
-        object_storages = ["local"]
-        if args.with_minio:
-            object_storages.append("s3")
-            if is_private_binary:
-                object_storages.append("s3_with_keeper")
-        if args.with_azurite:
-            object_storages.append("azure")
-        if args.with_nginx:
-            object_storages.append("web")
-
         for i in range(0, number_disks):
             possible_types = (
                 ["object_storage"]
@@ -440,7 +445,7 @@ def modify_server_settings(
                 backups_element,
                 random.choice(possible_types),
                 created_disks_types,
-                object_storages,
+                is_private_binary,
             )
             created_disks_types.append(next_created_disk_pair)
         # Add policies sometimes
@@ -472,9 +477,7 @@ def modify_server_settings(
                     if main_xml is None or random.randint(1, 3) == 1:
                         if main_xml is not None and random.randint(1, 100) <= 70:
                             add_settings_from_dict(policy_properties, main_xml)
-                        main_xml = ET.SubElement(
-                            volumes_xml, f"volume{volume_counter}"
-                        )
+                        main_xml = ET.SubElement(volumes_xml, f"volume{volume_counter}")
                         volume_counter += 1
                     disk_xml = ET.SubElement(main_xml, "disk")
                     disk_xml.text = f"disk{inputs[i]}"

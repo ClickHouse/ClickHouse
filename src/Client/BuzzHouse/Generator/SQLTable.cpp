@@ -1222,7 +1222,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             }
             else if (
                 b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
-                && (!fc.storage_policies.empty() || !fc.disks.empty()))
+                && (!fc.storage_policies.empty() || !fc.keeper_disks.empty()))
             {
                 /// Requires storage setting
                 const auto & ovals = svs->other_values();
@@ -1234,10 +1234,10 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                     == ovals.end())
                 {
                     SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-                    const String & pick = (fc.disks.empty() || rg.nextBool()) ? "storage_policy" : "disk";
+                    const String & pick = (fc.keeper_disks.empty() || rg.nextSmallNumber() < 3) ? "storage_policy" : "disk";
 
                     sv->set_property(pick);
-                    sv->set_value("'" + rg.pickRandomly(pick == "storage_policy" ? fc.storage_policies : fc.disks) + "'");
+                    sv->set_value("'" + rg.pickRandomly(pick == "storage_policy" ? fc.storage_policies : fc.keeper_disks) + "'");
                 }
             }
         }

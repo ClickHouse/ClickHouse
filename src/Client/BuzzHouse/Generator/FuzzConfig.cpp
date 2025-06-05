@@ -303,7 +303,8 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
     return res;
 }
 
-void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, const String & table, const String & col)
+void FuzzConfig::loadServerSettings(
+    DB::Strings & out, const bool distinct, const String & table, const String & col, const String & extra_clause)
 {
     String buf;
     uint64_t found = 0;
@@ -311,10 +312,11 @@ void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, cons
     if (processServerQuery(
             false,
             fmt::format(
-                R"(SELECT {}"{}" FROM "system"."{}" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                R"(SELECT {}"{}" FROM "system"."{}"{} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 distinct ? "DISTINCT " : "",
                 col,
                 table,
+                extra_clause,
                 fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
@@ -331,11 +333,12 @@ void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, cons
 
 void FuzzConfig::loadServerConfigurations()
 {
-    loadServerSettings(this->collations, false, "collations", "name");
-    loadServerSettings(this->storage_policies, false, "storage_policies", "policy_name");
-    loadServerSettings(this->disks, false, "disks", "name");
-    loadServerSettings(this->timezones, false, "time_zones", "time_zone");
-    loadServerSettings(this->clusters, true, "clusters", "cluster");
+    loadServerSettings(this->collations, false, "collations", "name", "");
+    loadServerSettings(this->storage_policies, false, "storage_policies", "policy_name", "");
+    loadServerSettings(this->disks, false, "disks", "name", "");
+    loadServerSettings(this->keeper_disks, false, "disks", "name", " WHERE metadata_type = 'Keeper'");
+    loadServerSettings(this->timezones, false, "time_zones", "time_zone", "");
+    loadServerSettings(this->clusters, true, "clusters", "cluster", "");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const
