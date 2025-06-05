@@ -88,6 +88,7 @@ public:
         , scan(scan_)
         , data_prefix(data_prefix_)
         , table_schema(table_schema_)
+        , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
         , object_storage(object_storage_)
         , callback(callback_)
@@ -103,10 +104,11 @@ public:
         if (filter_dag_)
             pruner.emplace(*filter_dag_, table_schema_, partition_columns_, DB::Context::getGlobalContextInstance());
 
-        expression_schema = table_schema;
         if (!physical_names_map_.empty())
         {
             for (auto & [name, value] : expression_schema)
+                name = physical_names_map_.at(name);
+            for (auto & name : partition_columns)
                 name = physical_names_map_.at(name);
         }
     }
@@ -311,7 +313,7 @@ private:
     const std::string data_prefix;
     const DB::NamesAndTypesList & table_schema;
     DB::NamesAndTypesList expression_schema;
-    const DB::Names & partition_columns;
+    DB::Names partition_columns;
     const DB::ObjectStoragePtr object_storage;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;

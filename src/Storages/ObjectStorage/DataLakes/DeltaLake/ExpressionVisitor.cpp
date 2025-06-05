@@ -707,10 +707,6 @@ void ParsedExpression::apply(
                 }
                 if (pos != current_chunk_pos)
                 {
-                    DB::WriteBufferFromOwnString wb;
-                    DB::SerializedSetsRegistry registry;
-                    dag.serialize(wb, registry);
-
                     throw DB::Exception(
                         DB::ErrorCodes::LOGICAL_ERROR,
                         "Position mismatch, column {} position in schema: {}, "
@@ -719,7 +715,7 @@ void ParsedExpression::apply(
                         node->result_name, pos, current_chunk_pos,
                         fmt::join(columns, ", "),
                         fmt::join(chunk_schema.getNames(), ", "), fmt::join(schema.getNames(), ", "),
-                        wb.str());
+                        dag.dumpDAG());
                 }
                 break;
             }
