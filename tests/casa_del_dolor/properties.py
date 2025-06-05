@@ -185,7 +185,7 @@ object_storages_properties = {
         "s3_max_single_part_upload_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "server_side_encryption_customer_key_base64": lambda: random.randint(0, 1),
+        # "server_side_encryption_customer_key_base64": lambda: random.randint(0, 1), not working well
         "skip_access_check": lambda: random.randint(0, 1),
         "support_batch_delete": lambda: random.randint(0, 1),
         "thread_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()),
@@ -283,10 +283,13 @@ def add_single_disk(
         iter_prev_disk = prev_disk = random.choice(range(0, i))
 
         # Cannot create encrypted disk on web storage
+        # Cannot create cached disk on local storage
         while created_disks_types[iter_prev_disk][1] in ("cache", "encrypted"):
             iter_prev_disk = created_disks_types[iter_prev_disk][0]
         if created_disks_types[iter_prev_disk][1] == "web" and disk_type == "encrypted":
             disk_type = "cache"
+        elif created_disks_types[iter_prev_disk][1] == "local" and disk_type == "cache":
+            disk_type = "object_storage"
 
     # Add a single disk
     disk_type_xml = ET.SubElement(next_disk, "type")
@@ -442,24 +445,41 @@ def modify_server_settings(
             created_disks_types.append(next_created_disk_pair)
         # Add policies sometimes
         if random.randint(1, 100) <= 70 and args.max_disks > 0:
+            j = 0
+            bottom_disks = []
+            for val in created_disks_types:
+                if val[1] not in ("cache", "encrypted"):
+                    bottom_disks.append(j)
+                j += 1
+            number_bottom_disks = len(bottom_disks)
             policies_element = ET.SubElement(storage_config, "policies")
             number_policies = random.randint(1, args.max_disks)
-            disk_permutations = list(itertools.permutations(range(0, number_disks)))
+            disk_permutations = list(itertools.permutations(bottom_disks))
 
             for i in range(0, number_policies):
                 next_policy_xml = ET.SubElement(policies_element, f"policy{i}")
                 volumes_xml = ET.SubElement(next_policy_xml, "volumes")
+                main_xml = None
+                volume_counter = 0
 
                 number_elements = (
-                    1 if random.randint(1, 2) == 1 else random.randint(1, number_disks)
+                    1
+                    if random.randint(1, 2) == 1
+                    else random.randint(1, number_bottom_disks)
                 )
                 inputs = random.choice(disk_permutations)
                 for i in range(0, number_elements):
-                    main_xml = ET.SubElement(volumes_xml, f"disk{inputs[i]}")
+                    if main_xml is None or random.randint(1, 3) == 1:
+                        if main_xml is not None and random.randint(1, 100) <= 70:
+                            add_settings_from_dict(policy_properties, main_xml)
+                        main_xml = ET.SubElement(
+                            volumes_xml, f"volume{volume_counter}"
+                        )
+                        volume_counter += 1
                     disk_xml = ET.SubElement(main_xml, "disk")
                     disk_xml.text = f"disk{inputs[i]}"
-                    if random.randint(1, 100) <= 70:
-                        add_settings_from_dict(policy_properties, main_xml)
+                if main_xml is not None and random.randint(1, 100) <= 70:
+                    add_settings_from_dict(policy_properties, main_xml)
                 if random.randint(1, 100) <= 70:
                     add_settings_from_dict(policy_properties, next_policy_xml)
 

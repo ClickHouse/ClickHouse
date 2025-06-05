@@ -325,8 +325,8 @@ void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, cons
             buf.resize(0);
             found++;
         }
-        LOG_INFO(log, "Found {} entries from {} table", found, table);
     }
+    LOG_INFO(log, "Found {} entries from {} table", found, table);
 }
 
 void FuzzConfig::loadServerConfigurations()
