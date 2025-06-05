@@ -6171,7 +6171,7 @@ SELECT * FROM test_table
 └───┘
 ```
 )", 0) \
-    DECLARE(Bool, count_distinct_optimization, false, R"(
+    DECLARE(Bool, count_distinct_optimization, true, R"(
 Rewrite count distinct to subquery of group by
 )", 0) \
     DECLARE(Bool, throw_if_no_data_to_insert, true, R"(
