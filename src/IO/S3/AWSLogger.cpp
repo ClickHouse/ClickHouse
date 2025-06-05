@@ -57,6 +57,8 @@ Aws::Utils::Logging::LogLevel AWSLogger::GetLogLevel() const
     return Aws::Utils::Logging::LogLevel::Info;
 }
 
+namespace
+{
 // this function helps to avoid read all str when strlen is called
 bool startsWith(const char* str, const char* prefix)
 {
@@ -68,7 +70,7 @@ bool startsWith(const char* str, const char* prefix)
     return *prefix == 0;
 }
 
-bool isMuted(const char * message)
+bool is404Muted(const char * message)
 {
     // this is a way how to mure scary logs from `AWSXMLClient::BuildAWSError` about 404
     // when 404 is expected response
@@ -95,17 +97,18 @@ bool isMuted(const char * message)
 
     return code == Poco::Net::HTTPResponse::HTTP_NOT_FOUND;
 }
+}
 
 void AWSLogger::Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) // NOLINT
 {
-    if (isMuted(format_str))
+    if (is404Muted(format_str))
         return;
     callLogImpl(log_level, tag, format_str); /// FIXME. Variadic arguments?
 }
 
 void AWSLogger::LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream)
 {
-    if (isMuted(message_stream.str().c_str()))
+    if (is404Muted(message_stream.str().c_str()))
         return;
     callLogImpl(log_level, tag, message_stream.str().c_str());
 }

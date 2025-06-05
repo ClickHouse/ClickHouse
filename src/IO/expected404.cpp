@@ -4,7 +4,7 @@
 namespace DB
 {
 
-thread_local size_t Expected404Scope::expected_404_scope_count = 0;
+thread_local size_t expected_404_scope_count = 0;
 
 Expected404Scope::Expected404Scope()
     : initial_thread_id(CurrentThread::get().thread_id)

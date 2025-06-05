@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/defines.h>
+#include <base/types.h>
 #include <cstddef>
 
 namespace DB
@@ -15,7 +15,6 @@ public:
     static bool is404Expected();
 
 private:
-    static thread_local size_t expected_404_scope_count;
     UInt64 initial_thread_id;
 };
 
