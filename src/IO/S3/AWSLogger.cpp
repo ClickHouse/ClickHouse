@@ -75,11 +75,13 @@ bool isMuted(const char * message)
     if (!Expected404Scope::is404Expected())
         return false;
 
-    static const std::string_view prefix = "HTTP response code: ";
-    if (!startsWith(message, prefix.data()))
+    static const char * prefix_str = "HTTP response code: ";
+    static const size_t prefix_len = strlen(prefix_str);
+
+    if (!startsWith(message, prefix_str))
         return false;
 
-    const char * code_str = message + prefix.size();
+    const char * code_str = message + prefix_len;
     size_t len = 3;
 
     // check that strlen(code_str) >= len
