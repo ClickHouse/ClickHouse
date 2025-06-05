@@ -148,7 +148,7 @@ possible_properties = {
     "query_condition_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "query_condition_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "remap_executable": lambda: random.randint(0, 1),
-    "restore_threads": lambda: random.randint(0, multiprocessing.cpu_count()),
+    "restore_threads": lambda: random.randint(1, multiprocessing.cpu_count()),
     "shutdown_wait_backups_and_restores": lambda: random.randint(0, 1),
     "shutdown_wait_unfinished_queries": lambda: random.randint(0, 1),
     "storage_metadata_write_full_object_key": lambda: random.randint(0, 1),
@@ -317,7 +317,7 @@ def add_single_disk(
         object_storage_type_xml.text = object_storage_type
 
         # Set disk metadata type
-        metadata_type = "local"
+        metadata_type = "keeper" if object_storage_type == "s3_with_keeper" else "local"
         if random.randint(1, 100) <= 70:
             possible_metadata_types = (
                 ["local", "plain", "web"]
@@ -328,8 +328,8 @@ def add_single_disk(
                 # Increased probability
                 possible_metadata_types.extend(["keeper", "keeper", "keeper"])
             metadata_type = random.choice(possible_metadata_types)
-            metadata_xml = ET.SubElement(next_disk, "metadata_type")
-            metadata_xml.text = metadata_type
+        metadata_xml = ET.SubElement(next_disk, "metadata_type")
+        metadata_xml.text = metadata_type
 
         # Add endpoint info
         if object_storage_type in ("s3", "s3_with_keeper"):
@@ -417,7 +417,6 @@ def modify_server_settings(
     # Add disk configurations
     if (
         root.find("storage_configuration") is None
-        and args.max_disks > 0
         and random.randint(1, 100) <= args.add_disk_settings_prob
     ):
         modified = True
@@ -425,7 +424,7 @@ def modify_server_settings(
         storage_config = ET.SubElement(root, "storage_configuration")
         disk_element = ET.SubElement(storage_config, "disks")
         backups_element = ET.SubElement(root, "backups")
-        number_disks = random.randint(1, args.max_disks)
+        number_disks = random.randint(args.min_disks, args.max_disks)
 
         allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
         allowed_disk_xml.text = "default"
@@ -449,7 +448,7 @@ def modify_server_settings(
             )
             created_disks_types.append(next_created_disk_pair)
         # Add policies sometimes
-        if random.randint(1, 100) <= 70 and args.max_disks > 0:
+        if random.randint(1, 100) <= args.add_policy_settings_prob:
             j = 0
             bottom_disks = []
             for val in created_disks_types:
@@ -458,7 +457,7 @@ def modify_server_settings(
                 j += 1
             number_bottom_disks = len(bottom_disks)
             policies_element = ET.SubElement(storage_config, "policies")
-            number_policies = random.randint(1, args.max_disks)
+            number_policies = random.randint(args.min_disks, args.max_disks)
             disk_permutations = list(itertools.permutations(bottom_disks))
 
             for i in range(0, number_policies):
