@@ -366,7 +366,7 @@ public:
         /// [(outer_x_1, outer_y_1, ...)]
         ///
         /// A multi-polygon is represented by 3d array:
-        /// [[[[(outer_x_1, outer_y_1, ...)], [(hole1_x_1, hole1_y_1), ...], ...], ...]
+        /// [[[(outer_x_1, outer_y_1, ...)], [(hole1_x_1, hole1_y_1), ...], ...], ...]
 
         if (isThreeDimensionalArray(*arguments[1].type))
         {
