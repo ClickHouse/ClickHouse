@@ -234,6 +234,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
     /// Add physical column info.
     auto & state = states.emplace_back();
     state.primitive_column = column;
+    state.type = type;
     state.compression = options.compression;
     state.compression_level = options.compression_level;
 
@@ -419,6 +420,13 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             {
                 types(T::BYTE_ARRAY);
             }
+            break;
+        }
+        case TypeIndex::Object:
+        {
+            parq::LogicalType t;
+            t.__set_JSON({});
+            types(T::BYTE_ARRAY, C::JSON, t);
             break;
         }
 
@@ -610,6 +618,10 @@ void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates & states, SchemaElements & schemas)
 {
+    /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
+    /// parquet dictionary-encoding.
+    column = column->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+
     switch (type->getTypeId())
     {
         case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, states, schemas); break;

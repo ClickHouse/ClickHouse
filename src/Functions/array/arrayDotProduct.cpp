@@ -412,7 +412,7 @@ The return type is determined by the type of the arguments. If Arrays or Tuples 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayDotProduct>();
+    factory.registerFunction<FunctionArrayDotProduct>(documentation);
 }
 
 // These functions are used by TupleOrArrayFunction in Function/vectorFunctions.cpp

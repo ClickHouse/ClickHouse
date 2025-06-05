@@ -7,23 +7,13 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Poco/JSON/Object.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
-namespace StorageObjectStorageSetting
-{
-extern const StorageObjectStorageSettingsBool delta_lake_read_schema_same_as_table_schema;
-}
-namespace Setting
-{
-extern const SettingsBool allow_experimental_delta_kernel_rs;
-}
 
 struct DeltaLakePartitionColumn
 {
