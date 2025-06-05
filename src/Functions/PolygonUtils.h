@@ -234,7 +234,7 @@ private:
             ++idx;
         }
 
-        /// All polygons have empty bounding boxes; skip R-tree building 
+        /// All polygons have empty bounding boxes; skip R-tree building
         /// and mark the multipolygon as having an empty bound.
         if (boxes.empty())
         {
