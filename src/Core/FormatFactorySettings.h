@@ -578,6 +578,9 @@ Write data types in binary format instead of type names in Native output format
     DECLARE(Bool, output_format_native_write_json_as_string, false, R"(
 Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [String](../../sql-reference/data-types/string.md) column containing JSON strings instead of default native JSON serialization.
 )", 0) \
+    DECLARE(Bool, output_format_native_use_flattened_dynamic_and_json_serialization, false, R"(
+Write data of [JSON](../../sql-reference/data-types/newjson.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) columns in a flattened format (all types/paths as separate subcolumns).
+)", 0) \
     \
     DECLARE(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, R"(
 Allows choosing a parser of the text representation of date and time.
