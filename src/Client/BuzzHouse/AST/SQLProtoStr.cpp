@@ -444,10 +444,21 @@ CONV_FN(SpecialVal, val)
             ret += "()";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_MAP:
-            ret += "map()";
+            if (val.paren())
+            {
+                ret += "map()";
+            }
+            else
+            {
+                ret += "'{}'";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_JSON:
-            ret += "'{}'::JSON";
+            ret += "'{}'";
+            if (val.paren())
+            {
+                ret += "::JSON";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MINUS_ZERO_FP:
             ret += "-0.0";
@@ -519,40 +530,88 @@ CONV_FN(SpecialVal, val)
             ret += "115792089237316195423570985008687907853269984665640564039457584007913129639935";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE:
-            ret += "'1970-01-01'::Date";
+            ret += "'1970-01-01'";
+            if (val.paren())
+            {
+                ret += "::Date";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATE:
-            ret += "'2149-06-06'::Date";
+            ret += "'2149-06-06'";
+            if (val.paren())
+            {
+                ret += "::Date";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE32:
-            ret += "'1900-01-01'::Date32";
+            ret += "'1900-01-01'";
+            if (val.paren())
+            {
+                ret += "::Date32";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATE32:
-            ret += "'2299-12-31'::Date32";
+            ret += "'2299-12-31'";
+            if (val.paren())
+            {
+                ret += "::Date32";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_TIME:
-            ret += "'-999:59:59'::Time";
+            ret += "'-999:59:59'";
+            if (val.paren())
+            {
+                ret += "::Time";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_TIME:
-            ret += "'999:59:59'::Time";
+            ret += "'999:59:59'";
+            if (val.paren())
+            {
+                ret += "::Time";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_TIME64:
-            ret += "'000:00:00'::Time64";
+            ret += "'000:00:00'";
+            if (val.paren())
+            {
+                ret += "::Time64";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_TIME64:
-            ret += "'999:59:59.99999999'::Time64";
+            ret += "'999:59:59.99999999'";
+            if (val.paren())
+            {
+                ret += "::Time64";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATETIME:
-            ret += "'1970-01-01 00:00:00'::DateTime";
+            ret += "'1970-01-01 00:00:00'";
+            if (val.paren())
+            {
+                ret += "::DateTime";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATETIME:
-            ret += "'2106-02-07 06:28:15'::DateTime";
+            ret += "'2106-02-07 06:28:15'";
+            if (val.paren())
+            {
+                ret += "::DateTime";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATETIME64:
-            ret += "'1900-01-01 00:00:00'::DateTime64";
+            ret += "'1900-01-01 00:00:00'";
+            if (val.paren())
+            {
+                ret += "::DateTime64";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATETIME64:
-            ret += "'2299-12-31 23:59:59.99999999'::DateTime64";
+            ret += "'2299-12-31 23:59:59.99999999'";
+            if (val.paren())
+            {
+                ret += "::DateTime64";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL_CHAR:
             ret += "'\\0'";
