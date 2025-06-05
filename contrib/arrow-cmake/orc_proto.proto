@@ -1,0 +1,456 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+syntax = "proto2";
+
+package orc.proto;
+
+option java_package = "org.apache.orc";
+
+message IntegerStatistics  {
+  optional sint64 minimum = 1;
+  optional sint64 maximum = 2;
+  optional sint64 sum = 3;
+}
+
+message DoubleStatistics {
+  optional double minimum = 1;
+  optional double maximum = 2;
+  optional double sum = 3;
+}
+
+message StringStatistics {
+  optional string minimum = 1;
+  optional string maximum = 2;
+  // sum will store the total length of all strings in a stripe
+  optional sint64 sum = 3;
+  // If the minimum or maximum value was longer than 1024 bytes, store a lower or upper
+  // bound instead of the minimum or maximum values above.
+  optional string lower_bound = 4;
+  optional string upper_bound = 5;
+}
+
+message BucketStatistics {
+  repeated uint64 count = 1 [packed=true];
+}
+
+message DecimalStatistics {
+  optional string minimum = 1;
+  optional string maximum = 2;
+  optional string sum = 3;
+}
+
+message DateStatistics {
+  // min,max values saved as days since epoch
+  optional sint32 minimum = 1;
+  optional sint32 maximum = 2;
+}
+
+message TimestampStatistics {
+  // min,max values saved as milliseconds since epoch
+  optional sint64 minimum = 1;
+  optional sint64 maximum = 2;
+  optional sint64 minimum_utc = 3;
+  optional sint64 maximum_utc = 4;
+  // store the lower 6 TS digits for min/max to achieve nanosecond precision
+  optional int32 minimum_nanos = 5;
+  optional int32 maximum_nanos = 6;
+}
+
+message BinaryStatistics {
+  // sum will store the total binary blob length in a stripe
+  optional sint64 sum = 1;
+}
+
+// Statistics for list and map
+message CollectionStatistics {
+  optional uint64 min_children = 1;
+  optional uint64 max_children = 2;
+  optional uint64 total_children = 3;
+}
+
+message ColumnStatistics {
+  optional uint64 number_of_values = 1;
+  optional IntegerStatistics int_statistics = 2;
+  optional DoubleStatistics double_statistics = 3;
+  optional StringStatistics string_statistics = 4;
+  optional BucketStatistics bucket_statistics = 5;
+  optional DecimalStatistics decimal_statistics = 6;
+  optional DateStatistics date_statistics = 7;
+  optional BinaryStatistics binary_statistics = 8;
+  optional TimestampStatistics timestamp_statistics = 9;
+  optional bool has_null = 10;
+  optional uint64 bytes_on_disk = 11;
+  optional CollectionStatistics collection_statistics = 12;
+}
+
+message RowIndexEntry {
+  repeated uint64 positions = 1 [packed=true];
+  optional ColumnStatistics statistics = 2;
+}
+
+message RowIndex {
+  repeated RowIndexEntry entry = 1;
+}
+
+message BloomFilter {
+  optional uint32 num_hash_functions = 1;
+  repeated fixed64 bitset = 2;
+  optional bytes utf8bitset = 3;
+}
+
+message BloomFilterIndex {
+  repeated BloomFilter bloom_filter = 1;
+}
+
+message Stream {
+  // if you add new index stream kinds, you need to make sure to update
+  // StreamName to ensure it is added to the stripe in the right area
+  enum Kind {
+    PRESENT = 0;
+    DATA = 1;
+    LENGTH = 2;
+    DICTIONARY_DATA = 3;
+    DICTIONARY_COUNT = 4;
+    SECONDARY = 5;
+    ROW_INDEX = 6;
+    BLOOM_FILTER = 7;
+    BLOOM_FILTER_UTF8 = 8;
+    // Virtual stream kinds to allocate space for encrypted index and data.
+    ENCRYPTED_INDEX = 9;
+    ENCRYPTED_DATA = 10;
+
+    // stripe statistics streams
+    STRIPE_STATISTICS = 100;
+    // A virtual stream kind that is used for setting the encryption IV.
+    FILE_STATISTICS = 101;
+  }
+  optional Kind kind = 1;
+  optional uint32 column = 2;
+  optional uint64 length = 3;
+}
+
+message ColumnEncoding {
+  enum Kind {
+    DIRECT = 0;
+    DICTIONARY = 1;
+    DIRECT_V2 = 2;
+    DICTIONARY_V2 = 3;
+  }
+  optional Kind kind = 1;
+  optional uint32 dictionary_size = 2;
+
+  // The encoding of the bloom filters for this column:
+  //   0 or missing = none or original
+  //   1            = ORC-135 (utc for timestamps)
+  optional uint32 bloom_encoding = 3;
+}
+
+message StripeEncryptionVariant {
+  repeated Stream streams = 1;
+  repeated ColumnEncoding encoding = 2;
+}
+
+// each stripe looks like:
+//   index streams
+//     unencrypted
+//     variant 1..N
+//   data streams
+//     unencrypted
+//     variant 1..N
+//   footer
+
+message StripeFooter {
+  repeated Stream streams = 1;
+  repeated ColumnEncoding columns = 2;
+  optional string writer_timezone = 3;
+  // one for each column encryption variant
+  repeated StripeEncryptionVariant encryption = 4;
+}
+
+// the file tail looks like:
+//   encrypted stripe statistics: ColumnarStripeStatistics (order by variant)
+//   stripe statistics: Metadata
+//   footer: Footer
+//   postscript: PostScript
+//   psLen: byte
+
+message StringPair {
+  optional string key = 1;
+  optional string value = 2;
+}
+
+message Type {
+  enum Kind {
+    BOOLEAN = 0;
+    BYTE = 1;
+    SHORT = 2;
+    INT = 3;
+    LONG = 4;
+    FLOAT = 5;
+    DOUBLE = 6;
+    STRING = 7;
+    BINARY = 8;
+    TIMESTAMP = 9;
+    LIST = 10;
+    MAP = 11;
+    STRUCT = 12;
+    UNION = 13;
+    DECIMAL = 14;
+    DATE = 15;
+    VARCHAR = 16;
+    CHAR = 17;
+    TIMESTAMP_INSTANT = 18;
+  }
+  optional Kind kind = 1;
+  repeated uint32 subtypes = 2 [packed=true];
+  repeated string field_names = 3;
+  optional uint32 maximum_length = 4;
+  optional uint32 precision = 5;
+  optional uint32 scale = 6;
+  repeated StringPair attributes = 7;
+}
+
+message StripeInformation {
+  // the global file offset of the start of the stripe
+  optional uint64 offset = 1;
+  // the number of bytes of index
+  optional uint64 index_length = 2;
+  // the number of bytes of data
+  optional uint64 data_length = 3;
+  // the number of bytes in the stripe footer
+  optional uint64 footer_length = 4;
+  // the number of rows in this stripe
+  optional uint64 number_of_rows = 5;
+  // If this is present, the reader should use this value for the encryption
+  // stripe id for setting the encryption IV. Otherwise, the reader should
+  // use one larger than the previous stripe's encryptStripeId.
+  // For unmerged ORC files, the first stripe will use 1 and the rest of the
+  // stripes won't have it set. For merged files, the stripe information
+  // will be copied from their original files and thus the first stripe of
+  // each of the input files will reset it to 1.
+  // Note that 1 was choosen, because protobuf v3 doesn't serialize
+  // primitive types that are the default (eg. 0).
+  optional uint64 encrypt_stripe_id = 6;
+  // For each encryption variant, the new encrypted local key to use
+  // until we find a replacement.
+  repeated bytes encrypted_local_keys = 7;
+}
+
+message UserMetadataItem {
+  optional string name = 1;
+  optional bytes value = 2;
+}
+
+// StripeStatistics (1 per a stripe), which each contain the
+// ColumnStatistics for each column.
+// This message type is only used in ORC v0 and v1.
+message StripeStatistics {
+  repeated ColumnStatistics col_stats = 1;
+}
+
+// This message type is only used in ORC v0 and v1.
+message Metadata {
+  repeated StripeStatistics stripe_stats = 1;
+}
+
+// In ORC v2 (and for encrypted columns in v1), each column has
+// their column statistics written separately.
+message ColumnarStripeStatistics {
+  // one value for each stripe in the file
+  repeated ColumnStatistics col_stats = 1;
+}
+
+enum EncryptionAlgorithm {
+  UNKNOWN_ENCRYPTION = 0;  // used for detecting future algorithms
+  AES_CTR_128 = 1;
+  AES_CTR_256 = 2;
+}
+
+message FileStatistics {
+  repeated ColumnStatistics column = 1;
+}
+
+// How was the data masked? This isn't necessary for reading the file, but
+// is documentation about how the file was written.
+message DataMask {
+  // the kind of masking, which may include third party masks
+  optional string name = 1;
+  // parameters for the mask
+  repeated string mask_parameters = 2;
+  // the unencrypted column roots this mask was applied to
+  repeated uint32 columns = 3 [packed = true];
+}
+
+// Information about the encryption keys.
+message EncryptionKey {
+  optional string key_name = 1;
+  optional uint32 key_version = 2;
+  optional EncryptionAlgorithm algorithm = 3;
+}
+
+// The description of an encryption variant.
+// Each variant is a single subtype that is encrypted with a single key.
+message EncryptionVariant {
+  // the column id of the root
+  optional uint32 root = 1;
+  // The master key that was used to encrypt the local key, referenced as
+  // an index into the Encryption.key list.
+  optional uint32 key = 2;
+  // the encrypted key for the file footer
+  optional bytes encrypted_key = 3;
+  // the stripe statistics for this variant
+  repeated Stream stripe_statistics = 4;
+  // encrypted file statistics as a FileStatistics
+  optional bytes file_statistics = 5;
+}
+
+// Which KeyProvider encrypted the local keys.
+enum KeyProviderKind {
+  UNKNOWN = 0;
+  HADOOP = 1;
+  AWS = 2;
+  GCP = 3;
+  AZURE = 4;
+}
+
+message Encryption {
+  // all of the masks used in this file
+  repeated DataMask mask = 1;
+  // all of the keys used in this file
+  repeated EncryptionKey key = 2;
+  // The encrypted variants.
+  // Readers should prefer the first variant that the user has access to
+  // the corresponding key. If they don't have access to any of the keys,
+  // they should get the unencrypted masked data.
+  repeated EncryptionVariant variants = 3;
+  // How are the local keys encrypted?
+  optional KeyProviderKind key_provider = 4;
+}
+
+enum CalendarKind {
+  UNKNOWN_CALENDAR = 0;
+   // A hybrid Julian/Gregorian calendar with a cutover point in October 1582.
+  JULIAN_GREGORIAN = 1;
+  // A calendar that extends the Gregorian calendar back forever.
+  PROLEPTIC_GREGORIAN = 2;
+}
+
+message Footer {
+  optional uint64 header_length = 1;
+  optional uint64 content_length = 2;
+  repeated StripeInformation stripes = 3;
+  repeated Type types = 4;
+  repeated UserMetadataItem metadata = 5;
+  optional uint64 number_of_rows = 6;
+  repeated ColumnStatistics statistics = 7;
+  optional uint32 row_index_stride = 8;
+
+  // Each implementation that writes ORC files should register for a code
+  // 0 = ORC Java
+  // 1 = ORC C++
+  // 2 = Presto
+  // 3 = Scritchley Go from https://github.com/scritchley/orc
+  // 4 = Trino
+  // 5 = CUDF
+  optional uint32 writer = 9;
+
+  // information about the encryption in this file
+  optional Encryption encryption = 10;
+  optional CalendarKind calendar = 11;
+
+  // informative description about the version of the software that wrote
+  // the file. It is assumed to be within a given writer, so for example
+  // ORC 1.7.2 = "1.7.2". It may include suffixes, such as "-SNAPSHOT".
+  optional string software_version = 12;
+}
+
+enum CompressionKind {
+  NONE = 0;
+  ZLIB = 1;
+  SNAPPY = 2;
+  LZO = 3;
+  LZ4 = 4;
+  ZSTD = 5;
+  BROTLI = 6;
+}
+
+// Serialized length must be less that 255 bytes
+message PostScript {
+  optional uint64 footer_length = 1;
+  optional CompressionKind compression = 2;
+  optional uint64 compression_block_size = 3;
+  // the version of the file format
+  //   [0, 11] = Hive 0.11
+  //   [0, 12] = Hive 0.12
+  repeated uint32 version = 4 [packed = true];
+  optional uint64 metadata_length = 5;
+
+  // The version of the writer that wrote the file. This number is
+  // updated when we make fixes or large changes to the writer so that
+  // readers can detect whether a given bug is present in the data.
+  //
+  // Only the Java ORC writer may use values under 6 (or missing) so that
+  // readers that predate ORC-202 treat the new writers correctly. Each
+  // writer should assign their own sequence of versions starting from 6.
+  //
+  // Version of the ORC Java writer:
+  //   0 = original
+  //   1 = HIVE-8732 fixed (fixed stripe/file maximum statistics &
+  //                        string statistics use utf8 for min/max)
+  //   2 = HIVE-4243 fixed (use real column names from Hive tables)
+  //   3 = HIVE-12055 added (vectorized writer implementation)
+  //   4 = HIVE-13083 fixed (decimals write present stream correctly)
+  //   5 = ORC-101 fixed (bloom filters use utf8 consistently)
+  //   6 = ORC-135 fixed (timestamp statistics use utc)
+  //   7 = ORC-517 fixed (decimal64 min/max incorrect)
+  //   8 = ORC-203 added (trim very long string statistics)
+  //   9 = ORC-14 added (column encryption)
+  //
+  // Version of the ORC C++ writer:
+  //   6 = original
+  //
+  // Version of the Presto writer:
+  //   6 = original
+  //
+  // Version of the Scritchley Go writer:
+  //   6 = original
+  //
+  // Version of the Trino writer:
+  //   6 = original
+  //
+  // Version of the CUDF writer:
+  //   6 = original
+  //
+  optional uint32 writer_version = 6;
+
+  // the number of bytes in the encrypted stripe statistics
+  optional uint64 stripe_statistics_length = 7;
+
+  // Leave this last in the record
+  optional string magic = 8000;
+}
+
+// The contents of the file tail that must be serialized.
+// This gets serialized as part of OrcSplit, also used by footer cache.
+message FileTail {
+  optional PostScript postscript = 1;
+  optional Footer footer = 2;
+  optional uint64 file_length = 3;
+  optional uint64 postscript_length = 4;
+}
