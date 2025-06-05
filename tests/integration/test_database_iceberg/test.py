@@ -138,9 +138,22 @@ CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_s
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
-    show_result = node.query(f"SHOW DATABASE {name}")
-    assert minio_secret_key not in show_result
-    assert "HIDDEN" in show_result
+
+
+def print_objects():
+    minio_client = Minio(
+        f"localhost:9002",
+        access_key="minio",
+        secret_key=minio_secret_key,
+        secure=False,
+        http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
+    )
+
+    objects = list(minio_client.list_objects("warehouse", "", recursive=True))
+    names = [x.object_name for x in objects]
+    names.sort()
+    for name in names:
+        print(f"Found object: {name}")
 
 
 @pytest.fixture(scope="module")
@@ -304,8 +317,6 @@ def test_select(started_cluster):
     assert num_rows == int(
         node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
     )
-
-    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{namespace}.{table_name}' and database = '{CATALOG_NAME}'").strip()) == 1
 
 
 def test_hide_sensitive_info(started_cluster):

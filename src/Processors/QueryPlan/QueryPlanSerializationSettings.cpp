@@ -90,11 +90,11 @@ struct QueryPlanSerializationSettingsImpl : public BaseSettings<QueryPlanSeriali
 };
 
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) QueryPlanSerializationSettings##TYPE NAME = &QueryPlanSerializationSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) QueryPlanSerializationSettings##TYPE NAME = &QueryPlanSerializationSettingsImpl ::NAME;
 
 namespace QueryPlanSerializationSetting
 {
-PLAN_SERIALIZATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+PLAN_SERIALIZATION_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN

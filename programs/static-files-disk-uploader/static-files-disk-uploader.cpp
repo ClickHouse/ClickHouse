@@ -67,12 +67,7 @@ static void processFile(const fs::path & file_path, const fs::path & dst_path, b
 
         /// test mode for integration tests.
         if (test_mode)
-        {
-            dst_buf = BuilderWriteBufferFromHTTP(Poco::URI(dst_file_path))
-                          .withConnectionGroup(HTTPConnectionGroupType::HTTP)
-                          .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
-                          .create();
-        }
+            dst_buf = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_file_path), Poco::Net::HTTPRequest::HTTP_PUT);
         else
             dst_buf = std::make_shared<WriteBufferFromFile>(dst_file_path);
 
@@ -95,10 +90,7 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
     {
         dst_path /= "store";
         auto files_root = dst_path / prefix;
-        root_meta = BuilderWriteBufferFromHTTP(Poco::URI(files_root / ".index"))
-                      .withConnectionGroup(HTTPConnectionGroupType::HTTP)
-                      .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
-                      .create();
+        root_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(files_root / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
     }
     else
     {
@@ -121,10 +113,7 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
             std::shared_ptr<WriteBuffer> directory_meta;
             if (test_mode)
             {
-                directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(dst_path / directory_prefix / ".index"))
-                                    .withConnectionGroup(HTTPConnectionGroupType::HTTP)
-                                    .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
-                                    .create();
+                directory_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_path / directory_prefix / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
             }
             else
             {

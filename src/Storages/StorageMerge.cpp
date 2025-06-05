@@ -41,7 +41,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -84,9 +83,6 @@ extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
-extern const int UNKNOWN_TABLE;
-extern const int ACCESS_DENIED;
-extern const int TABLE_IS_READ_ONLY;
 }
 
 namespace
@@ -147,8 +143,6 @@ StorageMerge::StorageMerge(
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
     const DBToTableSetMap & source_databases_and_tables_,
-    const std::optional<String> & table_to_write_,
-    bool table_to_write_auto_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -157,7 +151,6 @@ StorageMerge::StorageMerge(
         database_is_regexp_,
         source_database_name_or_regexp_, {},
         source_databases_and_tables_)
-    , table_to_write_auto(table_to_write_auto_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty()
@@ -166,8 +159,6 @@ StorageMerge::StorageMerge(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
-    if (!table_to_write_auto)
-        setTableToWrite(table_to_write_, source_database_name_or_regexp_, database_is_regexp_);
 }
 
 StorageMerge::StorageMerge(
@@ -177,8 +168,6 @@ StorageMerge::StorageMerge(
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
     const String & source_table_regexp_,
-    const std::optional<String> & table_to_write_,
-    bool table_to_write_auto_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -187,7 +176,6 @@ StorageMerge::StorageMerge(
         database_is_regexp_,
         source_database_name_or_regexp_,
         source_table_regexp_, {})
-    , table_to_write_auto(table_to_write_auto_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty()
@@ -196,8 +184,6 @@ StorageMerge::StorageMerge(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
-    if (!table_to_write_auto)
-        setTableToWrite(table_to_write_, source_database_name_or_regexp_, database_is_regexp_);
 }
 
 StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(ContextPtr context_) const
@@ -305,29 +291,6 @@ void StorageMerge::forEachTable(F && func) const
         /// Always continue to the next table.
         return false;
     });
-}
-
-template <typename F>
-void StorageMerge::forEachTableName(F && func) const
-{
-    auto database_table_iterators = database_name_or_regexp.getDatabaseIterators(getContext());
-
-    for (auto & iterator : database_table_iterators)
-    {
-        while (iterator->isValid())
-        {
-            const auto & table = iterator->table();
-            if (table.get() != this)
-            {
-                QualifiedTableName table_name;
-                table_name.database = iterator->databaseName();
-                table_name.table = iterator->name();
-                func(table_name);
-            }
-
-            iterator->next();
-        }
-    }
 }
 
 bool StorageMerge::isRemote() const
@@ -696,7 +659,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 /// (Assuming that view has empty list of columns if it's parameterized.)
                 if (storage->isView() && storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
-                    throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
+                    throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parametrized view can't be queried through a Merge table.");
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no columns.");
             }
@@ -705,9 +668,6 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_as_aliases;
             Names real_column_names = column_names;
-            /// If there are no real columns requested from this table, we will read the smallest column.
-            /// We should remember it to not include this column in the result.
-            bool is_smallest_column_requested = false;
 
             const auto & database_name = std::get<0>(table);
             const auto & table_name = std::get<3>(table);
@@ -722,7 +682,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             }
 
             auto modified_query_info
-                = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
+                = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, aliases);
 
             if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
@@ -773,10 +733,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                     column_names_as_aliases = alias_actions.getRequiredColumns().getNames();
                     if (column_names_as_aliases.empty())
-                    {
                         column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
-                        is_smallest_column_requested = true;
-                    }
                 }
             }
 
@@ -791,7 +748,6 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 required_max_block_size,
                 table,
                 column_names_to_read,
-                is_smallest_column_requested,
                 row_policy_data_opt,
                 modified_context,
                 current_streams);
@@ -804,7 +760,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
-                convertAndFilterSourceStream(common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
+                convertAndFilterSourceStream(common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -937,7 +893,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     const StorageSnapshotPtr & storage_snapshot_,
     Names required_column_names,
     Names & column_names_as_aliases,
-    bool & is_smallest_column_requested,
     Aliases & aliases) const
 {
     const auto & [database_name, storage, storage_lock, table_name] = storage_with_lock_and_name;
@@ -945,7 +900,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
     SelectQueryInfo modified_query_info = query_info;
 
-    modified_query_info.initial_storage_snapshot = merge_storage_snapshot;
+    modified_query_info.merge_storage_snapshot = merge_storage_snapshot;
 
     if (modified_query_info.planner_context)
         modified_query_info.planner_context = std::make_shared<PlannerContext>(modified_context, modified_query_info.planner_context);
@@ -1034,16 +989,12 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     column_node = std::make_shared<ColumnNode>(NameAndTypePair{column, storage_columns.getColumn(get_column_options, column).type }, modified_query_info.table_expression);
                 }
 
-                ColumnNodePtrWithHashSet empty_correlated_columns_set;
-                PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+                PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, false /*use_column_identifier_as_action_node_name*/);
                 actions_visitor.visit(*filter_actions_dag, column_node);
             }
             column_names_as_aliases = filter_actions_dag->getRequiredColumnsNames();
             if (column_names_as_aliases.empty())
-            {
                 column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_snapshot_->metadata->getColumns().getAllPhysical()).name);
-                is_smallest_column_requested = true;
-            }
         }
 
         if (!column_name_to_node.empty())
@@ -1206,7 +1157,6 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     UInt64 max_block_size,
     const StorageWithLockAndName & storage_with_lock,
     const Names & real_column_names_read_from_the_source_table,
-    bool & is_smallest_column_requested,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextMutablePtr modified_context,
     size_t streams_num) const
@@ -1236,10 +1186,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// If there are only virtual columns in query, we must request at least one other column.
         Names real_column_names = real_column_names_read_from_the_source_table;
         if (real_column_names.empty())
-        {
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot_->metadata->getColumns().getAllPhysical()).name);
-            is_smallest_column_requested = true;
-        }
 
         storage->read(plan,
             real_column_names,
@@ -1520,8 +1467,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const Aliases & aliases,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
-    ChildPlan & child,
-    bool is_smallest_column_requested)
+    ChildPlan & child)
 {
     Block before_block_header = child.plan.getCurrentHeader();
 
@@ -1541,9 +1487,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
             QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
             query_analysis_pass.run(query_tree, local_context);
 
-            ColumnNodePtrWithHashSet empty_correlated_columns_set;
-            PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
-            const auto & [nodes, _] = actions_visitor.visit(actions_dag, query_tree);
+            PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, false /*use_column_identifier_as_action_node_name*/);
+            const auto & nodes = actions_visitor.visit(actions_dag, query_tree);
 
             if (nodes.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
@@ -1586,18 +1531,12 @@ void ReadFromMerge::convertAndFilterSourceStream(
     ColumnsWithTypeAndName converted_columns;
     size_t size = current_step_columns.size();
     converted_columns.reserve(current_step_columns.size());
-    String smallest_column_name = ExpressionActions::getSmallestColumn(snapshot->metadata->getColumns().getAllPhysical()).name;
     for (size_t i = 0; i < size; ++i)
     {
         const auto & source_elem = current_step_columns[i];
         if (header.has(source_elem.name))
         {
             converted_columns.push_back(header.getByName(source_elem.name));
-        }
-        else if (is_smallest_column_requested && smallest_column_name == source_elem.name)
-        {
-            /// This column is unneeded in the result.
-            converted_columns.push_back(source_elem);
         }
         else if (header.columns() == current_step_columns.size())
         {
@@ -1728,14 +1667,14 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
     return traverseTablesUntil([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
 }
 
-std::optional<UInt64> StorageMerge::totalRows(ContextPtr query_context) const
+std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const
 {
-    return totalRowsOrBytes([&](const auto & table) { return table->totalRows(query_context); });
+    return totalRowsOrBytes([&](const auto & table) { return table->totalRows(settings); });
 }
 
-std::optional<UInt64> StorageMerge::totalBytes(ContextPtr query_context) const
+std::optional<UInt64> StorageMerge::totalBytes(const Settings & settings) const
 {
-    return totalRowsOrBytes([&](const auto & table) { return table->totalBytes(query_context); });
+    return totalRowsOrBytes([&](const auto & table) { return table->totalBytes(settings); });
 }
 
 template <typename F>
@@ -1755,77 +1694,6 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
 }
 
-void StorageMerge::setTableToWrite(
-    const std::optional<String> & table_to_write_,
-    const String & source_database_name_or_regexp_,
-    bool database_is_regexp_)
-{
-    if (!table_to_write_.has_value())
-    {
-        table_to_write = std::nullopt;
-        return;
-    }
-
-    auto qualified_name = QualifiedTableName::parseFromString(*table_to_write_);
-
-    if (qualified_name.database.empty())
-    {
-        if (database_is_regexp_)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_to_write' must contain database if 'db_name' is regular expression");
-
-        qualified_name.database = source_database_name_or_regexp_;
-    }
-
-    table_to_write = qualified_name;
-}
-
-SinkToStoragePtr StorageMerge::write(
-    const ASTPtr & query,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context_,
-    bool async_insert)
-{
-    const auto & access = context_->getAccess();
-
-    if (table_to_write_auto)
-    {
-        table_to_write = std::nullopt;
-        bool any_table_found = false;
-        forEachTableName([&](const auto & table_name)
-        {
-            any_table_found = true;
-            if (!table_to_write.has_value() || table_to_write->getFullName() < table_name.getFullName())
-            {
-                if (access->isGranted(AccessType::INSERT, table_name.database, table_name.table))
-                    table_to_write = table_name;
-            }
-        });
-        if (!table_to_write.has_value())
-        {
-            if (any_table_found)
-                throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to write in any suitable table for storage {}", getName());
-            else
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Can't find any table to write for storage {}", getName());
-        }
-    }
-    else
-    {
-        if (!table_to_write.has_value())
-            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Method write is not allowed in storage {} without described table to write", getName());
-
-        access->checkAccess(AccessType::INSERT, table_to_write->database, table_to_write->table);
-    }
-
-    auto database = DatabaseCatalog::instance().getDatabase(table_to_write->database);
-    auto table = database->getTable(table_to_write->table, context_);
-    auto table_lock = table->lockForShare(
-        context_->getInitialQueryId(),
-        context_->getSettingsRef()[Setting::lock_acquire_timeout]);
-    auto sink = table->write(query, metadata_snapshot, context_, async_insert);
-    sink->addTableLock(table_lock);
-    return sink;
-}
-
 void registerStorageMerge(StorageFactory & factory)
 {
     factory.registerStorage("Merge", [](const StorageFactory::Arguments & args)
@@ -1836,12 +1704,10 @@ void registerStorageMerge(StorageFactory & factory)
 
         ASTs & engine_args = args.engine_args;
 
-        size_t size = engine_args.size();
-
-        if (size < 2 || size > 3)
+        if (engine_args.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Merge requires 2 or 3 parameters - name "
-                            "of source database, regexp for table names, and optional table name for writing");
+                            "Storage Merge requires exactly 2 parameters - name "
+                            "of source database and regexp for table names.");
 
         auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
 
@@ -1853,24 +1719,8 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
 
-        std::optional<String> table_to_write = std::nullopt;
-        bool table_to_write_auto = false;
-        if (size == 3)
-        {
-            bool is_identifier = engine_args[2]->as<ASTIdentifier>();
-            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
-            table_to_write = checkAndGetLiteralArgument<String>(engine_args[2], "table_to_write");
-            if (is_identifier && table_to_write == "auto")
-            {
-                if (is_regexp)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "RegExp for database with auto table_to_write is forbidden");
-                table_to_write_auto = true;
-            }
-        }
-
         return std::make_shared<StorageMerge>(
-            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp,
-            table_name_regexp, table_to_write, table_to_write_auto, args.getLocalContext());
+            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getLocalContext());
     },
     {
         .supports_schema_inference = true

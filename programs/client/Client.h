@@ -24,17 +24,16 @@ public:
 
     int main(const std::vector<String> & /*args*/) override;
 
-    bool tryToReconnect(uint32_t max_reconnection_attempts, uint32_t time_to_sleep_between) override;
 protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
-    bool processWithASTFuzzer(std::string_view full_query) override;
+    bool processWithFuzzing(const String & full_query) override;
     bool buzzHouse() override;
-    bool processASTFuzzerStep(const String & query_to_execute, const ASTPtr & parsed_query);
+    std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, bool permissive);
 
     void connect() override;
 
-    void processError(std::string_view query) const override;
+    void processError(const String & query) const override;
 
     String getName() const override { return "client"; }
 

@@ -1,10 +1,9 @@
 #include "DisksApp.h"
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
-#include <Common/Exception.h>
+#include "Common/Exception.h"
 #include "Common/filesystemHelpers.h"
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/Macros.h>
 #include "DisksClient.h"
 #include "ICommand.h"
 #include "ICommand_fwd.h"
@@ -492,8 +491,6 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     config().keys(keys);
     initializeHistoryFile();
 
-    Poco::AutoPtr<Poco::FileChannel> log_file{nullptr};
-
     if (config().has("save-logs"))
     {
         auto log_level = config().getString("log-level", "trace");
@@ -501,19 +498,9 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
 
-        log_file = new Poco::FileChannel;
-        log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(log_path));
-        log_file->setProperty(Poco::FileChannel::PROP_ROTATION, "100M");
-        log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
-        log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, "false");
-        log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, "false");
-        log_file->setProperty(Poco::FileChannel::PROP_FLUSH, "true");
-        log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, "false");
-        log_file->open();
-
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, log_file);
-        Poco::Logger::root().setChannel(log);
+        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::FileChannel(log_path));
+        logger().setChannel(log);
     }
     else
     {
@@ -539,9 +526,6 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::DISKS);
 
-    if (config().has("macros"))
-        global_context->setMacros(std::make_unique<Macros>(config(), "macros", &logger()));
-
     String path = config().getString("path", DBMS_DEFAULT_PATH);
 
     global_context->setPath(path);
@@ -558,9 +542,6 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     {
         processQueryText(query.value());
     }
-
-    if (log_file)
-        log_file->close();
 
     return Application::EXIT_OK;
 }

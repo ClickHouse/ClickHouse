@@ -149,23 +149,21 @@ public:
     }
 
     ~TemporaryFileOnLocalDisk() override
+    try
     {
-        try
+        if (disk->existsFile(path_to_file))
         {
-            if (disk->existsFile(path_to_file))
-            {
-                LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
-                disk->removeRecursive(path_to_file);
-            }
-            else
-            {
-                LOG_WARNING(getLogger("TemporaryFileOnLocalDisk"), "Temporary path '{}' does not exist in '{}' on disk {}", path_to_file, disk->getPath(), disk->getName());
-            }
+            LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
+            disk->removeRecursive(path_to_file);
         }
-        catch (...)
+        else
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG_WARNING(getLogger("TemporaryFileOnLocalDisk"), "Temporary path '{}' does not exist in '{}' on disk {}", path_to_file, disk->getPath(), disk->getName());
         }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
 private:
@@ -336,9 +334,8 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
 
 TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size)
     : WrapperGuard(std::make_unique<TemporaryDataBuffer>(parent_, reserve_size), DBMS_TCP_PROTOCOL_VERSION, header_)
-    , header(header_.cloneWithoutColumns()) /// header is copied without columns to exclude constant columns since they are not supported in (de/)serialization
-{
-}
+    , header(header_)
+{}
 
 TemporaryDataBuffer::Stat TemporaryBlockStreamHolder::finishWriting() const
 {

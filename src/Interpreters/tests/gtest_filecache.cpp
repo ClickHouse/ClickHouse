@@ -59,7 +59,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 max_elements;
     extern const FileCacheSettingsUInt64 max_file_segment_size;
     extern const FileCacheSettingsUInt64 boundary_alignment;
-    extern const FileCacheSettingsFileCachePolicy cache_policy;
+    extern const FileCacheSettingsString cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
     extern const FileCacheSettingsUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
@@ -110,9 +110,6 @@ void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & exp
     std::cerr << "\nFile segments: ";
     for (const auto & file_segment : *file_segments)
         std::cerr << file_segment->range().toString() << ", ";
-    std::cerr << "\nExpected: ";
-    for (const auto & r : expected_ranges)
-        std::cerr << r.toString() << ", ";
 
     ASSERT_EQ(file_segments->size(), expected_ranges.size());
 
@@ -377,12 +374,11 @@ TEST_F(FileCacheTest, LRUPolicy)
     settings[FileCacheSetting::max_elements] = 5;
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
 
 
-    const auto & user = FileCache::getCommonUser();
+    const auto user = FileCache::getCommonUser();
     {
         std::cerr << "Step 1\n";
         auto cache = DB::FileCache("1", settings);
@@ -767,7 +763,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         auto settings2 = settings;
         settings2[FileCacheSetting::max_file_segment_size] = 10;
         settings2[FileCacheSetting::path] = caches_dir / "cache2";
-        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
         fs::create_directories(settings2[FileCacheSetting::path].value);
         auto cache2 = DB::FileCache("3", settings2);
         cache2.initialize();
@@ -838,11 +833,10 @@ TEST_F(FileCacheTest, writeBuffer)
     settings[FileCacheSetting::max_file_segment_size] = 5;
     settings[FileCacheSetting::path] = cache_base_path;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     FileCache cache("6", settings);
     cache.initialize();
-    const auto & user = FileCache::getCommonUser();
+    const auto user = FileCache::getCommonUser();
 
     auto write_to_cache = [&, this](const String & key, const Strings & data, bool flush, ReadBufferPtr * out_read_buffer = nullptr)
     {
@@ -972,12 +966,11 @@ try
     settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
     settings[FileCacheSetting::path] = cache_base_path;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     DB::FileCache file_cache("7", settings);
     file_cache.initialize();
 
-    const auto & user = FileCache::getCommonUser();
+    const auto user = FileCache::getCommonUser();
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(&file_cache, TemporaryDataOnDiskSettings{});
 
     auto some_data_holder = file_cache.getOrSet(FileCacheKey::fromPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
@@ -1112,7 +1105,6 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     settings[FileCacheSetting::max_elements] = 10;
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
@@ -1134,7 +1126,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     cache->initialize();
 
     auto key = DB::FileCacheKey::fromPath(file_path);
-    const auto & user = FileCache::getCommonUser();
+    const auto user = FileCache::getCommonUser();
 
     {
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
@@ -1174,7 +1166,6 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
         settings[FileCacheSetting::path] = cache_base_path;
         settings[FileCacheSetting::load_metadata_asynchronously] = false;
-        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
@@ -1242,12 +1233,12 @@ TEST_F(FileCacheTest, SLRUPolicy)
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::cache_policy] = "SLRU";
     settings[FileCacheSetting::slru_size_ratio] = 0.5;
 
     const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
     size_t file_cache_name = 0;
-    const auto & user = FileCache::getCommonUser();
+    const auto user = FileCache::getCommonUser();
 
     {
         auto cache = DB::FileCache(std::to_string(++file_cache_name), settings);
@@ -1351,9 +1342,9 @@ TEST_F(FileCacheTest, SLRUPolicy)
         settings2[FileCacheSetting::max_size] = 30;
         settings2[FileCacheSetting::max_elements] = 6;
         settings2[FileCacheSetting::boundary_alignment] = 1;
+        settings2[FileCacheSetting::cache_policy] = "SLRU";
         settings2[FileCacheSetting::slru_size_ratio] = 0.5;
-        settings2[FileCacheSetting::load_metadata_asynchronously] = false;
-        settings2[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
         auto cache = std::make_shared<DB::FileCache>("slru_2", settings2);
         cache->initialize();
@@ -1422,67 +1413,5 @@ TEST_F(FileCacheTest, SLRUPolicy)
 
         assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
         assertProtected(cache->dumpQueue(), { Range(10, 14), Range(0, 4), Range(5, 9)  });
-    }
-}
-
-TEST_F(FileCacheTest, FileCacheGetOrSet)
-{
-    ServerUUID::setRandomForUnitTests();
-    DB::ThreadStatus thread_status;
-
-    DB::FileCacheSettings settings;
-    settings[FileCacheSetting::path] = cache_base_path;
-    settings[FileCacheSetting::max_size] = 30;
-    settings[FileCacheSetting::max_elements] = 5;
-    settings[FileCacheSetting::max_file_segment_size] = 25;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-
-    const auto & user = FileCache::getCommonUser();
-    const auto key = DB::FileCacheKey::fromPath("key1");
-
-    auto cache = DB::FileCache("1", settings);
-    cache.initialize();
-
-    {
-        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */22);
-        assertEqual(holder, { Range(0, 21) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */3);
-        assertEqual(holder, { Range(0, 20) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */5);
-        assertEqual(holder, { Range(0, 19) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */1);
-        assertEqual(holder, { Range(0, 19) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 22, /* file_size */25, {}, 0, user, /* boundary_alignment */7);
-        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
-
-        auto holder2 = cache.getOrSet(key, 0, 26, /* file_size */27, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder2, { Range(0, 24), Range(25, 26) }, { State::EMPTY, State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 22, /* file_size */25, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
-
-        auto holder2 = cache.getOrSet(key, 0, 19, /* file_size */27, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder2, { Range(0, 24) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 25, /* file_size */26, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 25, /* file_size */20, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder, { Range(0, 19) }, { State::EMPTY });
     }
 }

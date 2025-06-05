@@ -38,11 +38,12 @@ function(add_contrib cmake_folder)
     add_subdirectory (${cmake_folder})
 endfunction()
 
+# We need to add OpenSSL first so that all our projects use our own version instead of the system one.
+add_contrib (openssl-cmake openssl)
+
 # Use the original launchers for the projects that are needed for source code generation:
 # protoc and llvm-tlbgen.
 disable_dummy_launchers_if_needed()
-# We need to add OpenSSL first so that all our projects use our own version instead of the system one.
-add_contrib (openssl-cmake openssl)  # Needed for delta-lake
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
@@ -89,7 +90,6 @@ add_contrib (libarchive-cmake libarchive)
 
 add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
-add_contrib (chdig-cmake chdig)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -123,6 +123,7 @@ add_contrib (aws-cmake
     aws-c-mqtt
     aws-c-s3
     aws-c-sdkutils
+    aws-s2n-tls
     aws-checksums
     aws-crt-cpp
     aws-cmake
@@ -138,6 +139,9 @@ add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
 add_contrib (curl-cmake curl)
 add_contrib (azure-cmake azure) # requires: curl
+if (NOT OS_DARWIN)
+    add_contrib (sentry-native-cmake sentry-native) # requires: curl
+endif()
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
@@ -248,7 +252,6 @@ add_contrib (jwt-cpp-cmake jwt-cpp)
 
 add_contrib (sha3iuf-cmake SHA3IUF)
 
-add_contrib (bech32)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
