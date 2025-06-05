@@ -64,13 +64,15 @@ set(ARROW_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
 set(PROTO_DIR "${ORC_SOURCE_DIR}/../proto")
 
+# Set the proto source directory
+set(PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
         COMMAND ${PROTOBUF_EXECUTABLE}
         -I ${PROTO_DIR}
         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
-        "${PROTO_DIR}/orc_proto.proto")
-
+        "${PROTO_DIR}/orc_proto.proto"
+        DEPENDS "${PROTO_DIR}/orc_proto.proto")
 
 # === flatbuffers
 set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
