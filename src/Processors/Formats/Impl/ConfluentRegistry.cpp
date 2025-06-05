@@ -1,7 +1,16 @@
 #include <Processors/Formats/Impl/ConfluentRegistry.h>
 
 #include <IO/HTTPCommon.h>
+#include "Common/CurrentMetrics.h"
 #include <Common/Exception.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric AvroSchemaCacheBytes;
+    extern const Metric AvroSchemaCacheCells;
+    extern const Metric ProtobufSchemaCacheBytes;
+    extern const Metric ProtobufSchemaCacheCells;
+}
 
 namespace DB
 {
@@ -16,10 +25,10 @@ ConfluentSchemaRegistry::ConfluentSchemaRegistry(
     const std::string & base_url_, const String & logger_name_, [[maybe_unused]] size_t schema_cache_max_size)
     : base_url(base_url_)
 #if USE_AVRO
-    , avro_schema_cache(schema_cache_max_size)
+    , avro_schema_cache(CurrentMetrics::AvroSchemaCacheBytes, CurrentMetrics::AvroSchemaCacheCells, schema_cache_max_size)
 #endif
 #if USE_PROTOBUF
-    , protobuf_schema_cache(schema_cache_max_size)
+    , protobuf_schema_cache(CurrentMetrics::ProtobufSchemaCacheBytes, CurrentMetrics::ProtobufSchemaCacheCells, schema_cache_max_size)
 #endif
     , logger_name(logger_name_)
 {
@@ -68,7 +77,6 @@ const google::protobuf::Descriptor * ConfluentSchemaRegistry::getProtobufSchema(
             source_tree.MapPath("", ".");
 
             google::protobuf::compiler::SourceTreeDescriptorDatabase db(&source_tree);
-            google::protobuf::DescriptorPool pool(&db);
             google::protobuf::compiler::Importer importer(&source_tree, &error_collector);
 
             std::istringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -82,11 +90,10 @@ const google::protobuf::Descriptor * ConfluentSchemaRegistry::getProtobufSchema(
             if (!parser.Parse(&tokenizer, &file_proto))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to parse proto text");
 
-            file_proto.set_name("inline.proto");
+            file_proto.set_name(generator.createRandom().toString() + ".proto");
             google::protobuf::FileDescriptorSet fds;
             *fds.add_file() = file_proto;
 
-            google::protobuf::DescriptorPool independent_pool;
             return std::make_shared<const google::protobuf::Descriptor *>(independent_pool.BuildFile(file_proto)->message_type(0));
         });
     return *schema;

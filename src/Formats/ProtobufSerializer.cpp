@@ -2541,17 +2541,17 @@ namespace
                     int field_tag;
                     while (reader->readFieldNumber(field_tag))
                     {
-                        size_t field_index = findFieldIndexByFieldTag(field_tag);
-                        if (field_index == static_cast<size_t>(-1))
+                        auto field_index = findFieldIndexByFieldTag(field_tag);
+                        if (!field_index.has_value())
                         {
                             if (use_confluent)
                                 break;
                             else
                                 continue;
                         }
-                        auto * field_serializer = field_infos[field_index].field_serializer.get();
+                        auto * field_serializer = field_infos[field_index.value()].field_serializer.get();
                         field_serializer->readRow(row_num);
-                        field_infos[field_index].field_read = true;
+                        field_infos[field_index.value()].field_read = true;
                     }
 
                     for (auto & info : field_infos)
@@ -2626,7 +2626,7 @@ namespace
         }
 
     private:
-        size_t findFieldIndexByFieldTag(int field_tag)
+        std::optional<size_t> findFieldIndexByFieldTag(int field_tag)
         {
             while (true)
             {
@@ -2634,14 +2634,20 @@ namespace
                     return last_field_index;
                 if (field_tag < last_field_tag)
                     break;
-                if (++last_field_index >= field_infos.size())
+                if (!last_field_index)
+                {
+                    last_field_index = 0;
+                    if (last_field_index.value() >= field_infos.size())
+                        break;
+                }
+                else if (++(*last_field_index) >= field_infos.size())
                     break;
-                last_field_tag = field_infos[last_field_index].field_tag;
+                last_field_tag = field_infos[last_field_index.value()].field_tag;
             }
             last_field_tag = field_tag;
             auto it = field_index_by_field_tag.find(field_tag);
             if (it == field_index_by_field_tag.end())
-                last_field_index = static_cast<size_t>(-1);
+                last_field_index = std::nullopt;
             else
                 last_field_index = it->second;
             return last_field_index;
@@ -2686,19 +2692,19 @@ namespace
 
         const FieldDescriptor * const parent_field_descriptor;
         bool has_envelope_as_parent = false;
-        const bool with_length_delimiter;
-        const bool google_wrappers_special_treatment;
+        const bool with_length_delimiter = false;
+        const bool google_wrappers_special_treatment = false;
         const std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
-        const bool should_skip_if_empty;
+        const bool should_skip_if_empty = false;
         ProtobufReader * const reader;
         ProtobufWriter * const writer;
         std::vector<FieldInfo> field_infos;
         std::unordered_map<int, size_t> field_index_by_field_tag;
         MutableColumns mutable_columns;
-        bool use_confluent;
+        bool use_confluent = false;
         bool has_missing_columns = false;
         int last_field_tag = 0;
-        size_t last_field_index = static_cast<size_t>(-1);
+        std::optional<size_t> last_field_index = std::nullopt;
     };
 
     /// Serializes a top-level envelope message in the protobuf schema.

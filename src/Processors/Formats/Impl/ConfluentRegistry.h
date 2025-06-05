@@ -12,6 +12,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
+#include <Poco/UUIDGenerator.h>
 
 #if USE_AVRO
 #    include <Compiler.hh>
@@ -51,6 +52,8 @@ public:
 #endif
 
 private:
+    google::protobuf::DescriptorPool independent_pool;
+    Poco::UUIDGenerator generator;
     String fetchSchema(uint32_t id);
 
     Poco::URI base_url;

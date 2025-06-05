@@ -31,6 +31,12 @@
 #   include <google/protobuf/io/zero_copy_stream_impl.h>
 #   include <google/protobuf/io/tokenizer.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric ProtobufSchemaRegistryCacheBytes;
+    extern const Metric ProtobufSchemaRegistryCacheCells;
+}
+
 namespace DB
 {
 
@@ -133,7 +139,7 @@ size_t ProtobufRowInputFormat::countRows(size_t max_block_size)
 
 #define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
 /// Cache of Schema Registry URL -> SchemaRegistry
-static CacheBase<std::string, ConfluentSchemaRegistry> schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
+static CacheBase<std::string, ConfluentSchemaRegistry> schema_registry_cache(CurrentMetrics::ProtobufSchemaRegistryCacheBytes, CurrentMetrics::ProtobufSchemaRegistryCacheCells, SCHEMA_REGISTRY_CACHE_MAX_SIZE);
 
 static std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
 {
@@ -220,11 +226,11 @@ bool ProtobufConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadE
 
     SchemaId schema_id = readConfluentSchemaId(*in, first_row);
     first_row = false;
-    descriptor = const_cast<google::protobuf::Descriptor *>(schema_registry->getProtobufSchema(schema_id));
+    descriptor = schema_registry->getProtobufSchema(schema_id);
     in->ignore();
 
-    auto schema = protobufSchemaToCHSchema(descriptor, format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference);
-    createReaderAndSerializer();
+    if (descriptor)
+        createReaderAndSerializer();
 
     size_t row_num = columns.empty() ? 0 : columns[0]->size();
 

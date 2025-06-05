@@ -86,7 +86,7 @@ private:
     std::unique_ptr<ProtobufReader> reader;
     std::unique_ptr<ProtobufSerializer> serializer;
 
-    google::protobuf::Descriptor * descriptor;
+    const google::protobuf::Descriptor * descriptor;
     std::vector<size_t> missing_column_indices;
     bool with_length_delimiter;
     bool flatten_google_wrappers;
