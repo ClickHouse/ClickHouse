@@ -956,8 +956,6 @@ void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, cons
             ++i;
         }
     }
-
-    return;
 }
 
 void StorageKafka2::saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, const std::filesystem::path & keeper_path_to_data, const String & data)
