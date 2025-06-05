@@ -57,7 +57,9 @@ Aws::Utils::Logging::LogLevel AWSLogger::GetLogLevel() const
     return Aws::Utils::Logging::LogLevel::Info;
 }
 
-bool startsWith(const char* str, const char* prefix) {
+// this function helps to avoid read all str when strlen is called
+bool startsWith(const char* str, const char* prefix)
+{
     while (*prefix && *str == *prefix)
     {
         ++str;
@@ -69,7 +71,7 @@ bool startsWith(const char* str, const char* prefix) {
 bool isMuted(const char * message)
 {
     // this is a way how to mure scary logs from `AWSXMLClient::BuildAWSError` about 404
-    // when 404 is expected responce
+    // when 404 is expected response
     if (!Expected404Scope::is404Expected())
         return false;
 
@@ -80,7 +82,7 @@ bool isMuted(const char * message)
     const char * code_str = message + prefix.size();
     size_t len = 3;
 
-    // chech that strlen(code_str) >= len
+    // check that strlen(code_str) >= len
     for (size_t i = 0; i < len; ++i)
         if (!code_str[i])
             return false;
