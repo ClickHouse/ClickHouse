@@ -125,6 +125,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace ActionLocks
@@ -642,9 +643,13 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->getEmbeddedDictionaries().reload();
             break;
         case Type::RELOAD_CONFIG:
+        {
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated("SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
             system_context->reloadConfig();
             break;
+        }
         case Type::RELOAD_USERS:
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
