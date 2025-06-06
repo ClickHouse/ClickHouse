@@ -237,6 +237,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
                         break;
                     }
                 }
+                if (output_result_to_delete == "")
+                    output_result_to_delete = search_column; /// old analyzer
                 filter_expression.removeUnusedResult(output_result_to_delete);
                 filter_expression.removeUnusedActions();
                 updated_layers++;
