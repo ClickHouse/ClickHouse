@@ -340,7 +340,10 @@ void filterPartsUsingProjection(
         if (it != created_projections.end() && !it->second->is_broken)
         {
             RangesInDataPart projection_part(
-                it->second, part_with_ranges.part_index_in_query, part_with_ranges.part_starting_offset_in_query);
+                it->second,
+                part_with_ranges.data_part,
+                part_with_ranges.part_index_in_query,
+                part_with_ranges.part_starting_offset_in_query);
             projection_parts.push_back(std::move(projection_part));
         }
         else
