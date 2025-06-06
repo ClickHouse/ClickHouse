@@ -536,23 +536,6 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     return QueryProcessingStage::WithMergeableState;
 }
 
-class ColumnNameCollectorVisitor : public ConstInDepthQueryTreeVisitor<ColumnNameCollectorVisitor>
-{
-public:
-    explicit ColumnNameCollectorVisitor(std::unordered_set<std::string> & column_names_)
-        : column_names(column_names_)
-    {}
-
-    void visitImpl(const QueryTreeNodePtr & node)
-    {
-        if (const auto * column_node = node->as<ColumnNode>())
-            column_names.insert(column_node->getColumnName());
-    }
-
-private:
-    std::unordered_set<std::string> & column_names;
-};
-
 /// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp
 /// Will skip merging step in the initial server when the following conditions are met:
 /// 1. Sharding key columns should be a subset of expression columns.
@@ -568,10 +551,10 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     // may have internal table aliases (e.g. __table1.id). Setting use_column_identifier_as_action_node_name=false
     // makes the DAG builder use plain column names without table qualifiers.
     auto [expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
-        expr, 
-        empty_input_columns, 
-        query_info.planner_context, 
-        empty_correlated_columns_set, 
+        expr,
+        empty_input_columns,
+        query_info.planner_context,
+        empty_correlated_columns_set,
         false /* use_column_identifier_as_action_node_name */);
 
     correlated_subtrees.assertEmpty("in sharding key expression");
@@ -582,16 +565,18 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     const auto & expr_key_required_columns = expression_dag.getRequiredColumnsNames();
 
     const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
-    
-    for (const auto & col : sharding_key_dag.getRequiredColumnsNames()){
+
+    for (const auto & col : sharding_key_dag.getRequiredColumnsNames())
+    {
         if (std::ranges::find(expr_key_required_columns, col) == expr_key_required_columns.end())
             return false;
     }
-        
+
     auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(expression_dag);
     for (const auto & node : irreducibe_nodes)
     {
-        if (node->type == ActionsDAG::ActionType::FUNCTION && !isInjectiveFunction(node)){
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !isInjectiveFunction(node))
+        {
             return false;
         }
     }
