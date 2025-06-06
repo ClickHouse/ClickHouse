@@ -97,7 +97,7 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
-static Poco::JSON::Object::Ptr readJSON(
+Poco::JSON::Object::Ptr readJSON(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
     StorageObjectStorage::ConfigurationPtr configuration_ptr,
