@@ -1065,23 +1065,56 @@ inline void writeTimeText(const LocalTime & local_time, WriteBuffer & buf)
     if (local_time.negative())
         buf.write("-", 1);
 
-    if (local_time.hour() > 99)
-        buf.write(std::to_string('0' + ((local_time.hour() / 100) % 10)).c_str(), 1); // H   - if we have a 3-digit hour
-    if (local_time.hour() > 9)
-        buf.write(std::to_string('0' + ((local_time.hour() / 10) % 10)).c_str(), 1); // H   - if we have a ≥ 2-digit hour
+    const auto hour = local_time.hour();
+    const auto minute = local_time.minute();
+    const auto second = local_time.second();
 
-    char buffer[9] = {
-        static_cast<char>('0' + (local_time.hour() % 10)),         // H
-        delimiter1,
-        static_cast<char>('0' + (local_time.minute() / 10)),      // M
-        static_cast<char>('0' + (local_time.minute() % 10)),      // M
-        delimiter1,
-        static_cast<char>('0' + (local_time.second() / 10)),      // S
-        static_cast<char>('0' + (local_time.second() % 10))       // S
-    };
-
-
-    buf.write(buffer, 9);
+    // Handle hours with variable digits
+    if (hour >= 100)
+    {
+        // 3-digit hours
+        char buffer[9] = {
+            static_cast<char>('0' + (hour / 100)),      // H
+            static_cast<char>('0' + ((hour / 10) % 10)), // H
+            static_cast<char>('0' + (hour % 10)),        // H
+            delimiter1,
+            static_cast<char>('0' + (minute / 10)),      // M
+            static_cast<char>('0' + (minute % 10)),      // M
+            delimiter1,
+            static_cast<char>('0' + (second / 10)),      // S
+            static_cast<char>('0' + (second % 10))       // S
+        };
+        buf.write(buffer, 9);
+    }
+    else if (hour >= 10)
+    {
+        // 2-digit hours
+        char buffer[8] = {
+            static_cast<char>('0' + (hour / 10)),        // H
+            static_cast<char>('0' + (hour % 10)),        // H
+            delimiter1,
+            static_cast<char>('0' + (minute / 10)),      // M
+            static_cast<char>('0' + (minute % 10)),      // M
+            delimiter1,
+            static_cast<char>('0' + (second / 10)),      // S
+            static_cast<char>('0' + (second % 10))       // S
+        };
+        buf.write(buffer, 8);
+    }
+    else
+    {
+        // 1-digit hours
+        char buffer[7] = {
+            static_cast<char>('0' + hour),               // H
+            delimiter1,
+            static_cast<char>('0' + (minute / 10)),      // M
+            static_cast<char>('0' + (minute % 10)),      // M
+            delimiter1,
+            static_cast<char>('0' + (second / 10)),      // S
+            static_cast<char>('0' + (second % 10))       // S
+        };
+        buf.write(buffer, 7);
+    }
 }
 
 inline void writeTimeText(const LocalTime & local_time, WriteBuffer & buf)
