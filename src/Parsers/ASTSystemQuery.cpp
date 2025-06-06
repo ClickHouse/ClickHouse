@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
+#include <type_traits>
 
 namespace DB
 {
@@ -443,6 +444,43 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     comma = true;
                 ostr << ' ';
                 print_identifier(cur_log);
+            }
+            break;
+        }
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+        {
+
+            if (!function_name.empty())
+            {
+                ostr << ' ';
+                print_identifier(function_name);
+            }
+
+            if (!handler_name.empty())
+            {
+                ostr << ' ';
+                print_identifier(handler_name);
+            }
+
+            if (parameters && !parameters->empty())
+            {
+                bool comma = false;
+                for (const auto & param : *parameters)
+                {
+                    if (comma)
+                        ostr << ',';
+                    else
+                        comma = true;
+                    std::visit([&](const auto & value)
+                    {
+                        using T = std::decay_t<decltype(value)>;
+                        if constexpr (std::is_same_v<T, String>)
+                            ostr << ' ' << quoteString(value);
+                        else
+                            ostr << ' ' << value;
+                    }, param);
+                }
             }
             break;
         }

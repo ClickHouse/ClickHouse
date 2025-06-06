@@ -42,6 +42,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/XRayInstrumentationManager.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -857,7 +858,21 @@ BlockIO InterpreterSystemQuery::execute()
             unloadPrimaryKeys();
             break;
         }
-
+#if USE_XRAY
+        case Type::INSTRUMENT_ADD:
+        {
+            instrumentWithXRay(true, query);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            instrumentWithXRay(false, query);
+            break;
+        }
+#else
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+#endif
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
         {
@@ -1351,6 +1366,31 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     }
 }
 
+#if USE_XRAY
+[[clang::xray_never_instrument]] void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
+{
+    // query.handler_name -- handler to be set for the function
+    // query.function_name -- name of the function to be patched - rename in query to function name
+    // query.parameters -- parameters for the handler. should be one of the following: string, int, float
+    try
+    {
+        if (add)
+            XRayInstrumentationManager::instance().setHandlerAndPatch(query.function_name, query.handler_name, query.parameters, getContext());
+        else
+            XRayInstrumentationManager::instance().unpatchFunction(query.function_name, query.handler_name);
+    }
+    catch (const DB::Exception & e)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Failed to instrument function '{}' with handler '{}': {}",
+            query.function_name,
+            query.handler_name,
+            e.what());
+    }
+}
+#endif
+
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
@@ -1781,6 +1821,16 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::UNLOCK_SNAPSHOT:
         {
             required_access.emplace_back(AccessType::BACKUP);
+            break;
+        }
+        case Type::INSTRUMENT_ADD:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_ADD);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
         case Type::STOP_THREAD_FUZZER:
