@@ -110,9 +110,16 @@ def test_disk_readonly_prometheus_status(started_cluster):
     output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
     logging.info(f"Initial permissions for {disk_path}: {output}")
 
+    contents = node.exec_in_container(["ls", "-la", disk_path]).strip()
+    logging.info(f"Contents of {disk_path}:\n{contents}")
+
+
     # Step 1: Remove write permission to simulate broken disk
     node.exec_in_container(["chmod", "555", disk_path])
     logging.info(f"Changed permissions to 555 on {disk_path} to simulate readonly disk")
+
+    contents = node.exec_in_container(["ls", "-la", disk_path]).strip()
+    logging.info(f"Contents of {disk_path}:\n{contents}")
 
     output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
     logging.info(f"After changed to readonly,  permissions for {disk_path}: {output}")
