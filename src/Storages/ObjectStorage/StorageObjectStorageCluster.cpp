@@ -101,7 +101,7 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */true,
+        /* if_not_updated_before */false,
         /* check_consistent_with_previous_metadata */true);
     return configuration->totalRows();
 }
@@ -111,7 +111,7 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */true,
+        /* if_not_updated_before */false,
         /* check_consistent_with_previous_metadata */true);
     return configuration->totalBytes();
 }
