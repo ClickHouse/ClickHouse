@@ -30,6 +30,11 @@ bool MutationCommand::isBarrierCommand() const
     return type == RENAME_COLUMN;
 }
 
+bool MutationCommand::isDeleteCommand() const
+{
+    return type == DELETE || type == APPLY_DELETED_MASK;
+}
+
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
 {
     if (command->type == ASTAlterCommand::DELETE)
@@ -149,7 +154,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_INDEX;
-        res.column_name = command->index->as<ASTIdentifier &>().name();
+        res.index_name = command->index->as<ASTIdentifier &>().name();
         if (command->partition)
             res.partition = command->partition->clone();
         if (command->clear_index)
@@ -173,7 +178,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_PROJECTION;
-        res.column_name = command->projection->as<ASTIdentifier &>().name();
+        res.projection_name = command->projection->as<ASTIdentifier &>().name();
         if (command->partition)
             res.partition = command->partition->clone();
         if (command->clear_projection)

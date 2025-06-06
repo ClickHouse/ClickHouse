@@ -140,6 +140,7 @@ struct TTLTableDescription
 
     /// Parse description from string
     static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
+    TTLDescriptions getAllDescriptions() const;
 };
 
 }
