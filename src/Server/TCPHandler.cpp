@@ -126,6 +126,8 @@ namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
     extern const ServerSettingsBool process_query_plan_packet;
+    extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
+    extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
 }
 }
 
@@ -167,6 +169,7 @@ namespace DB::ErrorCodes
     extern const int USER_EXPIRED;
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_TABLE;
+    extern const int TCP_CONNECTION_LIMIT_EXCEEDED;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -319,6 +322,8 @@ TCPHandler::~TCPHandler() = default;
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
+
+    connection_start_time = Poco::Timestamp();
 
     extractConnectionSettingsFromContext(server.context());
 
@@ -750,6 +755,8 @@ void TCPHandler::runImpl()
 
             sendLogs(query_state.value());
             sendEndOfStream(query_state.value());
+
+            checkConnectionLimits();
 
             query_state->finalizeOut(out);
         }
@@ -2681,6 +2688,32 @@ void TCPHandler::run()
     {
         tryLogCurrentException(log, "TCPHandler");
         throw;
+    }
+}
+
+void TCPHandler::checkConnectionLimits()
+{
+    ++query_count;
+    const auto & server_settings = server.context()->getServerSettings();
+    UInt64 max_queries = server_settings[ServerSetting::tcp_close_connection_after_queries_num];
+    UInt64 max_seconds = server_settings[ServerSetting::tcp_close_connection_after_queries_seconds];
+
+    auto elapsed_seconds = static_cast<UInt64>((Poco::Timestamp() - connection_start_time) / Poco::Timestamp::resolution());
+
+    bool max_queries_exceeded = max_queries > 0 && query_count >= max_queries;
+    bool max_seconds_exceeded = max_seconds > 0 && elapsed_seconds >= max_seconds;
+
+    if (max_queries_exceeded || max_seconds_exceeded)
+    {
+        LOG_INFO(log, "Closing connection due to limits: queries={}, seconds={}", query_count, elapsed_seconds);
+
+        std::string reason;
+        if (max_queries_exceeded)
+            reason = fmt::format("query limit of {}", max_queries);
+        if (max_seconds_exceeded)
+            reason += (reason.empty() ? "" : " and ") + fmt::format("time limit of {} seconds", max_seconds);
+
+        throw Exception(ErrorCodes::TCP_CONNECTION_LIMIT_EXCEEDED, "Connection closed: exceeded {}", reason);
     }
 }
 
