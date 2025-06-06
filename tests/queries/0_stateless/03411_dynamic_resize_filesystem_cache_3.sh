@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # is to be run in parallel to other tests, not to produce .reference.
 # `s3_cache` is used for many tests and for all tests in case of s3-storage run.
 disk_name="s3_cache"
-tabke_name="table_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+table_name="table_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS ${table_name};
