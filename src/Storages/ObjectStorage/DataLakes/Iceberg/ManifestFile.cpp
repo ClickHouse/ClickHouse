@@ -339,6 +339,17 @@ ManifestFileContent::ManifestFileContent(
                     DataFileSpecificInfo{});
                 break;
             case FileContentType::POSITIONAL_DELETE: {
+                std::optional<String> reference_file_path = std::nullopt;
+                try
+                {
+                    // reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
+                    reference_file_path
+                        = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
+                              .safeGet<String>();
+                }
+                catch (const DB::Exception &)
+                {
+                }
                 this->position_deletes_files.emplace_back(
                     file_path_key,
                     file_path,
@@ -347,10 +358,7 @@ ManifestFileContent::ManifestFileContent(
                     partition_key_value,
                     &common_partition_specification,
                     columns_infos,
-                    PositionalDeleteFileSpecificInfo{
-                        .reference_file_path
-                        = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
-                              .safeGet<String>()});
+                    PositionalDeleteFileSpecificInfo{.reference_file_path = reference_file_path});
                 break;
             }
             default:

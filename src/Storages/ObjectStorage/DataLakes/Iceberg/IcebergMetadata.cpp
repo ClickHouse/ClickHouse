@@ -818,6 +818,8 @@ ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 
 std::vector<Iceberg::ManifestFileEntry>
 IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType file_content_type) const
 {
+    if (!relevant_snapshot)
+        return {};
     std::optional<std::vector<Iceberg::ManifestFileEntry>> & cached_files = (file_content_type == FileContentType::DATA)
         ? cached_unprunned_files_for_last_processed_snapshot
         : cached_unprunned_position_deletes_files_for_last_processed_snapshot;
