@@ -32,7 +32,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase(0, nullptr, 0, file_size_)
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
@@ -67,6 +67,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                    .withBufSize(buf_size)
                    .withHostFilter(&context->getRemoteHostFilter())
                    .withExternalBuf(use_external_buffer)
+                   .withDelayInit(false)
                    .create(credentials);
 
     if (read_until_position)
@@ -109,20 +110,17 @@ bool ReadBufferFromWebServer::nextImpl()
     if (use_external_buffer)
     {
         impl->set(internal_buffer.begin(), internal_buffer.size());
+
+        chassert(working_buffer.begin());
+        chassert(pos >= working_buffer.begin());
+        chassert(pos <= working_buffer.end());
     }
     else
     {
         impl->position() = position();
     }
 
-    chassert(available() == 0);
-
-    chassert(pos >= working_buffer.begin());
-    chassert(pos <= working_buffer.end());
-
-    chassert(working_buffer.begin() != nullptr);
     chassert(impl->buffer().begin() != nullptr);
-
     chassert(impl->available() == 0);
 
     auto result = impl->next();

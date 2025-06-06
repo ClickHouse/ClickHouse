@@ -114,6 +114,8 @@ private:
 
     void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;
 
+    void initialize();
+
     CallResult  callImpl(
         Poco::Net::HTTPResponse & response,
         const std::string & method_,
@@ -125,7 +127,7 @@ private:
         const String & method_,
         const std::optional<HTTPRange> & range);
 
-    std::unique_ptr<ReadBuffer> initialize();
+    std::unique_ptr<ReadBuffer> createReadBuffer();
 
     std::optional<size_t> tryGetFileSize() override;
 
