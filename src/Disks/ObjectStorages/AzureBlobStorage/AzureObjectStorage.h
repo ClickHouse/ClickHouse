@@ -40,6 +40,9 @@ public:
 
     ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
 
+    std::string getRootPrefix() const override { return object_namespace; }
+
+    /// Object keys are unique within the object namespace (container + prefix).
     std::string getCommonKeyPrefix() const override { return ""; }
 
     std::string getDescription() const override { return description; }
