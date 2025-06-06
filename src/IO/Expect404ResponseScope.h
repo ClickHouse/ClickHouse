@@ -1,7 +1,6 @@
 #pragma once
 
-#include <base/types.h>
-#include <cstddef>
+#include <thread>
 
 namespace DB
 {
@@ -18,7 +17,7 @@ public:
     static bool is404Expected();
 
 private:
-    UInt64 initial_thread_id;
+    std::thread::id initial_thread_id;
 };
 
 }
