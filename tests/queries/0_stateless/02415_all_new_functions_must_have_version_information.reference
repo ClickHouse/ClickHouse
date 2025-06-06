@@ -232,7 +232,6 @@ dictGetUUIDOrDefault
 dictHas
 dictIsIn
 displayName
-divideOrNull
 domain
 domainRFC
 domainWithoutWWW
@@ -377,7 +376,6 @@ initcapUTF8
 initialQueryID
 initialQueryStartTime
 initializeAggregation
-intDivOrNull
 intExp10
 intExp2
 intHash32
@@ -438,7 +436,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-moduloOrNull
 monthName
 mortonDecode
 mortonEncode

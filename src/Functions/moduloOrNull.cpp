@@ -22,7 +22,7 @@ if the right argument is 0.
 Returns the remainder of the division of `x` by `y`, or null when the divisor is zero.
     )";
     FunctionDocumentation::Examples examples = {{"moduloOrNull by zero", "SELECT moduloOrNull(5, 0)", "\\N"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
@@ -52,7 +52,7 @@ Returns the difference between `x` and the nearest integer not greater than
 `x` divisible by `y`, `null` when the divisor is zero.
     )";
     FunctionDocumentation::Examples examples = {{"positiveModuloOrNull", "SELECT positiveModuloOrNull(5, 0)", "\\N"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
