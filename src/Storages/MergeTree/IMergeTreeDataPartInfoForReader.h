@@ -1,6 +1,7 @@
 #pragma once
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ColumnsDescription.h>
 #include <Core/NamesAndTypes.h>
@@ -71,6 +72,10 @@ public:
     virtual String getTableName() const = 0;
 
     virtual void reportBroken() = 0;
+
+    virtual void setReadHints(const RangesInDataPartReadHints & read_hints_) = 0;
+
+    virtual const RangesInDataPartReadHints & getReadHints() const = 0;
 };
 
 using MergeTreeDataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader>;

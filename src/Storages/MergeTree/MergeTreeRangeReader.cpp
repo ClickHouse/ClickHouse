@@ -4,6 +4,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
@@ -1035,6 +1036,14 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     /// Column _block_offset is the same as _part_offset if it's not persisted in part.
     if (read_sample_block.has(BlockOffsetColumn::name))
         add_offset_column(BlockOffsetColumn::name);
+
+    if (merge_tree_reader->data_part_info_for_read->getReadHints().ann_search_results.has_value())
+    {
+        /// Read hints are currently only used by vector search indexes!
+        part_offsets_auto_column = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+        auto distance_pos = read_sample_block.getPositionByName("_distance");
+        columns[distance_pos] = ColumnFloat32::create(result.numReadRows(), float(99999.99));
+    }
 }
 
 ColumnPtr MergeTreeRangeReader::createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
@@ -1313,6 +1322,58 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
+void MergeTreeRangeReader::executeActionsForVectorSearchReadHints(ReadResult & result, const Block & previous_header) const
+{
+    auto before_rows = result.num_rows;
+
+    /// Populate a filter that is True only for the exact "neighbour" part offsets we got from vector index
+    auto filter_data = ColumnUInt8::create(result.num_rows, UInt8(0));
+    IColumn::Filter & filter = filter_data->getData();
+
+    /// Populate the "_distance" virtual column from the distances we got from vector index
+    auto distance_pos = read_sample_block.getPositionByName("_distance");
+    distance_pos += previous_header.columns();
+    auto distance_column = IColumn::mutate(std::move(result.columns[distance_pos]));
+    auto & distances = typeid_cast<ColumnFloat32 *>(distance_column.get())->getData();
+
+    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
+    const auto & offsets_and_distances = read_hints.ann_search_results.value();
+    auto exact_part_offsets = offsets_and_distances.rows;
+    chassert (offsets_and_distances.distances.has_value());
+    const auto exact_distances = offsets_and_distances.distances.value();
+    chassert (exact_part_offsets.size() == exact_distances.size());
+
+    /// stash the distance for an offset before sorting the offsets
+    std::unordered_map<UInt64, float> offset_to_distance;
+    for (size_t i = 0; i < exact_distances.size(); i++)
+        offset_to_distance[exact_part_offsets[i]] = exact_distances[i];
+
+    std::sort(exact_part_offsets.begin(), exact_part_offsets.end());
+
+    const auto & offsets  = typeid_cast<const ColumnUInt64&>(*part_offsets_auto_column).getData();
+    size_t j = 0;
+    for (size_t i = 0; i < result.num_rows;i++)
+    {
+        while (j < exact_part_offsets.size() && offsets[i] > exact_part_offsets[j])
+            j++;
+
+        if (j >= exact_part_offsets.size())
+            break;
+
+        if (offsets[i] == exact_part_offsets[j])
+        {
+            filter[i] = true;
+            distances[i] = offset_to_distance[offsets[i]];
+            j++;
+        }
+    }
+
+    result.columns[distance_pos] = std::move(distance_column);
+    result.applyFilter(FilterWithCachedCount(filter_data->getPtr()));
+    auto after_rows = result.num_rows;
+    LOG_DEBUG(log, "Used similarity index to shortlist exact rows, before {} , after {}", before_rows, after_rows);
+}
+
 void MergeTreeRangeReader::executeActionsBeforePrewhere(ReadResult & result, Columns & read_columns, const Block & previous_header, size_t num_read_rows) const
 {
     merge_tree_reader->fillVirtualColumns(read_columns, num_read_rows);
@@ -1355,6 +1416,9 @@ void MergeTreeRangeReader::executeActionsBeforePrewhere(ReadResult & result, Col
 void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const
 {
     result.checkInternalConsistency();
+
+    if (merge_tree_reader->data_part_info_for_read->getReadHints().ann_search_results.has_value())
+        executeActionsForVectorSearchReadHints(result, previous_header);
 
     if (!prewhere_info)
         return;
