@@ -12,8 +12,8 @@ using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMonth
 REGISTER_FUNCTION(ToMonth)
 {
     FunctionDocumentation::Description description_to_month = R"(
- Returns the month component (1-12) of a `Date` or `DateTime` value.
-        )";
+Returns the month component (1-12) of a `Date` or `DateTime` value.
+    )";
     FunctionDocumentation::Syntax syntax_to_month = "toMonth(datetime)";
     FunctionDocumentation::Arguments arguments_to_month = {
         {"datetime", "A Date or DateTime value to get the month from. [`Date`](/sql-reference/data-types/date)/[`Date32`](/sql-reference/data-types/date32)/[`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)."}
