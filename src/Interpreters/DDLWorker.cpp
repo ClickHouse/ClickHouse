@@ -1159,19 +1159,29 @@ bool DDLWorker::initializeMainThread()
 
 void DDLWorker::runMainThread()
 {
-    auto reset_state = [&]()
+    auto mark_reinitializing = [&]()
     {
         initialized = false;
         /// It will wait for all threads in pool to finish and will not rethrow exceptions (if any).
         /// We create new thread pool to forget previous exceptions.
         if (1 < pool_size)
-            worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
+            worker_pool = std::make_unique<ThreadPool>(
+                CurrentMetrics::DDLWorkerThreads,
+                CurrentMetrics::DDLWorkerThreadsActive,
+                CurrentMetrics::DDLWorkerThreadsScheduled,
+                pool_size);
+    };
+
+    auto reset_state = [&]()
+    {
+        mark_reinitializing();
         /// Clear other in-memory state, like server just started.
         current_tasks.clear();
         last_skipped_entry_name.reset();
         max_id = 0;
         LOG_INFO(log, "Cleaned DDLWorker state");
     };
+
 
     setThreadName("DDLWorker");
     LOG_DEBUG(log, "Starting DDLWorker thread");
@@ -1204,17 +1214,22 @@ void DDLWorker::runMainThread()
             subsequent_errors_count = 0;
 
             LOG_DEBUG(log, "Waiting for queue updates");
+            auto zookeeper = getAndSetZooKeeper();
             queue_updated_event->wait();
+            if (zookeeper->expired())
+            {
+                LOG_INFO(log, "Zookeeper connection expired during the events wait, will try to reconnect again");
+                mark_reinitializing();
+                sleepForSeconds(1);
+                continue;
+            }
         }
         catch (const Coordination::Exception & e)
         {
             subsequent_errors_count = 0;
             if (Coordination::isHardwareError(e.code))
             {
-                initialized = false;
-                /// Wait for pending async tasks
-                if (1 < pool_size)
-                    worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
+                mark_reinitializing();
                 LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}", getCurrentExceptionMessage(true));
             }
             else
@@ -1299,6 +1314,27 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         active_node_holders.clear();
     }
 
+    for (auto it = active_node_holders.begin(); it != active_node_holders.end();)
+    {
+        auto & zk = it->second.first;
+        if (zk->expired())
+        {
+            const auto & host_id = it->first;
+            String active_path = fs::path(replicas_dir) / host_id / "active";
+            LOG_DEBUG(log, "Zookeeper of active_path {} expired, removing the holder", active_path);
+
+            auto & active_node_holder = it->second.second;
+            if (active_node_holder)
+                active_node_holder->setAlreadyRemoved();
+            it = active_node_holders.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+
     const auto maybe_secure_port = context->getTCPPortSecure();
     const auto port = context->getTCPPort();
 
@@ -1335,10 +1371,10 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         }
 
         String active_path = fs::path(replicas_dir) / host_id / "active";
-        if (zookeeper->exists(active_path))
-            continue;
-
         String active_id = toString(ServerUUID::get());
+
+        zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
+
         LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
 
         zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
