@@ -89,9 +89,10 @@ public:
     }
 
 private:
-    void onRemoveOverflowWeightLoss(size_t weight_loss) override
+    /// Called when cache eviction occurs
+    void onEviction(const EvictionStats& stats) override
     {
-        ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheWeightLost, weight_loss);
+        ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheWeightLost, stats.total_weight_loss);
     }
 };
 

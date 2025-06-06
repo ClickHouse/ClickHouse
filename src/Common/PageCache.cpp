@@ -145,9 +145,9 @@ bool PageCache::contains(const PageCacheKey & key, bool inject_eviction) const
     return shard.contains(key_hash);
 }
 
-void PageCache::Shard::onRemoveOverflowWeightLoss(size_t weight_loss)
+void PageCache::Shard::onEviction(const EvictionStats& stats)
 {
-    ProfileEvents::increment(ProfileEvents::PageCacheWeightLost, weight_loss);
+    ProfileEvents::increment(ProfileEvents::PageCacheWeightLost, stats.total_weight_loss);
 }
 
 void PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)

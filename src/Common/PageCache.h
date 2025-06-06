@@ -98,7 +98,7 @@ private:
     public:
         using Base::Base;
 
-        void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) override;
+        void onEviction(const EvictionStats & /*stats*/) override;
     };
 
 public:

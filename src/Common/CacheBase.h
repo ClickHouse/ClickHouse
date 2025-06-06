@@ -67,7 +67,6 @@ public:
     {
         auto on_eviction_function = [this](const EvictionStats & stats)
         {
-            onRemoveOverflowWeightLoss(stats.total_weight_loss); // Backward compatibility
             onEviction(stats); // New callback with full stats
         };
 
@@ -344,10 +343,6 @@ private:
     friend struct InsertTokenHolder;
 
     InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
-
-    /// Override this method if you want to track how much weight was lost in removeOverflow method.
-    /// Keep existing method for backward compatibility, prefer OnEviction() for new implementations.
-    virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) {}
 
     /// Override this method if you want to track eviction metrics in removeOverflow method.
     /// To add more metrics, add them to EvictionStats struct.
