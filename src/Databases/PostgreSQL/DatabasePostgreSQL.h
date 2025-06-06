@@ -39,6 +39,7 @@ public:
 
     bool canContainMergeTreeTables() const override { return false; }
     bool canContainDistributedTables() const override { return false; }
+    bool canContainRocksDBTables() const override { return false; }
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     ASTPtr getCreateDatabaseQuery() const override;
@@ -76,7 +77,6 @@ private:
     mutable Tables cached_tables;
     std::unordered_set<std::string> detached_or_dropped;
     BackgroundSchedulePoolTaskHolder cleaner_task;
-    std::shared_ptr<IDisk> db_disk;
     LoggerPtr log;
 
     String getTableNameForLogs(const String & table_name) const;
