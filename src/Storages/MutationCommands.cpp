@@ -286,9 +286,12 @@ NameSet MutationCommands::getSecondaryIndicesOnColumnAlterModifyOptions(
     SecondaryIndicesOnColumnsAlterModify & secondary_indices_alter_mode)
 {
     NameSet altered_columns;
-    if (this->size() == 1 && this->front().ast)
+    for (const auto & command : *this)
     {
-        if (auto * alter_cmd = this->front().ast->as<ASTAlterCommand>();
+        if (!command.ast)
+            continue;
+
+        if (auto * alter_cmd = command.ast->as<ASTAlterCommand>();
             alter_cmd && alter_cmd->type==ASTAlterCommand::MODIFY_COLUMN)
         {
             if (auto * column_declaration = alter_cmd->col_decl->as<ASTColumnDeclaration>())
