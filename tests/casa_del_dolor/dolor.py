@@ -71,14 +71,12 @@ parser.add_argument(
     "--min-disks",
     type=int,
     default=1,
-    choices=range(1, 51),
     help="Minimum number of disks to generate",
 )
 parser.add_argument(
     "--max-disks",
     type=int,
     default=5,
-    choices=range(1, 51),
     help="Maximum number of disks to generate",
 )
 parser.add_argument(

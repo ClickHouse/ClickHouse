@@ -434,7 +434,7 @@ def modify_server_settings(
             possible_types = (
                 ["object_storage"]
                 if i == 0
-                else ["object_storage", "cache", "encrypted"]
+                else ["object_storage", "object_storage", "cache", "encrypted"]
             )
             next_created_disk_pair = add_single_disk(
                 i,
