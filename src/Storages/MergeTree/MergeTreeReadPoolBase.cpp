@@ -142,6 +142,16 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
         read_task_info.data_part = part_with_ranges.data_part;
         read_task_info.parent_part = part_with_ranges.parent_part;
+
+        if (read_task_info.data_part->isProjectionPart() && !read_task_info.parent_part)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Did not find parent part {} for projection part {}",
+                read_task_info.data_part->getParentPartName(),
+                read_task_info.data_part->getDataPartStorage().getFullPath());
+        }
+
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
         read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
         read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, getContext());
