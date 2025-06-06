@@ -4665,6 +4665,9 @@ Possible values:
     DECLARE(Bool, optimize_use_implicit_projections, true, R"(
 Automatically choose implicit projections to perform SELECT query
 )", 0) \
+    DECLARE(Bool, optimize_use_projection_filtering, true, R"(
+Enables using projections to filter part ranges even when projections are not selected to perform SELECT query.
+)", 0) \
     DECLARE(Bool, force_optimize_projection, false, R"(
 Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md/#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 
@@ -6780,10 +6783,10 @@ Possible values:
  - 'Streaming' - stream exchange data over network.
 )", EXPERIMENTAL) \
     \
-    /** Experimental tsToGrid aggregate function. */ \
-    DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
-Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
-)", EXPERIMENTAL) \
+    /** Experimental timeSeries* aggregate functions. */ \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
+Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
+)", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

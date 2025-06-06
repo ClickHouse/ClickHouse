@@ -66,10 +66,6 @@ UUIDNumToString
 UUIDStringToNum
 UUIDToNum
 UUIDv7ToDateTime
-YYYYMMDDToDate
-YYYYMMDDToDate32
-YYYYMMDDhhmmssToDateTime
-YYYYMMDDhhmmssToDateTime64
 _CAST
 __actionName
 __bitBoolMaskAnd
@@ -232,7 +228,6 @@ dictGetUUIDOrDefault
 dictHas
 dictIsIn
 displayName
-divideOrNull
 domain
 domainRFC
 domainWithoutWWW
@@ -377,7 +372,6 @@ initcapUTF8
 initialQueryID
 initialQueryStartTime
 initializeAggregation
-intDivOrNull
 intExp10
 intExp2
 intHash32
@@ -422,10 +416,6 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
-makeDate
-makeDate32
-makeDateTime
-makeDateTime64
 map
 mapAdd
 mapFromArrays
@@ -438,7 +428,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-moduloOrNull
 monthName
 mortonDecode
 mortonEncode

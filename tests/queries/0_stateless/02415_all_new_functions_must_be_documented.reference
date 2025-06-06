@@ -151,7 +151,6 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
 demangle
-divideOrNull
 dotProduct
 dumpColumnStructure
 e
@@ -258,7 +257,6 @@ initcap
 initcapUTF8
 initialQueryID
 initializeAggregation
-intDivOrNull
 intExp10
 intExp2
 intHash32
@@ -299,10 +297,6 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
-makeDate
-makeDate32
-makeDateTime
-makeDateTime64
 map
 mapAdd
 mapFromArrays
@@ -315,7 +309,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-moduloOrNull
 monthName
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny

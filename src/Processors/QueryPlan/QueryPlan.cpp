@@ -32,6 +32,7 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("description", int(description));
     changes.emplace_back("actions", int(actions));
     changes.emplace_back("indexes", int(indexes));
+    changes.emplace_back("projections", int(projections));
     changes.emplace_back("sorting", int(sorting));
     changes.emplace_back("distributed", int(distributed));
 
@@ -250,6 +251,9 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
 
     if (options.indexes)
         step.describeIndexes(map);
+
+    if (options.projections)
+        step.describeProjections(map);
 }
 
 JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const
@@ -369,6 +373,9 @@ static void explainStep(
 
     if (options.indexes)
         step.describeIndexes(settings);
+
+    if (options.projections)
+        step.describeProjections(settings);
 
     if (options.distributed)
         step.describeDistributedPlan(settings, options);
