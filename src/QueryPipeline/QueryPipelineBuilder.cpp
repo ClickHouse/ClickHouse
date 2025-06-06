@@ -424,6 +424,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 }
 
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeft(
+    IQueryPlanStep * step,
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
@@ -444,7 +445,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     left->pipe.collected_processors = collected_processors;
 
     /// Remember the last step of the right pipeline.
-    IQueryPlanStep * step = right->pipe.processors->back()->getQueryPlanStep();
     /// Collect the NEW processors for the right pipeline.
     QueryPipelineProcessorsCollector collector(*right, step);
 
@@ -543,7 +543,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             delayed_root_output_ports.emplace_back(&outport);
     }
 
-
     Block left_header = left->getHeader();
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -579,11 +578,13 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             *lit = &joining->getOutputs().front();
         }
 
-
         ++lit;
         ++rit;
         if (collected_processors)
+        {
+            collected_processors->emplace_back(squashing);
             collected_processors->emplace_back(joining);
+        }
 
         left->pipe.processors->emplace_back(std::move(squashing));
         left->pipe.processors->emplace_back(std::move(joining));
@@ -632,6 +633,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     Processors processors = collector.detachProcessors();
     if (step)
         step->appendExtraProcessors(processors);
+
+    if (collected_processors)
+        for (auto & processor : *collected_processors)
+            processor->setQueryPlanStep(step);
 
     left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
     left->resources = std::move(right->resources);
