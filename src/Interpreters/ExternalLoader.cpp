@@ -676,6 +676,7 @@ public:
             }
         }
 
+        size_t loaded_or_scheduled_count = 0;
         /// Iterate through all the objects again and either start loading or just set `next_update_time`.
         {
             std::lock_guard lock{mutex};
@@ -700,11 +701,13 @@ public:
 
                         /// Object was modified or it was failed to reload last time, so it should be reloaded.
                         startLoading(info);
+                        ++loaded_or_scheduled_count;
                     }
                     else if (info.failed())
                     {
                         /// Object was never loaded successfully and should be reloaded.
                         startLoading(info);
+                        ++loaded_or_scheduled_count;
                     }
                     else
                     {
@@ -713,6 +716,7 @@ public:
                 }
             }
         }
+        LOG_DEBUG(log, "Loaded or scheduled for load {} objects", loaded_or_scheduled_count);
     }
 
 private:
