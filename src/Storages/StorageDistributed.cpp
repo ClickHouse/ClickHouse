@@ -412,7 +412,7 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
-        sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAll(), false);
+        sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
     }
@@ -523,7 +523,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     std::optional<QueryProcessingStage::Enum> optimized_stage;
     if (settings[Setting::allow_experimental_analyzer])
-        optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings, storage_snapshot);
+        optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
     else
         optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
     if (optimized_stage)
@@ -542,7 +542,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 /// 2. Sharding key expression is a deterministic function of col1, ..., coln and expression key is injective functions of these col1, ..., coln.
 /// 3. If the expression contains non-injective function, return false.
 bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
-    const QueryTreeNodePtr & expr, [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
+    const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const
 {
     ColumnsWithTypeAndName empty_input_columns;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
@@ -584,7 +584,7 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     return allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches);
 }
 
-std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings, const StorageSnapshotPtr & storage_snapshot) const
+std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
         && has_sharding_key && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
@@ -611,21 +611,21 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     // DISTINCT
     if (query_node.isDistinct())
     {
-        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getProjectionNode(), storage_snapshot, query_info))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getProjectionNode(), query_info))
             return {};
     }
 
     // GROUP BY
     if (query_info.has_aggregates || query_node.hasGroupBy())
     {
-        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || query_node.isGroupByWithGroupingSets() || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getGroupByNode(), storage_snapshot, query_info))
+        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || query_node.isGroupByWithGroupingSets() || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getGroupByNode(), query_info))
             return {};
     }
 
     // LIMIT BY
     if (query_node.hasLimitBy())
     {
-        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getLimitByNode(), storage_snapshot, query_info))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getLimitByNode(), query_info))
             return {};
     }
 
