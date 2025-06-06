@@ -1151,7 +1151,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
                 // the current protocol requires additional round-trip to finish reading for a replica,
                 // i.e., (1) packet with ranges to read and finish = false and (2) empty packet with finish=true.
                 // So, when replica N will ask for their first task, but all tasks have already been assigned,
-                // the replica N will not be in replicas_used set, but it should excluded from cancelling.
+                // the replica N will not be in replicas_used set, but it should be excluded from cancellation.
                 replicas_to_exclude.insert(replica_num);
             }
         }
