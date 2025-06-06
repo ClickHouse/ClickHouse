@@ -283,8 +283,14 @@ def add_single_disk(
         iter_prev_disk = prev_disk = random.choice(range(0, i))
 
         # Cannot create encrypted disk on web storage
-        # Cannot create cached disk on local storage
+        # Cannot create cached disk on local storage or encrypted disk
         while created_disks_types[iter_prev_disk][1] in ("cache", "encrypted"):
+            if (
+                created_disks_types[iter_prev_disk][1] == "encrypted"
+                and disk_type == "cache"
+            ):
+                disk_type = "object_storage"
+                break
             iter_prev_disk = created_disks_types[iter_prev_disk][0]
         if created_disks_types[iter_prev_disk][1] == "web" and disk_type == "encrypted":
             disk_type = "cache"
