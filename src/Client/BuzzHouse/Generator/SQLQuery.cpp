@@ -893,7 +893,7 @@ bool StatementGenerator::joinedTableOrFunction(
     {
         String url;
         String buf;
-        bool first = false;
+        bool first = true;
         TableFunction * tf = tof->mutable_tfunc();
         URLFunc * ufunc = tf->mutable_url();
         const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));

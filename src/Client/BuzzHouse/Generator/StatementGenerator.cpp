@@ -673,7 +673,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         /// Use insert into URL
         String url;
         String buf2;
-        bool first = false;
+        bool first = true;
         URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
         const InOutFormat outf = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
 
