@@ -832,6 +832,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         return false;
 
     const size_t original_buffer_size = internal_buffer.size();
+    if (!original_buffer_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal buffer is empty");
 
     bool implementation_buffer_can_be_reused = false;
     SCOPE_EXIT({
@@ -859,7 +861,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                 }
             }
 
-            if (use_external_buffer && !internal_buffer.empty())
+            if (!internal_buffer.empty())
                 internal_buffer.resize(original_buffer_size);
 
             chassert(!file_segment.isDownloader());
@@ -884,8 +886,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         file_segments->front().increasePriority();
     }
 
-    chassert(!internal_buffer.empty());
-
     auto & file_segment = file_segments->front();
     const auto & current_read_range = file_segment.range();
 
@@ -893,7 +893,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     {
         /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
         /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
-        if (settings.local_fs_buffer_size < internal_buffer.size())
+        if (settings.local_fs_buffer_size && settings.local_fs_buffer_size < internal_buffer.size())
             internal_buffer.resize(settings.local_fs_buffer_size);
 
         /// It would make sense to reduce buffer size to what is left to read (when we read the last segment) regardless of the read_type.
