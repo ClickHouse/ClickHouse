@@ -58,11 +58,15 @@ public:
             NestedPools nested_pools_,
             time_t decrease_error_period_,
             size_t max_error_cap_,
+            time_t min_unstable_period_,
+            time_t max_unstable_period_,
             LoggerPtr log_)
         : nested_pools(std::move(nested_pools_))
         , decrease_error_period(decrease_error_period_)
         , max_error_cap(max_error_cap_)
         , shared_pool_states(nested_pools.size())
+        , min_unstable_period(min_unstable_period_)
+        , max_unstable_period(max_unstable_period_)
         , log(log_)
     {
         for (size_t i = 0;i < nested_pools.size(); ++i)
@@ -95,6 +99,7 @@ public:
         size_t index = 0;
         size_t error_count = 0;
         size_t slowdown_count = 0;
+        bool is_stable = false;
     };
 
     /// This functor must be provided by a client. It must perform a single try that takes a connection
@@ -171,7 +176,8 @@ protected:
     PoolStates shared_pool_states;
     /// The time when error counts were last decreased.
     time_t last_error_decrease_time = 0;
-
+    time_t min_unstable_period = 0;
+    time_t max_unstable_period = 0;
     LoggerPtr log;
 };
 
@@ -193,13 +199,17 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     /// Note that `error_count` and `slowdown_count` are used for ordering, but set to zero in the resulting ShuffledPool
     std::vector<ShuffledPool> shuffled_pools;
     shuffled_pools.reserve(nested_pools.size());
+
+    auto current_time = std::time(nullptr);
     for (size_t i = 0; i < nested_pools.size(); ++i)
-        shuffled_pools.emplace_back(ShuffledPool{.pool = nested_pools[i], .state = &pool_states[i], .index = i});
+        shuffled_pools.emplace_back(ShuffledPool{.pool = nested_pools[i], .state = &pool_states[i], .index = i, .is_stable = pool_states[i].is_unstable_until <= current_time});
 
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
         [use_slowdown_count](const ShuffledPool & lhs, const ShuffledPool & rhs)
         {
+            if (lhs.is_stable != rhs.is_stable)
+                return lhs.is_stable > rhs.is_stable;
             return PoolState::compare(*lhs.state, *rhs.state, use_slowdown_count);
         });
 
@@ -215,6 +225,17 @@ inline void PoolWithFailoverBase<TNestedPool>::updateSharedErrorCounts(std::vect
         auto & pool_state = shared_pool_states[pool.index];
         pool_state.error_count = std::min<UInt64>(max_error_cap, pool_state.error_count + pool.error_count);
         pool_state.slowdown_count += pool.slowdown_count;
+
+        if (pool.is_stable)
+        {
+            pool_state.is_unstable_until = 0;
+            pool_state.unstable_period = 0;
+        }
+        else
+        {
+            pool_state.unstable_period = pool_state.unstable_period == 0 ? min_unstable_period : std::min(pool_state.unstable_period * 2, max_unstable_period);
+            pool_state.is_unstable_until = std::time(nullptr) + pool_state.unstable_period;
+        }
     }
 }
 
@@ -391,6 +412,9 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     /// Priority from the GetPriorityFunc.
     Priority priority{0};
     UInt64 random = 0;
+
+    time_t unstable_period = 0;
+    time_t is_unstable_until = 0;
 
     void randomize()
     {
