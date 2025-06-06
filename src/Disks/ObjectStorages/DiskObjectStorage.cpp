@@ -745,6 +745,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     /// We wrap read buffer from object storage (read_buf = object_storage->readObject())
     /// inside ReadBufferFromRemoteFSGather, so add nested buffer setting.
     read_settings = read_settings.withNestedBuffer();
+    read_settings.remote_read_buffer_use_external_buffer = false;
 
     const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     const bool use_page_cache =
