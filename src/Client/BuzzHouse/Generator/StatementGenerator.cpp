@@ -671,7 +671,8 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     else if ((is_url = (url_func && (nopt2 < cluster_func + remote_func + url_func + 1))))
     {
         /// Use insert into URL
-        String url, buf2;
+        String url;
+        String buf2;
         bool first = false;
         URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
         const InOutFormat outf = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
