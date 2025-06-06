@@ -27,7 +27,7 @@ namespace DB
 
 namespace S3
 {
-std::string tryGetRunningAvailabilityZone();
+std::string tryGetRunningAvailabilityZone(bool is_zone_id);
 }
 
 namespace KafkaSetting
@@ -367,9 +367,10 @@ void updateGlobalConfiguration(
 
     if (kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value == "MSK")
     {
-        std::string rack = S3::tryGetRunningAvailabilityZone();
+        std::string rack = S3::tryGetRunningAvailabilityZone(true /*zone-id */);
         kafka_config.set("client.rack", rack);
-        LOG_WARNING(params.log, "client.rack set to {}.", rack);
+        LOG_TRACE(params.log, "client.rack set to {}.", rack);
+
     }
 
 #if USE_KRB5

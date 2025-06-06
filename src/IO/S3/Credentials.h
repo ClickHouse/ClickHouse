@@ -23,13 +23,14 @@ namespace DB::S3
 static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
 
 /// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
-std::string getRunningAvailabilityZone();
-std::string tryGetRunningAvailabilityZone();
+std::string getRunningAvailabilityZone(bool is_zone_id = false);
+std::string tryGetRunningAvailabilityZone(bool is_zone_id = false);
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
     static constexpr char EC2_SECURITY_CREDENTIALS_RESOURCE[] = "/latest/meta-data/iam/security-credentials";
     static constexpr char EC2_AVAILABILITY_ZONE_RESOURCE[] = "/latest/meta-data/placement/availability-zone";
+    static constexpr char EC2_AVAILABILITY_ZONE_ID_RESOURCE[] = "/latest/meta-data/placement/availability-zone-id";
     static constexpr char EC2_IMDS_TOKEN_RESOURCE[] = "/latest/api/token";
     static constexpr char EC2_IMDS_TOKEN_HEADER[] = "x-aws-ec2-metadata-token";
     static constexpr char EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE[] = "21600";
@@ -58,11 +59,11 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
-    friend String getRunningAvailabilityZone();
+    friend String getRunningAvailabilityZone(bool is_zone_id);
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
-    static String getAvailabilityZoneOrException();
+    static String getAvailabilityZoneOrException(bool is_zone_id = false);
 
     const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
