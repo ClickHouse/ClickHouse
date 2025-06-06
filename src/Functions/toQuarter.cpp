@@ -11,7 +11,29 @@ using FunctionToQuarter = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToQua
 
 REGISTER_FUNCTION(ToQuarter)
 {
-    factory.registerFunction<FunctionToQuarter>();
+    FunctionDocumentation::Description description_to_quarter = R"(
+Returns the quarter of the year (1-4) for a given `Date` or `DateTime` value.
+    )";
+    FunctionDocumentation::Syntax syntax_to_quarter = "toQuarter(datetime)";
+    FunctionDocumentation::Arguments arguments_to_quarter = {
+        {"datetime", "A `Date` or `DateTime` value to get the quarter of the year from. [`Date`](/sql-reference/data-types/date)/[`Date32`](/sql-reference/data-types/date32)/[`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_to_quarter = "The quarter of the year for the given date/time. [`UInt8`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_to_quarter = {
+        {"Usage example", R"(
+SELECT toQuarter(toDateTime('2023-04-21 10:20:30'))
+        )",
+        R"(
+┌─toQuarter(toDateTime('2023-04-21 10:20:30'))─┐
+│                                            2 │
+└──────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_to_quarter = {1, 1};
+    FunctionDocumentation::Category category_to_quarter = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_to_quarter = {description_to_quarter, syntax_to_quarter, arguments_to_quarter, returned_value_to_quarter, examples_to_quarter, introduced_in_to_quarter, category_to_quarter};
+
+    factory.registerFunction<FunctionToQuarter>(documentation_to_quarter);
     /// MySQL compatibility alias.
     factory.registerAlias("QUARTER", "toQuarter", FunctionFactory::Case::Insensitive);
 }
