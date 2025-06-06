@@ -176,7 +176,7 @@ protected:
     const bool distributed_processing;
     /// Whether we need to call `configuration->update()`
     /// (e.g. refresh configuration) on each read() method call.
-    bool update_configuration_on_read = true;
+    bool update_configuration_on_read_write = true;
 
     LoggerPtr log;
 };
@@ -274,10 +274,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual void update( ///NOLINT
+    virtual void update(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
-        bool if_not_updated_before = false);
+        bool if_not_updated_before,
+        bool check_consistent_with_previous_metadata);
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {

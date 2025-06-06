@@ -130,7 +130,11 @@ ColumnsDescription TableFunctionObjectStorage<
         context->checkAccess(getSourceAccessType());
 
         auto storage = getObjectStorage(context, !is_insert_query);
-        configuration->update(storage, context);
+        configuration->update(
+            object_storage,
+            context,
+            /* if_not_updated_before */true,
+            /* check_consistent_with_previous_metadata */true);
 
         std::string sample_path;
         ColumnsDescription columns;

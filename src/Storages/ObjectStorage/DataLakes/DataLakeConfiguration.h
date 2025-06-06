@@ -58,19 +58,21 @@ public:
     void update(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
-        bool if_not_updated_before) override
+        bool if_not_updated_before,
+        bool check_consistent_with_previous_metadata) override
     {
         const bool updated_before = current_metadata != nullptr;
         if (updated_before && if_not_updated_before)
             return;
 
-        BaseStorageConfiguration::update(object_storage, local_context);
+        BaseStorageConfiguration::update(
+            object_storage, local_context, if_not_updated_before, check_consistent_with_previous_metadata);
 
         const bool changed = updateMetadataIfChanged(object_storage, local_context);
         if (!changed)
             return;
 
-        if (hasExternalDynamicMetadata() && updated_before)
+        if (check_consistent_with_previous_metadata && hasExternalDynamicMetadata() && updated_before)
         {
             throw Exception(
                 ErrorCodes::FORMAT_VERSION_TOO_OLD,

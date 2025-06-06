@@ -112,7 +112,12 @@ StorageObjectStorage::StorageObjectStorage(
     {
         if (!do_lazy_init)
         {
-            configuration->update(object_storage, context, /* if_not_updated_before */is_table_function);
+            configuration->update(
+                object_storage,
+                context,
+                /* if_not_updated_before */is_table_function,
+                /* check_consistent_with_previous_metadata */true);
+
             updated_configuration = true;
         }
     }
@@ -131,7 +136,7 @@ StorageObjectStorage::StorageObjectStorage(
     /// but this is not needed for table function,
     /// which exists only for the duration of a single query
     /// (e.g. read always follows constructor immediately).
-    update_configuration_on_read = !is_table_function || !updated_configuration;
+    update_configuration_on_read_write = !is_table_function || !updated_configuration;
 
     std::string sample_path;
     ColumnsDescription columns{columns_};
@@ -193,7 +198,8 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
 void StorageObjectStorage::Configuration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
-    bool /* if_not_updated_before */)
+    bool /* if_not_updated_before */,
+    bool /* check_consistent_with_previous_metadata */)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
@@ -201,19 +207,33 @@ void StorageObjectStorage::Configuration::update( ///NOLINT
 
 bool StorageObjectStorage::hasExternalDynamicMetadata(ContextPtr query_context) const
 {
-    configuration->update(object_storage, query_context, /* if_not_updated */true);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */true,
+        /* check_consistent_with_previous_metadata */true);
+
     return configuration->hasExternalDynamicMetadata();
 }
 
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
-    configuration->update(object_storage, query_context, /* if_not_updated */true);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */true,
+        /* check_consistent_with_previous_metadata */true);
+
     return configuration->getExternalMetadata(object_storage, query_context);
 }
 
 void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 {
-    configuration->update(object_storage, context_ptr);
+    configuration->update(
+        object_storage,
+        context_ptr,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */false);
 
     auto columns = configuration->tryGetTableStructureFromMetadata();
     if (!columns.has_value())
@@ -226,13 +246,21 @@ void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
-    configuration->update(object_storage, query_context);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */true,
+        /* check_consistent_with_previous_metadata */true);
     return configuration->totalRows();
 }
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(object_storage, query_context);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */true,
+        /* check_consistent_with_previous_metadata */true);
     return configuration->totalBytes();
 }
 
@@ -378,8 +406,14 @@ void StorageObjectStorage::read(
 {
     /// We did configuration->update() in constructor,
     /// so in case of table function there is no need to do the same here again.
-    if (update_configuration_on_read)
-        configuration->update(object_storage, local_context);
+    if (update_configuration_on_read_write)
+    {
+        configuration->update(
+            object_storage,
+            local_context,
+            /* if_not_updated_before */false,
+            /* check_consistent_with_previous_metadata */true);
+    }
 
     if (partition_by && configuration->withPartitionWildcard())
     {
@@ -425,7 +459,15 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    configuration->update(object_storage, local_context);
+    if (update_configuration_on_read_write)
+    {
+        configuration->update(
+            object_storage,
+            local_context,
+            /* if_not_updated_before */false,
+            /* check_consistent_with_previous_metadata */true);
+    }
+
     const auto sample_block = metadata_snapshot->getSampleBlock();
     const auto & settings = configuration->getQuerySettings(local_context);
 

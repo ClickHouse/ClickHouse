@@ -68,7 +68,11 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
     /// so no lazy initialization is allowed.
-    configuration->update(object_storage, context_);
+    configuration->update(
+        object_storage,
+        context_,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
 
     ColumnsDescription columns{columns_};
     std::string sample_path;
@@ -94,13 +98,21 @@ std::string StorageObjectStorageCluster::getName() const
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
-    configuration->update(object_storage, query_context);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */true,
+        /* check_consistent_with_previous_metadata */true);
     return configuration->totalRows();
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(object_storage, query_context);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */true,
+        /* check_consistent_with_previous_metadata */true);
     return configuration->totalBytes();
 }
 
