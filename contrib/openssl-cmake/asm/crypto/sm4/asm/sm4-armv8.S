@@ -1,4 +1,4 @@
-// Copyright 2022 The OpenSSL Project Authors. All Rights Reserved.
+// Copyright 2022-2025 The OpenSSL Project Authors. All Rights Reserved.
 //
 // Licensed under the Apache License 2.0 (the "License").  You may not use
 // this file except in compliance with the License.  You can obtain a copy
@@ -15,7 +15,11 @@
 #include "arm_arch.h"
 .arch	armv8-a+crypto
 .text
+
+.section	.rodata
+.type	_sm4_v8_consts,%object
 .align	6
+_sm4_v8_consts:
 .Lck:
 .long	0x00070E15, 0x1C232A31, 0x383F464D, 0x545B6269
 .long	0x70777E85, 0x8C939AA1, 0xA8AFB6BD, 0xC4CBD2D9
@@ -27,15 +31,20 @@
 .long	0x10171E25, 0x2C333A41, 0x484F565D, 0x646B7279
 .Lfk:
 .long	0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc
+.size	_sm4_v8_consts,.-_sm4_v8_consts
+.previous
+
 .globl	sm4_v8_set_encrypt_key
 .type	sm4_v8_set_encrypt_key,%function
 .align	5
 sm4_v8_set_encrypt_key:
 	AARCH64_VALID_CALL_TARGET
 	ld1	{v0.4s},[x0]
-	adr	x2,.Lfk
+	adrp	x2,.Lfk
+	add	x2,x2,#:lo12:.Lfk
 	ld1	{v24.4s},[x2]
-	adr	x2,.Lck
+	adrp	x2,.Lck
+	add	x2,x2,#:lo12:.Lck
 	ld1	{v16.4s,v17.4s,v18.4s,v19.4s},[x2],64
 #ifndef __ARMEB__
 	rev32	v0.16b,v0.16b
@@ -60,9 +69,11 @@ sm4_v8_set_encrypt_key:
 sm4_v8_set_decrypt_key:
 	AARCH64_VALID_CALL_TARGET
 	ld1	{v7.4s},[x0]
-	adr	x2,.Lfk
+	adrp	x2,.Lfk
+	add	x2,x2,#:lo12:.Lfk
 	ld1	{v24.4s},[x2]
-	adr	x2, .Lck
+	adrp	x2,.Lck
+	add	x2,x2,#:lo12:.Lck
 	ld1	{v16.4s,v17.4s,v18.4s,v19.4s},[x2],64
 #ifndef __ARMEB__
 	rev32	v7.16b,v7.16b

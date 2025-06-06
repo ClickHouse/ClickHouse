@@ -57,3 +57,14 @@ OPENSSL_cleanse:
     bge     a1,t1,4b  # if len>=8 loop
     bnez    a1,1b         # if len<8 and len != 0, store remaining bytes
     ret
+################################################################################
+# size_t riscv_vlen_asm(void)
+# Return VLEN (i.e. the length of a vector register in bits).
+.p2align 3
+.globl riscv_vlen_asm
+.type riscv_vlen_asm,@function
+riscv_vlen_asm:
+    csrr a0, vlenb
+    slli a0, a0, 3
+    ret
+.size riscv_vlen_asm,.-riscv_vlen_asm
