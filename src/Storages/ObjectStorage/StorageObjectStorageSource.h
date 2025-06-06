@@ -8,6 +8,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/Cache/ObjectStorageListObjectsCache.h>
 
 
 namespace DB
@@ -170,16 +171,30 @@ private:
 class StorageObjectStorageSource::GlobIterator : public IObjectIterator, WithContext
 {
 public:
+    struct ListObjectsCacheWithKey
+    {
+        ListObjectsCacheWithKey(ObjectStorageListObjectsCache & cache_, const ObjectStorageListObjectsCache::Key & key_) : cache(cache_), key(key_) {}
+
+        void set(ObjectStorageListObjectsCache::Value && value) const
+        {
+            cache.set(key, std::make_shared<ObjectStorageListObjectsCache::Value>(std::move(value)));
+        }
+
+    private:
+        ObjectStorageListObjectsCache & cache;
+        ObjectStorageListObjectsCache::Key key;
+    };
+
     GlobIterator(
-        ObjectStoragePtr object_storage_,
+        const ObjectStorageIteratorPtr & object_storage_iterator_,
         ConfigurationPtr configuration_,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns_,
         ContextPtr context_,
         ObjectInfos * read_keys_,
-        size_t list_object_keys_size,
         bool throw_on_zero_files_match_,
-        std::function<void(FileProgress)> file_progress_callback_ = {});
+        std::function<void(FileProgress)> file_progress_callback_ = {},
+        std::unique_ptr<ListObjectsCacheWithKey> list_cache_ = nullptr);
 
     ~GlobIterator() override = default;
 
@@ -192,7 +207,7 @@ private:
     void createFilterAST(const String & any_key);
     void fillBufferForKey(const std::string & uri_key);
 
-    const ObjectStoragePtr object_storage;
+    ObjectStorageIteratorPtr object_storage_iterator;
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const bool throw_on_zero_files_match;
@@ -203,7 +218,6 @@ private:
     ObjectInfos object_infos;
     ObjectInfos * read_keys;
     ExpressionActionsPtr filter_expr;
-    ObjectStorageIteratorPtr object_storage_iterator;
     bool recursive{false};
     std::vector<String> expanded_keys;
     std::vector<String>::iterator expanded_keys_iter;
@@ -216,6 +230,8 @@ private:
     const ContextPtr local_context;
 
     std::function<void(FileProgress)> file_progress_callback;
+    std::unique_ptr<ListObjectsCacheWithKey> list_cache;
+    ObjectInfos object_list;
 };
 
 class StorageObjectStorageSource::KeysIterator : public IObjectIterator
