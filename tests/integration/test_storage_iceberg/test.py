@@ -2585,7 +2585,8 @@ def test_metadata_cache(started_cluster, storage_type):
         )
     )
 
-    assert 0 == int(
+    # cache hit = 1 because we read metadata object string from cache when we call update()
+    assert 1 == int(
         instance.query(
             f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
@@ -2626,7 +2627,7 @@ def test_metadata_cache(started_cluster, storage_type):
         )
     )
 
-    assert 0 == int(
+    assert 1 == int(
         instance.query(
             f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
