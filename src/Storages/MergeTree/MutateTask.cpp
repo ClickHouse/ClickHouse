@@ -1475,7 +1475,7 @@ private:
         bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
-        SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode;
+        SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode = SecondaryIndicesOnColumnsAlterModify::THROW;
         NameSet altered_columns = ctx->commands->getSecondaryIndicesOnColumnAlterModifyOptions(
             ctx->data->getSettings(),
             secondary_indices_alter_mode);
@@ -2513,7 +2513,7 @@ bool MutateTask::prepare()
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
-        SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode;
+        SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode = SecondaryIndicesOnColumnsAlterModify::THROW;
         NameSet altered_columns = ctx->commands->getSecondaryIndicesOnColumnAlterModifyOptions(
             ctx->data->getSettings(),
             secondary_indices_alter_mode);
