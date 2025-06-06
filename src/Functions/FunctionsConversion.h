@@ -2829,10 +2829,6 @@ struct ToNumberMonotonicity
 
         /// Float cases.
 
-        /// When converting to Float, the conversion is always monotonic.
-        if constexpr (is_floating_point<T>)
-            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
-
         const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
         const IDataType * low_cardinality_dictionary_type = nullptr;
         if (low_cardinality)
@@ -2842,6 +2838,27 @@ struct ToNumberMonotonicity
         WhichDataType which_inner_type = low_cardinality
             ? WhichDataType(low_cardinality_dictionary_type)
             : WhichDataType(type);
+
+        /// When converting to Float, the conversion is always monotonic.
+        if constexpr (is_floating_point<T>)
+        {
+            if (left.isNull() || right.isNull())
+            {
+                if (std::is_same_v<T, BFloat16> && (which_inner_type.isInt8() || which_inner_type.isUInt8()))
+                    return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+                if (std::is_same_v<T, Float32> && (which_inner_type.isBFloat16() || which_inner_type.isInt8() || which_inner_type.isInt16()
+                    || which_inner_type.isUInt8() || which_inner_type.isUInt16()))
+                    return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+                if (std::is_same_v<T, Float64> && (which_inner_type.isBFloat16() || which_inner_type.isFloat32()
+                    || which_inner_type.isInt8() || which_inner_type.isInt16() || which_inner_type.isInt32()
+                    || which_inner_type.isUInt8() || which_inner_type.isUInt16() || which_inner_type.isUInt32()))
+                    return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+            }
+
+            return { .is_monotonic = true, .is_always_monotonic = true };
+        }
 
         /// If converting from Float, for monotonicity, arguments must fit in range of result type.
         if (which_inner_type.isFloat())
@@ -2952,8 +2969,8 @@ struct ToDateMonotonicity
             if (std::is_same_v<T, DataTypeDate> && (which.isDate() || which.isInt8() || which.isUInt8() || which.isUInt16()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
-            if (std::is_same_v<T, DataTypeDate32> && (which.isDateOrDate32() || which.isInt8() || which.isInt16() || which.isInt32()
-                || which.isUInt8() || which.isUInt16()))
+            if (std::is_same_v<T, DataTypeDate32> && (which.isDateOrDate32() || which.isInt8() || which.isInt16() || which.isUInt8()
+                || which.isUInt16()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
             return {.is_monotonic = true, .is_always_monotonic = true};
@@ -2988,12 +3005,11 @@ struct ToDateTimeMonotonicity
         if (type.isValueRepresentedByNumber())
         {
             auto which = WhichDataType(type);
-            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isDate() || which.isInt8() || which.isInt16()
-                || which.isUInt8() || which.isUInt16() || which.isUInt32()))
+            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isDate() || which.isUInt8() || which.isUInt16()
+                || which.isUInt32()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
-            if (std::is_same_v<T, DataTypeDateTime64> && (which.isDateOrDate32OrDateTimeOrDateTime64() || which.isNativeInt()
-                || which.isUInt8() || which.isUInt16() || which.isUInt32()))
+            if (std::is_same_v<T, DataTypeDateTime64> && (which.isDateOrDate32OrDateTimeOrDateTime64() || which.isNativeInteger()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
             return {.is_monotonic = true, .is_always_monotonic = true};
