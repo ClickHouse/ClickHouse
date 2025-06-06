@@ -19,6 +19,11 @@ class Context;
 class WriteBuffer;
 class ReadBuffer;
 
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
+
+enum class SecondaryIndicesOnColumnsAlterModify : uint8_t;
+
 /// Represents set of actions which should be applied
 /// to values from set of columns which satisfy predicate.
 struct MutationCommand
@@ -95,6 +100,11 @@ public:
     /// to be executed without issues on the creation state.
     bool containBarrierCommand() const;
     NameSet getAllUpdatedColumns() const;
+
+    /// For alter table modify columns, check which option is set and which column is changed.
+    NameSet getSecondaryIndicesOnColumnAlterModifyOptions(
+        MergeTreeSettingsPtr settings,
+        SecondaryIndicesOnColumnsAlterModify & secondary_indices_alter_mode);
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

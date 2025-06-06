@@ -73,6 +73,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
+    extern const MergeTreeSettingsSecondaryIndicesOnColumnsAlterModify secondary_indices_on_columns_alter_modify;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
@@ -604,7 +605,10 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     QueryPipelineBuilder & builder,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
-    const NameSet & materialized_indices)
+    const NameSet & materialized_indices,
+    std::vector<MergeTreeIndexPtr> & indices_to_skip,
+    const NameSet & alter_column_names,
+    SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode)
 {
     /// Checks if columns used in skipping indexes modified.
     const auto & index_factory = MergeTreeIndexFactory::instance();
@@ -615,9 +619,21 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
 
     for (const auto & index : indices)
     {
+        if (secondary_indices_alter_mode == SecondaryIndicesOnColumnsAlterModify::DROP &&
+            std::any_of(index.column_names.begin(),
+                        index.column_names.end(),
+                        [&](String s) { return alter_column_names.contains(s); }))
+        {
+            indices_to_skip.emplace_back(index_factory.get(index));
+            continue;
+        }
+
         bool need_recalculate =
             materialized_indices.contains(index.name)
-            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name));
+            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name))
+            || (secondary_indices_alter_mode == SecondaryIndicesOnColumnsAlterModify::REBUILD
+                && std::any_of(index.column_names.begin(), index.column_names.end(),
+                    [&](String s) { return alter_column_names.contains(s); }));
 
         if (need_recalculate)
         {
@@ -626,6 +642,8 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
                 ASTPtr expr_list = index.expression_list_ast->clone();
                 for (const auto & expr : expr_list->children)
                     indices_recalc_expr_list->children.push_back(expr->clone());
+
+                indices_to_skip.emplace_back(index_factory.get(index));
             }
         }
     }
@@ -702,7 +720,7 @@ static NameSet collectFilesToSkip(
     const MergeTreeDataPartPtr & source_part,
     const MergeTreeDataPartPtr & new_part,
     const Block & updated_header,
-    const std::set<MergeTreeIndexPtr> & indices_to_recalc,
+    const std::vector<MergeTreeIndexPtr> & indices_to_skip,
     const String & mrk_extension,
     const std::vector<ProjectionDescriptionRawPtr> & projections_to_skip,
     const std::set<ColumnStatisticsPartPtr> & stats_to_recalc)
@@ -712,7 +730,7 @@ static NameSet collectFilesToSkip(
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
 
-    for (const auto & index : indices_to_recalc)
+    for (const auto & index : indices_to_skip)
     {
         /// Since MinMax index has .idx2 extension, we need to add correct extension.
         files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
@@ -1457,15 +1475,29 @@ private:
         bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
+        SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode = SecondaryIndicesOnColumnsAlterModify::THROW;
+        NameSet altered_columns = ctx->commands->getSecondaryIndicesOnColumnAlterModifyOptions(
+            ctx->data->getSettings(),
+            secondary_indices_alter_mode);
+
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
         {
             if (removed_indices.contains(idx.name))
                 continue;
 
+            if (secondary_indices_alter_mode == SecondaryIndicesOnColumnsAlterModify::DROP &&
+                std::any_of(idx.column_names.begin(),
+                            idx.column_names.end(),
+                            [&](const String & column) { return altered_columns.contains(column); }))
+                continue;
+
             bool need_recalculate =
                 ctx->materialized_indices.contains(idx.name)
-                || (!is_full_part_storage && ctx->source_part->hasSecondaryIndex(idx.name));
+                || (!is_full_part_storage && ctx->source_part->hasSecondaryIndex(idx.name))
+                || (secondary_indices_alter_mode == SecondaryIndicesOnColumnsAlterModify::REBUILD &&
+                    std::any_of(idx.column_names.begin(), idx.column_names.end(),
+                        [&](const String & column) { return altered_columns.contains(column); }));
 
             if (need_recalculate)
             {
@@ -1521,8 +1553,9 @@ private:
         }
 
         bool lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
-        bool lightweight_delete_drop = lightweight_delete_mode
-            && (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::DROP;
+        bool lightweight_delete_drop = lightweight_delete_mode &&
+                (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
+                    == LightweightMutationProjectionMode::DROP;
 
         const auto & projections = ctx->metadata_snapshot->getProjections();
         for (const auto & projection : projections)
@@ -1876,6 +1909,29 @@ private:
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
+
+        /// Remove dropped secondary indices from checksums, to avoid complain of broken parts.
+        if ((*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify] ==
+            SecondaryIndicesOnColumnsAlterModify::DROP)
+        {
+            NameSet secondary_indices_rebuild;
+            for (const auto & idx : ctx->indices_to_recalc)
+            {
+                secondary_indices_rebuild.insert(idx->getFileName() + idx->getSerializedFileExtension());
+                secondary_indices_rebuild.insert(idx->getFileName() + ctx->mrk_extension);
+            }
+
+            for (const auto & file : ctx->files_to_skip)
+            {
+                if (!file.starts_with(INDEX_FILE_PREFIX))
+                    continue;
+
+                if (secondary_indices_rebuild.contains(file))
+                    continue;
+
+                ctx->new_data_part->checksums.remove(file);
+            }
+        }
 
         ctx->compression_codec = ctx->source_part->default_codec;
 
@@ -2457,12 +2513,21 @@ bool MutateTask::prepare()
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
+        SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode = SecondaryIndicesOnColumnsAlterModify::THROW;
+        NameSet altered_columns = ctx->commands->getSecondaryIndicesOnColumnAlterModifyOptions(
+            ctx->data->getSettings(),
+            secondary_indices_alter_mode);
+
+        std::vector<MergeTreeIndexPtr> indices_to_skip;
         ctx->indices_to_recalc = MutationHelpers::getIndicesToRecalculate(
             ctx->source_part,
             ctx->mutating_pipeline_builder,
             ctx->metadata_snapshot,
             ctx->context,
-            ctx->materialized_indices);
+            ctx->materialized_indices,
+            indices_to_skip,
+            altered_columns,
+            secondary_indices_alter_mode);
 
         auto lightweight_mutation_projection_mode = (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode];
         bool lightweight_delete_drops_projections =
@@ -2494,7 +2559,7 @@ bool MutateTask::prepare()
             ctx->source_part,
             ctx->new_data_part,
             ctx->updated_header,
-            ctx->indices_to_recalc,
+            indices_to_skip,
             ctx->mrk_extension,
             projections_to_skip,
             ctx->stats_to_recalc);
