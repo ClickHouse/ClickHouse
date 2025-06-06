@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/DataTypeNothing.h>
 
 #include <Columns/ColumnNullable.h>
 
@@ -1150,6 +1151,7 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
 
     return result_aggregate_function_name;
 }
+
 
 /// Resolve identifier functions implementation
 
@@ -3040,11 +3042,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (function_in_arguments_nodes.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
 
+        auto & in_first_argument = function_in_arguments_nodes[0];
         auto & in_second_argument = function_in_arguments_nodes[1];
+
         if (isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[0]) || isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[1]))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Correlated subqueries are not supported as IN function arguments yet, but found in expression: {}",
                 node->formatASTForErrorMessage());
+
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
@@ -3108,10 +3113,141 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression_table_node));
                 }
             }
+            /// If it's a function node like array(..) or tuple(..), consider rewriting them to 'has':
+            if (auto * non_const_set_candidate = in_second_argument->as<FunctionNode>())
+            {
+                bool left_is_null = false;
+                if (const auto * const_node = in_first_argument->as<ConstantNode>())
+                    left_is_null = const_node->getValue().isNull();
+                bool transform_null_in = scope.context->getSettingsRef()[Setting::transform_null_in];
+
+                // In case of SELECT NULL in ... SETTINGS transform_null_in = 0, we should return NULL
+                if (left_is_null && !transform_null_in)
+                {
+                    node = std::make_shared<ConstantNode>(
+                            Field(),
+                            std::make_shared<DataTypeNullable>(
+                            std::make_shared<DataTypeNothing>()));
+                    return ProjectionNames{ function_name };
+                }
+                const auto & candidate_name = non_const_set_candidate->getFunctionName();
+
+                /// Case 1: array(..) node – keep existing behavior
+                if (candidate_name == "array")
+                {
+                    function_name = "has";
+                    is_special_function_in = false;
+                    auto & fn_args = function_node.getArguments().getNodes();
+                    std::swap(fn_args[0], fn_args[1]);
+                }
+                /// Case 2: tuple(..) node – rewrite it into an array
+                else if (candidate_name == "tuple")
+                {
+                    /// Infer a common type among the tuple elements
+                    auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
+                    if (left_is_null)
+                    {
+                        std::vector<QueryTreeNodePtr> null_checks;
+                        for (auto & elem : tuple_args)
+                        {
+                            if (isNullableOrLowCardinalityNullable(elem->getResultType()))
+                            {
+                                auto isnull_fn = std::make_shared<FunctionNode>("isNull");
+                                isnull_fn->getArguments().getNodes().push_back(elem);
+                                null_checks.emplace_back(isnull_fn);
+                            }
+                        }
+
+                        if (null_checks.empty())
+                        {
+                            // No nullable elements ⇒ always FALSE (0)
+                            node = std::make_shared<ConstantNode>(
+                                Field(UInt64(0)),
+                                std::make_shared<DataTypeUInt8>());
+                            return ProjectionNames{ function_name };
+                        }
+
+                        // Build arrayCount([isNull(e1), isNull(e2), ...])
+                        auto list_node = std::make_shared<ListNode>();
+                        list_node->getNodes() = null_checks;
+                        auto array_fn = std::make_shared<FunctionNode>("array");
+                        array_fn->getArgumentsNode() = list_node;
+
+                        auto arraycount_fn = std::make_shared<FunctionNode>("arrayCount");
+                        arraycount_fn->getArguments().getNodes().push_back(array_fn);
+
+                        // Build comparison: arrayCount(...) > 0
+                        auto zero64 = std::make_shared<ConstantNode>(
+                            Field(UInt64(0)),
+                            std::make_shared<DataTypeUInt64>());
+                        auto gt_fn = std::make_shared<FunctionNode>("greater");
+                        gt_fn->getArguments().getNodes() = { arraycount_fn, zero64 };
+
+                        QueryTreeNodePtr new_node = gt_fn;
+                        auto proj = calculateFunctionProjectionName(
+                            new_node,
+                            parameters_projection_names,
+                            arguments_projection_names);
+                        resolveFunction(new_node, scope);
+
+                        node = new_node;
+                        return {proj};
+                    }
+
+                    DataTypePtr common_type = in_first_argument->getResultType();
+
+                    /// Create a new array node
+                    auto array_function_node = std::make_shared<FunctionNode>("array");
+                    auto array_arguments_list = std::make_shared<ListNode>();
+
+                    /// for each tuple element, build a CAST function node to the target type
+                    /// except for NULL values which are passed through directly
+                    for (auto & arg : tuple_args)
+                    {
+                        /// If we have a NULL constant, pass it through directly without casting
+                        if (const auto * const_node = arg->as<ConstantNode>())
+                        {
+                            if (const_node->getValue().isNull())
+                            {
+                                array_arguments_list->getNodes().push_back(arg);
+                                continue;
+                            }
+                        }
+
+                        /// Otherwise cast to target type
+                        auto cast_function_node = std::make_shared<FunctionNode>("CAST");
+                        auto cast_arguments_list = std::make_shared<ListNode>();
+
+                        /// First argument: the original element
+                        cast_arguments_list->getNodes().push_back(arg);
+                        /// Second argument: a constant node with the target type name
+                        auto type_constant_node = std::make_shared<ConstantNode>(common_type->getName(), std::make_shared<DataTypeString>());
+                        cast_arguments_list->getNodes().push_back(type_constant_node);
+
+                        /// Assign the cast arguments list to the CAST function node
+                        cast_function_node->getArgumentsNode() = cast_arguments_list;
+                        array_arguments_list->getNodes().push_back(cast_function_node);
+                    }
+
+                    /// assign the new array arguments list to the array function node
+                    array_function_node->getArgumentsNode() = array_arguments_list;
+
+                    /// replace the original tuple node with the new array node
+                    in_second_argument = array_function_node;
+
+                    /// force resolution of the new array node.
+                    resolveExpressionNode(in_second_argument, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+                    /// rewrite the IN call as a has() call by swapping the arguments
+                    function_name = "has";
+                    is_special_function_in = false;
+                    auto & fn_args = function_node.getArguments().getNodes();
+                    std::swap(fn_args[0], fn_args[1]);
+                }
+            }
         }
 
         /// Edge case when the first argument of IN is scalar subquery.
-        auto & in_first_argument = function_in_arguments_nodes[0];
         auto first_argument_type = in_first_argument->getNodeType();
         if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
         {
