@@ -334,8 +334,8 @@ private:
                 current_weight_lost += cell.size;
                 eviction_stats.total_weight_loss += cell.size;
                 // Get item-specific count from callback (e.g., number of marks)
-                eviction_stats.total_evicted_marks_num += on_remove_function(cell.value);
-                ++eviction_stats.total_evicted_files_num;
+                eviction_stats.total_evicted_value_entities_num += on_remove_function(cell.value);
+                ++eviction_stats.total_evicted_keys_num;
 
                 cells.erase(it);
                 queue.pop_front();
@@ -345,7 +345,7 @@ private:
         }
 
         // Call eviction callback only for actual evictions from probationary queue
-        if (!is_protected && eviction_stats.total_evicted_files_num > 0)
+        if (!is_protected && eviction_stats.total_evicted_keys_num > 0)
         {
             on_eviction_function(eviction_stats);
         }

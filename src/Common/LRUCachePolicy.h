@@ -250,8 +250,8 @@ private:
             current_size_in_bytes -= cell.size;
             current_weight_lost += cell.size;
             /// Get item-specific count from callback (e.g., number of marks)
-            eviction_stats.total_evicted_marks_num += on_remove_function(cell.value);
-            ++eviction_stats.total_evicted_files_num;
+            eviction_stats.total_evicted_value_entities_num += on_remove_function(cell.value);
+            ++eviction_stats.total_evicted_keys_num;
 
             cells.erase(it);
             queue.pop_front();
@@ -259,7 +259,7 @@ private:
         }
 
         /// Call eviction callback with accumulated stats
-        if (eviction_stats.total_evicted_files_num > 0)
+        if (eviction_stats.total_evicted_keys_num > 0)
             on_eviction_function(eviction_stats);
 
         if (current_size_in_bytes > (1ull << 63))

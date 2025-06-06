@@ -36,9 +36,12 @@ public:
 
     struct EvictionStats
     {
+        /// Used to count total weight loss (e.g., in bytes) during eviction
         size_t total_weight_loss;
-        size_t total_evicted_marks_num;
-        size_t total_evicted_files_num;
+        /// Used to count cached entities (eg: marks totalling over MarksInCompressedFile in MarkCache)
+        size_t total_evicted_value_entities_num;
+        /// Used to count number of evicted keys (eg: files in MarkCache)
+        size_t total_evicted_keys_num;
     };
 
     using OnEvictionFunction = std::function<void(const EvictionStats &)>;  // Receives aggregate stats

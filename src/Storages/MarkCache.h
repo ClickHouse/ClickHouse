@@ -72,8 +72,8 @@ private:
     void onEviction(const EvictionStats& stats) override
     {
         ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, stats.total_weight_loss);
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks, stats.total_evicted_marks_num);
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles, stats.total_evicted_files_num);
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks, stats.total_evicted_value_entities_num);
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles, stats.total_evicted_keys_num);
     }
 };
 
