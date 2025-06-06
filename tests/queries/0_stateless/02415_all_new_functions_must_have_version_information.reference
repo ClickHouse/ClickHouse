@@ -655,7 +655,6 @@ runningDifference
 runningDifferenceStartingWithFirstValue
 seriesDecomposeSTL
 seriesOutliersDetectTukey
-serverTimezone
 serverUUID
 shardCount
 shardNum
@@ -727,10 +726,6 @@ tid
 timeDiff
 timeSlot
 timeSlots
-timestamp
-timezone
-timezoneOf
-timezoneOffset
 toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
@@ -753,9 +748,6 @@ toDateTime64OrZero
 toDateTimeOrDefault
 toDateTimeOrNull
 toDateTimeOrZero
-toDayOfMonth
-toDayOfWeek
-toDayOfYear
 toDaysSinceYearZero
 toDecimal128
 toDecimal128OrDefault
@@ -783,7 +775,6 @@ toFloat64
 toFloat64OrDefault
 toFloat64OrNull
 toFloat64OrZero
-toHour
 toIPv4
 toIPv4OrDefault
 toIPv4OrNull
@@ -834,14 +825,10 @@ toJSONString
 toLastDayOfMonth
 toLastDayOfWeek
 toLowCardinality
-toMillisecond
-toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
 toMonday
-toMonth
 toNullable
-toQuarter
 toRelativeDayNum
 toRelativeHourNum
 toRelativeMinuteNum
@@ -850,7 +837,6 @@ toRelativeQuarterNum
 toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
-toSecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -870,7 +856,6 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
-toTimezone
 toTypeName
 toUInt128
 toUInt128OrDefault
@@ -911,7 +896,6 @@ toWeek
 toYYYYMM
 toYYYYMMDD
 toYYYYMMDDhhmmss
-toYear
 toYearWeek
 today
 tokens
