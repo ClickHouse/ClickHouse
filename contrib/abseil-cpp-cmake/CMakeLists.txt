@@ -1,6 +1,5 @@
 set(ABSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
 set(ABSL_COMMON_INCLUDE_DIRS "${ABSL_ROOT_DIR}")
-
 # This is a minimized version of the function definition in CMake/AbseilHelpers.cmake
 
 #
@@ -107,6 +106,7 @@ absl_cc_library(
     ${ABSL_DEFAULT_COPTS}
   DEPS
     absl::algorithm
+    absl::config
     absl::core_headers
     absl::meta
     absl::nullability
@@ -115,6 +115,7 @@ absl_cc_library(
 
 set(DIR ${ABSL_ROOT_DIR}/absl/base)
 
+# Internal-only target, do not depend on directly.
 absl_cc_library(
   NAME
     atomic_hook
@@ -171,10 +172,10 @@ absl_cc_library(
   HDRS
     "${DIR}/nullability.h"
   SRCS
-    "${DIR}/internal/nullability_impl.h"
+    "${DIR}/internal/nullability_deprecated.h"
   DEPS
+    absl::config
     absl::core_headers
-    absl::type_traits
   COPTS
     ${ABSL_DEFAULT_COPTS}
 )
@@ -288,8 +289,6 @@ absl_cc_library(
   HDRS
     "${DIR}/internal/hide_ptr.h"
     "${DIR}/internal/identity.h"
-    "${DIR}/internal/inline_variable.h"
-    "${DIR}/internal/invoke.h"
     "${DIR}/internal/scheduling_mode.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
@@ -416,12 +415,11 @@ absl_cc_library(
     absl::errno_saver
 )
 
-# Internal-only target, do not depend on directly.
 absl_cc_library(
   NAME
     fast_type_id
   HDRS
-    "${DIR}/internal/fast_type_id.h"
+    "${DIR}/fast_type_id.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   LINKOPTS
@@ -444,6 +442,63 @@ absl_cc_library(
     absl::core_headers
 )
 
+absl_cc_library(
+  NAME
+    poison
+  SRCS
+    "${DIR}/internal/poison.cc"
+  HDRS
+    "${DIR}/internal/poison.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  LINKOPTS
+    ${ABSL_DEFAULT_LINKOPTS}
+  DEPS
+    absl::config
+    absl::core_headers
+    absl::malloc_internal
+)
+
+absl_cc_library(
+  NAME
+    tracing_internal
+  HDRS
+    "${DIR}/internal/tracing.h"
+  SRCS
+    "${DIR}/internal/tracing.cc"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  DEPS
+    absl::base
+)
+
+# Internal-only target, do not depend on directly.
+absl_cc_library(
+  NAME
+    iterator_traits_internal
+  HDRS
+    "${DIR}/internal/iterator_traits.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  DEPS
+    absl::config
+    absl::type_traits
+  PUBLIC
+)
+
+# Internal-only target, do not depend on directly.
+absl_cc_library(
+  NAME
+    iterator_traits_test_helper_internal
+  HDRS
+    "${DIR}/internal/iterator_traits_test_helper.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  DEPS
+    absl::config
+  PUBLIC
+)
+
 set(DIR ${ABSL_ROOT_DIR}/absl/cleanup)
 
 # Internal-only target, do not depend on directly.
@@ -455,7 +510,6 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::base_internal
     absl::core_headers
     absl::utility
   PUBLIC
@@ -504,6 +558,7 @@ absl_cc_library(
     absl::strings
     absl::throw_delegate
     absl::type_traits
+    absl::weakly_mixed_integer
 )
 
 # Internal-only target, do not depend on directly.
@@ -523,7 +578,7 @@ absl_cc_library(
   NAME
     fixed_array
   HDRS
-   "${DIR}/fixed_array.h"
+    "${DIR}/fixed_array.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -532,8 +587,10 @@ absl_cc_library(
     absl::config
     absl::core_headers
     absl::dynamic_annotations
+    absl::iterator_traits_internal
     absl::throw_delegate
     absl::memory
+    absl::weakly_mixed_integer
   PUBLIC
 )
 
@@ -542,7 +599,7 @@ absl_cc_library(
   NAME
     inlined_vector_internal
   HDRS
-   "${DIR}/internal/inlined_vector.h"
+    "${DIR}/internal/inlined_vector.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -560,7 +617,7 @@ absl_cc_library(
   NAME
     inlined_vector
   HDRS
-   "${DIR}/inlined_vector.h"
+    "${DIR}/inlined_vector.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -570,6 +627,7 @@ absl_cc_library(
     absl::throw_delegate
     absl::memory
     absl::type_traits
+    absl::weakly_mixed_integer
   PUBLIC
 )
 
@@ -586,7 +644,7 @@ absl_cc_library(
     absl::hash_container_defaults
     absl::raw_hash_map
     absl::algorithm_container
-    absl::memory
+    absl::type_traits
   PUBLIC
 )
 
@@ -604,6 +662,7 @@ absl_cc_library(
     absl::algorithm_container
     absl::core_headers
     absl::memory
+    absl::type_traits
   PUBLIC
 )
 
@@ -622,6 +681,7 @@ absl_cc_library(
     absl::raw_hash_map
     absl::algorithm_container
     absl::memory
+    absl::type_traits
   PUBLIC
 )
 
@@ -640,6 +700,7 @@ absl_cc_library(
     absl::raw_hash_set
     absl::algorithm_container
     absl::memory
+    absl::type_traits
   PUBLIC
 )
 
@@ -787,9 +848,11 @@ absl_cc_library(
     ${ABSL_DEFAULT_COPTS}
   DEPS
     absl::config
+    absl::common_policy_traits
     absl::container_memory
     absl::core_headers
     absl::raw_hash_set
+    absl::type_traits
     absl::throw_delegate
   PUBLIC
 )
@@ -809,6 +872,21 @@ absl_cc_library(
 # Internal-only target, do not depend on directly.
 absl_cc_library(
   NAME
+    hashtable_control_bytes
+  HDRS
+    "${DIR}/internal/hashtable_control_bytes.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  DEPS
+    absl::bits
+    absl::config
+    absl::core_headers
+    absl::endian
+)
+
+# Internal-only target, do not depend on directly.
+absl_cc_library(
+  NAME
     raw_hash_set
   HDRS
     "${DIR}/internal/raw_hash_set.h"
@@ -818,6 +896,7 @@ absl_cc_library(
     ${ABSL_DEFAULT_COPTS}
   DEPS
     absl::bits
+    absl::common_policy_traits
     absl::compressed_tuple
     absl::config
     absl::container_common
@@ -825,16 +904,34 @@ absl_cc_library(
     absl::core_headers
     absl::dynamic_annotations
     absl::endian
+    absl::function_ref
     absl::hash
+    absl::hash_function_defaults
     absl::hash_policy_traits
+    absl::hashtable_control_bytes
     absl::hashtable_debug_hooks
     absl::hashtablez_sampler
+    absl::iterator_traits_internal
     absl::memory
     absl::meta
     absl::optional
     absl::prefetch
     absl::raw_logging_internal
     absl::utility
+    absl::weakly_mixed_integer
+  PUBLIC
+)
+
+# Internal-only target, do not depend on directly.
+absl_cc_library(
+  NAME
+    raw_hash_set_resize_impl
+  HDRS
+    "${DIR}/internal/raw_hash_set_resize_impl.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  DEPS
+    absl::config
   PUBLIC
 )
 
@@ -859,7 +956,6 @@ absl_cc_library(
 
 set(DIR ${ABSL_ROOT_DIR}/absl/crc)
 
-# Internal-only target, do not depend on directly.
 absl_cc_library(
   NAME
     crc_cpu_detect
@@ -872,6 +968,7 @@ absl_cc_library(
   DEPS
     absl::base
     absl::config
+    absl::optional
 )
 
 # Internal-only target, do not depend on directly.
@@ -1073,6 +1170,7 @@ absl_cc_library(
     debugging_internal
   HDRS
     "${DIR}/internal/address_is_readable.h"
+    "${DIR}/internal/addresses.h"
     "${DIR}/internal/elf_mem_image.h"
     "${DIR}/internal/vdso_support.h"
   SRCS
@@ -1095,16 +1193,74 @@ absl_cc_library(
     demangle_internal
   HDRS
     "${DIR}/internal/demangle.h"
-    "${DIR}/internal/demangle_rust.h"
   SRCS
     "${DIR}/internal/demangle.cc"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  DEPS
+    absl::config
+    absl::demangle_rust
+  PUBLIC
+)
+
+# Internal-only target, do not depend on directly.
+absl_cc_library(
+  NAME
+    bounded_utf8_length_sequence
+  HDRS
+    "${DIR}/internal/bounded_utf8_length_sequence.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  DEPS
+    absl::bits
+    absl::config
+)
+
+# Internal-only target, do not depend on directly.
+absl_cc_library(
+  NAME
+    decode_rust_punycode
+  HDRS
+    "${DIR}/internal/decode_rust_punycode.h"
+  SRCS
+    "${DIR}/internal/decode_rust_punycode.cc"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  DEPS
+    absl::bounded_utf8_length_sequence
+    absl::config
+    absl::nullability
+    absl::utf8_for_code_point
+)
+
+# Internal-only target, do not depend on directly.
+absl_cc_library(
+  NAME
+    demangle_rust
+  HDRS
+    "${DIR}/internal/demangle_rust.h"
+  SRCS
     "${DIR}/internal/demangle_rust.cc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::base
+    absl::config
     absl::core_headers
-  PUBLIC
+    absl::decode_rust_punycode
+)
+
+# Internal-only target, do not depend on directly.
+absl_cc_library(
+  NAME
+    utf8_for_code_point
+  HDRS
+    "${DIR}/internal/utf8_for_code_point.h"
+  SRCS
+    "${DIR}/internal/utf8_for_code_point.cc"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  DEPS
+    absl::config
 )
 
 absl_cc_library(
@@ -1136,7 +1292,6 @@ absl_cc_library(
 
 set(DIR ${ABSL_ROOT_DIR}/absl/flags)
 
-# Internal-only target, do not depend on directly.
 absl_cc_library(
   NAME
     flags_path_util
@@ -1167,6 +1322,7 @@ absl_cc_library(
   DEPS
     absl::config
     absl::core_headers
+    absl::no_destructor
     absl::flags_path_util
     absl::strings
     absl::synchronization
@@ -1190,6 +1346,7 @@ absl_cc_library(
     absl::flags_path_util
     absl::flags_program_name
     absl::core_headers
+    absl::no_destructor
     absl::strings
     absl::synchronization
 )
@@ -1285,6 +1442,7 @@ absl_cc_library(
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
     absl::config
+    absl::fast_type_id
     absl::flags_commandlineflag
     absl::flags_private_handle_accessor
     absl::flags_config
@@ -1310,10 +1468,12 @@ absl_cc_library(
   DEPS
     absl::base
     absl::config
+    absl::fast_type_id
     absl::flags_commandlineflag
     absl::flags_commandlineflag_internal
     absl::flags_config
     absl::flags_marshalling
+    absl::no_destructor
     absl::synchronization
     absl::meta
     absl::utility
@@ -1337,6 +1497,7 @@ absl_cc_library(
     absl::flags_internal
     absl::flags_reflection
     absl::core_headers
+    absl::nullability
     absl::strings
 )
 
@@ -1381,6 +1542,7 @@ absl_cc_library(
     absl::config
     absl::core_headers
     absl::flags_usage_internal
+    absl::no_destructor
     absl::raw_logging_internal
     absl::strings
     absl::synchronization
@@ -1411,12 +1573,10 @@ absl_cc_library(
     absl::flags_program_name
     absl::flags_reflection
     absl::flags_usage
+    absl::no_destructor
     absl::strings
     absl::synchronization
 )
-
-############################################################################
-# Unit tests in alphabetical order.
 
 set(DIR ${ABSL_ROOT_DIR}/absl/functional)
 
@@ -1430,7 +1590,6 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::base_internal
     absl::config
     absl::core_headers
     absl::type_traits
@@ -1448,7 +1607,6 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::base_internal
     absl::compressed_tuple
   PUBLIC
 )
@@ -1463,7 +1621,6 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::base_internal
     absl::core_headers
     absl::any_invocable
     absl::meta
@@ -1509,6 +1666,7 @@ absl_cc_library(
     absl::variant
     absl::utility
     absl::low_level_hash
+    absl::weakly_mixed_integer
   PUBLIC
 )
 
@@ -1540,14 +1698,26 @@ absl_cc_library(
     ${ABSL_DEFAULT_COPTS}
   DEPS
     absl::config
+    absl::core_headers
     absl::endian
     absl::int128
     absl::prefetch
 )
 
+# Internal-only target, do not depend on directly.
+absl_cc_library(
+  NAME
+    weakly_mixed_integer
+  HDRS
+    "${DIR}/internal/weakly_mixed_integer.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  DEPS
+    absl::config
+)
+
 set(DIR ${ABSL_ROOT_DIR}/absl/log)
 
-# Internal targets
 absl_cc_library(
   NAME
     log_internal_check_impl
@@ -1578,11 +1748,14 @@ absl_cc_library(
   LINKOPTS
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
+    absl::base
     absl::config
     absl::core_headers
+    absl::leak_check
     absl::log_internal_nullguard
     absl::log_internal_nullstream
     absl::log_internal_strip
+    absl::nullability
     absl::strings
 )
 
@@ -1729,25 +1902,28 @@ absl_cc_library(
     absl::config
     absl::core_headers
     absl::errno_saver
-    absl::inlined_vector
     absl::examine_stack
+    absl::inlined_vector
     absl::log_internal_append_truncated
     absl::log_internal_format
     absl::log_internal_globals
     absl::log_internal_proto
     absl::log_internal_log_sink_set
     absl::log_internal_nullguard
+    absl::log_internal_structured_proto
     absl::log_globals
     absl::log_entry
     absl::log_severity
     absl::log_sink
     absl::log_sink_registry
     absl::memory
+    absl::nullability
     absl::raw_logging_internal
-    absl::strings
-    absl::strerror
-    absl::time
     absl::span
+    absl::strerror
+    absl::strings
+    absl::strings_internal
+    absl::time
 )
 
 absl_cc_library(
@@ -1842,6 +2018,7 @@ absl_cc_library(
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
     absl::config
+    absl::core_headers
 )
 
 absl_cc_library(
@@ -1857,6 +2034,7 @@ absl_cc_library(
   DEPS
     absl::config
     absl::strings
+    absl::strings_internal
     absl::span
 )
 
@@ -2020,8 +2198,6 @@ absl_cc_library(
 absl_cc_library(
   NAME
     log_entry
-  SRCS
-    "${DIR}/log_entry.cc"
   HDRS
     "${DIR}/log_entry.h"
   COPTS
@@ -2070,6 +2246,7 @@ absl_cc_library(
     absl::config
     absl::log_sink
     absl::log_internal_log_sink_set
+    absl::nullability
   PUBLIC
 )
 
@@ -2104,9 +2281,32 @@ absl_cc_library(
   LINKOPTS
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
+    absl::any_invocable
     absl::config
+    absl::core_headers
     absl::log_internal_message
+    absl::log_internal_structured_proto
     absl::strings
+)
+
+absl_cc_library(
+  NAME
+    log_internal_structured_proto
+  SRCS
+    "${DIR}/internal/structured_proto.cc"
+  HDRS
+    "${DIR}/internal/structured_proto.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  LINKOPTS
+    ${ABSL_DEFAULT_LINKOPTS}
+  DEPS
+    absl::log_internal_proto
+    absl::config
+    absl::span
+    absl::strings
+    absl::variant
+  PUBLIC
 )
 
 absl_cc_library(
@@ -2120,6 +2320,7 @@ absl_cc_library(
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
     absl::config
+    absl::core_headers
     absl::log_internal_structured
     absl::strings
   PUBLIC
@@ -2143,6 +2344,7 @@ absl_cc_library(
     absl::log_internal_fnmatch
     absl::memory
     absl::no_destructor
+    absl::nullability
     absl::strings
     absl::synchronization
     absl::optional
@@ -2192,8 +2394,6 @@ absl_cc_library(
     absl::config
     absl::strings
 )
-
-# Test targets
 
 set(DIR ${ABSL_ROOT_DIR}/absl/memory)
 
@@ -2247,7 +2447,9 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
+    absl::config
     absl::core_headers
+    absl::endian
   PUBLIC
 )
 
@@ -2347,10 +2549,10 @@ absl_cc_library(
   LINKOPTS
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
+    absl::config
     absl::random_distributions
     absl::random_internal_nonsecure_base
     absl::random_internal_pcg_engine
-    absl::random_internal_pool_urbg
     absl::random_internal_randen_engine
     absl::random_seed_sequences
 )
@@ -2365,6 +2567,7 @@ absl_cc_library(
   LINKOPTS
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
+    absl::config
     absl::core_headers
     absl::random_internal_distribution_caller
     absl::random_internal_fast_uniform_bits
@@ -2438,6 +2641,7 @@ absl_cc_library(
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
     absl::config
+    absl::raw_logging_internal
 )
 
 absl_cc_library(
@@ -2455,7 +2659,7 @@ absl_cc_library(
     absl::config
     absl::inlined_vector
     absl::nullability
-    absl::random_internal_pool_urbg
+    absl::random_internal_entropy_pool
     absl::random_internal_salted_seed_seq
     absl::random_internal_seed_material
     absl::random_seed_gen_exception
@@ -2491,6 +2695,7 @@ absl_cc_library(
     absl::config
     absl::utility
     absl::fast_type_id
+    absl::type_traits
 )
 
 # Internal-only target, do not depend on directly.
@@ -2521,7 +2726,7 @@ absl_cc_library(
     ${ABSL_DEFAULT_LINKOPTS}
     $<$<BOOL:${MINGW}>:-lbcrypt>
   DEPS
-    absl::core_headers
+    absl::config
     absl::optional
     absl::random_internal_fast_uniform_bits
     absl::raw_logging_internal
@@ -2532,11 +2737,11 @@ absl_cc_library(
 # Internal-only target, do not depend on directly.
 absl_cc_library(
   NAME
-    random_internal_pool_urbg
+    random_internal_entropy_pool
   SRCS
-    "${DIR}/internal/pool_urbg.cc"
+    "${DIR}/internal/entropy_pool.cc"
   HDRS
-    "${DIR}/internal/pool_urbg.h"
+    "${DIR}/internal/entropy_pool.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   LINKOPTS
@@ -2545,13 +2750,12 @@ absl_cc_library(
     absl::base
     absl::config
     absl::core_headers
-    absl::endian
+    absl::random_internal_platform
     absl::random_internal_randen
     absl::random_internal_seed_material
-    absl::random_internal_traits
     absl::random_seed_gen_exception
-    absl::raw_logging_internal
     absl::span
+    absl::synchronization
 )
 
 # Internal-only target, do not depend on directly.
@@ -2583,6 +2787,7 @@ absl_cc_library(
   LINKOPTS
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
+    absl::config
     absl::int128
     absl::type_traits
 )
@@ -2645,12 +2850,11 @@ absl_cc_library(
   LINKOPTS
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
-    absl::core_headers
+    absl::config
     absl::inlined_vector
-    absl::random_internal_pool_urbg
+    absl::random_internal_entropy_pool
     absl::random_internal_salted_seed_seq
     absl::random_internal_seed_material
-    absl::span
     absl::type_traits
 )
 
@@ -2760,6 +2964,7 @@ absl_cc_library(
     absl::random_internal_platform
     absl::random_internal_randen_hwaes_impl
     absl::config
+    absl::optional
 )
 
 # Internal-only target, do not depend on directly.
@@ -2842,6 +3047,7 @@ absl_cc_library(
     absl::core_headers
     absl::function_ref
     absl::inlined_vector
+    absl::leak_check
     absl::memory
     absl::no_destructor
     absl::nullability
@@ -2849,8 +3055,8 @@ absl_cc_library(
     absl::raw_logging_internal
     absl::span
     absl::stacktrace
-    absl::strerror
     absl::str_format
+    absl::strerror
     absl::strings
     absl::symbolize
   PUBLIC
@@ -2912,7 +3118,6 @@ absl_cc_library(
     "${DIR}/has_absl_stringify.h"
     "${DIR}/internal/damerau_levenshtein_distance.h"
     "${DIR}/internal/string_constant.h"
-    "${DIR}/internal/has_absl_stringify.h"
     "${DIR}/match.h"
     "${DIR}/numbers.h"
     "${DIR}/str_cat.h"
@@ -2955,6 +3160,7 @@ absl_cc_library(
     absl::core_headers
     absl::endian
     absl::int128
+    absl::iterator_traits_internal
     absl::memory
     absl::nullability
     absl::raw_logging_internal
@@ -2971,7 +3177,7 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::core_headers
+    absl::config
     absl::string_view
   PUBLIC
 )
@@ -3062,6 +3268,7 @@ absl_cc_library(
     absl::utility
     absl::int128
     absl::span
+    absl::strings_internal
 )
 
 # Internal-only target, do not depend on directly.
@@ -3087,10 +3294,10 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::base_internal
     absl::compressed_tuple
     absl::config
     absl::container_memory
+    absl::compare
     absl::core_headers
     absl::crc_cord_state
     absl::endian
@@ -3233,7 +3440,6 @@ absl_cc_library(
     "${DIR}/cord.cc"
     "${DIR}/cord_analysis.cc"
     "${DIR}/cord_analysis.h"
-    "${DIR}/cord_buffer.cc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -3256,12 +3462,12 @@ absl_cc_library(
     absl::span
     absl::strings
     absl::type_traits
+    absl::weakly_mixed_integer
   PUBLIC
 )
 
 set(DIR ${ABSL_ROOT_DIR}/absl/synchronization)
 
-# Internal-only target, do not depend on directly.
 absl_cc_library(
   NAME
     graphcycles_internal
@@ -3341,10 +3547,13 @@ absl_cc_library(
     absl::core_headers
     absl::dynamic_annotations
     absl::malloc_internal
+    absl::nullability
     absl::raw_logging_internal
     absl::stacktrace
     absl::symbolize
+    absl::tracing_internal
     absl::time
+    absl::tracing_internal
     Threads::Threads
   PUBLIC
 )
@@ -3386,7 +3595,7 @@ absl_cc_library(
     "${DIR}/internal/cctz/include/cctz/civil_time.h"
     "${DIR}/internal/cctz/include/cctz/civil_time_detail.h"
   SRCS
-  "${DIR}/internal/cctz/src/civil_time_detail.cc"
+    "${DIR}/internal/cctz/src/civil_time_detail.cc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
 )
@@ -3420,7 +3629,7 @@ absl_cc_library(
     Threads::Threads
     # TODO(#1495): Use $<LINK_LIBRARY:FRAMEWORK,CoreFoundation> once our
     # minimum CMake version >= 3.24
-    $<$<PLATFORM_ID:Darwin>:-Wl,-framework,CoreFoundation>
+    $<$<PLATFORM_ID:Darwin,iOS,tvOS,visionOS,watchOS>:-Wl,-framework,CoreFoundation>
 )
 
 set(DIR ${ABSL_ROOT_DIR}/absl/types)
@@ -3433,40 +3642,10 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::bad_any_cast
     absl::config
     absl::core_headers
-    absl::fast_type_id
-    absl::type_traits
     absl::utility
   PUBLIC
-)
-
-absl_cc_library(
-  NAME
-    bad_any_cast
-  HDRS
-   "${DIR}/bad_any_cast.h"
-  COPTS
-    ${ABSL_DEFAULT_COPTS}
-  DEPS
-    absl::bad_any_cast_impl
-    absl::config
-  PUBLIC
-)
-
-# Internal-only target, do not depend on directly.
-absl_cc_library(
-  NAME
-    bad_any_cast_impl
-  SRCS
-    "${DIR}/bad_any_cast.h"
-    "${DIR}/bad_any_cast.cc"
-  COPTS
-    ${ABSL_DEFAULT_COPTS}
-  DEPS
-    absl::config
-    absl::raw_logging_internal
 )
 
 absl_cc_library(
@@ -3480,10 +3659,12 @@ absl_cc_library(
     ${ABSL_DEFAULT_COPTS}
   DEPS
     absl::algorithm
+    absl::config
     absl::core_headers
     absl::nullability
     absl::throw_delegate
     absl::type_traits
+    absl::weakly_mixed_integer
   PUBLIC
 )
 
@@ -3492,49 +3673,11 @@ absl_cc_library(
     optional
   HDRS
     "${DIR}/optional.h"
-  SRCS
-    "${DIR}/internal/optional.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::bad_optional_access
-    absl::base_internal
     absl::config
-    absl::core_headers
-    absl::memory
-    absl::nullability
-    absl::type_traits
     absl::utility
-  PUBLIC
-)
-
-absl_cc_library(
-  NAME
-    bad_optional_access
-  HDRS
-    "${DIR}/bad_optional_access.h"
-  SRCS
-    "${DIR}/bad_optional_access.cc"
-  COPTS
-    ${ABSL_DEFAULT_COPTS}
-  DEPS
-    absl::config
-    absl::raw_logging_internal
-  PUBLIC
-)
-
-absl_cc_library(
-  NAME
-    bad_variant_access
-  HDRS
-    "${DIR}/bad_variant_access.h"
-  SRCS
-    "${DIR}/bad_variant_access.cc"
-  COPTS
-    ${ABSL_DEFAULT_COPTS}
-  DEPS
-    absl::config
-    absl::raw_logging_internal
   PUBLIC
 )
 
@@ -3543,16 +3686,10 @@ absl_cc_library(
     variant
   HDRS
     "${DIR}/variant.h"
-  SRCS
-    "${DIR}/internal/variant.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::bad_variant_access
-    absl::base_internal
     absl::config
-    absl::core_headers
-    absl::type_traits
     absl::utility
   PUBLIC
 )
@@ -3571,6 +3708,30 @@ absl_cc_library(
   PUBLIC
 )
 
+# Deprecated empty library.
+# Clients should remove this dependency.
+absl_cc_library(
+  NAME
+    bad_any_cast
+  PUBLIC
+)
+
+# Deprecated empty library.
+# Clients should remove this dependency.
+absl_cc_library(
+  NAME
+    bad_optional_access
+  PUBLIC
+)
+
+# Deprecated empty library.
+# Clients should remove this dependency.
+absl_cc_library(
+  NAME
+    bad_variant_access
+  PUBLIC
+)
+
 set(DIR ${ABSL_ROOT_DIR}/absl/utility)
 
 absl_cc_library(
@@ -3581,24 +3742,10 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::base_internal
     absl::config
     absl::type_traits
   PUBLIC
 )
-
-absl_cc_library(
-  NAME
-    if_constexpr
-  HDRS
-    "${DIR}/internal/if_constexpr.h"
-  COPTS
-    ${ABSL_DEFAULT_COPTS}
-  DEPS
-    absl::config
-  PUBLIC
-)
-
 
 add_library(_abseil_swiss_tables INTERFACE)
 target_include_directories (_abseil_swiss_tables SYSTEM BEFORE INTERFACE ${ABSL_ROOT_DIR})
