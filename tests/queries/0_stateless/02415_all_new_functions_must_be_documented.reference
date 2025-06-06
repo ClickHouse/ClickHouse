@@ -675,7 +675,6 @@ toStartOfInterval
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
-toStartOfMonth
 toStartOfNanosecond
 toStartOfSecond
 toStartOfTenMinutes
