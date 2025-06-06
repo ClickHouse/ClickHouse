@@ -38,27 +38,53 @@ struct ProjectionCandidate
 {
     const ProjectionDescription * projection;
 
-    /// The number of marks we are going to read
+    /// Estimated total marks to read (including parent and projection)
     size_t sum_marks = 0;
+
+    /// Number of parts, marks, and ranges selected during projection read
+    size_t selected_parts = 0;
+    size_t selected_marks = 0;
+    size_t selected_ranges = 0;
+    size_t selected_rows = 0;
+
+    /// Number of parent parts fully pruned by this projection
+    size_t filtered_parts = 0;
+
+    /// If applicable, pointing to projection stats for EXPLAIN projections = 1 introspection
+    ReadFromMergeTree::ProjectionStat * stat = nullptr;
 
     /// Analysis result, separate for parts with and without projection.
     /// Analysis is done in order to estimate the number of marks we are going to read.
     /// For chosen projection, it is reused for reading step.
     ReadFromMergeTree::AnalysisResultPtr merge_tree_projection_select_result_ptr;
-    ReadFromMergeTree::AnalysisResultPtr merge_tree_ordinary_select_result_ptr;
+
+    /// Parent parts that need to be read due to missing this projection
+    std::unordered_set<const IMergeTreeDataPart *> parent_parts;
 };
+
+/// Removes parts not in valid_parts from reading_select_result and updates related counters.
+/// Returns the number of parts removed.
+size_t filterPartsByProjection(
+    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts);
 
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
-    const ReadFromMergeTree & reading,
     const MergeTreeDataSelectExecutor & reader,
+    MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     const Names & required_column_names,
-    const RangesInDataParts & parts_with_ranges,
-    const SelectQueryInfo & query_info,
-    const ContextPtr & context,
-    const PartitionIdToMaxBlockPtr & max_added_blocks,
-    const ActionsDAG * dag);
+    ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
+    const SelectQueryInfo & projection_query_info,
+    const ContextPtr & context);
+
+/// Attempts to filter out data parts using projections.
+void filterPartsUsingProjection(
+    const ProjectionDescription & projection,
+    const MergeTreeDataSelectExecutor & reader,
+    MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
+    ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
+    const SelectQueryInfo & projection_query_info,
+    const ContextPtr & context);
 
 }
