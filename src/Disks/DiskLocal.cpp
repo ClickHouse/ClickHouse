@@ -624,27 +624,27 @@ catch (...)
     try
     {
         Poco::Pipe out_pipe;
-        Poco::ProcessHandle ph = Poco::Process::launch("ls", {"-l", disk_path}, nullptr, &out_pipe, nullptr);
+        Poco::ProcessHandle ph = Poco::Process::launch("ls", {"-lA", disk_path}, nullptr, &out_pipe, nullptr);
 
         constexpr size_t BUF_SIZE = 4096;
         char buffer[BUF_SIZE];
-        std::ostringstream ss;
-        int n = 0;
+        WriteBufferFromOwnString out;
 
+        int n = 0;
         while ((n = out_pipe.readBytes(buffer, BUF_SIZE)) > 0)
         {
-            ss.write(buffer, n);
+            out.write(buffer, n);
         }
 
-        ph.wait(); // Ensure child process exits
+        ph.wait();
 
-        LOG_WARNING(logger, "Cannot achieve read over the disk directory: {}. Directory contents:\n{}", disk_path, ss.str());
+        LOG_WARNING(logger, "Cannot achieve read over the disk directory: {}. Directory contents:\n{}", disk_path, out.str());
     }
     catch (...)
     {
         LOG_WARNING(logger, "Cannot achieve read over the disk directory: {}, and failed to list contents due to internal error.", disk_path);
     }
-    //LOG_WARNING(logger, "Cannot achieve read over the disk directory: {}", disk_path);
+    LOG_WARNING(logger, "Cannot achieve read over the disk directory: {}", disk_path);
     return false;
 }
 
