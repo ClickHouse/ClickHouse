@@ -35,15 +35,26 @@ _workflow_config_job = Job.Config(
     timeout=600,
 )
 
-_docker_build_job = Job.Config(
-    name=Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-    runs_on=Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
+_docker_build_manifest_job = Job.Config(
+    name=Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
+    runs_on=Settings.DOCKER_MERGE_RUNS_ON,
     job_requirements=Job.Requirements(
         python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
         python_requirements_txt="",
     ),
     timeout=int(5.5 * 3600),
-    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME}'",
+    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_MANIFEST_JOB_NAME}'",
+)
+
+_docker_build_amd_linux_job = Job.Config(
+    name=Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
+    runs_on=Settings.DOCKER_BUILD_AMD_RUNS_ON,
+    job_requirements=Job.Requirements(
+        python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
+        python_requirements_txt="",
+    ),
+    timeout=int(5.5 * 3600),
+    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME}'",
 )
 
 _docker_build_arm_linux_job = Job.Config(
@@ -72,8 +83,9 @@ _final_job = Job.Config(
 def _is_praktika_job(job_name):
     if job_name in (
         Settings.CI_CONFIG_JOB_NAME,
-        Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+        Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
         Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+        Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         Settings.FINISH_WORKFLOW_JOB_NAME,
     ):
         return True
@@ -124,7 +136,10 @@ def _build_dockers(workflow, job_name):
             job_status = Result.Status.FAILED
             job_info = "Failed to login to dockerhub"
 
-    if job_status == Result.Status.SUCCESS:
+    if (
+        job_status == Result.Status.SUCCESS
+        and job_name != Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
+    ):
         for docker in dockers:
             if amd_only and Docker.Platforms.AMD not in docker.platforms:
                 continue
@@ -144,7 +159,6 @@ def _build_dockers(workflow, job_name):
                     digests=docker_digests,
                     amd_only=amd_only,
                     arm_only=arm_only,
-                    with_log=True,
                 )
             )
             if results[-1].is_ok():
@@ -155,7 +169,7 @@ def _build_dockers(workflow, job_name):
 
     if (
         job_status == Result.Status.SUCCESS
-        and job_name == Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME
+        and job_name == Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
     ):
         print("Start docker manifest merge")
         for docker in dockers:
@@ -164,7 +178,7 @@ def _build_dockers(workflow, job_name):
                     config=docker,
                     digests=docker_digests,
                     with_log=True,
-                    add_latest=workflow.set_latest_in_dockers_build,
+                    add_latest=workflow.set_latest_for_docker_merged_manifest,
                 )
             )
 
@@ -365,12 +379,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
             for job in workflow.jobs:
                 # Skip native Praktika jobs
-                if job.name in (
-                    Settings.CI_CONFIG_JOB_NAME,
-                    Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
-                    Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-                    Settings.FINISH_WORKFLOW_JOB_NAME,
-                ):
+                if _is_praktika_job(job.name):
                     continue
 
                 is_affected = False
@@ -579,8 +588,9 @@ if __name__ == "__main__":
     try:
         workflow = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
         if job_name in (
-            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+            Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
             Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+            Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         ):
             result = _build_dockers(workflow, job_name)
         elif job_name == Settings.CI_CONFIG_JOB_NAME:
