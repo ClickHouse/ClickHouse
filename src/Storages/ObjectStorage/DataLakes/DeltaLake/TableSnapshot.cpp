@@ -13,6 +13,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
 #include "getSchemaFromSnapshot.h"
 #include "PartitionPruner.h"
 #include "KernelUtils.h"
@@ -227,60 +228,63 @@ public:
         /// but instead in data files paths directory names.
         /// So we extract these values here and put into `partitions_info`.
         DB::ObjectInfoWithPartitionColumns::PartitionColumnsInfo partitions_info;
-        for (const auto & partition_column : context->partition_columns)
+        if (partition_map)
         {
-            std::string * value;
-            /// This map is empty if columnMappingMode = ''.
-            /// (E.g. empty string, which is the default mode).
-            if (context->physical_names_map.empty())
+            for (const auto & partition_column : context->partition_columns)
             {
-                value = static_cast<std::string *>(ffi::get_from_string_map(
-                    partition_map,
-                    KernelUtils::toDeltaString(partition_column),
-                    KernelUtils::allocateString));
-            }
-            else
-            {
-                /// DeltaKernel has inconsistency, getPartitionColumns returns logical column names,
-                /// while here in partition_map we would have physical columns as map keys.
-                /// This will be fixed after switching to "transform"'s.
-                auto it = context->physical_names_map.find(partition_column);
-                if (it == context->physical_names_map.end())
+                std::string * value;
+                /// This map is empty if columnMappingMode = ''.
+                /// (E.g. empty string, which is the default mode).
+                if (context->physical_names_map.empty())
                 {
-                    throw DB::Exception(
-                        DB::ErrorCodes::LOGICAL_ERROR,
-                        "Cannot find parititon column {} in physical columns map",
-                        partition_column);
+                    value = static_cast<std::string *>(ffi::get_from_string_map(
+                        partition_map,
+                        KernelUtils::toDeltaString(partition_column),
+                        KernelUtils::allocateString));
+                }
+                else
+                {
+                    /// DeltaKernel has inconsistency, getPartitionColumns returns logical column names,
+                    /// while here in partition_map we would have physical columns as map keys.
+                    /// This will be fixed after switching to "transform"'s.
+                    auto it = context->physical_names_map.find(partition_column);
+                    if (it == context->physical_names_map.end())
+                    {
+                        throw DB::Exception(
+                            DB::ErrorCodes::LOGICAL_ERROR,
+                            "Cannot find parititon column {} in physical columns map",
+                            partition_column);
+                    }
+
+                    value = static_cast<std::string *>(ffi::get_from_string_map(
+                        partition_map,
+                        KernelUtils::toDeltaString(it->second),
+                        KernelUtils::allocateString));
                 }
 
-                value = static_cast<std::string *>(ffi::get_from_string_map(
-                    partition_map,
-                    KernelUtils::toDeltaString(it->second),
-                    KernelUtils::allocateString));
-            }
+                SCOPE_EXIT({ delete value; });
 
-            SCOPE_EXIT({ delete value; });
-
-            if (value)
-            {
-                auto name_and_type = context->schema.tryGetByName(partition_column);
-                if (!name_and_type)
+                if (value)
                 {
-                    throw DB::Exception(
-                        DB::ErrorCodes::LOGICAL_ERROR,
-                        "Cannot find column `{}` in schema, there are only columns: `{}`",
-                        partition_column, fmt::join(context->schema.getNames(), ", "));
+                    auto name_and_type = context->schema.tryGetByName(partition_column);
+                    if (!name_and_type)
+                    {
+                        throw DB::Exception(
+                            DB::ErrorCodes::LOGICAL_ERROR,
+                            "Cannot find column `{}` in schema, there are only columns: `{}`",
+                            partition_column, fmt::join(context->schema.getNames(), ", "));
+                    }
+                    partitions_info.emplace_back(
+                        name_and_type.value(),
+                        DB::parseFieldFromString(*value, name_and_type->type));
                 }
-                partitions_info.emplace_back(
-                    name_and_type.value(),
-                    DB::parseFieldFromString(*value, name_and_type->type));
             }
         }
 
         LOG_TEST(
             context->log,
             "Scanned file: {}, size: {}, num records: {}, partition columns: {}",
-            full_path, size, stats->num_records, partitions_info.size());
+            full_path, size, stats ? DB::toString(stats->num_records) : "Unknown", partitions_info.size());
 
         DB::ObjectInfoPtr object;
         if (partitions_info.empty())
@@ -338,7 +342,6 @@ private:
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
-    bool,
     LoggerPtr log_)
     : helper(helper_)
     , object_storage(object_storage_)

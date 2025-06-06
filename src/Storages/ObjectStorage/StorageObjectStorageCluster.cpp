@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Interpreters/Context.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -73,16 +74,29 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
+    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration())
         sample_path = getPathSample(metadata, context_);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns, context_, sample_path, std::nullopt, configuration->isDataLakeConfiguration()));
     setInMemoryMetadata(metadata);
 }
 
 std::string StorageObjectStorageCluster::getName() const
 {
     return configuration->getEngineName();
+}
+
+std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
+{
+    configuration->update(object_storage, query_context);
+    return configuration->totalRows();
+}
+
+std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
+{
+    configuration->update(object_storage, query_context);
+    return configuration->totalBytes();
 }
 
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(

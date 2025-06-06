@@ -19,21 +19,23 @@ This function will operate _correctly_ only in case the set of files matching th
 In case these files differ between nodes, the return value cannot be predetermined and depends on the order in which worker nodes request tasks from the initiator.
 :::
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-**Arguments**
+## Arguments {#arguments}
 
-- `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
-- `path` — The relative path to the file from [user_files_path](/operations/server-configuration-parameters/settings.md#user_files_path). Path to file also supports [globs](#globs-in-path).
-- `format` — [Format](/sql-reference/formats) of the files. Type: [String](../../sql-reference/data-types/string.md).
-- `structure` — Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
-- `compression_method` — Compression method. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.
+| Argument             | Description                                                                                                                                                                        |
+|----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cluster_name`       | Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.                                                                  |
+| `path`               | The relative path to the file from [user_files_path](/operations/server-configuration-parameters/settings.md#user_files_path). Path to file also supports [globs](#globs-in-path). |
+| `format`             | [Format](/sql-reference/formats) of the files. Type: [String](../../sql-reference/data-types/string.md).                                                                           |
+| `structure`          | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).                             |
+| `compression_method` | Compression method. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.                                                                                     |
 
-**Returned value**
+## Returned value {#returned_value}
 
 A table with the specified format and structure and with data from files matching the specified path.
 
@@ -79,11 +81,10 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
-
 ## Globs in Path {#globs-in-path}
 
 All patterns supported by [File](../../sql-reference/table-functions/file.md#globs-in-path) table function are supported by FileCluster.
 
-**See Also**
+## Related {#related}
 
 - [File table function](../../sql-reference/table-functions/file.md)
