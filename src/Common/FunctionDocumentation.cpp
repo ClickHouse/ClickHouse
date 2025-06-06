@@ -30,6 +30,11 @@ std::string FunctionDocumentation::argumentsAsString() const
     return res;
 }
 
+std::string FunctionDocumentation::syntaxAsString() const
+{
+    return boost::algorithm::trim_copy(syntax);
+}
+
 std::string FunctionDocumentation::returnedValueAsString() const
 {
     return boost::algorithm::trim_copy(returned_value);
