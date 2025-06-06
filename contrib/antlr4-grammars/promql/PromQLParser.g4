@@ -111,7 +111,7 @@ parens
 // Selectors
 
 instantSelector
-    : METRIC_NAME (LEFT_BRACE labelMatcherList? RIGHT_BRACE)?
+    : metricName (LEFT_BRACE labelMatcherList? RIGHT_BRACE)?
     | LEFT_BRACE labelMatcherList RIGHT_BRACE
     ;
 
@@ -202,6 +202,11 @@ labelName
 
 labelNameList
     : LEFT_PAREN (labelName (COMMA labelName)*)? RIGHT_PAREN
+    ;
+
+metricName
+    : METRIC_NAME
+    | keyword
     ;
 
 keyword
