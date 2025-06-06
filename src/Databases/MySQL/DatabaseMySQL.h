@@ -52,6 +52,8 @@ public:
 
     bool canContainDistributedTables() const override { return false; }
 
+    bool canContainRocksDBTables() const override { return false; }
+
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool empty() const override;
