@@ -881,7 +881,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     this->entries.clear();
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, ins->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, ins->mutable_setting_values());
     }
 }
 
@@ -3399,7 +3399,7 @@ void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, Backu
     if (rg.nextSmallNumber() < 4)
     {
         vals = vals ? vals : br->mutable_setting_values();
-        generateSettingValues(rg, serverSettings, vals);
+        generateSettingValues(rg, formatSettings, vals);
     }
     br->set_async(rg.nextSmallNumber() < 4);
 }
