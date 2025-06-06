@@ -122,10 +122,8 @@ private:
         KafkaConsumer2::OnlyTopicNameAndPartitionIdHash,
         KafkaConsumer2::OnlyTopicNameAndPartitionIdEquality>;
 
-    using TopicPartitionSet = std::unordered_set<
-        TopicPartition,
-        KafkaConsumer2::OnlyTopicNameAndPartitionIdHash,
-        KafkaConsumer2::OnlyTopicNameAndPartitionIdEquality>;
+    using TopicPartitionSet = std::
+        unordered_set<TopicPartition, KafkaConsumer2::OnlyTopicNameAndPartitionIdHash, KafkaConsumer2::OnlyTopicNameAndPartitionIdEquality>;
 
     struct ConsumerAndAssignmentInfo
     {
@@ -151,7 +149,11 @@ private:
             locks_it = tmp_locks.find(topic_partition);
             if (locks_it != tmp_locks.end())
                 return &locks_it->second;
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find locks for topic partition {}:{}", topic_partition.topic, topic_partition.partition_id);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot find locks for topic partition {}:{}",
+                topic_partition.topic,
+                topic_partition.partition_id);
         }
     };
 
@@ -166,7 +168,10 @@ private:
     {
         BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled{false};
-        explicit TaskContext(BackgroundSchedulePoolTaskHolder && task_) : holder(std::move(task_)) { }
+        explicit TaskContext(BackgroundSchedulePoolTaskHolder && task_)
+            : holder(std::move(task_))
+        {
+        }
     };
 
     enum class AssignmentChange
@@ -261,12 +266,26 @@ private:
         bool has_replica_without_locks{false};
     };
     std::pair<TopicPartitionSet, ActiveReplicasInfo> getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use);
-    std::pair<TopicPartitions, ActiveReplicasInfo>  getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions);
-    std::optional<LockedTopicPartitionInfo> createLocksInfoIfFree(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
 
-    // Takes lock over topic partitions and sets the committed offset in topic_partitions
-    void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota);
-    void updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks);
+    std::pair<TopicPartitions, ActiveReplicasInfo>
+    getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions);
+
+    std::optional<LockedTopicPartitionInfo>
+    createLocksInfoIfFree(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
+
+    void lockTemporaryLocks(
+        zkutil::ZooKeeper & keeper_to_use,
+        const TopicPartitions & available_topic_partitions,
+        TopicPartitionLocks & tmp_locks,
+        size_t & tmp_locks_quota,
+        bool has_replica_without_locks);
+
+    void updatePermanentLocks(
+        zkutil::ZooKeeper & keeper_to_use,
+        const TopicPartitions & topic_partitions,
+        TopicPartitionLocks & permanent_locks,
+        size_t topic_partitions_count,
+        size_t active_replica_count);
 
     // To save commit and intent nodes
     void saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, const std::filesystem::path & keeper_path_to_data, const String & data);

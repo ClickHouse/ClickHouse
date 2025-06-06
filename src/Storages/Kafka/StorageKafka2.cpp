@@ -124,7 +124,6 @@ namespace
 {
 constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
 constexpr auto TMP_LOCKS_REFRESH_POLLS = 15;
-constexpr auto TMP_LOCKS_QUOTA_STEP = 2U;
 }
 
 StorageKafka2::StorageKafka2(
@@ -794,6 +793,7 @@ std::pair<StorageKafka2::TopicPartitionSet, StorageKafka2::ActiveReplicasInfo> S
     );
 
     const auto replicas_count = keeper_to_use.getChildren(keeper_path + "/replicas").size();
+    LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total", replicas_with_lock.size(), replicas_count);
     const auto has_replica_without_locks = replicas_with_lock.size() < replicas_count;
     return {locked_partitions, ActiveReplicasInfo{replicas_count, has_replica_without_locks}};
 }
@@ -859,44 +859,45 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
     }
 }
 
-// First we delete all current temporary locks,
-// then we create new locks from free partitions
-void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota)
+void StorageKafka2::lockTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & available_topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota, const bool has_replica_without_locks)
 {
-    LOG_TRACE(log, "Starting to update temporary locks");
-    tmp_locks.clear();
-    auto available_topic_partitions_res = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
-
-    if (available_topic_partitions_res.first.empty())
+    /// There are no available topic partitions, so drop the quota to 0
+    if (available_topic_partitions.empty())
     {
         LOG_TRACE(log, "There are no available topic partitions to lock");
         tmp_locks_quota = 0;
         return;
     }
+    LOG_TRACE(log, "Starting to lock temporary locks");
 
-    pcg64 generator(randomSeed());
-    std::shuffle(available_topic_partitions_res.first.begin(), available_topic_partitions_res.first.end(), generator);
-    const auto & available_topic_partitions = available_topic_partitions_res.first;
-
-    /// tmp_locks_quota is increased by TMP_LOCKS_QUOTA_STEP
-    /// but always capped to the number of available topic partitions
-    if (tmp_locks_quota > 0 && available_topic_partitions_res.second.has_replica_without_locks)
+    /// We have some temporary lock quota, but there is at least one replica without locks, let's drop the quote to give the other replica a chance to lock some partitions
+    if (tmp_locks_quota > 0 && has_replica_without_locks)
     {
-        LOG_TRACE(log, "There is at least one consumer without locks, won't lock any temporary locks");
+        LOG_TRACE(log, "There is at least one consumer without locks, won't lock any temporary locks this round");
         tmp_locks_quota = 0;
         return;
     }
-    else if (tmp_locks_quota > 0 && tmp_locks_quota == available_topic_partitions.size())
+
+    /// We have some temporary lock quota, but it is greater than the number of available topic partitions,
+    /// so we will reduce the quota to give other replicas a chance to lock some partitions
+    if (tmp_locks_quota > 0 && tmp_locks_quota <= available_topic_partitions.size())
     {
 
         LOG_TRACE(log, "Reducing temporary locks to give other replicas a chance to lock some partitions");
-        tmp_locks_quota--;
+        tmp_locks_quota = std::min(tmp_locks_quota - 1, available_topic_partitions.size() - 1);
     }
     else
     {
-        tmp_locks_quota = std::min(available_topic_partitions.size(), tmp_locks_quota + TMP_LOCKS_QUOTA_STEP);
+        tmp_locks_quota = std::min(available_topic_partitions.size(), tmp_locks_quota + 1);
     }
     LOG_INFO(log, "The replica can take {} temporary locks in the current round", tmp_locks_quota);
+
+    if (tmp_locks_quota == 0)
+        return;
+
+    auto available_topic_partitions_copy = available_topic_partitions;
+    pcg64 generator(randomSeed());
+    std::shuffle(available_topic_partitions_copy.begin(), available_topic_partitions_copy.end(), generator);
 
     for (const auto & tp : available_topic_partitions)
     {
@@ -911,14 +912,11 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
 
 // If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
 // Otherwise, we try to lock free partitions one by one.
-void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks)
+void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & available_topic_partitions, TopicPartitionLocks & permanent_locks, const size_t topic_partitions_count, const size_t active_replica_count)
 {
     LOG_TRACE(log, "Starting to update permanent locks");
-    const auto available_topic_partitions_res = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
-    const auto & available_topic_partitions = available_topic_partitions_res.first;
-    const auto active_replica_count = available_topic_partitions_res.second.active_replica_count;
     chassert(active_replica_count > 0 && "There should be at least one active replica, because we are active");
-    size_t can_lock_partitions = std::max<size_t>(topic_partitions.size() / static_cast<size_t>(active_replica_count), 1);
+    size_t can_lock_partitions = std::max<size_t>(topic_partitions_count / static_cast<size_t>(active_replica_count), 1);
 
     LOG_TRACE(log, "The replica can have {} permanent locks after the current round", can_lock_partitions);
 
@@ -1288,8 +1286,11 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
                 return StallReason::NoMetadata;
             }
 
-            updatePermanentLocks(*consumer_info.keeper, all_topic_partitions, consumer_info.permanent_locks);
-            updateTemporaryLocks(*consumer_info.keeper, all_topic_partitions, consumer_info.tmp_locks, consumer_info.tmp_locks_quota);
+            // Clear temporary locks to give a chance to lock them as permanent locks and to make it possible to gather available topic partitions only once.
+            consumer_info.tmp_locks.clear();
+            const auto [available_topic_partitions, active_replicas_info] = getAvailableTopicPartitions(*consumer_info.keeper, all_topic_partitions);
+            updatePermanentLocks(*consumer_info.keeper, available_topic_partitions, consumer_info.permanent_locks, all_topic_partitions.size(), active_replicas_info.active_replica_count);
+            lockTemporaryLocks(*consumer_info.keeper, available_topic_partitions, consumer_info.tmp_locks, consumer_info.tmp_locks_quota, active_replicas_info.has_replica_without_locks);
             consumer_info.poll_count = 0;
 
             // Now we always have some assignment
