@@ -366,7 +366,11 @@ void updateGlobalConfiguration(
         kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
 
     if (kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value == "MSK")
-        kafka_config.set("client.rack", S3::tryGetRunningAvailabilityZone());
+    {
+        std::string rack = S3::tryGetRunningAvailabilityZone();
+        kafka_config.set("client.rack", rack);
+        LOG_WARNING(params.log, "client.rack set to {}.", rack);
+    }
 
 #if USE_KRB5
     if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
