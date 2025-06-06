@@ -995,7 +995,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/providers/implementations/macs/kmac_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/macs/poly1305_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/macs/siphash_prov.c
-    ${OPENSSL_SOURCE_DIR}/providers/implementations/rands/crngt.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/rands/drbg.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/rands/drbg_ctr.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/rands/drbg_hash.c
@@ -1022,9 +1021,9 @@ set(CRYPTO_SRC
 
 if(NOT ENABLE_OPENSSL_DYNAMIC)
     set(CRYPTO_SRC ${CRYPTO_SRC}
-        ${OPENSSL_SOURCE_DIR}/providers/fips/fips_entry.c
-        ${OPENSSL_SOURCE_DIR}/providers/fips/fipsprov.c
-        ${OPENSSL_SOURCE_DIR}/providers/legacyprov.c
+        # ${OPENSSL_SOURCE_DIR}/providers/fips/fips_entry.c
+        # ${OPENSSL_SOURCE_DIR}/providers/fips/fipsprov.c
+        # ${OPENSSL_SOURCE_DIR}/providers/legacyprov.c
     )
 endif()
 
@@ -1220,7 +1219,6 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/d1_lib.c
     ${OPENSSL_SOURCE_DIR}/ssl/d1_msg.c
     ${OPENSSL_SOURCE_DIR}/ssl/d1_srtp.c
-    ${OPENSSL_SOURCE_DIR}/ssl/event_queue.c
     ${OPENSSL_SOURCE_DIR}/ssl/methods.c
     ${OPENSSL_SOURCE_DIR}/ssl/pqueue.c
     ${OPENSSL_SOURCE_DIR}/ssl/priority_queue.c
@@ -1232,7 +1230,7 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_cert_comp.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_ciph.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_conf.c
-    ${OPENSSL_SOURCE_DIR}/ssl/ssl_err.c
+    ${OPENSSL_SOURCE_DIR}/crypto/ssl_err.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_err_legacy.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_init.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_lib.c
@@ -1332,6 +1330,7 @@ target_include_directories(crypto
 target_include_directories(crypto
     SYSTEM PUBLIC ${OPENSSL_SOURCE_DIR}/include
     PRIVATE ${OPENSSL_SOURCE_DIR}/providers/common/include
+    PRIVATE ${OPENSSL_SOURCE_DIR}/providers/fips/include
     PRIVATE ${OPENSSL_SOURCE_DIR}/providers/implementations/include
     PRIVATE ${OPENSSL_SOURCE_DIR}/crypto
     PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/include
