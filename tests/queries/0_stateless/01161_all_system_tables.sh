@@ -25,7 +25,7 @@ function run_selects()
 
     for t in "${tables_arr[@]}"
     do
-        ${CLICKHOUSE_CLIENT} -q "SELECT * FROM $t LIMIT $LIMIT SETTINGS allow_introspection_functions = 1 FORMAT Null" # Suppress style check: database=$CLICKHOUSE_DATABASEs
+        ${CLICKHOUSE_CLIENT} -q "SELECT * FROM $t LIMIT $LIMIT SETTINGS allow_introspection_functions = 1 FORMAT Null" # Suppress style check: current_database=$CLICKHOUSE_DATABASE
         wait_for_queries_to_finish
     done
 }
