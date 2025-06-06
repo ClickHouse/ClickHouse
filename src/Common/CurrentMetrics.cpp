@@ -303,6 +303,7 @@
     M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
+    M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
