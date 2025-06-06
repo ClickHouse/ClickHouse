@@ -42,6 +42,7 @@ timeout 5 bash -c select 2>/dev/null &
 timeout 5 bash -c select 2>/dev/null &
 
 $CLICKHOUSE_CLIENT -m --query "
+SET send_logs_level='error';
 SYSTEM RELOAD CONFIG"
 
 $CLICKHOUSE_CLIENT --query "SELECT sleep(3) FORMAT Null"
@@ -57,6 +58,7 @@ timeout 5 bash -c select 2>/dev/null &
 timeout 5 bash -c select 2>/dev/null &
 
 $CLICKHOUSE_CLIENT -m --query "
+SET send_logs_level='error';
 SYSTEM RELOAD CONFIG"
 
 $CLICKHOUSE_CLIENT --query "SELECT sleep(3) FORMAT Null"
