@@ -117,6 +117,8 @@
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
 
+#include <Analyzer/ConstantNode.h>
+#include <Planner/CollectColumnIdentifiers.h>
 
 namespace fs = std::filesystem;
 
@@ -410,7 +412,7 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
-        sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
+        sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAll(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
     }
@@ -534,23 +536,44 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     return QueryProcessingStage::WithMergeableState;
 }
 
+class ColumnNameCollectorVisitor : public ConstInDepthQueryTreeVisitor<ColumnNameCollectorVisitor>
+{
+public:
+    explicit ColumnNameCollectorVisitor(std::unordered_set<std::string> & column_names_)
+        : column_names(column_names_)
+    {}
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (const auto * column_node = node->as<ColumnNode>())
+            column_names.insert(column_node->getColumnName());
+    }
+
+private:
+    std::unordered_set<std::string> & column_names;
+};
+
 /// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp
 /// Will skip merging step in the initial server when the following conditions are met:
 /// 1. Sharding key columns should be a subset of expression columns.
 /// 2. Sharding key expression is a deterministic function of col1, ..., coln and expression key is injective functions of these col1, ..., coln.
 /// 3. If the expression contains non-injective function, return false.
 bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
-    const QueryTreeNodePtr & expr, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
+    const QueryTreeNodePtr & expr, [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
-    /// Get all physical columns as input since both sharding key and analyzed expressions could use any of them
-    ColumnsWithTypeAndName input_columns;
-    for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
-        input_columns.emplace_back(nullptr, column.type, column.name);
-
-    /// Use empty correlated columns set since we're analyzing expressions from the main query (projection/group by/limit by),
-    /// not from subqueries, so there are no correlated columns to consider
+    ColumnsWithTypeAndName empty_input_columns;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
-    auto [expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(expr, input_columns, query_info.planner_context, empty_correlated_columns_set);
+    // When comparing sharding key expressions, we need to ignore table qualifiers in column names
+    // because the sharding key is defined without table qualifiers, but the query expression
+    // may have internal table aliases (e.g. __table1.id). Setting use_column_identifier_as_action_node_name=false
+    // makes the DAG builder use plain column names without table qualifiers.
+    auto [expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        expr, 
+        empty_input_columns, 
+        query_info.planner_context, 
+        empty_correlated_columns_set, 
+        false /* use_column_identifier_as_action_node_name */);
+
     correlated_subtrees.assertEmpty("in sharding key expression");
 
     if (expression_dag.hasArrayJoin() || expression_dag.hasStatefulFunctions() || expression_dag.hasNonDeterministic())
@@ -559,14 +582,18 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     const auto & expr_key_required_columns = expression_dag.getRequiredColumnsNames();
 
     const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
-    for (const auto & col : sharding_key_dag.getRequiredColumnsNames())
+    
+    for (const auto & col : sharding_key_dag.getRequiredColumnsNames()){
         if (std::ranges::find(expr_key_required_columns, col) == expr_key_required_columns.end())
             return false;
+    }
+        
     auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(expression_dag);
     for (const auto & node : irreducibe_nodes)
     {
-        if (node->type == ActionsDAG::ActionType::FUNCTION && !isInjectiveFunction(node))
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !isInjectiveFunction(node)){
             return false;
+        }
     }
     const auto matches = matchTrees(expression_dag.getOutputs(), sharding_key_dag);
     return allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches);
