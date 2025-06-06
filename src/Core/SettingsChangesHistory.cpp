@@ -75,7 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
             {"use_legacy_to_time", true, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
             {"allow_experimental_time_time64_type", false, false, "New settings. Allows to use a new experimental Time and Time64 data types."},
-            {"enable_json_type", false, false, "New settings. Allows to use a new experimental Time and Time64 data types."},
+            {"enable_time_time64_type", false, false, "New settings. Allows to use a new experimental Time and Time64 data types."},
             {"input_format_parquet_enable_json_parsing", true, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
 
         });

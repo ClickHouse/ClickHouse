@@ -1315,12 +1315,14 @@ public:
             is_negative = true;
             t = -t;
         }
+
+        // Cap at 3599999 seconds (999:59:59)
+        if (unlikely(t > 3599999))
+            t = 3599999;
+
         res.second = t % 60;
         res.minute = t / 60 % 60;
         res.hour = t / 3600;
-
-        if (unlikely(res.hour > 999))
-            res.hour = 999;
 
         res.is_negative = is_negative;
 
