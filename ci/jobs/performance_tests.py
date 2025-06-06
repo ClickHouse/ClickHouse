@@ -594,9 +594,6 @@ def main():
         )
 
     # dmesg -T > dmesg.log
-    #
-    # ls -lath
-    #
     # 7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} \
     #    {right,left}/{performance,scripts} {{right,left}/db,db0}/preprocessed_configs \
     #    report analyze benchmark metrics \

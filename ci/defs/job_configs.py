@@ -788,7 +788,8 @@ class JobConfigs:
         runs_on=["#from param"],
         command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
         # TODO: switch to stateless-test image
-        run_in_docker="clickhouse/performance-comparison",
+        # CAP_SYS_ADMIN to fix issue https://github.com/ClickHouse/ClickHouse/issues/80479
+        run_in_docker="clickhouse/performance-comparison+--cap-add=SYS_ADMIN",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
