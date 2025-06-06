@@ -871,7 +871,7 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
 
     static const std::unordered_map<ASTExplainQuery::ExplainKind, std::vector<String>> settings_by_kind
         = {{ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
-           {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {}},
+           {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "query_tree_passes"}},
            {ASTExplainQuery::QueryTree, {"run_passes", "dump_passes", "dump_ast", "passes"}},
            {ASTExplainQuery::ExplainKind::QueryPlan, {"header, description", "actions", "indexes", "optimize", "json", "sorting"}},
            {ASTExplainQuery::ExplainKind::QueryPipeline, {"header", "graph=1", "compact"}},
