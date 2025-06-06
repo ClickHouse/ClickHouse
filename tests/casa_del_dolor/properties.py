@@ -57,7 +57,7 @@ possible_properties = {
     "background_message_broker_schedule_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
-    "background_move_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()),
+    "background_move_pool_size": lambda: random.randint(1, multiprocessing.cpu_count()),
     # "background_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()), has to be in a certain range
     "background_schedule_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
