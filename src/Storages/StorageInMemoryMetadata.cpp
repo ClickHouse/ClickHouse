@@ -1,4 +1,5 @@
 #include <Storages/StorageInMemoryMetadata.h>
+#include "Access/ContextAccess.h"
 
 #include <Access/AccessControl.h>
 #include <Access/User.h>
@@ -159,6 +160,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
+    new_context->setSetting("allow_ddl", 1);
 
     return new_context;
 }
