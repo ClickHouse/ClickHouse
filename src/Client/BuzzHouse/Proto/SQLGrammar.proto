@@ -2475,6 +2475,7 @@ message GenerateSeriesFunc {
         generate_series = 1;
         generateSeries = 2;
         numbers = 3;
+        numbers_mt = 4;
     }
     required GSName fname = 1;
     required Expr expr1 = 2;

@@ -283,6 +283,7 @@ private:
     String getNextAlias() { return "a" + std::to_string(aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
+    String columnPathRef(const ColumnPathChain & entry) const;
     void colRefOrExpression(RandomGenerator & rg, TableEngineValues teng, const ColumnPathChain & entry, Expr * expr);
     String nextComment(RandomGenerator & rg);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);

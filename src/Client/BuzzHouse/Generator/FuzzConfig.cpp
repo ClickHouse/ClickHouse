@@ -124,6 +124,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"keeper_map_path_prefix", [&](const JSONObjectType & value) { keeper_map_path_prefix = String(value.getString()); }},
         {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
         {"secure_port", [&](const JSONObjectType & value) { secure_port = static_cast<uint32_t>(value.getUInt64()); }},
+        {"http_port", [&](const JSONObjectType & value) { http_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},

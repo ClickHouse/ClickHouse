@@ -130,6 +130,8 @@ public:
 
     void setName(Database * db) const { SQLDatabase::setName(db, dname); }
 
+    String getName() const { return "d" + std::to_string(dname); }
+
     void finishDatabaseSpecification(DatabaseEngine * dspec) const
     {
         if (isReplicatedDatabase())
@@ -314,6 +316,18 @@ public:
             est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
         }
         est->mutable_table()->set_table("t" + std::to_string(name));
+    }
+
+    String getFullName(const bool setdbname) const
+    {
+        String res;
+
+        if (db || setdbname)
+        {
+            res += "d" + (db ? std::to_string(db->dname) : "efault") + ".";
+        }
+        res += "t" + std::to_string(tname);
+        return res;
     }
 
     void setName(ExprSchemaTable * est, const bool setdbname) const { SQLTable::setName(est, setdbname, db, tname); }

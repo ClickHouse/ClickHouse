@@ -305,6 +305,7 @@ void StatementGenerator::setTableRemote(
             }
         }
         flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
+        std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
         for (const auto & entry : this->remote_entries)
         {
             buf += fmt::format(
@@ -478,8 +479,9 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t values_udf = 3 * static_cast<uint32_t>(can_recurse);
     const uint32_t random_data_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf);
     const uint32_t dictionary = 15 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
+    const uint32_t url_encoded_table = 5 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
     const uint32_t prob_space = derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf
-        + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary;
+        + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -585,7 +587,7 @@ bool StatementGenerator::joinedTableOrFunction(
         GenerateSeriesFunc * gsf = tf->mutable_gseries();
         std::uniform_int_distribution<uint32_t> gsf_range(1, static_cast<uint32_t>(GenerateSeriesFunc_GSName_GSName_MAX));
         const GenerateSeriesFunc_GSName val = static_cast<GenerateSeriesFunc_GSName>(gsf_range(rg.generator));
-        const String & cname = val == GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers ? "number" : "generate_series";
+        const String & cname = val > GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_generateSeries ? "number" : "generate_series";
         std::uniform_int_distribution<uint32_t> numbers_range(1, UINT32_C(1000000));
 
         gsf->set_fname(val);
@@ -597,7 +599,7 @@ bool StatementGenerator::joinedTableOrFunction(
 
         this->current_level++;
         this->levels[this->current_level] = QueryLevel(this->current_level);
-        if (val == GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers)
+        if (val > GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_generateSeries)
         {
             if (noption < 4)
             {
@@ -882,6 +884,47 @@ bool StatementGenerator::joinedTableOrFunction(
 
         d.setName(rg.nextSmallNumber() < 8 ? tof->mutable_est() : tof->mutable_tfunc()->mutable_dictionary(), false);
         addDictionaryRelation(rel_name, d);
+    }
+    else if (
+        url_encoded_table
+        && nopt
+            < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+               + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + 1))
+    {
+        String url, buf;
+        bool first = false;
+        TableFunction * tf = tof->mutable_tfunc();
+        URLFunc * ufunc = tf->mutable_url();
+        const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
+        const std::optional<String> & cluster = tt.getCluster();
+        const InOutFormat outf = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+
+        if (cluster.has_value() || (!fc.clusters.empty() && rg.nextMediumNumber() < 16))
+        {
+            ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
+            ufunc->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
+        }
+        else
+        {
+            ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
+        }
+        url += "http://" + fc.host + ":" + std::to_string(fc.http_port) + "/?query=SELECT+";
+        flatTableColumnPath(to_remote_entries, tt.cols, [](const SQLColumn &) { return true; });
+        std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
+        for (const auto & entry : this->remote_entries)
+        {
+            const String & bottomName = entry.getBottomName();
+
+            url += fmt::format("{}{}", first ? "" : ",", bottomName);
+            buf += fmt::format("{}{} {}", first ? "" : ", ", bottomName, entry.getBottomType()->typeName(true));
+            first = false;
+        }
+        this->remote_entries.clear();
+        url += "+FROM+" + tt.getFullName(rg.nextBool()) + "+FORMAT+" + InOutFormat_Name(outf).substr(6);
+        ufunc->set_uurl(std::move(url));
+        ufunc->set_format(outf);
+        ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
+        addTableRelation(rg, false, rel_name, tt);
     }
     else
     {
