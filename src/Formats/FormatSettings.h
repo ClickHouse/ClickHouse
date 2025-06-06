@@ -248,6 +248,7 @@ struct FormatSettings
         bool pretty_print = true;
         char pretty_print_indent = ' ';
         size_t pretty_print_indent_multiplier = 4;
+        bool infer_array_of_dynamic_from_array_of_different_values = true;
     } json{};
 
     struct

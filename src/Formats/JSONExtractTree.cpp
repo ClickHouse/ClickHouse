@@ -1580,7 +1580,12 @@ private:
                 }
 
                 auto types_copy = types;
-                transformInferredJSONTypesIfNeeded(types_copy, format_settings, &json_inference_info);
+                /// Disable read_numbers_as_strings in json settings to avoid
+                /// inferring array with numbers and strings as Array(String) here.
+                /// It will be done later if needed in transformFinal*.
+                auto format_settings_copy = format_settings;
+                format_settings_copy.json.read_numbers_as_strings = false;
+                transformInferredJSONTypesIfNeeded(types_copy, format_settings_copy, &json_inference_info);
 
                 if (checkIfTypesAreEqual(types_copy))
                     return std::make_shared<DataTypeArray>(types_copy.back());
