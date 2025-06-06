@@ -127,7 +127,6 @@ private:
 
 };
 
-/// Once manifest file is constructed. It's unchangeable.
 using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
 
 }
