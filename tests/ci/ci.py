@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import concurrent.futures
 import json
@@ -1030,8 +1032,12 @@ def main() -> int:
         git_ref = git_runner.run(f"{GIT_PREFIX} rev-parse HEAD")
 
         # let's get CH version
-        version = get_version_from_repo(git=Git(True)).string
-        print(f"Got CH version for this commit: [{version}]")
+        git = Git(True)
+        version = get_version_from_repo(git = git).string
+        print(f"""Got CH version for this commit: [{version}]
+            latest tag: {git.latest_tag} ({git.commits_since_latest} commits back),
+            latest upstream tag: {git.latest_upstream_tag} ({git.commits_since_upstream} commits back)
+        """)
 
         docker_data = (
             _configure_docker_jobs(args.docker_digest_or_latest)
