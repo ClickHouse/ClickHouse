@@ -1,4 +1,5 @@
 import pytest
+import logging
 
 from helpers.cluster import ClickHouseCluster
 
@@ -182,6 +183,7 @@ def init_data_s3_rm_rec(source):
 
 
 def test_disks_app_func_ld(started_cluster):
+    logging.info("Start to test test_disks_app_func_ld")
     source = cluster.instances["disks_app_test"]
 
     out = source.exec_in_container(
@@ -212,7 +214,7 @@ def test_disks_app_func_ld(started_cluster):
             "switch-disk local; list-disks",
         ]
     )
-
+    logging.info("Start to test test_disks_app_func_ld")
     disks = list(
         map(lambda x: x.strip(), filter(lambda x: len(x) > 1, out.split("\n")))
     )
@@ -229,7 +231,9 @@ def test_disks_app_func_ld(started_cluster):
     ]
 
 
+
 def test_disks_app_func_ls(started_cluster):
+    logging.info("Start to test test_disks_app_func_ls")
     source = cluster.instances["disks_app_test"]
 
     remove_recurive(source, "test1", ".")
@@ -246,9 +250,10 @@ def test_disks_app_func_ls(started_cluster):
 
     assert ".:\nstore\n" in out
     assert "\n./store:\n" in out
-
+    logging.info("Finish to test test_disks_app_func_ls")
 
 def test_disks_app_func_cp(started_cluster):
+    logging.info("Start to test test_disks_app_func_cp")
     source = cluster.instances["disks_app_test"]
 
     touch(source, "test1", "path1")
@@ -282,9 +287,10 @@ def test_disks_app_func_cp(started_cluster):
     out = ls(source, "test1", ".")
 
     assert "path1" not in out
-
+    logging.info("Finish to test test_disks_app_func_cp")
 
 def test_disks_app_func_ln(started_cluster):
+    logging.info("Start to test test_disks_app_func_ln")
     source = cluster.instances["disks_app_test"]
 
     init_data(source)
@@ -297,17 +303,18 @@ def test_disks_app_func_ln(started_cluster):
             "link data/default/test_table data/default/z_tester",
         ]
     )
-
+    logging.info("Finish to test test_disks_app_func_ln")
     out = source.exec_in_container(
         ["/usr/bin/clickhouse", "disks", "--save-logs", "--query", "list data/default/"]
     )
-
+    logging.info("Finish to test test_disks_app_func_ln_2")
     files = out.split("\n")
 
     assert "z_tester" in files
 
 
 def test_disks_app_func_rm(started_cluster):
+    logging.info("Start to test test_disks_app_func_rm")
     source = cluster.instances["disks_app_test"]
 
     write(source, "test2", "path3")
@@ -321,9 +328,11 @@ def test_disks_app_func_rm(started_cluster):
     out = ls(source, "test2", ".")
 
     assert "path3" not in out
+    logging.info("Finish to test test_disks_app_func_rm")
 
 
 def test_disks_app_func_rm_shared_recursive(started_cluster):
+    logging.info("Start to test test_disks_app_func_rm_shared_recursive")
     source = cluster.instances["disks_app_test"]
 
     init_data_s3_rm_rec(source)
@@ -352,9 +361,11 @@ def test_disks_app_func_rm_shared_recursive(started_cluster):
     assert out == ".:\n\n"
 
     remove(source, "test3", ". --recursive")
+    logging.info("Finish to test test_disks_app_func_rm_shared_recursive")
 
 
 def test_disks_app_func_mv(started_cluster):
+    logging.info("Start to test test_disks_app_func_mv")
     source = cluster.instances["disks_app_test"]
 
     init_data(source)
@@ -375,7 +386,7 @@ def test_disks_app_func_mv(started_cluster):
             "move store old_store",
         ]
     )
-
+    logging.info("Finish to test test_disks_app_func_mv")
     out = ls(source, "test1", ".")
 
     files = out.split("\n")
@@ -386,6 +397,7 @@ def test_disks_app_func_mv(started_cluster):
 
 
 def test_disks_app_func_read_write(started_cluster):
+    logging.info("Start to test test_disks_app_func_read_write")
     source = cluster.instances["disks_app_test"]
 
     write(source, "test1", "5.txt")
@@ -401,13 +413,15 @@ def test_disks_app_func_read_write(started_cluster):
             "read 5.txt",
         ]
     )
-
+    logging.info("Finish to test test_disks_app_func_read_write")
     files = out.split("\n")
 
     assert files[0] == "tester"
 
 
+
 def test_remote_disk_list(started_cluster):
+    logging.info("Start to test test_remote_disk_list")
     source = cluster.instances["disks_app_test"]
     init_data_s3(source, "test4")
 
@@ -421,3 +435,4 @@ def test_remote_disk_list(started_cluster):
 
     assert ".:\nstore\n" in out
     assert "\n./store:\n" in out
+    logging.info("Finish to test test_remote_disk_list")

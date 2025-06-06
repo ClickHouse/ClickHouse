@@ -231,6 +231,30 @@ def monitor_directory(path, interval=1):
         prev_snapshot = current_snapshot
         time.sleep(interval)
 
+def print_directory_tree(path):
+    max_depth=2
+    indent="  "
+    def _print_tree(current_path, depth):
+        if depth > max_depth:
+            return
+        try:
+            entries = sorted(os.listdir(current_path))
+        except PermissionError:
+            logging.warning(f"{indent * depth}[Permission Denied]: {current_path}")
+            return
+
+        for entry in entries:
+            full_path = os.path.join(current_path, entry)
+            logging.info(f"{indent * depth}- {entry}")
+            if os.path.isdir(full_path):
+                _print_tree(full_path, depth + 1)
+
+    while True:
+        logging.info(f"\n--- Directory tree for: {path} ---")
+        _print_tree(path, depth=1)
+        time.sleep(10)
+
+
 signal.signal(signal.SIGINT, docker_kill_handler_handler)
 
 # Integration tests runner should allow to run tests on several versions of ClickHouse.
@@ -560,7 +584,7 @@ if __name__ == "__main__":
     for i in range(5):
         path = base_path_template.format(idx=i)
         # Just start monitoring thread regardless of whether the path exists now
-        thread = threading.Thread(target=monitor_directory, args=(path, 1), daemon=True)
+        thread = threading.Thread(target=print_directory_tree, args=(path), daemon=True)
         thread.start()
 
     subprocess.check_call(cmd, shell=True, bufsize=0)

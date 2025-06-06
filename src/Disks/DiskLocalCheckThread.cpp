@@ -43,15 +43,23 @@ void DiskLocalCheckThread::run()
     LOG_INFO(log, "Disk {} seems to be readable: {} . writable: {}", disk->getName(), can_read, can_write);
     if (can_read)
     {
-        if (disk->getName() == "test1")
+        if (disk->getName() == "test1" || disk->getName() == "test2")
         {
-            std::string disk_path =  "/var/lib/clickhouse/path1/";
+            std::string disk_path =
+                (disk->getName() == "test1" ? "/var/lib/clickhouse/path1/" : "/var/lib/clickhouse/path2/");
             try
             {
                 Poco::DirectoryIterator end;
+                bool found = false;
                 for (Poco::DirectoryIterator it(disk_path); it != end; ++it)
                 {
-                    LOG_INFO(log, "DiskLocalCheckThread found file in path {}: {}", disk_path, it.name());
+                    LOG_INFO(log, "DiskLocalCheckThread found file for disk {} in path {}: {}",
+                             disk->getName(), disk_path, it.name());
+                    found = true;
+                }
+                if(!found) {
+                    LOG_INFO(log, "DiskLocalCheckThread did not found file for disk {} in path {}",
+                             disk->getName(), disk_path);
                 }
             }
             catch (const std::exception & e)
