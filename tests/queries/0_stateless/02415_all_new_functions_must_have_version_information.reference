@@ -729,9 +729,6 @@ tid
 timeDiff
 timeSlot
 timeSlots
-timestamp
-timezone
-timezoneOf
 toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
@@ -862,7 +859,6 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
-toTimezone
 toTypeName
 toUInt128
 toUInt128OrDefault
