@@ -53,7 +53,6 @@ vectorOperation
     | vectorOperation andUnlessOp vectorOperation
     | vectorOperation orOp vectorOperation
     | vectorOperation vectorMatchOp vectorOperation
-    | vectorOperation AT vectorOperation
     | vector
     ;
 
@@ -96,7 +95,8 @@ subqueryOp
     ;
 
 offsetOp
-    : OFFSET NUMBER
+    : AT NUMBER (OFFSET NUMBER)?
+    | OFFSET NUMBER (AT NUMBER)?
     ;
 
 vector
@@ -140,8 +140,8 @@ matrixSelector
     ;
 
 offset
-    : instantSelector OFFSET NUMBER
-    | matrixSelector OFFSET NUMBER
+    : instantSelector offsetOp
+    | matrixSelector offsetOp
     ;
 
 // Functions
