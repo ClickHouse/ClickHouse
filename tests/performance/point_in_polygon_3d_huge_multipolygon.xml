@@ -72,7 +72,7 @@
                 toInt32(rand64(number*41) % 2001 - 1000),
                 toInt32(rand64(number*43) % 2001 - 1000)
             ) AS pt
-        FROM numbers(1_000_000);
+        FROM numbers(200_000);
     </create_query>
 
     <query>
