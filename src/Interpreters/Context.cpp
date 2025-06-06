@@ -1663,12 +1663,13 @@ void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_role
 
 void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> &)
 {
+    // External roles are roles received from other node, current roles is a collection of roles that were assigned locally
     if (!new_external_roles.empty())
     {
-        if (current_roles)
-            current_roles->insert(current_roles->end(), new_external_roles.begin(), new_external_roles.end());
+        if (external_roles)
+            external_roles->insert(external_roles->end(), new_external_roles.begin(), new_external_roles.end());
         else
-            current_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
+            external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
         need_recalculate_access = true;
     }
 }
