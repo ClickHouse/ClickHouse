@@ -52,7 +52,6 @@ vectorOperation
     | vectorOperation compareOp vectorOperation
     | vectorOperation andUnlessOp vectorOperation
     | vectorOperation orOp vectorOperation
-    | vectorOperation vectorMatchOp vectorOperation
     | vector
     ;
 
@@ -84,10 +83,6 @@ andUnlessOp
 
 orOp
     : OR grouping?
-    ;
-
-vectorMatchOp
-    : (ON | UNLESS) grouping?
     ;
 
 subqueryOp
