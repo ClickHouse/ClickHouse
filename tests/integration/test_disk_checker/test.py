@@ -95,37 +95,6 @@ def wait_for_metrics(node, metric_name, expected_value, timeout=30):
     return False
 
 
-def test_disk_broken_prometheus_status(started_cluster):
-    '''
-    Manually move away the disk checker file to simulate the disk broken status
-    :param started_cluster:
-    :return:
-    '''
-    node = cluster.instances["test_disk_checker"]
-    disk_name = "test1"
-    # Based on your config, disk name is 'test1' and path inside container is:
-    disk_path = "/var/lib/clickhouse/path1"
-    disk_checker_path = os.path.join(disk_path, ".disk_checker_file")
-    disk_checker_backup_path = disk_checker_path + ".bak"
-
-    # Ensure .disk_checker_file exists initially if we have set local_disk_check_period_ms
-    assert wait_for_file(node, disk_checker_path), ".disk_checker_file was not created in time"
-
-    # Step 2: Move away .disk_checker_file to simulate readonly disk
-    node.exec_in_container(["mv", disk_checker_path, disk_checker_backup_path])
-    logging.info("Moved .disk_checker_file away to simulate disk broken")
-
-    # Wait some seconds to let ClickHouse detect the change
-    expected_log = f"Disk {disk_name} marked as broken"
-    assert wait_for_log(node, expected_log), "DiskChecker did not find expected log for broken disk"
-    assert wait_for_metrics(node, "BrokenDisks", 1), "BrokenDisks metric did not reach 1"
-
-    # Step 3: Move the .disk_checker_file back to restore disk readable status
-    node.exec_in_container(["mv", disk_checker_backup_path, disk_checker_path])
-    logging.info("Restored .disk_checker_file to simulate broken disk back to normal")
-
-    assert wait_for_metrics(node, "BrokenDisks", 0), "BrokenDisks metric did not reach 0"
-
 
 def test_disk_readonly_prometheus_status(started_cluster):
     '''
@@ -150,7 +119,7 @@ def test_disk_readonly_prometheus_status(started_cluster):
 
     # We should find the readonly log
     expected_log = f"Disk {disk_name} is readonly"
-    assert wait_for_log(node, expected_log), "DiskChecker did not find expected log"
+    assert wait_for_log(node, expected_log), "DiskChecker did not find expected log for readonly disk"
 
     count = node.count_in_log(expected_log)
     logging.info(f"DiskChecker found the disk {disk_name} readonly log count: {count}")
@@ -168,3 +137,36 @@ def test_disk_readonly_prometheus_status(started_cluster):
 
     # Check Prometheus metrics again, disk should no longer be readonly
     assert wait_for_metrics(node, "ReadonlyDisks", 0), "ReadonlyDisks metric did not reach 0"
+
+
+def test_disk_broken_prometheus_status(started_cluster):
+    '''
+    Manually move away the disk checker file to simulate the disk broken status
+    :param started_cluster:
+    :return:
+    '''
+    node = cluster.instances["test_disk_checker"]
+    disk_name = "test1"
+    # Based on your config, disk name is 'test1' and path inside container is:
+    disk_path = "/var/lib/clickhouse/path1"
+    disk_checker_path = os.path.join(disk_path, ".disk_checker_file")
+    disk_checker_backup_path = disk_checker_path + ".bak"
+
+    # Ensure .disk_checker_file exists initially if we have set local_disk_check_period_ms
+    assert wait_for_file(node, disk_checker_path), ".disk_checker_file was not created in time"
+
+    # Step 2: Move away .disk_checker_file to simulate readonly disk
+    node.exec_in_container(["mv", disk_checker_path, disk_checker_backup_path])
+    logging.info("Moved .disk_checker_file away to simulate disk broken")
+
+    # Wait some seconds to let ClickHouse detect the change
+    expected_log = f"Disk {disk_name} marked as broken"
+    assert wait_for_log(node, expected_log), "DiskChecker did not find expected log for broken disk"
+    assert wait_for_metrics(node, "BrokenDisks", 1), "BrokenDisks metric did not reach 1"
+    # Step 3: Move the .disk_checker_file back to restore disk readable status
+    node.exec_in_container(["mv", disk_checker_backup_path, disk_checker_path])
+    logging.info("Restored .disk_checker_file to simulate broken disk back to normal")
+
+    expected_log = f"Disk {disk_name} seems to be fine"
+    assert wait_for_log(node, expected_log), "DiskChecker did not find the log indicating disk seems to be fine"
+
