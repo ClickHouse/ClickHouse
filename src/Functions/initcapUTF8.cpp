@@ -39,7 +39,7 @@ struct InitcapUTF8Impl
     static void processCodePoint(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst, bool& prev_alphanum)
     {
         size_t src_sequence_length = UTF8::seqLength(*src);
-        auto src_code_point = UTF8::convertUTF8ToCodePoint(src, src_end - src);
+        auto src_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(src), src_end - src);
 
         if (src_code_point)
         {
@@ -59,7 +59,7 @@ struct InitcapUTF8Impl
             prev_alphanum = alphanum;
             if (dst_code_point > 0)
             {
-                size_t dst_sequence_length = UTF8::convertCodePointToUTF8(dst_code_point, dst, src_end - src);
+                size_t dst_sequence_length = UTF8::convertCodePointToUTF8(dst_code_point, reinterpret_cast<char *>(dst), src_end - src);
                 assert(dst_sequence_length <= 4);
 
                 if (dst_sequence_length == src_sequence_length)
