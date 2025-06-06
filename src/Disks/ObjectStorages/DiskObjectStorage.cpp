@@ -777,12 +777,19 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         buffer_size = std::min(buffer_size, total_objects_size);
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
-    impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        storage_objects,
-        read_settings,
-        use_external_buffer_for_gather,
-        /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
+    if (storage_objects.size() > 1)
+    {
+        impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+            std::move(read_buffer_creator),
+            storage_objects,
+            read_settings,
+            use_external_buffer_for_gather,
+            /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
+    }
+    else
+    {
+        impl = read_buffer_creator(false, storage_objects[0]);
+    }
 
     if (use_page_cache)
     {
@@ -798,19 +805,19 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
             cache_key, read_settings.page_cache, std::move(impl), read_settings);
     }
 
-    if (use_async_buffer)
-    {
-        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        return std::make_unique<AsynchronousBoundedReadBuffer>(
-            std::move(impl),
-            reader,
-            read_settings,
-            buffer_size,
-            read_settings.remote_read_min_bytes_for_seek, /// Modified in private repo.
-            global_context->getAsyncReadCounters(),
-            global_context->getFilesystemReadPrefetchesLog());
+    //if (use_async_buffer)
+    //{
+    //    auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+    //    return std::make_unique<AsynchronousBoundedReadBuffer>(
+    //        std::move(impl),
+    //        reader,
+    //        read_settings,
+    //        buffer_size,
+    //        read_settings.remote_read_min_bytes_for_seek, /// Modified in private repo.
+    //        global_context->getAsyncReadCounters(),
+    //        global_context->getFilesystemReadPrefetchesLog());
 
-    }
+    //}
     return impl;
 }
 
