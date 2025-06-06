@@ -622,9 +622,12 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCmapAdd, 0, 0, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCmapSubtract, 0, 0, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCmapPopulateSeries, 0, 0, 1, 3),
-    CHFunction(SQLFunc::FUNCmapContains, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCmapKeys, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCmapContains, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCmapContainsKeyLike, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCmapExtractKeyLike, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCmapValues, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCmapContainsValue, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCmapContainsKeyLike, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCmapExtractKeyLike, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCmapApply, 1, 1, 1, 1),
@@ -877,6 +880,8 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCbase32Encode, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCbase32Decode, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtryBase32Decode, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCbech32Encode, 0, 0, 1, 3),
+    CHFunction(SQLFunc::FUNCbech32Decode, 0, 0, 1, 1),
     /// Timeseries
     CHFunction(SQLFunc::FUNCseriesOutliersDetectTukey, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCseriesPeriodDetectFFT, 0, 0, 1, 1),
@@ -1310,6 +1315,8 @@ const std::vector<CHFunction> CHFuncs = {
 
 const std::vector<CHFunction> CHTableFuncs = {
     /// Table Functions
+    CHFunction(SQLTableFunc::TFazureBlobStorage, 0, 0, 3, 8),
+    CHFunction(SQLTableFunc::TFazureBlobStorageCluster, 0, 0, 4, 9),
     CHFunction(SQLTableFunc::TFcluster, 0, 0, 2, 4),
     CHFunction(SQLTableFunc::TFclusterAllReplicas, 0, 0, 2, 4),
     CHFunction(SQLTableFunc::TFdictionary, 0, 0, 1, 1),

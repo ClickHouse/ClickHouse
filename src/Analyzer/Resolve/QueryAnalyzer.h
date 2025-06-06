@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -123,6 +124,8 @@ public:
 
 private:
     /// Utility functions
+
+    IdentifierResolveScope & createIdentifierResolveScope(const QueryTreeNodePtr & scope_node, IdentifierResolveScope * parent_scope);
 
     static ProjectionName calculateFunctionProjectionName(const QueryTreeNodePtr & function_node,
         const ProjectionNames & parameters_projection_names,
@@ -284,6 +287,8 @@ private:
     /// Global scalar subquery to scalar value map
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;
+
+    std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 
     const bool only_analyze;
 };
