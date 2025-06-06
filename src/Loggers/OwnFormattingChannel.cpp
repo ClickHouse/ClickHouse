@@ -7,17 +7,17 @@ namespace DB
 
 void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
 {
-    if (pChannel && priority >= msg.base.getPriority())
+    if (pChannel && priority >= msg.base->getPriority())
     {
         if (pFormatter)
         {
             std::string text;
             pFormatter->formatExtended(msg, text);
-            pChannel->log(Poco::Message(msg.base, text));
+            pChannel->log(Poco::Message(*msg.base, text));
         }
         else
         {
-            pChannel->log(msg.base);
+            pChannel->log(*msg.base);
         }
     }
 }

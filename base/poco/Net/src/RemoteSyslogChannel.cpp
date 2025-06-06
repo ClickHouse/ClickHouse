@@ -139,14 +139,7 @@ void RemoteSyslogChannel::log(const Message& msg)
 		m += ' ';
 		m += msg.getSource();
 		m += ' ';
-		if (msg.has(STRUCTURED_DATA))
-		{
-			m += msg.get(STRUCTURED_DATA);
-		}
-		else
-		{
-			m += "-";
-		}
+		m += "-";
 	}
 	m += ' ';
 	m += msg.getText();
