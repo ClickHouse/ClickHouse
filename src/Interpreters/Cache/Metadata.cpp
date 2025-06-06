@@ -2,6 +2,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Context.h>
+#include "Common/ProfileEvents.h"
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -12,12 +13,14 @@ namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
     extern const Metric FilesystemCacheDelayedCleanupElements;
+    extern const Metric FilesystemCacheKeys;
 }
 
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheLockKeyMicroseconds;
     extern const Event FilesystemCacheLockMetadataMicroseconds;
+    extern const Event FilesystemCacheCreatedKeyDirectories;
 }
 
 namespace DB
@@ -120,32 +123,39 @@ LockedKeyPtr KeyMetadata::lockNoStateCheck()
 
 bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 {
-    if (!created_base_directory.exchange(true))
+    if (created_base_directory.load())
+        return true;
+
+    std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
+
+    if (created_base_directory.load(std::memory_order_relaxed))
+        return true;
+
+    try
     {
-        try
-        {
-            std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
-            fs::create_directories(getPath());
-        }
-        catch (const fs::filesystem_error & e)
-        {
-            created_base_directory = false;
-
-            if (!throw_if_failed &&
-                (e.code() == std::errc::no_space_on_device
-                 || e.code() == std::errc::read_only_file_system
-                 || e.code() == std::errc::permission_denied
-                 || e.code() == std::errc::too_many_files_open
-                 || e.code() == std::errc::operation_not_permitted))
-            {
-                LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
-                          "because no space left on device", key);
-
-                return false;
-            }
-            throw;
-        }
+        fs::create_directories(getPath());
+        created_base_directory.store(true);
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedKeyDirectories);
     }
+    catch (const fs::filesystem_error & e)
+    {
+        created_base_directory = false;
+
+        if (!throw_if_failed &&
+            (e.code() == std::errc::no_space_on_device
+                || e.code() == std::errc::read_only_file_system
+                || e.code() == std::errc::permission_denied
+                || e.code() == std::errc::too_many_files_open
+                || e.code() == std::errc::operation_not_permitted))
+        {
+            LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
+                        "because no space left on device", key);
+
+            return false;
+        }
+        throw;
+    }
+
     return true;
 }
 
@@ -285,6 +295,8 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
 
         it = bucket.emplace(
             key, std::make_shared<KeyMetadata>(key, user, this, is_initial_load)).first;
+
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
     }
 
     it->second->assertAccess(user.user_id);
@@ -392,6 +404,8 @@ CacheMetadata::removeEmptyKey(
 
     locked_key.markAsRemoved();
     auto next_it = bucket.erase(it);
+
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheKeys);
 
     LOG_DEBUG(log, "Key {} is removed from metadata", key);
 
