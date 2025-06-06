@@ -7,6 +7,28 @@
 namespace BuzzHouse
 {
 
+const std::unordered_map<OutFormat, InFormat> StatementGenerator::outIn
+    = {{OutFormat::OUT_Arrow, InFormat::IN_Arrow},
+       {OutFormat::OUT_Avro, InFormat::IN_Avro},
+       {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
+       {OutFormat::OUT_CSV, InFormat::IN_CSV},
+       {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
+       {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
+       {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
+       {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
+       {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
+       {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
+       {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
+       {OutFormat::OUT_ORC, InFormat::IN_ORC},
+       {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
+       {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
+       {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
+       {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
+       {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
+       {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
+       {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
+       {OutFormat::OUT_Values, InFormat::IN_Values}};
+
 StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool rs)
     : fc(fuzzc)
     , connections(conn)
@@ -675,7 +697,11 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         String buf2;
         bool first = true;
         URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
-        const InOutFormat outf = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+        const OutFormat outf = rg.nextBool() ? rg.pickRandomly(outIn)
+                                             : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
+        const InFormat iinf = (outIn.find(outf) != outIn.end()) && rg.nextBool()
+            ? outIn.at(outf)
+            : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1);
 
         if (cluster.has_value() || (!fc.clusters.empty() && rg.nextMediumNumber() < 16))
         {
@@ -699,9 +725,9 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
                 entry.path.size() > 1 ? ")" : "");
             first = false;
         }
-        url += ")+FORMAT+" + InOutFormat_Name(outf).substr(6);
+        url += ")+FORMAT+" + InFormat_Name(iinf).substr(3);
         ufunc->set_uurl(std::move(url));
-        ufunc->set_format(outf);
+        ufunc->set_outformat(outf);
         ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf2));
     }
     else if (insert_into_table && (nopt2 < cluster_func + remote_func + url_func + insert_into_table + 1))
@@ -3235,9 +3261,12 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
         chassert(0);
     }
     br->set_out(outf);
-    if (rg.nextSmallNumber() < 4)
+    if (rg.nextBool())
     {
-        br->set_format(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
+        /// Most of the times, use formats that can be read later
+        br->set_outformat(
+            rg.nextBool() ? rg.pickRandomly(outIn)
+                          : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
     }
 }
 
@@ -3317,7 +3346,10 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
     }
     if (backup.out_format.has_value())
     {
-        br->set_format(backup.out_format.value());
+        br->set_informat(
+            (outIn.find(backup.out_format.value()) != outIn.end()) && rg.nextBool()
+                ? outIn.at(backup.out_format.value())
+                : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1));
     }
     br->set_backup_number(backup.backup_num);
 }
@@ -4334,9 +4366,9 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
             newb.backup_num = br.backup_number();
             newb.outf = br.out();
-            if (br.has_format())
+            if (br.has_outformat())
             {
-                newb.out_format = br.format();
+                newb.out_format = br.outformat();
             }
             for (int i = 0; i < br.out_params_size(); i++)
             {

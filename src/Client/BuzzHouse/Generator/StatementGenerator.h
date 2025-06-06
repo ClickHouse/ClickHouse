@@ -111,6 +111,8 @@ public:
 class StatementGenerator
 {
 public:
+    static const std::unordered_map<OutFormat, InFormat> outIn;
+
     FuzzConfig & fc;
     uint32_t next_type_mask = std::numeric_limits<uint32_t>::max();
 

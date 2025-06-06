@@ -2084,10 +2084,22 @@ CONV_FN(URLFunc, url)
     ret += "'";
     ret += url.uurl();
     ret += "'";
-    if (url.has_format())
+    if (url.has_informat())
     {
         ret += ", '";
-        ret += InOutFormat_Name(url.format()).substr(6);
+        ret += InFormat_Name(url.informat()).substr(3);
+        ret += "'";
+    }
+    else if (url.has_outformat())
+    {
+        ret += ", '";
+        ret += OutFormat_Name(url.outformat()).substr(4);
+        ret += "'";
+    }
+    else if (url.has_inoutformat())
+    {
+        ret += ", '";
+        ret += InOutFormat_Name(url.inoutformat()).substr(6);
         ret += "'";
     }
     if (url.has_structure())
@@ -4818,10 +4830,15 @@ CONV_FN(BackupRestore, backup)
         }
         ret += ")";
     }
-    if (backup.has_format())
+    if (backup.has_informat())
     {
         ret += " FORMAT ";
-        ret += OutFormat_Name(backup.format()).substr(4);
+        ret += InFormat_Name(backup.informat()).substr(3);
+    }
+    else if (backup.has_outformat())
+    {
+        ret += " FORMAT ";
+        ret += OutFormat_Name(backup.outformat()).substr(4);
     }
     if (backup.has_setting_values())
     {

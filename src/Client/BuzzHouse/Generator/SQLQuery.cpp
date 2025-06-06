@@ -275,7 +275,7 @@ void StatementGenerator::setTableRemote(
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
             }
             ufunc->set_uurl("http://" + sc.hostname + ":" + std::to_string(sc.port) + "/file" + std::to_string(t.tname));
-            ufunc->set_format(t.file_format);
+            ufunc->set_inoutformat(t.file_format);
             structure = ufunc->mutable_structure();
         }
         else
@@ -898,7 +898,11 @@ bool StatementGenerator::joinedTableOrFunction(
         URLFunc * ufunc = tf->mutable_url();
         const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
         const std::optional<String> & cluster = tt.getCluster();
-        const InOutFormat outf = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+        const OutFormat outf = rg.nextBool() ? rg.pickRandomly(outIn)
+                                             : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
+        const InFormat iinf = (outIn.find(outf) != outIn.end()) && rg.nextBool()
+            ? outIn.at(outf)
+            : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1);
 
         if (cluster.has_value() || (!fc.clusters.empty() && rg.nextMediumNumber() < 16))
         {
@@ -921,9 +925,9 @@ bool StatementGenerator::joinedTableOrFunction(
             first = false;
         }
         this->remote_entries.clear();
-        url += "+FROM+" + tt.getFullName(rg.nextBool()) + "+FORMAT+" + InOutFormat_Name(outf).substr(6);
+        url += "+FROM+" + tt.getFullName(rg.nextBool()) + "+FORMAT+" + InFormat_Name(iinf).substr(3);
         ufunc->set_uurl(std::move(url));
-        ufunc->set_format(outf);
+        ufunc->set_outformat(outf);
         ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
         addTableRelation(rg, false, rel_name, tt);
     }

@@ -2565,8 +2565,12 @@ message URLFunc {
     required FName fname = 1;
     optional Cluster cluster = 2;
     required string uurl = 3;
-    optional InOutFormat format = 4;
-    optional Expr structure = 5;
+    oneof url_func_oneof {
+        InFormat informat = 4;
+        OutFormat outformat = 5;
+        InOutFormat inoutformat = 6;
+    }
+    optional Expr structure = 7;
 }
 
 message SQLTableFuncCall {
@@ -3858,11 +3862,14 @@ message BackupRestore {
     }
     required BackupOutput out = 5;
     repeated string out_params = 6;
-    optional OutFormat format = 7;
-    optional SettingValues setting_values = 8;
-    optional bool async = 9;
+    oneof backup_format_oneof {
+        InFormat informat = 7;
+        OutFormat outformat = 8;
+    }
+    optional SettingValues setting_values = 9;
+    optional bool async = 10;
     /// Need to know backup number
-    required uint32 backup_number = 10;
+    required uint32 backup_number = 11;
 }
 
 message Rename {
