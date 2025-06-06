@@ -136,6 +136,7 @@ cityHash64
 clamp
 coalesce
 compareSubstrings
+compose
 concat
 concatAssumeInjective
 concatWithSeparator

@@ -1,3 +1,4 @@
+#include <string>
 #include <string_view>
 
 #include <Parsers/ASTFunction.h>
@@ -28,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_FUNCTION;
 }
 
@@ -754,6 +756,102 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 bool ASTFunction::hasSecretParts() const
 {
     return (FunctionSecretArgumentsFinderAST(*this).getResult().hasSecrets()) || childrenHaveSecretParts();
+}
+
+void renumeratePlaceholders(ASTFunction & ast)
+{
+    auto * args_expr_list = ast.arguments->as<ASTExpressionList>();
+    if (args_expr_list)
+    {
+        // _{number}: placeholder with id number, 0 - unnamed placeholder, -1 - not a placeholder
+        std::vector<int> placeholders_in_list;
+
+        std::unordered_set<size_t> named_placeholders;
+        for (auto& child : args_expr_list->children)
+        {
+            if (auto * id = child->as<ASTIdentifier>())
+            {
+                const auto& id_name = id->name();
+                if (id_name == "_")
+                {
+                    placeholders_in_list.push_back(0);
+                }
+                else if (id_name.starts_with('_'))
+                {
+                    int pos = 0;
+                    try
+                    {
+                        pos = std::stoi(std::string{id_name.substr(1)});
+                    }
+                    catch (const std::exception &)
+                    {
+                        placeholders_in_list.push_back(-1);
+                        continue;
+                    }
+
+                    if (pos < 0)
+                    {
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Placeholder '{}' has negative number. Function: {}", id_name, ast.formatForErrorMessage());
+                    }
+                    if (named_placeholders.contains(static_cast<size_t>(pos)))
+                    {
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Placeholder '{}' is already presented in function {}", id_name, ast.formatForErrorMessage());
+                    }
+                    named_placeholders.insert(static_cast<size_t>(pos));
+                    placeholders_in_list.push_back(pos);
+                }
+                else
+                {
+                    placeholders_in_list.push_back(-1);
+                }
+            }
+            else
+            {
+                placeholders_in_list.push_back(-1);
+            }
+        }
+
+        size_t free_placeholder = 1;
+        for (size_t i = 0; i < args_expr_list->children.size(); ++i)
+        {
+            while (!named_placeholders.empty() && named_placeholders.contains(free_placeholder))
+                named_placeholders.erase(free_placeholder++);
+            if (placeholders_in_list[i] == 0)
+            {
+                args_expr_list->children[i] = std::make_shared<ASTIdentifier>("__p" + std::to_string(free_placeholder++));
+            }
+            else if (placeholders_in_list[i] > 0)
+            {
+                args_expr_list->children[i] = std::make_shared<ASTIdentifier>("__p" + std::to_string(placeholders_in_list[i]));
+            }
+        }
+        while (!named_placeholders.empty() && named_placeholders.contains(free_placeholder))
+            named_placeholders.erase(free_placeholder++);
+
+        if (!named_placeholders.empty())
+        {
+            throw Exception(
+                ErrorCodes::UNKNOWN_IDENTIFIER,
+                "Placeholder with too big number ({}) occurred in expression.",
+                *named_placeholders.begin()
+            );
+        }
+
+        if (free_placeholder == 1)
+            return;
+
+        auto lambda_args_tuple = makeASTFunction("tuple");
+
+        for (size_t i = 1; i < free_placeholder; ++i)
+        {
+            lambda_args_tuple->arguments->children.push_back(std::make_shared<ASTIdentifier>("__p" + std::to_string(i)));
+        }
+
+        auto lambda_return = makeASTFunction("lambda", lambda_args_tuple, ast.clone());
+        lambda_return->is_lambda_function = true;
+
+        ast = *lambda_return;
+    }
 }
 
 String getFunctionName(const IAST * ast)

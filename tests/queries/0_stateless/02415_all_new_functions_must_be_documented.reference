@@ -114,6 +114,7 @@ char
 cityHash64
 clamp
 coalesce
+compose
 concat
 concatAssumeInjective
 connectionId

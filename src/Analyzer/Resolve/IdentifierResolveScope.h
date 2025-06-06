@@ -201,6 +201,8 @@ struct IdentifierResolveScope
         FunctionBasePtr function_base;
     };
 
+    std::vector<DataTypes> compose_arguments_stack;
+
     std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
 
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const;
