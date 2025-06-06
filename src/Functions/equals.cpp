@@ -18,8 +18,8 @@ REGISTER_FUNCTION(Equals)
         -- a == b
     )";
     FunctionDocumentation::Arguments arguments_equals = {
-        {"a", "First value. Can be of any comparable type."},
-        {"b", "Second value. Must be of the same type as `a`."}
+        {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
+        {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
     };
     FunctionDocumentation::ReturnedValue returned_value_equals = "Returns `1` if `a` is equal to `b`, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
     FunctionDocumentation::Examples examples_equals = {

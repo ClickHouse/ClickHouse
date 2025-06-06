@@ -20,8 +20,8 @@ REGISTER_FUNCTION(GreaterOrEquals)
     -- a >= b
 )";
     FunctionDocumentation::Arguments arguments_greaterOrEquals = {
-        {"a", "First value. Can be of any comparable type."},
-        {"b", "Second value. Must be of the same type as `a`."}
+        {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
+        {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
     };
     FunctionDocumentation::ReturnedValue returned_value_greaterOrEquals = "Returns `1` if `a` is greater than or equal to `b`, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
     FunctionDocumentation::Examples examples_greaterOrEquals = {
