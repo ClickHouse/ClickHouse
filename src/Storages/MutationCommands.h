@@ -9,7 +9,6 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -19,6 +18,11 @@ class ASTAlterCommand;
 class Context;
 class WriteBuffer;
 class ReadBuffer;
+
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
+
+enum class SecondaryIndicesOnColumnsAlterModify : uint8_t;
 
 /// Represents set of actions which should be applied
 /// to values from set of columns which satisfy predicate.

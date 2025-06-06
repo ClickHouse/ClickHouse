@@ -1,4 +1,5 @@
 #include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ParserAlterQuery.h>
