@@ -257,7 +257,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
     {
         auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, function_name);
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
     }
 
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
@@ -277,7 +277,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
         {
             auto query_context = CurrentThread::get().getQueryContext();
             if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, function_name);
+                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
         }
 
         return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
