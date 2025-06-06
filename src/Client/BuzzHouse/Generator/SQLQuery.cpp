@@ -891,7 +891,8 @@ bool StatementGenerator::joinedTableOrFunction(
             < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
                + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + 1))
     {
-        String url, buf;
+        String url;
+        String buf;
         bool first = false;
         TableFunction * tf = tof->mutable_tfunc();
         URLFunc * ufunc = tf->mutable_url();
