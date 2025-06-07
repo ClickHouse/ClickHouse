@@ -1,17 +1,21 @@
-set(USE_CHDIG_DEFAULT ${ENABLE_RUST})
+set(ENABLE_CHDIG_DEFAULT ${ENABLE_RUST})
 # SANITIZE            - Some issues with undefined symbols
 # NO_ARMV81_OR_HIGHER - Disabled because ring assumes that Neon is available with ARM
 # ENABLE_CLANG_TIDY   - clang-tidy knows nothing about Rust, plus chdig requires some libraries that are not generated due to dummy launcher (this can be fixed, but what for, let's simply disable it under tidy)
 # OS_DARWIN           - Uses default linker (over lld)
 # OS_FREEBSD          - Rust adds bunch of extra libraries as dependencies
 # ARCH_PPC64LE        - Does not have Scrt1.o
-if (USE_CHDIG_DEFAULT AND (SANITIZE OR NO_ARMV81_OR_HIGHER OR ENABLE_CLANG_TIDY OR OS_DARWIN OR OS_FREEBSD OR ARCH_PPC64LE))
+if (ENABLE_CHDIG_DEFAULT AND (SANITIZE OR NO_ARMV81_OR_HIGHER OR ENABLE_CLANG_TIDY OR OS_DARWIN OR OS_FREEBSD OR ARCH_PPC64LE))
     message(STATUS "Environment is not compatible with chdig. Disabling.")
-    set(USE_CHDIG_DEFAULT OFF)
+    set(ENABLE_CHDIG_DEFAULT OFF)
 endif()
-option(USE_CHDIG "Use chdig" ${USE_CHDIG_DEFAULT})
+option(ENABLE_CHDIG "Use chdig" ${ENABLE_CHDIG_DEFAULT})
 
-if (NOT USE_CHDIG)
+# Explicitly check for ENABLE_RUST one more time if it was enabled before, but now disabled, i.e.
+#
+#   cmake -DENABLE_RUST=1
+#   cmake -DENABLE_RUST=0
+if (NOT ENABLE_CHDIG OR NOT ENABLE_RUST)
     message(STATUS "Not using chdig")
     return()
 endif()

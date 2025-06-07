@@ -68,7 +68,8 @@ Int64 WorkloadSettings::getSemaphoreMaxCost() const
     }
 }
 
-Int64 WorkloadSettings::getQueueSize() const {
+Int64 WorkloadSettings::getQueueSize() const
+{
     return max_waiting_queries;
 }
 

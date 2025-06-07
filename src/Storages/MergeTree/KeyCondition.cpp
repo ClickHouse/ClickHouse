@@ -124,7 +124,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
     const char * pos = begin;
     const char * end = regexp.data() + regexp.size();
 
-    while (pos != end)
+    while (pos < end)
     {
         switch (*pos)
         {
@@ -147,19 +147,22 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
                     case '$':
                     case '.':
                     case '[':
+                    case ']':
                     case '?':
                     case '*':
                     case '+':
+                    case '\\':
                     case '{':
+                    case '}':
+                    case '-':
                         fixed_prefix += *pos;
+                        ++pos;
                     break;
                     default:
                         /// all other escape sequences are not supported
                             pos = end;
-                    break;
                 }
 
-                ++pos;
                 break;
             }
 
@@ -2891,40 +2894,30 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 bool KeyCondition::matchesExactContinuousRange() const
 {
     const Field field{};
-    auto is_always_monotonic_chain = [&field](const std::vector<FunctionBasePtr> & chain)
+    auto check_monotonicity_of_chain = [&field](const std::vector<FunctionBasePtr> & chain) -> std::pair<bool, bool>
     {
+        bool all_always_monotonic = true;
+        bool all_strict = true;
+
         for (const auto & func : chain)
         {
             if (!func || !func->hasInformationAboutMonotonicity())
-                return false;
+                return {false, false};
 
             const auto & types = func->getArgumentTypes();
             if (types.empty() || !types.front())
-                return false;
+                return {false, false};
 
             const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
-            if (!monotonicity.is_always_monotonic)
-                return false;
+            all_always_monotonic &= monotonicity.is_always_monotonic;
+            all_strict &= monotonicity.is_strict;
+
+            if (!all_always_monotonic && !all_strict)
+                break;
         }
 
-        return true;
+        return {all_always_monotonic, all_strict};
     };
-
-    for (const auto & elem : rpn)
-    {
-        if (!elem.monotonic_functions_chain.empty() && !is_always_monotonic_chain(elem.monotonic_functions_chain))
-            return false;
-
-        if (elem.set_index)
-        {
-            if (elem.function != RPNElement::Function::FUNCTION_IN_SET || elem.set_index->size() != 1)
-                return false;
-
-            for (const auto & mapping : elem.set_index->getIndexesMapping())
-                if (!mapping.functions.empty() && !is_always_monotonic_chain(mapping.functions))
-                    return false;
-        }
-    }
 
     enum Constraint
     {
@@ -2937,37 +2930,56 @@ bool KeyCondition::matchesExactContinuousRange() const
 
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::Function::FUNCTION_AND)
+        if (element.function == RPNElement::Function::FUNCTION_AND || element.function == RPNElement::Function::FUNCTION_UNKNOWN
+            || element.function == RPNElement::Function::ALWAYS_TRUE)
         {
             continue;
         }
 
         if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
         {
-            column_constraints[element.key_column] = Constraint::POINT;
+            for (const auto & mapping : element.set_index->getIndexesMapping())
+            {
+                auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(mapping.functions);
+                if (!is_chain_always_monotonic)
+                    return false;
+
+                chassert(mapping.key_index < key_columns.size());
+                /// For Constraint::POINT, we need to check if the function chain is strict.
+                /// For example, `toDate(event_time) in ('2025-06-03')` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
+                /// So, POINT needs to be converted to a RANGE
+                if (is_chain_strict)
+                    column_constraints[mapping.key_index] = Constraint::POINT;
+                else
+                {
+                    /// If this key is contained by multiple elements and has been set to POINT, do not convert it to RANGE.
+                    if (column_constraints[mapping.key_index] != Constraint::POINT)
+                        column_constraints[mapping.key_index] = Constraint::RANGE;
+                }
+            }
+
             continue;
         }
 
         if (element.function == RPNElement::Function::FUNCTION_IN_RANGE)
         {
+            auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(element.monotonic_functions_chain);
+            if (!is_chain_always_monotonic)
+                return false;
+
+            chassert(element.key_column < key_columns.size());
             if (element.range.left == element.range.right)
             {
-                column_constraints[element.key_column] = Constraint::POINT;
+                /// For Constraint::POINT, we need to check if the function chain is strict.
+                /// For example, `toDate(event_time) = '2025-06-03'` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
+                /// So, POINT needs to be converted to a RANGE
+                if (is_chain_strict)
+                    column_constraints[element.key_column] = Constraint::POINT;
             }
+
             if (column_constraints[element.key_column] != Constraint::POINT)
-            {
                 column_constraints[element.key_column] = Constraint::RANGE;
-            }
-            continue;
-        }
 
-        if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
-        {
-            continue;
-        }
-
-        if (element.function == RPNElement::Function::ALWAYS_TRUE)
-        {
             continue;
         }
 

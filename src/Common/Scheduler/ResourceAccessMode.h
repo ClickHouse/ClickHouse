@@ -29,15 +29,4 @@ inline CostUnit costUnitForMode(ResourceAccessMode mode)
     }
 }
 
-inline std::string_view costUnitToString(CostUnit unit)
-{
-    switch (unit)
-    {
-        case CostUnit::IOByte: return "IOByte";
-        case CostUnit::CPUSlot: return "CPUSlot";
-        case CostUnit::QuerySlot: return "QuerySlot";
-    }
-}
-
-
 }

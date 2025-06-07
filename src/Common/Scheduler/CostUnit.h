@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string_view>
+
 namespace DB
 {
 
@@ -11,5 +13,15 @@ enum class CostUnit
     CPUSlot,
     QuerySlot,
 };
+
+inline std::string_view costUnitToString(CostUnit unit)
+{
+    switch (unit)
+    {
+        case CostUnit::IOByte: return "IOByte";
+        case CostUnit::CPUSlot: return "CPUSlot";
+        case CostUnit::QuerySlot: return "QuerySlot";
+    }
+}
 
 }

@@ -24,6 +24,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     uint32_t port = default_port;
     uint32_t mysql_port = default_mysql_port;
     String hostname = "localhost";
+    String container;
     String unix_socket;
     String user = "test";
     String password;
@@ -33,6 +34,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
 
     static const SettingEntries configEntries
         = {{"hostname", [&](const JSONObjectType & value) { hostname = String(value.getString()); }},
+           {"container", [&](const JSONObjectType & value) { container = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
            {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
            {"unix_socket", [&](const JSONObjectType & value) { unix_socket = String(value.getString()); }},
@@ -54,7 +56,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     }
 
     return std::optional<ServerCredentials>(
-        ServerCredentials(hostname, port, mysql_port, unix_socket, user, password, database, user_files_dir, query_log_file));
+        ServerCredentials(hostname, container, port, mysql_port, unix_socket, user, password, database, user_files_dir, query_log_file));
 }
 
 static PerformanceMetric
@@ -119,8 +121,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
         {"seed", [&](const JSONObjectType & value) { seed = value.getUInt64(); }},
         {"host", [&](const JSONObjectType & value) { host = String(value.getString()); }},
+        {"keeper_map_path_prefix", [&](const JSONObjectType & value) { keeper_map_path_prefix = String(value.getString()); }},
         {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
         {"secure_port", [&](const JSONObjectType & value) { secure_port = static_cast<uint32_t>(value.getUInt64()); }},
+        {"http_port", [&](const JSONObjectType & value) { http_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
@@ -160,6 +164,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"mongodb", [&](const JSONObjectType & value) { mongodb_server = loadServerCredentials(value, "mongodb", 27017); }},
         {"redis", [&](const JSONObjectType & value) { redis_server = loadServerCredentials(value, "redis", 6379); }},
         {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
+        {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
+        {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
         {"disabled_types",
          [&](const JSONObjectType & value)
          {
@@ -298,7 +304,8 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
     return res;
 }
 
-void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, const String & table, const String & col)
+void FuzzConfig::loadServerSettings(
+    DB::Strings & out, const bool distinct, const String & table, const String & col, const String & extra_clause)
 {
     String buf;
     uint64_t found = 0;
@@ -306,31 +313,33 @@ void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, cons
     if (processServerQuery(
             false,
             fmt::format(
-                R"(SELECT {}"{}" FROM "system"."{}" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                R"(SELECT {}"{}" FROM "system"."{}"{} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 distinct ? "DISTINCT " : "",
                 col,
                 table,
+                extra_clause,
                 fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         out.clear();
-        while (std::getline(infile, buf))
+        while (std::getline(infile, buf) && !buf.empty())
         {
             out.push_back(buf);
             buf.resize(0);
             found++;
         }
-        LOG_INFO(log, "Found {} entries from {} table", found, table);
     }
+    LOG_INFO(log, "Found {} entries from {} table", found, table);
 }
 
 void FuzzConfig::loadServerConfigurations()
 {
-    loadServerSettings(this->collations, false, "collations", "name");
-    loadServerSettings(this->storage_policies, false, "storage_policies", "policy_name");
-    loadServerSettings(this->disks, false, "disks", "name");
-    loadServerSettings(this->timezones, false, "time_zones", "time_zone");
-    loadServerSettings(this->clusters, true, "clusters", "cluster");
+    loadServerSettings(this->collations, false, "collations", "name", "");
+    loadServerSettings(this->storage_policies, false, "storage_policies", "policy_name", "");
+    loadServerSettings(this->disks, false, "disks", "name", "");
+    loadServerSettings(this->keeper_disks, false, "disks", "name", " WHERE metadata_type = 'Keeper'");
+    loadServerSettings(this->timezones, false, "time_zones", "time_zone", "");
+    loadServerSettings(this->clusters, true, "clusters", "cluster", "");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const

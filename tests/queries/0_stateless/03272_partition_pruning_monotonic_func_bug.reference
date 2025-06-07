@@ -4,9 +4,9 @@ Expression
   ReadFromMergeTree
   Indexes:
     PrimaryKey
-      Keys: 
+      Keys:
         dateTrunc(\'hour\', ts)
       Condition: and((dateTrunc(\'hour\', ts) in (-Inf, 1731592800]), (dateTrunc(\'hour\', ts) in [1731506400, +Inf)))
       Parts: 1/1
       Granules: 1/1
-      Search algorithm: binary search
+      Search Algorithm: binary search

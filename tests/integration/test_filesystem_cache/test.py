@@ -21,6 +21,7 @@ def cluster():
             "node",
             main_configs=[
                 "config.d/storage_conf.xml",
+                "config.d/filesystem_caches_path.xml",
             ],
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
@@ -44,6 +45,7 @@ def cluster():
             main_configs=[
                 "config.d/storage_conf.xml",
                 "config.d/force_read_through_cache_for_merges.xml",
+                "config.d/filesystem_caches_path.xml",
             ],
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
@@ -389,7 +391,7 @@ def test_custom_cached_disk(non_shared_cluster):
         ).strip()
     )
 
-    assert "Filesystem cache path must lie inside" in node.query_and_get_error(
+    assert "Filesystem cache absolute path must lie inside" in node.query_and_get_error(
         f"""
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
@@ -931,15 +933,10 @@ def test_max_size_ratio(cluster):
         CREATE TABLE test (key UInt32, value String)
         Engine=MergeTree()
         ORDER BY value
-        SETTINGS disk = disk(
-            type = cache,
-            name = 'test_max_size_ratio',
-            path = 'test_max_size_ratio/',
-            max_size_ratio_to_total_space=0.7,
-            disk = 'hdd_blob');
+        SETTINGS disk = 'cache_with_max_size_ratio'
         """
     )
-    assert node.contains_in_log("Using max_size as ratio 0.7 to total disk space")
+    assert node.contains_in_log("Using max_size as ratio 0.7 to total disk space on path /var/log/clickhouse/fs-cache/max_size_ratio")
 
 
 def test_finished_download_time(cluster):

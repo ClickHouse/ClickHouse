@@ -1,112 +1,112 @@
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.a
         Condition: (json.a in [1, 1])
         Parts: 1/1
         Granules: 2/100
-        Search algorithm: binary search
+        Search Algorithm: binary search
 {"a":1,"b":"str","c":[{"d":"1"}]}
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           t.a
         Condition: (t.a in [1, 1])
         Parts: 1/1
         Granules: 2/100
-        Search algorithm: binary search
+        Search Algorithm: binary search
 (1,1)
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.c.:`Array(JSON)`.d.:`Int64`
         Condition: (json.c.:`Array(JSON)`.d.:`Int64` in [[1], [1]])
         Parts: 1/1
         Granules: 2/100
-        Search algorithm: binary search
+        Search Algorithm: binary search
 {"a":1,"b":"str","c":[{"d":"1"}]}
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.a
         Condition: (json.a in [1, 1])
         Parts: 1/1
         Granules: 3/200
-        Search algorithm: binary search
+        Search Algorithm: binary search
 {"a":1,"b":"str","c":[{"d":"1"}]}
 {"a":1,"b":"str","c":[{"d":"1"}]}
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           t.a
         Condition: (t.a in [1, 1])
         Parts: 1/1
         Granules: 3/200
-        Search algorithm: binary search
+        Search Algorithm: binary search
 (1,1)
 (1,1)
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.c.:`Array(JSON)`.d.:`Int64`
         Condition: (json.c.:`Array(JSON)`.d.:`Int64` in [[1], [1]])
         Parts: 1/1
         Granules: 3/200
-        Search algorithm: binary search
+        Search Algorithm: binary search
 {"a":1,"b":"str","c":[{"d":"1"}]}
 {"a":1,"b":"str","c":[{"d":"1"}]}
 ------------------------------------------------------------------
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.a
         Condition: (json.a in [1, 1])
         Parts: 1/1
         Granules: 2/100
-        Search algorithm: binary search
+        Search Algorithm: binary search
 {"a":1,"b":"str","c":[{"d":"1"}]}
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           t.a
         Condition: (t.a in [1, 1])
         Parts: 1/1
         Granules: 2/100
-        Search algorithm: binary search
+        Search Algorithm: binary search
 (1,1)
 Expression ((Project names + Projection))
-  Filter
+  Expression
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey
-        Keys: 
+        Keys:
           json.c.:`Array(JSON)`.d.:`Int64`
         Condition: (json.c.:`Array(JSON)`.d.:`Int64` in [[1], [1]])
         Parts: 1/1
         Granules: 2/100
-        Search algorithm: binary search
+        Search Algorithm: binary search
 {"a":1,"b":"str","c":[{"d":"1"}]}

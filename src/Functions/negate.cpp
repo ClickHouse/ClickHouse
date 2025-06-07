@@ -15,6 +15,9 @@ struct NegateImpl
 
     static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
+        if constexpr (is_decimal<A>)
+            return negateOverflow(a);
+
         return -static_cast<ResultType>(a);
     }
 

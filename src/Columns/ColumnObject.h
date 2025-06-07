@@ -246,6 +246,8 @@ public:
     ColumnDynamic * tryToAddNewDynamicPath(std::string_view path);
     /// Throws an exception if cannot add.
     void addNewDynamicPath(std::string_view path);
+    void addNewDynamicPath(std::string_view path, MutableColumnPtr column);
+    bool canAddNewDynamicPath() const { return dynamic_paths.size() < max_dynamic_paths; }
 
     void setDynamicPaths(const std::vector<String> & paths);
     void setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths);

@@ -47,6 +47,151 @@ ExpressionTransform
                 ExpressionTransform × 16
                   (ReadFromSystemNumbers)
                   NumbersRange × 16 0 → 1
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 36;
+(Expression)
+ExpressionTransform × 36
+  (Aggregating)
+  Resize 36 → 36
+    AggregatingTransform × 36
+      (Expression)
+      ExpressionTransform × 36
+        (Aggregating)
+        Resize 1 → 36
+          AggregatingTransform
+            (Expression)
+            ExpressionTransform
+              (ReadFromSystemNumbers)
+              NumbersRange 0 → 1
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 36;
+(Expression)
+ExpressionTransform × 36
+  (Aggregating)
+  Resize 36 → 36
+    AggregatingTransform × 36
+      (Expression)
+      ExpressionTransform × 36
+        (Aggregating)
+        Resize 36 → 36
+          AggregatingTransform × 36
+            (Expression)
+            ExpressionTransform × 36
+              (ReadFromSystemNumbers)
+              NumbersRange × 36 0 → 1
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 36;
+(Expression)
+ExpressionTransform
+  (Sorting)
+  MergingSortedTransform 36 → 1
+    MergeSortingTransform × 36
+      LimitsCheckingTransform × 36
+        PartialSortingTransform × 36
+          (Expression)
+          ExpressionTransform × 36
+            (Aggregating)
+            Resize 36 → 36
+              AggregatingTransform × 36
+                (Expression)
+                ExpressionTransform × 36
+                  (ReadFromSystemNumbers)
+                  NumbersRange × 36 0 → 1
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 48;
+(Expression)
+ExpressionTransform × 48
+  (Aggregating)
+  Resize × 2 24 → 24
+    AggregatingTransform × 48
+      StrictResize × 2 24 → 24
+        (Expression)
+        ExpressionTransform × 48
+          (Aggregating)
+          Resize 1 → 48
+            AggregatingTransform
+              (Expression)
+              ExpressionTransform
+                (ReadFromSystemNumbers)
+                NumbersRange 0 → 1
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 48;
+(Expression)
+ExpressionTransform × 48
+  (Aggregating)
+  Resize × 2 24 → 24
+    AggregatingTransform × 48
+      StrictResize × 2 24 → 24
+        (Expression)
+        ExpressionTransform × 48
+          (Aggregating)
+          Resize × 2 24 → 24
+            AggregatingTransform × 48
+              (Expression)
+              ExpressionTransform × 48
+                (ReadFromSystemNumbers)
+                NumbersRange × 48 0 → 1
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 48;
+(Expression)
+ExpressionTransform
+  (Sorting)
+  MergingSortedTransform 48 → 1
+    MergeSortingTransform × 48
+      LimitsCheckingTransform × 48
+        PartialSortingTransform × 48
+          (Expression)
+          ExpressionTransform × 48
+            (Aggregating)
+            Resize × 2 24 → 24
+              AggregatingTransform × 48
+                (Expression)
+                ExpressionTransform × 48
+                  (ReadFromSystemNumbers)
+                  NumbersRange × 48 0 → 1
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 49;
+(Expression)
+ExpressionTransform × 49
+  (Aggregating)
+  Resize × 2 25 → 25
+    AggregatingTransform × 49
+      StrictResize × 2 25 → 25
+        (Expression)
+        ExpressionTransform × 49
+          (Aggregating)
+          Resize 1 → 49
+            AggregatingTransform
+              (Expression)
+              ExpressionTransform
+                (ReadFromSystemNumbers)
+                NumbersRange 0 → 1
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 49;
+(Expression)
+ExpressionTransform × 49
+  (Aggregating)
+  Resize × 2 25 → 25
+    AggregatingTransform × 49
+      StrictResize × 2 25 → 25
+        (Expression)
+        ExpressionTransform × 49
+          (Aggregating)
+          Resize × 2 25 → 25
+            AggregatingTransform × 49
+              (Expression)
+              ExpressionTransform × 49
+                (ReadFromSystemNumbers)
+                NumbersRange × 49 0 → 1
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 49;
+(Expression)
+ExpressionTransform
+  (Sorting)
+  MergingSortedTransform 49 → 1
+    MergeSortingTransform × 49
+      LimitsCheckingTransform × 49
+        PartialSortingTransform × 49
+          (Expression)
+          ExpressionTransform × 49
+            (Aggregating)
+            Resize × 2 25 → 25
+              AggregatingTransform × 49
+                (Expression)
+                ExpressionTransform × 49
+                  (ReadFromSystemNumbers)
+                  NumbersRange × 49 0 → 1
 explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 1;
 (Expression)
 ExpressionTransform × 16

@@ -618,6 +618,10 @@ void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates & states, SchemaElements & schemas)
 {
+    /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
+    /// parquet dictionary-encoding.
+    column = column->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+
     switch (type->getTypeId())
     {
         case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, states, schemas); break;

@@ -68,11 +68,23 @@ parser.add_argument(
     help="Probability to set random disks",
 )
 parser.add_argument(
+    "--min-disks",
+    type=int,
+    default=1,
+    help="Minimum number of disks to generate",
+)
+parser.add_argument(
     "--max-disks",
     type=int,
     default=5,
-    choices=range(0, 51),
     help="Maximum number of disks to generate",
+)
+parser.add_argument(
+    "--add-policy-settings-prob",
+    type=int,
+    default=70,
+    choices=range(0, 101),
+    help="Probability to set random storage policies",
 )
 parser.add_argument(
     "--change-server-version-prob",
@@ -170,10 +182,18 @@ parser.add_argument(
 parser.add_argument(
     "--storage-limit", type=str, default="", help="Set a storage limit, e.g. '1g'"
 )
+parser.add_argument(
+    "--add-keeper-map-prefix",
+    type=bool,
+    default=True,
+    help="Add 'keeper_map_path_prefix' server setting",
+)
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
     raise f"The length of replica values {len(args.replica_values)} is not the same as shard values {len(args.shard_values)}"
+if args.min_disks > args.max_disks:
+    raise f"The min disk value {args.min_disks} is greater max disk value {args.max_disks}"
 
 logging.basicConfig(
     filename=args.log_path,
@@ -207,7 +227,7 @@ os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 is_private_binary = False
 with open(current_server, "r+") as f:
     mm = mmap.mmap(f.fileno(), 0)
-    is_private_binary = mm.find(b"s3_with_keeper")
+    is_private_binary = mm.find(b"s3_with_keeper") > -1
     mm.close()
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")

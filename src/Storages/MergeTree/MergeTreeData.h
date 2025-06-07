@@ -338,6 +338,8 @@ public:
         /// Renames part from old_name to new_name
         void tryRenameAll();
 
+        void rollBackAll();
+
         /// Renames all added parts from new_name to old_name if old name is not empty
         ~PartsTemporaryRename();
 
@@ -1243,6 +1245,8 @@ private:
     mutable IndexSizeByName secondary_index_sizes;
 
 protected:
+    void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
+
     void resetColumnSizes()
     {
         column_sizes.clear();

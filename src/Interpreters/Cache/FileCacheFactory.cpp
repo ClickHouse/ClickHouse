@@ -1,6 +1,9 @@
 #include "FileCacheFactory.h"
 #include "FileCache.h"
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -166,10 +169,21 @@ void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfig
 
         checked_paths.emplace(cache_info->config_path);
 
-        FileCacheSettings new_settings;
-        new_settings.loadFromConfig(config, cache_info->config_path);
-
         FileCacheSettings old_settings = cache_info->getSettings();
+
+        FileCacheSettings new_settings;
+        new_settings.loadFromConfig(config, cache_info->config_path, /* cache_path_prefix_if_relative */"/no-op/");
+
+        /// `path` setting can never be changed (in applySettingsIfPossilbe below)
+        /// but it will differ here even if in fact equal,
+        /// because of relative path usage in config,
+        /// while in old_settings it would already be normalized into absolute path.
+        /// We cannot do the same here for new_settings
+        /// (as we do not know if they are disk settings old non-disk settings,
+        /// while they have different default path prefix),
+        /// so consider them always equal as anyway non-changeable.
+        new_settings[FileCacheSetting::path] = old_settings[FileCacheSetting::path];
+
         if (old_settings == new_settings)
         {
             continue;
@@ -218,20 +232,39 @@ void FileCacheFactory::clear()
     caches_by_name.clear();
 }
 
-void FileCacheFactory::loadDefaultCaches(const Poco::Util::AbstractConfiguration & config)
+void FileCacheFactory::loadDefaultCaches(const Poco::Util::AbstractConfiguration & config, ContextPtr context)
 {
     Poco::Util::AbstractConfiguration::Keys cache_names;
     config.keys(FILECACHE_DEFAULT_CONFIG_PATH, cache_names);
+
     auto * log = &Poco::Logger::get("FileCacheFactory");
     LOG_DEBUG(log, "Will load {} caches from default cache config", cache_names.size());
+
     for (const auto & name : cache_names)
     {
+        const auto config_path = fmt::format("{}.{}", FILECACHE_DEFAULT_CONFIG_PATH, name);
+
         FileCacheSettings settings;
-        const auto & config_path = fmt::format("{}.{}", FILECACHE_DEFAULT_CONFIG_PATH, name);
-        settings.loadFromConfig(config, config_path);
+        settings.loadFromConfig(
+            config,
+            config_path,
+            getPathPrefixForRelativeCachePath(context),
+            /* default_cache_path */"");
+
         auto cache = getOrCreate(name, settings, config_path);
         cache->initialize();
+
         LOG_DEBUG(log, "Loaded cache `{}` from default cache config", name);
     }
 }
+
+std::string getPathPrefixForRelativeCachePath(ContextPtr context)
+{
+    auto config_fs_caches_dir = context->getFilesystemCachesPath();
+    if (!config_fs_caches_dir.empty())
+        return config_fs_caches_dir;
+
+    return fs::path(context->getPath()) / "caches";
+}
+
 }

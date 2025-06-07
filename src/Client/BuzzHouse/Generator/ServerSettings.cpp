@@ -201,6 +201,7 @@ std::unordered_map<String, CHSetting> performanceSettings
             false)},
        {"transform_null_in", trueOrFalseSetting},
        {"use_concurrency_control", trueOrFalseSetting},
+       {"use_iceberg_partition_pruning", trueOrFalseSetting},
        {"use_index_for_in_with_subqueries", trueOrFalseSetting},
        {"use_page_cache_with_distributed_cache", trueOrFalseSetting},
        {"use_query_condition_cache", trueOrFalseSetting},
@@ -236,6 +237,15 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"cancel_http_readonly_queries_on_client_close", trueOrFalseSettingNoOracle},
     {"cast_ipv4_ipv6_default_on_conversion_error", trueOrFalseSettingNoOracle},
     {"cast_keep_nullable", trueOrFalseSettingNoOracle},
+    {"cast_string_to_date_time_mode",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {"'best_effort'", "'best_effort_us'", "'basic'"};
+             return rg.pickRandomly(choices);
+         },
+         {"'best_effort'", "'best_effort_us'", "'basic'"},
+         false)},
     {"cast_string_to_dynamic_use_inference", trueOrFalseSettingNoOracle},
     {"check_query_single_value_result", trueOrFalseSetting},
     {"check_referential_table_dependencies", trueOrFalseSettingNoOracle},
@@ -469,6 +479,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_parquet_allow_missing_columns", trueOrFalseSettingNoOracle},
     {"input_format_parquet_bloom_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_case_insensitive_column_matching", trueOrFalseSettingNoOracle},
+    {"input_format_parquet_enable_json_parsing", trueOrFalseSettingNoOracle},
     {"input_format_parquet_enable_row_group_prefetch", trueOrFalseSettingNoOracle},
     {"input_format_parquet_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_preserve_order", trueOrFalseSettingNoOracle},
@@ -640,6 +651,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_json_skip_null_value_in_named_tuples", trueOrFalseSettingNoOracle},
     {"output_format_json_validate_utf8", trueOrFalseSettingNoOracle},
     {"output_format_markdown_escape_special_characters", trueOrFalseSettingNoOracle},
+    {"output_format_native_use_flattened_dynamic_and_json_serialization", trueOrFalseSettingNoOracle},
     {"output_format_native_write_json_as_string", trueOrFalseSettingNoOracle},
     {"output_format_orc_compression_method",
      CHSetting(
@@ -893,6 +905,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "max_rows_to_transfer",
           "min_insert_block_size_rows",
           "min_insert_block_size_rows_for_materialized_views",
+          "min_outstreams_per_resize_after_split",
           "output_format_parquet_batch_size",
           "output_format_parquet_data_page_size",
           "output_format_parquet_row_group_size",

@@ -1,7 +1,7 @@
 # See https://doc.rust-lang.org/nightly/rustc/platform-support.html
 
-function(set_rust_target)
-    if(DEFINED CMAKE_TOOLCHAIN_FILE)
+macro(set_rust_target)
+    if(DEFINED CMAKE_TOOLCHAIN_FILE AND NOT DEFINED Rust_CARGO_TARGET)
         if(CMAKE_TOOLCHAIN_FILE MATCHES "ppc64le")
             set(Rust_CARGO_TARGET "powerpc64le-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         elseif((CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64") AND (CMAKE_TOOLCHAIN_FILE MATCHES "musl"))
@@ -25,44 +25,50 @@ function(set_rust_target)
         endif()
         message(STATUS "Set Rust target to ${Rust_CARGO_TARGET}")
     endif ()
-endfunction()
+
+    # FindRust.cmake
+    set(RUST_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
+    if (NOT "${RUST_MODULE_PATH}" IN_LIST "${CMAKE_MODULE_PATH}")
+        list (APPEND CMAKE_MODULE_PATH "${RUST_MODULE_PATH}")
+    endif()
+endmacro()
 
 # Keep in sync with toolchain in docker images
 # (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
 set(Rust_TOOLCHAIN "nightly-2024-12-01")
-set(Rust_ERROR_MESSAGE "Cannot find ${Rust_TOOLCHAIN} Rust toolchain. You can install it with 'rustup toolchain install ${Rust_TOOLCHAIN}'")
+
+macro(find_rust)
+    set_rust_target()
+    if (NOT DEFINED Rust_FOUND)
+        find_package(Rust)
+    endif()
+    if (NOT Rust_FOUND)
+        message(${RECONFIGURE_MESSAGE_LEVEL} "Cannot find ${Rust_TOOLCHAIN} Rust toolchain. You can install it with 'rustup toolchain install ${Rust_TOOLCHAIN}'")
+    endif()
+endmacro()
 
 if (NOT ENABLE_LIBRARIES)
-  set(DEFAULT_ENABLE_RUST FALSE)
+    set(DEFAULT_ENABLE_RUST FALSE)
 elseif (NOT DEFINED ENABLE_RUST)
-  set_rust_target()
-  list (APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
-  find_package(Rust)
-  if (NOT Rust_FOUND)
-    message(${RECONFIGURE_MESSAGE_LEVEL} "${Rust_ERROR_MESSAGE}")
-  endif()
-  set(DEFAULT_ENABLE_RUST ${Rust_FOUND})
+    find_rust()
+    set(DEFAULT_ENABLE_RUST ${Rust_FOUND})
 else()
-  set(DEFAULT_ENABLE_RUST TRUE)
+    if (ENABLE_RUST)
+        # Give a sensible warning if Rust is not available
+        find_rust()
+        set(DEFAULT_ENABLE_RUST TRUE)
+    else()
+        set(DEFAULT_ENABLE_RUST FALSE)
+    endif()
 endif()
 
 option(ENABLE_RUST "Enable rust" ${DEFAULT_ENABLE_RUST})
 if(NOT ENABLE_RUST)
-  message(STATUS "Not using rust")
-  return()
+    message(STATUS "Not using Rust")
+    return()
 endif()
 
-# Try to find proper rust toolchain one more time in case of ENABLE_RUST already installed to give sensible error
-find_package(Rust)
-if (DEFINED ENABLE_RUST)
-  if (NOT Rust_FOUND)
-    message(${RECONFIGURE_MESSAGE_LEVEL} "${Rust_ERROR_MESSAGE}")
-  endif()
-endif()
-
-# FindRust.cmake
 set_rust_target()
-list(APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
 # Define function corrosion_import_crate()
 include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")
 

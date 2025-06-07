@@ -128,8 +128,8 @@ private:
         if (!needle_size)
             return 1;
 
-        auto haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
-        auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+        auto haystack_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(haystack_pos), haystack_end - haystack_pos);
+        auto needle_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle_pos), needle_end - needle_pos);
         if (!haystack_code_point || !needle_code_point)
             return 0;
 
@@ -140,12 +140,12 @@ private:
                 needle_pos += UTF8::seqLength(*needle_pos);
                 if (needle_pos >= needle_end)
                     break;
-                needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+                needle_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle_pos), needle_end - needle_pos);
             }
             haystack_pos += UTF8::seqLength(*haystack_pos);
             if (haystack_pos >= haystack_end)
                 break;
-            haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
+            haystack_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(haystack_pos), haystack_end - haystack_pos);
         }
         return needle_pos == needle_end;
     }

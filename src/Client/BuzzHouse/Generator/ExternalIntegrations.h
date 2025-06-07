@@ -43,7 +43,9 @@ enum class IntegrationCall
     SQLite = 3,
     Redis = 4,
     MongoDB = 5,
-    MinIO = 6
+    MinIO = 6,
+    Azurite = 7,
+    HTTP = 8
 };
 
 class ClickHouseIntegration
@@ -136,7 +138,7 @@ public:
     static std::unique_ptr<MySQLIntegration>
     testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCredentials & scc, bool read_log, const String & server);
 
-    void setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te) override;
+    void setEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase> db, uint32_t tname) override;
 
@@ -178,7 +180,7 @@ public:
     static std::unique_ptr<PostgreSQLIntegration>
     testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, bool read_log);
 
-    void setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te) override;
+    void setEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
 
@@ -332,6 +334,41 @@ public:
     ~MinIOIntegration() override = default;
 };
 
+class AzuriteIntegration : public ClickHouseIntegration
+{
+public:
+    explicit AzuriteIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+        : ClickHouseIntegration(fcc, ssc)
+    {
+    }
+
+    void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
+
+    void setBackupDetails(const String & filename, BackupRestore * br);
+
+    bool performIntegration(
+        RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t tname, bool, bool, std::vector<ColumnPathChain> &) override;
+
+    ~AzuriteIntegration() override = default;
+};
+
+class HTTPIntegration : public ClickHouseIntegration
+{
+public:
+    explicit HTTPIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+        : ClickHouseIntegration(fcc, ssc)
+    {
+    }
+
+    String getConnectionURL();
+
+    void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
+
+    bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, bool, std::vector<ColumnPathChain> &) override;
+
+    ~HTTPIntegration() override = default;
+};
+
 class ExternalIntegrations
 {
 private:
@@ -342,6 +379,8 @@ private:
     std::unique_ptr<RedisIntegration> redis;
     std::unique_ptr<MongoDBIntegration> mongodb;
     std::unique_ptr<MinIOIntegration> minio;
+    std::unique_ptr<AzuriteIntegration> azurite;
+    std::unique_ptr<HTTPIntegration> http;
     std::unique_ptr<MySQLIntegration> clickhouse;
 
     std::filesystem::path default_sqlite_path;
@@ -370,6 +409,10 @@ public:
     bool hasRedisConnection() const { return redis != nullptr; }
 
     bool hasMinIOConnection() const { return minio != nullptr; }
+
+    bool hasAzuriteConnection() const { return azurite != nullptr; }
+
+    bool hasHTTPConnection() const { return http != nullptr; }
 
     bool hasClickHouseExtraServerConnection() const { return clickhouse != nullptr; }
 
@@ -403,7 +446,7 @@ public:
 
     void replicateSettings(PeerTableDatabase pt);
 
-    void setBackupDetails(const String & filename, BackupRestore * br);
+    void setBackupDetails(IntegrationCall dc, const String & filename, BackupRestore * br);
 };
 
 }

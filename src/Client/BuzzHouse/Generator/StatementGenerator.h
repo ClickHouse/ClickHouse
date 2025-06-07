@@ -111,10 +111,13 @@ public:
 class StatementGenerator
 {
 public:
+    static const std::unordered_map<OutFormat, InFormat> outIn;
+
     FuzzConfig & fc;
     uint32_t next_type_mask = std::numeric_limits<uint32_t>::max();
 
 private:
+    std::vector<TableEngineValues> likeEngs;
     ExternalIntegrations & connections;
     const bool supports_cloud_features, replica_setup;
     const size_t deterministic_funcs_limit, deterministic_aggrs_limit;
@@ -282,6 +285,8 @@ private:
     String getNextAlias() { return "a" + std::to_string(aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
+    String columnPathRef(const ColumnPathChain & entry) const;
+    void colRefOrExpression(RandomGenerator & rg, TableEngineValues teng, const ColumnPathChain & entry, Expr * expr);
     String nextComment(RandomGenerator & rg);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     void addViewRelation(const String & rel_name, const SQLView & v);
