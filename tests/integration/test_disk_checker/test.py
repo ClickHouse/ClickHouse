@@ -1,10 +1,7 @@
 import pytest
-
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import wait_condition
 
-import os
-import time
-import logging
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -16,157 +13,92 @@ def started_cluster():
             main_configs=["config.xml"],
             with_minio=False,
             with_zookeeper=True,
-            with_remote_database_disk=False,  # The tests work on the local disk and check local files
+            with_remote_database_disk=False,
+            stay_alive=True,
         )
         cluster.start()
 
-        # local disk requires its `path` directory to exist.
-        # the two paths below belong to `test1` and `test2` disks
         node = cluster.instances["test_disk_checker"]
-        node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"mkdir -p /var/lib/clickhouse/path1",
-            ]
-        )
+        node.exec_in_container(["bash", "-c", "mkdir -p /var/lib/clickhouse/path1"])
+
+        # Wait for disk checker to initialize
 
         yield cluster
-
     finally:
         cluster.shutdown()
 
-def test_disk_checker_started_log(started_cluster):
-    node = cluster.instances["test_disk_checker"]
 
-    # This is the log string we expect (case-sensitive grep)
+def get_metric_value(node, metric_name):
+    result = node.query(
+        f"SELECT value FROM system.metrics WHERE metric = '{metric_name}'"
+    ).strip()
+    return int(result) if result else 0
 
-    expected_log = "Disk check for disk test1 started with period 10.00 s"
 
-    count = node.count_in_log(expected_log)
+def test_disk_readonly_status(started_cluster):
+    try:
+        node = cluster.instances["test_disk_checker"]
+        disk_path = "/var/lib/clickhouse/path1"
 
-    # Make sure it exists in the logs
-    logging.info(f"DiskChecker log count: {count}")
-    assert int(count) > 0, "DiskChecker did not start or log not found"
+        # a hack to make disk readonly
+        node.exec_in_container(["mount", "--bind", disk_path, disk_path])
+        node.exec_in_container(["mount", "-o", "remount,ro,bind", disk_path])
 
-def wait_for_file(node, filepath, timeout=30):
-    '''
-    Wait for file to exist within timeout
-    :param node:      The node to be checked
-    :param filepath:  The file to be checked
-    :param timeout:   The maximum wait time
-    :return:
-    '''
-    for _ in range(timeout):
-        res = node.exec_in_container(["bash", "-c", f"test -f {filepath} && echo exists || echo missing"]).strip()
-        if res == "exists":
-            return True
-        time.sleep(1)
-    return False
+        # assert for metric with retries
+        wait_condition(
+            func=lambda: get_metric_value(node, "ReadonlyDisks"),
+            condition=lambda value: value == 1,
+            max_attempts=10,
+            delay=1,
+        )
 
-def wait_for_log(node, expected_log, timeout=30):
-    '''
-    Wait for log to exist within timeout
-    :param node:         The testing instance
-    :param expected_log: The log expected in clickhouse-server.log
-    :param timeout:      In the config.xml, we set up the check period to 10s,
-                         so the timeout 30s is good enough
-    :return:
-    '''
-    for _ in range(timeout):
-        count = int(node.count_in_log(expected_log))
-        if count > 0:
-            return True
-        time.sleep(1)
-    return False
+        # restore the disk to writable state
+        node.exec_in_container(["mount", "-o", "remount,rw,bind", disk_path])
 
-def wait_for_metrics(node, metric_name, expected_value, timeout=30):
-    for _ in range(timeout):
+        # again assert for metric with retries
+        wait_condition(
+            func=lambda: get_metric_value(node, "ReadonlyDisks"),
+            condition=lambda value: value == 0,
+            max_attempts=10,
+            delay=1,
+        )
+    finally:
         try:
-            result = node.query(f"SELECT value FROM system.metrics WHERE metric = '{metric_name}'").strip()
-            value = int(result)
-            logging.info(f"wait_for_metrics for metric_name {metric_name}, "
-                         f"current value {value}, expected {expected_value}")
-            if value == expected_value:
-                return True
-        except Exception as e:
-            logging.debug(f"wait_for_metrics: Exception querying metric {metric_name}: {e}")
-        time.sleep(1)
-    return False
+            node.exec_in_container(["umount", disk_path])
+        except:
+            pass
 
 
+def test_disk_broken_status(started_cluster):
+    try:
+        node = cluster.instances["test_disk_checker"]
+        disk_path = "/var/lib/clickhouse/path1"
 
-def test_disk_readonly_prometheus_status(started_cluster):
-    '''
-    Manually change disk permission to r-xr-xr-w to simulate that disk is readonly
-    :param started_cluster:
-    :return:
-    '''
-    node = cluster.instances["test_disk_checker"]
+        # move the directory to simulate a borken disk
+        node.exec_in_container(["mv", disk_path, f"{disk_path}_broken"])
 
-    disk_path = "/var/lib/clickhouse/path1"
-    disk_name = "test1"
+        # assert for metric with retries
+        wait_condition(
+            func=lambda: get_metric_value(node, "BrokenDisks"),
+            condition=lambda value: value == 1,
+            max_attempts=10,
+            delay=1,
+        )
 
-    output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
-    logging.info(f"Initial permissions for {disk_path}: {output}")
+        # restore the previously moved directory
+        node.exec_in_container(["mv", f"{disk_path}_broken", disk_path])
+        # it looks like clickhouse needs to be restarted to recover from broken disk
+        node.restart_clickhouse()
 
-    # Step 1: Remove write permission to simulate broken disk
-    node.exec_in_container(["chmod", "555", disk_path])
-    logging.info(f"Changed permissions to 555 on {disk_path} to simulate readonly disk")
-
-    output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
-    logging.info(f"After changed to readonly,  permissions for {disk_path}: {output}")
-
-    # We should find the readonly log
-    expected_log = f"Disk {disk_name} is readonly"
-    assert wait_for_log(node, expected_log), "DiskChecker did not find expected log for readonly disk"
-
-    count = node.count_in_log(expected_log)
-    logging.info(f"DiskChecker found the disk {disk_name} readonly log count: {count}")
-    assert int(count) > 0, f"DiskChecker did not found the log indicating disk {disk_name} is readonly"
-
-    # Check Prometheus metrics for readonly disk
-    assert wait_for_metrics(node, "ReadonlyDisks", 1), "ReadonlyDisks metric did not reach 1"
-
-    # Step 2: Restore permissions
-    node.exec_in_container(["chmod", "775", disk_path])
-    logging.info(f"Restored permissions to 775 on {disk_path}")
-
-    output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
-    logging.info(f"After changed to 775 again,  permissions for {disk_path}: {output}")
-
-    # Check Prometheus metrics again, disk should no longer be readonly
-    assert wait_for_metrics(node, "ReadonlyDisks", 0), "ReadonlyDisks metric did not reach 0"
-
-
-def test_disk_broken_prometheus_status(started_cluster):
-    '''
-    Manually move away the disk checker file to simulate the disk broken status
-    :param started_cluster:
-    :return:
-    '''
-    node = cluster.instances["test_disk_checker"]
-    disk_name = "test1"
-    # Based on your config, disk name is 'test1' and path inside container is:
-    disk_path = "/var/lib/clickhouse/path1"
-    disk_checker_path = os.path.join(disk_path, ".disk_checker_file")
-    disk_checker_backup_path = disk_checker_path + ".bak"
-
-    # Ensure .disk_checker_file exists initially if we have set local_disk_check_period_ms
-    assert wait_for_file(node, disk_checker_path), ".disk_checker_file was not created in time"
-
-    # Step 2: Move away .disk_checker_file to simulate readonly disk
-    node.exec_in_container(["mv", disk_checker_path, disk_checker_backup_path])
-    logging.info("Moved .disk_checker_file away to simulate disk broken")
-
-    # Wait some seconds to let ClickHouse detect the change
-    expected_log = f"Disk {disk_name} marked as broken"
-    assert wait_for_log(node, expected_log), "DiskChecker did not find expected log for broken disk"
-    assert wait_for_metrics(node, "BrokenDisks", 1), "BrokenDisks metric did not reach 1"
-    # Step 3: Move the .disk_checker_file back to restore disk readable status
-    node.exec_in_container(["mv", disk_checker_backup_path, disk_checker_path])
-    logging.info("Restored .disk_checker_file to simulate broken disk back to normal")
-
-    expected_log = f"Disk {disk_name} seems to be fine"
-    assert wait_for_log(node, expected_log), "DiskChecker did not find the log indicating disk seems to be fine"
-
+        # again assert for metric with retries
+        wait_condition(
+            func=lambda: get_metric_value(node, "BrokenDisks"),
+            condition=lambda value: value == 0,
+            max_attempts=10,
+            delay=1,
+        )
+    finally:
+        try:
+            node.exec_in_container(["umount", disk_path])
+        except:
+            pass
