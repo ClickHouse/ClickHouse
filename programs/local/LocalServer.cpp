@@ -4,7 +4,6 @@
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -34,8 +33,6 @@
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
@@ -888,9 +885,6 @@ void LocalServer::processConfig()
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
-    NamedCollectionFactory::instance().loadIfNot();
-    FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
-
     /// NOTE: it is important to apply any overrides before
     /// `setDefaultProfiles` calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
@@ -907,15 +901,16 @@ void LocalServer::processConfig()
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    std::string server_default_database = server_settings[ServerSetting::default_database];
-    if (!server_default_database.empty())
+    std::string default_database = server_settings[ServerSetting::default_database];
+    if (default_database.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     {
-        DatabasePtr database = createClickHouseLocalDatabaseOverlay(server_default_database, global_context);
+        DatabasePtr database = createClickHouseLocalDatabaseOverlay(default_database, global_context);
         if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
             DatabaseCatalog::instance().addUUIDMapping(uuid);
-        DatabaseCatalog::instance().attachDatabase(server_default_database, database);
-        global_context->setCurrentDatabase(server_default_database);
+        DatabaseCatalog::instance().attachDatabase(default_database, database);
     }
+    global_context->setCurrentDatabase(default_database);
 
     if (getClientConfiguration().has("path"))
     {
@@ -953,14 +948,14 @@ void LocalServer::processConfig()
                 DatabaseCatalog::instance().startupBackgroundTasks();
             }
 
+            /// For ClickHouse local if path is not set the loader will be disabled.
+            global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+
             LOG_DEBUG(log, "Loaded metadata.");
         }
 
         if (!attached_system_database)
             attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
-
-        if (fs::exists(fs::path(path) / "user_defined"))
-            global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
@@ -968,11 +963,6 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
-
-    std::string default_database = getClientConfiguration().getString("database", server_default_database);
-    if (default_database.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
-    global_context->setCurrentDatabase(default_database);
 
     server_display_name = getClientConfiguration().getString("display_name", "");
 
@@ -1049,7 +1039,7 @@ void LocalServer::addExtraOptions(OptionsDescription & options_description)
 
 void LocalServer::applyCmdSettings(ContextMutablePtr context)
 {
-    context->applySettingsChanges(cmd_settings->changes());
+    context->applySettingsChanges(cmd_settings.changes());
 }
 
 

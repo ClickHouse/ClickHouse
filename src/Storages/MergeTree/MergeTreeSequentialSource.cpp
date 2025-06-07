@@ -229,16 +229,8 @@ try
             result_column = result_column->convertToFullColumnIfSparse();
             auto & column = result_column->assumeMutableRef();
             auto & offset_data = assert_cast<ColumnUInt64 &>(column).getData();
-            if (read_task_info->merged_part_offsets->isMappingEnabled())
-            {
-                for (auto & offset : offset_data)
-                    offset = (*read_task_info->merged_part_offsets)[read_task_info->part_index_in_query, offset];
-            }
-            else
-            {
-                for (auto & offset : offset_data)
-                    offset += read_task_info->part_starting_offset_in_query;
-            }
+            for (auto & offset : offset_data)
+                offset = (*read_task_info->merged_part_offsets)[read_task_info->part_index_in_query, offset];
         }
         result_column->assumeMutableRef().shrinkToFit();
     }

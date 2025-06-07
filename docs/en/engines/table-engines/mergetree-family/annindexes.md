@@ -356,7 +356,7 @@ The current size of the vector similarity index cache is shown in [system.metric
 ```sql
 SELECT metric, value
 FROM system.metrics
-WHERE metric = 'VectorSimilarityIndexCacheBytes'
+WHERE metric = 'VectorSimilarityIndexCacheSize'
 ```
 
 The cache hits and misses for a query with some query id can be obtained from [system.query_log](../../../operations/system-tables/query_log.md):

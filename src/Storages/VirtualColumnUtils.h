@@ -76,8 +76,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ColumnsDescription & storage_columns,
     const ContextPtr & context,
     const std::string & sample_path = "",
-    std::optional<FormatSettings> format_settings_ = std::nullopt,
-    bool is_data_lake = false);
+    std::optional<FormatSettings> format_settings_ = std::nullopt);
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 

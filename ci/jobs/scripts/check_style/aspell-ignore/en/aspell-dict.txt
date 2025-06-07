@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3283 
+personal_ws-1.1 en 3238 
 AArch
 ACLs
 ALTERs
@@ -82,7 +82,6 @@ BackupsIOThreads
 BackupsIOThreadsActive
 BackupsThreads
 BackupsThreadsActive
-Bech
 BestEffort
 BestEffortOrNull
 BestEffortOrZero
@@ -183,7 +182,6 @@ CloudAvailableBadge
 CloudDetails
 CloudNotSupportedBadge
 CloudStorage
-CoalescingMergeTree
 CodeBlock
 CodeLLDB
 Codecs
@@ -265,8 +263,6 @@ DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
-DictionaryMaxUpdateDelay
-DictionaryTotalFailedUpdates
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
@@ -338,7 +334,6 @@ FilesystemMainPathTotalINodes
 FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
-FixedStrings
 FlameGraph
 Flink
 ForEach
@@ -602,7 +597,6 @@ MSan
 MVCC
 MacBook
 MacOS
-Mainnet
 MapState
 MarkCacheBytes
 MarkCacheFiles
@@ -990,7 +984,6 @@ Schemas
 Schwartzian
 SeasClick
 SeekTable
-SegWit
 SelfManaged
 Sematext
 SendExternalTables
@@ -1095,7 +1088,6 @@ TemporaryFilesForJoin
 TemporaryFilesForSort
 TemporaryFilesUnknown
 Testflows
-Testnet
 Tgz
 Theil's
 Theils
@@ -1395,7 +1387,6 @@ backupview
 balancer
 basename
 bcrypt
-bech
 benchmarked
 benchmarking
 bfloat
@@ -1440,7 +1431,6 @@ bitmaskToArray
 bitmaskToList
 bitov
 blake
-blobpath
 blockNumber
 blockSerializedSize
 blockSize
@@ -1860,6 +1850,7 @@ formatter
 formatters
 fqdn
 frac
+freezed
 frictionless
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1969,7 +1960,6 @@ grpc
 grpcio
 gtest
 gtid
-gunzip
 gzip
 gzipped
 hadoop
@@ -2078,7 +2068,6 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
-isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2220,13 +2209,9 @@ mapAll
 mapApply
 mapConcat
 mapContains
-mapContainsKey
 mapContainsKeyLike
-mapContainsValue
-mapContainsValueLike
 mapExists
 mapExtractKeyLike
-mapExtractValueLike
 mapFilter
 mapFromArrays
 mapKeys
@@ -2264,7 +2249,6 @@ metacharacters
 metasymbols
 metrica
 metroHash
-mergeTreePartInfo
 mfedotov
 mflix
 minMap
@@ -2357,10 +2341,8 @@ namespace
 namespaces
 natively
 nats
-ncat
 ness
 nestjs
-netcat
 netloc
 newjson
 ngram

@@ -48,6 +48,7 @@ using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
+using ThreadStatusPtr = ThreadStatus *;
 
 using QueryIsCanceledPredicate = std::function<bool()>;
 
@@ -68,7 +69,6 @@ public:
     ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
     explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
-    explicit ThreadGroup(ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -79,7 +79,7 @@ public:
 
     const FatalErrorCallback fatal_error_callback;
 
-    MemorySpillScheduler::Ptr memory_spill_scheduler;
+    MemorySpillScheduler memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -118,14 +118,11 @@ public:
 
     static ThreadGroupPtr createForBackgroundProcess(ContextPtr storage_context);
 
-    static ThreadGroupPtr createForMaterializedView();
-
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
-    UInt64 getThreadsTotalElapsedMs() const;
 
     void linkThread(UInt64 thread_id);
-    void unlinkThread(UInt64 elapsed_thread_counter_ms);
+    void unlinkThread();
 
 private:
     mutable std::mutex mutex;
@@ -141,8 +138,6 @@ private:
 
     /// Peak threads count in the group
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
-
-    UInt64 elapsed_total_threads_counter_ms TSA_GUARDED_BY(mutex) = 0;
 };
 
 /**
@@ -236,7 +231,7 @@ private:
 
     bool performance_counters_finalized = false;
 
-    String query_id;
+    String query_id_from_query_context;
 
     struct TimePoint
     {
@@ -245,13 +240,10 @@ private:
         UInt64 microseconds() const;
         UInt64 seconds() const;
 
-        UInt64 elapsedMilliseconds() const;
-        UInt64 elapsedMilliseconds(const TimePoint & current) const;
-
         std::chrono::time_point<std::chrono::system_clock> point;
     };
 
-    TimePoint thread_attach_time{};
+    TimePoint query_start_time{};
 
     // CPU and Real time query profilers
     std::unique_ptr<QueryProfilerReal> query_profiler_real;
@@ -263,24 +255,43 @@ private:
     Stopwatch stopwatch{CLOCK_MONOTONIC_COARSE};
     UInt64 last_performance_counters_update_time = 0;
 
+    /// See setInternalThread()
+    bool internal_thread = false;
+
     /// This is helpful for cut linking dependencies for clickhouse_common_io
     using Deleter = std::function<void()>;
     Deleter deleter;
 
     LoggerPtr log = nullptr;
 
+    bool check_current_thread_on_destruction;
+
 public:
-    explicit ThreadStatus();
+    explicit ThreadStatus(bool check_current_thread_on_destruction_ = true);
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
 
-    void setQueryId(std::string && new_query_id) noexcept;
-    void clearQueryId() noexcept;
     const String & getQueryId() const;
 
     ContextPtr getQueryContext() const;
     ContextPtr getGlobalContext() const;
+
+    /// "Internal" ThreadStatus is used for materialized views for separate
+    /// tracking into system.query_views_log
+    ///
+    /// You can have multiple internal threads, but only one non-internal with
+    /// the same thread_id.
+    ///
+    /// "Internal" thread:
+    /// - cannot have query profiler
+    ///   since the running (main query) thread should already have one
+    /// - should not try to obtain latest counter on detach
+    ///   because detaching of such threads will be done from a different
+    ///   thread_id, and some counters are not available (i.e. getrusage()),
+    ///   but anyway they are accounted correctly in the main ThreadStatus of a
+    ///   query.
+    void setInternalThread();
 
     /// Attaches slave thread to existing thread group
     void attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached = true);

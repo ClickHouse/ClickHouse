@@ -73,8 +73,7 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            auto metdata_disk = getDisk();
-            metdata_disk->removeRecursive(getTableDataPath(table_name));
+            db_disk->removeRecursive(getTableDataPath(table_name));
         }
     }
     catch (...)
@@ -129,7 +128,6 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 
 void DatabaseMemory::removeDataPath(ContextPtr)
 {
-    auto db_disk = getDisk();
     db_disk->removeRecursive(data_path);
 }
 
@@ -207,7 +205,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
         }
 
         chassert(storage);
-        storage->applyMetadataChangesToCreateQueryForBackup(create_table_query);
+        storage->adjustCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
     }
 

@@ -809,7 +809,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
     Aliases aliases;
     QueryAliasesVisitor(aliases).visit(inner_query);
     auto inner_query_normalized = inner_query->clone();
-    QueryNormalizer::Data normalizer_data(aliases, {}, false, QueryNormalizer::ExtractedSettings(getContext()->getSettingsRef()), false);
+    QueryNormalizer::Data normalizer_data(aliases, {}, false, getContext()->getSettingsRef(), false);
     QueryNormalizer(normalizer_data).visit(inner_query_normalized);
 
     auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);

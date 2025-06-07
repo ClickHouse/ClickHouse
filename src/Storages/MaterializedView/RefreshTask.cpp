@@ -5,7 +5,6 @@
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -15,7 +14,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Context.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>

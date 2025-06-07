@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Core/FormatFactorySettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>

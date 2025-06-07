@@ -7,7 +7,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Interpreters/Context.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -151,25 +150,19 @@ StorageObjectStorage::StorageObjectStorage(
     {
         if (do_lazy_init)
             do_init();
-        if (!configuration->isDataLakeConfiguration())
+        try
         {
-            try
-            {
-                sample_path = getPathSample(context);
-            }
-            catch (...)
-            {
-                LOG_WARNING(
-                    log,
-                    "Failed to list object storage, cannot use hive partitioning. "
-                    "Error: {}",
-                    getCurrentExceptionMessage(true));
-            }
+            sample_path = getPathSample(context);
+        }
+        catch (...)
+        {
+            LOG_WARNING(
+                log, "Failed to list object storage, cannot use hive partitioning. "
+                "Error: {}", getCurrentExceptionMessage(true));
         }
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        metadata.columns, context, sample_path, format_settings, configuration->isDataLakeConfiguration()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
     setInMemoryMetadata(metadata);
 }
 
@@ -440,11 +433,13 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (configuration->withPartitionWildcard())
     {
-        ASTPtr partition_by_ast = partition_by;
+        ASTPtr partition_by_ast = nullptr;
         if (auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
         {
             if (insert_query->partition_by)
                 partition_by_ast = insert_query->partition_by;
+            else
+                partition_by_ast = partition_by;
         }
 
         if (partition_by_ast)
@@ -462,9 +457,8 @@ SinkToStoragePtr StorageObjectStorage::write(
     configuration->setPaths(paths);
 
     return std::make_shared<StorageObjectStorageSink>(
-        paths.back(),
         object_storage,
-        configuration,
+        configuration->clone(),
         format_settings,
         sample_block,
         local_context);
@@ -618,7 +612,8 @@ void StorageObjectStorage::Configuration::initialize(
     Configuration & configuration_to_initialize,
     ASTs & engine_args,
     ContextPtr local_context,
-    bool with_table_structure)
+    bool with_table_structure,
+    StorageObjectStorageSettingsPtr settings)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
@@ -642,12 +637,25 @@ void StorageObjectStorage::Configuration::initialize(
     else
         FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
 
+    configuration_to_initialize.storage_settings = settings;
     configuration_to_initialize.initialized = true;
+}
+
+const StorageObjectStorageSettings & StorageObjectStorage::Configuration::getSettingsRef() const
+{
+    return *storage_settings;
 }
 
 void StorageObjectStorage::Configuration::check(ContextPtr) const
 {
     FormatFactory::instance().checkFormatName(format);
+}
+
+StorageObjectStorage::Configuration::Configuration(const Configuration & other)
+{
+    format = other.format;
+    compression_method = other.compression_method;
+    structure = other.structure;
 }
 
 bool StorageObjectStorage::Configuration::withPartitionWildcard() const

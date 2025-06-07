@@ -169,24 +169,6 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
 endif ()
 
-if (ENABLE_CHDIG)
-    message(STATUS "Adding chdig to clickhouse-bundle")
-    list(APPEND CLICKHOUSE_BUNDLE chdig)
-    # NOTE: we need to do this here, since contrib has EXCLUDE_FROM_ALL
-    corrosion_install(TARGETS chdig RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-else ()
-    # Dummy target mostly for sanitizers build to avoid breaking packages
-    # (nfpm do not have options to ignore non existing files)
-    set(CHDIG_PATH ${CMAKE_BINARY_DIR}/chdig)
-    file(GENERATE OUTPUT ${CHDIG_PATH} CONTENT "#!/usr/bin/env sh\necho chdig is not enabled in this ClickHouse build >&2 && exit 1\n")
-    install(FILES ${CHDIG_PATH}
-        DESTINATION ${CMAKE_INSTALL_BINDIR}
-        PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
-                    GROUP_READ GROUP_EXECUTE
-                    WORLD_READ WORLD_EXECUTE
-    )
-endif ()
-
 clickhouse_program_install(clickhouse-benchmark benchmark)
 clickhouse_program_install(clickhouse-check-marks check-marks)
 clickhouse_program_install(clickhouse-checksum-for-compressed-block checksum-for-compressed-block)
@@ -216,7 +198,6 @@ if (ENABLE_CLICKHOUSE_KEEPER)
     if (NOT BUILD_STANDALONE_KEEPER)
         add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLIT_DEBUG_SYMBOLS_DIR})
     endif()
 
     # otherwise we don't build keeper
@@ -243,13 +224,13 @@ endif()
 
 if (CHECK_LARGE_OBJECT_SIZES)
     add_custom_command(TARGET clickhouse POST_BUILD
-        COMMAND "${CMAKE_SOURCE_DIR}/utils/check-large-objects.sh" "${CMAKE_BINARY_DIR}")
+        COMMAND "${CMAKE_SOURCE_DIR}/utils/check-style/check-large-objects.sh" "${CMAKE_BINARY_DIR}")
 endif ()
 
 if (SPLIT_DEBUG_SYMBOLS)
     clickhouse_split_debug_symbols(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR} BINARY_PATH clickhouse)
 else()
-    clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR})
+    clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR})
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
 

@@ -1,6 +1,5 @@
 #include <memory>
 #include <IO/WriteBufferFromString.h>
-#include <Common/ISlotControl.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
@@ -16,7 +15,6 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -54,8 +52,7 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
 {
     if (process_list_element)
     {
-        profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles]
-            && process_list_element->getContext()->getProcessorsProfileLog();
+        profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles];
         trace_processors = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_processors];
     }
     try
@@ -194,7 +191,6 @@ bool PipelineExecutor::checkTimeLimitSoft()
     if (process_list_element)
     {
         bool continuing = process_list_element->checkTimeLimitSoft();
-
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
@@ -209,7 +205,6 @@ bool PipelineExecutor::checkTimeLimitSoft()
 bool PipelineExecutor::checkTimeLimit()
 {
     bool continuing = checkTimeLimitSoft();
-
     if (!continuing)
         process_list_element->checkTimeLimit(); // Will throw if needed
 
@@ -317,7 +312,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 #endif
 
             /// Try to execute neighbour processor.
-            ExecutorTasks::SpawnStatus spawn_status = ExecutorTasks::DO_NOT_SPAWN;
             {
                 Queue queue;
                 Queue async_queue;
@@ -329,27 +323,24 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 
                 /// Push other tasks to global queue.
                 if (status == ExecutingGraph::UpdateNodeStatus::Done)
-                    spawn_status = tasks.pushTasks(queue, async_queue, context);
+                    tasks.pushTasks(queue, async_queue, context);
             }
 
 #ifndef NDEBUG
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            if (spawn_status == ExecutorTasks::SHOULD_SPAWN)
+            try
             {
-                try
-                {
-                    /// Upscale if possible.
-                    spawnThreads();
-                }
-                catch (...)
-                {
-                    /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
-                    /// We should cancel execution properly before rethrow.
-                    cancel(ExecutionStatus::Exception);
-                    throw;
-                }
+                /// Upscale if possible.
+                spawnThreads();
+            }
+            catch (...)
+            {
+                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                /// We should cancel execution properly before rethrow.
+                cancel(ExecutionStatus::Exception);
+                throw;
             }
 
             /// We have executed single processor. Check if we need to yield execution.
@@ -451,7 +442,7 @@ void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
 {
     while (cpu_slots)
     {
-        if (!slot)
+        if (!slot && tasks.shouldSpawn())
             slot = cpu_slots->tryAcquire();
         if (!slot)
             return;
@@ -460,7 +451,7 @@ void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
 
         /// Count of threads in use should be updated for proper finish() condition.
         /// NOTE: this will not decrease `use_threads` below initially granted count
-        const auto spawn_status = tasks.upscale(thread_num + 1);
+        tasks.upscale(thread_num + 1);
 
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
@@ -480,9 +471,6 @@ void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
         });
 
         chassert(!slot); // Just to make sure. Slot should be empty after we moved it to the thread lambda
-
-        if (spawn_status == ExecutorTasks::DO_NOT_SPAWN)
-            return;
     }
 }
 
@@ -490,34 +478,36 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 {
     initializeExecution(num_threads, concurrency_control);
 
-    try
-    {
-        if (num_threads > 1)
-        {
-            {
-                std::lock_guard lock(spawn_mutex);
-                // Start at least one thread, could block to acquire the first CPU slot
-                spawnThreadsImpl(cpu_slots->acquire());
-            }
-            tasks.processAsyncTasks();
-            pool->wait();
-        }
-        else
-        {
-            auto slot = cpu_slots->tryAcquire();
-            executeSingleThread(0);
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+    bool finished_flag = false;
 
-        cancel(ExecutionStatus::Exception);
-        if (pool)
-            pool->wait();
+    SCOPE_EXIT_SAFE(
+        if (!finished_flag)
+        {
+            /// If finished_flag is not set, there was an exception.
+            /// Cancel execution in this case.
+            cancel(ExecutionStatus::Exception);
+            if (pool)
+                pool->wait();
+        }
+    );
 
-        throw;
+    if (num_threads > 1)
+    {
+        {
+            std::lock_guard lock(spawn_mutex);
+            // Start at least one thread, could block to acquire the first CPU slot
+            spawnThreadsImpl(cpu_slots->acquire());
+        }
+        tasks.processAsyncTasks();
+        pool->wait();
     }
+    else
+    {
+        auto slot = cpu_slots->acquire();
+        executeSingleThread(0);
+    }
+
+    finished_flag = true;
 }
 
 String PipelineExecutor::dumpPipeline() const

@@ -44,8 +44,6 @@ The table structure can differ from the source table structure:
 - `external_database` — Name of a database in an external DBMS.
 - `external_table` — Name of a table in the `external_database`.
 
-These parameters can also be passed using [named collections](operations/named-collections.md).
-
 ## Usage Example {#usage-example}
 
 **Retrieving data from the local MySQL installation via ODBC**

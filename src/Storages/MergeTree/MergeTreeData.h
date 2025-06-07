@@ -338,8 +338,6 @@ public:
         /// Renames part from old_name to new_name
         void tryRenameAll();
 
-        void rollBackAll();
-
         /// Renames all added parts from new_name to old_name if old name is not empty
         ~PartsTemporaryRename();
 
@@ -370,7 +368,6 @@ public:
             Replacing           = 5,
             Graphite            = 6,
             VersionedCollapsing = 7,
-            Coalescing          = 8,
         };
 
         Mode mode;
@@ -1163,7 +1160,7 @@ public:
     /// Overridden in StorageReplicatedMergeTree
     virtual MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
-    /// Check shared data usage on other replicas for detached/frozen part
+    /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
     virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name);
 
@@ -1245,8 +1242,6 @@ private:
     mutable IndexSizeByName secondary_index_sizes;
 
 protected:
-    void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
-
     void resetColumnSizes()
     {
         column_sizes.clear();

@@ -1594,10 +1594,6 @@ namespace ErrorCodes
     When enabled, allows summing columns in a SummingMergeTree table to be used in
     the partition or sorting key.
     )", 0) \
-    DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
-    When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
-    the partition or sorting key.
-    )", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, R"(
@@ -1637,13 +1633,6 @@ namespace ErrorCodes
     - [ignore_cold_parts_seconds](/operations/settings/settings#ignore_cold_parts_seconds)
     - [prefer_warmed_unmerged_parts_seconds](/operations/settings/settings#prefer_warmed_unmerged_parts_seconds)
     - [cache_warmer_threads](/operations/settings/settings#cache_warmer_threads)
-    )", 0) \
-    DECLARE(String, cache_populated_by_fetch_filename_regexp, "", R"(
-    :::note
-    This setting applies only to ClickHouse Cloud.
-    :::
-
-    If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
     )", 0) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, R"(
     Allow experimental CLEANUP merges for ReplacingMergeTree with `is_deleted`
@@ -2292,17 +2281,16 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        size_t col = 0;
-        res_columns[col++]->insert(setting_name);
-        res_columns[col++]->insert(setting.getValueString());
-        res_columns[col++]->insert(setting.getDefaultValueString());
-        res_columns[col++]->insert(setting.isValueChanged());
-        res_columns[col++]->insert(setting.getDescription());
+        res_columns[0]->insert(setting_name);
+        res_columns[1]->insert(setting.getValueString());
+        res_columns[2]->insert(setting.getDefaultValueString());
+        res_columns[3]->insert(setting.isValueChanged());
+        res_columns[4]->insert(setting.getDescription());
+
         Field min;
         Field max;
-        std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        constraints.get(*this, setting_name, min, max, disallowed_values, writability);
+        constraints.get(*this, setting_name, min, max, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -2310,17 +2298,12 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         if (!max.isNull())
             max = MergeTreeSettings::valueToStringUtil(setting_name, max);
 
-        Array disallowed_array;
-        for (const auto & value : disallowed_values)
-                disallowed_array.emplace_back(MergeTreeSettings::valueToStringUtil(setting_name, value));
-
-        res_columns[col++]->insert(min);
-        res_columns[col++]->insert(max);
-        res_columns[col++]->insert(disallowed_array);
-        res_columns[col++]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[col++]->insert(setting.getTypeName());
-        res_columns[col++]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[col++]->insert(setting.getTier());
+        res_columns[5]->insert(min);
+        res_columns[6]->insert(max);
+        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[8]->insert(setting.getTypeName());
+        res_columns[9]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[10]->insert(setting.getTier());
     }
 }
 

@@ -38,12 +38,12 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
                 {
                     switch (mode)
                     {
-                        case DB::ResourceAccessMode::DiskRead:
+                        case DB::ASTCreateResourceQuery::AccessMode::DiskRead:
                         {
                             read_disks.emplace_back(disk ? *disk : "ANY");
                             break;
                         }
-                        case DB::ResourceAccessMode::DiskWrite:
+                        case DB::ASTCreateResourceQuery::AccessMode::DiskWrite:
                         {
                             write_disks.emplace_back(disk ? *disk : "ANY");
                             break;
@@ -54,7 +54,7 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
                 res_columns[1]->insert(read_disks);
                 res_columns[2]->insert(write_disks);
             }
-            res_columns[3]->insert(DB::costUnitToString(resource->unit));
+            res_columns[3]->insert(DB::ASTCreateResourceQuery::unitToString(resource->unit));
             res_columns[4]->insert(ast->formatForLogging());
         }
     }
