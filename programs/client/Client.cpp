@@ -24,6 +24,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
+#include <Client/JWTProvider.h>
+
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
@@ -32,6 +34,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Poco/Util/Application.h>
+#include <Poco/URI.h>
 
 #include <filesystem>
 
@@ -348,6 +351,13 @@ try
         showClientVersion();
     }
 
+#if USE_JWT_CPP && USE_SSL
+    if (config().getBool("login", false))
+    {
+        login();
+    }
+#endif
+
     try
     {
         connect();
@@ -417,6 +427,38 @@ catch (...)
     return getCurrentExceptionCode();
 }
 
+#if USE_JWT_CPP && USE_SSL
+void Client::login()
+{
+    std::string host = hosts_and_ports.front().host;
+    std::string auth_url = getClientConfiguration().getString("oauth-url", "");
+    std::string client_id = getClientConfiguration().getString("oauth-client-id", "");
+    std::string audience = getClientConfiguration().getString("oauth-audience", "");
+
+    if ((auth_url.empty() || client_id.empty()) && !isCloudEndpoint(host))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Could not retrieve authentication endpoints for host '{}'. Please specify --oauth-url and --oauth-client-id if you are "
+            "not using ClickHouse Cloud.",
+            host);
+    }
+
+    jwt_provider = createJwtProvider(auth_url, client_id, audience, host, output_stream, error_stream);
+    if (jwt_provider)
+    {
+        std::string jwt = jwt_provider->getJWT();
+        if (!jwt.empty())
+        {
+            getClientConfiguration().setString("jwt", jwt);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Login failed. Please check your credentials and try again.");
+        }
+    }
+}
+#endif
 
 void Client::connect()
 {
@@ -441,6 +483,10 @@ void Client::connect()
 
             connection_parameters = ConnectionParameters(
                 config(), host, database, hosts_and_ports[attempted_address_index].port);
+
+#if USE_JWT_CPP && USE_SSL
+            connection_parameters.jwt_provider = jwt_provider;
+#endif
 
             if (is_interactive)
                 output_stream << "Connecting to "
@@ -655,6 +701,12 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         "ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")(
         "quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")(
         "jwt", po::value<std::string>(), "Use JWT for authentication")
+#if USE_JWT_CPP && USE_SSL
+        ("login", po::bool_switch(), "Use OAuth 2.0 to login")
+        ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
+        ("oauth-client-id", po::value<std::string>(), "The client ID for the OAuth 2.0 application")
+        ("oauth-audience", po::value<std::string>(), "The audience for the OAuth 2.0 token")
+#endif
 
         ("max_client_network_bandwidth",
          po::value<int>(),
@@ -810,6 +862,23 @@ void Client::processOptions(
         config().setString("jwt", options["jwt"].as<std::string>());
         config().setString("user", "");
     }
+#if USE_JWT_CPP && USE_SSL
+    if (options["login"].as<bool>())
+    {
+        if (!options["user"].defaulted())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and login flags can't be specified together");
+        if (config().has("jwt"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "JWT and login flags can't be specified together");
+        config().setBool("login", true);
+        config().setString("user", "");
+    }
+    if (options.count("oauth-url"))
+        config().setString("oauth-url", options["oauth-url"].as<std::string>());
+    if (options.count("oauth-client-id"))
+        config().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
+    if (options.count("oauth-audience"))
+        config().setString("oauth-audience", options["oauth-audience"].as<std::string>());
+#endif
     if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
@@ -941,9 +1010,39 @@ void Client::readArguments(
     std::vector<Arguments> & external_tables_arguments,
     std::vector<Arguments> & hosts_and_ports_arguments)
 {
-    bool has_connection_string
-        = argc >= 2 && tryParseConnectionString(std::string_view(argv[1]), common_arguments, hosts_and_ports_arguments);
-    int start_argument_index = has_connection_string ? 2 : 1;
+    // Default to oauth authentication for ClickHouse Cloud
+    bool is_hostname_argument = false;
+#if USE_JWT_CPP && USE_SSL
+    if (argc >= 2)
+    {
+        std::string hostname(argv[1]);
+        std::string port;
+
+        Poco::URI uri{hostname};
+        if (const auto & host = uri.getHost(); !host.empty())
+        {
+            hostname = host;
+            port = std::to_string(uri.getPort());
+        }
+
+        if (isCloudEndpoint(hostname))
+        {
+            is_hostname_argument = true;
+
+            common_arguments.emplace_back("--login");
+            common_arguments.emplace_back("--secure");
+
+            std::vector<std::string> host_and_port;
+            host_and_port.push_back("--host=" + hostname);
+            if (!port.empty())
+                host_and_port.push_back("--port=" + port);
+            hosts_and_ports_arguments.push_back(std::move(host_and_port));
+        }
+    }
+#endif
+
+    bool has_connection_string = !is_hostname_argument && argc >= 2 && tryParseConnectionString(std::string_view(argv[1]), common_arguments, hosts_and_ports_arguments);
+    int start_argument_index = (has_connection_string || is_hostname_argument) ? 2 : 1;
 
     /** We allow different groups of arguments:
         * - common arguments;
@@ -961,7 +1060,7 @@ void Client::readArguments(
     {
         std::string_view arg = argv[arg_num];
 
-        if (has_connection_string)
+        if (has_connection_string || is_hostname_argument)
             checkIfCmdLineOptionCanBeUsedWithConnectionString(arg);
 
         if (arg == "--external")

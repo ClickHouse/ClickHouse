@@ -33,7 +33,7 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
     if (config.getBool("no-secure", false))
         return false;
 
-    if (connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com"))
+    if (connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com") || connection_host.ends_with(".clickhouse-dev.com"))
         return true;
 
     if (connection_port && connection_port.value() == DBMS_DEFAULT_SECURE_PORT)
