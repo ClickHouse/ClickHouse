@@ -97,7 +97,7 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
-Poco::JSON::Object::Ptr readJSON(
+Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
     StorageObjectStorage::ConfigurationPtr configuration_ptr,
@@ -111,7 +111,7 @@ Poco::JSON::Object::Ptr readJSON(
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
 
         String json_str;
-        readJSONObjectPossiblyInvalid(json_str, *buf);
+        getMetadataJSONObjectObjectPossiblyInvalid(json_str, *buf);
         return json_str;
     };
 
@@ -334,7 +334,7 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
         auto [version, metadata_file_path] = getMetadataFileAndVersion(path);
         if (need_all_metadata_files_parsing)
         {
-            auto metadata_file_object = readJSON(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log);
+            auto metadata_file_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log);
             if (table_uuid.has_value())
             {
                 if (metadata_file_object->has(f_table_uuid))
@@ -462,7 +462,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
         metadata_file_changed = true;
     }
 
-    auto metadata_object = readJSON(metadata_file_path, object_storage, configuration_ptr, manifest_cache, local_context, log);
+    auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, manifest_cache, local_context, log);
     chassert(format_version == metadata_object->getValue<int>(f_format_version));
 
     auto previous_snapshot_id = relevant_snapshot_id;
@@ -622,7 +622,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, log.get());
 
-    Poco::JSON::Object::Ptr object = readJSON(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log);
+    Poco::JSON::Object::Ptr object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log);
 
     IcebergSchemaProcessor schema_processor;
 
@@ -704,7 +704,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
 
     chassert(metadata_version == last_metadata_version);
 
-    auto metadata_object = readJSON(metadata_file_path, object_storage, configuration_ptr, manifest_cache, getContext(), log);
+    auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, manifest_cache, getContext(), log);
 
     chassert(format_version == metadata_object->getValue<int>(f_format_version));
 
