@@ -833,7 +833,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     const size_t original_buffer_size = internal_buffer.size();
     if (!original_buffer_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal buffer cannot be empty");
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Internal buffer cannot be empty (use external buffer: {})", use_external_buffer);
 
     bool implementation_buffer_can_be_reused = false;
     SCOPE_EXIT({
