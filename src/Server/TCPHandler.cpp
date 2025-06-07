@@ -285,6 +285,7 @@ TCPHandler::TCPHandler(
     , log(getLogger("TCPHandler"))
     , read_event(read_event_)
     , write_event(write_event_)
+    , connection_start_time(Poco::Timestamp())
     , server_display_name(std::move(server_display_name_))
     , host_name(std::move(host_name_))
 {
@@ -322,8 +323,6 @@ TCPHandler::~TCPHandler() = default;
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
-
-    connection_start_time = Poco::Timestamp();
 
     extractConnectionSettingsFromContext(server.context());
 
