@@ -631,15 +631,19 @@ try
 catch (const std::exception & e)
 {
     LOG_WARNING(logger, "Cannot achieve read over the disk directory: {}, exception: {}", disk_path, e.what());
-    if (disk_path == "/var/lib/clickhouse/path1/")
+    if (disk_path == "/var/lib/clickhouse/path1/" || disk_path == "/var/lib/clickhouse/path2/" )
     {
         try
         {
             Poco::DirectoryIterator end;
+            bool found = false;
             for (Poco::DirectoryIterator it(disk_path); it != end; ++it)
             {
+                found = true;
                 LOG_INFO(logger, "Disk Local can read Found file in path {}: {}", disk_path, it.name());
             }
+            if (!found)
+                LOG_INFO(logger, "Disk LOCAL cannot find any file in path {}", disk_path);
         }
         catch (const std::exception & e)
         {
