@@ -46,6 +46,7 @@ namespace Setting
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_estimated_execution_time;
     extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool push_external_roles_in_interserver_queries;
@@ -664,6 +665,17 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
         case Protocol::Server::Exception:
             got_exception_from_replica = true;
+
+            if (context->getSettingsRef()[Setting::skip_unavailable_shards] && context->getSettingsRef()[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION)
+            {
+                LOG_ERROR(log,
+                    "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
+                    connections->dumpAddresses(),
+                    packet.exception->displayText());
+
+                return ReadResult(Block{});
+            }
+
             packet.exception->rethrow();
             break;
 
@@ -819,6 +831,17 @@ void RemoteQueryExecutor::finish()
 
             case Protocol::Server::Exception:
                 got_exception_from_replica = true;
+
+                if (context->getSettingsRef()[Setting::skip_unavailable_shards] && context->getSettingsRef()[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION)
+                {
+                    LOG_ERROR(log,
+                        "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
+                        connections->dumpAddresses(),
+                        packet.exception->displayText());
+
+                    break;
+                }
+
                 packet.exception->rethrow();
                 break;
 
