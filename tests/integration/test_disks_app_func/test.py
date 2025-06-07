@@ -53,7 +53,7 @@ def write(source, disk, path):
                     f"'write {path}'",
                 ]
             ),
-        ]
+            ]
     )
 
 
@@ -74,7 +74,7 @@ def touch(source, disk, path):
                     f"'touch {path}'",
                 ]
             ),
-        ]
+            ]
     )
 
 
@@ -105,6 +105,9 @@ def ls(source, disk, path):
         ]
     )
 
+def printPathInfo(source, prefix, disk_path):
+    contents = source.exec_in_container(["ls", "-lA --time-style=full-iso", disk_path]).strip()
+    logging.info(f"{prefix} Contents of {disk_path}:\n{contents}")
 
 def remove(source, disk, path):
     return source.exec_in_container(
@@ -183,7 +186,7 @@ def init_data_s3_rm_rec(source):
 
 
 def test_disks_app_func_ld(started_cluster):
-    logging.info("Start to test test_disks_app_func_ld")
+    logging.info(f"Start to test test_disks_app_func_ld")
     source = cluster.instances["disks_app_test"]
 
     out = source.exec_in_container(
@@ -214,7 +217,7 @@ def test_disks_app_func_ld(started_cluster):
             "switch-disk local; list-disks",
         ]
     )
-    logging.info("Start to test test_disks_app_func_ld")
+
     disks = list(
         map(lambda x: x.strip(), filter(lambda x: len(x) > 1, out.split("\n")))
     )
@@ -229,14 +232,18 @@ def test_disks_app_func_ld(started_cluster):
         "test3",
         "test4",
     ]
-
+    logging.info(f"Finish to test test_disks_app_func_ld")
 
 
 def test_disks_app_func_ls(started_cluster):
-    logging.info("Start to test test_disks_app_func_ls")
+    logging.info(f"Start to test test_disks_app_func_ls")
     source = cluster.instances["disks_app_test"]
+    printPathInfo(source, "Before remove_recurive in test_disks_app_func_ls", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before remove_recurive in test_disks_app_func_ls", "/var/lib/clickhouse/path2/")
 
     remove_recurive(source, "test1", ".")
+    printPathInfo(source, "After remove_recurive in test_disks_app_func_ls", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After remove_recurive in test_disks_app_func_ls", "/var/lib/clickhouse/path2/")
 
     init_data(source)
 
@@ -250,17 +257,24 @@ def test_disks_app_func_ls(started_cluster):
 
     assert ".:\nstore\n" in out
     assert "\n./store:\n" in out
-    logging.info("Finish to test test_disks_app_func_ls")
+    logging.info(f"Finish to test test_disks_app_func_ls")
+
 
 def test_disks_app_func_cp(started_cluster):
-    logging.info("Start to test test_disks_app_func_cp")
+    logging.info(f"Start to test test_disks_app_func_cp")
     source = cluster.instances["disks_app_test"]
+    printPathInfo(source, "Before touch in test_disks_app_func_cp", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before touch in test_disks_app_func_cp", "/var/lib/clickhouse/path2/")
 
     touch(source, "test1", "path1")
+    printPathInfo(source, "After touch in test_disks_app_func_cp", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After touch in test_disks_app_func_cp", "/var/lib/clickhouse/path2/")
 
     out = ls(source, "test1", ".")
 
     assert "path1" in out
+    printPathInfo(source, "Before clickhosue disks copy in test_disks_app_func_cp", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before clickhosue disks copy in test_disks_app_func_cp", "/var/lib/clickhouse/path2/")
 
     source.exec_in_container(
         [
@@ -270,13 +284,18 @@ def test_disks_app_func_cp(started_cluster):
             "copy --recursive --disk-from test1 --disk-to test2 . .",
         ]
     )
+    printPathInfo(source, "After clickhosue disks copy in test_disks_app_func_cp", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After clickhosue disks copy in test_disks_app_func_cp", "/var/lib/clickhouse/path2/")
 
     out = ls(source, "test2", ".")
 
     assert "path1" in out
-
+    printPathInfo(source, "Before remove in test_disks_app_func_cp", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before remove in test_disks_app_func_cp", "/var/lib/clickhouse/path2/")
     remove(source, "test2", "path1")
     remove(source, "test1", "path1")
+    printPathInfo(source, "After remove in test_disks_app_func_cp", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After remove in test_disks_app_func_cp", "/var/lib/clickhouse/path2/")
 
     # alesapin: Why we need list one more time?
     # kssenii: it is an assertion that the file is indeed deleted
@@ -287,13 +306,16 @@ def test_disks_app_func_cp(started_cluster):
     out = ls(source, "test1", ".")
 
     assert "path1" not in out
-    logging.info("Finish to test test_disks_app_func_cp")
+    logging.info(f"Finish to test test_disks_app_func_cp")
+
 
 def test_disks_app_func_ln(started_cluster):
-    logging.info("Start to test test_disks_app_func_ln")
+    logging.info(f"Start to test test_disks_app_func_ln")
     source = cluster.instances["disks_app_test"]
 
     init_data(source)
+    printPathInfo(source, "Before clickhosue disks query link in test_disks_app_func_ln", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before clickhosue disks query link in test_disks_app_func_ln", "/var/lib/clickhouse/path2/")
 
     source.exec_in_container(
         [
@@ -303,69 +325,115 @@ def test_disks_app_func_ln(started_cluster):
             "link data/default/test_table data/default/z_tester",
         ]
     )
-    logging.info("Finish to test test_disks_app_func_ln")
+    printPathInfo(source, "After clickhosue disks query link in test_disks_app_func_ln", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After clickhosue disks query link in test_disks_app_func_ln", "/var/lib/clickhouse/path2/")
+
     out = source.exec_in_container(
         ["/usr/bin/clickhouse", "disks", "--save-logs", "--query", "list data/default/"]
     )
-    logging.info("Finish to test test_disks_app_func_ln_2")
+    printPathInfo(source, "After clickhosue disks query in test_disks_app_func_ln", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After clickhosue disks query in test_disks_app_func_ln", "/var/lib/clickhouse/path2/")
+
     files = out.split("\n")
 
     assert "z_tester" in files
+    logging.info(f"Finish to test test_disks_app_func_ln")
 
 
 def test_disks_app_func_rm(started_cluster):
-    logging.info("Start to test test_disks_app_func_rm")
+    logging.info(f"Start to test test_disks_app_func_rm")
     source = cluster.instances["disks_app_test"]
+    printPathInfo(source, "After write test 2 in test_disks_app_func_rm", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After write test 2 in test_disks_app_func_rm", "/var/lib/clickhouse/path2/")
 
     write(source, "test2", "path3")
+
+    printPathInfo(source, "After write test 2 in test_disks_app_func_rm", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After write test 2 in test_disks_app_func_rm", "/var/lib/clickhouse/path2/")
 
     out = ls(source, "test2", ".")
 
     assert "path3" in out
+    printPathInfo(source, "Before remove test 2 on path3 in test_disks_app_func_rm", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before remove test 2 on path3 in test_disks_app_func_rm", "/var/lib/clickhouse/path2/")
 
     remove(source, "test2", "path3")
+
+    printPathInfo(source, "After remove test 2 on path3 in test_disks_app_func_rm", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After remove test 2 on path3 in test_disks_app_func_rm", "/var/lib/clickhouse/path2/")
 
     out = ls(source, "test2", ".")
 
     assert "path3" not in out
-    logging.info("Finish to test test_disks_app_func_rm")
+    logging.info(f"Finish to test test_disks_app_func_rm")
 
 
 def test_disks_app_func_rm_shared_recursive(started_cluster):
-    logging.info("Start to test test_disks_app_func_rm_shared_recursive")
+    logging.info(f"Start to test test_disks_app_func_rm_shared_recursive")
     source = cluster.instances["disks_app_test"]
 
     init_data_s3_rm_rec(source)
     out = ls(source, "test3", ". --recursive")
     assert (
-        out
-        == ".:\na\n\n./a:\na\nb\nc\nd\n\n./a/a:\na\nb\nc\n\n./a/b:\na\nb\nc\nd\ne\n\n./a/c:\n\n./a/d:\n\n"
+            out
+            == ".:\na\n\n./a:\na\nb\nc\nd\n\n./a/a:\na\nb\nc\n\n./a/b:\na\nb\nc\nd\ne\n\n./a/c:\n\n./a/d:\n\n"
     )
+    printPathInfo(source, "Before rm test 3 recursively in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before rm test 3 recursively in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
 
     remove(source, "test3", "a/a --recursive")
+    printPathInfo(source, "After rm test 3 recursively in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After rm test 3 recursively in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
+
     out = ls(source, "test3", ". --recursive")
     assert (
-        out == ".:\na\n\n./a:\nb\nc\nd\n\n./a/b:\na\nb\nc\nd\ne\n\n./a/c:\n\n./a/d:\n\n"
+            out == ".:\na\n\n./a:\nb\nc\nd\n\n./a/b:\na\nb\nc\nd\ne\n\n./a/c:\n\n./a/d:\n\n"
     )
+    printPathInfo(source, "Before rm test 3 recursively a/b --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before rm test 3 recursively a/b --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
 
     remove(source, "test3", "a/b --recursive")
+    printPathInfo(source, "After rm test 3 recursively a/b --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After rm test 3 recursively a/b --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
+
+    printPathInfo(source, "Before rm test 3 recursively . --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before rm test 3 recursively . --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
+
     out = ls(source, "test3", ". --recursive")
     assert out == ".:\na\n\n./a:\nc\nd\n\n./a/c:\n\n./a/d:\n\n"
+    printPathInfo(source, "After rm test 3 recursively . --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After rm test 3 recursively . --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
+
+    printPathInfo(source, "Before rm test 3 recursively a/c --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before rm test 3 recursively a/c --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
+
 
     remove(source, "test3", "a/c --recursive")
     out = ls(source, "test3", ". --recursive")
     assert out == ".:\na\n\n./a:\nd\n\n./a/d:\n\n"
+    printPathInfo(source, "After rm test 3 recursively a/c --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After rm test 3 recursively a/c --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
+
+    printPathInfo(source, "Before rm test 3 recursively a --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before rm test 3 recursively a --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
 
     remove(source, "test3", "a --recursive")
     out = ls(source, "test3", ". --recursive")
     assert out == ".:\n\n"
+    printPathInfo(source, "After rm test 3 recursively a --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After rm test 3 recursively a --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
+
+    printPathInfo(source, "Before rm test 3 recursively . --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before rm test 3 recursively . --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
 
     remove(source, "test3", ". --recursive")
-    logging.info("Finish to test test_disks_app_func_rm_shared_recursive")
+    logging.info(f"Finish to test test_disks_app_func_rm_shared_recursive")
 
+    printPathInfo(source, "After rm test 3 recursively . --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Ater rm test 3 recursively . --recursive in test_disks_app_func_rm_shared_recursive", "/var/lib/clickhouse/path2/")
 
 def test_disks_app_func_mv(started_cluster):
-    logging.info("Start to test test_disks_app_func_mv")
+    logging.info(f"Start to test test_disks_app_func_mv")
     source = cluster.instances["disks_app_test"]
 
     init_data(source)
@@ -375,6 +443,9 @@ def test_disks_app_func_mv(started_cluster):
     files = out.split("\n")
     assert "old_store" not in files
     assert "store" in files
+
+    printPathInfo(source, "Before run container --query move store old_store test_disks_app_func_mv", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before run container --query move store old_store test_disks_app_func_mv", "/var/lib/clickhouse/path2/")
 
     source.exec_in_container(
         [
@@ -386,19 +457,33 @@ def test_disks_app_func_mv(started_cluster):
             "move store old_store",
         ]
     )
-    logging.info("Finish to test test_disks_app_func_mv")
+    printPathInfo(source, "After run container --query move store old_store test_disks_app_func_mv", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After run container --query move store old_store test_disks_app_func_mv", "/var/lib/clickhouse/path2/")
+
     out = ls(source, "test1", ".")
 
     files = out.split("\n")
     assert "old_store" in files
     assert "store" not in files
 
+    printPathInfo(source, "Before run ./old_store --recursive test_disks_app_func_mv", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before run ./old_store --recursive test_disks_app_func_mv", "/var/lib/clickhouse/path2/")
+
+
     remove(source, "test1", "./old_store --recursive")
+
+    printPathInfo(source, "After run ./old_store --recursive test_disks_app_func_mv", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After run ./old_store --recursive test_disks_app_func_mv", "/var/lib/clickhouse/path2/")
+
+    logging.info(f"Finish to test test_disks_app_func_mv")
 
 
 def test_disks_app_func_read_write(started_cluster):
-    logging.info("Start to test test_disks_app_func_read_write")
+    logging.info(f"Start to test test_disks_app_func_read_write")
     source = cluster.instances["disks_app_test"]
+
+    printPathInfo(source, "Before write test1 5.txt test_disks_app_func_read_write", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "Before write test1 5.txt  test_disks_app_func_read_write", "/var/lib/clickhouse/path2/")
 
     write(source, "test1", "5.txt")
 
@@ -413,15 +498,17 @@ def test_disks_app_func_read_write(started_cluster):
             "read 5.txt",
         ]
     )
-    logging.info("Finish to test test_disks_app_func_read_write")
+    printPathInfo(source, "After write test1 5.txt test_disks_app_func_read_write", "/var/lib/clickhouse/path1/")
+    printPathInfo(source, "After write test1 5.txt test_disks_app_func_read_write", "/var/lib/clickhouse/path2/")
+
     files = out.split("\n")
 
     assert files[0] == "tester"
-
+    logging.info(f"Finish to test test_disks_app_func_read_write")
 
 
 def test_remote_disk_list(started_cluster):
-    logging.info("Start to test test_remote_disk_list")
+    logging.info(f"Start to test test_remote_disk_list")
     source = cluster.instances["disks_app_test"]
     init_data_s3(source, "test4")
 
@@ -435,4 +522,4 @@ def test_remote_disk_list(started_cluster):
 
     assert ".:\nstore\n" in out
     assert "\n./store:\n" in out
-    logging.info("Finish to test test_remote_disk_list")
+    logging.info(f"Finish to test test_remote_disk_list")
