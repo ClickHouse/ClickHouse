@@ -111,7 +111,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
 
         String json_str;
-        getMetadataJSONObjectObjectPossiblyInvalid(json_str, *buf);
+        readJSONObjectPossiblyInvalid(json_str, *buf);
         return json_str;
     };
 
