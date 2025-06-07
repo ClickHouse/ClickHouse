@@ -5,7 +5,6 @@ SET max_rows_to_read = 0, max_result_rows = 0, max_bytes_before_external_group_b
 
 -- does not use 127.1 due to prefer_localhost_replica
 
-select * from remote('127.{2..11}', view(select * from numbers(1e6))) group by number order by number limit 20 settings distributed_group_by_no_merge=0, max_memory_usage='100Mi'; -- { serverError MEMORY_LIMIT_EXCEEDED }
 -- no memory limit error, because with distributed_group_by_no_merge=2 remote servers will do ORDER BY and will cut to the LIMIT
 select * from remote('127.{2..11}', view(select * from numbers(1e6))) group by number order by number limit 20 settings distributed_group_by_no_merge=2, max_memory_usage='100Mi';
 

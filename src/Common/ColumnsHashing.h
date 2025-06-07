@@ -16,6 +16,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 
+#include <Analyzer/SortNode.h>
+
 #include <Core/Defines.h>
 #include <memory>
 #include <cassert>

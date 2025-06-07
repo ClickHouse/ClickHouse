@@ -501,8 +501,9 @@ public:
         auto offset_it = column_sparse.getIterator(row_begin);
 
         for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
-                                                    &values, offset_it.getValueIndex(), arena);
+            if (places[offset_it.getCurrentRow()] != nullptr)
+                static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
+                                                        &values, offset_it.getValueIndex(), arena);
     }
 
     void mergeBatch(
@@ -684,6 +685,8 @@ public:
         {
             for (; batch_index < row_end; ++batch_index)
             {
+                chassert(places[batch_index] != nullptr);
+                chassert(places[batch_index] + place_offset != nullptr);
                 static_cast<const Derived *>(this)->insertResultInto(places[batch_index] + place_offset, to, arena);
                 /// For State AggregateFunction ownership of aggregate place is passed to result column after insert,
                 /// so we need to destroy all states up to state of -State combinator.
@@ -693,7 +696,10 @@ public:
         catch (...)
         {
             for (size_t destroy_index = batch_index; destroy_index < row_end; ++destroy_index)
+            {
+                chassert(places[batch_index] != nullptr && places[destroy_index] + place_offset != nullptr);
                 static_cast<const Derived *>(this)->destroy(places[destroy_index] + place_offset);
+            }
 
             throw;
         }
