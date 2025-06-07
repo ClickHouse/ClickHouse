@@ -127,8 +127,7 @@ CREATE TABLE 03165_token_ft
     INDEX idx_message message TYPE text(tokenizer = 'default') GRANULARITY 1
 )
 ENGINE = MergeTree
-ORDER BY id
-SETTINGS min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
+ORDER BY id;
 
 INSERT INTO 03165_token_ft VALUES(1, 'Service is not ready');
 
