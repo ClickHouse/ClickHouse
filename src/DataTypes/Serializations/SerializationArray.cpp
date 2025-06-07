@@ -13,6 +13,8 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -22,6 +24,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_DATA;
 }
 
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
@@ -374,6 +377,19 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
             deserializeArraySizesPositionIndependent(column_array, *stream, rows_offset + limit);
         else
             SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, 0, rows_offset + limit, 0);
+
+        /// Verify offsets if the data comes over the network
+        if (settings.native_format)
+        {
+            const auto & offsets = column_array.getOffsets();
+            const auto * const it = std::adjacent_find(offsets.begin(), offsets.end(), std::greater<>());
+            if (it != offsets.end())
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays offsets are not monotonically increasing (starting at {}, value {})",
+                    std::distance(offsets.begin(), it),
+                    *it);
+            }
+        }
 
         /// The length of the offset column added to the stream cache is limit + rows_offset.
         addToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(column_array.getOffsetsColumn()));
