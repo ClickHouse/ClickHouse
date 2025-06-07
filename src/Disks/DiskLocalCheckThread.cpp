@@ -48,10 +48,13 @@ void DiskLocalCheckThread::run()
 {
     if (need_stop)
         return;
-    bool readonly = disk->isReadOnly();
-    bool broken = disk->isBroken();
+
+    bool was_readonly = disk->isReadOnly();
+    bool was_broken = disk->isBroken();
+
     bool can_read = disk->canRead();
     bool can_write = disk->canWrite();
+
     if (can_read)
     {
         if (disk->broken)
@@ -64,6 +67,7 @@ void DiskLocalCheckThread::run()
             disk->readonly = true;
             LOG_INFO(log, "Disk {} is readonly", disk->getName());
         }
+        disk->broken = false;
         task->scheduleAfter(check_period_ms);
     }
     else if (!disk->broken && retry < DISK_CHECK_ERROR_RETRY_TIME)
@@ -81,8 +85,8 @@ void DiskLocalCheckThread::run()
         disk->broken = true;
         task->scheduleAfter(check_period_ms);
     }
-    CurrentMetrics::add(CurrentMetrics::ReadonlyDisks, diskStatusChange(readonly, disk->isReadOnly()));
-    CurrentMetrics::add(CurrentMetrics::BrokenDisks, diskStatusChange(broken, disk->isBroken()));
+    CurrentMetrics::add(CurrentMetrics::ReadonlyDisks, diskStatusChange(was_readonly, disk->isReadOnly()));
+    CurrentMetrics::add(CurrentMetrics::BrokenDisks, diskStatusChange(was_broken, disk->isBroken()));
 }
 
 void DiskLocalCheckThread::shutdown()

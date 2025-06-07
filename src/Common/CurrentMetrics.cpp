@@ -397,8 +397,8 @@
     M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
     M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
     M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
-    M(ReadonlyDisks, "How many disks are marked as readonly during disk check.") \
-    M(BrokenDisks, "How many disks are marked as broken during disk check.") \
+    M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
+    M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
