@@ -26,25 +26,13 @@ public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-    using OnRemoveFunction = std::function<size_t(const MappedPtr &)>;  // For per-item callback
+    using OnRemoveFunction = std::function<void(const MappedPtr &)>;  // For per-item callback
 
     struct KeyMapped
     {
         Key key;
         MappedPtr mapped;
     };
-
-    struct EvictionStats
-    {
-        /// Used to count total weight loss (e.g., in bytes) during eviction
-        size_t total_weight_loss;
-        /// Used to count cached entities (eg: marks totalling over MarksInCompressedFile in MarkCache)
-        size_t total_evicted_value_entities_num;
-        /// Used to count number of evicted keys (eg: files in MarkCache)
-        size_t total_evicted_keys_num;
-    };
-
-    using OnEvictionFunction = std::function<void(const EvictionStats &)>;  // Receives aggregate stats
 
     explicit ICachePolicy(CachePolicyUserQuotaPtr user_quotas_) : user_quotas(std::move(user_quotas_)) {}
     virtual ~ICachePolicy() = default;

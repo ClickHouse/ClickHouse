@@ -149,10 +149,11 @@ public:
     }
 
 private:
-    /// Called when cache eviction occurs
-    void onEviction(const EvictionStats& stats) override
+    /// Called for each individual cell being evicted from cache
+    void onValueRemoval(const MappedPtr & mappedPtr) override
     {
-        ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheWeightLost, stats.total_weight_loss);
+        auto iceberg_metadata_files_cache_cell = std::static_pointer_cast<IcebergMetadataFilesCacheCell>(mappedPtr);
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheWeightLost, IcebergMetadataFilesCacheWeightFunction()(*iceberg_metadata_files_cache_cell));
     }
 };
 

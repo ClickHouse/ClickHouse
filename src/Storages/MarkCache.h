@@ -60,21 +60,17 @@ public:
     }
 
 private:
-    /// Called for each individual item being evicted from cache
-    /// Returns the number of marks in this specific file
-    size_t onValueRemoval(const MappedPtr & mappedPtr) override
+    /// Called for each individual cell being evicted from cache
+    void onValueRemoval(const MappedPtr & mappedPtr) override
     {
+        /// File is the key of MarkCache, each removal means eviction of 1 file from the cache.
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles);
+
         auto marks_in_compressed_file = std::static_pointer_cast<MarksInCompressedFile>(mappedPtr);
-        return marks_in_compressed_file->getNumberOfMarks();
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, MarksWeightFunction()(*marks_in_compressed_file));
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks, marks_in_compressed_file->getNumberOfMarks());
     }
 
-    /// Called when cache overflow occurs with aggregate eviction stats
-    void onEviction(const EvictionStats& stats) override
-    {
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, stats.total_weight_loss);
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks, stats.total_evicted_value_entities_num);
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles, stats.total_evicted_keys_num);
-    }
 };
 
 using MarkCachePtr = std::shared_ptr<MarkCache>;
