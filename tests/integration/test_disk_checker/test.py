@@ -21,8 +21,6 @@ def started_cluster():
         node = cluster.instances["test_disk_checker"]
         node.exec_in_container(["bash", "-c", "mkdir -p /var/lib/clickhouse/path1"])
 
-        # Wait for disk checker to initialize
-
         yield cluster
     finally:
         cluster.shutdown()
@@ -33,6 +31,18 @@ def get_metric_value(node, metric_name):
         f"SELECT value FROM system.metrics WHERE metric = '{metric_name}'"
     ).strip()
     return int(result) if result else 0
+
+
+def test_disk_checker_started_log(started_cluster):
+    node = cluster.instances["test_disk_checker"]
+
+    # ensure that the disk checker log line exists in server logs
+    def assert_log_exists():
+        expected_log = "Disk check for disk test1 started with period 1.00 s"
+        count = node.count_in_log(expected_log)
+        return int(count) > 0
+
+    wait_condition(assert_log_exists, lambda x: x, max_attempts=10, delay=1)
 
 
 def test_disk_readonly_status(started_cluster):
