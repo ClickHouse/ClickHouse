@@ -15,6 +15,7 @@
 
 #include <fmt/core.h>
 #include <iterator>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -149,10 +150,12 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    const ProfileEvents::Event & write_event_)
+    const ProfileEvents::Event & write_event_,
+    bool is_event_stream_enabled_)
     : HTTPWriteBuffer(response_.getSocket(), write_event_)
     , response(response_)
     , is_http_method_head(is_http_method_head_)
+    , is_event_stream_enabled(is_event_stream_enabled_)
 {
     if (response.getChunkedTransferEncoding())
         setChunked();
@@ -162,6 +165,13 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
 void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 {
     std::lock_guard lock(mutex);
+    // LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "onProgress called, is_event_stream_enabled={}", is_event_stream_enabled);
+
+    if (is_event_stream_enabled)
+    {
+         onProgressSSE(progress);
+         return;
+    }
 
     /// Cannot add new headers if body was started to send.
     if (headers_finished_sending)
@@ -176,6 +186,26 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         /// Send all common headers before our special progress headers.
         startSendHeaders();
         writeHeaderProgress();
+    }
+}
+
+void WriteBufferFromHTTPServerResponse::onProgressSSE(const Progress & progress)
+{
+    LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "onProgressSSE here");
+    accumulated_progress.incrementPiecewiseAtomically(progress);
+    if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
+    {
+        accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
+        progress_watch.restart();
+
+        WriteBufferFromOwnString progress_string_writer;
+        writeCString("event: progress\n", progress_string_writer);
+        writeCString("data: ", progress_string_writer);
+        accumulated_progress.writeJSON(progress_string_writer);
+        writeCString("\n\n", progress_string_writer);
+        auto & out = *this;
+        if (!out.isCanceled() && !out.isFinalized())
+            writeString(progress_string_writer.str(), out);
     }
 }
 

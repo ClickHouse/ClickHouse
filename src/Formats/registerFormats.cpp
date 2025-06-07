@@ -79,6 +79,7 @@ void registerOutputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory);
 void registerOutputFormatNpy(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory);
+void registerOutputFormatSSE(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -215,6 +216,8 @@ void registerFormats()
     registerInputFormatCustomSeparated(factory);
     registerOutputFormatCustomSeparated(factory);
     registerInputFormatForm(factory);
+
+    registerOutputFormatSSE(factory);
 
     registerInputFormatORC(factory);
     registerOutputFormatORC(factory);

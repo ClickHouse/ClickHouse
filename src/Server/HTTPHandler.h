@@ -188,6 +188,10 @@ private:
 
     static void pushDelayedResults(Output & used_output);
 
+    bool isEventStreamRequest(const HTTPServerRequest & request) const;
+
+    void writeEventStreamHeader(HTTPServerResponse & response);
+
 protected:
     // @see authenticateUserByHTTP()
     virtual bool authenticateUser(
