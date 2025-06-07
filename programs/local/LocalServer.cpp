@@ -914,9 +914,9 @@ void LocalServer::processConfig()
         if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
             DatabaseCatalog::instance().addUUIDMapping(uuid);
         DatabaseCatalog::instance().attachDatabase(server_default_database, database);
+        global_context->setCurrentDatabase(server_default_database);
     }
 
-    global_context->setCurrentDatabase(server_default_database);
     if (getClientConfiguration().has("path"))
     {
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
