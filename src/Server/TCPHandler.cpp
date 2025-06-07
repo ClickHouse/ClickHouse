@@ -285,7 +285,6 @@ TCPHandler::TCPHandler(
     , log(getLogger("TCPHandler"))
     , read_event(read_event_)
     , write_event(write_event_)
-    , connection_start_time(Poco::Timestamp())
     , server_display_name(std::move(server_display_name_))
     , host_name(std::move(host_name_))
 {
@@ -2698,7 +2697,7 @@ void TCPHandler::checkConnectionLimits()
     UInt64 max_queries = server_settings[ServerSetting::tcp_close_connection_after_queries_num];
     UInt64 max_seconds = server_settings[ServerSetting::tcp_close_connection_after_queries_seconds];
 
-    auto elapsed_seconds = static_cast<UInt64>((Poco::Timestamp() - connection_start_time) / Poco::Timestamp::resolution());
+    double elapsed_seconds = connection_timer.elapsedSeconds();
 
     bool max_queries_exceeded = max_queries > 0 && query_count >= max_queries;
     bool max_seconds_exceeded = max_seconds > 0 && elapsed_seconds >= max_seconds;
