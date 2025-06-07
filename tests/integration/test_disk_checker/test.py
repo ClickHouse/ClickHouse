@@ -107,21 +107,14 @@ def test_disk_readonly_prometheus_status(started_cluster):
     disk_path = "/var/lib/clickhouse/path1"
     disk_name = "test1"
 
-    output = node.exec_in_container(["ls", "-ld --time-style=full-iso", disk_path]).strip()
+    output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
     logging.info(f"Initial permissions for {disk_path}: {output}")
-
-    contents = node.exec_in_container(["ls", "-lA --time-style=full-iso", disk_path]).strip()
-    logging.info(f"Contents of {disk_path}:\n{contents}")
-
 
     # Step 1: Remove write permission to simulate broken disk
     node.exec_in_container(["chmod", "555", disk_path])
     logging.info(f"Changed permissions to 555 on {disk_path} to simulate readonly disk")
 
-    contents = node.exec_in_container(["ls", "-lA --time-style=full-iso", disk_path]).strip()
-    logging.info(f"Contents of {disk_path}:\n{contents}")
-
-    output = node.exec_in_container(["ls", "-ld --time-style=full-iso", disk_path]).strip()
+    output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
     logging.info(f"After changed to readonly,  permissions for {disk_path}: {output}")
 
     # We should find the readonly log
@@ -139,7 +132,7 @@ def test_disk_readonly_prometheus_status(started_cluster):
     node.exec_in_container(["chmod", "775", disk_path])
     logging.info(f"Restored permissions to 775 on {disk_path}")
 
-    output = node.exec_in_container(["ls", "-ld --time-style=full-iso", disk_path]).strip()
+    output = node.exec_in_container(["ls", "-ld", disk_path]).strip()
     logging.info(f"After changed to 775 again,  permissions for {disk_path}: {output}")
 
     # Check Prometheus metrics again, disk should no longer be readonly
@@ -157,16 +150,14 @@ def test_disk_broken_prometheus_status(started_cluster):
     # Based on your config, disk name is 'test1' and path inside container is:
     disk_path = "/var/lib/clickhouse/path1"
     disk_checker_path = os.path.join(disk_path, ".disk_checker_file")
-    from datetime import datetime
-    formatted_time = datetime.now.strftime('%Y_%m_%d_%H_%M_%S_%f')[:-3]
-    disk_checker_backup_path = disk_checker_path + "_" + formatted_time + ".bak"
+    disk_checker_backup_path = disk_checker_path + ".bak"
 
     # Ensure .disk_checker_file exists initially if we have set local_disk_check_period_ms
     assert wait_for_file(node, disk_checker_path), ".disk_checker_file was not created in time"
 
     # Step 2: Move away .disk_checker_file to simulate readonly disk
     node.exec_in_container(["mv", disk_checker_path, disk_checker_backup_path])
-    logging.info(f"Moved .disk_checker_file away to {disk_checker_backup_path} simulate disk broken ")
+    logging.info("Moved .disk_checker_file away to simulate disk broken")
 
     # Wait some seconds to let ClickHouse detect the change
     expected_log = f"Disk {disk_name} marked as broken"
