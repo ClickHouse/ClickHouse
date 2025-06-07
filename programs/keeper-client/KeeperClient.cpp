@@ -1,4 +1,8 @@
 #include "KeeperClient.h"
+#include <algorithm>
+#include <cctype>
+#include <iterator>
+#include <string_view>
 #include "Commands.h"
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
@@ -9,8 +13,58 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/parseQuery.h>
+#include <replxx.hxx>
 #include <Poco/Util/HelpFormatter.h>
 
+namespace
+{
+
+char WORD_BREAK_CHARACTERS[] = " \t\v\f\a\b\r\n";
+
+/// Automatically prepend double quote for non first word under cursor, i.e.:
+///
+///     ls     => ls
+///     ls /   => ls "/
+///     ls "/  => ls "/
+///
+void prependDoubleQuoteForPath(replxx::Replxx & rx)
+{
+    replxx::Replxx::State state(rx.get_state());
+    std::string_view word_breaks(WORD_BREAK_CHARACTERS);
+
+    size_t cursor = state.cursor_position();
+    std::string text(state.text());
+
+    /// Example of algorith for 'ls /foo':
+    ///
+    /// std::string(text.begin(), word_begin) = 'ls '
+    /// std::string(word_begin, word_end) = '/foo'
+    /// std::string(word_end, text.end()) = ''
+
+    auto word_begin = std::find_first_of(text.rbegin() + text.size() - cursor, text.rend(), word_breaks.begin(), word_breaks.end()).base();
+    /// Do not quote first argument (w/o moving word_begin)
+    {
+        auto first_word = word_begin;
+        while (std::isspace(*first_word))
+            --first_word;
+        if (first_word == text.begin())
+            return;
+    }
+
+    auto word_end = std::find_first_of(text.begin() + cursor, text.end(), word_breaks.begin(), word_breaks.end());
+    if (std::distance(word_begin, word_end) < 1)
+        return;
+
+    if (*word_begin != '"')
+    {
+        text.insert(word_begin, '"');
+        ++cursor;
+    }
+
+    rx.set_state(replxx::Replxx::State(text.c_str(), cursor));
+}
+
+}
 
 namespace DB
 {
@@ -43,8 +97,11 @@ String KeeperClient::executeFourLetterCommand(const String & command)
     return result;
 }
 
-std::vector<String> KeeperClient::getCompletions(const String & prefix) const
+std::vector<String> KeeperClient::getCompletions(String prefix) const
 {
+    /// Append trailing double quote to pass the parser correctly
+    if (!prefix.ends_with('"'))
+        prefix.append("\"");
     Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
     IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
@@ -68,15 +125,21 @@ std::vector<String> KeeperClient::getCompletions(const String & prefix) const
 
     fs::path path = string_path;
     String parent_path;
-    if (string_path.ends_with("/"))
+    /// parent_path has "/" at the end only if it is root
+    if (string_path.ends_with('/'))
         parent_path = getAbsolutePath(string_path);
     else
         parent_path = getAbsolutePath(path.parent_path());
 
+    /// parent_prefix always has "/" at the end
+    auto parent_prefix = parent_path;
+    if (!parent_prefix.ends_with('/'))
+        parent_prefix.append("/");
+
     try
     {
         for (const auto & child : zookeeper->getChildren(parent_path))
-            result.push_back(child);
+            result.push_back("\"" + parent_prefix + child);
     }
     catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
 
@@ -323,7 +386,6 @@ void KeeperClient::runInteractiveReplxx()
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {};
-    char word_break_characters[] = " \t\v\f\a\b\r\n/";
 
     auto reader_options = ReplxxLineReader::Options
     {
@@ -334,8 +396,9 @@ void KeeperClient::runInteractiveReplxx()
         .ignore_shell_suspend = false,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
-        .word_break_characters = word_break_characters,
+        .word_break_characters = WORD_BREAK_CHARACTERS,
         .highlighter = {},
+        .on_complete_modify_callback = prependDoubleQuoteForPath,
     };
     ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
