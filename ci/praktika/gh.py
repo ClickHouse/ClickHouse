@@ -1,7 +1,8 @@
+import dataclasses
 import json
 import time
 import traceback
-from typing import Any
+from typing import Any, List, Optional
 
 from ._environment import _Environment
 from .info import Info
@@ -219,6 +220,75 @@ class GH:
         cls.print_log_in_group(
             "GITHUB_EVENT", Shell.get_output("cat $GITHUB_EVENT_PATH")
         )
+
+    @dataclasses.dataclass
+    class ResultSummaryForGH:
+        name: str
+        status: Result.Status
+        sha: str = ""
+        start_time: Optional[float] = None
+        duration: Optional[float] = None
+        failed_results: List["ResultSummaryForGH"] = dataclasses.field(
+            default_factory=list
+        )
+
+        @classmethod
+        def from_result(cls, result: Result):
+            def flatten_results(results):
+                for r in results:
+                    if not r.results:
+                        yield r
+                    else:
+                        yield from flatten_results(r.results)
+
+            info = Info()
+            summary = cls(
+                name=result.name,
+                status=result.status,
+                sha=info.sha,
+                start_time=result.start_time,
+                duration=result.duration,
+                failed_results=[],
+            )
+            for sub_result in result.results:
+                if not sub_result.is_ok():
+                    failed_result = cls(name=sub_result.name, status=sub_result.status)
+                    failed_result.failed_results = [
+                        cls(r.name, r.status)
+                        for r in flatten_results(sub_result.results)
+                        if not r.is_ok()
+                    ]
+                    summary.failed_results.append(failed_result)
+            return summary
+
+        def to_markdown(self):
+            body = "**CI summary for commit [{}](https://github.com/{repo}/commit/{sha})**\n".format(
+                self.sha[:7], repo=Info().repo_name, sha=self.sha
+            )
+            body += "Status: {}\n".format(self.status)
+            body += "Duration: {}\n".format(self.duration)
+            if self.failed_results:
+                body += "Failed results:\n"
+                body += "|job_name|test_name|status|info|comment|\n"
+                body += "|:--|:--|:-:|:--|:--|\n"
+                for failed_result in self.failed_results:
+                    body += "|{}|{}|{}|{}|{}|\n".format(
+                        failed_result.name,
+                        "",
+                        failed_result.status,
+                        "",
+                        "",
+                    )
+                    if failed_result.failed_results:
+                        for sub_failed_result in failed_result.failed_results:
+                            body += "|{}|{}|{}|{}|{}|\n".format(
+                                "",
+                                sub_failed_result.name,
+                                sub_failed_result.status,
+                                "",
+                                "",
+                            )
+            return body
 
 
 if __name__ == "__main__":

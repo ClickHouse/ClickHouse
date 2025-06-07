@@ -556,21 +556,39 @@ def _finish_workflow(workflow, job_name):
         if skipped_results:
             ready_for_merge_description += f", Skipped: {len(skipped_results)}"
 
-    if workflow.enable_merge_ready_status:
+    if workflow.enable_merge_ready_status or workflow.enable_gh_summary_comment:
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
         app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
         from .gh_auth import GHAuth
 
         GHAuth.auth(app_id=app_id, app_key=pem)
-        if not GH.post_commit_status(
-            name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
-            or f"Ready For Merge [{workflow.name}]",
-            status=ready_for_merge_status,
-            description=ready_for_merge_description,
-            url="",
-        ):
-            print(f"ERROR: failed to set ReadyForMerge status")
-            env.add_info(ResultInfo.GH_STATUS_ERROR)
+
+        if workflow.enable_merge_ready_status:
+            if not GH.post_commit_status(
+                name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
+                or f"Ready For Merge [{workflow.name}]",
+                status=ready_for_merge_status,
+                description=ready_for_merge_description,
+                url="",
+            ):
+                print(f"ERROR: failed to set ReadyForMerge status")
+                env.add_info(ResultInfo.GH_STATUS_ERROR)
+
+        if workflow.enable_gh_summary_comment:
+            try:
+                summary_body = GH.ResultSummaryForGH.from_result(
+                    workflow_result
+                ).to_markdown()
+                substr = "**CI summary for commit ["
+                assert substr in summary_body
+                if not GH.post_pr_comment(
+                    comment_body=summary_body, or_update_comment_with_substring=substr
+                ):
+                    print(f"ERROR: failed to post CI summary")
+                    env.add_info(ResultInfo.GH_STATUS_ERROR)
+            except Exception as e:
+                print(f"ERROR: failed to post CI summary, ex {e}")
+                env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
