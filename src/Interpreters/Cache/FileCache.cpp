@@ -1007,12 +1007,6 @@ bool FileCache::tryReserve(
         return false;
     }
 
-    if (!file_segment.getKeyMetadata()->createBaseDirectory())
-    {
-        failure_reason = "not enough space on device";
-        return false;
-    }
-
     if (eviction_candidates.size() > 0)
     {
         cache_lock.unlock();
@@ -1088,6 +1082,13 @@ bool FileCache::tryReserve(
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
+
+    cache_lock.unlock();
+    if (!file_segment.getKeyMetadata()->createBaseDirectory())
+    {
+        failure_reason = "not enough space on device";
+        return false;
+    }
 
     return true;
 }
