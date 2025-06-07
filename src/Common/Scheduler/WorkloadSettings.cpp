@@ -18,7 +18,7 @@ bool WorkloadSettings::hasThrottler() const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_bytes_per_second != 0;
-        case CostUnit::CPUSlot: return false;
+        case CostUnit::CPUSlot: return max_cpus != 0;
         case CostUnit::QuerySlot: return max_queries_per_second != 0;
     }
 }
@@ -27,7 +27,7 @@ Float64 WorkloadSettings::getThrottlerMaxSpeed() const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_bytes_per_second;
-        case CostUnit::CPUSlot: return 0;
+        case CostUnit::CPUSlot: return max_cpus;
         case CostUnit::QuerySlot: return max_queries_per_second;
     }
 }
@@ -36,7 +36,7 @@ Float64 WorkloadSettings::getThrottlerMaxBurst() const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_burst_bytes;
-        case CostUnit::CPUSlot: return 0;
+        case CostUnit::CPUSlot: return max_burst_cpu_seconds;
         case CostUnit::QuerySlot: return max_burst_queries;
     }
 }
@@ -78,6 +78,9 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
         std::optional<Priority> priority;
         std::optional<Float64> max_bytes_per_second;
         std::optional<Float64> max_burst_bytes;
+        std::optional<Float64> max_cpus;
+        std::optional<Float64> max_cpu_share;
+        std::optional<Float64> max_burst_cpu_seconds;
         std::optional<Float64> max_queries_per_second;
         std::optional<Float64> max_burst_queries;
         std::optional<Int64> max_io_requests;
@@ -144,6 +147,12 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
                 max_bytes_per_second = getNotNegativeFloat64(name, value);
             else if (name == "max_burst_bytes" || name == "max_burst")
                 max_burst_bytes = getNotNegativeFloat64(name, value);
+            else if (name == "max_cpus")
+                max_cpus = getNotNegativeFloat64(name, value);
+            else if (name == "max_cpu_share")
+                max_cpu_share = getNotNegativeFloat64(name, value);
+            else if (name == "max_burst_cpu_seconds")
+                max_burst_cpu_seconds = getNotNegativeFloat64(name, value);
             else if (name == "max_queries_per_second")
                 max_queries_per_second = getNotNegativeFloat64(name, value);
             else if (name == "max_burst_queries")
@@ -204,6 +213,28 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
     }
     max_burst_bytes = get_value(specific.max_burst_bytes, regular.max_burst_bytes, max_burst_bytes);
 
+    // CPU throttling
+    if (specific.max_cpus || regular.max_cpus)
+    {
+        // Compute max_cpus as minimum of two possible values: (1) exact limit and (2) share limit.
+        Float64 limit = 0;
+        Float64 exact_limit = get_value(specific.max_cpus, regular.max_cpus, 0.0);
+        Float64 share_limit = get_value(specific.max_cpu_share, regular.max_cpu_share, 0.0);
+        if (exact_limit > 0)
+            limit = exact_limit;
+        if (share_limit > 0)
+        {
+            Float64 value = share_limit * getNumberOfCPUCoresToUse();
+            if (value > 0 && value < limit)
+                limit = value;
+        }
+        max_cpus = limit;
+        // We always set max_burst_cpu_seconds if max_cpus is changed.
+        // This is done for users to be able to ignore more advanced max_burst_cpu_seconds setting and rely only on max_cpus.
+        max_burst_cpu_seconds = default_burst_seconds * max_cpus;
+    }
+    max_burst_cpu_seconds = get_value(specific.max_burst_cpu_seconds, regular.max_burst_cpu_seconds, max_burst_cpu_seconds);
+
     // Query throttling
     if (specific.max_queries_per_second || regular.max_queries_per_second)
     {
@@ -221,18 +252,20 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
 
     // Compute concurrent thread limit as minimum of two possible values: (1) exact limit and (2) ratio to cores limit.
     // Zero setting value means unlimited number of threads.
-    Int64 limit = unlimited;
-    Int64 exact_number = get_value(specific.max_concurrent_threads, regular.max_concurrent_threads, Int64(0));
-    Float64 ratio_to_cores = get_value(specific.max_concurrent_threads_ratio_to_cores, regular.max_concurrent_threads_ratio_to_cores, 0.0);
-    if (exact_number > 0 && exact_number < limit)
-        limit = exact_number;
-    if (ratio_to_cores > 0)
     {
-        Int64 value = static_cast<Int64>(ratio_to_cores * getNumberOfCPUCoresToUse());
-        if (value > 0 && value < limit)
-            limit = value;
+        Int64 limit = unlimited;
+        Int64 exact_number = get_value(specific.max_concurrent_threads, regular.max_concurrent_threads, Int64(0));
+        Float64 ratio_to_cores = get_value(specific.max_concurrent_threads_ratio_to_cores, regular.max_concurrent_threads_ratio_to_cores, 0.0);
+        if (exact_number > 0 && exact_number < limit)
+            limit = exact_number;
+        if (ratio_to_cores > 0)
+        {
+            Int64 value = static_cast<Int64>(ratio_to_cores * getNumberOfCPUCoresToUse());
+            if (value > 0 && value < limit)
+                limit = value;
+        }
+        max_concurrent_threads = limit;
     }
-    max_concurrent_threads = limit;
 
     // Concurrent queries limit
     max_concurrent_queries = get_value(specific.max_concurrent_queries, regular.max_concurrent_queries, max_concurrent_queries, unlimited);

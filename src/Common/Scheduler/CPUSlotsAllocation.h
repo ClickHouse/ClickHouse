@@ -68,15 +68,15 @@ public:
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
     // For tests only. Returns true iff resource request is enqueued in the scheduler
-    bool isRequesting() const;
+    bool isRequesting() const override;
 
 private:
-    friend class CPUSlotRequest; // for schedule() and failed()
+    friend class CPUSlotRequest; // for grant() and failed()
 
     // Resource request failed
     void failed(const std::exception_ptr & ptr);
 
-    // Enqueue resource request if necessary
+    // Grant a slot and enqueue another resource request if necessary
     void grant();
 
     // Returns the queue for the current request

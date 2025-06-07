@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ConcurrencyControl.h>
+#include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
@@ -41,6 +42,7 @@ namespace Setting
     extern const SettingsBool log_processors_profiles;
     extern const SettingsBool opentelemetry_trace_processors;
     extern const SettingsSeconds max_execution_time;
+    extern const SettingsString workload;
 }
 
 namespace ErrorCodes
@@ -174,7 +176,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
             return true;
     }
 
-    executeStepImpl(0, yield_flag);
+    executeStepImpl(0, single_thread_cpu_slot.get(), yield_flag);
 
     if (!tasks.isFinished())
         return true;
@@ -271,9 +273,9 @@ void PipelineExecutor::finalizeExecution()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}", dumpPipeline());
 }
 
-void PipelineExecutor::executeSingleThread(size_t thread_num)
+void PipelineExecutor::executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot)
 {
-    executeStepImpl(thread_num);
+    executeStepImpl(thread_num, cpu_slot);
 
 #ifndef NDEBUG
     auto & context = tasks.getThreadContext(thread_num);
@@ -286,11 +288,15 @@ void PipelineExecutor::executeSingleThread(size_t thread_num)
 #endif
 }
 
-void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yield_flag)
+void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_slot, std::atomic_bool * yield_flag)
 {
 #ifndef NDEBUG
     Stopwatch total_time_watch;
 #endif
+
+    ISlotLease * cpu_lease = dynamic_cast<ISlotLease*>(cpu_slot);
+    if (cpu_lease)
+        cpu_lease->startConsumption();
 
     auto & context = tasks.getThreadContext(thread_num);
     bool yield = false;
@@ -336,20 +342,19 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            if (spawn_status == ExecutorTasks::SHOULD_SPAWN)
+            try
             {
-                try
-                {
-                    /// Upscale if possible.
-                    spawnThreads();
-                }
-                catch (...)
-                {
-                    /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
-                    /// We should cancel execution properly before rethrow.
-                    cancel(ExecutionStatus::Exception);
-                    throw;
-                }
+                /// Communicate with resource scheduler or ConcurrencyControl
+                /// Do upscaling, downscaling, or sleep for preemption
+                if (!controlConcurrency(cpu_lease, spawn_status == ExecutorTasks::SHOULD_SPAWN))
+                    break;
+            }
+            catch (...)
+            {
+                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                /// We should cancel execution properly before rethrow.
+                cancel(ExecutionStatus::Exception);
+                throw;
             }
 
             /// We have executed single processor. Check if we need to yield execution.
@@ -398,8 +403,23 @@ static SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool concurrency_c
         if (workload_cpu_scheduling_is_enabled)
         {
             /// Allocate CPU slots through resource scheduler
-            constexpr size_t master_threads = 1uz;
-            return std::make_shared<CPUSlotsAllocation>(master_threads, num_threads - master_threads, master_thread_link, worker_thread_link);
+            if (query_context->getCPUSlotPreemption())
+            {
+                auto quantum_ns = std::max(10uz, query_context->getCPUSlotQuantum());
+                return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link,
+                    CPULeaseSettings
+                    {
+                        .quantum_ns = static_cast<ResourceCost>(quantum_ns),
+                        .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
+                        .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
+                        .workload = query_context->getSettingsRef()[Setting::workload],
+                    });
+            }
+            else
+            {
+                constexpr size_t master_threads = 1uz;
+                return std::make_shared<CPUSlotsAllocation>(master_threads, num_threads - master_threads, master_thread_link, worker_thread_link);
+            }
         }
         else
         {
@@ -437,17 +457,26 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
         pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
 }
 
-void PipelineExecutor::spawnThreads()
+bool PipelineExecutor::controlConcurrency(ISlotLease * cpu_lease, bool should_spawn)
 {
     /// Only allow one thread to spawn, if someone is already spawning threads, just skip.
-    if (spawn_mutex.try_lock())
+    if (should_spawn && spawn_mutex.try_lock())
     {
         std::lock_guard lock(spawn_mutex, std::adopt_lock);
-        spawnThreadsImpl({});
+        spawnThreads({});
     }
+
+    if (cpu_lease) // Check if preemtion is enabled (see `cpu_slot_preemption` server setting)
+    {
+        // Preemption point. Renewal could block execution due to CPU overload.
+        if (!cpu_lease->renew())
+            return false; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
+    }
+
+    return true;
 }
 
-void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
+void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 {
     while (cpu_slots)
     {
@@ -469,7 +498,7 @@ void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
 
             try
             {
-                executeSingleThread(thread_num);
+                executeSingleThread(thread_num, my_slot.get());
             }
             catch (...)
             {
@@ -497,7 +526,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
             {
                 std::lock_guard lock(spawn_mutex);
                 // Start at least one thread, could block to acquire the first CPU slot
-                spawnThreadsImpl(cpu_slots->acquire());
+                spawnThreads(cpu_slots->acquire());
             }
             tasks.processAsyncTasks();
             pool->wait();
