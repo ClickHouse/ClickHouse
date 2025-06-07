@@ -577,11 +577,9 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, bool metadat
 
 std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String data_path) const
 {
-    LOG_DEBUG(log, "Checking schema version for data file: {}", data_path);
     auto schema_id_it = schema_id_by_data_file.find(data_path);
     if (schema_id_it == schema_id_by_data_file.end())
     {
-        LOG_DEBUG(log, "Schema version for data file {} is not found in map", data_path);
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find manifest file for data file: {}", data_path);
     }
     auto schema_id = schema_id_it->second;
@@ -824,7 +822,6 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
     for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFile(manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
-        LOG_DEBUG(log, "Manifest file: {}", manifest_list_entry.manifest_file_path);
         ManifestFilesPruner pruner(
             schema_processor, relevant_snapshot_schema_id,
             use_partition_pruning ? filter_dag : nullptr,
