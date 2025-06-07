@@ -462,17 +462,17 @@
     "contrib-c-ares": {
       "flake": false,
       "locked": {
-        "lastModified": 1684756904,
-        "narHash": "sha256-4K4XxXiSotUoVOciBVWANjfOlhwtno0jJq52GI8WTQ0=",
+        "lastModified": 1744112538,
+        "narHash": "sha256-MeQ4eqt7QyRD7YVomXR+fwBzraiYe2s2Eozz0sE8Xgo=",
         "owner": "c-ares",
         "repo": "c-ares",
-        "rev": "6360e96b5cf8e5980c887ce58ef727e53d77243a",
+        "rev": "d3a507e920e7af18a5efb7f9f1d8044ed4750013",
         "type": "github"
       },
       "original": {
         "owner": "c-ares",
         "repo": "c-ares",
-        "rev": "6360e96b5cf8e5980c887ce58ef727e53d77243a",
+        "rev": "d3a507e920e7af18a5efb7f9f1d8044ed4750013",
         "type": "github"
       }
     },
@@ -649,17 +649,17 @@
     "contrib-curl": {
       "flake": false,
       "locked": {
-        "lastModified": 1739430857,
-        "narHash": "sha256-Q6vGENvtpxuhehhyMSz/Q6NmJkhJgp3Vccf5H23+rrs=",
+        "lastModified": 1748410854,
+        "narHash": "sha256-dZV6bDqV+7/nw3Ubhsva8dn4GRVQjy8D95OqNw4RvA8=",
         "owner": "curl",
         "repo": "curl",
-        "rev": "57495c64871d18905a0941db9196ef90bafe9a29",
+        "rev": "4dacb79fcdd9364c1083e06f6a011d797a344f47",
         "type": "github"
       },
       "original": {
         "owner": "curl",
         "repo": "curl",
-        "rev": "57495c64871d18905a0941db9196ef90bafe9a29",
+        "rev": "4dacb79fcdd9364c1083e06f6a011d797a344f47",
         "type": "github"
       }
     },
@@ -1108,17 +1108,17 @@
     "contrib-libarchive": {
       "flake": false,
       "locked": {
-        "lastModified": 1714123335,
-        "narHash": "sha256-czNKXHoEn1x4deNErnqp/NZfCglF1CxNoLtZ8tcl394=",
+        "lastModified": 1743364783,
+        "narHash": "sha256-N1PzkkM6k35GuteKijsJZw5Og0DiM70VihN6qlLqGfU=",
         "owner": "libarchive",
         "repo": "libarchive",
-        "rev": "313aa1fa10b657de791e3202c168a6c833bc3543",
+        "rev": "8a7a9cc527fd1d6d8664315d3bed47c4259479cc",
         "type": "github"
       },
       "original": {
         "owner": "libarchive",
         "repo": "libarchive",
-        "rev": "313aa1fa10b657de791e3202c168a6c833bc3543",
+        "rev": "8a7a9cc527fd1d6d8664315d3bed47c4259479cc",
         "type": "github"
       }
     },
@@ -1771,17 +1771,17 @@
     "contrib-rust_vendor": {
       "flake": false,
       "locked": {
-        "lastModified": 1748543544,
+        "lastModified": 1749070397,
         "narHash": "sha256-ylpOUXCpvQ00sD2TEZAB47mO8Erhne03JVWBKXJR2MY=",
         "owner": "ClickHouse",
         "repo": "rust_vendor",
-        "rev": "8ebeb41f6a94c8d220e3a82b067a47841dbb2470",
+        "rev": "3f5cbcac0698db449b5174236dfd7040a5ca1a4d",
         "type": "github"
       },
       "original": {
         "owner": "ClickHouse",
         "repo": "rust_vendor",
-        "rev": "8ebeb41f6a94c8d220e3a82b067a47841dbb2470",
+        "rev": "3f5cbcac0698db449b5174236dfd7040a5ca1a4d",
         "type": "github"
       }
     },

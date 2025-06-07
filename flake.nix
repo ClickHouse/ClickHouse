@@ -87,7 +87,10 @@
 
         cmakeFlags = [
           "-DCOMPILER_CACHE=disabled"
+
           "-DENABLE_TESTS=0"
+
+          "-DENABLE_QATLIB=0"
           "-DENABLE_DELTA_KERNEL_RS=0"
         ];
 
@@ -162,7 +165,7 @@
     contrib-miniselect = { url = "github:danlark1/miniselect/be0af6bd0b6eb044d1acc4f754b229972d99903a"; flake = false; };
     contrib-rocksdb = { url = "github:ClickHouse/rocksdb/4d479be3591e7855cecebfb894585e04cd9e4245"; flake = false; };
     contrib-xz = { url = "github:xz-mirror/xz/869b9d1b4edd6df07f819d360d306251f8147353"; flake = false; };
-    contrib-abseil-cpp = { url = "github:ClickHouse/abseil-cpp/9ac7062b1860d895fb5a8cbf58c3e9ef8f674b5f"; flake = false; };
+    contrib-abseil-cpp = { url = "github:ClickHouse/abseil-cpp/a3c4dd3e77f28b526efbb0eb394b72e29c633936"; flake = false; };
     contrib-dragonbox = { url = "github:ClickHouse/dragonbox/923705af6fd953aa948fc175f6020b15f7359838"; flake = false; };
     contrib-fast_float = { url = "github:fastfloat/fast_float/7eae925b51fd0f570ccd5c880c12e3e27a23b86f"; flake = false; };
     contrib-NuRaft = { url = "github:ClickHouse/NuRaft/c01f5cd9e0edb90c4febf49685b962cf0de91833"; flake = false; };
