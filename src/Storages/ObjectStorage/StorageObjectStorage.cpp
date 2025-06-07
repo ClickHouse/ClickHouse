@@ -195,7 +195,7 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-void StorageObjectStorage::Configuration::update( ///NOLINT
+bool StorageObjectStorage::Configuration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
     bool /* if_not_updated_before */,
@@ -203,17 +203,7 @@ void StorageObjectStorage::Configuration::update( ///NOLINT
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
-}
-
-bool StorageObjectStorage::hasExternalDynamicMetadata(ContextPtr query_context) const
-{
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */true,
-        /* check_consistent_with_previous_metadata */true);
-
-    return configuration->hasExternalDynamicMetadata();
+    return true;
 }
 
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
@@ -221,19 +211,32 @@ IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_c
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */true,
-        /* check_consistent_with_previous_metadata */true);
-
-    return configuration->getExternalMetadata(object_storage, query_context);
-}
-
-void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
-{
-    configuration->update(
-        object_storage,
-        context_ptr,
         /* if_not_updated_before */false,
         /* check_consistent_with_previous_metadata */false);
+
+    return configuration->getExternalMetadata();
+}
+
+bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+{
+    bool updated = configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */true,
+        /* check_consistent_with_previous_metadata */false);
+
+    if (!configuration->hasExternalDynamicMetadata())
+        return false;
+
+    if (!updated)
+    {
+        /// Force the update.
+        configuration->update(
+            object_storage,
+            query_context,
+            /* if_not_updated_before */false,
+            /* check_consistent_with_previous_metadata */false);
+    }
 
     auto columns = configuration->tryGetTableStructureFromMetadata();
     if (!columns.has_value())
@@ -242,6 +245,7 @@ void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
     StorageInMemoryMetadata metadata;
     metadata.setColumns(std::move(columns.value()));
     setInMemoryMetadata(metadata);
+    return true;
 }
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
@@ -251,6 +255,7 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
         query_context,
         /* if_not_updated_before */false,
         /* check_consistent_with_previous_metadata */true);
+
     return configuration->totalRows();
 }
 
@@ -261,6 +266,7 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
         query_context,
         /* if_not_updated_before */false,
         /* check_consistent_with_previous_metadata */true);
+
     return configuration->totalBytes();
 }
 

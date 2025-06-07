@@ -55,7 +55,8 @@ public:
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 
-    void update(
+    /// Returns true, if metadata is of the latest version, false if unknown.
+    bool update(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         bool if_not_updated_before,
@@ -63,14 +64,14 @@ public:
     {
         const bool updated_before = current_metadata != nullptr;
         if (updated_before && if_not_updated_before)
-            return;
+            return false;
 
         BaseStorageConfiguration::update(
             object_storage, local_context, if_not_updated_before, check_consistent_with_previous_metadata);
 
         const bool changed = updateMetadataIfChanged(object_storage, local_context);
         if (!changed)
-            return;
+            return true;
 
         if (check_consistent_with_previous_metadata && hasExternalDynamicMetadata() && updated_before)
         {
@@ -79,6 +80,7 @@ public:
                 "Metadata is not consinsent with the one which was used to infer table schema. "
                 "Please, retry the query.");
         }
+        return true;
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
@@ -114,9 +116,9 @@ public:
             && current_metadata->supportsSchemaEvolution();
     }
 
-    IDataLakeMetadata * getExternalMetadata(ObjectStoragePtr object_storage, ContextPtr context) override
+    IDataLakeMetadata * getExternalMetadata() override
     {
-        updateMetadataIfChanged(object_storage, context);
+        assertInitialized();
         return current_metadata.get();
     }
 

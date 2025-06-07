@@ -141,9 +141,7 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
-    bool hasExternalDynamicMetadata(ContextPtr) const override;
-
-    void updateExternalDynamicMetadata(ContextPtr) override;
+    bool updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
 
@@ -246,7 +244,7 @@ public:
 
     virtual bool hasExternalDynamicMetadata() { return false; }
 
-    virtual IDataLakeMetadata * getExternalMetadata(ObjectStoragePtr, ContextPtr) { return nullptr; }
+    virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
 
@@ -274,7 +272,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual void update(
+    /// Returns true, if metadata is of the latest version, false if unknown.
+    virtual bool update(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         bool if_not_updated_before,

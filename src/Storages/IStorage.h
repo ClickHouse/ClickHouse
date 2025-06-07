@@ -101,9 +101,6 @@ public:
     /// Returns true if the storage is dictionary
     virtual bool isDictionary() const { return false; }
 
-    /// Returns true if the metadata of a table can be changed normally by other processes
-    virtual bool hasExternalDynamicMetadata(ContextPtr) const { return false; }
-
     /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
 
@@ -493,7 +490,8 @@ public:
     virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
 
     /// Updates metadata that can be changed by other processes
-    virtual void updateExternalDynamicMetadata(ContextPtr);
+    /// Return true if external metadata exists and was updated.
+    virtual bool updateExternalDynamicMetadataIfExists(ContextPtr /* context */) { return false; }
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.

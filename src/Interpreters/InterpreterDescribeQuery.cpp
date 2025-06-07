@@ -183,8 +183,7 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
-    if (table->hasExternalDynamicMetadata(query_context))
-        table->updateExternalDynamicMetadata(query_context);
+    table->updateExternalDynamicMetadataIfExists(query_context);
 
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
