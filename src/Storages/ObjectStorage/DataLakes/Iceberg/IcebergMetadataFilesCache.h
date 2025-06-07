@@ -101,7 +101,7 @@ public:
     }
 
     template <typename LoadFunc>
-    const String & getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
+    String getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
     {
         auto load_fn_wrapper = [&]()
         {
