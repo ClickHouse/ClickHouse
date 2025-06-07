@@ -1093,26 +1093,6 @@ namespace
                 throw;
         }
 
-        if (!pid)
-        {
-            auto sh = ShellCommand::execute("pidof clickhouse-server");
-
-            if (tryReadIntText(pid, sh->out))
-            {
-                fmt::print("Found pid = {} in the list of running processes.\n", pid);
-            }
-            else if (!sh->out.eof())
-            {
-                fmt::print("The pidof command returned unusual output.\n");
-            }
-
-            WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
-            copyData(sh->err, std_err);
-            std_err.finalize();
-
-            sh->tryWait();
-        }
-
         if (pid)
         {
             if (0 == kill(pid, 0))
