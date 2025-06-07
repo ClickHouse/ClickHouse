@@ -50,6 +50,11 @@ class ExtractKeyValuePairs : public IFunction
             builder.withMaxNumberOfPairs(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row]);
         }
 
+        if (parsed_arguments.unexpected_quoting_character_strategy)
+        {
+            builder.withUnexpectedQuotingCharacterStrategy(parsed_arguments.unexpected_quoting_character_strategy->getDataAt(0).toString());
+        }
+
         if constexpr (WITH_ESCAPING)
         {
             return builder.buildWithEscaping();
@@ -134,7 +139,7 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
-        return {1, 2, 3, 4};
+        return {1, 2, 3, 4, 5};
     }
 
 private:
@@ -171,6 +176,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             - `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
             - `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to `\space`, `,` and `;`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
             - `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+            - `unexpected_quoting_character_strategy` - Strategy to handle quoting characters in unexpected places during `read_key` and `read_value` phase. Possible values: "invalid", "accept" and "promote". Invalid will discard key/value and transition back to `WAITING_KEY` state. Accept will treat it as a normal character. Promote will transition to `READ_QUOTED_{KEY/VALUE}` state and start from next character.
 
             **Returned values**
             - The extracted key-value pairs in a Map(String, String).
@@ -203,6 +209,74 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
             │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
             └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            ```
+
+            unexpected_quoting_character_strategy examples:
+
+            unexpected_quoting_character_strategy=invalid
+
+            ```sql
+            SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
+            ```
+
+            ```text
+            ┌─kv────────────────┐
+            │ {'abc':'5'}  │
+            └───────────────────┘
+            ```
+
+            ```sql
+            SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
+            ```
+
+            ```text
+            ┌─kv──┐
+            │ {}  │
+            └─────┘
+            ```
+
+            unexpected_quoting_character_strategy=accept
+
+            ```sql
+            SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+            ```
+
+            ```text
+            ┌─kv────────────────┐
+            │ {'name"abc':'5'}  │
+            └───────────────────┘
+            ```
+
+            ```sql
+            SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+            ```
+
+            ```text
+            ┌─kv─────────────────┐
+            │ {'name"abc"':'5'}  │
+            └────────────────────┘
+            ```
+
+            unexpected_quoting_character_strategy=promote
+
+            ```sql
+            SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+            ```
+
+            ```text
+            ┌─kv──┐
+            │ {}  │
+            └─────┘
+            ```
+
+            ```sql
+            SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+            ```
+
+            ```text
+            ┌─kv───────────┐
+            │ {'abc':'5'}  │
+            └──────────────┘
             ```
 
             **Escape sequences without escape sequences support**
