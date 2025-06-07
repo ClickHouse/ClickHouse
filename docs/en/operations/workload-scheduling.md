@@ -205,8 +205,12 @@ To customize workload the following settings could be used:
 * `max_io_requests` - the limit on the number of concurrent IO requests in this workload.
 * `max_bytes_inflight` - the limit on the total inflight bytes for concurrent requests in this workload.
 * `max_bytes_per_second` - the limit on byte read or write rate of this workload.
-* `max_burst_bytes` - maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
+* `max_burst_bytes` - the maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
 * `max_concurrent_threads` - the limit on the number of threads for queries in this workload.
+* `max_concurrent_threads_ratio_to_cores` - the same as `max_concurrent_threads`, but normalized to the number of available CPU cores.
+* `max_cpus` - the limit on the number of CPU cores to serve queries in this workload.
+* `max_cpu_share` - the same as `max_cpus`, but normalized to the number of available CPU cores.
+* `max_burst_cpu_seconds` - the maximum number of CPU seconds that could be consumed by the workload without being throttled due to `max_cpus`.
 
 All limits specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = 10485760` will have 10 MB/s bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
 
@@ -274,6 +278,43 @@ Slot scheduling provides a way to control [query concurrency](/operations/settin
 
 :::note
 Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload. To achieve the previous behavior create only WORKER THREAD resource, set `max_concurrent_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting. This configuration corresponds to [`concurrent_threads_scheduler`](server-configuration-parameters/settings.md#concurrent_threads_scheduler) setting set "fair_round_robin" value.
+:::
+
+## Threads vs. CPUs {#threads_vs_cpus}
+
+There are two way to control CPU consumption of a workload:
+* Thread number limit: `max_concurrent_threads` and `max_concurrent_threads_ratio_to_cores`
+* CPU throttling: `max_cpus`, `max_cpu_share` and `max_burst_cpu_seconds`
+
+The former allows one to dynamically control how many threads are spawned for a query, depending on the current server load. It effectively lowers what `max_threads` query setting dictates. The former throttles CPU consumtion of the workload using token bucket algorithm. It does not affect thread number directly, but throttles the total CPU consumption of all threads in the workload.
+
+Token bucket throttling with `max_cpus` and `max_burst_cpu_seconds` means the following. During any interval of `delta` seconds the total CPU consumption by all queries in workload is not allowed to be greater than `max_cpus * delta + max_burst_cpu_seconds` CPU seconds. It limits average consumption by `max_cpus` in long-term, but this limit might be exceeded in short-term. For example, given `max_burst_cpu_seconds = 60` and `max_cpus=0.001`, one is allowed to run either 1 thread for 60 seconds or 2 threads for 30 seconds or 60 threads for 1 seconds without being throttled. Default value for `max_burst_cpu_seconds` is `max_cpus * 1 second`.
+
+:::warning
+CPU throttling settings are active only if `cpu_slot_preemption` server setting is enabled and ignored otherwise.
+:::
+
+While holding a CPU slot a thread could be in one of there main states:
+* **Running:** Effectively consuming CPU resource. Time spent in this state in accounted by the CPU throttling.
+* **Ready:** Waiting for a CPU to became available. Not accounted by CPU throttling.
+* **Blocked:** Doing IO operations or other blocking syscalls (e.g. waiting on a mutex). Not accounted by CPU throttling.
+
+Let's consider an example of configuration that combines both CPU throttling and thread number limits:
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE WORKLOAD all SETTINGS max_concurrent_threads_ratio_to_cores = 2
+CREATE WORKLOAD admin IN all SETTINGS max_concurrent_threads = 2, priority = -1
+CREATE WORKLOAD production IN all SETTINGS weight = 4
+CREATE WORKLOAD analytics IN production SETTINGS max_cpu_share = 0.7, weight = 3
+CREATE WORKLOAD ingestion IN production
+CREATE WORKLOAD development IN all SETTINGS max_cpu_share = 0.3
+```
+
+Here we limit the total number of threads for all queries to be x2 of the available CPUs. Admin workload is limited to exactly two threads at most, regardless of the number of available CPUs. Admin has priority -1 (less than default 0) and it gets any CPU slot first if required. When the admin does not run queries, CPU resources are divided among production and development workloads. Guaranteed shares of CPU time are based on weights (4 to 1): At least 80% goes to production (if required), and at least 20% goes to development (if required). While weights form guarantees, CPU throttling forms limits: production is not limited and can consume 100%, while development has a limit of 30%, which is applied even if there are no queries from other workloads. Production workload is not a leaf, so its resources are split among analytics and ingestion according to weights (3 to 1). It means that analytics has a guarantee of at least 0.8 * 0.75 = 60%, and based on `max_cpu_share`, it has a limit of 70% of total CPU resources. While ingestion is left with a guarantee of at least 0.8 * 0.25 = 20%, it has no upper limit.
+
+:::note
+If you want to maximize CPU utilization on your ClickHouse server, avoid using `max_cpus` and `max_burst_cpu_seconds` for the root workload `all`. Instead, set a higher value for `max_concurrent_threads`. For example, on a system with 8 CPUs, set `max_concurrent_threads = 16`. This allows 8 threads to run CPU tasks while 8 other threads can handle I/O operations. Additional threads will create CPU pressure, ensuring scheduling rules are enforced. In contrast, setting `max_cpus = 8` will never create CPU pressure because the server cannot exceed the 8 available CPUs.
 :::
 
 ## Query slot scheduling {#query_scheduling}
