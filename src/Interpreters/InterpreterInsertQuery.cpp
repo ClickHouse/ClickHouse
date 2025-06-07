@@ -181,7 +181,7 @@ Block InterpreterInsertQuery::getSampleBlock(
             return window_view->getInputHeader();
         if (no_destination)
             return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtualsList());
-        return metadata_snapshot->getSampleBlockInsertable();
+        return metadata_snapshot->getSampleBlockNonMaterialized();
     }
 
     /// Form the block based on the column names from the query
