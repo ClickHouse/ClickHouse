@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+#include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
@@ -11,6 +12,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/castColumn.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/thread_local_rng.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Formats/FormatParserGroup.h>
@@ -159,13 +161,84 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     return file_metadata;
 }
 
+void Reader::getHyperrectangleForRowGroup(const std::vector</*idx_in_output_block*/ std::optional<size_t>> & key_condition_columns, const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const
+{
+    for (size_t i = 0; i < key_condition_columns.size(); ++i)
+    {
+        if (!key_condition_columns[i].has_value())
+            continue;
+        const PrimitiveColumnInfo & column_info = primitive_columns[*key_condition_columns[i]];
+        if (!column_info.stats_decoder)
+            continue;
+        const auto & column_meta = meta->columns.at(column_info.column_idx).meta_data;
+        if (!column_meta.__isset.statistics)
+            continue;
+
+        Range & range = hyperrectangle[i];
+
+        bool nullable = column_info.levels.back().def > 0;
+        bool always_null = column_meta.statistics.__isset.null_count &&
+                           column_meta.statistics.null_count == column_meta.num_values;
+        bool can_be_null = !column_meta.statistics.__isset.null_count ||
+                           column_meta.statistics.null_count != 0;
+        bool null_as_default = options.null_as_default && !column_info.output_nullable;
+
+        if (nullable && always_null)
+        {
+            /// Single-point range containing either the default value or one of the infinities.
+            if (null_as_default)
+                range.right = range.left = column_info.final_type->getDefault();
+            else
+                range.right = range.left;
+            continue;
+        }
+
+        if (column_meta.statistics.__isset.min_value)
+            column_info.stats_decoder->decode(column_meta.statistics.min_value, /*is_max=*/ false, range.left);
+        if (column_meta.statistics.__isset.max_value)
+            column_info.stats_decoder->decode(column_meta.statistics.max_value, /*is_max=*/ true, range.right);
+
+        if (range.left > range.right)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Column chunk statistics for column '{}' appear to have min_value > max_value: {} > {}. Use setting input_format_parquet_filter_push_down=0 to ignore.", column_info.name, static_cast<const Field &>(range.left), static_cast<const Field &>(range.right));
+
+        if (nullable && can_be_null)
+        {
+            if (null_as_default)
+            {
+                Field default_value = column_info.final_type->getDefault();
+                /// Make sure the range contains the default value.
+                if (!range.left.isNull() && accurateLess(default_value, range.left))
+                    range.left = default_value;
+                if (!range.right.isNull() && accurateLess(range.right, default_value))
+                    range.right = default_value;
+            }
+            else
+            {
+                /// Make sure the range reaches infinity on at least one side.
+                if (!range.left.isNull() && !range.right.isNull())
+                    range.left = NEGATIVE_INFINITY;
+            }
+        }
+        else
+        {
+            /// If the column doesn't have nulls, exclude both infinities.
+            if (range.left.isNull())
+                range.left_included = false;
+            if (range.right.isNull())
+                range.right_included = false;
+        }
+    }
+}
+
 void Reader::prefilterAndInitRowGroups()
 {
     extended_sample_block = *sample_block;
     for (const auto & col : parser_group->additional_columns)
         extended_sample_block.insert(col);
+    extended_sample_block_data_types = extended_sample_block.getDataTypes();
     PrewhereInfoPtr prewhere_info = parser_group->prewhere_info;
 
+    /// Process schema.
     SchemaConverter schemer(file_metadata, options, &extended_sample_block);
     if (prewhere_info && !prewhere_info->remove_prewhere_column)
         schemer.external_columns.push_back(prewhere_info->prewhere_column_name);
@@ -174,17 +247,20 @@ void Reader::prefilterAndInitRowGroups()
     total_primitive_columns_in_file = schemer.primitive_column_idx;
     output_columns = std::move(schemer.output_columns);
 
-    if (parser_group->key_condition)
+    /// Index in output block -> index in primitive_columns.
+    /// Only includes primitive columns (not arrays, tuples, etc) that appear in key_condition.
+    std::vector</*idx_in_output_block*/ std::optional<size_t>> key_condition_columns(extended_sample_block.columns());
+    for (const OutputColumnInfo & output_column : output_columns)
     {
-        /// TODO [parquet]: assign PrimitiveColumnInfo:: use_bloom_filter and use_column_index; possibly:
-        /// Expect that either all or none of the column chunks have indexes written.
-        /// (If that's not the case, nothing breaks, we may just pick suboptimal options here.)
+        if (output_column.idx_in_output_block.has_value() && output_column.is_primitive &&
+            parser_group->columns_used_by_key_condition.contains(*output_column.idx_in_output_block))
+        {
+            key_condition_columns[*output_column.idx_in_output_block] = output_column.primitive_start;
+            primitive_columns[output_column.primitive_start].used_by_key_condition = *output_column.idx_in_output_block;
+        }
     }
 
-    bool use_offset_index = options.always_use_offset_index || prewhere_info
-        || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.use_column_index; });
-    bool need_to_find_bloom_filter_lengths_the_hard_way = false;
-
+    /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata.row_groups[row_group_idx];
@@ -193,18 +269,138 @@ void Reader::prefilterAndInitRowGroups()
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
 
-        /// TODO [parquet]: Filtering.
+        Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
+        if (options.use_row_group_min_max && parser_group->key_condition)
+        {
+            getHyperrectangleForRowGroup(key_condition_columns, meta, hyperrectangle);
+            if (!parser_group->key_condition->checkInHyperrectangle(
+                    hyperrectangle, extended_sample_block_data_types).can_be_true)
+                continue;
+        }
+
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
         row_group.row_group_idx = row_group_idx;
         row_group.columns.resize(primitive_columns.size());
+        row_group.hyperrectangle = std::move(hyperrectangle);
 
-        /// Initialize column chunks, mostly prefetches.
         for (size_t column_idx = 0; column_idx < primitive_columns.size(); ++column_idx)
         {
             ColumnChunk & column = row_group.columns[column_idx];
             size_t parquet_column_idx = primitive_columns[column_idx].column_idx;
             column.meta = &meta->columns.at(parquet_column_idx);
+
+            /// Whether the innermost array element type is nullable.
+            /// E.g. Nullable(String) or Array(Nullable(String)).
+            /// Does not apply to nullable arrays, e.g. Nullable(Array(String)), because clickhouse
+            /// doesn't support them; we convert null arrays to empty arrays, no null map.
+            bool is_nullable = !primitive_columns[column_idx].levels.back().is_array;
+            /// If column is declared as nullable, but statistics say there are no nulls, don't
+            /// waste time converting definition levels into null map.
+            bool null_count_is_known_to_be_zero =
+                column.meta->meta_data.statistics.__isset.null_count &&
+                column.meta->meta_data.statistics.null_count == 0;
+            column.need_null_map = is_nullable && !null_count_is_known_to_be_zero;
+        }
+    }
+
+    if (row_groups.empty())
+        return; // all row groups were skipped
+
+    if (options.use_bloom_filter && parser_group->key_condition)
+    {
+        /// Index in output block -> arrow column info.
+        std::vector<std::optional<parquet::ColumnDescriptor>> bf_eligible_columns(key_condition_columns.size());
+        bool any_column_eligible_for_bf = false;
+        for (size_t idx_in_output_block = 0; idx_in_output_block < key_condition_columns.size(); ++idx_in_output_block)
+        {
+            auto primitive_column_idx = key_condition_columns[idx_in_output_block];
+            if (!primitive_column_idx.has_value())
+                continue;
+
+            /// Check for presense of bloom filter only in first row group, expecting that usually
+            /// either all or none of the row groups have bloom filter for any given column.
+            const parq::ColumnChunk * column_chunk_meta = row_groups[0].columns[*primitive_column_idx].meta;
+            if (!column_chunk_meta->meta_data.__isset.bloom_filter_offset)
+                continue;
+
+            /// Glue to convert thrift types to equivalent arrow types because arrow felt the need to
+            /// duplicate them for some reason. Our parquetTryHashColumn is called from both the
+            /// arrow-based reader v0 and this reader v3, so arrow types are the common denominator.
+            /// Warning: this requires that we use the same thrift-generated types as arrow; if we
+            /// ever switch to thrift-generating our own code from parquet.thrift (e.g. to use a
+            /// newer version), this will stop working.
+            const PrimitiveColumnInfo & column_info = primitive_columns[*primitive_column_idx];
+            const parquet::format::SchemaElement * schema_element = &file_metadata.schema.at(column_info.schema_idx);
+            auto node = parquet::schema::PrimitiveNode::FromParquet(static_cast<const void *>(schema_element));
+            bf_eligible_columns[idx_in_output_block].emplace(std::move(node), column_info.levels.back().def, column_info.levels.back().rep);
+            any_column_eligible_for_bf = true;
+        }
+
+        if (any_column_eligible_for_bf)
+        {
+            bool any_column_uses_bf = false;
+
+            auto hash_one = [&](size_t column_idx, const Field & f) -> std::optional<uint64_t>
+            {
+                const auto & descriptor = bf_eligible_columns.at(column_idx);
+                if (!descriptor.has_value())
+                    return std::nullopt;
+                auto hash = parquetTryHashField(f, &*descriptor);
+                if (!hash.has_value())
+                    return std::nullopt;
+
+                PrimitiveColumnInfo & column_info = primitive_columns[key_condition_columns.at(column_idx).value()];
+                column_info.use_bloom_filter = true;
+                column_info.bloom_filter_hashes.push_back(*hash);
+                any_column_uses_bf = true;
+                return hash;
+            };
+
+            auto hash_many = [&](size_t column_idx, const ColumnPtr & column) -> std::optional<std::vector<uint64_t>>
+            {
+                const auto & descriptor = bf_eligible_columns.at(column_idx);
+                if (!descriptor.has_value())
+                    return std::nullopt;
+                auto hashes = parquetTryHashColumn(column.get(), &*descriptor);
+                if (!hashes.has_value())
+                    return std::nullopt;
+
+                PrimitiveColumnInfo & column_info = primitive_columns[key_condition_columns.at(column_idx).value()];
+                column_info.use_bloom_filter = true;
+                column_info.bloom_filter_hashes.insert(column_info.bloom_filter_hashes.end(), hashes->begin(), hashes->end());
+                any_column_uses_bf = true;
+                return hashes;
+            };
+
+            bloom_filter_condition.emplace(*parser_group->key_condition);
+            bloom_filter_condition->prepareBloomFilterData(hash_one, hash_many);
+
+            if (!any_column_uses_bf)
+                bloom_filter_condition.reset();
+        }
+    }
+
+    if (options.use_page_min_max)
+    {
+        const auto & column_conditions = static_cast<ParserGroupExt *>(parser_group->opaque.get())->column_conditions;
+        for (const auto & [idx_in_output_block, key_condition] : column_conditions)
+        {
+            size_t primitive_column_idx = key_condition_columns.at(idx_in_output_block).value();
+            primitive_columns[primitive_column_idx].column_index_condition = key_condition.get();
+        }
+    }
+
+    bool use_offset_index = options.always_use_offset_index || prewhere_info
+        || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.column_index_condition; });
+    bool need_to_find_bloom_filter_lengths_the_hard_way = false;
+
+    for (RowGroup & row_group : row_groups)
+    {
+        /// Initialize prefetches.
+        for (size_t column_idx = 0; column_idx < primitive_columns.size(); ++column_idx)
+        {
+            ColumnChunk & column = row_group.columns[column_idx];
 
             /// Dictionary page.
             size_t dict_page_length = 0;
@@ -217,7 +413,8 @@ void Reader::prefilterAndInitRowGroups()
                     start, dict_page_length, /*likely_to_be_used=*/ true);
 
                 /// Dictionary filter.
-                if (dict_page_length < options.dictionary_filter_limit_bytes &&
+                if (primitive_columns[column_idx].used_by_key_condition.has_value() &&
+                    dict_page_length < options.dictionary_filter_limit_bytes &&
                     column.meta->meta_data.__isset.encoding_stats)
                 {
                     bool all_pages_are_dictionary_encoded = true;
@@ -249,6 +446,7 @@ void Reader::prefilterAndInitRowGroups()
                         len, /*likely_to_be_used=*/ false);
                 }
                 /// bloom_filter_header_prefetch and bloom_filter_data_prefetch overlap, that's ok.
+                column.use_bloom_filter = true;
                 column.bloom_filter_header_prefetch = prefetcher.registerRange(
                     size_t(column.meta->meta_data.bloom_filter_offset),
                     max_header_length, /*likely_to_be_used=*/ true);
@@ -264,7 +462,7 @@ void Reader::prefilterAndInitRowGroups()
             }
 
             /// Column index.
-            column.use_column_index = primitive_columns[column_idx].use_column_index
+            column.use_column_index = primitive_columns[column_idx].column_index_condition
                 && column.offset_index_prefetch
                 && column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length;
             if (column.use_column_index)
@@ -277,18 +475,6 @@ void Reader::prefilterAndInitRowGroups()
                 size_t(column.meta->meta_data.data_page_offset),
                 size_t(column.meta->meta_data.total_compressed_size) - dict_page_length,
                 /*likely_to_be_used=*/ true);
-
-            /// Whether the innermost array element type is nullable.
-            /// E.g. Nullable(String) or Array(Nullable(String)).
-            /// Does not apply to nullable arrays, e.g. Nullable(Array(String)), because clickhouse
-            /// doesn't support them; we convert null arrays to empty arrays, no null map.
-            bool is_nullable = !primitive_columns[column_idx].levels.back().is_array;
-            /// If column is declared as nullable, but statistics say there are no nulls, don't
-            /// waste time converting definition levels into null map.
-            bool null_count_is_known_to_be_zero =
-                column.meta->meta_data.statistics.__isset.null_count &&
-                column.meta->meta_data.statistics.null_count == 0;
-            column.need_null_map = is_nullable && !null_count_is_known_to_be_zero;
         }
     }
 
@@ -320,7 +506,7 @@ void Reader::prefilterAndInitRowGroups()
         {
             for (ColumnChunk & column : row_group.columns)
             {
-                if (!column.bloom_filter_header_prefetch)
+                if (!column.use_bloom_filter)
                     continue;
                 chassert(column.meta->meta_data.__isset.bloom_filter_offset);
                 size_t offset = size_t(column.meta->meta_data.bloom_filter_offset);
@@ -405,18 +591,47 @@ void Reader::preparePrewhere()
     }
 }
 
-void Reader::processBloomFilterHeader(ColumnChunk & /*column*/, const PrimitiveColumnInfo & /*column_info*/)
+void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
-    volatile bool f = true;
-    if (f)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bloom filters not implemented");
-}
+    auto data = prefetcher.getRangeData(column.bloom_filter_header_prefetch);
+    size_t header_size = deserializeThriftStruct(column.bloom_filter_header, data.data(), data.size());
 
-void Reader::decodeBloomFilterBlocks(ColumnChunk & /*column*/, const PrimitiveColumnInfo & /*column_info*/)
-{
-    volatile bool f = true;
-    if (f)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bloom filters not implemented");
+    if (!column.bloom_filter_header.algorithm.__isset.BLOCK ||
+        !column.bloom_filter_header.hash.__isset.XXHASH ||
+        !column.bloom_filter_header.compression.__isset.UNCOMPRESSED)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported bloom filter format. Use setting input_format_parquet_bloom_filter_push_down=0 to ignore.");
+
+    const size_t BYTES_PER_BLOCK = 32;
+    if (column.bloom_filter_header.numBytes <= 0 || column.bloom_filter_header.numBytes % BYTES_PER_BLOCK != 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bloom filter size.");
+    size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / BYTES_PER_BLOCK;
+
+    const auto & hashes = column_info.bloom_filter_hashes;
+    std::vector<size_t> block_idxs;
+    block_idxs.reserve(hashes.size());
+    for (UInt64 h : column_info.bloom_filter_hashes)
+    {
+        size_t block_idx = ((h >> 32) * num_blocks) >> 32;
+        block_idxs.push_back(block_idx);
+    }
+
+    std::sort(block_idxs.begin(), block_idxs.end());
+    block_idxs.erase(std::unique(block_idxs.begin(), block_idxs.end()), block_idxs.end());
+
+    std::vector<std::pair</*global_offset*/ size_t, /*length*/ size_t>> subranges;
+    subranges.reserve(block_idxs.size());
+    size_t base_offset = column.meta->meta_data.bloom_filter_offset + header_size;
+    for (size_t block_idx : block_idxs)
+        subranges.emplace_back(base_offset + block_idx * BYTES_PER_BLOCK, BYTES_PER_BLOCK);
+    auto prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
+
+    column.bloom_filter_blocks.reserve(block_idxs.size());
+    for (size_t i = 0; i < block_idxs.size(); ++i)
+    {
+        BloomFilterBlock & block = column.bloom_filter_blocks.emplace_back();
+        block.block_idx = block_idxs[i];
+        block.prefetch = std::move(prefetches[i]);
+    }
 }
 
 void Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
@@ -447,19 +662,146 @@ void Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInf
     column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.raw_decoded_type);
 }
 
-bool Reader::applyBloomAndDictionaryFilters(RowGroup & /*row_group*/)
+bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
 {
-    volatile bool f = true;
-    if (f)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bloom filters not implemented");
-    return true;
+    size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / 32;
+    for (size_t h : hashes)
+    {
+        size_t block_idx = ((h >> 32) * num_blocks) >> 32;
+        auto it = std::partition_point(column.bloom_filter_blocks.begin(), column.bloom_filter_blocks.end(), [&](const BloomFilterBlock & block) { return block.block_idx < block_idx; });
+        /// All hashes must've been preregistered in bloom_filter_hashes, and their blocks prefetched.
+        if (it == column.bloom_filter_blocks.end() || it->block_idx != block_idx)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected hash in bloom filter lookup");
+
+        auto data = prefetcher.getRangeData(it->prefetch);
+
+        /// https://parquet.apache.org/docs/file-format/bloomfilter/
+        static constexpr UInt32 salt[8] = {0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U};
+        bool miss = false;
+        for (size_t i = 0; i < 8; ++i)
+        {
+            size_t bit_idx = UInt32(UInt32(h) * salt[i]) >> 27;
+            UInt32 word = unalignedLoad<UInt32>(data.data() + i * 4);
+            if (!(word & (1u << bit_idx)))
+            {
+                miss = true;
+                break;
+            }
+        }
+        if (!miss)
+            return true;
+    }
+    return false;
 }
 
-void Reader::applyColumnIndex(ColumnChunk & /*column*/, const PrimitiveColumnInfo & /*column_info*/)
+bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group)
 {
-    volatile bool f = true;
-    if (f)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column index not implemented");
+    /// TODO [parquet]: Dictionary filter.
+
+    KeyCondition::ColumnIndexToBloomFilter filter_map;
+    for (size_t i = 0; i < row_group.columns.size(); ++i)
+    {
+        if (row_group.columns[i].use_bloom_filter)
+            filter_map.emplace(
+                primitive_columns[i].used_by_key_condition.value(),
+                std::make_unique<BloomFilterLookup>(prefetcher, row_group.columns[i]));
+    }
+    /// We use both the min/max statistics and bloom filter. For the case where condition has
+    /// something like `x < 42 OR y = 1337`, where `x < 42` is ruled out by min/max, and `y = 1337`
+    /// is ruled out by bloom filter.
+    /// (I'm guessing this hardly ever comes in practice, but it was easy enough to support.)
+    return bloom_filter_condition->checkInHyperrectangle(
+        row_group.hyperrectangle, extended_sample_block_data_types, filter_map).can_be_true;
+}
+
+void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group)
+{
+    chassert(column.use_column_index);
+    chassert(column_info.column_index_condition);
+    size_t idx_in_output_block = column_info.used_by_key_condition.value();
+
+    auto data = prefetcher.getRangeData(column.column_index_prefetch);
+    parq::ColumnIndex column_index;
+    deserializeThriftStruct(column_index, data.data(), data.size());
+
+    size_t num_pages = column.offset_index.page_locations.size();
+    bool nullable = column_info.levels.back().def > 0;
+    bool null_as_default = options.null_as_default && !column_info.output_nullable;
+    if (column_index.min_values.size() != num_pages || column_index.max_values.size() != num_pages ||
+        (column_index.null_pages.size() != num_pages && !column_index.null_pages.empty()) ||
+        (column_index.__isset.null_counts && column_index.null_counts.size() != num_pages))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of pages in column index: {} null_pages, {} null_counts, {} min_values, {} max_values, {} pages in offset index", column_index.null_pages.size(), column_index.null_counts.size(), column_index.min_values.size(), column_index.max_values.size(), num_pages);
+
+    Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
+    size_t prev_row_idx = 0; // start of the latest range of rows that pass filter
+    for (size_t page_idx = 0; page_idx < num_pages; ++page_idx)
+    {
+        Range & range = hyperrectangle[idx_in_output_block];
+        range = Range::createWholeUniverse();
+
+        bool always_null = !column_index.null_pages.empty() && column_index.null_pages[page_idx];
+        bool can_be_null = !column_index.__isset.null_counts || column_index.null_counts[page_idx] != 0;
+
+        if (nullable && always_null)
+        {
+            /// Single-point range containing either the default value or one of the infinities.
+            if (null_as_default)
+                range.right = range.left = column_info.final_type->getDefault();
+            else
+                range.right = range.left;
+        }
+        else
+        {
+            column_info.stats_decoder->decode(column_index.min_values[page_idx], /*is_max=*/ false, range.left);
+            column_info.stats_decoder->decode(column_index.max_values[page_idx], /*is_max=*/ true, range.right);
+
+            if (range.left > range.right)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Column index appears to have min_value > max_value: {} > {}. Use setting input_format_parquet_page_filter_push_down=0 to ignore.", static_cast<const Field &>(range.left), static_cast<const Field &>(range.right));
+
+            if (nullable && can_be_null)
+            {
+                if (null_as_default)
+                {
+                    Field default_value = column_info.final_type->getDefault();
+                    /// Make sure the range contains the default value.
+                    if (!range.left.isNull() && accurateLess(default_value, range.left))
+                        range.left = default_value;
+                    if (!range.right.isNull() && accurateLess(range.right, default_value))
+                        range.right = default_value;
+                }
+                else
+                {
+                    /// Make sure the range reaches infinity on at least one side.
+                    if (!range.left.isNull() && !range.right.isNull())
+                        range.left = NEGATIVE_INFINITY;
+                }
+            }
+            else
+            {
+                /// If the column doesn't have nulls, exclude both infinities.
+                if (range.left.isNull())
+                    range.left_included = false;
+                if (range.right.isNull())
+                    range.right_included = false;
+            }
+        }
+
+        bool passes_filter = column_info.column_index_condition->checkInHyperrectangle(
+            hyperrectangle, extended_sample_block_data_types).can_be_true;
+
+        if (!passes_filter)
+        {
+            size_t start_row = column.offset_index.page_locations[page_idx].first_row_index;
+            size_t end_row = page_idx + 1 < num_pages ? column.offset_index.page_locations[page_idx + 1].first_row_index : row_group.meta->num_rows;
+            chassert(end_row > start_row); // validated in decodeOffsetIndex
+            if (start_row > prev_row_idx)
+                column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
+            prev_row_idx = end_row;
+        }
+    }
+
+    if (size_t(row_group.meta->num_rows) > prev_row_idx)
+        column.row_ranges_after_column_index.emplace_back(prev_row_idx, row_group.meta->num_rows);
 }
 
 void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
@@ -861,7 +1203,6 @@ void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColu
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet offset index covers too few rows");
         const auto & page_info = column.data_pages[column.data_pages_idx];
         size_t first_row_idx = size_t(page_info.meta->first_row_index);
-        /// TODO [parquet]: Remember to check that row ranges don't overlap when loading offset index.
         if (first_row_idx > row_idx)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Row passes filters but its page was not selected for reading. This is a bug.");
 

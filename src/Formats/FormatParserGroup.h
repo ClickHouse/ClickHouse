@@ -44,6 +44,7 @@ struct FormatParserGroup
 
     /// Optionally created from filter_actions_dag, if the format needs it.
     std::shared_ptr<const KeyCondition> key_condition;
+    std::unordered_set<size_t> columns_used_by_key_condition;
     /// Columns that are only needed for PREWHERE. In key_condition's "key" tuple, they come after
     /// all columns of the sample block.
     Block additional_columns;
@@ -66,7 +67,8 @@ struct FormatParserGroup
     size_t getParsingThreadsPerReader() const;
     size_t getIOThreadsPerReader() const;
 
-    /// Creates `key_condition` and `additional_columns`. Call inside call_once(init_flag, ...).
+    /// Creates `key_condition`, `additional_columns`, and `columns_used_by_key_condition`.
+    /// Call inside call_once(init_flag, ...).
     void initKeyCondition(const Block & keys);
 };
 

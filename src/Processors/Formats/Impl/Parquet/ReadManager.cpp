@@ -49,9 +49,16 @@ void ReadManager::init(FormatParserGroupPtr parser_group_)
         stages[i].row_group_tasks_to_schedule.resize(num_row_groups);
     }
 
-    /// TODO [parquet]: distribute memory_target_fraction more carefully: 0 for skipped stages, higher for prewhere
+    /// Distribute memory budget among stages.
     double sum = 0;
-    stages[size_t(ReadStage::MainData)].memory_target_fraction *= 5;
+    stages[size_t(ReadStage::MainData)].memory_target_fraction *= 10;
+    if (parser_group->prewhere_info)
+        stages[size_t(ReadStage::PrewhereData)].memory_target_fraction *= 5;
+    else
+    {
+        stages[size_t(ReadStage::PrewhereOffsetIndex)].memory_target_fraction = 0;
+        stages[size_t(ReadStage::PrewhereData)].memory_target_fraction = 0;
+    }
     stages[size_t(ReadStage::NotStarted)].memory_target_fraction = 0;
     stages[size_t(ReadStage::Deliver)].memory_target_fraction = 0;
     for (size_t i = 0; i < stages.size(); ++i)
@@ -703,18 +710,16 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
         {
             case ReadStage::BloomFilterHeader: /// TODO [parquet]: do all columns in one task
                 reader.processBloomFilterHeader(column, column_info);
+                column.bloom_filter_header_prefetch.reset(&diff);
                 break;
             case ReadStage::BloomFilterBlocksOrDictionary:
                 if (column.use_dictionary_filter)
                     reader.decodeDictionaryPage(column, column_info);
-                else
-                    reader.decodeBloomFilterBlocks(column, column_info);
-                column.bloom_filter_header_prefetch.reset(&diff);
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
                 reader.decodeOffsetIndex(column, row_group);
                 column.offset_index_prefetch.reset(&diff);
-                reader.applyColumnIndex(column, column_info);
+                reader.applyColumnIndex(column, column_info, row_group);
                 column.column_index_prefetch.reset(&diff);
                 break;
             case ReadStage::PrewhereOffsetIndex:
