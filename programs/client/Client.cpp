@@ -23,6 +23,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
+#include <Client/JWTProvider.h>
+
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
@@ -31,6 +33,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Poco/Util/Application.h>
+#include <Poco/URI.h>
 
 #include <filesystem>
 
@@ -372,6 +375,13 @@ try
         showClientVersion();
     }
 
+#if USE_JWT_CPP && USE_SSL
+    if (config().getBool("login", false))
+    {
+        login();
+    }
+#endif
+
     try
     {
         connect();
@@ -441,6 +451,37 @@ catch (...)
     return getCurrentExceptionCode();
 }
 
+#if USE_JWT_CPP && USE_SSL
+void Client::login()
+{
+    std::string host = hosts_and_ports.front().host;
+    std::string auth_url = getClientConfiguration().getString("auth-url", "");
+    std::string client_id = getClientConfiguration().getString("auth-client-id", "");
+
+    if ((auth_url.empty() || client_id.empty()) && !isCloudEndpoint(host))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Could not retrieve authentication endpoints for host '{}'. Please specify --auth-url and --auth-client-id if you are "
+            "not using ClickHouse Cloud.",
+            host);
+    }
+
+    jwt_provider = createJwtProvider(auth_url, client_id, host, output_stream, error_stream);
+    if (jwt_provider)
+    {
+        std::string jwt = jwt_provider->getJWT();
+        if (!jwt.empty())
+        {
+            getClientConfiguration().setString("jwt", jwt);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Login failed. Please check your credentials and try again.");
+        }
+    }
+}
+#endif
 
 void Client::connect()
 {
@@ -465,6 +506,10 @@ void Client::connect()
 
             connection_parameters = ConnectionParameters(
                 config(), host, database, hosts_and_ports[attempted_address_index].port);
+
+#if USE_JWT_CPP && USE_SSL
+            connection_parameters.jwt_provider = jwt_provider;
+#endif
 
             if (is_interactive)
                 output_stream << "Connecting to "
@@ -834,6 +879,14 @@ void Client::processOptions(
         config().setString("jwt", options["jwt"].as<std::string>());
         config().setString("user", "");
     }
+    if (options["login"].as<bool>())
+    {
+        if (!options["user"].defaulted())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and login flags can't be specified together");
+        if (config().has("jwt"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "JWT and login flags can't be specified together");
+        config().setString("user", "");
+    }
     if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
@@ -965,9 +1018,32 @@ void Client::readArguments(
     std::vector<Arguments> & external_tables_arguments,
     std::vector<Arguments> & hosts_and_ports_arguments)
 {
-    bool has_connection_string
-        = argc >= 2 && tryParseConnectionString(std::string_view(argv[1]), common_arguments, hosts_and_ports_arguments);
-    int start_argument_index = has_connection_string ? 2 : 1;
+    // Default to oauth authentication for ClickHouse Cloud
+    bool is_hostname_argument = false;
+#if USE_JWT_CPP && USE_SSL
+    if (argc >= 2)
+    {
+        std::string_view hostname(argv[1]);
+
+        // Check if first argument is a cloud hostname
+        if (isCloudEndpoint(std::string(hostname)))
+        {
+            is_hostname_argument = true;
+
+            // Add authentication and security flags for cloud endpoints
+            common_arguments.emplace_back("--login");
+            common_arguments.emplace_back("--secure");
+
+            // Add host argument
+            std::vector<std::string> host_and_port;
+            host_and_port.push_back("--host=" + std::string(hostname));
+            hosts_and_ports_arguments.push_back(std::move(host_and_port));
+        }
+    }
+#endif
+
+    bool has_connection_string = !is_hostname_argument && argc >= 2 && tryParseConnectionString(std::string_view(argv[1]), common_arguments, hosts_and_ports_arguments);
+    int start_argument_index = (has_connection_string || is_hostname_argument) ? 2 : 1;
 
     /** We allow different groups of arguments:
         * - common arguments;
@@ -985,7 +1061,7 @@ void Client::readArguments(
     {
         std::string_view arg = argv[arg_num];
 
-        if (has_connection_string)
+        if (has_connection_string || is_hostname_argument)
             checkIfCmdLineOptionCanBeUsedWithConnectionString(arg);
 
         if (arg == "--external")
