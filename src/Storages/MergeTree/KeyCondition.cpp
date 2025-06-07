@@ -2943,7 +2943,7 @@ bool KeyCondition::matchesExactContinuousRange() const
 
                 chassert(mapping.key_index < key_columns.size());
                 /// For Constraint::POINT, we need to check if the function chain is strict.
-                /// For example, `toDate(event_time) in ('2025-06-03'`) means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
+                /// For example, `toDate(event_time) in ('2025-06-03')` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
                 /// So, POINT needs to be converted to a RANGE
                 if (is_chain_strict)
                     column_constraints[mapping.key_index] = Constraint::POINT;
