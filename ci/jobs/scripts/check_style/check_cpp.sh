@@ -36,7 +36,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     grep -vP $EXCLUDE_DOCS |
     xargs grep $@ -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
-    grep -v -P '(//|:\s+\*|\$\(\()| \)"'
+    grep -v -P '(//|:\s+\*|\$\(\()| \)"' && echo "{ should be a new line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
 
 # Tabs
@@ -45,9 +45,14 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     xargs grep $@ -F $'\t' && echo '^ tabs are not allowed'
 
 # // namespace comments are unneeded
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
+result=$(find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
     grep -vP $EXCLUDE |
-    xargs grep $@ -P '}\s*//+\s*namespace\s*'
+    xargs grep $@ -P '}\s*//+\s*namespace\s*' 2>/dev/null)
+
+if [ -n "$result" ]; then
+    echo "$result"
+    echo "^ Found unnecessary namespace comments"
+fi
 
 # Broken symlinks
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
