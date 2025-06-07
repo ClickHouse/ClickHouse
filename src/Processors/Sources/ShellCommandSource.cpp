@@ -13,6 +13,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include <Core/Field.h>
 
 #include <boost/circular_buffer.hpp>
 #include <fmt/ranges.h>
