@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <Poco/Timespan.h>
 
 namespace DB

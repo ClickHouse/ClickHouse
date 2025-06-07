@@ -372,3 +372,6 @@
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
+[submodule "contrib/nghttp2"]
+	path = contrib/nghttp2
+	url = https://github.com/nghttp2/nghttp2

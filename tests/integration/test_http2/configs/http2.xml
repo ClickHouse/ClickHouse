@@ -1,0 +1,10 @@
+<clickhouse>
+    <https_port>8443</https_port>
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
+        </server>
+    </openSSL>
+    <http2_server></http2_server>
+</clickhouse>

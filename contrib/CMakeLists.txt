@@ -248,6 +248,8 @@ add_contrib (jwt-cpp-cmake jwt-cpp)
 
 add_contrib (sha3iuf-cmake SHA3IUF)
 
+add_contrib (nghttp2-cmake nghttp2)
+
 add_contrib (bech32)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.

@@ -273,6 +273,8 @@ set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPI
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+add_object_library(clickhouse_server_http1 Server/HTTP/HTTP1)
+add_object_library(clickhouse_server_http2 Server/HTTP/HTTP2)
 if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_server_ssh Server/SSH)
 endif()
@@ -679,6 +681,10 @@ endif ()
 
 if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
+endif()
+
+if (TARGET ch_contrib::nghttp2)
+    dbms_target_link_libraries(PRIVATE ch_contrib::nghttp2)
 endif()
 
 if (ENABLE_BUZZHOUSE)

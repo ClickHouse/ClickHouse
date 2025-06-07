@@ -1,7 +1,6 @@
 #include <Server/IndexRequestHandler.h>
 #include <Server/StaticRequestHandler.h>
 #include <Server/HTTPResponseHeaderWriter.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/HTTPCommon.h>
 
 #include <incbin.h>
@@ -17,7 +16,7 @@ IndexRequestHandler::IndexRequestHandler(IServer & server_, const std::unordered
 {
 }
 
-void IndexRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
+void IndexRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     /// If it looks like a browser:
     if (request.get("User-Agent", "").starts_with("Mozilla"))
@@ -27,15 +26,15 @@ void IndexRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
-        setResponseDefaultHeaders(response);
+        response.setResponseDefaultHeaders();
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-        wb.write(reinterpret_cast<const char *>(gresource_index_htmlData), gresource_index_htmlSize);
-        wb.finalize();
+        auto wb = response.makeStream();
+        wb->write(reinterpret_cast<const char *>(gresource_index_htmlData), gresource_index_htmlSize);
+        wb->finalize();
     }
     else
     {
-        StaticRequestHandler(server, "Ok.\n", parseHTTPResponseHeaders("text/html; charset=UTF-8")).handleRequest(request, response, write_event);
+        StaticRequestHandler(server, "Ok.\n", parseHTTPResponseHeaders("text/html; charset=UTF-8")).handleRequest(request, response);
     }
 }
 
