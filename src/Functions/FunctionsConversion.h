@@ -2842,20 +2842,17 @@ struct ToNumberMonotonicity
         /// When converting to Float, the conversion is always monotonic.
         if constexpr (is_floating_point<T>)
         {
-            if (left.isNull() || right.isNull())
-            {
-                if (std::is_same_v<T, BFloat16> && (which_inner_type.isInt8() || which_inner_type.isUInt8()))
-                    return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+            if (std::is_same_v<T, BFloat16> && (which_inner_type.isInt8() || which_inner_type.isUInt8()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
-                if (std::is_same_v<T, Float32> && (which_inner_type.isBFloat16() || which_inner_type.isInt8() || which_inner_type.isInt16()
-                    || which_inner_type.isUInt8() || which_inner_type.isUInt16()))
-                    return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+            if (std::is_same_v<T, Float32> && (which_inner_type.isBFloat16() || which_inner_type.isInt8() || which_inner_type.isInt16()
+                || which_inner_type.isUInt8() || which_inner_type.isUInt16()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
-                if (std::is_same_v<T, Float64> && (which_inner_type.isBFloat16() || which_inner_type.isFloat32()
-                    || which_inner_type.isInt8() || which_inner_type.isInt16() || which_inner_type.isInt32()
-                    || which_inner_type.isUInt8() || which_inner_type.isUInt16() || which_inner_type.isUInt32()))
-                    return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
-            }
+            if (std::is_same_v<T, Float64> && (which_inner_type.isBFloat16() || which_inner_type.isFloat32()
+                || which_inner_type.isInt8() || which_inner_type.isInt16() || which_inner_type.isInt32()
+                || which_inner_type.isUInt8() || which_inner_type.isUInt16() || which_inner_type.isUInt32()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
             return { .is_monotonic = true, .is_always_monotonic = true };
         }
