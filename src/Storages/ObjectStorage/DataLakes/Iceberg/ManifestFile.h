@@ -16,8 +16,6 @@
 namespace Iceberg
 {
 
-struct ManifestFileContentImpl;
-
 enum class ManifestEntryStatus : uint8_t
 {
     EXISTING = 0,

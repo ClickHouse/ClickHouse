@@ -109,7 +109,7 @@ private:
     Poco::JSON::Object::Ptr last_metadata_object;
     Int32 format_version;
 
-    std::unordered_map<String, Int32> schema_id_by_data_file;
+    mutable std::unordered_map<String, Int32> schema_id_by_data_file;
 
 
     Int32 relevant_snapshot_schema_id;
@@ -132,7 +132,7 @@ private:
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
-    void initializeDataFiles(const Iceberg::ManifestFileContent & content);
+    void initializeSchemasFromManifestFile(ManifestFileCacheKeys manifest_list_ptr) const;
 
     Iceberg::ManifestFilePtr getManifestFile(const String & filename, Int64 inherited_sequence_number) const;
 
