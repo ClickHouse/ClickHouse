@@ -2,6 +2,7 @@
 #include <Core/UUID.h>
 
 #include <IO/WriteHelpers.h>
+#include <base/defines.h>
 
 #include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
@@ -55,6 +56,11 @@ bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t milliseconds, bool ove
 
 void BackgroundSchedulePoolTaskInfo::deactivate()
 {
+    deactivateImpl(/*lock_pool_delayed_tasks=*/ true);
+}
+
+void BackgroundSchedulePoolTaskInfo::deactivateImpl(bool lock_pool_delayed_tasks)
+{
     std::lock_guard lock_exec(exec_mutex);
     std::lock_guard lock_schedule(schedule_mutex);
 
@@ -68,7 +74,17 @@ void BackgroundSchedulePoolTaskInfo::deactivate()
     /// and the pool guarantees it will deactivate all tasks before destruction completes,
     /// it is safe to assume `pool` is always valid (non-dangling) in this method.
     if (delayed)
-        pool.cancelDelayedTask(*this, lock_schedule);
+    {
+        if (lock_pool_delayed_tasks)
+        {
+            std::lock_guard delayed_tasks_mutex_lock(pool.delayed_tasks_mutex);
+            pool.cancelDelayedTask(*this, lock_schedule, &delayed_tasks_mutex_lock);
+        }
+        else
+        {
+            pool.cancelDelayedTask(*this, lock_schedule, /*delayed_tasks_mutex_lock=*/ nullptr);
+        }
+    }
 }
 
 void BackgroundSchedulePoolTaskInfo::activate()
@@ -150,12 +166,15 @@ void BackgroundSchedulePoolTaskInfo::execute()
     }
 }
 
-void BackgroundSchedulePoolTaskInfo::scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock)
+void BackgroundSchedulePoolTaskInfo::scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock) TSA_REQUIRES(schedule_mutex)
 {
     scheduled = true;
 
     if (delayed)
-        pool.cancelDelayedTask(*this, schedule_mutex_lock);
+    {
+        std::lock_guard delayed_tasks_mutex_lock(pool.delayed_tasks_mutex);
+        pool.cancelDelayedTask(*this, schedule_mutex_lock, &delayed_tasks_mutex_lock);
+    }
 
     /// If the task is not executing at the moment, enqueue it for immediate execution.
     /// But if it is currently executing, do nothing because it will be enqueued
@@ -237,14 +256,14 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
             for (auto & task_ptr : tasks)
             {
                 if (task_ptr)
-                    task_ptr->deactivate();
+                    task_ptr->deactivateImpl(/*lock_pool_delayed_tasks=*/ false);
             }
 
             // Deactivate all delayed tasks
             for (auto & delayed : delayed_tasks)
             {
                 if (delayed.second)
-                    delayed.second->deactivate();
+                    delayed.second->deactivateImpl(/*lock_pool_delayed_tasks=*/ false);
             }
         }
 
@@ -297,14 +316,11 @@ void BackgroundSchedulePool::scheduleDelayedTask(TaskInfo & task, size_t ms, std
 }
 
 
-void BackgroundSchedulePool::cancelDelayedTask(TaskInfo & task, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */) TSA_REQUIRES(task.schedule_mutex)
+void BackgroundSchedulePool::cancelDelayedTask(TaskInfo & task, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */, std::lock_guard<std::mutex> * /* delayed_tasks_mutex_lock */) TSA_REQUIRES(task.schedule_mutex) TSA_REQUIRES(delayed_tasks_mutex)
 {
-    {
-        std::lock_guard lock(delayed_tasks_mutex);
-        delayed_tasks.erase(task.iterator);
-        task.delayed = false;
-        task.iterator = delayed_tasks.end();
-    }
+    delayed_tasks.erase(task.iterator);
+    task.delayed = false;
+    task.iterator = delayed_tasks.end();
 
     delayed_tasks_cond_var.notify_all();
 }
