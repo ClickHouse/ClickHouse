@@ -624,7 +624,7 @@ catch (...)
     try
     {
         Poco::Pipe out_pipe;
-        Poco::ProcessHandle ph = Poco::Process::launch("ls", {"-lA", disk_path}, nullptr, &out_pipe, nullptr);
+        Poco::ProcessHandle ph = Poco::Process::launch("ls", {"-lA --time-style=full-iso", disk_path}, nullptr, &out_pipe, nullptr);
 
         constexpr size_t BUF_SIZE = 4096;
         char buffer[BUF_SIZE];
