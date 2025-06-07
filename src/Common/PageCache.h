@@ -98,7 +98,7 @@ private:
     public:
         using Base::Base;
 
-        void onEviction(const EvictionStats & /*stats*/) override;
+        void onValueRemoval(const MappedPtr & mappedPtr) override;
     };
 
 public:

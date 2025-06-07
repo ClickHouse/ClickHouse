@@ -40,7 +40,6 @@ public:
     using Mapped = typename CachePolicy::Mapped;
     using MappedPtr = typename CachePolicy::MappedPtr;
     using KeyMapped = typename CachePolicy::KeyMapped;
-    using EvictionStats = typename CachePolicy::EvictionStats;
 
     static constexpr auto NO_MAX_COUNT = 0uz;
     static constexpr auto DEFAULT_SIZE_RATIO = 0.5l;
@@ -65,14 +64,9 @@ public:
         size_t max_count,
         double size_ratio)
     {
-        auto on_eviction_function = [this](const EvictionStats & stats)
+        auto on_remove_function = [this](const MappedPtr & mappedPtr)
         {
-            onEviction(stats); // New callback with full stats
-        };
-
-        auto on_remove_function = [this](const MappedPtr & mappedPtr) -> size_t
-        {
-            return onValueRemoval(mappedPtr);
+            onValueRemoval(mappedPtr);
         };
 
         if (cache_policy_name.empty())
@@ -84,12 +78,12 @@ public:
         if (cache_policy_name == "LRU")
         {
             using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<LRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_eviction_function, on_remove_function);
+            cache_policy = std::make_unique<LRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_remove_function);
         }
         else if (cache_policy_name == "SLRU")
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_eviction_function, on_remove_function);
+            cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_remove_function);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
@@ -344,14 +338,10 @@ private:
 
     InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
 
-    /// Override this method if you want to track eviction metrics in removeOverflow method.
-    /// To add more metrics, add them to EvictionStats struct.
-    virtual void onEviction(const EvictionStats & /*stats*/) {}
-
-    /// Override this method if you want to handle individual value removals from cache.
-    /// This is called for each item being evicted and should return item-specific count (e.g., marks).
-    /// For MarkCache, we cast the mapped argument to MarksInCompressedFile and return number of marks.
-    virtual size_t onValueRemoval(const MappedPtr & /*mapped*/) { return 0; }};
+    /// This is called when a cell is being evicted from the cache.
+    /// Override this method if you want to handle individual value removals from cache
+    virtual void onValueRemoval(const MappedPtr & /*mapped*/) { }
+};
 
 
 }

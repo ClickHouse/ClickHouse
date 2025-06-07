@@ -93,9 +93,7 @@ public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
-    using typename Base::OnEvictionFunction;
     using typename Base::OnRemoveFunction;
-    using typename Base::EvictionStats;
 
     explicit TTLCachePolicy(CurrentMetrics::Metric size_in_bytes_metric_, CurrentMetrics::Metric count_metric_, CachePolicyUserQuotaPtr quotas_)
         : Base(std::move(quotas_))
@@ -290,7 +288,7 @@ private:
 
     WeightFunction weight_function;
     IsStaleFunction is_stale_function;
-    /// TODO support OnEvictionFunction callback
+    /// TODO support OnRemoveFunction callback
 
     void clearImpl()
     {
