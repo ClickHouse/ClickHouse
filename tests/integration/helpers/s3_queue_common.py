@@ -109,6 +109,7 @@ def create_table(
     expect_error=False,
     database_name="default",
     no_settings=False,
+    hive_partitioning="",
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -126,10 +127,10 @@ def create_table(
 
     engine_def = None
     if engine_name == "S3Queue":
-        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
+        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/{hive_partitioning}"
         engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
     else:
-        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
+        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/{hive_partitioning}', 'CSV')"
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     if no_settings:
