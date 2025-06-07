@@ -40,7 +40,7 @@ public:
     StorageID getDatabaseTable() const;
 
     /// Return explicitly specified column names to insert.
-    /// It none explicit names were specified, returns nullopt.
+    /// If none explicit names were specified, returns nullopt.
     std::optional<Names> getInsertColumnNames() const;
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
