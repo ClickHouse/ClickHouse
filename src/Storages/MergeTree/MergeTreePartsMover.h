@@ -12,6 +12,8 @@
 namespace DB
 {
 
+struct DataPartsLock;
+
 enum class MovePartsOutcome : uint8_t
 {
     PartsMoved,
@@ -40,7 +42,7 @@ using MergeTreeMovingParts = std::vector<MergeTreeMoveEntry>;
  */
 class MergeTreePartsMover
 {
-private:
+protected:
     /// Callback tells that part is not participating in background process
     using AllowedMovingPredicate = std::function<bool(const std::shared_ptr<const IMergeTreeDataPart> &, String * reason)>;
 
@@ -81,11 +83,51 @@ public:
     /// Can stop background moves and moves from queries
     ActionBlocker moves_blocker;
 
-private:
+    virtual ~MergeTreePartsMover() = default;
+
+protected:
+
+    virtual void preparePartToSwap(TemporaryClonedPart & /* cloned_part */ ) const {}
+
+    virtual std::pair<MutableDataPartStoragePtr, bool> clonePartImpl(
+        const MergeTreeDataPartPtr & part, const DiskPtr & disk,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) const;
 
     MergeTreeData * data;
     LoggerPtr log;
 };
 
+
+class MergeTreeZeroCopyPartsMover: public MergeTreePartsMover
+{
+public:
+
+    explicit MergeTreeZeroCopyPartsMover(MergeTreeData * data_)
+        : MergeTreePartsMover(data_)
+    {
+    }
+
+protected:
+
+    void preparePartToSwap(TemporaryClonedPart & cloned_part) const override;
+
+    std::pair<MutableDataPartStoragePtr, bool> clonePartImpl(
+        const MergeTreeDataPartPtr & part, const DiskPtr & disk,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) const override;
+
+};
+
+
+using MergeTreePartsMoverPtr = std::shared_ptr<MergeTreePartsMover>;
+
+class MergeTreePartsMoverFactory
+{
+public:
+    static MergeTreePartsMoverPtr get(MergeTreeData * data);
+};
 
 }
