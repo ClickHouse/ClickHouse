@@ -1841,6 +1841,7 @@ flamegraph
 flatbuffers
 flattenTuple
 flink
+flipCoordinates
 fluentd
 fmtlib
 formatDateTime
@@ -2329,6 +2330,7 @@ multiline
 multilinestring
 multiplyDecimal
 multipolygon
+multipolygons
 multiread
 multisearchany
 multisets
