@@ -107,6 +107,9 @@ private:
     void processSyncQuery();
 
     static bool isEmptyQuery(const String & query);
+
+    void initializeSystemTables(ContextMutablePtr query_context);
+    bool should_init_system_tables = true;
 };
 
 }
