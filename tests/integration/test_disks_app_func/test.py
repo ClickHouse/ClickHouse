@@ -1,16 +1,19 @@
 import pytest
-
+import os
+import time
+import logging
 from helpers.cluster import ClickHouseCluster
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
-    global cluster
+    global cluster, path1, path2
     try:
+        config_file, path1, path2 = render_config()
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "disks_app_test",
-            main_configs=["config.xml"],
+            main_configs=[config_file],
             with_minio=True,
             with_zookeeper=True,
             with_remote_database_disk=False,  # The tests work on the local disk and check local files
@@ -20,7 +23,7 @@ def started_cluster():
         # local disk requires its `path` directory to exist.
         # the two paths below belong to `test1` and `test2` disks
         node = cluster.instances["disks_app_test"]
-        for path in ["path1", "path2"]:
+        for path in [path1, path2]:
             node.exec_in_container(
                 [
                     "bash",
@@ -33,6 +36,34 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
+
+def render_config(template_filename="config_template.xml"):
+    timestamp = int(time.time())
+    path1 = f"path1_{timestamp}"
+    path2 = f"path2_{timestamp + 1}"
+    output_filename = f"config.generated.{timestamp}.xml"
+
+    # current directory
+    base_dir = os.path.dirname(__file__)
+    # config template file
+    template_path = os.path.join(base_dir, template_filename)
+    # config file
+    output_path = os.path.join(base_dir, output_filename)
+
+    # render the template
+    with open(template_path, "r") as f:
+        template = f.read()
+    rendered = template.format(path1=path1, path2=path2)
+
+    # write to tmp file
+    with open(output_path, "w") as f:
+        f.write(rendered)
+    logging.debug("Rendered config file %s with path1 $s and path2 %s",
+                  output_filename, path1, path2)
+    logging.debug("Redered config file: %s", rendered)
+
+    return output_filename, path1, path2
 
 
 def write(source, disk, path):
