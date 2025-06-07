@@ -260,8 +260,9 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
             }
 
             // Deactivate all delayed tasks
-            for (auto & delayed : delayed_tasks)
+            while (!delayed_tasks.empty())
             {
+                auto & delayed = *delayed_tasks.begin();
                 if (delayed.second)
                     delayed.second->deactivateImpl(/*lock_pool_delayed_tasks=*/ false);
             }
