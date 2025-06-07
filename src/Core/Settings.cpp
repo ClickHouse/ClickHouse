@@ -6783,10 +6783,10 @@ Possible values:
  - 'Streaming' - stream exchange data over network.
 )", EXPERIMENTAL) \
     \
-    /** Experimental timeSeries* aggregate functions. */ \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
-Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
-)", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
+    /** Experimental tsToGrid aggregate function. */ \
+    DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
+Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

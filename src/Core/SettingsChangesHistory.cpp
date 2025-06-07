@@ -76,7 +76,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
             {"optimize_use_projection_filtering", true, true, "New setting"},
             {"input_format_parquet_enable_json_parsing", true, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
-            {"allow_experimental_time_series_aggregate_functions", false, false, "New setting to enable experimental timeSeries* aggregate functions."},
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.5",
