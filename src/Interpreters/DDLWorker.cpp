@@ -1299,6 +1299,27 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         active_node_holders.clear();
     }
 
+    for (auto it = active_node_holders.begin(); it != active_node_holders.end();)
+    {
+        auto & zk = it->second.first;
+        if (zk->expired())
+        {
+            const auto & host_id = it->first;
+            String active_path = fs::path(replicas_dir) / host_id / "active";
+            LOG_DEBUG(log, "Zookeeper of active_path {} expired, removing the holder", active_path);
+
+            auto & active_node_holder = it->second.second;
+            if (active_node_holder)
+                active_node_holder->setAlreadyRemoved();
+            it = active_node_holders.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+
     const auto maybe_secure_port = context->getTCPPortSecure();
     const auto port = context->getTCPPort();
 
@@ -1335,10 +1356,10 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         }
 
         String active_path = fs::path(replicas_dir) / host_id / "active";
-        if (zookeeper->exists(active_path))
-            continue;
-
         String active_id = toString(ServerUUID::get());
+
+        zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
+
         LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
 
         zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
