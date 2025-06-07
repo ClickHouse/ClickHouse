@@ -1012,21 +1012,21 @@ The table below shows the behavior of this setting for various date-time functio
 
 | Function | `enable_extended_results_for_datetime_functions = 0` | `enable_extended_results_for_datetime_functions = 1` |
 |----------|---------------------------------------------------|---------------------------------------------------|
-| `toStartOfYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfISOYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfQuarter` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toLastDayOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toLastDayOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toMonday` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfDay` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfHour` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfFifteenMinutes` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfTenMinutes` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfFiveMinutes` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfMinute` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `timeSlot` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfISOYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfQuarter` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toLastDayOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toLastDayOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toMonday` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfDay` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfHour` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfFifteenMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfTenMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfFiveMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
