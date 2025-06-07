@@ -1,6 +1,4 @@
 #pragma once
-#include "Disks/IStoragePolicy.h"
-#include "base/types.h"
 #include "config.h"
 
 #if USE_AVRO
