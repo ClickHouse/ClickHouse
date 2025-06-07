@@ -1,5 +1,8 @@
 #pragma once
+#include "config.h"
+
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include "ExpressionVisitor.h"
 
 namespace DB
 {
@@ -12,24 +15,31 @@ namespace DB
  */
 struct ObjectInfoWithPartitionColumns : public DB::ObjectInfo
 {
-    struct PartitionColumnInfo
-    {
-        /// Name and type of the partition column.
-        NameAndTypePair name_and_type;
-        /// Partition value.
-        Field value;
-    };
-    using PartitionColumnsInfo = std::vector<PartitionColumnInfo>;
-
+#if USE_DELTA_KERNEL_RS
     template <typename... Args>
     explicit ObjectInfoWithPartitionColumns(
-        PartitionColumnsInfo && partitions_info_, Args &&... args)
+        std::unique_ptr<DeltaLake::ParsedExpression> expression_,
+        const Names & partition_columns_,
+        Args &&... args)
         : DB::ObjectInfo(std::forward<Args>(args)...)
-        , partitions_info(partitions_info_) {}
+        , expression(std::move(expression_))
+        , partition_columns(partition_columns_)
+    {
+    }
 
-    ~ObjectInfoWithPartitionColumns() override = default;
+    std::vector<DB::Field> getPartitionValues() const { return expression->getConstValues(partition_columns); }
 
-    PartitionColumnsInfo partitions_info;
+    void apply(DB::Chunk & chunk, const DB::NamesAndTypesList & chunk_schema, const DB::Names & columns) const
+    {
+        if (expression)
+            expression->apply(chunk, chunk_schema, columns);
+    }
+
+    const std::unique_ptr<DeltaLake::ParsedExpression> expression;
+    const Names partition_columns;
+#else
+    void apply(DB::Chunk &, const DB::NamesAndTypesList &, const DB::Names &) const {}
+#endif
 };
 
 }
