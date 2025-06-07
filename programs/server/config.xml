@@ -563,6 +563,13 @@
     </storage_configuration>
     -->
 
+    <!-- Default database disk storing metadata files: -->
+    <!--
+    <database_disk>
+        <disk>default</disk>
+    </database_disk>
+    -->
+
     <!-- Path to temporary data for processing heavy queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 

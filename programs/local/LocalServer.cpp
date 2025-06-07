@@ -4,6 +4,7 @@
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -33,6 +34,8 @@
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
@@ -885,6 +888,9 @@ void LocalServer::processConfig()
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
+    NamedCollectionFactory::instance().loadIfNot();
+    FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
+
     /// NOTE: it is important to apply any overrides before
     /// `setDefaultProfiles` calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
@@ -1039,7 +1045,7 @@ void LocalServer::addExtraOptions(OptionsDescription & options_description)
 
 void LocalServer::applyCmdSettings(ContextMutablePtr context)
 {
-    context->applySettingsChanges(cmd_settings.changes());
+    context->applySettingsChanges(cmd_settings->changes());
 }
 
 

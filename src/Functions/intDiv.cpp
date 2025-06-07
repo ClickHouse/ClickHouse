@@ -170,6 +170,22 @@ using FunctionIntDivOrNull = BinaryArithmeticOverloadResolver<DivideIntegralOrNu
 
 REGISTER_FUNCTION(IntDivOrNull)
 {
-    factory.registerFunction<FunctionIntDivOrNull>();
+    FunctionDocumentation::Description description = R"(
+Same as `intDiv` but returns NULL when dividing by zero or when dividing a
+minimal negative number by minus one.
+    )";
+    FunctionDocumentation::Syntax syntax = "intDivOrNull(x, y)";
+    FunctionDocumentation::Argument argument1 = {"x", "Left hand operand."};
+    FunctionDocumentation::Argument argument2 = {"y", "Right hand operand."};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = "Result of integer division of `x` and `y`, or NULL.";
+    FunctionDocumentation::Example example1 = {"Integer division by zero", "SELECT intDivOrNull(1, 0)","\\N"};
+    FunctionDocumentation::Example example2 = {"Dividing a minimal negative number by minus 1", "SELECT intDivOrNull(-9223372036854775808, -1)","\\N"};
+    FunctionDocumentation::Examples examples = {example1, example2};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+
+    factory.registerFunction<FunctionIntDivOrNull>(documentation);
 }
 }
