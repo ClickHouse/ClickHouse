@@ -22,13 +22,9 @@ struct WorkloadSettings
     Float64 weight = 1.0;
     Priority priority;
 
-    /// IO throttling constraints
+    /// Throttling constraints
     Float64 max_bytes_per_second = 0; // Zero means unlimited
     Float64 max_burst_bytes = 0; // default is `default_burst_seconds * max_bytes_per_second`
-
-    /// Query throttling constraints
-    Float64 max_queries_per_second = 0; // Zero means unlimited
-    Float64 max_burst_queries = 0; // default is `default_burst_seconds * max_queries_per_second`
 
     /// Limits total number of concurrent resource requests that are allowed to consume
     Int64 max_io_requests = unlimited;
@@ -36,14 +32,12 @@ struct WorkloadSettings
     /// Limits total bytes in-inflight for concurrent IO resource requests
     Int64 max_bytes_inflight = unlimited;
 
-    /// Limits total number of query threads
+    /// Limits total number of query threads (the first main thread is not counted)
     Int64 max_concurrent_threads = unlimited;
 
-    /// Limits total number of queries
-    Int64 max_concurrent_queries = unlimited;
-
     /// Settings that are applied depend on cost unit
-    CostUnit unit = CostUnit::IOByte;
+    using Unit = ASTCreateResourceQuery::CostUnit;
+    Unit unit = Unit::IOByte;
 
     // Throttler
     bool hasThrottler() const;
@@ -56,7 +50,7 @@ struct WorkloadSettings
     Int64 getSemaphoreMaxCost() const;
 
     // Should be called after default constructor
-    void initFromChanges(CostUnit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);
+    void initFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);
 };
 
 }

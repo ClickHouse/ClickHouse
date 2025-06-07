@@ -1,6 +1,5 @@
-#include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -146,14 +145,14 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeZooKeeperMergePredicate:
     if (queue.virtual_parts.getContainingPart(part->info) != part->name)
         return {};
 
-    auto in_partition = queue.mutations_by_partition.find(part->info.getPartitionId());
+    auto in_partition = queue.mutations_by_partition.find(part->info.partition_id);
     if (in_partition == queue.mutations_by_partition.end())
         return {};
 
     UInt64 mutations_limit = (*queue.storage.getSettings())[MergeTreeSetting::replicated_max_mutations_in_one_entry];
     UInt64 mutations_count = 0;
 
-    Int64 current_version = queue.getCurrentMutationVersion(part->info.getPartitionId(), part->info.getDataVersion());
+    Int64 current_version = queue.getCurrentMutationVersion(part->info.partition_id, part->info.getDataVersion());
     Int64 max_version = in_partition->second.begin()->first;
 
     int alter_version = -1;

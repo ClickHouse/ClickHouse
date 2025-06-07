@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import math
-import nats
 import os.path as p
 import random
 import subprocess
@@ -47,24 +46,6 @@ def wait_nats_to_start(nats_port, ssl_ctx=None, timeout=180):
         except Exception as ex:
             logging.debug("Can't connect to NATS " + str(ex))
             time.sleep(0.5)
-    
-    assert False, "NATS is unavailable"
-
-# function to check if nats is paused, because in some cases we successfully connected to it after calling pause_container
-def wait_nats_paused(nats_port, ssl_ctx=None, timeout=180):
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            asyncio.run(check_nats_is_available(nats_port, ssl_ctx=ssl_ctx))
-            time.sleep(0.5)
-        except nats.errors.NoServersError:
-            logging.debug("NATS is paused")
-            return
-        except Exception as ex:
-            logging.warning("Detect NATS status failed with error \"" + str(ex) + "\" - continue waiting for proper status...")
-            time.sleep(0.5)
-    
-    assert False, "NATS is not paused"
 
 def nats_check_query_result(query, time_limit_sec = 60):
     query_result = ""
@@ -1345,7 +1326,6 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
 
 def test_nats_no_connection_at_startup_1(nats_cluster):
     with nats_cluster.pause_container("nats1"):
-        wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
         instance.query_and_get_error(
             """
             CREATE TABLE test.cs (key UInt64, value UInt64)
@@ -1389,7 +1369,6 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
         """
     )
     with nats_cluster.pause_container("nats1"):
-        wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
         instance.query("ATTACH TABLE test.cs")
 
     wait_for_table_is_ready(instance, "test.cs")

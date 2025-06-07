@@ -8,7 +8,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
@@ -56,22 +55,13 @@ void resolveSchemaAndFormat(
     if (columns.empty())
     {
         if (format == "auto")
-        {
-            if (configuration->isDataLakeConfiguration())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Format must be already specified for {} storage. ", configuration->getTypeName());
-            std::tie(columns, format) = StorageObjectStorage::resolveSchemaAndFormatFromData(
-                object_storage, configuration, format_settings, sample_path, context);
-        }
+            std::tie(columns, format) =
+                StorageObjectStorage::resolveSchemaAndFormatFromData(object_storage, configuration, format_settings, sample_path, context);
         else
-        {
             columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
-        }
     }
     else if (format == "auto")
     {
-        if (configuration->isDataLakeConfiguration())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Format must be already specified for {} storage. ", configuration->getTypeName());
         format = StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
     }
 

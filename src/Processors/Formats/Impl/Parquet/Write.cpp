@@ -5,7 +5,6 @@
 #include <arrow/util/rle_encoding.h>
 #include <lz4.h>
 #include <xxhash.h>
-#include <DataTypes/DataTypeObject.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -13,7 +12,6 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnObject.h>
 #include <IO/WriteHelpers.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
@@ -396,45 +394,6 @@ struct ConverterNumberAsFixedString
     }
 
     size_t fixedStringSize() { return sizeof(T); }
-};
-
-struct ConverterJSON
-{
-    using Statistics = StatisticsStringRef;
-
-    const ColumnObject & column;
-    DataTypePtr data_type;
-    PODArray<parquet::ByteArray> buf;
-    std::vector<String> stash;
-    const FormatSettings & format_settings;
-
-    explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_, const FormatSettings & format_settings_)
-        : column(assert_cast<const ColumnObject &>(*c))
-        , data_type(data_type_)
-        , format_settings(format_settings_)
-    {
-    }
-
-    const parquet::ByteArray * getBatch(size_t offset, size_t count)
-    {
-        buf.resize(count);
-        stash.clear();
-        stash.reserve(count);
-
-        auto serialization = data_type->getDefaultSerialization();
-
-        for (size_t i = 0; i < count; ++i)
-        {
-            WriteBufferFromOwnString wb;
-            serialization->serializeTextJSON(column, offset + i, wb, format_settings);
-
-            stash.emplace_back(std::move(wb.str()));
-            const String & s = stash.back();
-
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
-        }
-        return buf.data();
-    }
 };
 
 /// Like ConverterNumberAsFixedString, but converts to big-endian. (Parquet uses little-endian
@@ -961,8 +920,7 @@ void writeColumnImpl(
 
 }
 
-void writeColumnChunkBody(
-    ColumnChunkWriteState & s, const WriteOptions & options, const FormatSettings & format_settings, WriteBuffer & out)
+void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & options, WriteBuffer & out)
 {
     s.column_chunk.meta_data.__set_num_values(s.max_def > 0 ? s.def.size() : s.primitive_column->size());
 
@@ -1050,9 +1008,6 @@ void writeColumnChunkBody(
             else
                 writeColumnImpl<parquet::ByteArrayType>(
                 s, options, out, ConverterFixedStringAsString(s.primitive_column));
-            break;
-        case TypeIndex::Object:
-            writeColumnImpl<parquet::ByteArrayType>(s, options, out, ConverterJSON(s.primitive_column, s.type, format_settings));
             break;
 
         #define F(source_type) \

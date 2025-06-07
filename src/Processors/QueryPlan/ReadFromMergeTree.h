@@ -15,12 +15,11 @@ namespace DB
 struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+
 class Pipe;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
-
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 struct MergeTreeDataSelectSamplingData
 {
@@ -72,7 +71,6 @@ public:
         Partition,
         PrimaryKey,
         Skip,
-        PrimaryKeyExpand,
     };
 
     /// This is a struct with information about applied indexes.
@@ -86,28 +84,9 @@ public:
         std::vector<std::string> used_keys = {};
         size_t num_parts_after;
         size_t num_granules_after;
-        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
     };
 
     using IndexStats = std::vector<IndexStat>;
-
-    /// Information about used projections.
-    struct ProjectionStat
-    {
-        std::string name = {};
-        std::string description = {};
-        std::string condition = {};
-        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
-        UInt64 selected_parts = 0;
-        UInt64 selected_ranges = 0;
-        UInt64 selected_marks = 0;
-        UInt64 selected_rows = 0;
-        UInt64 filtered_parts = 0;
-    };
-
-    /// `deque` is used to ensure stable addresses during projection analysis stats building.
-    using ProjectionStats = std::deque<ProjectionStat>;
-
     using ReadType = MergeTreeReadType;
 
     struct AnalysisResult
@@ -116,7 +95,6 @@ public:
         SplitPartsByRanges split_parts;
         MergeTreeDataSelectSamplingData sampling;
         IndexStats index_stats;
-        ProjectionStats projection_stats;
         Names column_names_to_read;
         ReadType read_type = ReadType::Default;
         UInt64 total_parts = 0;
@@ -136,7 +114,7 @@ public:
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
 
     ReadFromMergeTree(
-        RangesInDataParts parts_,
+        MergeTreeData::DataPartsVector parts_,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
         Names all_column_names_,
         const MergeTreeData & data_,
@@ -145,7 +123,7 @@ public:
         const ContextPtr & context_,
         size_t max_block_size_,
         size_t num_streams_,
-        PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
         bool enable_parallel_reading_,
@@ -171,11 +149,9 @@ public:
 
     void describeActions(FormatSettings & format_settings) const override;
     void describeIndexes(FormatSettings & format_settings) const override;
-    void describeProjections(FormatSettings & format_settings) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
-    void describeProjections(JSONBuilder::JSONMap & map) const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
@@ -195,26 +171,27 @@ public:
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
         std::optional<KeyCondition> part_offset_condition;
-        std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         std::optional<std::unordered_set<String>> part_values;
     };
 
     static AnalysisResultPtr selectRangesToRead(
-        RangesInDataParts parts,
+        MergeTreeData::DataPartsVector parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         size_t num_streams,
-        PartitionIdToMaxBlockPtr max_block_numbers_to_read,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
         const MergeTreeData & data,
         const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes,
         bool find_exact_ranges);
+
+    AnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts, bool find_exact_ranges = false) const;
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
@@ -238,7 +215,7 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
-    const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : prepared_parts; }
+    const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
@@ -253,7 +230,7 @@ public:
 private:
     MergeTreeReaderSettings reader_settings;
 
-    RangesInDataParts prepared_parts;
+    MergeTreeData::DataPartsVector prepared_parts;
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
 
     Names all_column_names;
@@ -272,7 +249,7 @@ private:
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
 
-    PartitionIdToMaxBlockPtr max_block_numbers_to_read;
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
@@ -311,9 +288,7 @@ private:
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, std::optional<ActionsDAG> & out_projection);
 
-    ReadFromMergeTree::AnalysisResult & getAnalysisResultImpl() const;
-    const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const { return getAnalysisResultImpl(); }
-    ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
+    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
     int getSortDirection() const;
     void updateSortDescription();

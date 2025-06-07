@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
+#include "MetadataStorageFromPlainObjectStorage.h"
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
@@ -10,7 +10,6 @@
 #include <Common/logger_useful.h>
 
 #include <Common/filesystemHelpers.h>
-#include <IO/Expect404ResponseScope.h>
 
 #include <filesystem>
 
@@ -40,7 +39,7 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
 {
     if (object_metadata_cache_size)
-        object_metadata_cache.emplace(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
+        object_metadata_cache.emplace(object_metadata_cache_size);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
@@ -92,7 +91,6 @@ uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path)
 
 std::optional<uint64_t> MetadataStorageFromPlainObjectStorage::getFileSizeIfExists(const String & path) const
 {
-    Expect404ResponseScope scope;  // 404 is not an error
     if (auto res = getObjectMetadataEntryWithCache(path))
         return res->file_size;
     return std::nullopt;

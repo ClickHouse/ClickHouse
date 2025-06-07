@@ -162,15 +162,15 @@ class CHServer:
             f"./tests/performance/scripts/perf.py --host localhost localhost \
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
                 --runs {runs} --max-queries {max_queries} \
-                --profile-seconds 10 \
+                --profile-seconds 0 \
                 {test_file}",
             verbose=True,
-            strip=False,
         )
         duration = sw.duration
         if res != 0:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
+            err = Shell.get_output(f"echo \"{err}\" | grep '{test_name}\t'")
         with open(f"{results_path}/{test_name}-raw.tsv", "w") as f:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:
@@ -319,7 +319,7 @@ def main():
             f"cp ./programs/server/config.xml {perf_right_config}",
             f"cp ./programs/server/users.xml {perf_right_config}",
             f"cp -r --dereference ./programs/server/config.d {perf_right_config}",
-            f"cp ./tests/performance/scripts/config/config.d/*xml {perf_right_config}/config.d/",
+            # f"cp ./tests/performance/scripts/config/config.d/*.xml {perf_right_config}/config.d/",
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             # f"cp -r ./tests/performance {perf_right}",
@@ -331,7 +331,9 @@ def main():
             "clickhouse-local --version",
         ]
         results.append(
-            Result.from_commands_run(name="Install ClickHouse", command=commands)
+            Result.from_commands_run(
+                name="Install ClickHouse", command=commands, with_log=True
+            )
         )
         res = results[-1].is_ok()
 
@@ -350,7 +352,7 @@ def main():
             ]
             results.append(
                 Result.from_commands_run(
-                    name="Install Reference ClickHouse", command=commands
+                    name="Install Reference ClickHouse", command=commands, with_log=True
                 )
             )
             res = results[-1].is_ok()
@@ -362,8 +364,8 @@ def main():
         if not Path(f"{db_path}/.done").is_file():
             Shell.check(f"mkdir -p {db_path}", verbose=True)
             dataset_paths = {
-                "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
-                "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
+                "hits10": "https://clickhouse-private-datasets.s3.amazonaws.com/hits_10m_single/partitions/hits_10m_single.tar",
+                "hits100": "https://clickhouse-private-datasets.s3.amazonaws.com/hits_100m_single/partitions/hits_100m_single.tar",
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
             }
@@ -419,7 +421,9 @@ def main():
             f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
             f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
         ]
-        results.append(Result.from_commands_run(name="Configure", command=commands))
+        results.append(
+            Result.from_commands_run(name="Configure", command=commands, with_log=True)
+        )
         res = results[-1].is_ok()
 
     leftCH = CHServer(is_left=True)
@@ -520,6 +524,7 @@ def main():
             Result.from_commands_run(
                 name="Report",
                 command=commands,
+                with_log=True,
                 workdir=perf_wd,
             )
         )
@@ -616,7 +621,7 @@ def main():
     # attach all logs with errors
     Shell.check(f"rm -f {perf_wd}/logs.tar.zst")
     Shell.check(
-        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" -o -name "*.svg" \) ! -path "*/db/*" !  -path "*/db0/*" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
+        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" \) ! -path "*/db/*" !  -path "*/db0/*" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
         verbose=True,
     )
     if Path(f"{perf_wd}/logs.tar.zst").is_file():

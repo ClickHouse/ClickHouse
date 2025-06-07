@@ -90,7 +90,7 @@ public:
     void addChains(std::vector<Chain> chains);
 
     /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
-    void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
+    void resize(size_t num_streams, bool strict = false);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 
@@ -130,7 +130,6 @@ private:
     bool isCompleted() const { return !empty() && output_ports.empty(); }
     static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
-    void addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per_resize_after_split, bool strict);
 
     friend class QueryPipelineBuilder;
     friend class QueryPipeline;

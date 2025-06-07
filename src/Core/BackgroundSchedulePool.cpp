@@ -1,9 +1,4 @@
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/UUID.h>
-
-#include <IO/WriteHelpers.h>
-
-#include <Common/ThreadStatus.h>
+#include "BackgroundSchedulePool.h"
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -11,7 +6,6 @@
 #include <Common/UniqueLock.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
-
 #include <chrono>
 
 
@@ -108,17 +102,9 @@ void BackgroundSchedulePoolTaskInfo::execute()
         executing = true;
     }
 
-    /// Using this tmp query_id storage to prevent bad_alloc thrown under the try/catch.
-    std::string task_query_id = fmt::format("{}::{}", pool.thread_name, UUIDHelpers::generateV4());
-
     try
     {
-        chassert(current_thread); /// Thread from global thread pool
-        current_thread->setQueryId(std::move(task_query_id));
-
         function();
-
-        current_thread->clearQueryId();
     }
     catch (...)
     {

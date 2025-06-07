@@ -31,8 +31,7 @@ struct Optimization
 {
     struct ExtraSettings
     {
-        size_t max_limit_for_vector_search_queries;
-        VectorSearchFilterStrategy vector_search_filter_strategy;
+        size_t max_limit_for_ann_queries;
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
     };
@@ -135,7 +134,7 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-bool optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, size_t max_limit_for_lazy_materialization);
+void optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, size_t max_limit_for_lazy_materialization);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);

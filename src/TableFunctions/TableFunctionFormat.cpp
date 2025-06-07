@@ -27,7 +27,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
 }
 
@@ -125,6 +125,9 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     while (reader->pull(block))
         blocks.push_back(std::move(block));
 
+    if (blocks.size() == 1)
+        return blocks[0];
+
     /// In case when data contains more then 1 block we combine
     /// them all to one big block (this is considered a rare case).
     return concatenateBlocks(blocks);
@@ -214,7 +217,7 @@ Result:
 )", ""
         },
     },
-    .category = FunctionDocumentation::Category::TableFunction
+    .category{""}
 };
 
 }
