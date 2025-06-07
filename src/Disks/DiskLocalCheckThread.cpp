@@ -54,7 +54,6 @@ void DiskLocalCheckThread::run()
     bool can_write = disk->canWrite();
     if (can_read)
     {
-        LOG_INFO(log, "Disk {} can be read...", disk->getName());
         if (disk->broken)
             LOG_INFO(log, "Disk {0} seems to be fine. It can be recovered using `SYSTEM RESTART DISK {0}`", disk->getName());
         retry = 0;
@@ -69,7 +68,6 @@ void DiskLocalCheckThread::run()
     }
     else if (!disk->broken && retry < DISK_CHECK_ERROR_RETRY_TIME)
     {
-        LOG_INFO(log, "Disk {} found broken, but will retry...", disk->getName());
         ++retry;
         task->scheduleAfter(DISK_CHECK_ERROR_SLEEP_MS);
     }
