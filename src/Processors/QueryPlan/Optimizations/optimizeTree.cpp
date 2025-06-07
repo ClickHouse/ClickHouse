@@ -1,4 +1,6 @@
 #include <Common/Exception.h>
+#include "Planner/Utils.h"
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -118,7 +120,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     }
 }
 
-void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeSecondPass(
+    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     std::unordered_set<String> applied_projection_names;
@@ -184,6 +187,34 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         stack.pop_back();
     }
+
+    // find ReadFromLocalParallelReplicaStep and replace with optimized local plan
+    stack.push_back({.node = &root});
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep*>(frame.node->step.get()))
+        {
+            auto local_plan = read_from_local->extractQueryPlan();
+            local_plan->optimize(optimization_settings);
+            if (optimization_settings.merge_expressions)
+                local_plan->mergeExpressions();
+
+            query_plan.replaceNode(frame.node, std::move(local_plan));
+        }
+
+        stack.pop_back();
+    }
+
 
     stack.push_back({.node = &root});
 

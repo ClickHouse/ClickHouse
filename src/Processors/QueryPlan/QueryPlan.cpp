@@ -1,3 +1,4 @@
+#include <memory>
 #include <stack>
 
 #include <Common/JSONBuilder.h>
@@ -6,7 +7,7 @@
 #include <IO/WriteBuffer.h>
 
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -491,7 +492,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
     if (optimization_settings.build_sets)
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
 }
@@ -703,4 +704,31 @@ QueryPlan QueryPlan::clone() const
     return result;
 }
 
+void QueryPlan::replaceNode(Node * node, QueryPlanPtr plan)
+{
+    const auto & header = node->step->getOutputHeader();
+    const auto & plan_header = plan->getCurrentHeader();
+
+    if (!blocksHaveEqualStructure(header, plan_header))
+    {
+        auto converting_dag = ActionsDAG::makeConvertingActions(
+            plan_header.getColumnsWithTypeAndName(), header.getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
+
+        auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
+        plan->addStep(std::move(expression));
+    }
+
+    nodes.splice(nodes.end(), std::move(plan->nodes));
+
+    node->step = std::move(plan->getRootNode()->step);
+    node->children = plan->getRootNode()->children;
+
+    max_threads = std::max(max_threads, plan->max_threads);
+    resources = std::move(plan->resources);
+}
+
+void QueryPlan::mergeExpressions()
+{
+    QueryPlanOptimizations::tryMergeExpressions(getRootNode(), nodes, {});
+}
 }
