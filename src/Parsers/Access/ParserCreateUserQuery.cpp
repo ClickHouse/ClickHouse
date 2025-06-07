@@ -563,7 +563,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!ParserUserNamesWithHost{}.parse(pos, names_ast, expected))
         return false;
     auto names = typeid_cast<std::shared_ptr<ASTUserNamesWithHost>>(names_ast);
-    auto names_ref = names->names;
 
     auto pos_after_parsing_names = pos;
 
@@ -698,13 +697,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         String common_host_pattern;
         if (names->getHostPatternIfCommon(common_host_pattern) && !common_host_pattern.empty())
-        {
             hosts.emplace().addLikePattern(common_host_pattern);
-            names->concatParts();
-        }
     }
-    else if (alter)
-        names->concatParts();
 
     bool alter_query_with_no_changes = alter && pos_after_parsing_names == pos;
 
