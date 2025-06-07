@@ -2,7 +2,6 @@
 
 #if USE_PARQUET
 
-#include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Formats/FormatFactory.h>
@@ -471,7 +470,7 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
 
         if (always_null)
         {
-            /// Single-point range containing either the default value of one of the infinities.
+            /// Single-point range containing either the default value or one of the infinities.
             if (null_as_default)
                 hyperrectangle[idx].right = hyperrectangle[idx].left = default_value;
             else
@@ -709,14 +708,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                     return std::nullopt;
                 }
 
-                auto nested_column = column;
-
-                if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
-                {
-                    nested_column = nullable_column->getNestedColumnPtr();
-                }
-
-                return parquetTryHashColumn(nested_column.get(), parquet_column_descriptor);
+                return parquetTryHashColumn(column.get(), parquet_column_descriptor);
             };
 
             key_condition_with_bloom_filter_data->prepareBloomFilterData(hash_one, hash_many);

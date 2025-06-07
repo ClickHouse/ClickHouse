@@ -96,6 +96,74 @@ struct PageDecoderInfo
     std::unique_ptr<PageDecoder> makeDecoder(parq::Encoding::type, std::span<const char> data) const;
 };
 
+/// Decodes values min/max values from parquet statistics into Fields suitable for
+/// KeyCondition::checkInHyperrectangle.
+///
+/// We should be extra careful about type conversions to make sure the comparator used by parquet
+/// writer when producing min/max is exactly equivalent to the comparator that KeyCondition will use
+/// when comparing our decoded+converted Field values.
+/// E.g. if the parquet file has column `x String`, but we read it as `file(..., 'x Int64')`, we
+/// silently auto-cast data from String to Int64 (by parsing number as text); but we can't do the
+/// same for min/max values because String min/max is not the same as Int64 min/max (e.g. "10" < "9").
+/// So we have an allowlist of type conversions (dispatched in SchemaConverter), and the conversion is
+/// done by together with decoding, by StatsDecoder.
+struct StatsDecoder
+{
+    /// Decodes min/max value from parquet Statistics or ColumnIndex.
+    /// Called separately for min (with is_max=false) and max (is_max=true).
+    /// The caller pre-fills `out` with corresponding +-infinity, so this function can just leave
+    /// `out` unchanged if the value can't be decoded.
+    virtual void decode(const String & in, bool is_max, Field & out) const = 0;
+
+    virtual ~StatsDecoder() = default;
+};
+
+/// Input physical type: INT32 or INT64.
+/// Output Field type: Int64, UInt64, or IPv4.
+struct IntStatsDecoder : public StatsDecoder
+{
+    size_t input_value_size = 0;
+    bool input_signed = false;
+
+    bool output_signed = false;
+    bool output_ipv4 = false;
+
+    void decode(const String &, bool, Field &) const override;
+};
+
+/// Input physical type: INT32, INT64, BYTE_ARRAY, or FIXED_LEN_BYTE_ARRAY.
+/// Output Field type: Decimal32, Decimal64, Decimal128, or Decimal256.
+struct DecimalStatsDecoder : public StatsDecoder
+{
+    size_t input_value_size = 0;
+    UInt32 input_scale = 0;
+    bool input_big_endian = false;
+
+    size_t output_value_size = 0;
+    size_t output_scale = 0;
+    bool output_int = 0;
+
+    void decode(const String &, bool, Field &) const override;
+};
+
+/// Input physical type: FLOAT or DOUBLE.
+/// Output Field type: Float32 or Float64.
+struct FloatStatsDecoder : public StatsDecoder
+{
+    size_t input_value_size = 0;
+    size_t output_value_size = 0;
+
+    void decode(const String &, bool, Field &) const override;
+};
+
+/// Input physical type: BYTE_ARRAY or FIXED_LEN_BYTE_ARRAY.
+/// Output Field type: String.
+struct StringStatsDecoder : public StatsDecoder
+{
+    void decode(const String &, bool, Field &) const override;
+};
+
+
 void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out);
 
 std::unique_ptr<PageDecoder> makeDictionaryIndicesDecoder(parq::Encoding::type encoding, size_t dictionary_size, std::span<const char> data);

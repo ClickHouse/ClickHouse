@@ -42,7 +42,6 @@ Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
     options.null_as_default = format_settings.null_as_default;
     options.max_block_size = format_settings.parquet.max_block_size;
     options.preferred_block_size_bytes = format_settings.parquet.prefer_block_bytes;
-    options.dictionary_filter_limit_bytes = format_settings.parquet.dictionary_filter_limit_bytes;
     options.fuzz = format_settings.parquet.fuzz;
     return options;
 }
@@ -88,6 +87,10 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                         getFormatParsingThreadPool().get(), parser_group->max_parsing_threads, "ParquetDecoder", CurrentThread::getGroup());
 
                 auto ext = std::make_shared<Parquet::ParserGroupExt>();
+
+                if (parser_group->key_condition)
+                    parser_group->key_condition->extractSingleColumnConditions(ext->column_conditions, nullptr);
+
                 ext->total_memory_low_watermark = format_settings.parquet.memory_low_watermark;
                 ext->total_memory_high_watermark = format_settings.parquet.memory_high_watermark;
                 parser_group->opaque = ext;

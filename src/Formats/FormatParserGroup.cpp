@@ -90,6 +90,7 @@ void FormatParserGroup::initKeyCondition(const Block & keys)
     key_condition = std::make_shared<const KeyCondition>(
         inverted_dag, ctx, names,
         std::make_shared<ExpressionActions>(ActionsDAG(columns)));
+    columns_used_by_key_condition = key_condition->getUsedColumns();
 }
 
 }

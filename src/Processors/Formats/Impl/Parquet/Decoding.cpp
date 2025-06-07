@@ -1,5 +1,13 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
+    extern const int CANNOT_PARSE_NUMBER;
+}
+
 namespace DB::Parquet
 {
 
@@ -445,6 +453,65 @@ void Dictionary::index(const PaddedPODArray<UInt32> & indexes, IColumn & out)
     }
 }
 
+void IntStatsDecoder::decode(const String & in, bool /*is_max*/, Field & out) const
+{
+    if (in.size() != input_value_size)
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected size: {}", in.size());
 
+    UInt64 val = 0;
+    switch (input_value_size)
+    {
+        case 1: val = unalignedLoad<UInt8>(in.data()); break;
+        case 2: val = unalignedLoad<UInt16>(in.data()); break;
+        case 4: val = unalignedLoad<UInt32>(in.data()); break;
+        case 8: val = unalignedLoad<UInt64>(in.data()); break;
+        default: chassert(false);
+    }
+
+    /// Sign-extend.
+    if (input_signed && input_value_size < 8 && (val >> (input_value_size * 8 - 1)) != 0)
+        val |= 0 - (1ul << (input_value_size * 8));
+
+    /// Check for overflow in signed <-> unsigned conversion.
+    if (input_signed && !output_signed && Int64(val) < 0)
+        return;
+    if (!input_signed && output_signed && val > UInt64(INT64_MAX))
+        return;
+
+    if (output_ipv4)
+    {
+        if (val <= UInt64(UINT32_MAX))
+            out = Field(IPv4(UInt32(val)));
+    }
+    else if (output_signed)
+        out = Field(Int64(val));
+    else
+        out = Field(val);
+}
+
+void StringStatsDecoder::decode(const String & in, bool, Field & out) const
+{
+    out = Field(in);
+}
+
+void DecimalStatsDecoder::decode(const String &, bool, Field &) const
+{
+    /// TODO [parquet]:
+    //remember rounding up/down and overflow checks
+}
+
+void FloatStatsDecoder::decode(const String &, bool, Field &) const
+{
+    /// TODO [parquet]:
+    /// Note this comment from parquet.thrift:
+    /// (*) Because the sorting order is not specified properly for floating
+    ///     point values (relations vs. total ordering) the following
+    ///     compatibility rules should be applied when reading statistics:
+    ///     - If the min is a NaN, it should be ignored.
+    ///     - If the max is a NaN, it should be ignored.
+    ///     - If the min is +0, the row group may contain -0 values as well.
+    ///     - If the max is -0, the row group may contain +0 values as well.
+    ///     - When looking for NaN values, min and max should be ignored.
+}
 
 }

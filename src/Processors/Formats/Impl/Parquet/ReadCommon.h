@@ -9,6 +9,7 @@ namespace DB
 {
 struct FormatParserGroup;
 using FormatParserGroupPtr = std::shared_ptr<FormatParserGroup>;
+class KeyCondition;
 }
 
 namespace DB::Parquet
@@ -31,6 +32,7 @@ struct ReadOptions
 
     bool fuzz = false; // TODO [parquet]: Use it.
 
+    /// Not implemented.
     /// Use dictionary filter if dictionary page is smaller than this (and all values in the column
     /// chunk are dictionary-encoded). This takes precedence over bloom filter. 0 to disable.
     size_t dictionary_filter_limit_bytes = 0;
@@ -40,12 +42,20 @@ struct ReadOptions
 
     size_t preferred_block_size_bytes = DEFAULT_BLOCK_SIZE * 256;
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
+
+    /// Don't use bloom filter for `x IN (...)` if the set `(...)` is has more than this many
+    /// elements. There's no point using bloom filter for big sets because false positive
+    /// probability becomes very high. E.g. if bloom filter has 1% false positive probability,
+    /// searching for 100 elements would have 63% false positive probability.
+    size_t bloom_filter_max_set_size = 100;
 };
 
 struct ParserGroupExt
 {
     size_t total_memory_low_watermark = 0;
     size_t total_memory_high_watermark = 0;
+
+    std::vector<std::pair</*column_idx*/ size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 
     struct Limits
     {

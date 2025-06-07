@@ -65,13 +65,16 @@ namespace DB::Parquet
 //     - no columns to read, but not trivial count either
 //     - ROW POLICY, with and without prewhere, with old and new reader
 //     - prewhere with defaults (it probably doesn't fill them correctly, see MergeTreeRangeReader::executeActionsBeforePrewhere)
-//     - prewhere on virtual columns
+//     - prewhere on virtual columns (do they end up in additional_columns?)
 //     - prewhere with weird filter type (LowCardinality(UInt8), Nullable(UInt8), const UInt8)
 //     - prewhere involving arrays and tuples
 //     - IN with subqueries with and without prewhere
 //     - compare performance to MergeTree (full scan, prewhere, skipping granules)
 //     - `insert into function file('t.parquet') select number as k, toString(number)||':'||randomPrintableASCII(1000) as v from numbers(1000000) settings engine_file_truncate_on_insert=1; select count(), sum(length(v)) from file('t.parquet')` - new reader is slower than default
 //     - array touching >2 pages
+//     - bf and page filtering on prewhere-only columns
+//     - all types of filtering by IS NULL / IS NOT NULL
+//     - Bool type
 //  * write a comment explaining the advantage of the weird complicated two-step scheduling
 //    (tasks_to_schedule -> task queue -> run) and per-stage memory accounting - maximizing prefetch
 //    parallelism; contrast with a simpler strategy of having no queues, and worker threads e.g.
@@ -140,10 +143,13 @@ struct Reader
 
     struct PrimitiveColumnInfo
     {
-        /// Column index in parquet file. NOT index in primitive_columns array.
+        /// Primitive column index in parquet file. NOT index in primitive_columns array.
         size_t column_idx;
+        /// Index in parquet `schema` (in FileMetaData).
+        size_t schema_idx;
         String name;
         PageDecoderInfo decoder;
+        std::unique_ptr<StatsDecoder> stats_decoder;
 
         DataTypePtr raw_decoded_type; // not Nullable
         DataTypePtr intermediate_type; // maybe Nullable
@@ -162,9 +168,14 @@ struct Reader
         UInt8 max_array_def = 0;
 
         bool use_bloom_filter = false;
-        bool use_column_index = false;
+        const KeyCondition * column_index_condition = nullptr;
         bool use_prewhere = false;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
+
+        std::optional<size_t> used_by_key_condition; // index in extended_sample_block
+
+        /// If use_bloom_filter, these are the values that we need to find in bloom filter.
+        std::vector<UInt64> bloom_filter_hashes;
 
         PrimitiveColumnInfo() = default;
         PrimitiveColumnInfo(PrimitiveColumnInfo &&) = default;
@@ -271,13 +282,14 @@ struct Reader
     {
         const parq::ColumnChunk * meta;
 
+        bool use_bloom_filter = false;
         bool use_dictionary_filter = false;
         bool use_column_index = false;
         bool need_null_map = false;
 
         /// Prefetches.
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
-        PrefetchHandle bloom_filter_header_prefetch; // indicates if bloom filter should be used
+        PrefetchHandle bloom_filter_header_prefetch;
         PrefetchHandle bloom_filter_data_prefetch;
         PrefetchHandle dictionary_page_prefetch;
         PrefetchHandle column_index_prefetch;
@@ -367,6 +379,8 @@ struct Reader
         /// NOT parallel to `meta.columns` (it's a subset of parquet colums).
         std::vector<ColumnChunk> columns;
 
+        Hyperrectangle hyperrectangle; // min/max for each column; parallel to extended_sample_block
+
         std::deque<RowSubgroup> subgroups;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> intersected_row_ranges_after_column_index;
@@ -402,6 +416,25 @@ struct Reader
     parq::FileMetaData file_metadata;
     std::deque<RowGroup> row_groups;
 
+    /// Don't get confused in different column numberings (sorry there are so many):
+    ///  * In parquet metadata, columns are listed in array `schema`.
+    ///    PrimitiveColumnInfo::schema_idx is index in that array.
+    ///    This includes compound columns (e.g. arrays or tuples), their constituent primitive columns,
+    ///    and various boilerplate (e.g. map key-value tuple, separately from the map itself).
+    ///  * In parquet row group metadata, `columns` lists only primitive columns - a subsequence of `schema`.
+    ///    PrimitiveColumnInfo::column_idx is index in that array.
+    ///  * `extended_sample_block` lists the columns that were requested by the SQL query.
+    ///    OutputColumnInfo::idx_in_output_block is index of the column in this block.
+    ///    `sample_block`'s list of columns is a prefix of `extended_sample_block`'s list of columns.
+    ///    Columns may have compound types, e.g. Tuple.
+    ///  * `primitive_columns` is the list of columns we need to physically read, in some order.
+    ///    For compound columns, this list has their primitive sub-columns (e.g. elements of Tuple),
+    ///    but not the compound columns themselves.
+    ///    Arrays RowGroup::columns and RowSubgroup::columns are parallel to `primitive_columns`.
+    ///  * `output_columns` contains the instructions for how to go from primitive columns to output
+    ///    columns. E.g. for Array(Array(Int64)) there would be 3 elements in output_columns:
+    ///    Int64 (pointing to an element of primitive_columns), Array(Int64), and Array(Array(Int64)).
+
     std::vector<PrimitiveColumnInfo> primitive_columns;
     size_t total_primitive_columns_in_file = 0;
     std::vector<OutputColumnInfo> output_columns;
@@ -410,7 +443,10 @@ struct Reader
     /// The added columns are used as inputs to prewhere expression, then discarded.
     /// (Why not just add them to sample_block? To avoid unnecessarily applying filter to them.)
     Block extended_sample_block;
+    DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
     std::vector<PrewhereStep> prewhere_steps;
+
+    std::optional<KeyCondition> bloom_filter_condition;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
@@ -422,13 +458,12 @@ struct Reader
 
     /// Deserialize bf header and determine which bf blocks to read.
     void processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
-    void decodeBloomFilterBlocks(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
 
     /// Returns false if the row group was filtered out and should be skipped.
     bool applyBloomAndDictionaryFilters(RowGroup & row_group);
 
-    void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
 
     void decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group);
@@ -451,7 +486,18 @@ struct Reader
     void applyPrewhere(RowSubgroup & row_subgroup);
 
 private:
-    double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
+    struct BloomFilterLookup : public KeyCondition::BloomFilter
+    {
+        Prefetcher & prefetcher;
+        ColumnChunk & column;
+
+        BloomFilterLookup(Prefetcher & prefetcher_, ColumnChunk & column_) : prefetcher(prefetcher_), column(column_) {}
+
+        bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+    };
+
+    void getHyperrectangleForRowGroup(const std::vector</*idx_in_output_block*/ std::optional<size_t>> & key_condition_columns, const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
+double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool initializePage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decompressPageIfCompressed(PageState & page);
