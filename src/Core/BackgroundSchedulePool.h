@@ -69,7 +69,7 @@ private:
     void scheduleDelayedTask(TaskInfo & task_info, size_t ms, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
 
     /// Remove task, that was scheduled with delay, from schedule.
-    void cancelDelayedTask(TaskInfo & task_info, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
+    void cancelDelayedTask(TaskInfo & task_info, std::lock_guard<std::mutex> & task_schedule_mutex_lock, std::lock_guard<std::mutex> * delayed_tasks_mutex_lock);
 
     std::atomic<bool> shutdown {false};
 
@@ -130,7 +130,9 @@ private:
 
     void execute();
 
-    void scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock) TSA_REQUIRES(schedule_mutex);
+    void scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock);
+
+    void deactivateImpl(bool lock_pool_delayed_tasks);
 
     BackgroundSchedulePool & pool;
     std::string log_name;
