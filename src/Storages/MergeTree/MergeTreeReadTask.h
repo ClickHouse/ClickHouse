@@ -28,6 +28,11 @@ using DeserializationPrefixesCachePtr = std::shared_ptr<DeserializationPrefixesC
 class MergedPartOffsets;
 using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 
+struct ProjectionIndexBitmap;
+using ProjectionIndexBitmapPtr = std::shared_ptr<ProjectionIndexBitmap>;
+using ProjectionIndexBitmaps = std::vector<ProjectionIndexBitmapPtr>;
+using ProjectionIndexBitmapsBuilder = std::function<ProjectionIndexBitmaps()>;
+
 enum class MergeTreeReadType : uint8_t
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
@@ -110,6 +115,7 @@ public:
     {
         MergeTreeReaderPtr main;
         std::vector<MergeTreeReaderPtr> prewhere;
+        MergeTreeReaderPtr projection_index;
     };
 
     struct BlockSizeParams
@@ -137,7 +143,10 @@ public:
         const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_);
 
-    void initializeReadersChain(const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
+    void initializeReadersChain(
+        const PrewhereExprInfo & prewhere_actions,
+        ReadStepsPerformanceCounters & read_steps_performance_counters,
+        const ProjectionIndexBitmapsBuilder & projection_index_builder);
 
     BlockAndProgress read();
     bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }
@@ -151,8 +160,12 @@ public:
 
     Readers releaseReaders() { return std::move(readers); }
 
+    size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
+
     static Readers createReaders(const MergeTreeReadTaskInfoPtr & read_info, const Extras & extras, const MarkRanges & ranges);
-    static MergeTreeReadersChain createReadersChain(const Readers & readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
+
+    static MergeTreeReadersChain createReadersChain(
+        const Readers & readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
     UInt64 estimateNumRows() const;

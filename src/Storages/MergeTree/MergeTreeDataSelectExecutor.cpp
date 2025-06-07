@@ -1087,8 +1087,9 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
-    auto max_partitions_to_read
-        = settings[Setting::max_partitions_to_read].changed ? settings[Setting::max_partitions_to_read].value : (*data_settings)[MergeTreeSetting::max_partitions_to_read].value;
+    auto max_partitions_to_read = settings[Setting::max_partitions_to_read].changed
+        ? settings[Setting::max_partitions_to_read].value
+        : (*data_settings)[MergeTreeSetting::max_partitions_to_read].value;
     if (max_partitions_to_read > 0)
     {
         std::set<String> partitions;
@@ -1102,7 +1103,8 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
                 max_partitions_to_read);
     }
 
-    if ((*data_settings)[MergeTreeSetting::max_concurrent_queries] > 0 && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0
+    if ((*data_settings)[MergeTreeSetting::max_concurrent_queries] > 0
+        && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0
         && result.selected_marks >= (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries])
     {
         auto query_id = context->getCurrentQueryId();
@@ -1159,7 +1161,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
     if (merge_tree_select_result_ptr)
     {
-        if (merge_tree_select_result_ptr->selected_marks == 0)
+        if (merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
     else if (parts.empty())

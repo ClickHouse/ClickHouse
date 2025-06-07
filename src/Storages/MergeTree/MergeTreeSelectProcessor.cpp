@@ -1,26 +1,29 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+
 #include <Columns/ColumnLazy.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Processors/Chunk.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Storages/LazilyReadInfo.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/Context.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeArray.h>
-#include <Processors/Chunk.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/VirtualColumnUtils.h>
+
 #include <city.h>
-#include <Storages/LazilyReadInfo.h>
 
 namespace
 {
@@ -95,7 +98,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const PrewhereInfoPtr & prewhere_info_,
     const LazilyReadInfoPtr & lazily_read_info_,
     const ExpressionActionsSettings & actions_settings_,
-    const MergeTreeReaderSettings & reader_settings_)
+    const MergeTreeReaderSettings & reader_settings_,
+    ProjectionIndexBuildContextPtr projection_index_build_context_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , prewhere_info(prewhere_info_)
@@ -108,6 +112,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , lazily_read_info(lazily_read_info_)
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), lazily_read_info, prewhere_info))
+    , projection_index_build_context(std::move(projection_index_build_context_))
 {
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
@@ -125,9 +130,17 @@ String MergeTreeSelectProcessor::getName() const
     return fmt::format("MergeTreeSelect(pool: {}, algorithm: {})", pool->getName(), algorithm->getName());
 }
 
-bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere, bool force_short_circuit_execution);
+bool tryBuildPrewhereSteps(
+    PrewhereInfoPtr prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
+    PrewhereExprInfo & prewhere,
+    bool force_short_circuit_execution);
 
-PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps, bool force_short_circuit_execution)
+PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
+    PrewhereInfoPtr prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
+    bool enable_multiple_prewhere_read_steps,
+    bool force_short_circuit_execution)
 {
     PrewhereExprInfo prewhere_actions;
     if (prewhere_info)
@@ -271,6 +284,107 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
     return {Chunk(), 0, 0, true};
 }
 
+ProjectionIndexReader::ProjectionIndexReader(
+    ProjectionDescriptionRawPtr projection_,
+    std::shared_ptr<MergeTreeReadPoolProjectionIndex> pool,
+    PrewhereInfoPtr prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
+    const MergeTreeReaderSettings & reader_settings)
+    : projection(projection_)
+    , projection_index_read_pool(std::move(pool))
+    , processor(std::make_unique<MergeTreeSelectProcessor>(
+          std::static_pointer_cast<IMergeTreeReadPool>(projection_index_read_pool),
+          std::make_unique<MergeTreeProjectionIndexSelectAlgorithm>(),
+          std::move(prewhere_info),
+          nullptr/*lazily_read_info*/,
+          actions_settings,
+          reader_settings))
+{
+}
+
+ProjectionIndexBitmapPtr
+ProjectionIndexReader::getOrBuildProjectionIndexBitmapFromRanges(const RangesInDataPart & ranges) const
+{
+    return projection_index_read_pool->getProjectionIndexBitmap(
+        ranges.data_part,
+        [&]() -> ProjectionIndexBitmapPtr
+        {
+            bool can_use_32bit_part_offset = ranges.parent_ranges.max_part_offset <= std::numeric_limits<UInt32>::max();
+
+            /// Prepare the read processor with the current part and its read ranges.
+            /// This sets up internal state needed to read the projection data.
+            assert_cast<MergeTreeProjectionIndexSelectAlgorithm &>(*processor->algorithm).preparePartToRead(&ranges);
+            auto res = can_use_32bit_part_offset ? ProjectionIndexBitmap::create32() : ProjectionIndexBitmap::create64();
+
+            /// Start reading chunks from the projection index reader.
+            /// Each chunk contains a column of UInt64 offsets that we insert into the bitmap.
+            while (true)
+            {
+                auto chunk = processor->read();
+                if (chunk.chunk)
+                {
+                    if (chunk.chunk.getNumRows() > 0)
+                    {
+                        chassert(chunk.chunk.getColumns().size() == 1);
+                        auto offset_column = chunk.chunk.getColumns()[0]->convertToFullIfNeeded();
+                        const auto & offsets = assert_cast<const ColumnUInt64 &>(*offset_column);
+
+                        auto add_offsets = [&]<typename Offset>(Offset)
+                        {
+                            if (ranges.parent_ranges.isContiguousFullRange())
+                            {
+                                for (auto offset : offsets.getData())
+                                    res->add<Offset>(offset);
+                            }
+                            else
+                            {
+                                for (auto offset : offsets.getData())
+                                {
+                                    if (ranges.parent_ranges.contains(offset))
+                                        res->add<Offset>(offset);
+                                }
+                            }
+                        };
+                        if (can_use_32bit_part_offset)
+                            add_offsets(UInt32{});
+                        else
+                            add_offsets(UInt64{});
+                    }
+                }
+
+                if (chunk.is_finished)
+                    break;
+            }
+
+            /// If the read was cancelled, return nullptr to avoid using an incomplete index bitmap.
+            if (processor->is_cancelled)
+                return nullptr;
+            else
+                return res;
+        });
+}
+
+void ProjectionIndexReader::cleanupProjectionIndexBitmap(const RangesInDataPart & ranges) const
+{
+    projection_index_read_pool->cleanupProjectionIndexBitmap(ranges.data_part);
+}
+
+void ProjectionIndexReader::cancel() const noexcept
+{
+    processor->cancel();
+}
+
+/// Cancels all internal operations for this select processor, including cancelling any ongoing projection index reads.
+void MergeTreeSelectProcessor::cancel() noexcept
+{
+    is_cancelled = true;
+    if (projection_index_build_context)
+    {
+        for (auto && [_, reader] : projection_index_build_context->readers)
+            reader.cancel();
+    }
+}
+
 void MergeTreeSelectProcessor::initializeReadersChain()
 {
     PrewhereExprInfo all_prewhere_actions;
@@ -281,7 +395,53 @@ void MergeTreeSelectProcessor::initializeReadersChain()
     for (const auto & step : prewhere_actions.steps)
         all_prewhere_actions.steps.push_back(step);
 
-    task->initializeReadersChain(all_prewhere_actions, read_steps_performance_counters);
+    /// Optionally initialize the projection index bitmap builder for the current read task. If the build context exists
+    /// and contains relevant read ranges for the current part, build a lazy bitmap builder that will retrieve or
+    /// construct projection index bitmaps for all involved projections. These bitmaps will later be used to filter rows
+    /// during the first reading step.
+    ProjectionIndexBitmapsBuilder projection_index_builder;
+    if (projection_index_build_context)
+    {
+        auto it = projection_index_build_context->read_ranges.find(task->getInfo().part_index_in_query);
+        auto & remaining_marks = projection_index_build_context->part_remaining_marks.at(task->getInfo().part_index_in_query).value;
+        if (it != projection_index_build_context->read_ranges.end())
+        {
+            projection_index_builder = [this, &projection_index_all_ranges = it->second, &remaining_marks]() -> ProjectionIndexBitmaps
+            {
+                ProjectionIndexBitmaps bitmaps;
+                for (const auto & ranges : projection_index_all_ranges)
+                {
+                    const auto & proj_name = ranges.data_part->name;
+                    const auto & reader = projection_index_build_context->readers.at(proj_name);
+                    auto res = reader.getOrBuildProjectionIndexBitmapFromRanges(ranges);
+
+                    /// If any bitmap is incomplete (due to cancellation), the projection index becomes invalid.
+                    if (!res)
+                        return {};
+                    bitmaps.emplace_back(res);
+                }
+
+                /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
+                /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
+                /// cleanup of any per-part cached resources (e.g., projection index bitmap).
+                size_t task_marks = task->getNumMarksToRead();
+                bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
+
+                if (part_last_task)
+                {
+                    for (const auto & ranges : projection_index_all_ranges)
+                    {
+                        const auto & proj_name = ranges.data_part->name;
+                        const auto & reader = projection_index_build_context->readers.at(proj_name);
+                        reader.cleanupProjectionIndexBitmap(ranges);
+                    }
+                }
+                return bitmaps;
+            };
+        }
+    }
+
+    task->initializeReadersChain(all_prewhere_actions, read_steps_performance_counters, projection_index_builder);
 }
 
 void MergeTreeSelectProcessor::injectLazilyReadColumns(
@@ -311,7 +471,9 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
     for (auto column_with_type_and_name : lazily_read_info->lazily_read_columns)
     {
         if (create_empty_column_lazy)
+        {
             column_with_type_and_name.column = ColumnLazy::create(columns[0]->size());
+        }
         else
         {
             column_with_type_and_name.column = ColumnLazy::create(columns);
@@ -337,6 +499,10 @@ Block MergeTreeSelectProcessor::transformHeader(
 static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
 {
     WriteBufferFromOwnString out;
+    const auto & projection_index_counter = counters.getProjectionIndexCounter();
+    if (projection_index_counter)
+        out << fmt::format("projection index step rows_read: {}, ", projection_index_counter->rows_read.load());
+
     const auto & all_counters = counters.getCounters();
     for (size_t i = 0; i < all_counters.size(); ++i)
     {
