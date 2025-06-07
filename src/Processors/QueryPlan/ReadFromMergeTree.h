@@ -338,6 +338,8 @@ public:
     size_t getMaxBlockSize() const { return block_size.max_block_size_rows; }
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
+    const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const { return getAnalysisResultImpl(); }
+    ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
@@ -488,8 +490,6 @@ private:
         std::optional<ActionsDAG> & out_projection);
 
     ReadFromMergeTree::AnalysisResult & getAnalysisResultImpl() const;
-    const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const { return getAnalysisResultImpl(); }
-    ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
 
     int getSortDirection() const;
     void updateSortDescription();
