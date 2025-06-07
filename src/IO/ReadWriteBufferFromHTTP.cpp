@@ -245,15 +245,9 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
         http_header_entries.emplace_back(user_agent, fmt::format("ClickHouse/{}{}", VERSION_STRING, VERSION_OFFICIAL));
     }
 
-    if (!delay_initialization && use_external_buffer)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Invalid setting for ReadWriteBufferFromHTTP"
-            "delay_initialization is false and use_external_buffer it true.");
-
     if (!delay_initialization)
     {
-        next();
+        initialize();
     }
 }
 
@@ -399,7 +393,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 }
 
 
-std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
+std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::createReadBuffer()
 {
     Poco::Net::HTTPResponse response;
 
@@ -457,6 +451,20 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
     return std::move(result).transformToReadBuffer(use_external_buffer ? 0 : buffer_size);
 }
 
+void ReadWriteBufferFromHTTP::initialize()
+{
+    impl = createReadBuffer();
+
+    if (use_external_buffer)
+    {
+        impl->set(internal_buffer.begin(), internal_buffer.size());
+    }
+    else
+    {
+        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+    }
+}
+
 bool ReadWriteBufferFromHTTP::nextImpl()
 {
     if (next_callback)
@@ -467,11 +475,22 @@ bool ReadWriteBufferFromHTTP::nextImpl()
     doWithRetries(
         /*callable=*/ [&] ()
         {
-            if (!impl)
+            if (impl)
+            {
+                if (use_external_buffer)
+                {
+                    impl->set(internal_buffer.begin(), internal_buffer.size());
+                }
+                else
+                {
+                    impl->position() = position();
+                }
+            }
+            else
             {
                 try
                 {
-                    impl = initialize();
+                    initialize();
                 }
                 catch (HTTPException & e)
                 {
@@ -484,24 +503,6 @@ bool ReadWriteBufferFromHTTP::nextImpl()
 
                     throw;
                 }
-
-                if (use_external_buffer)
-                {
-                    impl->set(internal_buffer.begin(), internal_buffer.size());
-                }
-                else
-                {
-                    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
-                }
-            }
-
-            if (use_external_buffer)
-            {
-                impl->set(internal_buffer.begin(), internal_buffer.size());
-            }
-            else
-            {
-                impl->position() = position();
             }
 
             next_result = impl->next();

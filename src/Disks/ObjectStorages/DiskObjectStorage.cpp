@@ -754,9 +754,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const bool use_external_buffer_for_gather = use_async_buffer || use_page_cache;
 
     auto read_buffer_creator =
-        [this, read_settings, read_hint, file_size]
+        [this, read_settings, read_hint, file_size, is_nested = (storage_objects.size() > 1) || use_async_buffer || use_page_cache]
         (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
     {
+        read_settings.remote_read_buffer_use_external_buffer = is_nested;
         read_settings.remote_read_buffer_restrict_seek = restricted_seek;
         return object_storage->readObject(object_, read_settings, read_hint, file_size);
     };
@@ -777,12 +778,19 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         buffer_size = std::min(buffer_size, total_objects_size);
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
-    impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        storage_objects,
-        read_settings,
-        use_external_buffer_for_gather,
-        /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
+    if (storage_objects.size() > 1)
+    {
+        impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+            std::move(read_buffer_creator),
+            storage_objects,
+            read_settings,
+            use_external_buffer_for_gather,
+            /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
+    }
+    else
+    {
+        impl = read_buffer_creator(false, storage_objects[0]);
+    }
 
     if (use_page_cache)
     {
