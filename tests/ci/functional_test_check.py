@@ -326,6 +326,9 @@ def main():
         pr_info, stopwatch.start_time_str, check_name
     )
 
+    # Remove leftover container from a previous run, if it exists
+    Shell.check("docker rm -f func-tester 2>/dev/null || true")
+
     if (not validate_bugfix_check and not flaky_check) or tests_to_run:
         run_command = get_run_command(
             check_name,
