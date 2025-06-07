@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
+    extern const int LIMIT_EXCEEDED;
 }
 
 size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
@@ -242,6 +243,13 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 
     if (!partition_by_description.empty() && threads > 1)
     {
+        /// We are going to shuffle the data from streams to threads. This will create (threads * streams) connections in the pipeline.
+        /// Let's limit this by some sane value to avoid explosion.
+        const size_t connection_count_limit = 1000000;
+        if (threads * streams > connection_count_limit)
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
+                threads, streams, connection_count_limit);
+
         Block stream_header = pipeline.getHeader();
 
         ColumnNumbers key_columns;
