@@ -61,9 +61,11 @@ public:
     }
 
 private:
-    void onRemoveOverflowWeightLoss(size_t weight_loss) override
+    /// Called for each individual cell being evicted from cache
+    void onValueRemoval(const MappedPtr & mappedPtr) override
     {
-        ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, weight_loss);
+        ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost);
+        UNUSED(mappedPtr);
     }
 };
 
