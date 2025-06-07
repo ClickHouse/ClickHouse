@@ -4,6 +4,7 @@
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -888,7 +889,7 @@ void LocalServer::processConfig()
 #endif
 
     NamedCollectionFactory::instance().loadIfNot();
-    FileCacheFactory::instance().loadDefaultCaches(config());
+    FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
     /// NOTE: it is important to apply any overrides before
     /// `setDefaultProfiles` calls since it will copy current context (i.e.
@@ -1044,7 +1045,7 @@ void LocalServer::addExtraOptions(OptionsDescription & options_description)
 
 void LocalServer::applyCmdSettings(ContextMutablePtr context)
 {
-    context->applySettingsChanges(cmd_settings.changes());
+    context->applySettingsChanges(cmd_settings->changes());
 }
 
 

@@ -307,12 +307,12 @@ bool DatabaseDataLake::isTableExist(const String & name, ContextPtr /* context_ 
     return getCatalog()->existsTable(namespace_name, table_name);
 }
 
-StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context_) const
+StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context_)  const
 {
-    return tryGetTableImpl(name, context_, false);
+    return tryGetTableImpl(name, context_, false, false);
 }
 
-StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight) const
+StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg) const
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
@@ -324,6 +324,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     auto [namespace_name, table_name] = parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
+        return nullptr;
+
+    if (ignore_if_not_iceberg && !table_metadata.isDefaultReadableTable())
         return nullptr;
 
     if (!lightweight && !table_metadata.isDefaultReadableTable())
@@ -446,7 +449,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool /* skip_not_loaded */) const
+    bool skip_not_loaded) const
 {
     Tables tables;
     auto catalog = getCatalog();
@@ -457,7 +460,11 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        auto storage = tryGetTable(table_name, context_);
+        auto storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
+
+        if (storage == nullptr)
+            continue;
+
         [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
         chassert(inserted);
     }
@@ -468,7 +475,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool /*skip_not_loaded*/) const
+    bool skip_not_loaded) const
 {
      Tables tables;
     auto catalog = getCatalog();
@@ -488,7 +495,10 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
         /// have this try/catch here.
         try
         {
-            auto storage = tryGetTableImpl(table_name, context_, true);
+            auto storage = tryGetTableImpl(table_name, context_, true, skip_not_loaded);
+            if (storage == nullptr)
+                continue;
+
             [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
             chassert(inserted);
         }

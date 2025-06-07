@@ -1,31 +1,27 @@
-set(USE_CHDIG_DEFAULT ${ENABLE_RUST})
+set(ENABLE_CHDIG_DEFAULT ${ENABLE_RUST})
 # SANITIZE            - Some issues with undefined symbols
 # NO_ARMV81_OR_HIGHER - Disabled because ring assumes that Neon is available with ARM
 # ENABLE_CLANG_TIDY   - clang-tidy knows nothing about Rust, plus chdig requires some libraries that are not generated due to dummy launcher (this can be fixed, but what for, let's simply disable it under tidy)
 # OS_DARWIN           - Uses default linker (over lld)
 # OS_FREEBSD          - Rust adds bunch of extra libraries as dependencies
 # ARCH_PPC64LE        - Does not have Scrt1.o
-if (USE_CHDIG_DEFAULT AND (SANITIZE OR NO_ARMV81_OR_HIGHER OR ENABLE_CLANG_TIDY OR OS_DARWIN OR OS_FREEBSD OR ARCH_PPC64LE))
+if (ENABLE_CHDIG_DEFAULT AND (SANITIZE OR NO_ARMV81_OR_HIGHER OR ENABLE_CLANG_TIDY OR OS_DARWIN OR OS_FREEBSD OR ARCH_PPC64LE))
     message(STATUS "Environment is not compatible with chdig. Disabling.")
-    set(USE_CHDIG_DEFAULT OFF)
+    set(ENABLE_CHDIG_DEFAULT OFF)
 endif()
-option(USE_CHDIG "Use chdig" ${USE_CHDIG_DEFAULT})
+option(ENABLE_CHDIG "Use chdig" ${ENABLE_CHDIG_DEFAULT})
 
-if (NOT USE_CHDIG)
+# Explicitly check for ENABLE_RUST one more time if it was enabled before, but now disabled, i.e.
+#
+#   cmake -DENABLE_RUST=1
+#   cmake -DENABLE_RUST=0
+if (NOT ENABLE_CHDIG OR NOT ENABLE_RUST)
     message(STATUS "Not using chdig")
     return()
 endif()
 
 clickhouse_import_crate(MANIFEST_PATH ../chdig/Cargo.toml ALL_FEATURES CRATE_TYPES bin)
 clickhouse_config_crate_flags(chdig)
-
-# See [1] for more details, but basically:
-# - we need to explicitly set CXXSTDLIB to avoid using of libstdc++
-# - link with the library explicitly to add search path (-L)
-#
-#   [1]: https://github.com/rust-lang/cc-rs/blob/7666d4f4f36d3bcacce9ab72fc6538fcc0ea1716/src/lib.rs#L762-L775
-corrosion_set_env_vars(chdig "CXXSTDLIB=cxx")
-corrosion_link_libraries(chdig cxx)
 
 corrosion_link_libraries(chdig unwind)
 

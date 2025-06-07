@@ -296,6 +296,7 @@
     \
     M(MergingSortedMilliseconds, "Total time spent while merging sorted columns", ValueType::Milliseconds) \
     M(AggregatingSortedMilliseconds, "Total time spent while aggregating sorted columns", ValueType::Milliseconds) \
+    M(CoalescingSortedMilliseconds, "Total time spent while coalescing sorted columns", ValueType::Milliseconds) \
     M(CollapsingSortedMilliseconds, "Total time spent while collapsing sorted columns", ValueType::Milliseconds) \
     M(ReplacingSortedMilliseconds, "Total time spent while replacing sorted columns", ValueType::Milliseconds) \
     M(SummingSortedMilliseconds, "Total time spent while summing sorted columns", ValueType::Milliseconds) \
@@ -597,7 +598,9 @@ The server successfully detected this situation and will download merged part fr
     \
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata", ValueType::Microseconds) \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
+    M(FilesystemCacheCreatedKeyDirectories, "Number of created key directories", ValueType::Bytes) \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache", ValueType::Number) \
+    M(FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease, "Number of file segments evicted from filesystem cache when increasing priority of file segments (Applies to SLRU cache policy)", ValueType::Number) \
     M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \
@@ -1030,6 +1033,7 @@ The server successfully detected this situation and will download merged part fr
     M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
     M(IndexBinarySearchAlgorithm, "Number of times the binary search algorithm is used over the index marks", ValueType::Number) \
     M(IndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the index marks", ValueType::Number) \
+    M(ParallelReplicasQueryCount, "Number of (sub)queries executed using parallel replicas during a query execution", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
