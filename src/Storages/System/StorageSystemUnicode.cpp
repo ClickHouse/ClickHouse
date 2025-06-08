@@ -26,7 +26,7 @@
 #include <unicode/uversion.h>
 #include <unicode/ustring.h>
 
-namespace DB                
+namespace DB
 {
 
 std::vector<std::pair<String, UProperty>> getPropNames()
