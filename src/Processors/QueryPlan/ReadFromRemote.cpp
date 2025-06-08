@@ -64,6 +64,7 @@ namespace Setting
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
+    extern const SettingsBool parallel_replicas_wait_for_unused_replicas;
 }
 
 namespace ErrorCodes
@@ -924,19 +925,23 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
         pipes.emplace_back(std::move(pipe));
     }
 
-    coordinator->setReadCompletedCallback(
-        [sources = std::move(remote_sources)](const std::set<size_t> & used_replicas)
-        {
-            for (const auto & [replica_num, processor] : sources)
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::parallel_replicas_wait_for_unused_replicas])
+    {
+        coordinator->setReadCompletedCallback(
+            [sources = std::move(remote_sources)](const std::set<size_t> & used_replicas)
             {
-                if (used_replicas.contains(replica_num))
-                    continue;
+                for (const auto & [replica_num, processor] : sources)
+                {
+                    if (used_replicas.contains(replica_num))
+                        continue;
 
-                auto proc = processor.lock();
-                if (proc)
-                    proc->cancel();
-            }
-        });
+                    auto proc = processor.lock();
+                    if (proc)
+                        proc->cancel();
+                }
+            });
+    }
 
     return pipes;
 }

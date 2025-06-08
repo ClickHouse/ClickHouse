@@ -74,6 +74,7 @@ def test_skip_replicas_without_table(start_cluster):
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": cluster_name,
                 "log_comment": log_comment,
+                "parallel_replicas_wait_for_unused_replicas": True,
             },
         )
         == expected_result

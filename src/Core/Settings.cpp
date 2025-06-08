@@ -6431,6 +6431,9 @@ Use local pipeline during distributed INSERT SELECT with parallel replicas
     DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
 The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 )", BETA) \
+    DECLARE(Bool, parallel_replicas_wait_for_unused_replicas, false, R"(
+Wait for unused replicas even if all read tasks have been assigned to other replicas. Useful for testing
+)", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
 )", 0) \
