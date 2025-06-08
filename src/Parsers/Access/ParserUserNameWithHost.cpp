@@ -1,3 +1,4 @@
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
@@ -32,7 +33,22 @@ bool parseUserNameWithHost(
             }
             else if (ParserStringLiteral{}.parse(pos, name_ast, expected))
             {
-                if (name_ast->as<ASTLiteral &>().value.safeGet<String>().empty())
+                auto name = name_ast->as<ASTLiteral &>().value.safeGet<String>();
+
+                if (name.empty())
+                    return false;
+
+                // If somebody tried to use query parameter by putting it into a string literal my mistake, e.g.
+                //     CREATE USER '{name:Identifier}@192.168.%.%', '{name:Identifier}';
+                // they would end up with not intended users in their system because string literals are parsed as is.
+                // For preventing this kind of mistakes we parse string literals and allow only identifiers without parameters.
+                Tokens tokens(name.data(), name.data() + name.size(), 0, false);
+                IParser::Pos literal_check_pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+                Expected literal_check_expected;
+                ASTPtr literal_check_ast;
+                if (ParserIdentifier(allow_query_parameter = true).parse(literal_check_pos, literal_check_ast, literal_check_expected)
+                    && literal_check_ast->as<ASTIdentifier &>().isParam())
                     return false;
             }
             else
