@@ -63,6 +63,7 @@ def test_increase_error_count(start_cluster):
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": cluster_name,
+                "parallel_replicas_wait_for_unused_replicas" : True,
             },
         )
         == expected_result
