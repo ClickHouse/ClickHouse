@@ -82,6 +82,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("backslash", "add a backslash at the end of each line of the formatted query")
             ("allow_settings_after_format_in_insert", "Allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
+            ("show_secrets", po::bool_switch()->default_value(false), "show secret values like passwords, API keys, etc.")
         ;
 
         Settings cmd_settings;
@@ -107,6 +108,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool obfuscate = options.count("obfuscate");
         bool backslash = options.count("backslash");
         bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
+        bool show_secrets = options["show_secrets"].as<bool>();
 
         std::function<void(std::string_view)> comments_callback;
         if (options.count("comments"))
@@ -257,7 +259,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         WriteBufferFromOwnString str_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
                         IAST::FormatSettings settings(oneline_current_query, hilite);
-                        settings.show_secrets = true;
+                        settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
                         res->format(str_buf, settings);
 
