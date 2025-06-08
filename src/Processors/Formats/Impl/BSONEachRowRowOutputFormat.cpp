@@ -546,6 +546,7 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
         { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
     factory.markOutputFormatNotTTYFriendly("BSONEachRow");
+    factory.setContentType("BSONEachRow", "application/octet-stream");
 }
 
 }
