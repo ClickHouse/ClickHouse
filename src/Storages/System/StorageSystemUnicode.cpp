@@ -26,7 +26,7 @@
 #include <unicode/uversion.h>
 #include <unicode/ustring.h>
 
-namespace DB
+namespace DB                
 {
 
 std::vector<std::pair<String, UProperty>> getPropNames()
@@ -158,7 +158,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
 
     // Common buffers/err_code used for ICU API calls
     UChar buffer[32];
-    char char_buffer[80];
+    char char_name_buffer[100];
     UErrorCode err_code;
 
     auto prop_names = getPropNames();
@@ -271,8 +271,8 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
             }
             else if (prop == UCHAR_NAME)
             {
-                auto len = u_charName(code, U_UNICODE_CHAR_NAME, char_buffer, 32, &err_code);
-                ret.assign(char_buffer, len);
+                auto len = u_charName(code, U_UNICODE_CHAR_NAME, char_name_buffer, sizeof(char_name_buffer), &err_code);
+                ret.assign(char_name_buffer, len);
             }
             else if (prop == UCHAR_SIMPLE_CASE_FOLDING)
             {
