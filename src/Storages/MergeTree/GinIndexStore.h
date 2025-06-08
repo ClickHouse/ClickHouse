@@ -177,8 +177,13 @@ private:
     /// Initialize segment ID by either reading from file .gin_sid or setting to default value
     void initSegmentId();
 
+    /// Stores segment id into disk
+    void writeSegmentId();
+
     /// Get a range of next available segment IDs
     UInt32 getNextSegmentIDRange(size_t n);
+
+    void verifyFormatVersionIsSupported(size_t version);
 
     String name;
     DataPartStoragePtr storage;
@@ -189,7 +194,7 @@ private:
     std::mutex mutex;
 
     /// Not thread-safe, protected by mutex
-    std::optional<UInt32> next_available_segment_id = std::nullopt;
+    UInt32 next_available_segment_id = 0;
 
     /// Dictionaries indexed by segment ID
     using GinSegmentDictionaries = std::unordered_map<UInt32, GinSegmentDictionaryPtr>;

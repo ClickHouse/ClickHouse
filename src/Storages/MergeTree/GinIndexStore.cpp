@@ -165,18 +165,25 @@ bool GinIndexStore::exists() const
     return storage->existsFile(segment_id_file_name);
 }
 
+void GinIndexStore::verifyFormatVersionIsSupported(size_t version)
+{
+    if (version != static_cast<std::underlying_type_t<Format>>(CURRENT_GIN_FILE_FORMAT_VERSION))
+        throw Exception(
+            ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "Unsupported text index version: expected version {}, but got {}",
+            CURRENT_GIN_FILE_FORMAT_VERSION,
+            version);
+}
+
 UInt32 GinIndexStore::getNextSegmentIDRange(size_t n)
 {
     std::lock_guard guard(mutex);
 
-    /// We cannot directly use file system to read and update the segment id,
-    /// because packed storage do not support reading value from the uncommitted file.
-    /// To avoid it, we can store the segment id internally and save to disk only once finalized.
-    if (!next_available_segment_id.has_value())
+    if (next_available_segment_id == 0)
         initSegmentId();
 
-    UInt32 segment_id = next_available_segment_id.value();
-    *next_available_segment_id += n;
+    UInt32 segment_id = next_available_segment_id;
+    next_available_segment_id += n;
     return segment_id;
 }
 
@@ -208,8 +215,7 @@ UInt32 GinIndexStore::getNumOfSegments()
         uint8_t version = 0;
         readBinary(version, *istr);
 
-        if (version > static_cast<std::underlying_type_t<Format>>(CURRENT_GIN_FILE_FORMAT_VERSION))
-            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported full-text index version {}", version);
+        verifyFormatVersionIsSupported(version);
 
         readVarUInt(result, *istr);
     }
@@ -227,20 +233,9 @@ bool GinIndexStore::needToWrite() const
 void GinIndexStore::finalize()
 {
     if (!current_postings.empty())
-        writeSegment();
-
-    // If next available segment id has value, then the value has to be saved to disk again with the updated segment id
-    if (next_available_segment_id.has_value())
     {
-        String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(segment_id_file_name, 8, {});
-
-        /// Write version
-        writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
-
-        writeVarUInt(next_available_segment_id.value(), *ostr);
-        ostr->sync();
-        ostr->finalize();
+        writeSegment();
+        writeSegmentId();
     }
 
     if (metadata_file_stream)
@@ -269,7 +264,7 @@ void GinIndexStore::initSegmentId()
 {
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
 
-    UInt32 result;
+    UInt32 segment_id;
     if (storage->existsFile(segment_id_file_name))
     {
         std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt, std::nullopt);
@@ -277,15 +272,14 @@ void GinIndexStore::initSegmentId()
         uint8_t version = 0;
         readBinary(version, *istr);
 
-        if (version > static_cast<std::underlying_type_t<Format>>(CURRENT_GIN_FILE_FORMAT_VERSION))
-            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported full-text index version {}", version);
+        verifyFormatVersionIsSupported(version);
 
-        readVarUInt(result, *istr);
+        readVarUInt(segment_id, *istr);
     }
     else
-        result = 1;
+        segment_id = 1;
 
-    next_available_segment_id = result;
+    next_available_segment_id = segment_id;
 }
 
 void GinIndexStore::initFileStreams()
@@ -297,6 +291,19 @@ void GinIndexStore::initFileStreams()
     metadata_file_stream = data_part_storage_builder->writeFile(metadata_file_name, 4096, WriteMode::Append, {});
     dict_file_stream = data_part_storage_builder->writeFile(dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+}
+
+void GinIndexStore::writeSegmentId()
+{
+    String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
+    std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(segment_id_file_name, 8, {});
+
+    /// Write version
+    writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
+
+    writeVarUInt(next_available_segment_id, *ostr);
+    ostr->sync();
+    ostr->finalize();
 }
 
 void GinIndexStore::writeSegment()
