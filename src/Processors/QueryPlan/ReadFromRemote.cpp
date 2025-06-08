@@ -64,7 +64,6 @@ namespace Setting
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
-    extern const SettingsBool parallel_replicas_wait_for_unused_replicas;
 }
 
 namespace ErrorCodes
