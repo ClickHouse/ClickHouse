@@ -36,7 +36,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_sasl_mechanism;
     extern const KafkaSettingsString kafka_sasl_username;
     extern const KafkaSettingsString kafka_sasl_password;
-    extern const KafkaSettingsString kafka_autodetect_client_rack;
+    extern const KafkaSettingsBool kafka_autodetect_client_rack;
 }
 
 namespace ErrorCodes
@@ -365,12 +365,16 @@ void updateGlobalConfiguration(
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
         kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
 
-    if (kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value == "MSK")
+    if (kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value)
     {
         std::string rack = S3::tryGetRunningAvailabilityZone(true /*zone-id */);
-        kafka_config.set("client.rack", rack);
-        LOG_TRACE(params.log, "client.rack set to {}.", rack);
-
+        if (!rack.empty())
+        {
+            kafka_config.set("client.rack", rack);
+            LOG_TRACE(params.log, "client.rack set to {}.", rack);
+        }
+        else
+            LOG_ERROR(params.log, "Failed to deeermine client.rack.");
     }
 
 #if USE_KRB5
