@@ -14,7 +14,8 @@ namespace DB
 
 namespace
 {
-bool parseUserNameWithHost(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTUserNameWithHost> & ast_)
+bool parseUserNameWithHost(
+    IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTUserNameWithHost> & ast_, bool allow_query_parameter)
 {
     return IParserBase::wrapParseImpl(
         pos,
@@ -23,7 +24,7 @@ bool parseUserNameWithHost(IParserBase::Pos & pos, Expected & expected, std::sha
             ASTPtr name_ast;
             String host_pattern;
 
-            if (ParserIdentifier(/*allow_query_parameter_=*/true).parse(pos, name_ast, expected))
+            if (ParserIdentifier(allow_query_parameter).parse(pos, name_ast, expected))
             {
                 if (ParserToken{TokenType::At}.ignore(pos, expected))
                     if (!parseIdentifierOrStringLiteral(pos, expected, host_pattern) || host_pattern.empty())
@@ -51,11 +52,16 @@ bool parseUserNameWithHost(IParserBase::Pos & pos, Expected & expected, std::sha
 bool ParserUserNameWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     std::shared_ptr<ASTUserNameWithHost> res;
-    if (!parseUserNameWithHost(pos, expected, res))
+    if (!parseUserNameWithHost(pos, expected, res, allow_query_parameter))
         return false;
 
     node = res;
     return true;
+}
+
+ParserUserNameWithHost::ParserUserNameWithHost(bool allow_query_parameter_)
+    : allow_query_parameter(allow_query_parameter_)
+{
 }
 
 
@@ -66,7 +72,7 @@ bool ParserUserNamesWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     auto parse_single_name = [&]
     {
         std::shared_ptr<ASTUserNameWithHost> ast;
-        if (!parseUserNameWithHost(pos, expected, ast))
+        if (!parseUserNameWithHost(pos, expected, ast, allow_query_parameter))
             return false;
 
         names.emplace_back(std::move(ast));
@@ -80,6 +86,11 @@ bool ParserUserNamesWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     result->children = std::move(names);
     node = result;
     return true;
+}
+
+ParserUserNamesWithHost::ParserUserNamesWithHost(bool allow_query_parameter_)
+    : allow_query_parameter(allow_query_parameter_)
+{
 }
 
 }

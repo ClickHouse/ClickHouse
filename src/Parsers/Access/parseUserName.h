@@ -11,10 +11,11 @@ namespace DB
 /// The `host` can be an ip address, ip subnet, or a host name.
 /// The % and _ wildcard characters are permitted in `host`.
 /// These have the same meaning as for pattern-matching operations performed with the LIKE operator.
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name);
+/// It supports query parameters if 'allow_query_parameter' is true, but not in 'host' part.
+bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_nameo, bool allow_query_parameter = false);
 
 /// Parses a comma-separated list of user names.
-bool parseUserNames(IParser::Pos & pos, Expected & expected, Strings & user_names);
+bool parseUserNames(IParser::Pos & pos, Expected & expected, Strings & user_names, bool allow_query_parameter = false);
 
 
 /// Parses either the 'CURRENT_USER' keyword (or some of its aliases).
