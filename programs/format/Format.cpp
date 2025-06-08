@@ -80,7 +80,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("multiquery,n", "allow multiple queries in the same file")
             ("obfuscate", "obfuscate instead of formatting")
             ("backslash", "add a backslash at the end of each line of the formatted query")
-            ("allow_settings_after_format_in_insert", "Allow SETTINGS after FORMAT, but note, that this is not always safe")
+            ("allow_settings_after_format_in_insert", "allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
             ("show_secrets", po::bool_switch()->default_value(false), "show secret values like passwords, API keys, etc.")
         ;
