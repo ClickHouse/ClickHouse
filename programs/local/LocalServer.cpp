@@ -1112,8 +1112,8 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
     {
         std::string_view arg = argv[arg_num];
 
-        /// Parameter arg after underline.
-        if (arg.starts_with("--param_"))
+        /// Parameter arg after underline or dash.
+        if (arg.starts_with("--param_") || arg.starts_with("--param-"))
         {
             auto param_continuation = arg.substr(strlen("--param_"));
             auto equal_pos = param_continuation.find_first_of('=');
