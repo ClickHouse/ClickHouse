@@ -11,7 +11,7 @@
 #endif
 
 
-namespace
+namespace // NOLINT
 {
 
 template <char... symbols>
