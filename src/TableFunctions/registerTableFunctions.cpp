@@ -42,6 +42,7 @@ void registerTableFunctions()
 
     registerTableFunctionView(factory);
     registerTableFunctionViewIfPermitted(factory);
+    registerTableFunctionCurrentGrants(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);

@@ -41,6 +41,8 @@ void registerTableFunctionJDBC(TableFunctionFactory & factory);
 void registerTableFunctionView(TableFunctionFactory & factory);
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory);
 
+void registerTableFunctionCurrentGrants(TableFunctionFactory & factory);
+
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
 #endif
