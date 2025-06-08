@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stddef.h>
-//#include <Parsers/Lexer.h>
 
 namespace DB
 {
@@ -28,35 +27,9 @@ namespace DB
     \
     M(Comma) \
     M(Semicolon) \
-    M(VerticalDelimiter)      /** Vertical delimiter \G */ \
-    M(Dot)                    /** Compound identifiers, like a.b or tuple access operator a.1, (x, y).2. */ \
-                              /** Need to be distinguished from floating point number with omitted integer part: .1 */ \
-    \
-    M(Asterisk)               /** Could be used as multiplication operator or on it's own: "SELECT *" */ \
-    \
-    M(HereDoc) \
-    \
-    M(DollarSign) \
-    M(Plus) \
     M(Minus) \
-    M(Slash) \
-    M(Percent) \
-    M(Arrow)                  /** ->. Should be distinguished from minus operator. */ \
-    M(QuestionMark) \
-    M(Colon) \
-    M(DoubleColon) \
     M(Equals) \
-    M(NotEquals) \
-    M(Less) \
-    M(Greater) \
-    M(LessOrEquals) \
-    M(GreaterOrEquals) \
-    M(Spaceship)              /** <=>. Used in MySQL for NULL-safe equality comparison. */ \
     M(PipeMark) \
-    M(Concatenation)          /** String concatenation operator: || */ \
-    \
-    M(At)                     /** @. Used for specifying user names and also for MySQL-style variables. */ \
-    M(DoubleAt)               /** @@. Used for MySQL-style global variables. */ \
     M(Tilde) \
     M(ExclamationMark) \
     \
