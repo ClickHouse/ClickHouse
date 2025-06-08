@@ -26,6 +26,8 @@ public:
         bool with_pending_data,
         const std::vector<String> & external_roles) = 0;
 
+    virtual void sendQueryPlan(const QueryPlan & query_plan) = 0;
+
     virtual void sendReadTaskResponse(const String &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
 
@@ -34,6 +36,8 @@ public:
 
     /// Version of `receivePacket` function without locking.
     virtual Packet receivePacketUnlocked(AsyncCallback async_callback) = 0;
+
+    virtual UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) = 0;
 
     /// Break all active connections.
     virtual void disconnect() = 0;

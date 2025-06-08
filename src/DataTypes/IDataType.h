@@ -1,15 +1,21 @@
 #pragma once
 
-#include <memory>
-#include <boost/noncopyable.hpp>
 #include <Core/Names.h>
 #include <Core/TypeId.h>
 #include <Common/COW.h>
-#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/Serializations/ISerialization.h>
+
+#include <memory>
+
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
+
+struct DataTypeCustomDesc;
+using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
+class IDataTypeCustomName;
+using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
 
 namespace ErrorCodes
 {
@@ -62,7 +68,7 @@ struct SerializationInfoSettings;
 class IDataType : private boost::noncopyable, public std::enable_shared_from_this<IDataType>
 {
 public:
-    IDataType() = default;
+    IDataType();
     virtual ~IDataType();
 
     /// Compile time flag. If false, then if C++ types are the same, then SQL types are also the same.
@@ -72,19 +78,9 @@ public:
     /// static constexpr bool is_parametric = false;
 
     /// Name of data type (examples: UInt64, Array(String)).
-    String getName() const
-    {
-        if (custom_name)
-            return custom_name->getName();
-        return doGetName();
-    }
+    String getName() const;
 
-    String getPrettyName(size_t indent = 0) const
-    {
-        if (custom_name)
-            return custom_name->getName();
-        return doGetPrettyName(indent);
-    }
+    String getPrettyName(size_t indent = 0) const;
 
     DataTypePtr getPtr() const { return shared_from_this(); }
 
@@ -342,14 +338,14 @@ protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
 
-    /// Customize this DataType
-    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
-
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable SerializationPtr custom_serialization;
 
 public:
+    /// Customize this DataType
+    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
+
     bool hasCustomName() const { return static_cast<bool>(custom_name.get()); }
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
@@ -366,7 +362,7 @@ protected:
         bool throw_if_null) const
     {
         if (throw_if_null)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData() is not implemented for type {}", getName());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData is not implemented for type {}", getName());
         return nullptr;
     }
 };

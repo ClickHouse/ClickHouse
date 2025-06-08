@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/MergeType.h>
 
 #include <Storages/StorageInMemoryMetadata.h>
@@ -16,6 +15,9 @@ struct MergeSelectorChoice
 {
     PartsRange range;
     MergeType merge_type;
+
+    /// If this merges down to a single part in a partition
+    bool final = false;
 };
 
 class MergeSelectorApplier

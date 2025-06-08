@@ -47,6 +47,10 @@ public:
     {
         WhichDataType which{arguments.back()};
 
+        if (params.size() < 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Incorrect number of parameters for aggregate function with {} suffix", getName());
+
         if (which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
         {
             UInt64 begin = params[params.size() - 3].safeGet<UInt64>();

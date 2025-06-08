@@ -5,6 +5,7 @@
 #include <mutex>
 #include <optional>
 #include <filesystem>
+#include <variant>
 
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -28,11 +29,34 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <azure/core/credentials/credentials.hpp>
+#include <azure/storage/common/storage_credential.hpp>
+#include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
+
+namespace DB::AzureBlobStorage
+{
+class ContainerClientWrapper;
+using ContainerClient = ContainerClientWrapper;
+
+using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
+
+using AuthMethod = std::variant<
+    ConnectionString,
+    std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
+    std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
+    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
+
+}
+
+
 #endif
 
 #if USE_AWS_S3
-#include <IO/S3/Client.h>
+namespace DB::S3
+{
+class Client;
+}
 #endif
 
 namespace DB
@@ -113,6 +137,10 @@ public:
 
     virtual ObjectStorageType getType() const = 0;
 
+    /// The logical root or base path used to group a set of related objects.
+    virtual std::string getRootPrefix() const { return ""; }
+
+    /// Common object key prefix relative to the root path.
     virtual std::string getCommonKeyPrefix() const = 0;
 
     virtual std::string getDescription() const = 0;
@@ -227,6 +255,10 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
     }
 
+    /// Returns whether this object storage generates a random blob name for each object.
+    /// This function returns false if this object storage just adds some constant string to a passed path to generate a blob name.
+    virtual bool areObjectKeysRandom() const = 0;
+
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
 
@@ -249,6 +281,11 @@ public:
 
 #if USE_AZURE_BLOB_STORAGE
     virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
+    }
+
+    virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }

@@ -1,21 +1,14 @@
 #include "Client.h"
-#include <cstdlib>
-#include <iomanip>
-#include <iostream>
-#include <optional>
-#include <string>
-#include <fcntl.h>
+#include <Client/ConnectionString.h>
+#include <Core/Protocol.h>
+#include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/ThreadStatus.h>
-#include "Client/ConnectionString.h"
-#include "Core/Protocol.h"
-#include "Parsers/formatAST.h"
 
 #include <Access/AccessControl.h>
 
 #include <Columns/ColumnString.h>
-#include <Core/Settings.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
@@ -26,18 +19,27 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
 
+#include <Storages/MergeTree/MergeTreeSettings.h>
+
 #include <Poco/Util/Application.h>
 
+#include <filesystem>
+
 #include "config.h"
+
+#if USE_BUZZHOUSE
+#   include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#   include <Client/BuzzHouse/Generator/FuzzConfig.h>
+#endif
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -62,8 +64,15 @@ namespace ErrorCodes
     extern const int USER_EXPIRED;
 }
 
+Client::Client()
+{
+    fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr);
+}
 
-void Client::processError(const String & query) const
+
+Client::~Client() = default;
+
+void Client::processError(std::string_view query) const
 {
     if (server_exception)
     {
@@ -168,7 +177,13 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
         if (config.has(prefix + ".port"))
             config.setInt("port", config.getInt(prefix + ".port"));
         if (config.has(prefix + ".secure"))
-            config.setBool("secure", config.getBool(prefix + ".secure"));
+        {
+            bool secure = config.getBool(prefix + ".secure");
+            if (secure)
+                config.setBool("secure", true);
+            else
+                config.setBool("no-secure", true);
+        }
         if (config.has(prefix + ".user"))
             config.setString("user", config.getString(prefix + ".user"));
         if (config.has(prefix + ".password"))
@@ -330,7 +345,6 @@ void Client::initialize(Poco::Util::Application & self)
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
-    UseSSL use_ssl;
     auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 
@@ -346,7 +360,6 @@ try
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
-    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
@@ -483,15 +496,7 @@ void Client::connect()
             config().setString("host", connection_parameters.host);
             config().setInt("port", connection_parameters.port);
 
-            /// Apply setting changes received from server, but with lower priority than settings
-            /// changed from command line.
-            SettingsChanges settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
-            const Settings & settings = global_context->getSettingsRef();
-            std::erase_if(settings_from_server, [&](const SettingChange & change)
-            {
-                return settings.isChanged(change.name);
-            });
-            global_context->applySettingsChanges(settings_from_server);
+            settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
 
             break;
         }
@@ -647,7 +652,7 @@ void Client::printChangedSettings() const
     };
 
     print_changes(client_context->getSettingsRef().changes(), "settings");
-    print_changes(cmd_merge_tree_settings.changes(), "MergeTree settings");
+    print_changes(cmd_merge_tree_settings->changes(), "MergeTree settings");
 }
 
 
@@ -660,8 +665,8 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
     if (options_description.hosts_and_ports_description.has_value())
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
-    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n";
-    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parameterized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
 
@@ -785,11 +790,9 @@ void Client::processOptions(
 
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
-
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::CLIENT);
-
-    global_context->setSettings(cmd_settings);
+    global_context->setSettings(*cmd_settings);
 
     /// Copy settings-related program options to config.
     /// TODO: Is this code necessary?
@@ -845,12 +848,28 @@ void Client::processOptions(
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
     buzz_house_options_path = options.count("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
-    buzz_house = !buzz_house_options_path.empty();
-    if (query_fuzzer_runs || buzz_house)
+    buzz_house = !query_fuzzer_runs && !buzz_house_options_path.empty();
+    if (query_fuzzer_runs || !buzz_house_options_path.empty())
     {
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
         ignore_error = true;
+#if USE_BUZZHOUSE
+        if (!buzz_house_options_path.empty())
+        {
+            fuzz_config = std::make_unique<BuzzHouse::FuzzConfig>(this, buzz_house_options_path);
+            external_integrations = std::make_unique<BuzzHouse::ExternalIntegrations>(*fuzz_config);
+
+            if (query_fuzzer_runs && fuzz_config->seed)
+            {
+                fuzzer.setSeed(fuzz_config->seed);
+            }
+        }
+#endif
+        if (query_fuzzer_runs)
+        {
+            fmt::print(stdout, "Using seed {} for AST fuzzer\n", fuzzer.getSeed());
+        }
     }
 
     if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))
@@ -1005,8 +1024,8 @@ void Client::readArguments(
             if (arg == "--file"sv || arg == "--name"sv || arg == "--structure"sv || arg == "--types"sv)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter must be in external group, try add --external before {}", arg);
 
-            /// Parameter arg after underline.
-            if (arg.starts_with("--param_"))
+            /// Parameter arg after underline or dash.
+            if (arg.starts_with("--param_") || arg.starts_with("--param-"))
             {
                 auto param_continuation = arg.substr(strlen("--param_"));
                 auto equal_pos = param_continuation.find_first_of('=');

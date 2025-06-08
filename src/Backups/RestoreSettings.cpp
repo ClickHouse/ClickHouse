@@ -32,7 +32,7 @@ namespace
         {
             if (field.getType() == Field::Types::String)
             {
-                const String & str = field.safeGet<const String &>();
+                const String & str = field.safeGet<String>();
                 if (str == "1" || boost::iequals(str, "true") || boost::iequals(str, "create"))
                 {
                     value = RestoreTableCreationMode::kCreate;
@@ -96,7 +96,7 @@ namespace
         {
             if (field.getType() == Field::Types::String)
             {
-                const String & str = field.safeGet<const String &>();
+                const String & str = field.safeGet<String>();
                 if (str == "1" || boost::iequals(str, "true") || boost::iequals(str, "create"))
                 {
                     value = RestoreAccessCreationMode::kCreate;
@@ -164,6 +164,7 @@ namespace
     M(Bool, skip_unresolved_access_dependencies) \
     M(Bool, update_access_entities_dependents) \
     M(RestoreUDFCreationMode, create_function) \
+    M(Bool, allow_azure_native_copy) \
     M(Bool, allow_s3_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
     M(Bool, use_same_password_for_base_backup) \

@@ -26,7 +26,23 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+IDataType::IDataType() = default;
+
 IDataType::~IDataType() = default;
+
+String IDataType::getName() const
+{
+    if (custom_name)
+        return custom_name->getName();
+    return doGetName();
+}
+
+String IDataType::getPrettyName(size_t indent) const
+{
+    if (custom_name)
+        return custom_name->getName();
+    return doGetPrettyName(indent);
+}
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {
@@ -135,7 +151,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
                         {
                             dynamic_subcolumn_data->type = tmp_subpath[i].creator->create(dynamic_subcolumn_data->type);
                             dynamic_subcolumn_data->column = tmp_subpath[i].creator->create(dynamic_subcolumn_data->column);
-                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization);
+                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
                         }
 
                         tmp_subpath[i].data = *dynamic_subcolumn_data;

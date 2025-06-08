@@ -10,7 +10,7 @@ system disable failpoint replicated_sends_failpoint;
 
 system sync replica data_r2;
 
-system flush logs;
+system flush logs text_log, part_log;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 select event_time_microseconds, logger_name, message from system.text_log where level = 'Error' and message like '%Malformed chunked encoding%' order by 1 format LineAsString;
 

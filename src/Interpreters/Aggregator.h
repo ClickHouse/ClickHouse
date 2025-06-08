@@ -5,36 +5,19 @@
 #include <type_traits>
 #include <variant>
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 
-#include <base/StringRef.h>
-#include <Common/HashTable/FixedHashMap.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/TwoLevelHashMap.h>
-#include <Common/HashTable/StringHashMap.h>
-#include <Common/HashTable/TwoLevelStringHashMap.h>
-
+#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
-#include <Common/ColumnsHashingImpl.h>
 #include <Common/ThreadPool.h>
-#include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
-#include <Disks/SingleDiskVolume.h>
-#include <Disks/TemporaryFileOnDisk.h>
-
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
 
 #include <Parsers/IAST_fwd.h>
 
@@ -88,9 +71,10 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 class Aggregator final
 {
 public:
+    using AggregateFunctionContainer = PaddedPODArray<AggregateDataPtr>;
     using AggregateColumns = std::vector<ColumnRawPtrs>;
-    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
-    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
+    using AggregateColumnsData = std::vector<AggregateFunctionContainer *>;
+    using AggregateColumnsConstData = std::vector<const AggregateFunctionContainer *>;
     using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
 
     struct Params
@@ -122,7 +106,6 @@ public:
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set = false;
         TemporaryDataOnDiskScopePtr tmp_data_scope;
-        /// Settings is used to determine cache size. No threads are created.
         size_t max_threads = 0;
         const size_t min_free_disk_space = 0;
         bool compile_aggregate_expressions = false;
@@ -267,13 +250,13 @@ public:
       *  which can then be combined with other states (for distributed query processing).
       * If final = true, then columns with ready values are created as aggregate columns.
       */
-    BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
+    BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final) const;
 
     ManyAggregatedDataVariants prepareVariantsToMerge(ManyAggregatedDataVariants && data_variants) const;
 
     using BucketToBlocks = std::map<Int32, BlocksList>;
     /// Merge partially aggregated blocks separated to buckets into one data structure.
-    void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads, std::atomic<bool> & is_cancelled);
+    void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, std::atomic<bool> & is_cancelled);
 
     /// Merge several partially aggregated blocks into one.
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.
@@ -346,6 +329,8 @@ private:
 #endif
 
     std::vector<bool> is_aggregate_function_compiled;
+
+    mutable ThreadPool thread_pool;
 
     /** Try to compile aggregate functions.
       */
@@ -449,7 +434,9 @@ private:
 
     /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
-    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const;
+    void mergeDataImpl(
+        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, std::atomic<bool> & is_cancelled)
+        const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
@@ -526,17 +513,13 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
-    BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
+    BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
 
     template <bool return_single_block>
     ConvertToBlockRes<return_single_block> prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
 
     template <typename Method>
-    BlocksList prepareBlocksAndFillTwoLevelImpl(
-        AggregatedDataVariants & data_variants,
-        Method & method,
-        bool final,
-        ThreadPool * thread_pool) const;
+    BlocksList prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;
 
     template <typename State, typename Table>
     void mergeStreamsImplCase(
@@ -548,6 +531,7 @@ private:
         size_t row_begin,
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
+        std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys) const;
 
     /// `arena_for_keys` used to store serialized aggregation keys (in methods like `serialized`) to save some space.
@@ -561,6 +545,7 @@ private:
         AggregateDataPtr overflow_row,
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
+        std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys = nullptr) const;
 
     template <typename Method, typename Table>
@@ -575,6 +560,7 @@ private:
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
         const ColumnRawPtrs & key_columns,
+        std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
@@ -651,6 +637,7 @@ private:
         Arena * arena);
 };
 
+/// NOTE: For non-Analyzer it does not include the database name
 UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 
 /** Get the aggregation variant by its type. */

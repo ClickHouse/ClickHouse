@@ -25,7 +25,7 @@ SELECT count(*) FROM file('$CURDIR/data_hive/partitioning/number=42/date=2020-01
 $CLICKHOUSE_LOCAL -q """
 set use_hive_partitioning = 1;
 
-SELECT identifier FROM file('$CURDIR/data_hive/partitioning/identifier=*/email.csv') LIMIT 2;
+SELECT identifier FROM file('$CURDIR/data_hive/partitioning/identifier=*/email.csv') ORDER BY identifier DESC LIMIT 2;
 SELECT a FROM file('$CURDIR/data_hive/partitioning/a=b/a=b/sample.parquet') LIMIT 1;
 """
 
@@ -69,6 +69,9 @@ SELECT *, column0 FROM s3('http://localhost:11111/test/hive_partitioning/column0
 
 SELECT *, non_existing_column FROM s3('http://localhost:11111/test/hive_partitioning/non_existing_column=Elizabeth/sample.parquet') LIMIT 10;
 SELECT *, column0 FROM s3('http://localhost:11111/test/hive_partitioning/column0=*/sample.parquet') WHERE column0 = 'Elizabeth' LIMIT 10;
+
+SELECT _path FROM s3('http://localhost:11111/test/hive_partitioning/column0=Arthur/**.parquet') order by _path;
+SELECT _path FROM s3('http://localhost:11111/test/hive_partitioning/column0=Arthur/**.parquet') where column1 = '';
 """
 
 $CLICKHOUSE_CLIENT -q """

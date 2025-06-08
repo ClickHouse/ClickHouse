@@ -22,12 +22,15 @@ cluster_param = pytest.mark.parametrize(
 )
 
 
-def get_dist_path(cluster, table, dist_format):
+def get_dist_path(cluster, node, table, dist_format):
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='{table}'"
+    ).strip()
     if dist_format == 0:
-        return f"/var/lib/clickhouse/data/test/{table}/default@not_existing:9000"
+        return f"{data_path}/default@not_existing:9000"
     if cluster == "test_cluster_internal_replication":
-        return f"/var/lib/clickhouse/data/test/{table}/shard1_all_replicas"
-    return f"/var/lib/clickhouse/data/test/{table}/shard1_replica1"
+        return f"{data_path}/shard1_all_replicas"
+    return f"{data_path}/shard1_replica1"
 
 
 @pytest.fixture(scope="module")
@@ -43,6 +46,8 @@ def started_cluster():
 
 @cluster_param
 def test_single_file(started_cluster, cluster):
+    node.query("drop table if exists test.distr_1 sync")
+
     node.query(
         "create table test.distr_1 (x UInt64, s String) engine = Distributed('{}', database, table)".format(
             cluster
@@ -53,7 +58,7 @@ def test_single_file(started_cluster, cluster):
         settings={"use_compact_format_in_distributed_parts_names": "1"},
     )
 
-    path = get_dist_path(cluster, "distr_1", 1)
+    path = get_dist_path(cluster, node, "distr_1", 1)
     query = f"select * from file('{path}/1.bin', 'Distributed')"
     out = node.exec_in_container(
         ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
@@ -71,11 +76,12 @@ def test_single_file(started_cluster, cluster):
 
     assert out == "1\ta\n2\tbb\n3\tccc\n"
 
-    node.query("drop table test.distr_1")
+    node.query("drop table test.distr_1 sync")
 
 
 @cluster_param
 def test_two_files(started_cluster, cluster):
+    node.query("drop table if exists test.distr_2 sync")
     node.query(
         "create table test.distr_2 (x UInt64, s String) engine = Distributed('{}', database, table)".format(
             cluster
@@ -94,7 +100,7 @@ def test_two_files(started_cluster, cluster):
         },
     )
 
-    path = get_dist_path(cluster, "distr_2", 1)
+    path = get_dist_path(cluster, node, "distr_2", 1)
     query = f"select * from file('{path}/{{1,2,3,4}}.bin', 'Distributed') order by x"
     out = node.exec_in_container(
         ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
@@ -112,11 +118,13 @@ def test_two_files(started_cluster, cluster):
 
     assert out == "0\t_\n1\ta\n2\tbb\n3\tccc\n"
 
-    node.query("drop table test.distr_2")
+    node.query("drop table test.distr_2 sync")
 
 
 @cluster_param
 def test_single_file_old(started_cluster, cluster):
+    node.query("drop table if exists test.distr_3 sync")
+    node.query("drop table if exists t sync")
     node.query(
         "create table test.distr_3 (x UInt64, s String) engine = Distributed('{}', database, table)".format(
             cluster
@@ -129,7 +137,7 @@ def test_single_file_old(started_cluster, cluster):
         },
     )
 
-    path = get_dist_path(cluster, "distr_3", 0)
+    path = get_dist_path(cluster, node, "distr_3", 0)
     query = f"select * from file('{path}/1.bin', 'Distributed')"
     out = node.exec_in_container(
         ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
@@ -151,6 +159,8 @@ def test_single_file_old(started_cluster, cluster):
 
 
 def test_remove_replica(started_cluster):
+    node.query("drop table if exists test.local_4 sync")
+    node.query("drop table if exists test.distr_4 sync")
     node.query(
         "create table test.local_4 (x UInt64, s String) engine = MergeTree order by x"
     )
@@ -182,3 +192,24 @@ def test_remove_replica(started_cluster):
     node.query("attach table test.distr_4", ignore_error=True)
     node.query("SYSTEM FLUSH DISTRIBUTED test.distr_4", ignore_error=True)
     assert node.query("select 1") == "1\n"
+
+    node.query("drop table test.local_4 sync")
+    node.query("drop table test.distr_4 sync")
+
+    # revert back the configs for the subsequent runs
+    node.exec_in_container(
+        [
+            "sed",
+            "-i",
+            "s/test_cluster_remove_replica1/test_cluster_remove_replica2/g",
+            "/etc/clickhouse-server/config.d/another_remote_servers.xml",
+        ]
+    )
+    node.exec_in_container(
+        [
+            "sed",
+            "-i",
+            "s/test_cluster_remove_replica_tmp/test_cluster_remove_replica1/g",
+            "/etc/clickhouse-server/config.d/another_remote_servers.xml",
+        ]
+    )

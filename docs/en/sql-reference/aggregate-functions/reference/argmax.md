@@ -1,16 +1,18 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/argmax
+description: 'Calculates the `arg` value for a maximum `val` value.'
 sidebar_position: 109
+slug: /sql-reference/aggregate-functions/reference/argmax
+title: 'argMax'
 ---
 
 # argMax
 
 Calculates the `arg` value for a maximum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
-Both parts the `arg` and the `max` behave as [aggregate functions](/docs/en/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/docs/en/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `max` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **Syntax**
 
-``` sql
+```sql
 argMax(arg, val)
 ```
 
@@ -29,7 +31,7 @@ Type: matches `arg` type.
 
 Input table:
 
-``` text
+```text
 ┌─user─────┬─salary─┐
 │ director │   5000 │
 │ manager  │   3000 │
@@ -39,13 +41,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT argMax(user, salary) FROM salary;
 ```
 
 Result:
 
-``` text
+```text
 ┌─argMax(user, salary)─┐
 │ director             │
 └──────────────────────┘
@@ -106,4 +108,4 @@ SELECT argMax(a, tuple(b)) FROM test;
 
 **See also**
 
-- [Tuple](/docs/en/sql-reference/data-types/tuple.md)
+- [Tuple](/sql-reference/data-types/tuple.md)

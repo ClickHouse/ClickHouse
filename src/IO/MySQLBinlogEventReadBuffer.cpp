@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <IO/MySQLBinlogEventReadBuffer.h>
 
 

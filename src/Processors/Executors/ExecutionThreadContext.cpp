@@ -1,7 +1,8 @@
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 
 namespace DB
 {
@@ -46,6 +47,9 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 {
     try
     {
+        if (node->processor->isSpillable() && CurrentThread::getGroup())
+            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(node->processor);
+
         node->processor->work();
 
         /// Update read progress only for source nodes.
@@ -122,28 +126,6 @@ void ExecutionThreadContext::rethrowExceptionIfHas()
 {
     if (exception)
         std::rethrow_exception(exception);
-}
-
-ExecutingGraph::Node * ExecutionThreadContext::tryPopAsyncTask()
-{
-    ExecutingGraph::Node * task = nullptr;
-
-    if (!async_tasks.empty())
-    {
-        task = async_tasks.front();
-        async_tasks.pop();
-
-        if (async_tasks.empty())
-            has_async_tasks = false;
-    }
-
-    return task;
-}
-
-void ExecutionThreadContext::pushAsyncTask(ExecutingGraph::Node * async_task)
-{
-    async_tasks.push(async_task);
-    has_async_tasks = true;
 }
 
 }

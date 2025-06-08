@@ -1,5 +1,5 @@
-#include <memory>
 #include <Columns/ColumnString.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -10,7 +10,10 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <base/map.h>
+#include <Processors/Port.h>
+
+#include <memory>
+#include <ranges>
 
 
 namespace DB
@@ -140,7 +143,7 @@ public:
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 std::make_shared<FunctionFormatRow<no_newline>>(name_col->getValue<String>(), std::move(arguments_column_names), context),
-                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
                 return_type);
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
     }

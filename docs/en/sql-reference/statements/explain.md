@@ -1,8 +1,9 @@
 ---
-slug: /en/sql-reference/statements/explain
+description: 'Documentation for Explain'
+sidebar_label: 'EXPLAIN'
 sidebar_position: 39
-sidebar_label: EXPLAIN
-title: "EXPLAIN Statement"
+slug: /sql-reference/statements/explain
+title: 'EXPLAIN Statement'
 ---
 
 Shows the execution plan of a statement.
@@ -55,7 +56,7 @@ Union
                   ReadFromStorage (SystemNumbers)
 ```
 
-## EXPLAIN Types
+## EXPLAIN Types {#explain-types}
 
 - `AST` — Abstract syntax tree.
 - `SYNTAX` — Query text after AST-level optimizations.
@@ -63,7 +64,7 @@ Union
 - `PLAN` — Query execution plan.
 - `PIPELINE` — Query execution pipeline.
 
-### EXPLAIN AST
+### EXPLAIN AST {#explain-ast}
 
 Dump query AST. Supports all types of queries, not only `SELECT`.
 
@@ -97,7 +98,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-### EXPLAIN SYNTAX
+### EXPLAIN SYNTAX {#explain-syntax}
 
 Returns query after syntax optimizations.
 
@@ -123,7 +124,7 @@ FROM
 CROSS JOIN system.numbers AS c
 ```
 
-### EXPLAIN QUERY TREE
+### EXPLAIN QUERY TREE {#explain-query-tree}
 
 Settings:
 
@@ -136,7 +137,7 @@ Example:
 EXPLAIN QUERY TREE SELECT id, value FROM test_table;
 ```
 
-```
+```sql
 QUERY id: 0
   PROJECTION COLUMNS
     id UInt64
@@ -149,7 +150,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-### EXPLAIN PLAN
+### EXPLAIN PLAN {#explain-plan}
 
 Dump query plan steps.
 
@@ -158,6 +159,7 @@ Settings:
 - `header` — Prints output header for step. Default: 0.
 - `description` — Prints step description. Default: 1.
 - `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+- `projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 - `actions` — Prints detailed information about step actions. Default: 0.
 - `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
 
@@ -307,7 +309,8 @@ Example:
     "Keys": ["x", "y"],
     "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
     "Parts": 3/2,
-    "Granules": 10/6
+    "Granules": 10/6,
+    "Search Algorithm": "generic exclusion search"
   },
   {
     "Type": "Skip",
@@ -322,6 +325,47 @@ Example:
     "Description": "set GRANULARITY 2",
     "": 1/1,
     "Granules": 2/1
+  }
+]
+```
+
+With `projections` = 1, the `Projections` key is added. It contains an array of analyzed projections. Each projection is described as JSON with following keys:
+
+- `Name` — The projection name.
+- `Condition` —  The used projection primary key condition.
+- `Description` — The description of how the projection is used (e.g. part-level filtering).
+- `Selected Parts` — Number of parts selected by the projection.
+- `Selected Marks` — Number of marks selected.
+- `Selected Ranges` — Number of ranges selected.
+- `Selected Rows` — Number of rows selected.
+- `Filtered Parts` — Number of parts skipped due to part-level filtering.
+
+Example:
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Projections": [
+  {
+    "Name": "region_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(region in ['us_west', 'us_west'])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 3,
+    "Selected Marks": 3,
+    "Selected Ranges": 3,
+    "Selected Rows": 3,
+    "Filtered Parts": 2
+  },
+  {
+    "Name": "user_id_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(user_id in [107, 107])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 1,
+    "Selected Marks": 1,
+    "Selected Ranges": 1,
+    "Selected Rows": 1,
+    "Filtered Parts": 2
   }
 ]
 ```
@@ -385,7 +429,7 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-### EXPLAIN PIPELINE
+### EXPLAIN PIPELINE {#explain-pipeline}
 
 Settings:
 
@@ -416,9 +460,9 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersRange × 2 0 → 1
 ```
-### EXPLAIN ESTIMATE
+### EXPLAIN ESTIMATE {#explain-estimate}
 
-Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family. 
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family. 
 
 **Example**
 
@@ -444,7 +488,7 @@ Result:
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-### EXPLAIN TABLE OVERRIDE
+### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 Shows the result of a table override on a table schema accessed through a table function.
 Also does some validation, throwing an exception if the override would have caused some kind of failure.

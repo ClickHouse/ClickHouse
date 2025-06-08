@@ -1,11 +1,9 @@
 #include "HTTPAuthenticationScheme.h"
 
+#include <base/EnumReflection.h>
 #include <base/types.h>
 #include <Poco/String.h>
 #include <Common/Exception.h>
-
-#include <magic_enum.hpp>
-
 
 namespace DB
 {

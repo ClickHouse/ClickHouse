@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
@@ -55,13 +56,22 @@ void resolveSchemaAndFormat(
     if (columns.empty())
     {
         if (format == "auto")
-            std::tie(columns, format) =
-                StorageObjectStorage::resolveSchemaAndFormatFromData(object_storage, configuration, format_settings, sample_path, context);
+        {
+            if (configuration->isDataLakeConfiguration())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Format must be already specified for {} storage. ", configuration->getTypeName());
+            std::tie(columns, format) = StorageObjectStorage::resolveSchemaAndFormatFromData(
+                object_storage, configuration, format_settings, sample_path, context);
+        }
         else
+        {
             columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
+        }
     }
     else if (format == "auto")
     {
+        if (configuration->isDataLakeConfiguration())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Format must be already specified for {} storage. ", configuration->getTypeName());
         format = StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
     }
 
@@ -69,8 +79,8 @@ void resolveSchemaAndFormat(
     {
         /// We don't allow special columns.
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Special columns are not supported for {} storage"
-                        "like MATERIALIZED, ALIAS or EPHEMERAL", configuration->getTypeName());
+            "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
+            configuration->getTypeName());
     }
 }
 

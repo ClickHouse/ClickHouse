@@ -182,7 +182,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
 
-        if (with_expression_list)
+        if (with_expression_list && select)
         {
             const auto & children = select->as<ASTSelectWithUnionQuery>()->list_of_selects->children;
             for (const auto & child : children)
@@ -306,7 +306,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->select = select;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
-    query->end = end;
+    query->end = data ? end : nullptr;
 
     if (columns)
         query->children.push_back(columns);

@@ -8,6 +8,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -33,7 +34,8 @@
 ///  * `def` and `rep` arrays can be longer than `primitive_column`, because they include nulls and
 ///    empty arrays; the values in primitive_column correspond to positions where def[i] == max_def.
 ///
-/// If you do want to learn it, see dremel paper: https://research.google/pubs/pub36632/
+/// If you do want to learn it, see dremel paper:
+/// https://web.archive.org/web/20250126175539/https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/36632.pdf
 /// Instead of reading the whole paper, try staring at figures 2-3 for a while - it might be enough.
 /// (Why does Parquet do all this instead of just storing array lengths and null masks? I'm not
 /// really sure.)
@@ -232,7 +234,9 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
     /// Add physical column info.
     auto & state = states.emplace_back();
     state.primitive_column = column;
+    state.type = type;
     state.compression = options.compression;
+    state.compression_level = options.compression_level;
 
     state.column_chunk.__isset.meta_data = true;
     state.column_chunk.meta_data.__set_path_in_schema({name});
@@ -416,6 +420,13 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             {
                 types(T::BYTE_ARRAY);
             }
+            break;
+        }
+        case TypeIndex::Object:
+        {
+            parq::LogicalType t;
+            t.__set_JSON({});
+            types(T::BYTE_ARRAY, C::JSON, t);
             break;
         }
 
@@ -607,6 +618,10 @@ void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates & states, SchemaElements & schemas)
 {
+    /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
+    /// parquet dictionary-encoding.
+    column = column->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+
     switch (type->getTypeId())
     {
         case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, states, schemas); break;
