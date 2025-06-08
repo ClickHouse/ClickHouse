@@ -2,6 +2,7 @@
 
 #if USE_ARROW || USE_PARQUET
 
+#include <Core/DecimalFunctions.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -20,6 +21,9 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Port.h>
+
 #include <arrow/api.h>
 #include <arrow/builder.h>
 #include <arrow/type.h>
@@ -48,7 +52,8 @@
         M(FLOAT, arrow::FloatType) \
         M(DOUBLE, arrow::DoubleType) \
         M(BINARY, arrow::BinaryType) \
-        M(STRING, arrow::StringType)
+        M(STRING, arrow::StringType) \
+        M(FIXED_SIZE_BINARY, arrow::FixedSizeBinaryType)
 
 namespace DB
 {
@@ -176,23 +181,51 @@ namespace DB
         auto scale = datetime64_type->getScale();
         bool need_rescale = scale % 3;
         auto rescale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(3 - scale % 3);
-        for (size_t value_i = start; value_i < end; ++value_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[value_i])
+            for (size_t value_i = start; value_i < end; ++value_i)
             {
-                status = builder.AppendNull();
-            }
-            else
-            {
-                auto value = static_cast<Int64>(column[value_i].get<DecimalField<DateTime64>>().getValue());
-                if (need_rescale)
+                if ((*null_bytemap)[value_i])
                 {
-                    if (common::mulOverflow(value, rescale_multiplier, value))
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                    status = builder.AppendNull();
                 }
-                status = builder.Append(value);
+                else
+                {
+                    auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<DateTime64>>().getValue());
+                    if (need_rescale)
+                    {
+                        if (common::mulOverflow(value, rescale_multiplier, value))
+                            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                    }
+                    status = builder.Append(value);
+                }
+                checkStatus(status, write_column->getName(), format_name);
             }
+        }
+        else if (!need_rescale)
+        {
+            PaddedPODArray<Int64> values;
+            values.reserve(end - start);
+
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                values.emplace_back(static_cast<Int64>(column[value_i].safeGet<DecimalField<DateTime64>>().getValue()));
+            }
+
+            status = builder.AppendValues(values.data(), values.size());
             checkStatus(status, write_column->getName(), format_name);
+        }
+        else
+        {
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<DateTime64>>().getValue());
+                if (common::mulOverflow(value, rescale_multiplier, value))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+
+                status = builder.Append(value);
+                checkStatus(status, write_column->getName(), format_name);
+            }
         }
     }
 
@@ -418,7 +451,7 @@ namespace DB
         /// Convert dictionary values to arrow array.
         auto value_type = assert_cast<arrow::DictionaryType *>(builder->type().get())->value_type();
         std::unique_ptr<arrow::ArrayBuilder> values_builder;
-        arrow::MemoryPool* pool = arrow::default_memory_pool();
+        arrow::MemoryPool* pool = ArrowMemoryPool::instance();
         arrow::Status status = MakeBuilder(pool, value_type, &values_builder);
         checkStatus(status, column->getName(), format_name);
 
@@ -435,6 +468,7 @@ namespace DB
         /// AppendIndices in DictionaryBuilder works only with int64_t data, so we cannot use
         /// fillArrowArray here and should copy all indexes to int64_t container.
         PaddedPODArray<Int64> indexes;
+        indexes.reserve(end - start);
         if (mapping)
             indexes = extractIndexesWithRemapping(column_lc->getIndexesPtr(), mapping, start, end, is_nullable);
         else
@@ -479,7 +513,7 @@ namespace DB
         FOR_ARROW_TYPES(DISPATCH)
 #undef DISPATCH
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array with {} data.", column_type->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array {} with {} data", value_type->name(), column_type->getName());
     }
 
     template <typename ColumnType, typename ArrowBuilder>
@@ -495,18 +529,30 @@ namespace DB
         ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
         arrow::Status status;
 
-        for (size_t string_i = start; string_i < end; ++string_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[string_i])
+            for (size_t string_i = start; string_i < end; ++string_i)
             {
-                status = builder.AppendNull();
+                if ((*null_bytemap)[string_i])
+                {
+                    status = builder.AppendNull();
+                }
+                else
+                {
+                    std::string_view string_ref = internal_column.getDataAt(string_i).toView();
+                    status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
+                }
+                checkStatus(status, write_column->getName(), format_name);
             }
-            else
+        }
+        else
+        {
+            for (size_t string_i = start; string_i < end; ++string_i)
             {
                 std::string_view string_ref = internal_column.getDataAt(string_i).toView();
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
+                checkStatus(status, write_column->getName(), format_name);
             }
-            checkStatus(status, write_column->getName(), format_name);
         }
     }
 
@@ -581,12 +627,20 @@ namespace DB
         arrow::UInt16Builder & builder = assert_cast<arrow::UInt16Builder &>(*array_builder);
         arrow::Status status;
 
-        for (size_t value_i = start; value_i < end; ++value_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[value_i])
-                status = builder.AppendNull();
-            else
-                status = builder.Append(internal_data[value_i]);
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if ((*null_bytemap)[value_i])
+                    status = builder.AppendNull();
+                else
+                    status = builder.Append(internal_data[value_i]);
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            status = builder.AppendValues(internal_data.data() + start, end - start);
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -603,13 +657,21 @@ namespace DB
         arrow::UInt32Builder & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
         arrow::Status status;
 
-        for (size_t value_i = start; value_i < end; ++value_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[value_i])
-                status = builder.AppendNull();
-            else
-                status = builder.Append(internal_data[value_i]);
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if ((*null_bytemap)[value_i])
+                    status = builder.AppendNull();
+                else
+                    status = builder.Append(internal_data[value_i]);
 
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            status = builder.AppendValues(internal_data.data() + start, end - start);
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -626,12 +688,20 @@ namespace DB
         arrow::Date32Builder & builder = assert_cast<arrow::Date32Builder &>(*array_builder);
         arrow::Status status;
 
-        for (size_t value_i = start; value_i < end; ++value_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[value_i])
-                status = builder.AppendNull();
-            else
-                status = builder.Append(internal_data[value_i]);
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if ((*null_bytemap)[value_i])
+                    status = builder.AppendNull();
+                else
+                    status = builder.Append(internal_data[value_i]);
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            status = builder.AppendValues(internal_data.data() + start, end - start);
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -649,19 +719,30 @@ namespace DB
         ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
         arrow::Status status;
 
-        for (size_t value_i = start; value_i < end; ++value_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[value_i])
-                status = builder.AppendNull();
-            else
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if ((*null_bytemap)[value_i])
+                    status = builder.AppendNull();
+                else
+                {
+                    FieldType element = FieldType(column.getElement(value_i).value);
+                    status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element))); // TODO: try copy column
+                }
+
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            for (size_t value_i = start; value_i < end; ++value_i)
             {
                 FieldType element = FieldType(column.getElement(value_i).value);
-                status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element))); // TODO: try copy column
+                status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element)));
+                checkStatus(status, write_column->getName(), format_name);
             }
-
-            checkStatus(status, write_column->getName(), format_name);
         }
-        checkStatus(status, write_column->getName(), format_name);
     }
 
     template <typename ColumnType>
@@ -1025,7 +1106,7 @@ namespace DB
                     arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
                 }
 
-                arrow::MemoryPool * pool = arrow::default_memory_pool();
+                arrow::MemoryPool * pool = ArrowMemoryPool::instance();
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
                 arrow::Status status = MakeBuilder(pool, arrow_fields[column_i]->type(), &array_builder);
                 checkStatus(status, column->getName(), format_name);

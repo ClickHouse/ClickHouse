@@ -7,7 +7,8 @@
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <Parsers/Kusto/Utilities.h>
 #include "Poco/String.h"
-#include <format>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -40,8 +41,8 @@ bool DatatypeDatetime::convertImpl(String & out, IKQLParser::KQLPos & pos)
         if (Poco::toUpper(datetime_str) == "NULL")
             out = "NULL";
         else
-            out = std::format(
-                "if(toTypeName({0}) = 'Int64' OR toTypeName({0}) = 'Int32'OR toTypeName({0}) = 'Float64' OR  toTypeName({0}) = 'UInt32' OR "
+            out = fmt::format(
+                "if(toTypeName({0}) = 'Int64' OR toTypeName({0}) = 'Int32' OR toTypeName({0}) = 'Float64' OR  toTypeName({0}) = 'UInt32' OR "
                 " toTypeName({0}) = 'UInt64', toDateTime64({0},9,'UTC'), parseDateTime64BestEffortOrNull({0}::String,9,'UTC'))",
                 datetime_str);
         return true;
@@ -56,9 +57,9 @@ bool DatatypeDatetime::convertImpl(String & out, IKQLParser::KQLPos & pos)
                 break;
         }
         --pos;
-        datetime_str = std::format("'{}'", String(start->begin, pos->end));
+        datetime_str = fmt::format("'{}'", String(start->begin, pos->end));
     }
-    out = std::format("parseDateTime64BestEffortOrNull({},9,'UTC')", datetime_str);
+    out = fmt::format("parseDateTime64BestEffortOrNull({},9,'UTC')", datetime_str);
     ++pos;
     return true;
 }
@@ -124,7 +125,7 @@ bool DatatypeGuid::convertImpl(String & out, IKQLParser::KQLPos & pos)
         --pos;
         guid_str = String(start->begin, pos->end);
     }
-    out = std::format("toUUIDOrNull('{}')", guid_str);
+    out = fmt::format("toUUIDOrNull('{}')", guid_str);
     ++pos;
     return true;
 }
@@ -134,16 +135,13 @@ bool DatatypeInt::convertImpl(String & out, IKQLParser::KQLPos & pos)
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
-    String guid_str;
 
     ++pos;
     if (pos->type == KQLTokenType::QuotedIdentifier || pos->type == KQLTokenType::StringLiteral)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "String is not parsed as int literal.");
-    else
-    {
-        auto arg = getConvertedArgument(fn_name, pos);
-        out = std::format("toInt32({})", arg);
-    }
+
+    auto arg = getConvertedArgument(fn_name, pos);
+    out = fmt::format("toInt32({})", arg);
     return true;
 }
 
@@ -161,11 +159,9 @@ bool DatatypeReal::convertImpl(String & out, IKQLParser::KQLPos & pos)
     ++pos;
     if (pos->type == KQLTokenType::QuotedIdentifier || pos->type == KQLTokenType::StringLiteral)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "String is not parsed as double literal.");
-    else
-    {
-        auto arg = getConvertedArgument(fn_name, pos);
-        out = std::format("toFloat64({})", arg);
-    }
+
+    auto arg = getConvertedArgument(fn_name, pos);
+    out = fmt::format("toFloat64({})", arg);
     return true;
 }
 
@@ -195,9 +191,9 @@ bool DatatypeTimespan::convertImpl(String & out, IKQLParser::KQLPos & pos)
     if (time_span.parse(pos, node, expected))
     {
         if (sign)
-            out = std::format("-{}::Float64", time_span.toSeconds());
+            out = fmt::format("-{}::Float64", time_span.toSeconds());
         else
-            out = std::format("{}::Float64", time_span.toSeconds());
+            out = fmt::format("{}::Float64", time_span.toSeconds());
         ++pos;
     }
     else
@@ -237,7 +233,7 @@ bool DatatypeDecimal::convertImpl(String & out, IKQLParser::KQLPos & pos)
         else
             scale = std::stoi(arg.substr(exponential_pos + 1, arg.length()));
 
-        out = std::format("toDecimal128({}::String,{})", arg, scale);
+        out = fmt::format("toDecimal128({}::String,{})", arg, scale);
         return true;
     }
 
@@ -252,7 +248,7 @@ bool DatatypeDecimal::convertImpl(String & out, IKQLParser::KQLPos & pos)
     if (scale < 0 || Poco::toUpper(arg) == "NULL")
         out = "NULL";
     else
-        out = std::format("toDecimal128({}::String,{})", arg, scale);
+        out = fmt::format("toDecimal128({}::String,{})", arg, scale);
 
     return true;
 }

@@ -10,8 +10,6 @@
 #include <string>
 #include <vector>
 
-#include <Core/iostream_debug_helpers.h>
-
 
 template <typename T>
 inline std::ostream& operator<<(std::ostream & ostr, const std::vector<T> & v)
@@ -63,7 +61,7 @@ TEST_P(ParseDataTypeTest, parseStringValue)
         data_type->getDefaultSerialization()->deserializeWholeText(*col, buffer, FormatSettings{});
     }
 
-    ASSERT_EQ(p.expected_values.size(), col->size()) << "Actual items: " << *col;
+    ASSERT_EQ(p.expected_values.size(), col->size());
     for (size_t i = 0; i < col->size(); ++i)
     {
         ASSERT_EQ(p.expected_values[i], (*col)[i]);

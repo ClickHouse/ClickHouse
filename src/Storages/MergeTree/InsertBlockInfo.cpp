@@ -1,4 +1,9 @@
 #include <Storages/MergeTree/InsertBlockInfo.h>
+#include <Common/SipHash.h>
+#include <Common/logger_useful.h>
+#include <Columns/ColumnsNumber.h>
+#include <IO/WriteHelpers.h>
+#include <filesystem>
 
 namespace DB
 {
@@ -67,7 +72,8 @@ void AsyncInsertBlockInfo::filterBlockDuplicate(const std::vector<String> & bloc
     std::sort(offset_idx.begin(), offset_idx.end());
 
     auto & offsets = current_block_with_partition->offsets;
-    size_t idx = 0, remove_count = 0;
+    size_t idx = 0;
+    size_t remove_count = 0;
     auto it = offset_idx.begin();
     std::vector<size_t> new_offsets;
     std::vector<String> new_block_ids;

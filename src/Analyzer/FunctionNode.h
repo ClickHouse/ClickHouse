@@ -1,8 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Analyzer/ConstantValue.h>
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -141,12 +140,7 @@ public:
       * If function is not resolved nullptr returned.
       * If function is resolved as non aggregate function nullptr returned.
       */
-    AggregateFunctionPtr getAggregateFunction() const
-    {
-        if (kind == FunctionKind::UNKNOWN || kind == FunctionKind::ORDINARY)
-            return {};
-        return std::static_pointer_cast<const IAggregateFunction>(function);
-    }
+    AggregateFunctionPtr getAggregateFunction() const;
 
     /// Is function node resolved
     bool isResolved() const { return function != nullptr; }
@@ -201,8 +195,11 @@ public:
 
     void convertToNullable() override
     {
-        chassert(kind == FunctionKind::ORDINARY);
-        wrap_with_nullable = true;
+        /// Ignore other function kinds.
+        /// We might try to convert aggregate/window function for invalid query
+        /// before the validation happened.
+        if (kind == FunctionKind::ORDINARY)
+            wrap_with_nullable = true;
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;

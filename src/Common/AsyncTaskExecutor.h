@@ -1,5 +1,8 @@
 #pragma once
 
+#include <atomic>
+#include <mutex>
+#include <base/types.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
 #include <Common/FiberStack.h>
@@ -13,7 +16,7 @@
 namespace DB
 {
 
-enum class AsyncEventTimeoutType
+enum class AsyncEventTimeoutType : uint8_t
 {
     CONNECT,
     RECEIVE,

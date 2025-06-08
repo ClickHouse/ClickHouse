@@ -1,13 +1,15 @@
 #pragma once
 
-#include <memory>
 #include <Core/Types.h>
-#include <Common/Exception.h>
 #include <Interpreters/Cache/FileSegmentInfo.h>
 #include <Interpreters/Cache/Guards.h>
-#include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/UserInfo.h>
+
+#include <atomic>
+#include <memory>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -34,7 +36,7 @@ public:
         std::atomic<size_t> size;
         size_t hits = 0;
 
-        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size); }
+        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }
 
         bool isEvicting(const CachePriorityGuard::Lock &) const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }
@@ -95,6 +97,7 @@ public:
     size_t getElementsLimit(const CachePriorityGuard::Lock &) const { return max_elements; }
 
     size_t getSizeLimit(const CachePriorityGuard::Lock &) const { return max_size; }
+    size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
 
     virtual size_t getSize(const CachePriorityGuard::Lock &) const = 0;
 
@@ -107,6 +110,16 @@ public:
     virtual std::string getStateInfoForLog(const CachePriorityGuard::Lock &) const = 0;
 
     virtual void check(const CachePriorityGuard::Lock &) const;
+
+    enum class IterationResult : uint8_t
+    {
+        BREAK,
+        CONTINUE,
+        REMOVE_AND_CONTINUE,
+    };
+
+    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
+    virtual void iterate(IterateFunc func, const CachePriorityGuard::Lock &) = 0;
 
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
@@ -137,6 +150,8 @@ public:
 
     virtual PriorityDumpPtr dump(const CachePriorityGuard::Lock &) = 0;
 
+    /// Collect eviction candidates sufficient to free `size` bytes
+    /// and `elements` elements from cache.
     virtual bool collectCandidatesForEviction(
         size_t size,
         size_t elements,
@@ -146,8 +161,17 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::Lock &) = 0;
 
-    /// Collect eviction `candidates_num` candidates for eviction.
-    virtual bool collectCandidatesForEviction(
+    /// Collect eviction candidates sufficient to have `desired_size`
+    /// and `desired_elements_num` as current cache state.
+    /// Collect no more than `max_candidates_to_evict` elements.
+    /// Return SUCCESS status if the first condition is satisfied.
+    enum class CollectStatus
+    {
+        SUCCESS,
+        CANNOT_EVICT,
+        REACHED_MAX_CANDIDATES_LIMIT,
+    };
+    virtual CollectStatus collectCandidatesForEviction(
         size_t desired_size,
         size_t desired_elements_count,
         size_t max_candidates_to_evict,

@@ -10,9 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 echo "Starting clickhouse-server"
 
-$PORT
-
-$CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path /tmp/ > server.log 2>&1 &
+$CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "${CLICKHOUSE_TMP}/" > server.log 2>&1 &
 PID=$!
 
 function finish {
@@ -34,7 +32,7 @@ done
 
 # Check access rights
 
-$CLICKHOUSE_CLIENT -n --query "
+$CLICKHOUSE_CLIENT --query "
     DROP DATABASE IF EXISTS test;
     CREATE DATABASE test;
     USE test;

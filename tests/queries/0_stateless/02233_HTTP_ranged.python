@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from socketserver import ThreadingMixIn
-import socket
-import sys
-import re
-import threading
 import os
+import re
+import socket
+import subprocess
+import sys
+import threading
 import traceback
 import urllib.request
-import subprocess
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
 
 
 def is_ipv6(host):

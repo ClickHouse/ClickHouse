@@ -1,5 +1,7 @@
 #include <Processors/Merges/Algorithms/AggregatingSortedAlgorithm.h>
 
+#include <Columns/ColumnAggregateFunction.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -70,33 +72,11 @@ static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
     return def;
 }
 
-static MutableColumns getMergedColumns(const Block & header, const AggregatingSortedAlgorithm::ColumnsDefinition & def)
-{
-    MutableColumns columns;
-    columns.resize(header.columns());
-
-    for (const auto & desc : def.columns_to_simple_aggregate)
-    {
-        const auto & type = desc.nested_type ? desc.nested_type
-                                       : desc.real_type;
-        columns[desc.column_number] = type->createColumn();
-    }
-
-    for (size_t i = 0; i < columns.size(); ++i)
-        if (!columns[i])
-            columns[i] = header.getByPosition(i).type->createColumn();
-
-    return columns;
-}
-
 /// Remove constants and LowCardinality for SimpleAggregateFunction
 static void preprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::ColumnsDefinition & def)
 {
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
-
-    for (auto & column : columns)
-        column = column->convertToFullColumnIfConst();
 
     for (const auto & desc : def.columns_to_simple_aggregate)
         if (desc.nested_type)
@@ -159,19 +139,31 @@ AggregatingSortedAlgorithm::SimpleAggregateDescription::~SimpleAggregateDescript
 
 
 AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
-    MutableColumns columns_,
     UInt64 max_block_size_rows_,
     UInt64 max_block_size_bytes_,
     ColumnsDefinition & def_)
-    : MergedData(std::move(columns_), false, max_block_size_rows_, max_block_size_bytes_), def(def_)
+    : MergedData(false, max_block_size_rows_, max_block_size_bytes_), def(def_)
 {
+}
+
+void AggregatingSortedAlgorithm::AggregatingMergedData::initialize(const DB::Block & header, const IMergingAlgorithm::Inputs & inputs)
+{
+    MergedData::initialize(header, inputs);
+
+    for (const auto & desc : def.columns_to_simple_aggregate)
+    {
+        const auto & type = desc.nested_type ? desc.nested_type
+                                             : desc.real_type;
+        columns[desc.column_number] = type->createColumn();
+    }
+
     initAggregateDescription();
 
     /// Just to make startGroup() simpler.
     if (def.allocates_memory_in_arena)
     {
-        arena = std::make_unique<Arena>();
-        arena_size = arena->allocatedBytes();
+        def.arena = std::make_unique<Arena>();
+        def.arena_size = def.arena->allocatedBytes();
     }
 }
 
@@ -197,10 +189,10 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::startGroup(const ColumnR
     /// To avoid this, reset arena if and only if:
     /// - arena is required (i.e. SimpleAggregateFunction(any, String) in PK),
     /// - arena was used in the previous groups.
-    if (def.allocates_memory_in_arena && arena->allocatedBytes() > arena_size)
+    if (def.allocates_memory_in_arena && def.arena->allocatedBytes() > def.arena_size)
     {
-        arena = std::make_unique<Arena>();
-        arena_size = arena->allocatedBytes();
+        def.arena = std::make_unique<Arena>();
+        def.arena_size = def.arena->allocatedBytes();
     }
 
     is_group_started = true;
@@ -211,7 +203,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::finishGroup()
     /// Write the simple aggregation result for the current group.
     for (auto & desc : def.columns_to_simple_aggregate)
     {
-        desc.function->insertResultInto(desc.state.data(), *desc.column, arena.get());
+        desc.function->insertResultInto(desc.state.data(), *desc.column, def.arena.get());
         desc.destroyState();
     }
 
@@ -232,7 +224,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::addRow(SortCursor & curs
     for (auto & desc : def.columns_to_simple_aggregate)
     {
         auto & col = cursor->all_columns[desc.column_number];
-        desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->getRow(), arena.get());
+        desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->getRow(), def.arena.get());
     }
 }
 
@@ -267,12 +259,15 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
     size_t max_block_size_bytes_)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_)
     , columns_definition(defineColumns(header_, description_))
-    , merged_data(getMergedColumns(header_, columns_definition), max_block_size_rows_, max_block_size_bytes_, columns_definition)
+    , merged_data(max_block_size_rows_, max_block_size_bytes_, columns_definition)
 {
 }
 
 void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 {
+    removeConstAndSparse(inputs);
+    merged_data.initialize(header, inputs);
+
     for (auto & input : inputs)
         if (input.chunk)
             preprocessChunk(input.chunk, columns_definition);
@@ -282,6 +277,7 @@ void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 
 void AggregatingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
+    removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);
 }

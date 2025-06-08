@@ -11,7 +11,7 @@ bool ParserKQLDistinct::parseImpl(KQLPos & pos, ASTPtr & node, [[maybe_unused]] 
 
     expr = getExprFromToken(pos);
 
-    Tokens tokens(expr.data(), expr.data() + expr.size());
+    Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true);
     IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
     Expected sql_expected;
 

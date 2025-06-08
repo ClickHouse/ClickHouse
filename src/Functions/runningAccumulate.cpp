@@ -1,9 +1,11 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/scope_guard_safe.h>
@@ -11,11 +13,17 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_deprecated_error_prone_window_functions;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int DEPRECATED_FUNCTION;
 }
 
 namespace
@@ -34,8 +42,16 @@ class FunctionRunningAccumulate : public IFunction
 {
 public:
     static constexpr auto name = "runningAccumulate";
-    static FunctionPtr create(ContextPtr)
+
+    static FunctionPtr create(ContextPtr context)
     {
+        if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
+            throw Exception(
+                ErrorCodes::DEPRECATED_FUNCTION,
+                "Function {} is deprecated since its usage is error-prone (see docs)."
+                "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
+                name);
+
         return std::make_shared<FunctionRunningAccumulate>();
     }
 

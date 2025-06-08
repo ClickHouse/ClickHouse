@@ -10,7 +10,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Interpreters/Context.h>
 #include <Poco/Event.h>
 
 
@@ -103,6 +102,7 @@ public:
         , format_settings(params.format_settings)
         , min_chunk_bytes(params.min_chunk_bytes)
         , max_block_size(params.max_block_size)
+        , last_block_missing_values(getPort().getHeader().columns())
         , is_server(params.is_server)
         , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, CurrentMetrics::ParallelParsingInputFormatThreadsScheduled, params.max_threads)
     {
@@ -124,9 +124,14 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "resetParser() is not allowed for {}", getName());
     }
 
-    const BlockMissingValues & getMissingValues() const final
+    const BlockMissingValues * getMissingValues() const final
     {
-        return last_block_missing_values;
+        return &last_block_missing_values;
+    }
+
+    void setSerializationHints(const SerializationInfoByName & hints) override
+    {
+        serialization_hints = hints;
     }
 
     size_t getApproxBytesReadForChunk() const override { return last_approx_bytes_read_for_chunk; }
@@ -137,7 +142,7 @@ private:
 
     Chunk read() final;
 
-    void onCancel() final
+    void onCancel() noexcept final
     {
         /*
          * The format parsers themselves are not being cancelled here, so we'll
@@ -190,7 +195,7 @@ private:
             }
         }
 
-        const BlockMissingValues & getMissingValues() const { return input_format->getMissingValues(); }
+        const BlockMissingValues * getMissingValues() const { return input_format->getMissingValues(); }
 
     private:
         const InputFormatPtr & input_format;
@@ -207,6 +212,7 @@ private:
 
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
+    SerializationInfoByName serialization_hints;
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
@@ -292,7 +298,7 @@ private:
             first_parser_finished.wait();
     }
 
-    void finishAndWait()
+    void finishAndWait() noexcept
     {
         /// Defending concurrent segmentator thread join
         std::lock_guard finish_and_wait_lock(finish_and_wait_mutex);

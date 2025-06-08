@@ -89,20 +89,20 @@ private:
 ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
 {
     ColumnPtr array_ptr = arguments[0].column;
-    const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
+    const ColumnArray & array = checkAndGetColumn<ColumnArray>(*array_ptr);
 
     const auto & return_type = result_type;
 
     auto res_ptr = return_type->createColumn();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
-    const IColumn & src_data = array->getData();
-    const ColumnArray::Offsets & offsets = array->getOffsets();
+    const IColumn & src_data = array.getData();
+    const ColumnArray::Offsets & offsets = array.getOffsets();
 
     IColumn & res_data = res.getData();
     ColumnArray::Offsets & res_offsets = res.getOffsets();
 
-    const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(src_data);
+    const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(&src_data);
 
     const IColumn * inner_col;
 
@@ -289,7 +289,18 @@ void FunctionArrayDistinct::executeHashed(
 
 REGISTER_FUNCTION(ArrayDistinct)
 {
-    factory.registerFunction<FunctionArrayDistinct>();
+    FunctionDocumentation::Description description = "Returns an array containing only the distinct elements of an array.";
+    FunctionDocumentation::Syntax syntax = "arrayDistinct(arr)";
+    FunctionDocumentation::Arguments argument = {
+        {"arr", "Array for which to extract distinct elements. [`Array(T)`](/sql-reference/data-types/array)."},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array containing the distinct elements. [`Array(T)`](/sql-reference/data-types/array).";
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayDistinct([1, 2, 2, 3, 1]);", "[1,2,3]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayDistinct>(documentation);
 }
 
 }

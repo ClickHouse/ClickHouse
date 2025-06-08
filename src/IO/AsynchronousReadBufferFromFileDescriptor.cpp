@@ -1,4 +1,3 @@
-#include <cerrno>
 #include <ctime>
 #include <optional>
 #include <Common/ProfileEvents.h>
@@ -196,7 +195,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
             return new_pos;
         }
-        else if (prefetch_future.valid())
+        if (prefetch_future.valid())
         {
             /// Read from prefetch buffer and recheck if the new position is valid inside.
             if (nextImpl())
@@ -244,7 +243,7 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
     file_offset_of_buffer_end = 0;
 }
 
-size_t AsynchronousReadBufferFromFileDescriptor::getFileSize()
+std::optional<size_t> AsynchronousReadBufferFromFileDescriptor::tryGetFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
 }

@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -37,9 +36,10 @@ public:
     void resetReadBuffer() override;
 
     /// TODO: remove context somehow.
-    void setContext(const ContextPtr & context_) { context = Context::createCopy(context_); }
+    void setContext(const ContextPtr & context_);
+    void setQueryParameters(const NameToNameMap & parameters);
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
@@ -49,7 +49,7 @@ private:
     ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
                            const FormatSettings & format_settings_);
 
-    enum class ParserType
+    enum class ParserType : uint8_t
     {
         Streaming,
         BatchTemplate,

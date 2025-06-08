@@ -1,8 +1,9 @@
 import os
 
 import pytest
-from helpers.test_tools import TSV
+
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_DIR = os.path.join(SCRIPT_DIR, "configs")

@@ -7,6 +7,7 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -84,6 +85,10 @@ def test_system_tables(start_cluster):
             "keep_free_space": "0",
         },
     ]
+    if node1.with_remote_database_disk:
+        expected_disks_data.append(
+            {"name": "disk_db_remote", "path": "", "keep_free_space": "0"}
+        )
 
     click_disk_data = json.loads(
         node1.query("SELECT name, path, keep_free_space FROM system.disks FORMAT JSON")
@@ -1783,15 +1788,12 @@ def test_move_across_policies_does_not_work(start_cluster):
         except QueryRuntimeException:
             """All parts of partition 'all' are already on disk 'jbod2'."""
 
-        with pytest.raises(
-            QueryRuntimeException,
-            match=".*because disk does not belong to storage policy.*",
-        ):
-            node1.query(
-                """ALTER TABLE {name}2 ATTACH PARTITION tuple() FROM {name}""".format(
-                    name=name
-                )
+        # works when attach
+        node1.query(
+            """ALTER TABLE {name}2 ATTACH PARTITION tuple() FROM {name}""".format(
+                name=name
             )
+        )
 
         with pytest.raises(
             QueryRuntimeException,
@@ -1814,7 +1816,7 @@ def test_move_across_policies_does_not_work(start_cluster):
             )
 
         assert node1.query(
-            """SELECT * FROM {name}""".format(name=name)
+            """SELECT * FROM {name}2""".format(name=name)
         ).splitlines() == ["1"]
 
     finally:

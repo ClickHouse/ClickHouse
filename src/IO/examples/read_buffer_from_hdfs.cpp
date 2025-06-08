@@ -1,8 +1,7 @@
-#include <memory>
-#include <string>
+#include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <base/types.h>
 #include <Common/Config/ConfigProcessor.h>
 

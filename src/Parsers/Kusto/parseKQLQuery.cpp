@@ -1,20 +1,11 @@
-#include <Parsers/parseQuery.h>
-
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Parsers/ParserQuery.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/Kusto/KQLLexer.h>
 #include <Parsers/Kusto/KQLTokenIterator.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <base/find_symbols.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 
 namespace DB
@@ -91,16 +82,14 @@ void writeQueryWithHighlightedErrorPositions(
             out << "\033[41;1m \033[0m";
             return;
         }
-        else
-        {
-            size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
 
-            /// Bright on red background.
-            out << "\033[41;1m";
-            out.write(current_position_to_hilite, bytes_to_hilite);
-            out << "\033[0m";
-            pos = current_position_to_hilite + bytes_to_hilite;
-        }
+        size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
+
+        /// Bright on red background.
+        out << "\033[41;1m";
+        out.write(current_position_to_hilite, bytes_to_hilite);
+        out << "\033[0m";
+        pos = current_position_to_hilite + bytes_to_hilite;
     }
     out.write(pos, end - pos);
 }
@@ -265,31 +254,6 @@ ASTPtr tryParseKQLQuery(
     const auto last_token = token_iterator.max();
     _out_query_end = last_token.end;
 
-    ASTInsertQuery * insert = nullptr;
-    if (parse_res)
-    {
-        if (auto * explain = res->as<ASTExplainQuery>())
-        {
-            if (auto explained_query = explain->getExplainedQuery())
-            {
-                insert = explained_query->as<ASTInsertQuery>();
-            }
-        }
-        else
-        {
-            insert = res->as<ASTInsertQuery>();
-        }
-    }
-
-    // If parsed query ends at data for insertion. Data for insertion could be
-    // in any format and not necessary be lexical correct, so we can't perform
-    // most of the checks.
-    if (insert && insert->data)
-    {
-        return res;
-    }
-
-    // More granular checks for queries other than INSERT w/inline data.
     /// Lexical error
     if (last_token.isError())
     {

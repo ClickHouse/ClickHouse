@@ -40,8 +40,13 @@ public:
             : function(function_), argument_types(argument_types_), parameters(parameters_) {}
 
     AggregateFunctionPtr getFunction() const { return function; }
+    String getFunctionName() const;
+    const DataTypes & getArgumentsDataTypes() const { return argument_types; }
+    const Array & getParameters() const { return parameters; }
     String getName() const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
+
+DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters);
 
 }

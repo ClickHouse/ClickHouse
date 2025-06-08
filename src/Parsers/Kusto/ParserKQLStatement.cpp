@@ -1,19 +1,18 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/CommonParsers.h>
 #include <Parsers/IParserBase.h>
-#include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSetQuery.h>
+
 
 namespace DB
 {
 
 bool ParserKQLStatement::parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected)
 {
-    ParserKQLWithOutput query_with_output_p(end, allow_settings_after_format_in_insert);
+    ParserKQLWithOutput query_with_output_p(end);
 
     bool res = query_with_output_p.parse(pos, node, expected);
     if (!res)

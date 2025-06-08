@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Common/Exception.h>
+
 #include <boost/range/adaptor/map.hpp>
 
 
@@ -35,7 +36,7 @@ public:
     {
         auto new_min_block = new_part_info.min_block;
         auto new_max_block = new_part_info.max_block;
-        auto & parts = partitions[new_part_info.partition_id];
+        auto & parts = partitions[new_part_info.getPartitionId()];
 
         /// Find the first part with max_block >= `part_info.min_block`.
         auto first_it = parts.lower_bound(new_min_block);
@@ -98,7 +99,7 @@ public:
 
     bool isCoveredByAnotherPart(const MergeTreePartInfo & part_info) const
     {
-        auto partition_it = partitions.find(part_info.partition_id);
+        auto partition_it = partitions.find(part_info.getPartitionId());
         if (partition_it == partitions.end())
             return false;
 
@@ -151,7 +152,7 @@ BackupCoordinationReplicatedTables::~BackupCoordinationReplicatedTables() = defa
 
 void BackupCoordinationReplicatedTables::addPartNames(PartNamesForTableReplica && part_names)
 {
-    const auto & table_shared_id = part_names.table_shared_id;
+    const auto & table_zk_path = part_names.table_zk_path;
     const auto & table_name_for_logs = part_names.table_name_for_logs;
     const auto & replica_name = part_names.replica_name;
     const auto & part_names_and_checksums = part_names.part_names_and_checksums;
@@ -159,7 +160,7 @@ void BackupCoordinationReplicatedTables::addPartNames(PartNamesForTableReplica &
     if (prepared)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addPartNames() must not be called after preparing");
 
-    auto & table_info = table_infos[table_shared_id];
+    auto & table_info = table_infos[table_zk_path];
     table_info.table_name_for_logs = table_name_for_logs;
 
     if (!table_info.covered_parts_finder)
@@ -200,11 +201,11 @@ void BackupCoordinationReplicatedTables::addPartNames(PartNamesForTableReplica &
     }
 }
 
-Strings BackupCoordinationReplicatedTables::getPartNames(const String & table_shared_id, const String & replica_name) const
+Strings BackupCoordinationReplicatedTables::getPartNames(const String & table_zk_path, const String & replica_name) const
 {
     prepare();
 
-    auto it = table_infos.find(table_shared_id);
+    auto it = table_infos.find(table_zk_path);
     if (it == table_infos.end())
         return {};
 
@@ -218,7 +219,7 @@ Strings BackupCoordinationReplicatedTables::getPartNames(const String & table_sh
 
 void BackupCoordinationReplicatedTables::addMutations(MutationsForTableReplica && mutations_for_table_replica)
 {
-    const auto & table_shared_id = mutations_for_table_replica.table_shared_id;
+    const auto & table_zk_path = mutations_for_table_replica.table_zk_path;
     const auto & table_name_for_logs = mutations_for_table_replica.table_name_for_logs;
     const auto & replica_name = mutations_for_table_replica.replica_name;
     const auto & mutations = mutations_for_table_replica.mutations;
@@ -226,7 +227,7 @@ void BackupCoordinationReplicatedTables::addMutations(MutationsForTableReplica &
     if (prepared)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMutations() must not be called after preparing");
 
-    auto & table_info = table_infos[table_shared_id];
+    auto & table_info = table_infos[table_zk_path];
     table_info.table_name_for_logs = table_name_for_logs;
     for (const auto & [mutation_id, mutation_entry] : mutations)
         table_info.mutations.emplace(mutation_id, mutation_entry);
@@ -236,11 +237,11 @@ void BackupCoordinationReplicatedTables::addMutations(MutationsForTableReplica &
 }
 
 std::vector<MutationInfo>
-BackupCoordinationReplicatedTables::getMutations(const String & table_shared_id, const String & replica_name) const
+BackupCoordinationReplicatedTables::getMutations(const String & table_zk_path, const String & replica_name) const
 {
     prepare();
 
-    auto it = table_infos.find(table_shared_id);
+    auto it = table_infos.find(table_zk_path);
     if (it == table_infos.end())
         return {};
 
@@ -257,16 +258,16 @@ BackupCoordinationReplicatedTables::getMutations(const String & table_shared_id,
 
 void BackupCoordinationReplicatedTables::addDataPath(DataPathForTableReplica && data_path_for_table_replica)
 {
-    const auto & table_shared_id = data_path_for_table_replica.table_shared_id;
+    const auto & table_zk_path = data_path_for_table_replica.table_zk_path;
     const auto & data_path = data_path_for_table_replica.data_path;
 
-    auto & table_info = table_infos[table_shared_id];
+    auto & table_info = table_infos[table_zk_path];
     table_info.data_paths.emplace(data_path);
 }
 
-Strings BackupCoordinationReplicatedTables::getDataPaths(const String & table_shared_id) const
+Strings BackupCoordinationReplicatedTables::getDataPaths(const String & table_zk_path) const
 {
-    auto it = table_infos.find(table_shared_id);
+    auto it = table_infos.find(table_zk_path);
     if (it == table_infos.end())
         return {};
 
@@ -289,11 +290,12 @@ void BackupCoordinationReplicatedTables::prepare() const
             for (const auto & [part_name, part_replicas] : table_info.replicas_by_part_name)
             {
                 auto part_info = MergeTreePartInfo::fromPartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+                [[maybe_unused]] const auto & partition_id = part_info.getPartitionId();
 
                 auto & min_data_versions_by_partition = table_info.min_data_versions_by_partition;
-                auto it2 = min_data_versions_by_partition.find(part_info.partition_id);
+                auto it2 = min_data_versions_by_partition.find(partition_id);
                 if (it2 == min_data_versions_by_partition.end())
-                    min_data_versions_by_partition[part_info.partition_id] = part_info.getDataVersion();
+                    min_data_versions_by_partition[partition_id] = part_info.getDataVersion();
                 else
                     it2->second = std::min(it2->second, part_info.getDataVersion());
 

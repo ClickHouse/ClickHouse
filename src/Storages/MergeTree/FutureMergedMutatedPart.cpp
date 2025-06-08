@@ -26,7 +26,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
         future_part_storage_type = std::min(future_part_storage_type, part->getDataPartStorage().getType());
     }
 
-    auto chosen_format = parts_.front()->storage.choosePartFormatOnDisk(sum_bytes_uncompressed, sum_rows);
+    auto chosen_format = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows);
     future_part_type = std::min(future_part_type, chosen_format.part_type);
     future_part_storage_type = std::min(future_part_storage_type, chosen_format.storage_type);
     assign(std::move(parts_), {future_part_type, future_part_storage_type});
@@ -57,7 +57,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
     }
 
     part_format = future_part_format;
-    part_info.partition_id = parts.front()->info.partition_id;
+    part_info.setPartitionId(parts.front()->info.getPartitionId());
     part_info.min_block = parts.front()->info.min_block;
     part_info.max_block = parts.back()->info.max_block;
     part_info.level = max_level + 1;
@@ -88,7 +88,8 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
 
 void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const IReservation * reservation)
 {
-    path = storage.getFullPathOnDisk(reservation->getDisk()) + name + "/";
+    path = fs::path(storage.getFullPathOnDisk(reservation->getDisk())) / name;
+    path += "/";
 }
 
 }

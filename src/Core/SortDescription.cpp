@@ -1,10 +1,13 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <IO/Operators.h>
+#include <Columns/IColumn.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -14,6 +17,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
 {
@@ -103,7 +111,15 @@ static std::string getSortDescriptionDump(const SortDescription & description, c
     WriteBufferFromOwnString buffer;
 
     for (size_t i = 0; i < description.size(); ++i)
-        buffer << header_types[i]->getName() << ' ' << description[i].direction << ' ' << description[i].nulls_direction;
+    {
+        if (i != 0)
+            buffer << ", ";
+
+        buffer << "(type: " << header_types[i]->getName()
+            << ", direction: " << description[i].direction
+            << ", nulls_direction: " << description[i].nulls_direction
+            << ")";
+    }
 
     return buffer.str();
 }
@@ -199,6 +215,60 @@ JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description)
     }
 
     return json_array;
+}
+
+void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out)
+{
+    writeVarUInt(sort_description.size(), out);
+    for (const auto & desc : sort_description)
+    {
+        writeStringBinary(desc.column_name, out);
+
+        UInt8 flags = 0;
+        if (desc.direction > 0)
+            flags |= 1;
+        if (desc.nulls_direction > 0)
+            flags |= 2;
+        if (desc.collator)
+            flags |= 4;
+        if (desc.with_fill)
+            flags |= 8;
+
+        writeIntBinary(flags, out);
+
+        if (desc.collator)
+            writeStringBinary(desc.collator->getLocale(), out);
+
+        if (desc.with_fill)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH FILL is not supported in serialized sort description");
+    }
+}
+
+void deserializeSortDescription(SortDescription & sort_description, ReadBuffer & in)
+{
+    size_t size = 0;
+    readVarUInt(size, in);
+    sort_description.resize(size);
+    for (auto & desc : sort_description)
+    {
+        readStringBinary(desc.column_name, in);
+        UInt8 flags = 0;
+        readIntBinary(flags, in);
+
+        desc.direction = (flags & 1) ? 1 : -1;
+        desc.nulls_direction = (flags & 2) ? 1 : -1;
+
+        if (flags & 4)
+        {
+            String collator_locale;
+            readStringBinary(collator_locale, in);
+            if (!collator_locale.empty())
+                desc.collator = std::make_shared<Collator>(collator_locale);
+        }
+
+        if (flags & 8)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH FILL is not supported in deserialized sort description");
+    }
 }
 
 }

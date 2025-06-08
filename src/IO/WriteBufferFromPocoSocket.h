@@ -19,8 +19,6 @@ public:
     explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
     explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, const ProfileEvents::Event & write_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-    ~WriteBufferFromPocoSocket() override;
-
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
     using WriteBuffer::write;
@@ -37,11 +35,11 @@ protected:
     void socketSendBytes(const char * ptr, size_t size);
     void socketSendStr(const std::string & str)
     {
-        return socketSendBytes(str.data(), str.size());
+        socketSendBytes(str.data(), str.size());
     }
     void socketSendStr(const char * ptr)
     {
-        return socketSendBytes(ptr, strlen(ptr));
+        socketSendBytes(ptr, strlen(ptr));
     }
 
     Poco::Net::Socket & socket;

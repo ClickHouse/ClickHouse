@@ -1,5 +1,4 @@
 #pragma once
-#include <Common/ColumnsHashing.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
 
@@ -9,6 +8,12 @@
 
 namespace DB
 {
+
+namespace ColumnsHashing
+{
+struct HashMethodContextSettings;
+}
+
 class Arena;
 class Aggregator;
 
@@ -288,7 +293,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key_string_two_level) \
         M(low_cardinality_key_fixed_string_two_level)
 
-    enum class Type
+    enum class Type : uint8_t
     {
         EMPTY = 0,
         without_key,
@@ -311,7 +316,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isConvertibleToTwoLevel() const;
     void convertToTwoLevel();
     bool isLowCardinality() const;
-    static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContext::Settings & settings);
+    static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
 
 };
 

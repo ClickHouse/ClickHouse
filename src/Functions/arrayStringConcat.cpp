@@ -7,12 +7,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/Regexps.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
 
@@ -159,8 +157,13 @@ public:
             {"separator", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
         };
 
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -183,7 +186,7 @@ public:
         const ColumnString & col_string = assert_cast<const ColumnString &>(*str_subcolumn.get());
 
         auto col_res = ColumnString::create();
-        if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(col_arr.getData()))
+        if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(&col_arr.getData()))
             executeInternal(col_string, col_arr, delimiter, *col_res, col_nullable->getNullMapData().data());
         else
             executeInternal(col_string, col_arr, delimiter, *col_res);
@@ -196,7 +199,22 @@ public:
 
 REGISTER_FUNCTION(ArrayStringConcat)
 {
-    factory.registerFunction<FunctionArrayStringConcat>();
+    FunctionDocumentation::Description description = "Concatenates the elements of an array of strings into a single string, using the specified delimiter between elements.";
+    FunctionDocumentation::Syntax syntax = "arrayStringConcat(arr[, delimiter])";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr", "The source array of strings. [`Array(String)`](/sql-reference/data-types/array)."},
+        {"delimiter", "Optional. The delimiter to insert between elements. [`String`](/sql-reference/data-types/string). Defaults to empty string if not specified."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "A string consisting of the array elements joined by the delimiter. String.";
+    FunctionDocumentation::Examples examples = {
+        {"Basic usage", "SELECT arrayStringConcat(['a', 'b', 'c']);", "'abc'"},
+        {"With delimiter", "SELECT arrayStringConcat(['a', 'b', 'c'], ',');", "a, b, c"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayStringConcat>(documentation);
 }
 
 }

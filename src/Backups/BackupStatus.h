@@ -2,11 +2,12 @@
 
 #include <base/types.h>
 
+#include <vector>
 
 namespace DB
 {
 
-enum class BackupStatus
+enum class BackupStatus : uint8_t
 {
     /// Statuses of making backups
     CREATING_BACKUP,

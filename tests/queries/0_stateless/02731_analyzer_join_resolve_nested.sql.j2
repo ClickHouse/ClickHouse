@@ -31,7 +31,7 @@ INSERT INTO nnna VALUES (1, [[([([(1,'d')],'d')], 's')]], ['s']);
 CREATE TABLE nnnb ( x UInt64, t Nested(t Nested(t Nested(t Nested(t UInt32, s String), s String), s String), s String) ) ENGINE = MergeTree ORDER BY x;
 INSERT INTO nnnb VALUES (1, [[([([(1,'d')],'d')], 's')]], ['s']);
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 {% for join_use_nulls in [0, 1] -%}
 

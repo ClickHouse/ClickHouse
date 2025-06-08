@@ -3,6 +3,7 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSelectQuery.h>
+
 namespace DB
 {
 bool ParserKQLExtend ::parseImpl(KQLPos & pos, ASTPtr & node, [[maybe_unused]] KQLExpected & expected)
@@ -23,7 +24,7 @@ bool ParserKQLExtend ::parseImpl(KQLPos & pos, ASTPtr & node, [[maybe_unused]] K
     {
         if (alias.empty())
         {
-            alias = std::format("Column{}", new_column_index);
+            alias = fmt::format("Column{}", new_column_index);
             ++new_column_index;
             new_extend_str += " AS";
         }

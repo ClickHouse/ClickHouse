@@ -3,7 +3,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
-#include "Coordination/KeeperStorage.h"
 #include "Parsers/ASTExpressionList.h"
 #include "Parsers/ASTIdentifier.h"
 #include "Parsers/ASTSelectQuery.h"
@@ -42,7 +41,6 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
     auto cloned_select_query = selectq->clone();
     expr_list->children[0] = makeASTFunction("count");
 
-    auto table_name = table_expr->database_and_table_name->as<ASTTableIdentifier>()->name();
     table_expr->children.clear();
     table_expr->children.emplace_back(std::make_shared<ASTSubquery>());
     table_expr->database_and_table_name = nullptr;

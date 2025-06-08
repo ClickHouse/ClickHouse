@@ -1,9 +1,16 @@
 #pragma once
 
 #include <Compression/ICompressionCodec.h>
+#include <Common/Logger.h>
+#include <atomic>
 #include <map>
 #include <random>
 #include <pcg_random.hpp>
+
+#include "config.h"
+
+#if USE_QPL
+
 #include <qpl/qpl.h>
 
 namespace Poco
@@ -117,3 +124,4 @@ private:
 };
 
 }
+#endif

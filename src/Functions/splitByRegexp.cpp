@@ -1,11 +1,14 @@
 #include <Columns/ColumnConst.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionTokens.h>
-#include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/Regexps.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -102,7 +105,7 @@ public:
                         return false;
             }
 
-            pos += 1;
+            ++pos;
             token_end = pos;
             ++splits;
         }
@@ -148,11 +151,68 @@ public:
 
 using FunctionSplitByRegexp = FunctionTokens<SplitByRegexpImpl>;
 
+/// Fallback splitByRegexp to splitByChar when its 1st argument is a trivial char for better performance
+class SplitByRegexpOverloadResolver : public IFunctionOverloadResolver
+{
+public:
+    static constexpr auto name = "splitByRegexp";
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<SplitByRegexpOverloadResolver>(context); }
+
+    explicit SplitByRegexpOverloadResolver(ContextPtr context_)
+        : context(context_)
+        , split_by_regexp(FunctionSplitByRegexp::create(context)) {}
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return SplitByRegexpImpl::getNumberOfArguments(); }
+    bool isVariadic() const override { return SplitByRegexpImpl::isVariadic(); }
+    /// ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return SplitByRegexpImpl::getArgumentsThatAreAlwaysConstant(); }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    {
+        if (patternIsTrivialChar(arguments))
+            return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
+        return std::make_unique<FunctionToFunctionBaseAdaptor>(
+            split_by_regexp,
+            DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
+            return_type);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return split_by_regexp->getReturnTypeImpl(arguments);
+    }
+
+private:
+    bool patternIsTrivialChar(const ColumnsWithTypeAndName & arguments) const
+    {
+        if (!arguments[0].column.get())
+            return false;
+        const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
+        if (!col)
+            return false;
+
+        String pattern = col->getValue<String>();
+        if (pattern.size() == 1)
+        {
+            OptimizedRegularExpression re = Regexps::createRegexp<false, false, false>(pattern);
+
+            std::string required_substring;
+            bool is_trivial;
+            bool required_substring_is_prefix;
+            re.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+            return is_trivial && required_substring == pattern;
+        }
+        return false;
+    }
+
+    ContextPtr context;
+    FunctionPtr split_by_regexp;
+};
 }
 
 REGISTER_FUNCTION(SplitByRegexp)
 {
-    factory.registerFunction<FunctionSplitByRegexp>();
+    factory.registerFunction<SplitByRegexpOverloadResolver>();
 }
 
 }

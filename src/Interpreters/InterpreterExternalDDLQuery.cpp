@@ -50,18 +50,18 @@ BlockIO InterpreterExternalDDLQuery::execute()
             return MySQLInterpreter::InterpreterMySQLDropQuery(
                 external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
                 getIdentifierName(arguments[1])).execute();
-        else if (external_ddl_query.external_ddl->as<ASTRenameQuery>())
+        if (external_ddl_query.external_ddl->as<ASTRenameQuery>())
             return MySQLInterpreter::InterpreterMySQLRenameQuery(
-                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
-                getIdentifierName(arguments[1])).execute();
-        else if (external_ddl_query.external_ddl->as<MySQLParser::ASTAlterQuery>())
+                       external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]), getIdentifierName(arguments[1]))
+                .execute();
+        if (external_ddl_query.external_ddl->as<MySQLParser::ASTAlterQuery>())
             return MySQLInterpreter::InterpreterMySQLAlterQuery(
-                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
-                getIdentifierName(arguments[1])).execute();
-        else if (external_ddl_query.external_ddl->as<MySQLParser::ASTCreateQuery>())
+                       external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]), getIdentifierName(arguments[1]))
+                .execute();
+        if (external_ddl_query.external_ddl->as<MySQLParser::ASTCreateQuery>())
             return MySQLInterpreter::InterpreterMySQLCreateQuery(
-                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
-                getIdentifierName(arguments[1])).execute();
+                       external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]), getIdentifierName(arguments[1]))
+                .execute();
 #endif
     }
 

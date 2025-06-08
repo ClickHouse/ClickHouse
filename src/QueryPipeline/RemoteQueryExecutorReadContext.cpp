@@ -18,8 +18,12 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
-RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_, bool suspend_when_query_sent_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this)), executor(executor_), suspend_when_query_sent(suspend_when_query_sent_)
+RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
+    RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_)
+    : AsyncTaskExecutor(std::make_unique<Task>(*this))
+    , executor(executor_)
+    , suspend_when_query_sent(suspend_when_query_sent_)
+    , read_packet_type_separately(read_packet_type_separately_)
 {
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
         throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
@@ -28,11 +32,16 @@ RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(RemoteQueryExecut
     epoll.add(timer.getDescriptor());
 }
 
+bool RemoteQueryExecutorReadContext::read()
+{
+    resume();
+    return !isInProgress();
+}
+
 bool RemoteQueryExecutorReadContext::checkBeforeTaskResume()
 {
     return !is_in_progress.load(std::memory_order_relaxed) || checkTimeout();
 }
-
 
 void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback)
 {
@@ -47,12 +56,22 @@ void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, Sus
 
     while (true)
     {
+        read_context.has_read_packet_part = PacketPart::None;
+
+        if (read_context.read_packet_type_separately)
+        {
+            read_context.packet.type = read_context.executor.getConnections().receivePacketTypeUnlocked(async_callback);
+            read_context.has_read_packet_part = PacketPart::Type;
+            suspend_callback();
+        }
         read_context.packet = read_context.executor.getConnections().receivePacketUnlocked(async_callback);
+        read_context.has_read_packet_part = PacketPart::Body;
         suspend_callback();
     }
 }
 
-void RemoteQueryExecutorReadContext::processAsyncEvent(int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
+void RemoteQueryExecutorReadContext::processAsyncEvent(
+    int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
 {
     connection_fd = fd;
     epoll.add(connection_fd, events);
@@ -141,14 +160,29 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
     /// connection_fd is closed by Poco::Net::Socket or Epoll
     if (pipe_fd[0] != -1)
     {
-        int err = close(pipe_fd[0]);
+        [[maybe_unused]] int err = close(pipe_fd[0]);
         chassert(!err || errno == EINTR);
     }
     if (pipe_fd[1] != -1)
     {
-        int err = close(pipe_fd[1]);
+        [[maybe_unused]] int err = close(pipe_fd[1]);
         chassert(!err || errno == EINTR);
     }
+}
+
+UInt64 RemoteQueryExecutorReadContext::getPacketType() const
+{
+    chassert(hasReadTillPacketType());
+    return packet.type;
+}
+
+Packet RemoteQueryExecutorReadContext::getPacket()
+{
+    chassert(hasReadPacket());
+
+    Packet p{std::move(packet)};
+    has_read_packet_part = PacketPart::None;
+    return p;
 }
 
 }

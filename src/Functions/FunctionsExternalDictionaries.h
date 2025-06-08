@@ -47,7 +47,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -274,11 +273,9 @@ public:
                         getName(),
                         key_column_type->getName());
                 }
-                else
-                {
-                    key_columns = {key_column};
-                    key_types = {key_column_type};
-                }
+
+                key_columns = {key_column};
+                key_types = {key_column_type};
             }
         }
 
@@ -297,7 +294,7 @@ private:
     mutable FunctionDictHelper helper;
 };
 
-enum class DictionaryGetFunctionType
+enum class DictionaryGetFunctionType : uint8_t
 {
     get,
     getOrDefault,
@@ -403,13 +400,10 @@ public:
 
             return std::make_shared<DataTypeTuple>(attribute_types, attribute_names);
         }
-        else
-        {
-            if (key_is_nullable)
-                return makeNullable(attribute_types.front());
-            else
-                return attribute_types.front();
-        }
+
+        if (key_is_nullable)
+            return makeNullable(attribute_types.front());
+        return attribute_types.front();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -575,11 +569,9 @@ public:
                          getName(),
                          key_col_with_type.type->getName());
                 }
-                else
-                {
-                    key_columns = {std::move(key_column)};
-                    key_types = {std::move(key_column_type)};
-                }
+
+                key_columns = {std::move(key_column)};
+                key_types = {std::move(key_column_type)};
             }
         }
 
@@ -630,11 +622,11 @@ private:
             column_before_cast.type,
             column_before_cast.name};
 
-        auto casted = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
+        auto cast = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
 
         auto mask_col = ColumnUInt8::create();
         mask_col->getData() = std::move(default_mask);
-        return {std::move(casted), std::move(mask_col)};
+        return {std::move(cast), std::move(mask_col)};
     }
 
     void restoreShortCircuitColumn(
@@ -652,21 +644,9 @@ private:
         };
 
         auto rows = mask_column->size();
-        result_column = if_func->build(if_args)->execute(if_args, result_type, rows);
+        result_column = if_func->build(if_args)->execute(if_args, result_type, rows, /* dry_run = */ false);
     }
 
-#ifdef ABORT_ON_LOGICAL_ERROR
-    void validateShortCircuitResult(const ColumnPtr & column, const IColumn::Filter & filter) const
-    {
-        size_t expected_size = filter.size() - countBytesInFilter(filter);
-        size_t col_size = column->size();
-        if (col_size != expected_size)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Invalid size of getColumnsOrDefaultShortCircuit result. Column has {} rows, but filter contains {} bytes.",
-                col_size, expected_size);
-    }
-#endif
 
     ColumnPtr executeDictionaryRequest(
         std::shared_ptr<const IDictionary> & dictionary,
@@ -695,11 +675,6 @@ private:
             {
                 IColumn::Filter default_mask;
                 result_columns = dictionary->getColumns(attribute_names, attribute_tuple_type.getElements(), key_columns, key_types, default_mask);
-
-#ifdef ABORT_ON_LOGICAL_ERROR
-                for (const auto & column : result_columns)
-                    validateShortCircuitResult(column, default_mask);
-#endif
 
                 auto [defaults_column, mask_column] =
                     getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
@@ -735,10 +710,6 @@ private:
             {
                 IColumn::Filter default_mask;
                 result = dictionary->getColumn(attribute_names[0], attribute_type, key_columns, key_types, default_mask);
-
-#ifdef ABORT_ON_LOGICAL_ERROR
-                validateShortCircuitResult(result, default_mask);
-#endif
 
                 auto [defaults_column, mask_column] =
                     getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
@@ -1153,9 +1124,9 @@ private:
         const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
 
         auto key_column = ColumnWithTypeAndName{arguments[1].column, arguments[1].type, arguments[1].name};
-        auto key_column_casted = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
+        auto key_column_cast = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
 
-        ColumnPtr result = dictionary->getHierarchy(key_column_casted, hierarchical_attribute.type);
+        ColumnPtr result = dictionary->getHierarchy(key_column_cast, hierarchical_attribute.type);
 
         return result;
     }
@@ -1211,10 +1182,10 @@ private:
         auto in_key_column = ColumnWithTypeAndName{arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
 
         auto hierarchical_attribute_non_nullable = removeNullable(hierarchical_attribute.type);
-        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute_non_nullable);
-        auto in_key_column_casted = castColumnAccurate(in_key_column, hierarchical_attribute_non_nullable);
+        auto key_column_cast = castColumnAccurate(key_column, hierarchical_attribute_non_nullable);
+        auto in_key_column_cast = castColumnAccurate(in_key_column, hierarchical_attribute_non_nullable);
 
-        ColumnPtr result = dictionary->isInHierarchy(key_column_casted, in_key_column_casted, hierarchical_attribute.type);
+        ColumnPtr result = dictionary->isInHierarchy(key_column_cast, in_key_column_cast, hierarchical_attribute.type);
 
         return result;
     }
@@ -1248,12 +1219,12 @@ public:
             return result_type->createColumn();
 
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = dictionary_helper->getDictionaryHierarchicalAttribute(dictionary);
+        const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
 
         auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
-        auto key_column_casted = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
+        auto key_column_cast = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
 
-        return dictionary->getDescendants(key_column_casted, removeNullable(hierarchical_attribute.type), level, hierarchical_parent_to_child_index);
+        return dictionary->getDescendants(key_column_cast, removeNullable(hierarchical_attribute.type), level, hierarchical_parent_to_child_index);
     }
 
     String name;
@@ -1356,7 +1327,7 @@ public:
                     "Illegal type of third argument of function {}. Expected const unsigned integer.",
                     getName());
 
-            auto value = static_cast<Int64>(arguments[2].column->getInt(0));
+            Int64 value = arguments[2].column->getInt(0);
             if (value < 0)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type of third argument of function {}. Expected const unsigned integer.",
@@ -1400,7 +1371,7 @@ public:
         }
 
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = dictionary_helper->getDictionaryHierarchicalAttribute(dictionary);
+        const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
 
         return std::make_shared<DataTypeArray>(removeNullable(hierarchical_attribute.type));
     }

@@ -27,14 +27,14 @@ public:
 
     void resetParser() override;
 
-    const BlockMissingValues & getMissingValues() const override;
+    const BlockMissingValues * getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
     Chunk read() override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }
@@ -75,6 +75,7 @@ private:
     void initializeIfNeeded();
 
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
+    std::shared_ptr<const arrow::KeyValueMetadata> metadata;
     std::shared_ptr<arrow::Schema> schema;
     const FormatSettings format_settings;
 };

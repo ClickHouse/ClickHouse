@@ -1,7 +1,10 @@
 #include <Processors/Formats/Impl/TabSeparatedRowOutputFormat.h>
+
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -95,7 +98,10 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
         if (is_raw)
+        {
             registerWithNamesAndTypes("LineAsString", register_func);
+            registerWithNamesAndTypes("Raw", register_func);
+        }
     }
 }
 

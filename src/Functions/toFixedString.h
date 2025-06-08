@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-enum class ConvertToFixedStringExceptionMode
+enum class ConvertToFixedStringExceptionMode : uint8_t
 {
     Throw,
     Null
@@ -116,6 +116,9 @@ public:
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             const auto src_n = column_fixed_string->getN();
+            if (src_n == n)
+                return column_fixed_string->cloneResized(column_fixed_string->size());
+
             if (src_n > n)
             {
                 if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)

@@ -38,8 +38,6 @@ protected:
 private:
     bool is_first;
     bool allow_alias_without_as_keyword;
-
-    static void parseJoinStrictness(Pos & pos, ASTTableJoin & table_join);
 };
 
 

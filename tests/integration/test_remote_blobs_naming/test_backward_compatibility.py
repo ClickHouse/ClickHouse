@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
+import logging
+import os
+import re
 from contextlib import contextmanager
 from difflib import unified_diff
-import logging
-import re
+
 import pytest
 
-import os
 from helpers.cluster import ClickHouseCluster
 
 

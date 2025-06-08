@@ -16,7 +16,8 @@ public:
     /// Initialize interpreter with query AST
     InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
         const ContextPtr & context_,
-        const SelectQueryOptions & select_query_options_);
+        const SelectQueryOptions & select_query_options_,
+        const Names & column_names = {});
 
     /** Initialize interpreter with query AST and storage.
       * After query tree is built left most table expression is replaced with table node that
@@ -25,9 +26,12 @@ public:
     InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
         const ContextPtr & context_,
         const StoragePtr & storage_,
-        const SelectQueryOptions & select_query_options_);
+        const SelectQueryOptions & select_query_options_,
+        const Names & column_names = {});
 
-    /// Initialize interpreter with query tree
+    /** Initialize interpreter with query tree.
+      * No query tree passes are applied.
+      */
     InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options_);
@@ -38,12 +42,17 @@ public:
     }
 
     Block getSampleBlock();
+    std::pair<Block, PlannerContextPtr> getSampleBlockAndPlannerContext();
 
     static Block getSampleBlock(const ASTPtr & query,
         const ContextPtr & context,
         const SelectQueryOptions & select_query_options = {});
 
     static Block getSampleBlock(const QueryTreeNodePtr & query_tree,
+        const ContextPtr & context_,
+        const SelectQueryOptions & select_query_options = {});
+
+    static std::pair<Block, PlannerContextPtr> getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options = {});
 
@@ -78,5 +87,7 @@ private:
     QueryTreeNodePtr query_tree;
     Planner planner;
 };
+
+void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);
 
 }

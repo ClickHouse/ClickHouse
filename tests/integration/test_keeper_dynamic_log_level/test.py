@@ -1,6 +1,7 @@
-import pytest
-import time
 import sys
+import time
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 

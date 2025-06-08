@@ -2,15 +2,9 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Common/AsynchronousMetrics.h>
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
-
-#include <vector>
-#include <atomic>
-#include <ctime>
 
 
 namespace DB

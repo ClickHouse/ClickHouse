@@ -161,7 +161,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
     else
     {
-        if (s_temporary.ignore(pos))
+        if (s_temporary.ignore(pos, expected))
             query->temporary = true;
 
         if (!s_tables.ignore(pos, expected))
@@ -201,7 +201,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->set(query->from, database);
 
     if (like)
-        query->like = like->as<ASTLiteral &>().value.safeGet<const String &>();
+        query->like = like->as<ASTLiteral &>().value.safeGet<String>();
 
     node = query;
 

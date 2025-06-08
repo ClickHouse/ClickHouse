@@ -79,12 +79,12 @@ bool ParserKQLSummarize::parseImpl(KQLPos & pos, ASTPtr & node, [[maybe_unused]]
                 String aggregate_fun = String(begin_pos->begin, begin_pos->end);
                 if (aggregate_functions.find(aggregate_fun) == aggregate_functions.end())
                 {
-                    alias = std::format("Columns{}", new_column_index);
+                    alias = fmt::format("Columns{}", new_column_index);
                     ++new_column_index;
                 }
                 else
                 {
-                    alias = std::format("{}_", aggregate_fun);
+                    alias = fmt::format("{}_", aggregate_fun);
                     auto agg_colum_pos = begin_pos;
                     ++agg_colum_pos;
                     ++agg_colum_pos;
@@ -96,7 +96,7 @@ bool ParserKQLSummarize::parseImpl(KQLPos & pos, ASTPtr & node, [[maybe_unused]]
                             alias = alias + String(agg_colum_pos->begin, agg_colum_pos->end);
                     }
                 }
-                expr = std::format("{} = {}", alias, expr);
+                expr = fmt::format("{} = {}", alias, expr);
             }
             expr_aggregations.push_back(expr);
         }
@@ -125,11 +125,11 @@ bool ParserKQLSummarize::parseImpl(KQLPos & pos, ASTPtr & node, [[maybe_unused]]
                     }
                     if (alias.empty())
                     {
-                        alias = std::format("Columns{}", new_column_index);
+                        alias = fmt::format("Columns{}", new_column_index);
                         ++new_column_index;
                     }
 
-                    expr = std::format("{} = {}", alias, expr);
+                    expr = fmt::format("{} = {}", alias, expr);
                 }
             }
             expr_groupbys.push_back(expr);

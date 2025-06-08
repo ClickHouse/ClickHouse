@@ -2,6 +2,7 @@
 #include <Processors/Transforms/RollupTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -21,8 +22,8 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-RollupStep::RollupStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_, bool use_nulls_)
-    : ITransformingStep(input_stream_, generateOutputHeader(params_.getHeader(input_stream_.header, final_), params_.keys, use_nulls_), getTraits())
+RollupStep::RollupStep(const Header & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_)
+    : ITransformingStep(input_header_, generateOutputHeader(params_.getHeader(input_header_, final_), params_.keys, use_nulls_), getTraits())
     , params(std::move(params_))
     , keys_size(params.keys_size)
     , final(final_)
@@ -46,13 +47,9 @@ void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     });
 }
 
-void RollupStep::updateOutputStream()
+void RollupStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
-        generateOutputHeader(params.getHeader(input_streams.front().header, final), params.keys, use_nulls),
-        getDataStreamTraits());
+    output_header = generateOutputHeader(params.getHeader(input_headers.front(), final), params.keys, use_nulls);
 }
-
 
 }

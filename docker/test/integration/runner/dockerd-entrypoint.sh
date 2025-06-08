@@ -54,7 +54,7 @@ set -e
 
 java_path="$(update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p')"
 export JAVA_PATH=$java_path
-export SPARK_HOME="/spark-3.3.2-bin-hadoop3"
+export SPARK_HOME="/spark-3.5.5-bin-hadoop3"
 export PATH=$SPARK_HOME/bin:$PATH
 export JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true"
 
@@ -62,8 +62,6 @@ echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse
 export CLICKHOUSE_TESTS_CLIENT_BIN_PATH=/clickhouse
 export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=/clickhouse-config
-export CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH=/clickhouse-odbc-bridge
-export CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH=/clickhouse-library-bridge
 
 export DOCKER_BASE_TAG=${DOCKER_BASE_TAG:=latest}
 export DOCKER_DOTNET_CLIENT_TAG=${DOCKER_DOTNET_CLIENT_TAG:=latest}

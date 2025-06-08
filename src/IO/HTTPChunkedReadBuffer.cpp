@@ -1,7 +1,7 @@
 #include <IO/HTTPChunkedReadBuffer.h>
 
 #include <IO/ReadHelpers.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <base/arithmeticOverflow.h>
 

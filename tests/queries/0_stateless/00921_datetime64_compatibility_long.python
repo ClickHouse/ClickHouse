@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # encoding: utf-8
 
-import re
-import itertools
-import sys
 import argparse
+import itertools
+import re
+import sys
 
 # Create SQL statement to verify dateTime64 is accepted as argument to functions taking DateTime.
 FUNCTIONS = """

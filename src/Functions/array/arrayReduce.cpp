@@ -21,7 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
@@ -73,7 +73,7 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
     ///  (possibly with parameters in parentheses, for example: "quantile(0.99)").
 
     if (arguments.size() < 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
             "Number of arguments for function {} doesn't match: passed {}, should be at least 2.",
             getName(), arguments.size());
 
@@ -216,7 +216,40 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
 
 REGISTER_FUNCTION(ArrayReduce)
 {
-    factory.registerFunction<FunctionArrayReduce>();
+    FunctionDocumentation::Description description = R"(
+Applies an aggregate function to array elements and returns its result.
+The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`.
+When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
+)";
+    FunctionDocumentation::Syntax syntax = "arrayReduce(agg_f, arr1 [, arr2, ... , arrN)]";
+    FunctionDocumentation::Arguments arguments = {
+        {"agg_f", "The name of an aggregate function which should be a constant [String](/sql-reference/data-types/string)."},
+        {"arr1 [, arr2, ... , arrN)]", "N arrays corresponding to the arguments of `agg_f`. [`Array(T)`](/sql-reference/data-types/array)."},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the result of the aggregate function";
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayReduce('max', [1, 2, 3]);", R"(
+┌─arrayReduce('max', [1, 2, 3])─┐
+│                             3 │
+└───────────────────────────────┘
+)"},{"Example with aggregate function using multiple arguments", R"(--If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
+
+SELECT arrayReduce('maxIf', [3, 5], [1, 0]);
+)", R"(
+┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
+│                                    3 │
+└──────────────────────────────────────┘
+)"},{"Example with a parametric aggregate function", R"(
+SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+)", R"(
+┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
+│                                                           4 │
+└─────────────────────────────────────────────────────────────┘
+)"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayReduce>(documentation);
 }
 
 }

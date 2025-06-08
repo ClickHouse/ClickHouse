@@ -8,7 +8,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <base/range.h>
 
 #include <constants.h>
@@ -17,6 +19,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
+}
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -32,10 +38,16 @@ namespace
 /// and returns h3 index of this point
 class FunctionGeoToH3 : public IFunction
 {
+    GeoToH3ArgumentOrder geotoh3_argument_order;
 public:
     static constexpr auto name = "geoToH3";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeoToH3>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGeoToH3>(context); }
+
+    explicit FunctionGeoToH3(ContextPtr context)
+    : geotoh3_argument_order(context->getSettingsRef()[Setting::geotoh3_argument_order])
+    {
+    }
 
     std::string getName() const override { return name; }
 
@@ -69,31 +81,49 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
             argument.column = argument.column->convertToFullColumnIfConst();
 
-        const auto * col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
-        if (!col_lon)
-            throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of argument {} of function {}. Must be Float64.",
-                    arguments[0].type->getName(),
-                    1,
-                    getName());
-        const auto & data_lon = col_lon->getData();
+        const ColumnFloat64 * col_lat = nullptr;
+        const ColumnFloat64 * col_lon = nullptr;
 
-        const auto * col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
+        if (geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT)
+        {
+            col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
+            col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
+        }
+        else
+        {
+            col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
+            col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
+        }
+
         if (!col_lat)
             throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of argument {} of function {}. Must be Float64.",
-                    arguments[1].type->getName(),
-                    2,
-                    getName());
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be Float64.",
+                arguments[1].type->getName(),
+                2,
+                getName());
+
         const auto & data_lat = col_lat->getData();
+
+        if (!col_lon)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be Float64.",
+                arguments[0].type->getName(),
+                1,
+                getName());
+        const auto & data_lon = col_lon->getData();
 
         const auto * col_res = checkAndGetColumn<ColumnUInt8>(non_const_arguments[2].column.get());
         if (!col_res)
@@ -149,3 +179,4 @@ REGISTER_FUNCTION(GeoToH3)
 }
 
 #endif
+

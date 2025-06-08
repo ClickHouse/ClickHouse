@@ -28,6 +28,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/copyData.h>
 #include <IO/Operators.h>
+#include <IO/Ask.h>
 #include <readpassphrase.h>
 
 #include <Poco/Util/XMLConfiguration.h>
@@ -100,35 +101,22 @@ namespace fs = std::filesystem;
 static auto executeScript(const std::string & command, bool throw_on_error = false)
 {
     auto sh = ShellCommand::execute(command);
+
     WriteBufferFromFileDescriptor wb_stdout(STDOUT_FILENO);
-    WriteBufferFromFileDescriptor wb_stderr(STDERR_FILENO);
     copyData(sh->out, wb_stdout);
+    wb_stdout.finalize();
+
+    WriteBufferFromFileDescriptor wb_stderr(STDERR_FILENO);
     copyData(sh->err, wb_stderr);
+    wb_stderr.finalize();
 
     if (throw_on_error)
     {
         sh->wait();
         return 0;
     }
-    else
-        return sh->tryWait();
-}
 
-static bool ask(std::string question)
-{
-    while (true)
-    {
-        std::string answer;
-        std::cout << question;
-        std::getline(std::cin, answer);
-        if (!std::cin.good())
-            return false;
-
-        if (answer.empty() || answer == "n" || answer == "N")
-            return false;
-        if (answer == "y" || answer == "Y")
-            return true;
-    }
+    return sh->tryWait();
 }
 
 static bool filesEqual(std::string path1, std::string path2)
@@ -323,7 +311,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     {
                         fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
                                    main_bin_path.string(), points_to.string(), binary_self_canonical_path.string());
-                        fs::remove(main_bin_path);
+                        (void)fs::remove(main_bin_path);
                     }
                 }
             }
@@ -489,7 +477,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                         {
                             fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
                                        symlink_path.string(), points_to.string(), main_bin_path.string());
-                            fs::remove(symlink_path);
+                            (void)fs::remove(symlink_path);
                         }
                     }
                 }
@@ -729,6 +717,15 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             }
         }
 
+        /// Don't allow relative paths because install script may cd to / when installing
+        /// And having path=./ may break the system
+        if (log_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log path is relative: {}", log_path.string());
+        if (data_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Data path is relative: {}", data_path.string());
+        if (pid_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pid path is relative: {}", pid_path.string());
+
         /// Create directories for data and log.
 
         if (fs::exists(log_path))
@@ -824,7 +821,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             char buf[1000] = {};
             std::string password;
-            if (auto * result = readpassphrase("Enter password for the default user: ", buf, sizeof(buf), 0))
+            if (auto * result = readpassphrase("Set up the password for the default user: ", buf, sizeof(buf), 0))
                 password = result;
 
             if (!password.empty())
@@ -997,7 +994,7 @@ namespace
             else
             {
                 fmt::print("{} file exists but damaged, ignoring.\n", pid_file.string());
-                fs::remove(pid_file);
+                (void)fs::remove(pid_file);
             }
         }
         else
@@ -1005,7 +1002,7 @@ namespace
             /// Create a directory for pid file.
             /// It's created by "install" but we also support cases when ClickHouse is already installed different way.
             fs::path pid_path = pid_file;
-            pid_path.remove_filename();
+            pid_path = pid_path.remove_filename();
             fs::create_directories(pid_path);
             /// All users are allowed to read pid file (for clickhouse status command).
             fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
@@ -1073,51 +1070,27 @@ namespace
         return 0;
     }
 
-    int isRunning(const fs::path & pid_file)
+    int isRunning(const fs::path & pid_file, bool ignore_file_does_not_exist)
     {
         int pid = 0;
 
-        if (fs::exists(pid_file))
+        try
         {
-            try
+            ReadBufferFromFile in(pid_file.string());
+            if (tryReadIntText(pid, in))
             {
-                ReadBufferFromFile in(pid_file.string());
-                if (tryReadIntText(pid, in))
-                {
-                    fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
-                }
-                else
-                {
-                    fmt::print("{} file exists but damaged, ignoring.\n", pid_file.string());
-                    fs::remove(pid_file);
-                }
+                fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
             }
-            catch (const Exception & e)
+            else
             {
-                if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                    throw;
-
-                /// If file does not exist (TOCTOU) - it's ok.
+                fmt::print("{} file exists but damaged, ignoring (the file will be removed).\n", pid_file.string());
+                (void)fs::remove(pid_file);
             }
         }
-
-        if (!pid)
+        catch (const Exception & e)
         {
-            auto sh = ShellCommand::execute("pidof clickhouse-server");
-
-            if (tryReadIntText(pid, sh->out))
-            {
-                fmt::print("Found pid = {} in the list of running processes.\n", pid);
-            }
-            else if (!sh->out.eof())
-            {
-                fmt::print("The pidof command returned unusual output.\n");
-            }
-
-            WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
-            copyData(sh->err, std_err);
-
-            sh->tryWait();
+            if (!ignore_file_does_not_exist || e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                throw;
         }
 
         if (pid)
@@ -1145,7 +1118,7 @@ namespace
 
     bool sendSignalAndWaitForStop(const fs::path & pid_file, int signal, unsigned max_tries, unsigned wait_ms, const char * signal_name)
     {
-        int pid = isRunning(pid_file);
+        int pid = isRunning(pid_file, /*ignore_file_does_not_exist=*/ false);
 
         if (!pid)
             return true;
@@ -1159,7 +1132,7 @@ namespace
         for (; try_num < max_tries; ++try_num)
         {
             fmt::print("Waiting for server to stop\n");
-            if (!isRunning(pid_file))
+            if (!isRunning(pid_file, /*ignore_file_does_not_exist=*/ true))
             {
                 fmt::print("Server stopped\n");
                 break;
@@ -1181,7 +1154,7 @@ namespace
         if (sendSignalAndWaitForStop(pid_file, signal, max_tries, 1000, signal_name))
             return 0;
 
-        int pid = isRunning(pid_file);
+        int pid = isRunning(pid_file, /*ignore_file_does_not_exist=*/ false);
         if (!pid)
             return 0;
 
@@ -1200,10 +1173,10 @@ namespace
         constexpr size_t num_kill_check_tries = 1000;
         constexpr size_t kill_check_delay_ms = 100;
         fmt::print("Will terminate forcefully (pid = {}).\n", pid);
-        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, signal_name))
+        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, "kill"))
             return 0;
 
-        if (!isRunning(pid_file))
+        if (!isRunning(pid_file, /*ignore_file_does_not_exist=*/ true))
             return 0;
 
         throw Exception(ErrorCodes::CANNOT_KILL,
@@ -1322,7 +1295,7 @@ int mainEntryClickHouseStatus(int argc, char ** argv)
         fs::path prefix = options["prefix"].as<std::string>();
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
 
-        isRunning(pid_file);
+        isRunning(pid_file, /*ignore_file_does_not_exist=*/ false);
     }
     catch (...)
     {

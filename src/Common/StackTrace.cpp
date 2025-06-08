@@ -4,12 +4,12 @@
 #include <base/constexpr_helpers.h>
 #include <base/demangle.h>
 
-#include <Common/scope_guard_safe.h>
+#include <base/MemorySanitizer.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/SharedMutex.h>
 #include <Common/SymbolIndex.h>
+#include <Common/scope_guard_safe.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -19,9 +19,10 @@
 #include <filesystem>
 #include <map>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
-#include <fmt/format.h>
 #include <libunwind.h>
+#include <fmt/format.h>
 
 #include <boost/algorithm/string/split.hpp>
 
@@ -55,22 +56,35 @@ bool shouldShowAddress(const void * addr)
 }
 }
 
+StackTrace::StackTrace()
+{
+    tryCapture();
+}
+
 void StackTrace::setShowAddresses(bool show)
 {
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
-std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
+static std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     using namespace std::string_literals;
     std::string address
         = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
 
     const std::string_view access =
-#if defined(__x86_64__) && !defined(OS_FREEBSD) && !defined(OS_DARWIN) && !defined(__arm__) && !defined(__powerpc__)
-        (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
+#if defined(__arm__)
+        "<not available on ARM>";
+#elif defined(__powerpc__)
+        "<not available on PowerPC>";
+#elif defined(OS_DARWIN)
+        "<not available on Darwin>";
+#elif defined(OS_FREEBSD)
+        "<not available on FreeBSD>";
+#elif !defined(__x86_64__)
+        "<not available>";
 #else
-        "";
+        (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
 #endif
 
     std::string_view message;
@@ -91,7 +105,7 @@ std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const uc
     return fmt::format("Address: {}. Access: {}. {}.", std::move(address), access, message);
 }
 
-constexpr std::string_view SigbusErrorString(int si_code)
+static constexpr std::string_view SigbusErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -116,7 +130,7 @@ constexpr std::string_view SigbusErrorString(int si_code)
     }
 }
 
-constexpr std::string_view SigfpeErrorString(int si_code)
+static constexpr std::string_view SigfpeErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -141,7 +155,7 @@ constexpr std::string_view SigfpeErrorString(int si_code)
     }
 }
 
-constexpr std::string_view SigillErrorString(int si_code)
+static constexpr std::string_view SigillErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -210,6 +224,8 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.__gregs[REG_PC]);
 #elif defined(__s390x__)
     return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
+#elif defined(__loongarch64)
+    return reinterpret_cast<void *>(context.uc_mcontext.__pc);
 #else
     return nullptr;
 #endif
@@ -246,8 +262,31 @@ void StackTrace::forEachFrame(
                 auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                if (dwarf_it->second.findAddress(
-                        uintptr_t(current_frame.physical_addr), location, mode, inline_frames))
+                uintptr_t adjusted_addr = uintptr_t(current_frame.physical_addr);
+                if (i > 0)
+                {
+                    /// For non-innermost stack frames, the address points to the *next* instruction
+                    /// after the `call` instruction. But we want the line number and inline function
+                    /// information for the `call` instruction. So subtract 1 from the address.
+                    /// Caveats:
+                    ///  * The `call` instruction can be longer than 1 byte, so addr-1 is in the middle
+                    ///    of the instruction. That's ok for debug info lookup: address ranges in debug
+                    ///    info cover the whole instruction.
+                    ///  * If the stack trace unwound out of a signal handler, the stack frame just
+                    ///    outside the signal didn't do a function call. It was interrupted by signal.
+                    ///    There's no `call` instruction, and decrementing the address is incorrect.
+                    ///    We may get incorrect line number and inlined functions in this case.
+                    ///    Unfortunate.
+                    ///    Note that libunwind, when producing this stack trace, knows whether this
+                    ///    frame is interrupted by signal or not. We could propagate this information
+                    ///    from libunwind to here and avoid subtracting 1 in this case, but currently
+                    ///    we don't do this.
+                    ///    But we don't do the decrement for findSymbol below (because `call` is
+                    ///    ~never the last instruction of a function), so the function name should be
+                    ///    correct for both pre-signal frames and regular frames.
+                    adjusted_addr -= 1;
+                }
+                if (dwarf_it->second.findAddress(adjusted_addr, location, mode, inline_frames))
                 {
                     current_frame.file = location.file.toString();
                     current_frame.line = location.line;
@@ -330,7 +369,10 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
         /// Skip excessive stack frames that we have created while finding stack trace.
         for (size_t i = 0; i < size; ++i)
         {
-            if (frame_pointers[i] == caller_address)
+            if (frame_pointers[i] == caller_address ||
+                /// This compensates for a hack in libunwind, see the "+ 1" in
+                /// UnwindCursor<A, R>::stepThroughSigReturn.
+                frame_pointers[i] == reinterpret_cast<void *>(reinterpret_cast<char *>(caller_address) + 1))
             {
                 offset = i;
                 break;
@@ -403,7 +445,7 @@ struct StackTraceTriple
 template <class T>
 concept MaybeRef = std::is_same_v<T, StackTraceTriple> || std::is_same_v<T, StackTraceRefTriple>;
 
-constexpr bool operator<(const MaybeRef auto & left, const MaybeRef auto & right)
+static constexpr bool operator<(const MaybeRef auto & left, const MaybeRef auto & right)
 {
     return std::tuple{left.pointers, left.size, left.offset} < std::tuple{right.pointers, right.size, right.offset};
 }
@@ -487,24 +529,42 @@ struct CacheEntry
 
 using CacheEntryPtr = std::shared_ptr<CacheEntry>;
 
-using StackTraceCache = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
+static constinit bool can_use_cache = false;
 
-static StackTraceCache & cacheInstance()
+using StackTraceCacheBase = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
+
+struct StackTraceCache : public StackTraceCacheBase
 {
-    static StackTraceCache cache;
-    return cache;
-}
+    StackTraceCache()
+        : StackTraceCacheBase()
+    {
+        can_use_cache = true;
+    }
+
+    ~StackTraceCache()
+    {
+        can_use_cache = false;
+    }
+};
+
+static StackTraceCache cache;
 
 static DB::SharedMutex stacktrace_cache_mutex;
 
-String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
+static String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
 {
     const StackTraceRefTriple key{pointers, offset, size};
+
+    if (!can_use_cache)
+    {
+        DB::WriteBufferFromOwnString out;
+        toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
+        return out.str();
+    }
 
     /// Calculation of stack trace text is extremely slow.
     /// We use cache because otherwise the server could be overloaded by trash queries.
     /// Note that this cache can grow unconditionally, but practically it should be small.
-    StackTraceCache & cache = cacheInstance();
     CacheEntryPtr cache_entry;
 
     // Optimistic try for cache hit to avoid any contention whatsoever, should be the main hot code route
@@ -543,7 +603,7 @@ std::string StackTrace::toString() const
     return toStringCached(frame_pointers, offset, size);
 }
 
-std::string StackTrace::toString(void ** frame_pointers_raw, size_t offset, size_t size)
+std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offset, size_t size)
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
@@ -556,5 +616,9 @@ std::string StackTrace::toString(void ** frame_pointers_raw, size_t offset, size
 void StackTrace::dropCache()
 {
     std::lock_guard lock{stacktrace_cache_mutex};
-    cacheInstance().clear();
+    cache.clear();
 }
+
+
+thread_local bool asynchronous_stack_unwinding = false;
+thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;

@@ -9,7 +9,6 @@ RUN apt-get update \
             curl \
             dmidecode \
             g++ \
-            gdb \
             git \
             gnuplot \
             imagemagick \
@@ -23,7 +22,6 @@ RUN apt-get update \
             python3 \
             python3-dev \
             python3-pip \
-            python3-setuptools \
             rsync \
             tree \
             tzdata \
@@ -33,13 +31,30 @@ RUN apt-get update \
             cargo \
             ripgrep \
             zstd \
-    && pip3 --no-cache-dir install 'clickhouse-driver==0.2.1' scipy \
+            unzip \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+COPY requirements.txt /
+RUN pip3 --no-cache-dir install -r requirements.txt
+
+RUN mkdir /fg && cd /fg \
+    && wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/flamegraph.pl" \
+    && wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/difffolded.pl" \
+    && chmod +x /fg/difffolded.pl \
+    && chmod +x /fg/flamegraph.pl
+
 COPY run.sh /
+
+COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /opt/gdb /opt/gdb
+ENV PATH="/opt/gdb/bin:${PATH}"
+
+# aws cli to acquire secrets and params from ssm
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
+    && unzip -q awscliv2.zip && ./aws/install \
+    && rm -rf /awscliv2.zip /aws
 
 CMD ["bash", "/run.sh"]
 

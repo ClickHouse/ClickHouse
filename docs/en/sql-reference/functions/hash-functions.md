@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/functions/hash-functions
+description: 'Documentation for Hash Functions'
+sidebar_label: 'Hash'
 sidebar_position: 85
-sidebar_label: Hash
+slug: /sql-reference/functions/hash-functions
+title: 'Hash Functions'
 ---
 
 # Hash Functions
@@ -10,9 +12,22 @@ Hash functions can be used for the deterministic pseudo-random shuffling of elem
 
 Simhash is a hash function, which returns close hash values for close (similar) arguments.
 
-## halfMD5
+Most hash functions accept any number of arguments of any types.
 
-[Interprets](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
+:::note
+Hash of NULL is NULL. To get a non-NULL hash of a Nullable column, wrap it in a tuple:
+```sql
+SELECT cityHash64(tuple(NULL))
+```
+:::
+
+:::note
+To calculate hash of the whole contents of a table, use `sum(cityHash64(tuple(*)))` (or other hash function). `tuple` ensures that rows with NULL values are not skipped. `sum` ensures that the order of rows doesn't matter.
+:::
+
+## halfMD5 {#halfmd5}
+
+[Interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
 
 ```sql
 halfMD5(par1, ...)
@@ -23,11 +38,11 @@ Consider using the [sipHash64](#siphash64) function instead.
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
-A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+A [UInt64](../data-types/int-uint.md) data type hash value.
 
 **Example**
 
@@ -41,15 +56,49 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 └────────────────────┴────────┘
 ```
 
-## MD4
+## MD4 {#md4}
 
 Calculates the MD4 from a string and returns the resulting set of bytes as FixedString(16).
 
 ## MD5 {#md5}
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
-If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
+If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the 'sipHash128' function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
+
+## RIPEMD160 {#ripemd160}
+
+Produces [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) hash value.
+
+**Syntax**
+
+```sql
+RIPEMD160(input)
+```
+
+**Parameters**
+
+- `input`: Input string. [String](../data-types/string.md)
+
+**Returned value**
+
+- A 160-bit `RIPEMD-160` hash value of type [FixedString(20)](../data-types/fixedstring.md).
+
+**Example**
+
+Use the [hex](../functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
+
+Query:
+
+```sql
+SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));
+```
+
+```response
+┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
+│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
+└───────────────────────────────────────────────────────────────┘
+```
 
 ## sipHash64 {#siphash64}
 
@@ -61,7 +110,7 @@ sipHash64(par1,...)
 
 This is a cryptographic hash function. It works at least three times faster than the [MD5](#md5) hash function.
 
-The function [interprets](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. It then combines the hashes by the following algorithm:
+The function [interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input parameters as strings and calculates the hash value for each of them. It then combines the hashes by the following algorithm:
 
 1. The first and the second hash value are concatenated to an array which is hashed.
 2. The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
@@ -69,11 +118,11 @@ The function [interprets](/docs/en/sql-reference/functions/type-conversion-funct
 
 **Arguments**
 
-The function takes a variable number of input parameters of any of the [supported data types](/docs/en/sql-reference/data-types/index.md).
+The function takes a variable number of input parameters of any of the [supported data types](../data-types/index.md).
 
 **Returned Value**
 
-A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+A [UInt64](../data-types/int-uint.md) data type hash value.
 
 Note that the calculated hash values may be equal for the same input values of different argument types. This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
 
@@ -89,7 +138,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 └──────────────────────┴────────┘
 ```
 
-## sipHash64Keyed
+## sipHash64Keyed {#siphash64keyed}
 
 Same as [sipHash64](#siphash64) but additionally takes an explicit key argument instead of using a fixed key.
 
@@ -105,7 +154,7 @@ Same as [sipHash64](#siphash64), but the first argument is a tuple of two UInt64
 
 **Returned value**
 
-A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+A [UInt64](../data-types/int-uint.md) data type hash value.
 
 **Example**
 
@@ -121,7 +170,7 @@ SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','
 └─────────────────────┴────────┘
 ```
 
-## sipHash128
+## sipHash128 {#siphash128}
 
 Like [sipHash64](#siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
@@ -143,7 +192,7 @@ Same as for [sipHash64](#siphash64).
 
 **Returned value**
 
-A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
+A 128-bit `SipHash` hash value of type [FixedString(16)](../data-types/fixedstring.md).
 
 **Example**
 
@@ -161,7 +210,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## sipHash128Keyed
+## sipHash128Keyed {#siphash128keyed}
 
 Same as [sipHash128](#siphash128) but additionally takes an explicit key argument instead of using a fixed key.
 
@@ -183,7 +232,7 @@ Same as [sipHash128](#siphash128), but the first argument is a tuple of two UInt
 
 **Returned value**
 
-A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
+A 128-bit `SipHash` hash value of type [FixedString(16)](../data-types/fixedstring.md).
 
 **Example**
 
@@ -201,7 +250,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## sipHash128Reference
+## sipHash128Reference {#siphash128reference}
 
 Like [sipHash128](#siphash128) but implements the 128-bit algorithm from the original authors of SipHash.
 
@@ -217,7 +266,7 @@ Same as for [sipHash128](#siphash128).
 
 **Returned value**
 
-A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
+A 128-bit `SipHash` hash value of type [FixedString(16)](../data-types/fixedstring.md).
 
 **Example**
 
@@ -235,7 +284,7 @@ Result:
 └────────────────────────────────────────┘
 ```
 
-## sipHash128ReferenceKeyed
+## sipHash128ReferenceKeyed {#siphash128referencekeyed}
 
 Same as [sipHash128Reference](#siphash128reference) but additionally takes an explicit key argument instead of using a fixed key.
 
@@ -251,7 +300,7 @@ Same as [sipHash128Reference](#siphash128reference), but the first argument is a
 
 **Returned value**
 
-A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
+A 128-bit `SipHash` hash value of type [FixedString(16)](../data-types/fixedstring.md).
 
 **Example**
 
@@ -269,7 +318,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cityHash64
+## cityHash64 {#cityhash64}
 
 Produces a 64-bit [CityHash](https://github.com/google/cityhash) hash value.
 
@@ -283,11 +332,11 @@ Note that Google changed the algorithm of CityHash after it has been added to Cl
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
-A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+A [UInt64](../data-types/int-uint.md) data type hash value.
 
 **Examples**
 
@@ -309,19 +358,80 @@ The following example shows how to compute the checksum of the entire table with
 SELECT groupBitXor(cityHash64(*)) FROM table
 ```
 
-## intHash32
+## intHash32 {#inthash32}
 
 Calculates a 32-bit hash code from any type of integer.
 This is a relatively fast non-cryptographic hash function of average quality for numbers.
 
-## intHash64
+**Syntax**
+
+```sql
+intHash32(int)
+```
+
+**Arguments**
+
+- `int` — Integer to hash. [(U)Int*](../data-types/int-uint.md).
+
+**Returned value**
+
+- 32-bit hash code. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT intHash32(42);
+```
+
+Result:
+
+```response
+┌─intHash32(42)─┐
+│    1228623923 │
+└───────────────┘
+```
+
+## intHash64 {#inthash64}
 
 Calculates a 64-bit hash code from any type of integer.
-It works faster than intHash32. Average quality.
+This is a relatively fast non-cryptographic hash function of average quality for numbers.
+It works faster than [intHash32](#inthash32).
 
-## SHA1, SHA224, SHA256, SHA512, SHA512_256
+**Syntax**
 
-Calculates SHA-1, SHA-224, SHA-256, SHA-512, SHA-512-256 hash from a string and returns the resulting set of bytes as [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+```sql
+intHash64(int)
+```
+
+**Arguments**
+
+- `int` — Integer to hash. [(U)Int*](../data-types/int-uint.md).
+
+**Returned value**
+
+- 64-bit hash code. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT intHash64(42);
+```
+
+Result:
+
+```response
+┌────────intHash64(42)─┐
+│ 11490350930367293593 │
+└──────────────────────┘
+```
+
+## SHA1, SHA224, SHA256, SHA512, SHA512_256 {#sha1-sha224-sha256-sha512-sha512_256}
+
+Calculates SHA-1, SHA-224, SHA-256, SHA-512, SHA-512-256 hash from a string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
 
 **Syntax**
 
@@ -332,22 +442,20 @@ SHA512('s')
 ```
 
 The function works fairly slowly (SHA-1 processes about 5 million short strings per second per processor core, while SHA-224 and SHA-256 process about 2.2 million).
-We recommend using this function only in cases when you need a specific hash function and you can’t select it.
+We recommend using this function only in cases when you need a specific hash function and you can't select it.
 Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in `SELECT` queries.
 
 **Arguments**
 
-- `s` — Input string for SHA hash calculation. [String](/docs/en/sql-reference/data-types/string.md).
+- `s` — Input string for SHA hash calculation. [String](../data-types/string.md).
 
 **Returned value**
 
-- SHA hash as a hex-unencoded FixedString. SHA-1 returns as FixedString(20), SHA-224 as FixedString(28), SHA-256 — FixedString(32), SHA-512 — FixedString(64).
-
-Type: [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+- SHA hash as a hex-unencoded FixedString. SHA-1 returns as FixedString(20), SHA-224 as FixedString(28), SHA-256 — FixedString(32), SHA-512 — FixedString(64). [FixedString](../data-types/fixedstring.md).
 
 **Example**
 
-Use the [hex](/docs/en/sql-reference/functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
+Use the [hex](../functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
 
 Query:
 
@@ -363,9 +471,9 @@ Result:
 └──────────────────────────────────────────┘
 ```
 
-## BLAKE3
+## BLAKE3 {#blake3}
 
-Calculates BLAKE3 hash string and returns the resulting set of bytes as [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+Calculates BLAKE3 hash string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
 
 **Syntax**
 
@@ -377,17 +485,15 @@ This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust 
 
 **Arguments**
 
-- s - input string for BLAKE3 hash calculation. [String](/docs/en/sql-reference/data-types/string.md).
+- s - input string for BLAKE3 hash calculation. [String](../data-types/string.md).
 
 **Return value**
 
-- BLAKE3 hash as a byte array with type FixedString(32).
-
-Type: [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+- BLAKE3 hash as a byte array with type FixedString(32). [FixedString](../data-types/fixedstring.md).
 
 **Example**
 
-Use function [hex](/docs/en/sql-reference/functions/encoding-functions.md/#hex) to represent the result as a hex-encoded string.
+Use function [hex](../functions/encoding-functions.md/#hex) to represent the result as a hex-encoded string.
 
 Query:
 ```sql
@@ -401,16 +507,16 @@ Result:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## URLHash(url\[, N\])
+## URLHash(url\[, N\]) {#urlhashurl-n}
 
 A fast, decent-quality non-cryptographic hash function for a string obtained from a URL using some type of normalization.
 `URLHash(s)` – Calculates a hash from a string without one of the trailing symbols `/`,`?` or `#` at the end, if present.
 `URLHash(s, N)` – Calculates a hash from a string up to the N level in the URL hierarchy, without one of the trailing symbols `/`,`?` or `#` at the end, if present.
 Levels are the same as in URLHierarchy.
 
-## farmFingerprint64
+## farmFingerprint64 {#farmfingerprint64}
 
-## farmHash64
+## farmHash64 {#farmhash64}
 
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) or Fingerprint value. `farmFingerprint64` is preferred for a stable and portable value.
 
@@ -423,11 +529,11 @@ These functions use the `Fingerprint64` and `Hash64` methods respectively from a
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
-A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+A [UInt64](../data-types/int-uint.md) data type hash value.
 
 **Example**
 
@@ -441,7 +547,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 └──────────────────────┴────────┘
 ```
 
-## javaHash
+## javaHash {#javahash}
 
 Calculates JavaHash from a [string](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452),
 [Byte](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Byte.java#l405),
@@ -492,7 +598,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## javaHashUTF16LE
+## javaHashUTF16LE {#javahashutf16le}
 
 Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string, assuming it contains bytes representing a string in UTF-16LE encoding.
 
@@ -528,7 +634,7 @@ Result:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## hiveHash
+## hiveHash {#hivehash}
 
 Calculates `HiveHash` from a string.
 
@@ -540,9 +646,7 @@ This is just [JavaHash](#javahash) with zeroed out sign bit. This function is us
 
 **Returned value**
 
-A `Int32` data type hash value.
-
-Type: `hiveHash`.
+- `hiveHash` hash value. [Int32](../data-types/int-uint.md).
 
 **Example**
 
@@ -560,7 +664,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## metroHash64
+## metroHash64 {#metrohash64}
 
 Produces a 64-bit [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) hash value.
 
@@ -570,11 +674,11 @@ metroHash64(par1, ...)
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
-A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+A [UInt64](../data-types/int-uint.md) data type hash value.
 
 **Example**
 
@@ -588,15 +692,15 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 └──────────────────────┴────────┘
 ```
 
-## jumpConsistentHash
+## jumpConsistentHash {#jumpconsistenthash}
 
 Calculates JumpConsistentHash form a UInt64.
 Accepts two arguments: a UInt64-type key and the number of buckets. Returns Int32.
 For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## kostikConsistentHash
+## kostikConsistentHash {#kostikconsistenthash}
 
-An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`. 
+An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`.
 
 **Syntax**
 
@@ -608,16 +712,16 @@ Alias: `yandexConsistentHash` (left for backwards compatibility sake).
 
 **Parameters**
 
-- `input`: A UInt64-type key [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
-- `n`: Number of buckets. [UInt16](/docs/en/sql-reference/data-types/int-uint.md).
+- `input`: A UInt64-type key [UInt64](../data-types/int-uint.md).
+- `n`: Number of buckets. [UInt16](../data-types/int-uint.md).
 
 **Returned value**
 
-- A [UInt16](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+- A [UInt16](../data-types/int-uint.md) data type hash value.
 
 **Implementation details**
 
-It is efficient only if n <= 32768. 
+It is efficient only if n &lt;= 32768.
 
 **Example**
 
@@ -633,7 +737,7 @@ SELECT kostikConsistentHash(16045690984833335023, 2);
 └───────────────────────────────────────────────┘
 ```
 
-## murmurHash2_32, murmurHash2_64
+## murmurHash2_32, murmurHash2_64 {#murmurhash2_32-murmurhash2_64}
 
 Produces a [MurmurHash2](https://github.com/aappleby/smhasher) hash value.
 
@@ -644,12 +748,12 @@ murmurHash2_64(par1, ...)
 
 **Arguments**
 
-Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
-- The `murmurHash2_32` function returns hash value having the [UInt32](/docs/en/sql-reference/data-types/int-uint.md) data type.
-- The `murmurHash2_64` function returns hash value having the [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type.
+- The `murmurHash2_32` function returns hash value having the [UInt32](../data-types/int-uint.md) data type.
+- The `murmurHash2_64` function returns hash value having the [UInt64](../data-types/int-uint.md) data type.
 
 **Example**
 
@@ -663,7 +767,7 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └──────────────────────┴────────┘
 ```
 
-## gccMurmurHash
+## gccMurmurHash {#gccmurmurhash}
 
 Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). It is portable between Clang and GCC builds.
 
@@ -675,13 +779,11 @@ gccMurmurHash(par1, ...)
 
 **Arguments**
 
-- `par1, ...` — A variable number of parameters that can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md/#data_types).
+- `par1, ...` — A variable number of parameters that can be any of the [supported data types](/sql-reference/data-types).
 
 **Returned value**
 
-- Calculated hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Calculated hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -702,7 +804,7 @@ Result:
 ```
 
 
-## kafkaMurmurHash
+## kafkaMurmurHash {#kafkamurmurhash}
 
 Calculates a 32-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [Kafka](https://github.com/apache/kafka/blob/461c5cfe056db0951d9b74f5adc45973670404d7/clients/src/main/java/org/apache/kafka/common/utils/Utils.java#L482) and without the highest bit to be compatible with [Default Partitioner](https://github.com/apache/kafka/blob/139f7709bd3f5926901a21e55043388728ccca78/clients/src/main/java/org/apache/kafka/clients/producer/internals/BuiltInPartitioner.java#L328).
 
@@ -714,13 +816,11 @@ MurmurHash(par1, ...)
 
 **Arguments**
 
-- `par1, ...` — A variable number of parameters that can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md/#data_types).
+- `par1, ...` — A variable number of parameters that can be any of the [supported data types](/sql-reference/data-types).
 
 **Returned value**
 
-- Calculated hash value.
-
-Type: [UInt32](/docs/en/sql-reference/data-types/int-uint.md).
+- Calculated hash value. [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -740,7 +840,7 @@ Result:
 └────────────┴──────────┘
 ```
 
-## murmurHash3_32, murmurHash3_64
+## murmurHash3_32, murmurHash3_64 {#murmurhash3_32-murmurhash3_64}
 
 Produces a [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
 
@@ -751,12 +851,12 @@ murmurHash3_64(par1, ...)
 
 **Arguments**
 
-Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
-- The `murmurHash3_32` function returns a [UInt32](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
-- The `murmurHash3_64` function returns a [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+- The `murmurHash3_32` function returns a [UInt32](../data-types/int-uint.md) data type hash value.
+- The `murmurHash3_64` function returns a [UInt64](../data-types/int-uint.md) data type hash value.
 
 **Example**
 
@@ -770,7 +870,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └─────────────┴────────┘
 ```
 
-## murmurHash3_128
+## murmurHash3_128 {#murmurhash3_128}
 
 Produces a 128-bit [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
 
@@ -782,13 +882,11 @@ murmurHash3_128(expr)
 
 **Arguments**
 
-- `expr` — A list of [expressions](/docs/en/sql-reference/syntax.md/#syntax-expressions). [String](/docs/en/sql-reference/data-types/string.md).
+- `expr` — A list of [expressions](/sql-reference/syntax#expressions). [String](../data-types/string.md).
 
 **Returned value**
 
-A 128-bit `MurmurHash3` hash value.
-
-Type: [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
+A 128-bit `MurmurHash3` hash value. [FixedString(16)](../data-types/fixedstring.md).
 
 **Example**
 
@@ -806,7 +904,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## xxh3
+## xxh3 {#xxh3}
 
 Produces a 64-bit [xxh3](https://github.com/Cyan4973/xxHash) hash value.
 
@@ -818,13 +916,11 @@ xxh3(expr)
 
 **Arguments**
 
-- `expr` — A list of [expressions](/docs/en/sql-reference/syntax.md/#syntax-expressions) of any data type.
+- `expr` — A list of [expressions](/sql-reference/syntax#expressions) of any data type.
 
 **Returned value**
 
-A 64-bit `xxh3` hash value.
-
-Type:  [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+A 64-bit `xxh3` hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -842,7 +938,7 @@ Result:
 └────────────────────────┘
 ```
 
-## xxHash32, xxHash64
+## xxHash32, xxHash64 {#xxhash32-xxhash64}
 
 Calculates `xxHash` from a string. It is proposed in two flavors, 32 and 64 bits.
 
@@ -856,9 +952,11 @@ SELECT xxHash64('')
 
 **Returned value**
 
-A `UInt32` or `UInt64` data type hash value.
+- Hash value. [UInt32/64](../data-types/int-uint.md).
 
-Type: `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.
+:::note
+The return type will be `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.
+:::
 
 **Example**
 
@@ -880,11 +978,11 @@ Result:
 
 - [xxHash](http://cyan4973.github.io/xxHash/).
 
-## ngramSimHash
+## ngramSimHash {#ngramsimhash}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](/docs/en/sql-reference/functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -894,14 +992,12 @@ ngramSimHash(string[, ngramsize])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -919,11 +1015,11 @@ Result:
 └────────────┘
 ```
 
-## ngramSimHashCaseInsensitive
+## ngramSimHashCaseInsensitive {#ngramsimhashcaseinsensitive}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](/docs/en/sql-reference/functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](/sql-reference/functions/bit-functions#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -933,14 +1029,12 @@ ngramSimHashCaseInsensitive(string[, ngramsize])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -958,11 +1052,11 @@ Result:
 └───────────┘
 ```
 
-## ngramSimHashUTF8
+## ngramSimHashUTF8 {#ngramsimhashutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](/docs/en/sql-reference/functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -972,14 +1066,12 @@ ngramSimHashUTF8(string[, ngramsize])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -997,11 +1089,11 @@ Result:
 └────────────┘
 ```
 
-## ngramSimHashCaseInsensitiveUTF8
+## ngramSimHashCaseInsensitiveUTF8 {#ngramsimhashcaseinsensitiveutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](/docs/en/sql-reference/functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1011,14 +1103,12 @@ ngramSimHashCaseInsensitiveUTF8(string[, ngramsize])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1036,11 +1126,11 @@ Result:
 └────────────┘
 ```
 
-## wordShingleSimHash
+## wordShingleSimHash {#wordshinglesimhash}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](/docs/en/sql-reference/functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1050,14 +1140,12 @@ wordShingleSimHash(string[, shinglesize])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1075,11 +1163,11 @@ Result:
 └────────────┘
 ```
 
-## wordShingleSimHashCaseInsensitive
+## wordShingleSimHashCaseInsensitive {#wordshinglesimhashcaseinsensitive}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](/docs/en/sql-reference/functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1089,14 +1177,12 @@ wordShingleSimHashCaseInsensitive(string[, shinglesize])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1114,11 +1200,11 @@ Result:
 └────────────┘
 ```
 
-## wordShingleSimHashUTF8
+## wordShingleSimHashUTF8 {#wordshinglesimhashutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](/docs/en/sql-reference/functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1128,14 +1214,12 @@ wordShingleSimHashUTF8(string[, shinglesize])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1153,11 +1237,11 @@ Result:
 └────────────┘
 ```
 
-## wordShingleSimHashCaseInsensitiveUTF8
+## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimhashcaseinsensitiveutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](/docs/en/sql-reference/functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1167,14 +1251,12 @@ wordShingleSimHashCaseInsensitiveUTF8(string[, shinglesize])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1192,7 +1274,7 @@ Result:
 └────────────┘
 ```
 
-## wyHash64
+## wyHash64 {#wyhash64}
 
 Produces a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.
 
@@ -1204,13 +1286,11 @@ wyHash64(string)
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
+- `string` — String. [String](../data-types/string.md).
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1228,11 +1308,11 @@ Result:
 └──────────────────────┘
 ```
 
-## ngramMinHash
+## ngramMinHash {#ngramminhash}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](/docs/en/sql-reference/functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
 **Syntax**
 
@@ -1242,15 +1322,13 @@ ngramMinHash(string[, ngramsize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1268,11 +1346,11 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## ngramMinHashCaseInsensitive
+## ngramMinHashCaseInsensitive {#ngramminhashcaseinsensitive}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](/docs/en/sql-reference/functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
 **Syntax**
 
@@ -1282,15 +1360,13 @@ ngramMinHashCaseInsensitive(string[, ngramsize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1308,11 +1384,11 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## ngramMinHashUTF8
+## ngramMinHashUTF8 {#ngramminhashutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](/docs/en/sql-reference/functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
 **Syntax**
 
@@ -1322,15 +1398,13 @@ ngramMinHashUTF8(string[, ngramsize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1348,11 +1422,11 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## ngramMinHashCaseInsensitiveUTF8
+## ngramMinHashCaseInsensitiveUTF8 {#ngramminhashcaseinsensitiveutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](/docs/en/sql-reference/functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
 **Syntax**
 
@@ -1362,15 +1436,13 @@ ngramMinHashCaseInsensitiveUTF8(string [, ngramsize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1388,7 +1460,7 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArg
+## ngramMinHashArg {#ngramminhasharg}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHash](#ngramminhash) function with the same input. Is case sensitive.
 
@@ -1400,15 +1472,13 @@ ngramMinHashArg(string[, ngramsize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` n-grams each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1426,7 +1496,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArgCaseInsensitive
+## ngramMinHashArgCaseInsensitive {#ngramminhashargcaseinsensitive}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashCaseInsensitive](#ngramminhashcaseinsensitive) function with the same input. Is case insensitive.
 
@@ -1438,15 +1508,13 @@ ngramMinHashArgCaseInsensitive(string[, ngramsize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` n-grams each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1464,7 +1532,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArgUTF8
+## ngramMinHashArgUTF8 {#ngramminhashargutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashUTF8](#ngramminhashutf8) function with the same input. Is case sensitive.
 
@@ -1476,15 +1544,13 @@ ngramMinHashArgUTF8(string[, ngramsize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` n-grams each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1502,7 +1568,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArgCaseInsensitiveUTF8
+## ngramMinHashArgCaseInsensitiveUTF8 {#ngramminhashargcaseinsensitiveutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
 
@@ -1514,15 +1580,13 @@ ngramMinHashArgCaseInsensitiveUTF8(string[, ngramsize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` n-grams each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1540,11 +1604,11 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHash
+## wordShingleMinHash {#wordshingleminhash}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](/docs/en/sql-reference/functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
 **Syntax**
 
@@ -1554,15 +1618,13 @@ wordShingleMinHash(string[, shinglesize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1580,11 +1642,11 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashCaseInsensitive
+## wordShingleMinHashCaseInsensitive {#wordshingleminhashcaseinsensitive}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](/docs/en/sql-reference/functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
 **Syntax**
 
@@ -1594,15 +1656,13 @@ wordShingleMinHashCaseInsensitive(string[, shinglesize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1620,11 +1680,11 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashUTF8
+## wordShingleMinHashUTF8 {#wordshingleminhashutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](/docs/en/sql-reference/functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
 **Syntax**
 
@@ -1634,15 +1694,13 @@ wordShingleMinHashUTF8(string[, shinglesize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1660,11 +1718,11 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashCaseInsensitiveUTF8
+## wordShingleMinHashCaseInsensitiveUTF8 {#wordshingleminhashcaseinsensitiveutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](/docs/en/sql-reference/functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
 **Syntax**
 
@@ -1674,15 +1732,13 @@ wordShingleMinHashCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1700,7 +1756,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArg
+## wordShingleMinHashArg {#wordshingleminhasharg}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordshingleMinHash](#wordshingleminhash) function with the same input. Is case sensitive.
 
@@ -1712,15 +1768,13 @@ wordShingleMinHashArg(string[, shinglesize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` word shingles each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1738,7 +1792,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArgCaseInsensitive
+## wordShingleMinHashArgCaseInsensitive {#wordshingleminhashargcaseinsensitive}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashCaseInsensitive](#wordshingleminhashcaseinsensitive) function with the same input. Is case insensitive.
 
@@ -1750,15 +1804,13 @@ wordShingleMinHashArgCaseInsensitive(string[, shinglesize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` word shingles each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1776,7 +1828,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArgUTF8
+## wordShingleMinHashArgUTF8 {#wordshingleminhashargutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashUTF8](#wordshingleminhashutf8) function with the same input. Is case sensitive.
 
@@ -1788,15 +1840,13 @@ wordShingleMinHashArgUTF8(string[, shinglesize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` word shingles each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1814,7 +1864,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArgCaseInsensitiveUTF8
+## wordShingleMinHashArgCaseInsensitiveUTF8 {#wordshingleminhashargcaseinsensitiveutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashCaseInsensitiveUTF8](#wordshingleminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
 
@@ -1826,15 +1876,13 @@ wordShingleMinHashArgCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 
 **Arguments**
 
-- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` word shingles each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1852,7 +1900,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-## sqidEncode
+## sqidEncode {#sqidencode}
 
 Encodes numbers as a [Sqid](https://sqids.org/) which is a YouTube-like ID string.
 The output alphabet is `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`.
@@ -1872,7 +1920,7 @@ Alias: `sqid`
 
 **Returned Value**
 
-A sqid [String](/docs/en/sql-reference/data-types/string.md).
+A sqid [String](../data-types/string.md).
 
 **Example**
 
@@ -1886,7 +1934,7 @@ SELECT sqidEncode(1, 2, 3, 4, 5);
 └───────────────────────────┘
 ```
 
-## sqidDecode
+## sqidDecode {#sqiddecode}
 
 Decodes a [Sqid](https://sqids.org/) back into its original numbers.
 Returns an empty array in case the input string is not a valid sqid.
@@ -1899,11 +1947,11 @@ sqidDecode(sqid)
 
 **Arguments**
 
-- A sqid - [String](/docs/en/sql-reference/data-types/string.md)
+- A sqid - [String](../data-types/string.md)
 
 **Returned Value**
 
-The sqid transformed to numbers [Array(UInt64)](/docs/en/sql-reference/data-types/array.md).
+The sqid transformed to numbers [Array(UInt64)](../data-types/array.md).
 
 **Example**
 
@@ -1916,3 +1964,48 @@ SELECT sqidDecode('gXHfJ1C6dN');
 │ [1,2,3,4,5]              │
 └──────────────────────────┘
 ```
+
+## keccak256 {#keccak256}
+
+Calculates Keccak-256 hash string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
+
+**Syntax**
+
+```sql
+keccak256('s')
+```
+
+This cryptographic hash-function is used a lot in [EVM-based blockchains](https://ethereum.github.io/yellowpaper/paper.pdf).
+
+**Arguments**
+
+- s - input string for Keccak-256 hash calculation. [String](../data-types/string.md).
+
+**Return value**
+
+- Keccak-256 hash as a byte array with type FixedString(32). [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Use function [hex](../functions/encoding-functions.md/#hex) to format the result as a hex-encoded string.
+
+Query:
+```sql
+select hex(keccak256('hello'))
+```
+
+Result:
+```sql
+   ┌─hex(keccak256('hello'))──────────────────────────────────────────┐
+1. │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
+   └──────────────────────────────────────────────────────────────────┘
+```
+
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
+
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

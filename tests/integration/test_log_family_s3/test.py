@@ -2,6 +2,7 @@ import logging
 import sys
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 
@@ -11,7 +12,7 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/minio.xml", "configs/ssl.xml"],
+            main_configs=["configs/storage_configuration.xml", "configs/ssl.xml"],
             with_minio=True,
         )
         logging.info("Starting cluster...")
@@ -84,3 +85,39 @@ def test_log_family_s3(cluster, log_engine, files_overhead, files_overhead_per_i
         assert_objects_count(cluster, 0)
     finally:
         node.query("DROP TABLE s3_test")
+
+
+# Imitate case when error occurs while inserting into table.
+# For examle S3::TooManyRequests.
+# In that case we can update data file, but not the size file.
+# So due to exception we should do truncate of the data file to undo the insert query.
+# See FileChecker::repair().
+def test_stripe_log_truncate(cluster):
+    node = cluster.instances["node"]
+
+    node.query(
+        """
+        CREATE TABLE stripe_table (
+            a int
+        ) ENGINE = StripeLog()
+        SETTINGS storage_policy='s3_no_retries'
+        """
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT stripe_log_sink_write_fallpoint")
+    node.query(
+        """
+        INSERT INTO stripe_table SELECT number FROM numbers(10)
+        """,
+        ignore_error=True,
+    )
+    node.query("SYSTEM DISABLE FAILPOINT stripe_log_sink_write_fallpoint")
+    node.query("SELECT count(*) FROM stripe_table") == "0\n"
+    node.query("INSERT INTO stripe_table SELECT number FROM numbers(10)")
+    node.query("SELECT count(*) FROM stripe_table") == "10\n"
+
+    # Make sure that everything is okey with the table after restart.
+    node.query("DETACH TABLE stripe_table")
+    node.query("ATTACH TABLE stripe_table")
+
+    assert node.query("DROP TABLE stripe_table") == ""

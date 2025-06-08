@@ -13,7 +13,7 @@ struct BitCountImpl
     using ResultType = std::conditional_t<(sizeof(A) * 8 >= 256), UInt16, UInt8>;
     static constexpr bool allow_string_or_fixed_string = true;
 
-    static inline ResultType apply(A a)
+    static ResultType apply(A a)
     {
         /// We count bits in the value representation in memory. For example, we support floats.
         /// We need to avoid sign-extension when converting signed numbers to larger type. So, uint8_t(-1) has 8 bits.
@@ -49,7 +49,7 @@ using FunctionBitCount = FunctionUnaryArithmetic<BitCountImpl, NameBitCount, fal
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitCount>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return {};
     }
@@ -57,7 +57,31 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitCount>
 
 REGISTER_FUNCTION(BitCount)
 {
-    factory.registerFunction<FunctionBitCount>();
+    FunctionDocumentation::Description description = "Calculates the number of bits set to one in the binary representation of a number.";
+    FunctionDocumentation::Syntax syntax = "bitCount(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "An integer or float value. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = R"(
+Returns the number of bits set to one in `x`. [`UInt8`](../data-types/int-uint.md).
+
+:::note
+The function does not convert the input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)).
+For example: `bitCount(toUInt8(-1)) = 8`.
+:::
+)";
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT bin(333), bitCount(333);",
+        R"(
+┌─bin(333)─────────┬─bitCount(333)─┐
+│ 0000000101001101 │             5 │
+└──────────────────┴───────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBitCount>(documentation);
 }
 
 }

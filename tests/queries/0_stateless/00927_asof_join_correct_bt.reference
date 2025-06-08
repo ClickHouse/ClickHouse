@@ -1,13 +1,36 @@
+-- { echoOn }
+SELECT A.k, A.t, A.a, B.b, B.t, B.k FROM A ASOF LEFT JOIN B1 B USING(k,t) ORDER BY (A.k, A.t);
 1	101	1	0	0	0
 1	102	2	2	102	1
 1	103	3	2	102	1
 1	104	4	4	104	1
 1	105	5	4	104	1
+SELECT A.k, A.t, A.a, B.b, B.t, B.k FROM A ASOF LEFT JOIN B2 B USING(k,t) ORDER BY (A.k, A.t);
 1	101	1	0	0	0
 1	102	2	2	102	1
 1	103	3	2	102	1
 1	104	4	4	104	1
 1	105	5	4	104	1
+SELECT A.k, A.t, A.a, B.b, B.t, B.k FROM A ASOF LEFT JOIN B3 B USING(k,t) ORDER BY (A.k, A.t);
+1	101	1	0	0	0
+1	102	2	2	102	1
+1	103	3	2	102	1
+1	104	4	4	104	1
+1	105	5	4	104	1
+SET join_algorithm = 'full_sorting_merge';
+SELECT A.k, A.t, A.a, B.b, B.t, B.k FROM A ASOF LEFT JOIN B1 B USING(k,t) ORDER BY (A.k, A.t);
+1	101	1	0	0	0
+1	102	2	2	102	1
+1	103	3	2	102	1
+1	104	4	4	104	1
+1	105	5	4	104	1
+SELECT A.k, A.t, A.a, B.b, B.t, B.k FROM A ASOF LEFT JOIN B2 B USING(k,t) ORDER BY (A.k, A.t);
+1	101	1	0	0	0
+1	102	2	2	102	1
+1	103	3	2	102	1
+1	104	4	4	104	1
+1	105	5	4	104	1
+SELECT A.k, A.t, A.a, B.b, B.t, B.k FROM A ASOF LEFT JOIN B3 B USING(k,t) ORDER BY (A.k, A.t);
 1	101	1	0	0	0
 1	102	2	2	102	1
 1	103	3	2	102	1

@@ -123,14 +123,14 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, *serialization, arena);
+        this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).insertResultInto(to);
+        this->data(place).insertResultInto(to, this->result_type);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -293,14 +293,14 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, *serialization, arena);
+        this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).insertResultInto(to);
+        this->data(place).insertResultInto(to, this->result_type);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -361,9 +361,9 @@ void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
 
     factory.registerFunction("any", {createAggregateFunctionAny, default_properties});
-    factory.registerAlias("any_value", "any", AggregateFunctionFactory::CaseInsensitive);
-    factory.registerAlias("first_value", "any", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("any_value", "any", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("first_value", "any", AggregateFunctionFactory::Case::Insensitive);
     factory.registerFunction("anyLast", {createAggregateFunctionAnyLast, default_properties});
-    factory.registerAlias("last_value", "anyLast", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("last_value", "anyLast", AggregateFunctionFactory::Case::Insensitive);
 }
 }

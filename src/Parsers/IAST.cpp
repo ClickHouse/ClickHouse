@@ -1,11 +1,16 @@
 #include <Parsers/IAST.h>
 
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/IdentifierQuotingStyle.h>
+#include <Poco/String.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 
+#include <algorithm>
 
 namespace DB
 {
@@ -14,8 +19,8 @@ namespace ErrorCodes
 {
     extern const int TOO_BIG_AST;
     extern const int TOO_DEEP_AST;
-    extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_ELEMENT_IN_AST;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -114,7 +119,7 @@ size_t IAST::checkSize(size_t max_size) const
 }
 
 
-IAST::Hash IAST::getTreeHash(bool ignore_aliases) const
+IASTHash IAST::getTreeHash(bool ignore_aliases) const
 {
     SipHash hash_state;
     updateTreeHash(hash_state, ignore_aliases);
@@ -165,13 +170,66 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-String IAST::formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const
+String IAST::formatWithPossiblyHidingSensitiveData(
+    size_t max_length,
+    bool one_line,
+    bool show_secrets,
+    bool print_pretty_type_names,
+    IdentifierQuotingRule identifier_quoting_rule,
+    IdentifierQuotingStyle identifier_quoting_style) const
 {
     WriteBufferFromOwnString buf;
-    FormatSettings settings(buf, one_line);
+    FormatSettings settings(one_line);
     settings.show_secrets = show_secrets;
-    format(settings);
+    settings.print_pretty_type_names = print_pretty_type_names;
+    settings.identifier_quoting_rule = identifier_quoting_rule;
+    settings.identifier_quoting_style = identifier_quoting_style;
+    format(buf, settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
+}
+
+String IAST::formatForLogging(size_t max_length) const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/max_length,
+        /*one_line=*/true,
+        /*show_secrets=*/false,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
+
+String IAST::formatForErrorMessage() const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        /*show_secrets=*/false,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
+
+String IAST::formatWithSecretsOneLine() const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        /*show_secrets=*/true,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
+
+String IAST::formatWithSecretsMultiLine() const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/false,
+        /*show_secrets=*/true,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 }
 
 bool IAST::childrenHaveSecretParts() const
@@ -207,22 +265,25 @@ String IAST::getColumnNameWithoutAlias() const
 }
 
 
-void IAST::FormatSettings::writeIdentifier(const String & name) const
+void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & name, bool ambiguous) const
 {
+    checkIdentifier(name);
+    bool must_quote
+        = (identifier_quoting_rule == IdentifierQuotingRule::Always
+           || (ambiguous && identifier_quoting_rule == IdentifierQuotingRule::WhenNecessary));
+
+    if (identifier_quoting_rule == IdentifierQuotingRule::UserDisplay && !must_quote)
+    {
+        // Quote `name` if it is one of the keywords when `identifier_quoting_rule` is `IdentifierQuotingRule::UserDisplay`
+        const auto & keyword_set = getKeyWordSet();
+        must_quote = keyword_set.contains(Poco::toUpper(name));
+    }
+
     switch (identifier_quoting_style)
     {
-        case IdentifierQuotingStyle::None:
-        {
-            if (always_quote_identifiers)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Incompatible arguments: always_quote_identifiers = true && "
-                                "identifier_quoting_style == IdentifierQuotingStyle::None");
-            writeString(name, ostr);
-            break;
-        }
         case IdentifierQuotingStyle::Backticks:
         {
-            if (always_quote_identifiers)
+            if (must_quote)
                 writeBackQuotedString(name, ostr);
             else
                 writeProbablyBackQuotedString(name, ostr);
@@ -230,7 +291,7 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         }
         case IdentifierQuotingStyle::DoubleQuotes:
         {
-            if (always_quote_identifiers)
+            if (must_quote)
                 writeDoubleQuotedString(name, ostr);
             else
                 writeProbablyDoubleQuotedString(name, ostr);
@@ -238,11 +299,26 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         }
         case IdentifierQuotingStyle::BackticksMySQL:
         {
-            if (always_quote_identifiers)
+            if (must_quote)
                 writeBackQuotedStringMySQL(name, ostr);
             else
                 writeProbablyBackQuotedStringMySQL(name, ostr);
             break;
+        }
+    }
+}
+
+void IAST::FormatSettings::checkIdentifier(const String & name) const
+{
+    if (enforce_strict_identifier_format)
+    {
+        bool is_word_char_identifier = std::all_of(name.begin(), name.end(), isWordCharASCII);
+        if (!is_word_char_identifier)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Identifier '{}' contains characters other than alphanumeric and cannot be when enforce_strict_identifier_format is enabled",
+                name);
         }
     }
 }
@@ -255,7 +331,8 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
     writeChar('\n', ostr);
     for (const auto & child : children)
     {
-        if (!child) throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST, "Can't dump nullptr child");
+        if (!child)
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST, "Can't dump a nullptr child");
         child->dumpTree(ostr, indent + 1);
     }
 }

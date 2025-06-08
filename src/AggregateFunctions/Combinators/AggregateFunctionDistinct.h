@@ -2,13 +2,10 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
-#include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/SipHash.h>
 #include <IO/ReadHelpersArena.h>
 
 
@@ -150,7 +147,7 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
   * Adding -Distinct suffix to aggregate function
 **/
 template <typename Data>
-class AggregateFunctionDistinct : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct<Data>>
+class AggregateFunctionDistinct final : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct<Data>>
 {
 private:
     AggregateFunctionPtr nested_func;
@@ -226,6 +223,11 @@ public:
     size_t sizeOfData() const override
     {
         return prefix_size + nested_func->sizeOfData();
+    }
+
+    size_t alignOfData() const override
+    {
+        return std::max(alignof(Data), nested_func->alignOfData());
     }
 
     void create(AggregateDataPtr __restrict place) const override

@@ -1,7 +1,7 @@
 #include <cassert>
 #include <base/defines.h>
 #include <Parsers/Kusto/KQLLexer.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/find_symbols.h>
 
 namespace DB

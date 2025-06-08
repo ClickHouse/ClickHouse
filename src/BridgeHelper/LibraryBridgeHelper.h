@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -37,7 +37,7 @@ protected:
 
     Poco::URI createBaseURI() const override;
 
-    static constexpr inline size_t DEFAULT_PORT = 9012;
+    static constexpr size_t DEFAULT_PORT = 9012;
 
     const Poco::Util::AbstractConfiguration & config;
     LoggerPtr log;
