@@ -393,9 +393,10 @@ The default tokenizer uses non-alphanumeric ASCII characters as separators.
 **Arguments**
 
 - `value` — The input string. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, `string`, and `noop`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
+- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, `string`, `pattern`, and `no_op`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
 - `ngrams` — Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
 - `separators` — Only relevant if argument `tokenizer` is `string`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`. [Array(String)](../data-types/array.md).
+- `patterns` — Only relevant if argument `tokenizer` is `pattern`: An optional array parameter which defines the patterns. If not set explicitly or empty, defaults to ['\\w+']. [Array(String)](../data-types/array.md)..
 
 :::note
 In case of the `string` tokenizer: if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
@@ -434,6 +435,20 @@ Result:
 ```text
 ┌─tokens──────────────────────────┐
 │ ['abc','bc ','c d',' de','def'] │
+└─────────────────────────────────┘
+```
+
+Using the pattern tokenizer with a pattern matches only ASCII alphabetic characters:
+
+```sql
+SELECT tokens('hello, world! test123,; text456\\', 'pattern', ['[a-zA-Z]+']) AS tokens;
+```
+
+Result:
+
+```text
+┌─tokens──────────────────────────┐
+│ ['hello','world','test','text'] │
 └─────────────────────────────────┘
 ```
 

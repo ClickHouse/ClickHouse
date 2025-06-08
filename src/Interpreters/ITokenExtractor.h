@@ -2,9 +2,10 @@
 
 #include <base/types.h>
 
+#include <Functions/Regexps.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/GinFilter.h>
-
+#include <Common/OptimizedRegularExpression.h>
 
 namespace DB
 {
@@ -196,6 +197,22 @@ struct StringTokenExtractor final : public ITokenExtractorHelper<StringTokenExtr
 
 private:
     std::vector<String> separators;
+};
+
+struct PatternTokenExtractor final : public ITokenExtractorHelper<PatternTokenExtractor>
+{
+    explicit PatternTokenExtractor(const std::vector<String>& patterns);
+
+    static const char * getName() { return "pattern"; }
+    static const char * getExternalName() { return getName(); }
+
+    std::vector<String> getTokens(const char * data, size_t length) const override;
+
+    bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
+
+    bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
+private:
+    std::vector<OptimizedRegularExpression> regular_expressions;
 };
 
 /// Parser doing "no operation". Returns the entire input as a single token.
