@@ -92,21 +92,20 @@ protected:
         size_t list_batch_size) const override;
 
 private:
-    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFilePtr>;
-
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
     IcebergMetadataFilesCachePtr manifest_cache;
-    mutable ManifestEntryByDataFile manifest_file_by_data_file;
 
     std::tuple<Int64, Int32> getVersion() const { return std::make_tuple(relevant_snapshot_id, relevant_snapshot_schema_id); }
 
     Int32 last_metadata_version;
     Poco::JSON::Object::Ptr last_metadata_object;
     Int32 format_version;
+
+    mutable std::unordered_map<String, Int32> schema_id_by_data_file;
 
 
     Int32 relevant_snapshot_schema_id;
@@ -122,14 +121,14 @@ private:
 
     void updateSnapshot();
 
-    Iceberg::ManifestListPtr getManifestList(const String & filename) const;
+    ManifestFileCacheKeys getManifestList(const String & filename) const;
     mutable std::vector<Iceberg::ManifestFileEntry> positional_delete_files_for_current_query;
 
     void addTableSchemaById(Int32 schema_id);
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
-    void initializeDataFiles(Iceberg::ManifestListPtr manifest_list_ptr) const;
+    void initializeSchemasFromManifestFile(ManifestFileCacheKeys manifest_list_ptr) const;
 
     Iceberg::ManifestFilePtr getManifestFile(const String & filename, Int64 inherited_sequence_number) const;
 
