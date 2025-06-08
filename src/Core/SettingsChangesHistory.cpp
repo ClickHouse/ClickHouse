@@ -78,6 +78,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
             /// RELEASE CLOSED
+            {"use_skip_indexes_on_data_read", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {

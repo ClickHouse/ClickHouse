@@ -2051,7 +2051,7 @@ void IMergeTreeDataPart::remove()
     /// Projections should be never removed by themselves, they will be removed
     /// with by parent part.
     if (isProjectionPart() && !is_temp)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} should be removed by its parent {}", name, parent_part_name);
 
     GinIndexStoreFactory::instance().remove(getDataPartStoragePtr()->getRelativePath());
 

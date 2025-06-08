@@ -1461,6 +1461,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_skip_indexes_on_data_read, false, R"(
+Enable using data skipping indexes during data reading.
+
+When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
 )", 0) \

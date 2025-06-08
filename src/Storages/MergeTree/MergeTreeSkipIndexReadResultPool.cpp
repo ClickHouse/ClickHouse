@@ -1,0 +1,134 @@
+#include <Storages/MergeTree/MergeTreeSkipIndexReadResultPool.h>
+
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric FilteringMarksWithSecondaryKeys;
+}
+
+namespace ProfileEvents
+{
+    extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
+}
+
+namespace DB
+{
+
+MergeTreeSkipIndexReadResultPool::MergeTreeSkipIndexReadResultPool(
+    UsefulSkipIndexes skip_indexes_,
+    MarkCachePtr mark_cache_,
+    UncompressedCachePtr uncompressed_cache_,
+    VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
+    MergeTreeReaderSettings reader_settings_,
+    LoggerPtr log_)
+    : skip_indexes(std::move(skip_indexes_))
+    , mark_cache(std::move(mark_cache_))
+    , uncompressed_cache(std::move(uncompressed_cache_))
+    , vector_similarity_index_cache(std::move(vector_similarity_index_cache_))
+    , reader_settings(std::move(reader_settings_))
+    , log(std::move(log_))
+{
+}
+
+SkipIndexReadResultPtr MergeTreeSkipIndexReadResultPool::getOrBuildSkipIndexReadResult(const RangesInDataPart & part)
+{
+    std::unique_lock lock(skip_index_read_result_registry_mutex);
+    auto it = skip_index_read_result_registry.find(part.data_part.get());
+
+    if (it == skip_index_read_result_registry.end())
+    {
+        auto promise = skip_index_read_result_registry.emplace(part.data_part.get(), SkipIndexReadResultEntry{}).first->second.promise;
+        lock.unlock();
+        try
+        {
+            CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
+
+            auto ranges = part.ranges;
+            size_t ending_mark = ranges.empty() ? 0 : ranges.back().end;
+            for (const auto & index_and_condition : skip_indexes.useful_indices)
+            {
+                if (is_cancelled)
+                {
+                    promise->set_value(nullptr);
+                    return {};
+                }
+
+                if (ranges.empty())
+                    break;
+
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
+                ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
+                    index_and_condition.index,
+                    index_and_condition.condition,
+                    part.data_part,
+                    ranges,
+                    reader_settings,
+                    mark_cache.get(),
+                    uncompressed_cache.get(),
+                    vector_similarity_index_cache.get(),
+                    log);
+            }
+
+            for (const auto & indices_and_condition : skip_indexes.merged_indices)
+            {
+                if (is_cancelled)
+                {
+                    promise->set_value(nullptr);
+                    return {};
+                }
+
+                if (ranges.empty())
+                    break;
+
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
+                ranges = MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
+                    indices_and_condition.indices,
+                    indices_and_condition.condition,
+                    part.data_part,
+                    ranges,
+                    reader_settings,
+                    mark_cache.get(),
+                    uncompressed_cache.get(),
+                    vector_similarity_index_cache.get(),
+                    log);
+            }
+
+            if (is_cancelled)
+            {
+                promise->set_value(nullptr);
+                return {};
+            }
+
+            auto res = std::make_shared<SkipIndexReadResult>(ending_mark);
+            for (const auto & range : ranges)
+            {
+                for (auto i = range.begin; i < range.end; ++i)
+                    (*res)[i] = true;
+            }
+            promise->set_value(res);
+            return res;
+        }
+        catch (...)
+        {
+            promise->set_value(nullptr);
+            throw;
+        }
+    }
+    else
+    {
+        auto future = it->second.future;
+        lock.unlock();
+        return future.get();
+    }
+}
+
+void MergeTreeSkipIndexReadResultPool::clear(const DataPartPtr & part)
+{
+    std::lock_guard lock(skip_index_read_result_registry_mutex);
+    skip_index_read_result_registry.erase(part.get());
+}
+
+}
