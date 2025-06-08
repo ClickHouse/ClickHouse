@@ -78,6 +78,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char use_delayed_remote_source[];
+    extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
 static void addConvertingActions(Pipe & pipe, const Block & header, bool use_positions_to_match = false)
@@ -925,8 +926,12 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
         pipes.emplace_back(std::move(pipe));
     }
 
-    const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::parallel_replicas_wait_for_unused_replicas])
+    bool wait_for_unused_replicas = false;
+    fiu_do_on(FailPoints::parallel_replicas_wait_for_unused_replicas,
+    {
+        wait_for_unused_replicas = true;
+    });
+    if (!wait_for_unused_replicas)
     {
         coordinator->setReadCompletedCallback(
             [sources = std::move(remote_sources)](const std::set<size_t> & used_replicas)
