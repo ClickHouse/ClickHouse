@@ -853,7 +853,7 @@ void FormatFactory::setContentType(const String & name, const String & content_t
     getOrCreateCreators(name).content_type = [=](const std::optional<FormatSettings> &){ return content_type; };
 }
 
-void FormatFactory::setContentType(const String & name, std::function<String(const std::optional<FormatSettings> &)> content_type)
+void FormatFactory::setContentType(const String & name, ContentTypeGetter content_type)
 {
     getOrCreateCreators(name).content_type = content_type;
 }

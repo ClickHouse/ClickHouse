@@ -114,6 +114,9 @@ private:
     /// The checker should return true if format support append.
     using AppendSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
+    /// Obtain HTTP content-type for the output format.
+    using ContentTypeGetter = std::function<String(const std::optional<FormatSettings> & settings)>;
+
     using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings)>;
     using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
 
@@ -140,8 +143,7 @@ private:
         bool supports_parallel_formatting{false};
         bool prefers_large_blocks{false};
         bool is_tty_friendly{true}; /// If false, client will ask before output in the terminal.
-        std::function<String(const std::optional<FormatSettings> &)> content_type
-            = [](const std::optional<FormatSettings> &){ return "text/plain; charset=UTF-8"; };
+        ContentTypeGetter content_type = [](const std::optional<FormatSettings> &){ return "text/plain; charset=UTF-8"; };
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
@@ -239,7 +241,7 @@ public:
     void markOutputFormatNotTTYFriendly(const String & name);
 
     void setContentType(const String & name, const String & content_type);
-    void setContentType(const String & name, std::function<String(const std::optional<FormatSettings> &)> content_type);
+    void setContentType(const String & name, ContentTypeGetter content_type);
 
     void markFormatSupportsSubsetOfColumns(const String & name);
     void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);
