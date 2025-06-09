@@ -296,22 +296,15 @@ NameSet MutationCommands::getSecondaryIndicesOnColumnAlterModifyOptions(
             alter_cmd && alter_cmd->type==ASTAlterCommand::MODIFY_COLUMN)
         {
             if (auto * column_declaration = alter_cmd->col_decl->as<ASTColumnDeclaration>())
-            {
                 altered_columns.insert(column_declaration->name);
-            }
             else
-            {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Cannot parse column declaration of alter command in mutation. It's a bug");
-            }
         }
     }
 
     if (!altered_columns.empty())
-    {
-        secondary_indices_alter_mode =
-            (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify];
-    }
+        secondary_indices_alter_mode = (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify];
 
     return altered_columns;
 }

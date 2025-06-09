@@ -604,11 +604,11 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     const MergeTreeDataPartPtr & source_part,
     QueryPipelineBuilder & builder,
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
     const NameSet & materialized_indices,
     std::vector<MergeTreeIndexPtr> & indices_to_skip,
     const NameSet & alter_column_names,
-    SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode)
+    SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode,
+    ContextPtr context)
 {
     /// Checks if columns used in skipping indexes modified.
     const auto & index_factory = MergeTreeIndexFactory::instance();
@@ -2523,11 +2523,11 @@ bool MutateTask::prepare()
             ctx->source_part,
             ctx->mutating_pipeline_builder,
             ctx->metadata_snapshot,
-            ctx->context,
             ctx->materialized_indices,
             indices_to_skip,
             altered_columns,
-            secondary_indices_alter_mode);
+            secondary_indices_alter_mode,
+            ctx->context);
 
         auto lightweight_mutation_projection_mode = (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode];
         bool lightweight_delete_drops_projections =

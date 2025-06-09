@@ -1789,31 +1789,20 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW, R"(
     Specifies what happens if lightweight delete `DELETE` is run for tables with
-    projections. It only takes effects on the parts touched.
-    `throw` returns an error (the DELETE statement is not run).
-    `drop` removes existing projections of the parts.
-    `rebuild` drops and builds new projections of the parts.
-
-    Possible values:
-    - `throw`
-    - `drop`
-    - `rebuild`
+    projections. It only takes effects on the parts touched. Possible values:
+    - `throw` returns an error (the DELETE statement is not run).
+    - `drop` removes existing projections of the parts.
+    - `rebuild` drops and builds new projections of the parts.
     )", 0) \
     DECLARE(DeduplicateMergeProjectionMode, deduplicate_merge_projection_mode, DeduplicateMergeProjectionMode::THROW, R"(
     Specifies what happens when merge projections in non-classic MergeTree, that
     is not (Replicated, Shared) MergeTree. It also controls `OPTIMIZE DEDUPLICATE`,
     but has effect on all MergeTree family members. It only takes effects on the
-    parts touched.
-    `throw` returns an error (the DELETE statement is not run).
-    `drop` removes existing projections of the parts.
-    `rebuild` drops and builds new projections of the parts.
-    `ignore` is for compatibility which might result in incorrect answer.
-
-    Possible values:
-    - `throw`
-    - `drop`
-    - `rebuild`
-    - `ignore`
+    parts touched. Possible values:
+    - `throw` returns an error (the DELETE statement is not run).
+    - `drop` removes existing projections of the parts.
+    - `rebuild` drops and builds new projections of the parts.
+    - `ignore` is for compatibility which might result in incorrect answer.
     )", 0) \
     /** Part loading settings. */           \
     DECLARE(Bool, columns_and_secondary_indices_sizes_lazy_calculation, true, R"(
@@ -1822,17 +1811,11 @@ namespace ErrorCodes
     )", 0) \
     /** Secondary Index settings. */ \
     DECLARE(SecondaryIndicesOnColumnsAlterModify, secondary_indices_on_columns_alter_modify, SecondaryIndicesOnColumnsAlterModify::THROW, R"(
-    Specifies what happens if ALTER MODIFY is run for a column with a secondary index.
-    `throw` returns an error (the ALTER MODIFY statement is not run).
-    `drop` removes existing secondary indexes.
-    `rebuild` drops and materializes existing secondary indexes.
-    `ignore` is intended for professional usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
-
-    Possible values:
-    - `throw`
-    - `drop`
-    - `rebuild`
-    - `ignore`
+    Specifies what happens if ALTER MODIFY is run for a column with a secondary index. Possible values:
+    - `throw` returns an error (the ALTER MODIFY statement is not run).
+    - `drop` removes existing secondary indexes.
+    - `rebuild` drops and materializes existing secondary indexes.
+    - `ignore` is intended for professional usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
     )", 0) \
     /** Default compression codec settings. */ \
     DECLARE(String, default_compression_codec, "", R"(
