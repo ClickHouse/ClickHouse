@@ -293,6 +293,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
          {ReplacingMergeTree, mergeTreeTableSettings},
+         {CoalescingMergeTree, mergeTreeTableSettings},
          {SummingMergeTree, mergeTreeTableSettings},
          {AggregatingMergeTree, mergeTreeTableSettings},
          {CollapsingMergeTree, mergeTreeTableSettings},
@@ -317,10 +318,18 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Hudi, {}},
          {DeltaLake, {}},
          {IcebergS3, {}},
+         {IcebergAzure, {}},
+         {IcebergLocal, {}},
          {Merge, {}},
          {Distributed, distributedTableSettings},
          {Dictionary, {}},
-         {GenerateRandom, {}}});
+         {GenerateRandom, {}},
+         {AzureBlobStorage, {}},
+         {AzureQueue, {}},
+         {URL, {}},
+         {KeeperMap, {}},
+         {ExternalDistributed, {}},
+         {MaterializedPostgreSQL, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},
