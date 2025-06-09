@@ -1,3 +1,0 @@
-<clickhouse>
-    <include_from>/etc/clickhouse-server/config.d/include_from.xml</include_from>
-</clickhouse>

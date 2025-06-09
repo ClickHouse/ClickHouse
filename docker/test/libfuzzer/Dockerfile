@@ -3,19 +3,16 @@ ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="https://archive.ubuntu.com"
-RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 ENV LANG=C.UTF-8
 ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# We need ca-certificates first to be able to update all repos. This is why it's run twice
-RUN apt-get update \
-    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
-
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+            ca-certificates \
             libc6-dbg \
             moreutils \
             ncdu \

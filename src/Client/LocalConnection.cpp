@@ -3,7 +3,6 @@
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
 #include <Core/Protocol.h>
-#include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -260,7 +259,6 @@ void LocalConnection::sendQuery(
 
     try
     {
-        query_context->setSetting("serialize_query_plan", false);
         state->io = executeQuery(state->query, query_context, QueryFlags{}, state->stage).second;
 
         if (state->io.pipeline.pushing())
@@ -334,11 +332,6 @@ void LocalConnection::sendQuery(
         state->io.onException();
         state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
     }
-}
-
-void LocalConnection::sendQueryPlan(const QueryPlan &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 void LocalConnection::sendData(const Block & block, const String &, bool)
@@ -467,23 +460,6 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    // pushing executors have to be finished before the final stats are sent
-    if (state->is_finished)
-    {
-        if (state->executor)
-        {
-            // no op
-        }
-        else if (state->pushing_async_executor)
-        {
-            state->pushing_async_executor->finish();
-        }
-        else if (state->pushing_executor)
-        {
-            state->pushing_executor->finish();
-        }
-    }
-
     if (state->is_finished && !state->sent_totals)
     {
         state->sent_totals = true;
@@ -532,7 +508,7 @@ bool LocalConnection::poll(size_t)
     {
         state->sent_profile_events = true;
 
-        if (send_profile_events && (state->executor || state->pushing_async_executor || state->pushing_executor))
+        if (send_profile_events && state->executor)
         {
             sendProfileEvents();
             return true;
@@ -634,7 +610,7 @@ bool LocalConnection::pollImpl()
 
 UInt64 LocalConnection::receivePacketType()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "receivePacketType is not implemented for LocalConnection");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "receivePacketType() is not implemented for LocalConnection");
 }
 
 Packet LocalConnection::receivePacket()

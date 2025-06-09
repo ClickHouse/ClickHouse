@@ -13,7 +13,6 @@
 #include <Common/callOnce.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
 #include <base/FnTraits.h>
@@ -23,7 +22,7 @@
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
-
+#include <boost/range/algorithm_ext/erase.hpp>
 
 namespace DB
 {
@@ -308,7 +307,7 @@ bool IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bo
 {
     if (isReadOnly())
         throwReadonlyCannotInsert(entity->getType(), entity->getName());
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "insertImpl is not implemented in {}", getStorageType());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "insertImpl() is not implemented in {}", getStorageType());
 }
 
 
@@ -404,7 +403,7 @@ bool IAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
             return false;
         throwReadonlyCannotRemove(entity->getType(), entity->getName());
     }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeImpl is not implemented in {}", getStorageType());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeImpl() is not implemented in {}", getStorageType());
 }
 
 
@@ -500,7 +499,7 @@ bool IAccessStorage::updateImpl(const UUID & id, const UpdateFunc &, bool throw_
             return false;
         throwReadonlyCannotUpdate(entity->getType(), entity->getName());
     }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateImpl is not implemented in {}", getStorageType());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateImpl() is not implemented in {}", getStorageType());
 }
 
 
@@ -830,11 +829,6 @@ void IAccessStorage::throwBackupNotAllowed() const
 void IAccessStorage::throwRestoreNotAllowed() const
 {
     throw Exception(ErrorCodes::ACCESS_STORAGE_DOESNT_ALLOW_BACKUP, "Restore of access entities is not allowed in {}", getStorageName());
-}
-
-bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name)
-{
-    return parseIdentifierOrStringLiteral(pos, expected, storage_name);
 }
 
 }

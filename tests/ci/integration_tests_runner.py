@@ -106,7 +106,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Killing all alive docker containers")
         subprocess.check_output(
-            "timeout --verbose --signal=KILL 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
+            "timeout --signal=KILL 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
             shell=True,
         )
     except subprocess.CalledProcessError as err:
@@ -115,7 +115,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Removing all docker containers")
         subprocess.check_output(
-            "timeout --verbose --signal=KILL 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
+            "timeout --signal=KILL 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
             shell=True,
         )
     except subprocess.CalledProcessError as err:
@@ -180,10 +180,6 @@ class ClickhouseIntegrationTestsRunner:
             os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         )
 
-        self.use_distributed_plan = (
-            os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
-        )
-
         if "run_by_hash_total" in self.params:
             self.run_by_hash_total = self.params["run_by_hash_total"]
             self.run_by_hash_num = self.params["run_by_hash_num"]
@@ -230,7 +226,7 @@ class ClickhouseIntegrationTestsRunner:
 
         cmd = (
             f"cd {self.repo_path}/tests/integration && "
-            f"timeout --verbose --signal=KILL 1h ./runner {self._get_runner_opts()} {image_cmd} "
+            f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} {image_cmd} "
             "--command ' echo Pre Pull finished ' "
         )
 
@@ -349,8 +345,6 @@ class ClickhouseIntegrationTestsRunner:
             result.append("--disable-net-host")
         if self.use_old_analyzer:
             result.append("--old-analyzer")
-        if self.use_distributed_plan:
-            result.append("--distributed-plan")
 
         return " ".join(result)
 
@@ -364,7 +358,7 @@ class ClickhouseIntegrationTestsRunner:
         report_file = "runner_get_all_tests.jsonl"
         cmd = (
             f"cd {self.repo_path}/tests/integration && "
-            f"timeout --verbose --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- "
+            f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- "
             f"--setup-plan --report-log={report_file}"
         )
 
@@ -603,7 +597,7 @@ class ClickhouseIntegrationTestsRunner:
             # -s -- (s)kipped
             cmd = (
                 f"cd {self.repo_path}/tests/integration && "
-                f"timeout --verbose --signal=KILL {timeout} ./runner {self._get_runner_opts()} "
+                f"timeout --signal=KILL {timeout} ./runner {self._get_runner_opts()} "
                 f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- "
                 f"-rfEps --run-id={i} --color=no --durations=0 "
                 f"--report-log={report_name} --report-log-exclude-logs-on-passed-tests "

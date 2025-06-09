@@ -1,6 +1,5 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/demangle.h>
-#include <Common/DateLUTImpl.h>
 #include <Interpreters/TraceLog.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>

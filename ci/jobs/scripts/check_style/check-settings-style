@@ -37,8 +37,7 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Storages/MySQL/MySQLSettings.cpp
     $ROOT_PATH/src/Storages/NATS/NATSSettings.cpp
     $ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp
-    $ROOT_PATH/src/Storages/ObjectStorage/StorageObjectStorageSettings.h
-    $ROOT_PATH/src/Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h
+    $ROOT_PATH/src/Storages/ObjectStorage/StorageObjectStorageSettings.cpp
     $ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp
     $ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp
     $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
@@ -56,8 +55,7 @@ function add_setting_declaration_file()
     fi
     filename=$(basename -- "$1")
     filename="${filename%.*}"
-    grep -e "DECLARE(" "$1" | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 9, length($1) - 9) " SettingsDeclaration" }' >> "${SETTINGS_FILE}"
-    grep -e "DECLARE_WITH_ALIAS(" "$1" | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 20, length($1) - 20) " SettingsDeclaration" }' >> "${SETTINGS_FILE}"
+    grep "DECLARE(" "$1" | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 9, length($1) - 9) " SettingsDeclaration" }' >> "${SETTINGS_FILE}"
 }
 
 for settings_file in ${ALL_DECLARATION_FILES};
@@ -70,7 +68,7 @@ done
 # previous releases, which is more important than consistency
 for setting in $(
       awk '{ gsub(/^.*Settings/, "", $2); print $1 " " $2}' "${SETTINGS_FILE}" | \
-      sort | uniq | awk '{ print $1 }' | uniq -d | grep -v "connect_timeout" | grep -v "max_connections" | grep -v "max_block_size"
+      sort | uniq | awk '{ print $1 }' | uniq -d | grep -v "connect_timeout" | grep -v "max_connections"
     );
 do
     echo "# Found multiple definitions of setting ${setting} with different types: "
@@ -110,20 +108,3 @@ do
         echo "# In $line but it should be ${expected/$'\n'/ }"
     done
 done
-
-# Settings.h (and a few similar headers) is included in many parts of the
-# codebase, so any modifications to it trigger a large-scale recompilation.
-# Therefore, it is crucial to avoid unnecessary inclusion of Settings.h in
-# headers.
-SETTINGS_H_EXCLUDES=(
-    # Templated code
-    --exclude "$ROOT_PATH/src/Access/resolveSetting.h"
-
-    # For functions we allow it for regular functions (due to lots of
-    # templates), but forbid it in interface (IFunction) part.
-    --exclude "$ROOT_PATH/src/Functions/*"
-    --include "$ROOT_PATH/src/Functions/IFunction*"
-)
-find $ROOT_PATH/src -name '*.h' -print0 | xargs -0 grep -P '#include[\s]*(<|")(Core/Settings.h)|(MergeTreeSettings.h)(>|")' "${SETTINGS_H_EXCLUDES[@]}" | \
-    grep . && echo '^ Too broad Settings.h or MergeTreeSettings.h usage'
-

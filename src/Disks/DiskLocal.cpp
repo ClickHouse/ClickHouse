@@ -398,8 +398,6 @@ void DiskLocal::removeDirectory(const String & path)
 void DiskLocal::removeDirectoryIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (!existsDirectory(fs_path))
-        return;
     if (0 != rmdir(fs_path.c_str()))
         if (errno != ENOENT)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
@@ -447,11 +445,9 @@ bool DiskLocal::isSymlinkNoThrow(const String & path) const
     return FS::isSymlinkNoThrow(fs::path(disk_path) / path);
 }
 
-void DiskLocal::createDirectorySymlink(const String & target, const String & link)
+void DiskLocal::createDirectoriesSymlink(const String & target, const String & link)
 {
-    auto link_path_inside_disk = fs::path(disk_path) / link;
-    /// Symlinks will be relative.
-    fs::create_directory_symlink(fs::proximate(fs::path(disk_path) / target, link_path_inside_disk.parent_path()), link_path_inside_disk);
+    fs::create_directory_symlink(fs::path(disk_path) / target, fs::path(disk_path) / link);
 }
 
 String DiskLocal::readSymlink(const fs::path & path) const

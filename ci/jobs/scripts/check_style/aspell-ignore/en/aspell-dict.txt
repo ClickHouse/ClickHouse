@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3283 
+personal_ws-1.1 en 2985
 AArch
 ACLs
 ALTERs
@@ -82,7 +82,6 @@ BackupsIOThreads
 BackupsIOThreadsActive
 BackupsThreads
 BackupsThreadsActive
-Bech
 BestEffort
 BestEffortOrNull
 BestEffortOrZero
@@ -153,7 +152,6 @@ CapContains
 CapUnion
 CapnProto
 CapnProtoEnumComparingMode
-CardSecondary
 CatBoost
 CellAreaM
 CellAreaRads
@@ -169,7 +167,6 @@ CityHash
 Clangd
 ClickBench
 ClickCat
-ClickHaskell
 ClickHouse
 ClickHouse's
 ClickHouseClient
@@ -183,7 +180,6 @@ CloudAvailableBadge
 CloudDetails
 CloudNotSupportedBadge
 CloudStorage
-CoalescingMergeTree
 CodeBlock
 CodeLLDB
 Codecs
@@ -205,8 +201,8 @@ ContextLockWait
 Contrib
 CountMin
 Covid
-Cramer
 Cramer's
+Cramer
 Criteo
 Crotty
 Crowdsourced
@@ -265,8 +261,6 @@ DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
-DictionaryMaxUpdateDelay
-DictionaryTotalFailedUpdates
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
@@ -338,7 +332,6 @@ FilesystemMainPathTotalINodes
 FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
-FixedStrings
 FlameGraph
 Flink
 ForEach
@@ -531,6 +524,8 @@ KafkaWrites
 Kahan
 Kaser
 Keccak
+blockchains
+keccak
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequests
@@ -602,7 +597,6 @@ MSan
 MVCC
 MacBook
 MacOS
-Mainnet
 MapState
 MarkCacheBytes
 MarkCacheFiles
@@ -803,6 +797,7 @@ ParallelParsingInputFormat
 ParallelParsingInputFormatThreads
 ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
+Parametrized
 ParquetCompression
 ParquetMetadata
 ParquetVersion
@@ -879,8 +874,6 @@ QueryCacheBytes
 QueryCacheEntries
 QueryCacheHits
 QueryCacheMisses
-QueryConditionCacheHits
-QueryConditionCacheMisses
 QueryPreempted
 QueryResultCacheNondeterministicFunctionHandling
 QueryResultCacheSystemTableHandling
@@ -990,12 +983,10 @@ Schemas
 Schwartzian
 SeasClick
 SeekTable
-SegWit
 SelfManaged
 Sematext
 SendExternalTables
 SendScalars
-ServerSettings
 SetOperationMode
 ShareAlike
 ShareSet
@@ -1009,8 +1000,8 @@ Simhash
 SimpleAggregateFunction
 SimpleState
 SipHash
-Smirnov
 Smirnov's
+Smirnov
 Smirnov'test
 Soundex
 SpanKind
@@ -1048,11 +1039,12 @@ SummingMergeTree
 SuperSet
 Superset
 SupersetDocker
-SvelteKit
 SystemLogParameters
 SystemReplicasThreads
 SystemReplicasThreadsActive
 SystemTableCloud
+SvelteKit
+Tauri
 TABLUM
 TAVG
 TCPConnection
@@ -1087,7 +1079,6 @@ TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
-Tauri
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -1095,7 +1086,6 @@ TemporaryFilesForJoin
 TemporaryFilesForSort
 TemporaryFilesUnknown
 Testflows
-Testnet
 Tgz
 Theil's
 Theils
@@ -1155,6 +1145,7 @@ URLHash
 URLHierarchy
 URLPathHierarchy
 USearch
+USearch
 UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
@@ -1188,8 +1179,8 @@ VirtualBox
 Vose
 WALs
 WSFG
-Welch
 Welch's
+Welch
 Werror
 Wether
 WikiStat
@@ -1261,7 +1252,6 @@ aggthrow
 aiochclient
 alloc
 allocator
-allowlist
 alphaTokens
 amplab
 analysisOfVariance
@@ -1316,8 +1306,6 @@ arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
-arrayLevenshteinDistance
-arrayLevenshteinDistanceWeighted
 arrayMap
 arrayMax
 arrayMin
@@ -1345,7 +1333,6 @@ arrayShiftLeft
 arrayShiftRight
 arrayShingles
 arrayShuffle
-arraySimilarity
 arraySlice
 arraySort
 arraySplit
@@ -1360,7 +1347,6 @@ arrayZipUnaligned
 ascii
 asin
 asinh
-aspell
 assumeNotNull
 async
 asynch
@@ -1395,7 +1381,6 @@ backupview
 balancer
 basename
 bcrypt
-bech
 benchmarked
 benchmarking
 bfloat
@@ -1440,11 +1425,9 @@ bitmaskToArray
 bitmaskToList
 bitov
 blake
-blobpath
 blockNumber
 blockSerializedSize
 blockSize
-blockchains
 blockinfo
 blockreader
 blocksize
@@ -1478,7 +1461,6 @@ capnproto
 cardinalities
 cardinality
 cartesian
-caseWithExpression
 cassandra
 catboost
 catboostEvaluate
@@ -1543,12 +1525,12 @@ codec
 codecs
 codepoint
 codepoints
-codespell
 collapsingmergetree
 combinator
 combinators
 compareSubstrings
 comparising
+composable
 composable
 compressability
 concat
@@ -1663,7 +1645,6 @@ dbal
 dbeaver
 dbgen
 dbms
-dbpedia
 ddl
 deallocated
 deallocation
@@ -1700,7 +1681,6 @@ denormalize
 denormalized
 denormalizing
 denormals
-denylist
 dequeued
 dequeues
 dereference
@@ -1741,7 +1721,6 @@ distinctdynamictypes
 distinctjsonpaths
 distro
 divideDecimal
-divideOrNull
 dmesg
 doesnt
 domainRFC
@@ -1860,6 +1839,7 @@ formatter
 formatters
 fqdn
 frac
+freezed
 frictionless
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1900,10 +1880,8 @@ geospatial
 getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
-getMergeTreeSetting
 getOSKernelVersion
 getServerPort
-getServerSetting
 getSetting
 getSettingOrDefault
 getSizeOfEnumType
@@ -1969,7 +1947,6 @@ grpc
 grpcio
 gtest
 gtid
-gunzip
 gzip
 gzipped
 hadoop
@@ -2018,8 +1995,8 @@ html
 http
 https
 hudi
+hudi
 hudiCluster
-hyperparameter
 hyperscan
 hypot
 hyvor
@@ -2027,7 +2004,6 @@ iTerm
 icebergCluster
 icosahedron
 icudata
-idelta
 idempotency
 idnaDecode
 idnaEncode
@@ -2054,7 +2030,6 @@ inodes
 instantiation
 instantiations
 intDiv
-intDivOrNull
 intDivOrZero
 intExp
 intHash
@@ -2065,7 +2040,6 @@ intervalLengthSum
 invalidCertificateHandler
 invariants
 invertedindexes
-irate
 isConstant
 isDecimalOverflow
 isFinite
@@ -2080,7 +2054,6 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
-isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2121,8 +2094,6 @@ kRing
 kafka
 kafkaMurmurHash
 kafkacat
-kbytes
-keccak
 keepalive
 keepermap
 kerberized
@@ -2222,13 +2193,9 @@ mapAll
 mapApply
 mapConcat
 mapContains
-mapContainsKey
 mapContainsKeyLike
-mapContainsValue
-mapContainsValueLike
 mapExists
 mapExtractKeyLike
-mapExtractValueLike
 mapFilter
 mapFromArrays
 mapKeys
@@ -2258,7 +2225,6 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
-mergeTreeProjection
 mergeable
 mergetree
 messageID
@@ -2266,7 +2232,6 @@ metacharacters
 metasymbols
 metrica
 metroHash
-mergeTreePartInfo
 mfedotov
 mflix
 minMap
@@ -2288,7 +2253,6 @@ mmap
 mmapped
 modularization
 moduli
-moduloOrNull
 moduloOrZero
 mongoc
 mongocxx
@@ -2344,7 +2308,6 @@ musqldump
 mutex
 mydb
 myfilter
-mypy
 mysql
 mysqldump
 mysqljs
@@ -2359,10 +2322,8 @@ namespace
 namespaces
 natively
 nats
-ncat
 ness
 nestjs
-netcat
 netloc
 newjson
 ngram
@@ -2504,8 +2465,6 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
-positiveModuloOrNull
-postfilter
 postfix
 postfixes
 postgres
@@ -2523,7 +2482,6 @@ prefetched
 prefetches
 prefetching
 prefetchsize
-prefilter
 preflight
 preimage
 preloaded
@@ -2609,7 +2567,6 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
-quantized
 quartile
 queryID
 queryString
@@ -2741,7 +2698,6 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
-runtimes
 russian
 rustc
 rustup
@@ -2809,10 +2765,6 @@ socketcache
 soundex
 sparkBar
 sparkbar
-sparseGrams
-sparseGramsHashes
-sparseGramsHashesUTF
-sparseGramsUTF
 sparsehash
 speedscope
 splitBy
@@ -2862,8 +2814,6 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
-stringBytesEntropy
-stringBytesUniq
 stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
@@ -2982,13 +2932,7 @@ throwIf
 throwif
 timeDiff
 timeSeriesData
-timeSeriesDeltaToGrid
 timeSeriesMetrics
-timeSeriesInstantDeltaToGrid
-timeSeriesInstantRateToGrid
-timeSeriesLastTwoSamples
-timeSeriesRateToGrid
-timeSeriesResampleToGridWithStaleness
 timeSeriesTags
 timeSlot
 timeSlots
@@ -2998,7 +2942,6 @@ timeZoneOffset
 timezones
 tinylog
 tmp
-tmpfs
 toBFloat
 toBool
 toColumnTypeName

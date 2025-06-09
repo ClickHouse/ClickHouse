@@ -12,7 +12,6 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Core/ServerSettings.h>
 
 #include <boost/locale/date_time_facet.hpp>
 
@@ -24,18 +23,15 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
-#if defined(OS_LINUX)
-#    include <netinet/tcp.h>
-#endif
 
+namespace ProfileEvents
+{
+    extern const Event OSCPUWaitMicroseconds;
+    extern const Event OSCPUVirtualTimeMicroseconds;
+}
 
 namespace DB
 {
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
-}
 
 namespace ErrorCodes
 {
@@ -91,8 +87,6 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/cpuinfo", cpuinfo);
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/net/dev", net_dev);
-    openFileIfExists("/proc/net/tcp", net_tcp);
-    openFileIfExists("/proc/net/tcp6", net_tcp6);
 
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
@@ -760,20 +754,6 @@ void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetri
     }
     if (num_pending_mutations <= max_pending_mutations_to_warn)
         context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
-
-    if (auto num_pending_mutations_over_execution_time = tryGetMetricValue(new_values, "NumberOfPendingMutationsOverExecutionTime");
-        num_pending_mutations_over_execution_time > 0)
-    {
-        context->addOrUpdateWarningMessage(
-            Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
-            PreformattedMessage::create(
-                "There are {} pending mutations that exceed the max_pending_mutations_execution_time_to_warn threshold.",
-                num_pending_mutations_over_execution_time));
-    }
-    else
-    {
-        context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD);
-    }
 }
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
@@ -1432,7 +1412,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             static constexpr size_t sector_size = 512;
 
             /// Always in milliseconds according to the docs.
-            static constexpr double time_multiplier = 1e-3;
+            static constexpr double time_multiplier = 1e-6;
 
 #define BLOCK_DEVICE_EXPLANATION \
     " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \
@@ -1628,132 +1608,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/net/dev", net_dev);
         }
-    }
-
-    if (net_tcp || net_tcp6)
-    {
-        UInt64 total_sockets = 0;
-        UInt64 sockets_by_state[16] = {};
-        UInt64 transmit_queue_size = 0;
-        UInt64 receive_queue_size = 0;
-        UInt64 unrecovered_retransmits = 0;
-        std::unordered_set<std::string> remote_addresses;
-
-        auto process_net = [&](const char * path, auto & file)
-        {
-            try
-            {
-                file->rewind();
-                /// Header
-                skipToNextLineOrEOF(*file);
-
-                while (!file->eof())
-                {
-                    /// Line number
-                    skipWhitespaceIfAny(*file, true);
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Local address and port
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Remote address and port
-                    String remote_address_and_port;
-                    readStringUntilWhitespace(remote_address_and_port, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    if (auto pos = remote_address_and_port.find(':'); pos != std::string::npos)
-                        remote_address_and_port.resize(pos);
-                    remote_addresses.emplace(remote_address_and_port);
-
-                    /// Socket state
-                    UInt8 state = 0;
-                    char state_hex[2]{};
-                    readPODBinary(state_hex, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    state = unhex2(state_hex);
-                    if (state < 16)
-                        ++sockets_by_state[state];
-
-                    /// tx_queue:rx_queue
-                    String tx_rx_queue;
-                    readStringUntilWhitespace(tx_rx_queue, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    if (auto pos = tx_rx_queue.find(':'); pos != std::string::npos)
-                    {
-                        std::string_view tx_queue = std::string_view(tx_rx_queue).substr(0, pos);
-                        std::string_view rx_queue = std::string_view(tx_rx_queue).substr(pos + 1);
-
-                        if (tx_queue.size() == 8 && rx_queue.size() == 8)
-                        {
-                            UInt32 tx_queue_size = unhexUInt<UInt32>(tx_queue.data()); // NOLINT
-                            UInt32 rx_queue_size = unhexUInt<UInt32>(rx_queue.data()); // NOLINT
-
-                            transmit_queue_size += tx_queue_size;
-                            receive_queue_size += rx_queue_size;
-                        }
-                    }
-
-                    /// tr:when
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Retransmits
-                    String retransmits_str;
-                    readStringUntilWhitespace(retransmits_str, *file);
-                    if (retransmits_str.size() == 8)
-                    {
-                        UInt32 retransmits = unhexUInt<UInt32>(retransmits_str.data());
-                        unrecovered_retransmits += retransmits;
-                    }
-
-                    skipToNextLineOrEOF(*file);
-                    ++total_sockets;
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                openFileIfExists(path, file);
-            }
-        };
-
-        if (net_tcp)
-            process_net("/proc/net/tcp", net_tcp);
-
-        if (net_tcp6)
-            process_net("/proc/net/tcp6", net_tcp6);
-
-        new_values["NetworkTCPSockets"] = { total_sockets,
-            "Total number of network sockets used on the server across TCPv4 and TCPv6, in all states." };
-
-        auto process_socket_state = [&](UInt8 state, const char * description)
-        {
-            if (state < 16 && sockets_by_state[state])
-                new_values[fmt::format("NetworkTCPSockets_{}", description)] = { sockets_by_state[state],
-                    "Total number of network sockets in the specific state on the server across TCPv4 and TCPv6." };
-        };
-
-        process_socket_state(TCP_ESTABLISHED, "ESTABLISHED");
-        process_socket_state(TCP_SYN_SENT, "SYN_SENT");
-        process_socket_state(TCP_SYN_RECV, "SYN_RECV");
-        process_socket_state(TCP_FIN_WAIT1, "FIN_WAIT1");
-        process_socket_state(TCP_FIN_WAIT2, "FIN_WAIT2");
-        process_socket_state(TCP_TIME_WAIT, "TIME_WAIT");
-        process_socket_state(TCP_CLOSE, "CLOSE");
-        process_socket_state(TCP_CLOSE_WAIT, "CLOSE_WAIT");
-        process_socket_state(TCP_LAST_ACK, "LAST_ACK");
-        process_socket_state(TCP_LISTEN, "LISTEN");
-        process_socket_state(TCP_CLOSING, "CLOSING");
-
-        new_values["NetworkTCPTransmitQueue"] = { transmit_queue_size,
-            "Total size of transmit queues of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPReceiveQueue"] = { receive_queue_size,
-            "Total size of receive queues of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPUnrecoveredRetransmits"] = { unrecovered_retransmits,
-            "Total size of current retransmits (unrecovered at this moment) of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPSocketRemoteAddresses"] = { remote_addresses.size(),
-            "Total number of unique remote addresses of network sockets used on the server across TCPv4 and TCPv6." };
     }
 
     if (vm_max_map_count)
@@ -1989,7 +1843,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    new_values["OSCPUOverload"] = { ProfileEvents::global_counters.getCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold], /*reset*/ true), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
+    new_values["OSCPUOverload"] = { getCPUOverloadMetric(), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
 
     /// Add more metrics as you wish.
 
@@ -2010,6 +1864,24 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         // which later get inserted into the system.warnings table:
         processWarningForMutationStats(new_values);
     }
+}
+
+double AsynchronousMetrics::getCPUOverloadMetric()
+{
+    Int64 curr_cpu_wait_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUWaitMicroseconds];
+    Int64 curr_cpu_virtual_time_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUVirtualTimeMicroseconds];
+
+    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds;
+    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds;
+
+    prev_cpu_wait_microseconds = curr_cpu_wait_microseconds;
+    prev_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds;
+
+    /// If we used less than one CPU core, we cannot detect overload.
+    if (os_cpu_virtual_time_microseconds < 1'000'000 || os_cpu_wait_microseconds <= 0)
+        return 0;
+
+    return static_cast<double>(os_cpu_wait_microseconds) / os_cpu_virtual_time_microseconds;
 }
 
 }

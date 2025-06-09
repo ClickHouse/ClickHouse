@@ -1,6 +1,5 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -9,6 +8,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 
 namespace
 {
@@ -28,15 +33,13 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & types) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"datetime", &isDateTimeOrDateTime64, nullptr, "DateTime or DateTime64"},
-        };
+        DataTypePtr type_no_nullable = removeNullable(types[0]);
 
-        validateFunctionArguments(*this, types, mandatory_args);
-
-        return std::make_shared<DataTypeString>();
+        if (isDateTime(type_no_nullable) || isDateTime64(type_no_nullable))
+            return std::make_shared<DataTypeString>();
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad argument for function {}, should be DateTime or DateTime64", name);
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -62,14 +65,6 @@ public:
 
         return DataTypeString().createColumnConst(1,
             dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
-    }
-
-private:
-    static bool isDateTimeOrDateTime64(const IDataType & type)
-    {
-        DataTypePtr type_no_nullable = removeNullable(type.getPtr());
-
-        return WhichDataType(*type_no_nullable).isDateTimeOrDateTime64();
     }
 };
 

@@ -29,13 +29,12 @@ Engines in the family:
 | MergeTree Engines                                                                                                                         |
 |-------------------------------------------------------------------------------------------------------------------------------------------|
 | [MergeTree](/engines/table-engines/mergetree-family/mergetree)                                                          |
-| [ReplacingMergeTree](/engines/table-engines/mergetree-family/replacingmergetree)                               |
+| [ReplacingMergeTree](/engines/table-engines/mergetree-family/replication)                               |
 | [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree)                                     |
 | [AggregatingMergeTree](/engines/table-engines/mergetree-family/aggregatingmergetree)                         |
 | [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree)               |
 | [VersionedCollapsingMergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
 | [GraphiteMergeTree](/engines/table-engines/mergetree-family/graphitemergetree)                                  |
-| [CoalescingMergeTree](/engines/table-engines/mergetree-family/coalescingmergetree)                                     |
 
 ### Log {#log}
 

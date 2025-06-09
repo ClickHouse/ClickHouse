@@ -400,6 +400,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     bool single_line = false;
     bool insert_buf = true;
 
+    SelectQueryOptions options;
     options.setExplain();
 
     ContextPtr query_context = getContext();
@@ -435,7 +436,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "EXPLAIN QUERY TREE is only supported with a new analyzer. SET enable_analyzer = 1.");
+                    "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
 
             if (ast.getExplainedQuery()->as<ASTSelectWithUnionQuery>() == nullptr)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
@@ -682,8 +683,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
 void registerInterpreterExplainQuery(InterpreterFactory & factory)
 {
-    auto create_fn = [](const InterpreterFactory::Arguments & args)
-    { return std::make_unique<InterpreterExplainQuery>(args.query, args.context, args.options); };
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterExplainQuery>(args.query, args.context);
+    };
     factory.registerInterpreter("InterpreterExplainQuery", create_fn);
 }
 

@@ -9,7 +9,6 @@
 #include <Common/parseGlobs.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
@@ -61,9 +60,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int TOO_MANY_PARTS;
-    extern const int TABLE_IS_READ_ONLY;
-    extern const int TABLE_IS_BEING_RESTARTED;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
@@ -130,18 +126,16 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 }
 
-bool ObjectStorageQueueSource::FileIterator::isFinished()
+bool ObjectStorageQueueSource::FileIterator::isFinished() const
 {
-    std::lock_guard lock(mutex);
-    LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
-    return iterator_finished
-        && std::all_of(listed_keys_cache.begin(), listed_keys_cache.end(), [](const auto & v) { return v.second.keys.empty(); })
-        && objects_to_retry.empty();
+     LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
+     return iterator_finished
+         && std::all_of(listed_keys_cache.begin(), listed_keys_cache.end(), [](const auto & v) { return v.second.keys.empty(); })
+         && objects_to_retry.empty();
 }
 
 size_t ObjectStorageQueueSource::FileIterator::estimatedKeysCount()
 {
-    std::lock_guard lock(next_mutex);
     /// Copied from StorageObjectStorageSource::estimateKeysCount().
     if (object_infos.empty() && !is_finished && object_storage_iterator->isValid())
         return std::numeric_limits<size_t>::max();
@@ -459,7 +453,6 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
 
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
-    std::lock_guard lock(mutex);
     for (const auto & [processor, holders] : bucket_holders)
     {
         LOG_TEST(log, "Releasing {} bucket holders for processor {}", holders.size(), processor);
@@ -874,17 +867,20 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             if (commit_settings.max_processed_files_before_commit)
             {
-                auto old_processed_files = progress->processed_files.fetch_add(1);
-                if (old_processed_files >= commit_settings.max_processed_files_before_commit)
+                std::lock_guard lock(progress->processed_files_mutex);
+                if (progress->processed_files.load(std::memory_order_relaxed) >= commit_settings.max_processed_files_before_commit)
                 {
                     LOG_TRACE(log, "Number of max processed files before commit reached "
                             "(rows: {}, bytes: {}, files: {}, time: {})",
                             progress->processed_rows.load(), progress->processed_bytes.load(),
                             progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
 
-                    --progress->processed_files;
                     file_iterator->returnForRetry(reader.getObjectInfo(), file_metadata);
                     break;
+                }
+                else
+                {
+                    progress->processed_files += 1;
                 }
             }
 
@@ -959,14 +955,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
 
-            const auto & object_metadata = reader.getObjectInfo()->metadata;
-
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .size = object_metadata->size_bytes,
-                    .last_modified = object_metadata->last_modified
+                    .size = reader.getObjectInfo()->metadata->size_bytes
                 }, getContext());
 
             return chunk;
@@ -1028,8 +1021,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     Coordination::Requests & requests,
     bool insert_succeeded,
     StoredObjects & successful_files,
-    const std::string & exception_message,
-    int error_code)
+    const std::string & exception_message)
 {
     if (processed_files.empty())
         return;
@@ -1063,12 +1055,6 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             }
         }
     }
-
-    /// We do not want to reduce retry count on certain errors,
-    /// because their incidence does not depend on the user.
-    const bool reduce_retry_count = !(error_code == ErrorCodes::TOO_MANY_PARTS
-                                      || error_code == ErrorCodes::TABLE_IS_BEING_RESTARTED
-                                      || error_code == ErrorCodes::TABLE_IS_READ_ONLY);
 
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
@@ -1108,7 +1094,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     file_metadata->prepareFailedRequests(
                         requests,
                         exception_message,
-                        reduce_retry_count);
+                        /* reduce_retry_count */false);
                 }
                 break;
             }
@@ -1132,7 +1118,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_message,
-                    reduce_retry_count);
+                    /* reduce_retry_count */false);
                 break;
             }
             case FileState::ErrorOnRead:
