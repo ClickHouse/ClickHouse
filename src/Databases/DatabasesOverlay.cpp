@@ -330,6 +330,14 @@ bool DatabasesOverlay::canContainDistributedTables() const
     return false;
 }
 
+bool DatabasesOverlay::canContainRocksDBTables() const
+{
+    for (const auto & db : databases)
+        if (db->canContainRocksDBTables())
+            return true;
+    return false;
+}
+
 void DatabasesOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
 {
     for (auto & db : databases)

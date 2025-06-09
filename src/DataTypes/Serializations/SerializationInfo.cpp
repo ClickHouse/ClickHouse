@@ -290,12 +290,9 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     writeString(oss.str(), out);
 }
 
-SerializationInfoByName SerializationInfoByName::readJSON(
-    const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in)
+SerializationInfoByName SerializationInfoByName::readJSONFromString(
+    const NamesAndTypesList & columns, const Settings & settings, const std::string & json_str)
 {
-    String json_str;
-    readString(json_str, in);
-
     Poco::JSON::Parser parser;
     auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
 
@@ -337,6 +334,15 @@ SerializationInfoByName SerializationInfoByName::readJSON(
     }
 
     return infos;
+}
+
+
+SerializationInfoByName SerializationInfoByName::readJSON(
+    const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in)
+{
+    String json_str;
+    readString(json_str, in);
+    return readJSONFromString(columns, settings, json_str);
 }
 
 }

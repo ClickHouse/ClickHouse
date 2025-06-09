@@ -63,16 +63,18 @@ namespace
                 res_columns[9]->insertDefault();
                 res_columns[10]->insertDefault();
                 res_columns[11]->insertDefault();
+                res_columns[12]->insertDefault();
             }
             else
             {
                 auto documentation = factory.getDocumentation(name);
                 res_columns[6]->insert(documentation.description);
-                res_columns[7]->insert(documentation.syntax);
+                res_columns[7]->insert(documentation.syntaxAsString());
                 res_columns[8]->insert(documentation.argumentsAsString());
-                res_columns[9]->insert(documentation.returned_value);
+                res_columns[9]->insert(documentation.returnedValueAsString());
                 res_columns[10]->insert(documentation.examplesAsString());
-                res_columns[11]->insert(documentation.category);
+                res_columns[11]->insert(documentation.introducedInAsString());
+                res_columns[12]->insert(documentation.categoryAsString());
             }
         }
         else
@@ -83,12 +85,13 @@ namespace
             res_columns[9]->insertDefault();
             res_columns[10]->insertDefault();
             res_columns[11]->insertDefault();
+            res_columns[12]->insertDefault();
         }
     }
 }
 
 
-std::vector<std::pair<String, Int8>> getOriginEnumsAndValues()
+std::vector<std::pair<String, Int8>> getOriginEnumsValues()
 {
     return std::vector<std::pair<String, Int8>>{
         {"System", static_cast<Int8>(FunctionOrigin::SYSTEM)},
@@ -106,12 +109,13 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"case_insensitive", std::make_shared<DataTypeUInt8>(), "Whether the function name can be used case-insensitively."},
         {"alias_to", std::make_shared<DataTypeString>(), "The original function name, if the function name is an alias."},
         {"create_query", std::make_shared<DataTypeString>(), "Obsolete."},
-        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues()), "Obsolete."},
+        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsValues()), "Obsolete."},
         {"description", std::make_shared<DataTypeString>(), "A high-level description what the function does."},
         {"syntax", std::make_shared<DataTypeString>(), "Signature of the function."},
         {"arguments", std::make_shared<DataTypeString>(), "What arguments does the function take."},
         {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
+        {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},
         {"categories", std::make_shared<DataTypeString>(), "The category of the function."}
     };
 }

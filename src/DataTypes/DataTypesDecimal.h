@@ -120,11 +120,11 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
 
 template <typename FromDataType, typename ToDataType, typename ReturnType = void>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result);
+ReturnType ALWAYS_INLINE convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result);
 
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
-    extern template void convertDecimalsImpl<FROM_DATA_TYPE, TO_DATA_TYPE, void>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename TO_DATA_TYPE::FieldType & result); \
-    extern template bool convertDecimalsImpl<FROM_DATA_TYPE, TO_DATA_TYPE, bool>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename TO_DATA_TYPE::FieldType & result);
+    extern template ALWAYS_INLINE void convertDecimalsImpl<FROM_DATA_TYPE, TO_DATA_TYPE, void>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename TO_DATA_TYPE::FieldType & result); \
+    extern template ALWAYS_INLINE bool convertDecimalsImpl<FROM_DATA_TYPE, TO_DATA_TYPE, bool>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename TO_DATA_TYPE::FieldType & result);
 #define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE
