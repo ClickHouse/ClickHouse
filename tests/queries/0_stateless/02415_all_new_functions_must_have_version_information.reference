@@ -133,7 +133,6 @@ changeSecond
 changeYear
 char
 cityHash64
-clamp
 coalesce
 compareSubstrings
 concat
@@ -336,7 +335,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greatest
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -357,7 +355,6 @@ hopStart
 hostName
 hypot
 identity
-if
 ifNull
 ignore
 ilike
@@ -395,7 +392,6 @@ joinGetOrNull
 jumpConsistentHash
 kafkaMurmurHash
 kostikConsistentHash
-least
 left
 leftPad
 leftPadUTF8
@@ -429,7 +425,6 @@ mortonEncode
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
-multiIf
 multiMatchAllIndices
 multiMatchAny
 multiMatchAnyIndex

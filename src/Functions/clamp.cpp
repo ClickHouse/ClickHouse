@@ -64,6 +64,50 @@ public:
 
 REGISTER_FUNCTION(Clamp)
 {
-    factory.registerFunction<FunctionClamp>();
+    FunctionDocumentation::Description description = R"(
+Restricts a value to be within the specified minimum and maximum bounds.
+
+If the value is less than the minimum, returns the minimum. If the value is greater than the maximum, returns the maximum. Otherwise, returns the value itself.
+
+All arguments must be of comparable types. The result type is the largest compatible type among all arguments.
+    )";
+    FunctionDocumentation::Syntax syntax = "clamp(value, min, max)";
+    FunctionDocumentation::Arguments arguments = {
+        {"value", "The value to clamp."},
+        {"min", "The minimum bound."},
+        {"max", "The maximum bound."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the value, restricted to the [min, max] range.";
+    FunctionDocumentation::Examples examples = {
+        {"Basic usage", R"(
+SELECT clamp(5, 1, 10) AS result;
+        )",
+        R"(
+┌─result─┐
+│      5 │
+└────────┘
+        )"},
+        {"Value below minimum", R"(
+SELECT clamp(-3, 0, 7) AS result;
+        )",
+        R"(
+┌─result─┐
+│      0 │
+└────────┘
+        )"},
+        {"Value above maximum", R"(
+SELECT clamp(15, 0, 7) AS result;
+        )",
+        R"(
+┌─result─┐
+│      7 │
+└────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionClamp>(documentation);
 }
 }
