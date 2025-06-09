@@ -11,8 +11,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
-         min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
+SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
 
 INSERT INTO tab (str) VALUES ('I am inverted');
 
