@@ -107,7 +107,7 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
                         integer_bit_num = 64;
                         break;
                     default:
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for {} must be NativeInt/NativeUInt.", name);
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for {} must be one of: Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64.", name);
                 }
                 fraction_bit_num = 0;
             }
