@@ -65,10 +65,11 @@ public:
         if (allow_custom_error_code_argument && number_of_arguments > 2)
         {
             WhichDataType which(arguments[2]);
-            if (!(which.isUInt8() || which.isUInt16()))
+            if (!(which.isInt8() || which.isInt16() || which.isInt32()))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Third argument of function {} must be UInt8 or UInt16 (passed: {})", getName(), arguments[2]->getName());
+                    "Third argument of function {} must be Int8, Int16 or Int32 (passed: {})", getName(), arguments[2]->getName());
         }
+
 
         return std::make_shared<DataTypeUInt8>();
     }
