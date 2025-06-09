@@ -341,7 +341,8 @@ bool CPULeaseAllocation::renew(Lease & lease)
     //     `acquire()` provides acquired slot "in credit" before it's granted to avoid delay.
     //  2. To avoid preemption of the last thread and allow 100% utilization with one "background" resource request.
     //     Otherwise every lease renewal leads to preemption of the last thread.
-    if (granted + static_cast<Int64>(enqueued) < 0)
+    // When requested, but not granted resource is consumed we have to do preemption (even for master thread).
+    if (granted + static_cast<Int64>(enqueued) < 0 || consumed_ns >= requested_ns)
     {
         // Check if preemption is needed
         size_t thread_num = lease.thread_num;
@@ -388,7 +389,7 @@ bool CPULeaseAllocation::waitForGrant(std::unique_lock<std::mutex> & lock, size_
     if (timeout == std::chrono::milliseconds::max())
     {
         threads.wake[thread_num].wait(lock, predicate);
-        return false;
+        return true; // Granted
     }
     else
     {

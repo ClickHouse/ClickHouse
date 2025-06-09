@@ -18,7 +18,7 @@ bool WorkloadSettings::hasThrottler() const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_bytes_per_second != 0;
-        case CostUnit::CPUSlot: return max_cpus != 0;
+        case CostUnit::CPUNanosecond: return max_cpus != 0;
         case CostUnit::QuerySlot: return max_queries_per_second != 0;
     }
 }
@@ -27,7 +27,7 @@ Float64 WorkloadSettings::getThrottlerMaxSpeed() const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_bytes_per_second;
-        case CostUnit::CPUSlot: return max_cpus;
+        case CostUnit::CPUNanosecond: return max_cpus * 1'000'000'000; // Convert CPU count to CPU * nanoseconds / sec
         case CostUnit::QuerySlot: return max_queries_per_second;
     }
 }
@@ -36,7 +36,7 @@ Float64 WorkloadSettings::getThrottlerMaxBurst() const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_burst_bytes;
-        case CostUnit::CPUSlot: return max_burst_cpu_seconds;
+        case CostUnit::CPUNanosecond: return max_burst_cpu_seconds * 1'000'000'000; // Convert seconds to nanoseconds
         case CostUnit::QuerySlot: return max_burst_queries;
     }
 }
@@ -45,7 +45,7 @@ bool WorkloadSettings::hasSemaphore() const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
-        case CostUnit::CPUSlot: return max_concurrent_threads != unlimited;
+        case CostUnit::CPUNanosecond: return max_concurrent_threads != unlimited;
         case CostUnit::QuerySlot: return max_concurrent_queries != unlimited;
     }
 }
@@ -54,7 +54,7 @@ Int64 WorkloadSettings::getSemaphoreMaxRequests() const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_io_requests;
-        case CostUnit::CPUSlot: return max_concurrent_threads;
+        case CostUnit::CPUNanosecond: return max_concurrent_threads;
         case CostUnit::QuerySlot: return max_concurrent_queries;
     }
 }
@@ -63,7 +63,7 @@ Int64 WorkloadSettings::getSemaphoreMaxCost() const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_bytes_inflight;
-        case CostUnit::CPUSlot: return unlimited;
+        case CostUnit::CPUNanosecond: return unlimited;
         case CostUnit::QuerySlot: return unlimited;
     }
 }
@@ -229,9 +229,6 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
                 limit = value;
         }
         max_cpus = limit;
-        // We always set max_burst_cpu_seconds if max_cpus is changed.
-        // This is done for users to be able to ignore more advanced max_burst_cpu_seconds setting and rely only on max_cpus.
-        max_burst_cpu_seconds = default_burst_seconds * max_cpus;
     }
     max_burst_cpu_seconds = get_value(specific.max_burst_cpu_seconds, regular.max_burst_cpu_seconds, max_burst_cpu_seconds);
 

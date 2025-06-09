@@ -530,8 +530,13 @@ public:
     struct Assertion
     {
         ThreadMetricsGroup * group;
-        double share;
+        double share = 0.0; // share of total consumed by all groups; zero means no share assertion
+        double max_speed = 0.0; // in cpus; zero means no throttling assertion
+        UInt64 max_burst_ns = 0; // in nanoseconds
+        bool exclude_from_total = false; // if true, this assertion will not be included in total consumed
+
         EventRateMeter consumed{now(), 120'000'000 /*ns*/};
+        UInt64 consumed_integral_ns = 0; // Total consumed by this assertion
 
         void init(double now_ns)
         {
@@ -543,14 +548,70 @@ public:
         {
             UInt64 consumed_ns = group->takeConsumed();
             consumed.add(now_ns, static_cast<double>(consumed_ns));
-            return consumed_ns;
+            consumed_integral_ns += consumed_ns;
+            return exclude_from_total ? 0 : consumed_ns;
         }
     };
 
     /// Waits for share of group to stabilize on given value
+    /// WARNING: do not add the same group to both expectShare and expectThrottling
     ThreadMetricsTester & expectShare(ThreadMetricsGroup * group, double share)
     {
-        assertions.emplace_back(Assertion{group, share});
+        assertions.emplace_back(Assertion
+            {
+                .group = group,
+                .share = share
+            });
+        return *this;
+    }
+
+    UInt64 burstUpperBound(double burst_sec, size_t max_concurrent_threads, size_t max_concurrent_queries, size_t quantum_ns) const
+    {
+        // It is hard to calculate tight upper bound for burst.
+        // First, we take into account configured burst,
+        // then we add quantum for every thread that can run concurrently (according to configure slots limit)
+        // then we add quantum for every query because it is allowed to run one extra thread.
+        // and finally due to report_ns period, quantum can be extended by 10%
+        return static_cast<UInt64>(burst_sec * 1'000'000'000 + (max_concurrent_threads + max_concurrent_queries) * (quantum_ns * 1.1));
+    }
+
+    /// Waits for share of group to stabilize on given value
+    ThreadMetricsTester & expectThrottling(
+        double speed,
+        double burst_sec,
+        size_t max_concurrent_threads,
+        size_t max_concurrent_queries,
+        size_t quantum_ns)
+    {
+        max_speed = speed;
+        max_burst_ns = burstUpperBound(burst_sec, max_concurrent_threads, max_concurrent_queries, quantum_ns);
+        return *this;
+    }
+
+    /// Waits for share of group to stabilize on given value
+    /// WARNING: do not add the same group to both expectShare and expectThrottling
+    ThreadMetricsTester & expectThrottling(
+        ThreadMetricsGroup * group,
+        double speed,
+        double burst_sec,
+        size_t max_concurrent_threads,
+        size_t max_concurrent_queries,
+        size_t quantum_ns,
+        bool exclude_from_total = false)
+    {
+        assertions.emplace_back(Assertion
+            {
+                .group = group,
+                .max_speed = speed,
+                .max_burst_ns = burstUpperBound(burst_sec, max_concurrent_threads, max_concurrent_queries, quantum_ns),
+                .exclude_from_total = exclude_from_total
+            });
+        return *this;
+    }
+
+    ThreadMetricsTester & runAtLeast(double seconds)
+    {
+        runtime_ns = seconds * 1'000'000'000;
         return *this;
     }
 
@@ -574,18 +635,21 @@ public:
         // We check infinite time to avoid flakiness.
         // CI environment is very unstable and it can take a lot of time to reach the expected shares.
         bool passed = false;
-        EventRateMeter cpu_usage(now(), 120'000'000 /*ns*/);
+        EventRateMeter total_consumed(now(), 120'000'000 /*ns*/);
         UInt64 cpu_assumption_fail_count = 0;
-        while (!passed)
+        UInt64 total_consumed_integral_ns = 0;
+        while (!passed && now() < start_ns + runtime_ns)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(24)); // Sleep to allow threads to consume resources
             double now_ns = now();
-            double total_consumed_delta = 0;
+            UInt64 total_consumed_delta = 0;
             for (auto & assertion : assertions)
                 total_consumed_delta += assertion.process(now_ns);
-            cpu_usage.add(now_ns, total_consumed_delta);
-            double consumed_cpus = cpu_usage.rate(now_ns);
-            DBG_PRINT("[{} ns] Total consumed delta: {:.2f} ns, CPU usage: {:.2f} cpus", now_ns - start_ns, total_consumed_delta, consumed_cpus);
+            double measured_ns = now(); // This timestamp should be done after all measurements for token bucket assertions
+            total_consumed.add(now_ns, static_cast<double>(total_consumed_delta));
+            total_consumed_integral_ns += total_consumed_delta;
+            double consumed_cpus = total_consumed.rate(now_ns);
+            DBG_PRINT("[{}] Total consumed delta: {} ns, CPU usage: {:.2f} cpus", now_ns - start_ns, total_consumed_delta, consumed_cpus);
             if (consumed_cpus < assume_cpus * 0.9) // Allow some margin of error
             {
                 cpu_assumption_fail_count++;
@@ -600,15 +664,45 @@ public:
                 passed = true;
                 for (auto & assertion : assertions)
                 {
-                    double actual_share = assertion.consumed.rate(now_ns) / consumed_cpus;
-                    if (std::abs(actual_share - assertion.share) / assertion.share > 0.1)
+                    if (assertion.share > 0.0)
                     {
-                        passed = false;
-                        DBG_PRINT("Assertion failed: expected share {:.2f}, actual share {:.2f}, total cpus {:.2f}", assertion.share, actual_share, consumed_cpus);
+                        double actual_share = assertion.consumed.rate(now_ns) / consumed_cpus;
+                        if (std::abs(actual_share - assertion.share) / assertion.share > 0.1)
+                        {
+                            passed = false;
+                            DBG_PRINT("Assertion failed: expected share {:.2f}, actual share {:.2f}, total cpus {:.2f}", assertion.share, actual_share, consumed_cpus);
+                        }
+                        else
+                        {
+                            DBG_PRINT("Assertion passed: expected share {:.2f}, actual share {:.2f}, total cpus {:.2f}", assertion.share, actual_share, consumed_cpus);
+                        }
+                    }
+                    if (assertion.max_speed > 0.0)
+                    {
+                        double allowed_consumption_ns = assertion.max_speed * (measured_ns - start_ns) + assertion.max_burst_ns;
+                        if (assertion.consumed_integral_ns > allowed_consumption_ns)
+                        {
+                            DBG_PRINT("Assertion failed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, assertion.consumed_integral_ns / 1'000'000.0);
+                            GTEST_FAIL();
+                        }
+                        else
+                        {
+                            DBG_PRINT("Assertion passed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, assertion.consumed_integral_ns / 1'000'000.0);
+                        }
+                    }
+                }
+
+                if (max_speed > 0.0)
+                {
+                    double allowed_consumption_ns = max_speed * (measured_ns - start_ns) + max_burst_ns;
+                    if (total_consumed_integral_ns > allowed_consumption_ns)
+                    {
+                        DBG_PRINT("Assertion failed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, total_consumed_integral_ns / 1'000'000.0);
+                        GTEST_FAIL();
                     }
                     else
                     {
-                        DBG_PRINT("Assertion passed: expected share {:.2f}, actual share {:.2f}, total cpus {:.2f}", assertion.share, actual_share, consumed_cpus);
+                        DBG_PRINT("Assertion passed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, total_consumed_integral_ns / 1'000'000.0);
                     }
                 }
             }
@@ -618,6 +712,9 @@ public:
 private:
     std::vector<Assertion> assertions;
     double assume_cpus = 0.0;
+    double max_speed = 0.0;
+    UInt64 max_burst_ns = 0;
+    double runtime_ns = 0.0;
 };
 
 // It emulates how PipelineExecutor interacts with CPU scheduler
@@ -1482,6 +1579,110 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingUpscaling)
     }
 
     queries.clear();
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingThrottlingHalfCore)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8, max_cpus = 0.5, max_burst_cpu_seconds = 0.05");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    // Make two iterations to check different initial bursts:
+    // First iteration starts with full token bucket and the following iterations start with unknown number of tokens in bucket.
+    // (Bucket should be empty, but in CI it may be again full, so the test is the same)
+    for (int iteration = 0; iteration < 3; ++iteration)
+    {
+        DBG_PRINT("--- Start #{} ---", iteration);
+        std::vector<TestQueryPtr> queries;
+        for (int query = 0; query < 2; query++)
+            queries.push_back(std::make_shared<TestQuery>(t));
+
+        queries[0]->start(TestQuery::AllocateLease, "A", 8);
+        queries[1]->start(TestQuery::AllocateLease, "B", 8);
+        DBG_PRINT("--- Check throttling ---");
+        ThreadMetricsTester()
+            .expectShare(&queries[0]->metrics, 0.5)
+            .expectShare(&queries[1]->metrics, 0.5)
+            .expectThrottling(0.5, 0.05, 8, 2, CPULeaseSettings::default_quantum_ns)
+            .runAtLeast(0.1)
+            .check();
+        DBG_PRINT("--- Stop ---");
+    }
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingThrottlingTwoCore)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8, max_cpus = 2, max_burst_cpu_seconds = 0.2");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    // Make two iterations to check different initial bursts:
+    // First iteration starts with full token bucket and the following iterations start with unknown number of tokens in bucket.
+    // (Bucket should be empty, but in CI it may be again full, so the test is the same)
+    for (int iteration = 0; iteration < 3; ++iteration)
+    {
+        DBG_PRINT("--- Start #{} ---", iteration);
+        std::vector<TestQueryPtr> queries;
+        for (int query = 0; query < 2; query++)
+            queries.push_back(std::make_shared<TestQuery>(t));
+
+        queries[0]->start(TestQuery::AllocateLease, "A", 8);
+        queries[1]->start(TestQuery::AllocateLease, "B", 8);
+        DBG_PRINT("--- Check throttling ---");
+        ThreadMetricsTester()
+            .expectShare(&queries[0]->metrics, 0.5)
+            .expectShare(&queries[1]->metrics, 0.5)
+            .expectThrottling(2, 0.2, 8, 2, CPULeaseSettings::default_quantum_ns)
+            .runAtLeast(0.1)
+            .check();
+        DBG_PRINT("--- Stop ---");
+    }
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingThrottlingAndFairness)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
+    t.query("CREATE WORKLOAD A IN all SETTINGS max_cpus = 2");
+    t.query("CREATE WORKLOAD B IN all");
+    t.query("CREATE WORKLOAD C IN all");
+
+    // Make two iterations to check different initial bursts:
+    // First iteration starts with full token bucket and the following iterations start with unknown number of tokens in bucket.
+    // (Bucket should be empty, but in CI it may be again full, so the test is the same)
+    for (int iteration = 0; iteration < 3; ++iteration)
+    {
+        DBG_PRINT("--- Start #{} ---", iteration);
+        std::vector<TestQueryPtr> queries;
+        for (int query = 0; query < 3; query++)
+            queries.push_back(std::make_shared<TestQuery>(t));
+
+        queries[0]->start(TestQuery::AllocateLease, "A", 8);
+        queries[1]->start(TestQuery::AllocateLease, "B", 8);
+        queries[2]->start(TestQuery::AllocateLease, "C", 8);
+        DBG_PRINT("--- Check throttling and shares ---");
+        ThreadMetricsTester()
+            .expectThrottling(&queries[0]->metrics, 2, 0.01, 8, 1, CPULeaseSettings::default_quantum_ns, true)
+            .expectShare(&queries[1]->metrics, 0.5)
+            .expectShare(&queries[2]->metrics, 0.5)
+            .runAtLeast(0.1)
+            .check();
+        DBG_PRINT("--- Stop ---");
+    }
 
     t.wait();
 }
