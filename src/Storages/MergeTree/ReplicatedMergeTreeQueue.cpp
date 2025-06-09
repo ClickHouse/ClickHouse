@@ -495,7 +495,6 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
         if (status.parts_to_do.size() == 0)
             some_mutations_are_probably_done = true;
 
-        status.finish_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         if (!status.latest_failed_part.empty() && part_info.contains(status.latest_failed_part_info))
         {
@@ -2159,6 +2158,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Marking mutation {} done because it is <= mutation_pointer ({})", znode, mutation_pointer);
                 mutation.is_done = true;
+                mutation.finish_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                 mutation.latest_fail_reason.clear();
                 mutation.latest_fail_error_code_name.clear();
                 alter_sequence.finishDataAlter(mutation.entry->alter_version, lock);
@@ -2220,6 +2220,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Mutation {} is done", entry->znode_name);
                 it->second.is_done = true;
+                it->second.finish_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                 it->second.latest_fail_reason.clear();
                 it->second.latest_fail_error_code_name.clear();
                 if (entry->isAlterMutation())

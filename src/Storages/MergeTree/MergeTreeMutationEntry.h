@@ -16,7 +16,7 @@ class IBackupEntry;
 struct MergeTreeMutationEntry
 {
     time_t create_time = 0;
-    time_t finish_time = 0;
+    time_t latest_succesful_mutation_time = 0;
     std::shared_ptr<MutationCommands> commands;
 
     DiskPtr disk;
