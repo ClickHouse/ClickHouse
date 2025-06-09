@@ -702,14 +702,14 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     const auto & indices = metadata_snapshot->getSecondaryIndices();
     bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
 
-    NameSet modified_columns_by_alter_modify_column = ctx->commands->getModifiedColumnsForAlterModifyColumn();
+    NameSet columns_modified_by_alter_modify_column = ctx->commands->getModifiedColumnsForAlterModifyColumn();
     auto alter_modify_column_secondary_index_mode = (*ctx->data->getSettings())[MergeTreeSetting::alter_modify_column_secondary_index_mode];
 
     for (const auto & index : indices)
     {
-        if (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::DROP &&
-            std::any_of(index.column_names.begin(), index.column_names.end(),
-                        [&](String s) { return modified_columns_by_alter_modify_column.contains(s); }))
+        if (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::DROP
+                && std::any_of(index.column_names.begin(), index.column_names.end(),
+                    [&](String s) { return columns_modified_by_alter_modify_column.contains(s); }))
         {
             indices_to_skip.emplace_back(index_factory.get(index));
             continue;
@@ -720,7 +720,7 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
             || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name))
             || (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::REBUILD
                 && std::any_of(index.column_names.begin(), index.column_names.end(),
-                    [&](String s) { return modified_columns_by_alter_modify_column.contains(s); }));
+                    [&](String s) { return columns_modified_by_alter_modify_column.contains(s); }));
 
         if (need_recalculate)
         {
@@ -1476,10 +1476,8 @@ private:
         bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
-        NameSet altered_columns = ctx->commands->getModifiedColumnsForAlterModifyColumn();
-        AlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode = AlterModifyColumnSecondaryIndexMode::THROW;
-        if (!altered_columns.empty())
-            alter_modify_column_secondary_index_mode = (*ctx->data->getSettings())[MergeTreeSetting::alter_modify_column_secondary_index_mode];
+        NameSet columns_modified_by_alter_modify_column = ctx->commands->getModifiedColumnsForAlterModifyColumn();
+        AlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode = (*ctx->data->getSettings())[MergeTreeSetting::alter_modify_column_secondary_index_mode];
 
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
@@ -1487,10 +1485,9 @@ private:
             if (removed_indices.contains(idx.name))
                 continue;
 
-            if (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::DROP &&
-                std::any_of(idx.column_names.begin(),
-                            idx.column_names.end(),
-                            [&](const String & column) { return altered_columns.contains(column); }))
+            if (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::DROP
+                && std::any_of(idx.column_names.begin(), idx.column_names.end(),
+                            [&](const String & column) { return columns_modified_by_alter_modify_column.contains(column); }))
                 continue;
 
             bool need_recalculate =
@@ -1498,7 +1495,7 @@ private:
                 || (!is_full_part_storage && ctx->source_part->hasSecondaryIndex(idx.name))
                 || (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::REBUILD &&
                     std::any_of(idx.column_names.begin(), idx.column_names.end(),
-                        [&](const String & column) { return altered_columns.contains(column); }));
+                        [&](const String & column) { return columns_modified_by_alter_modify_column.contains(column); }));
 
             if (need_recalculate)
             {
@@ -1555,8 +1552,7 @@ private:
 
         bool lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
         bool lightweight_delete_drop = lightweight_delete_mode &&
-                (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
-                    == LightweightMutationProjectionMode::DROP;
+                (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::DROP;
 
         const auto & projections = ctx->metadata_snapshot->getProjections();
         for (const auto & projection : projections)
