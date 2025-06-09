@@ -228,7 +228,6 @@ dictGetUUIDOrDefault
 dictHas
 dictIsIn
 displayName
-divideOrNull
 domain
 domainRFC
 domainWithoutWWW
@@ -247,7 +246,6 @@ encodeURLFormComponent
 encodeXMLComponent
 endsWith
 endsWithUTF8
-equals
 erf
 erfc
 errorCodeToName
@@ -338,8 +336,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greater
-greaterOrEquals
 greatest
 hasColumnInTable
 hasSubsequence
@@ -373,7 +369,6 @@ initcapUTF8
 initialQueryID
 initialQueryStartTime
 initializeAggregation
-intDivOrNull
 intExp10
 intExp2
 intHash32
@@ -406,8 +401,6 @@ leftPad
 leftPadUTF8
 leftUTF8
 lengthUTF8
-less
-lessOrEquals
 lgamma
 like
 log
@@ -491,7 +484,6 @@ normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
 not
-notEquals
 notILike
 notIn
 notInIgnoreSet
@@ -828,12 +820,10 @@ toIntervalSecond
 toIntervalWeek
 toIntervalYear
 toJSONString
-toLastDayOfMonth
 toLastDayOfWeek
 toLowCardinality
 toModifiedJulianDay
 toModifiedJulianDayOrNull
-toMonday
 toNullable
 toRelativeDayNum
 toRelativeHourNum
@@ -847,18 +837,14 @@ toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
 toStartOfHour
-toStartOfISOYear
 toStartOfInterval
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
-toStartOfMonth
 toStartOfNanosecond
-toStartOfQuarter
 toStartOfSecond
 toStartOfTenMinutes
 toStartOfWeek
-toStartOfYear
 toString
 toStringCutToZero
 toTime
@@ -893,7 +879,6 @@ toUUID
 toUUIDOrDefault
 toUUIDOrNull
 toUUIDOrZero
-toUnixTimestamp
 toUnixTimestamp64Micro
 toUnixTimestamp64Milli
 toUnixTimestamp64Nano

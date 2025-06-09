@@ -151,7 +151,6 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
 demangle
-divideOrNull
 dotProduct
 dumpColumnStructure
 e
@@ -161,7 +160,6 @@ encodeURLComponent
 encodeURLFormComponent
 encodeXMLComponent
 endsWith
-equals
 erf
 erfc
 errorCodeToName
@@ -230,8 +228,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greater
-greaterOrEquals
 greatest
 hasColumnInTable
 hasSubsequence
@@ -258,7 +254,6 @@ initcap
 initcapUTF8
 initialQueryID
 initializeAggregation
-intDivOrNull
 intExp10
 intExp2
 intHash32
@@ -287,8 +282,6 @@ leftPad
 leftPadUTF8
 leftUTF8
 lengthUTF8
-less
-lessOrEquals
 lgamma
 like
 log
@@ -311,7 +304,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-moduloOrNull
 monthName
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
@@ -368,7 +360,6 @@ normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
 not
-notEquals
 notILike
 notIn
 notInIgnoreSet
@@ -648,12 +639,10 @@ toIntervalSecond
 toIntervalWeek
 toIntervalYear
 toJSONString
-toLastDayOfMonth
 toLastDayOfWeek
 toLowCardinality
 toModifiedJulianDay
 toModifiedJulianDayOrNull
-toMonday
 toNullable
 toRelativeDayNum
 toRelativeHourNum
@@ -667,18 +656,14 @@ toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
 toStartOfHour
-toStartOfISOYear
 toStartOfInterval
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
-toStartOfMonth
 toStartOfNanosecond
-toStartOfQuarter
 toStartOfSecond
 toStartOfTenMinutes
 toStartOfWeek
-toStartOfYear
 toString
 toStringCutToZero
 toTime
@@ -712,7 +697,6 @@ toUUID
 toUUIDOrDefault
 toUUIDOrNull
 toUUIDOrZero
-toUnixTimestamp
 toUnixTimestamp64Micro
 toUnixTimestamp64Milli
 toUnixTimestamp64Nano
