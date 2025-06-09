@@ -121,7 +121,7 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
         if (!argument_types[0]->canBeUsedInBitOperations())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The type {} of argument for aggregate function {} is illegal, because it cannot be used in Bitmap operations",
+                "The type {} of argument for aggregate function {} is illegal, because it cannot be used in bit operations",
                 argument_types[0]->getName(),
                 name);
 
