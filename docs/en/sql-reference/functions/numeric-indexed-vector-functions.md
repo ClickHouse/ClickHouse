@@ -409,7 +409,7 @@ Result
 
 # numericIndexedVectorPointwiseEqual
 
-Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the values are equal, with all corresponding value set to 1.
+Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the values are equal, with all corresponding values set to 1.
 
 Syntax
 
