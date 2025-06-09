@@ -3,6 +3,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <IO/WriteBuffer.h>
 #include <Parsers/Kusto/Formatters.h>
+#include <base/arithmeticOverflow.h>
+
 
 namespace DB
 {
@@ -12,29 +14,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
-}
-
-void SerializationKustoInterval::serializeText(
-    const IColumn & column, const size_t row, WriteBuffer & ostr, const FormatSettings &) const
-{
-    const auto * interval_column = checkAndGetColumn<ColumnInterval>(&column);
-    if (!interval_column)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected column of underlying type of Interval");
-
-    const auto & value = interval_column->getData()[row];
-    const auto ticks = kind.toAvgNanoseconds() * value / 100;
-    const auto interval_as_string = formatKQLTimespan(ticks);
-    ostr.write(interval_as_string.c_str(), interval_as_string.length());
-}
-
-void SerializationKustoInterval::deserializeText(
-    [[maybe_unused]] IColumn & column,
-    [[maybe_unused]] ReadBuffer & istr,
-    [[maybe_unused]] const FormatSettings & settings,
-    [[maybe_unused]] const bool whole) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Deserialization is not implemented for {}", kind.toNameOfFunctionToIntervalDataType());
+    extern const int BAD_ARGUMENTS;
 }
 
 SerializationInterval::SerializationInterval(IntervalKind interval_kind_) : interval_kind(std::move(interval_kind_))
@@ -208,4 +188,28 @@ void SerializationInterval::serializeTextRaw(const IColumn & column, size_t row,
 {
     dispatch(&ISerialization::serializeTextRaw, settings.interval.output_format, column, row, ostr, settings);
 }
+
+/// Everything below is trash for the Kusto dialect:
+
+void SerializationKustoInterval::serializeText(
+    const IColumn & column, const size_t row, WriteBuffer & ostr, const FormatSettings &) const
+{
+    const auto * interval_column = checkAndGetColumn<ColumnInterval>(&column);
+    if (!interval_column)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected column of underlying type of Interval");
+
+    Int64 value = interval_column->getData()[row];
+    Int64 ticks = 0;
+    if (common::mulOverflow(kind.toAvgNanoseconds(), value, ticks))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Formatting an interval in Kusto dialect will overflow");
+    ticks = ticks / 100;
+    std::string interval_as_string = formatKQLTimespan(ticks);
+    ostr.write(interval_as_string.c_str(), interval_as_string.length());
+}
+
+void SerializationKustoInterval::deserializeText(IColumn &, ReadBuffer &, const FormatSettings &, const bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization in the Kusto dialect is not implemented");
+}
+
 }
