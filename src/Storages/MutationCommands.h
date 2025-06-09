@@ -19,11 +19,6 @@ class Context;
 class WriteBuffer;
 class ReadBuffer;
 
-struct MergeTreeSettings;
-using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
-
-enum class AlterModifyColumnSecondaryIndexMode : uint8_t;
-
 /// Represents set of actions which should be applied
 /// to values from set of columns which satisfy predicate.
 struct MutationCommand

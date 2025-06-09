@@ -1,5 +1,4 @@
 #include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ParserAlterQuery.h>
@@ -23,11 +22,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
     extern const int LOGICAL_ERROR;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsAlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode;
 }
 
 bool MutationCommand::isBarrierCommand() const
