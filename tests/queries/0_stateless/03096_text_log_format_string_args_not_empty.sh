@@ -5,8 +5,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 query_id=$(random_str 12)
-$CLICKHOUSE_CLIENT -m -q --enable_analyzer=1 --query_id ${query_id}_1 --query "select count; -- { serverError UNKNOWN_IDENTIFIER }"
-$CLICKHOUSE_CLIENT -m -q --enable_analyzer=1 --query_id ${query_id}_2 --query "select conut(); -- { serverError UNKNOWN_FUNCTION }"
+$CLICKHOUSE_CLIENT -m --enable_analyzer=1 --query_id ${query_id}_1 --query "select count; -- { serverError UNKNOWN_IDENTIFIER }"
+$CLICKHOUSE_CLIENT -m --enable_analyzer=1 --query_id ${query_id}_2 --query "select conut(); -- { serverError UNKNOWN_FUNCTION }"
 
 $CLICKHOUSE_CLIENT -m -q "
 system flush logs text_log;
