@@ -7,7 +7,7 @@
     <create_query>CREATE TABLE uin_value_details (ds Date, uin UInt32, value Float64) ENGINE = MergeTree() ORDER BY ds</create_query>
 
     <fill_query>INSERT INTO uin_value_details (ds, uin, value) SELECT '2023-12-20', number, number * number from numbers(1000)</fill_query>
-    <fill_query>INSERT INTO uin_value_details (ds, uin, value) SELECT '2023-12-21', number, number from numbers(1000);</fill_query>
+    <fill_query>INSERT INTO uin_value_details (ds, uin, value) SELECT '2023-12-21', number, number from numbers(1000)</fill_query>
 
     <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-22', number, number * number from numbers(5000)</fill_query>
     <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-23', number, number from numbers(5000)</fill_query>
