@@ -1,3 +1,4 @@
+#include <memory>
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <DataTypes/ObjectUtils.h>
@@ -95,6 +96,92 @@ enum class ExecuteTTLType : uint8_t
     NORMAL = 1,
     RECALCULATE= 2,
 };
+
+struct MutationContext
+{
+    MergeTreeData * data;
+    MergeTreeDataMergerMutator * mutator;
+    PartitionActionBlocker * merges_blocker;
+    TableLockHolder * holder;
+    MergeListEntry * mutate_entry;
+
+    LoggerPtr log{getLogger("MutateTask")};
+
+    FutureMergedMutatedPartPtr future_part;
+    MergeTreeData::DataPartPtr source_part;
+    StorageMetadataPtr metadata_snapshot;
+
+    MutationCommandsConstPtr commands;
+    time_t time_of_mutation;
+    ContextPtr context;
+    ReservationSharedPtr space_reservation;
+
+    CompressionCodecPtr compression_codec;
+
+    std::unique_ptr<CurrentMetrics::Increment> num_mutations;
+
+    QueryPipelineBuilder mutating_pipeline_builder;
+    QueryPipeline mutating_pipeline; // in
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
+    ProgressCallback progress_callback;
+    Block updated_header;
+
+    std::unique_ptr<MutationsInterpreter> interpreter;
+    UInt64 watch_prev_elapsed = 0;
+    std::unique_ptr<MergeStageProgress> stage_progress;
+
+    MutationCommands commands_for_part;
+    MutationCommands for_interpreter;
+    MutationCommands for_file_renames;
+
+    NamesAndTypesList storage_columns;
+    NameSet materialized_indices;
+    NameSet materialized_projections;
+    NameSet materialized_statistics;
+
+    MergeTreeData::MutableDataPartPtr new_data_part;
+    IMergedBlockOutputStreamPtr out;
+
+    String mrk_extension;
+
+    std::vector<ProjectionDescriptionRawPtr> projections_to_build;
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+
+    std::set<MergeTreeIndexPtr> indices_to_recalc;
+    std::set<ColumnStatisticsPartPtr> stats_to_recalc;
+    std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
+    MergeTreeData::DataPart::Checksums existing_indices_stats_checksums;
+    NameSet files_to_skip;
+    NameToNameVector files_to_rename;
+
+    bool need_sync;
+    ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+
+    MergeTreeTransactionPtr txn;
+
+    HardlinkedFiles hardlinked_files;
+
+    bool need_prefix = true;
+
+    scope_guard temporary_directory_lock;
+
+    bool checkOperationIsNotCanceled() const
+    {
+        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
+            || (*mutate_entry)->is_cancelled)
+        {
+            throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+        }
+
+        return true;
+    }
+
+    /// Whether we need to count lightweight delete rows in this mutation
+    bool count_lightweight_deleted_rows;
+    UInt64 execute_elapsed_ns = 0;
+};
+
+using MutationContextPtr = std::shared_ptr<MutationContext>;
 
 namespace MutationHelpers
 {
@@ -605,10 +692,9 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     QueryPipelineBuilder & builder,
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & materialized_indices,
+    const NameSet & modified_columns_by_alter_modify_column,
     std::vector<MergeTreeIndexPtr> & indices_to_skip,
-    const NameSet & alter_column_names,
-    AlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode,
-    ContextPtr context)
+    const std::shared_ptr<MutationContext> & ctx)
 {
     /// Checks if columns used in skipping indexes modified.
     const auto & index_factory = MergeTreeIndexFactory::instance();
@@ -616,13 +702,13 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
     bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
+    auto alter_modify_column_secondary_index_mode = (*ctx->data->getSettings())[MergeTreeSetting::alter_modify_column_secondary_index_mode];
 
     for (const auto & index : indices)
     {
         if (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::DROP &&
-            std::any_of(index.column_names.begin(),
-                        index.column_names.end(),
-                        [&](String s) { return alter_column_names.contains(s); }))
+            std::any_of(index.column_names.begin(), index.column_names.end(),
+                        [&](String s) { return modified_columns_by_alter_modify_column.contains(s); }))
         {
             indices_to_skip.emplace_back(index_factory.get(index));
             continue;
@@ -633,7 +719,7 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
             || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name))
             || (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::REBUILD
                 && std::any_of(index.column_names.begin(), index.column_names.end(),
-                    [&](String s) { return alter_column_names.contains(s); }));
+                    [&](String s) { return modified_columns_by_alter_modify_column.contains(s); }));
 
         if (need_recalculate)
         {
@@ -650,10 +736,10 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
 
     if (!indices_to_recalc.empty() && builder.initialized())
     {
-        auto indices_recalc_syntax = TreeRewriter(context).analyze(indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
+        auto indices_recalc_syntax = TreeRewriter(ctx->context).analyze(indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
         auto indices_recalc_expr = ExpressionAnalyzer(
                 indices_recalc_expr_list,
-                indices_recalc_syntax, context).getActions(false);
+                indices_recalc_syntax, ctx->context).getActions(false);
 
         /// We can update only one column, but some skip idx expression may depend on several
         /// columns (c1 + c2 * c3). It works because this stream was created with help of
@@ -1048,92 +1134,6 @@ void finalizeMutatedPart(
 }
 
 }
-
-struct MutationContext
-{
-    MergeTreeData * data;
-    MergeTreeDataMergerMutator * mutator;
-    PartitionActionBlocker * merges_blocker;
-    TableLockHolder * holder;
-    MergeListEntry * mutate_entry;
-
-    LoggerPtr log{getLogger("MutateTask")};
-
-    FutureMergedMutatedPartPtr future_part;
-    MergeTreeData::DataPartPtr source_part;
-    StorageMetadataPtr metadata_snapshot;
-
-    MutationCommandsConstPtr commands;
-    time_t time_of_mutation;
-    ContextPtr context;
-    ReservationSharedPtr space_reservation;
-
-    CompressionCodecPtr compression_codec;
-
-    std::unique_ptr<CurrentMetrics::Increment> num_mutations;
-
-    QueryPipelineBuilder mutating_pipeline_builder;
-    QueryPipeline mutating_pipeline; // in
-    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
-    ProgressCallback progress_callback;
-    Block updated_header;
-
-    std::unique_ptr<MutationsInterpreter> interpreter;
-    UInt64 watch_prev_elapsed = 0;
-    std::unique_ptr<MergeStageProgress> stage_progress;
-
-    MutationCommands commands_for_part;
-    MutationCommands for_interpreter;
-    MutationCommands for_file_renames;
-
-    NamesAndTypesList storage_columns;
-    NameSet materialized_indices;
-    NameSet materialized_projections;
-    NameSet materialized_statistics;
-
-    MergeTreeData::MutableDataPartPtr new_data_part;
-    IMergedBlockOutputStreamPtr out;
-
-    String mrk_extension;
-
-    std::vector<ProjectionDescriptionRawPtr> projections_to_build;
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
-
-    std::set<MergeTreeIndexPtr> indices_to_recalc;
-    std::set<ColumnStatisticsPartPtr> stats_to_recalc;
-    std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
-    MergeTreeData::DataPart::Checksums existing_indices_stats_checksums;
-    NameSet files_to_skip;
-    NameToNameVector files_to_rename;
-
-    bool need_sync;
-    ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
-
-    MergeTreeTransactionPtr txn;
-
-    HardlinkedFiles hardlinked_files;
-
-    bool need_prefix = true;
-
-    scope_guard temporary_directory_lock;
-
-    bool checkOperationIsNotCanceled() const
-    {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
-            || (*mutate_entry)->is_cancelled)
-        {
-            throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
-        }
-
-        return true;
-    }
-
-    /// Whether we need to count lightweight delete rows in this mutation
-    bool count_lightweight_deleted_rows;
-    UInt64 execute_elapsed_ns = 0;
-};
-
-using MutationContextPtr = std::shared_ptr<MutationContext>;
 
 // This class is responsible for:
 // 1. get projection pipeline and a sink to write parts
@@ -2513,10 +2513,7 @@ bool MutateTask::prepare()
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
-        NameSet altered_columns = ctx->commands->getModifiedColumnsForAlterModifyColumn();
-        auto alter_modify_column_secondary_index_mode = AlterModifyColumnSecondaryIndexMode::THROW;
-        if (!altered_columns.empty())
-            alter_modify_column_secondary_index_mode = (*ctx->data->getSettings())[MergeTreeSetting::alter_modify_column_secondary_index_mode];
+        NameSet modified_columns_by_alter_modify_column = ctx->commands->getModifiedColumnsForAlterModifyColumn();
 
         std::vector<MergeTreeIndexPtr> indices_to_skip;
         ctx->indices_to_recalc = MutationHelpers::getIndicesToRecalculate(
@@ -2524,10 +2521,9 @@ bool MutateTask::prepare()
             ctx->mutating_pipeline_builder,
             ctx->metadata_snapshot,
             ctx->materialized_indices,
+            modified_columns_by_alter_modify_column,
             indices_to_skip,
-            altered_columns,
-            alter_modify_column_secondary_index_mode,
-            ctx->context);
+            ctx);
 
         auto lightweight_mutation_projection_mode = (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode];
         bool lightweight_delete_drops_projections =
