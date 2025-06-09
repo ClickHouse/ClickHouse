@@ -29,11 +29,11 @@ Use two sorted arrays to store index and value respectively; the sorting logic i
 
 # Create a numericIndexedVector object
 
-There are two ways to create this structure: one is to use the aggregate function `groupNumericIndexedVector` with `-State`, and the other is to build it from a map using `numericIndexedVectorBuild`. The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not currently support such customization.
+There are two ways to create this structure: one is to use the aggregate function `groupNumericIndexedVector` with `-State`, and the other is to build it from a map using `numericIndexedVectorBuild`. The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not.
 
 ## groupNumericIndexedVector {#group-numeric-indexed-vector}
 
-Constructs a NumericIndexedVector from two data columns and returns the sum of all values as a Float64 type. If the suffix `State` is added, it returns a NumericIndexedVector object.
+Constructs a NumericIndexedVector from two data columns and returns the sum of all values as a `Float64` type. If the suffix `State` is added, it returns a NumericIndexedVector object.
 
 **Syntax**
 
