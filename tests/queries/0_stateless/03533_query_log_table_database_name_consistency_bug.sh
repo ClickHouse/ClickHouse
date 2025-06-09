@@ -41,11 +41,11 @@ SETTINGS index_granularity = 8192, log_comment='$log_comment';
 
 -- Insertion data queries
 INSERT INTO \`03533-query-log-table-database-name-consistency-bug\`.\`test-with-a-dash\`
-SETTINGS log_comment='$log_comment', async_insert=1
+SETTINGS log_comment='$log_comment', async_insert=1, wait_for_async_insert=1
 VALUES (1);
 
 INSERT INTO test_without_dash
-SETTINGS log_comment='$log_comment', async_insert=1
+SETTINGS log_comment='$log_comment', async_insert=1, wait_for_async_insert=1
 VALUES (1);
 
 -- Selection data queries
@@ -119,5 +119,10 @@ SELECT
         arrayExists(d -> d NOT IN allowed_databases, databases)
     ) AS unexpected_entries_found
 FROM system.query_log
-WHERE log_comment = '$log_comment';
+WHERE
+    log_comment = '$log_comment' AND
+    (
+        current_database = currentDatabase() OR
+        hasAny(databases, [currentDatabase(), '\`03533-query-log-table-database-name-consistency-bug\`'])
+    );
 "
