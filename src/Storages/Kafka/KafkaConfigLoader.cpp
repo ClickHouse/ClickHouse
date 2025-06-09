@@ -376,7 +376,7 @@ void updateGlobalConfiguration(
         {
             kerberosInit(keytab, principal);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             LOG_ERROR(params.log, "KerberosInit failure: {}", getExceptionMessageForLogging(e, false));
         }
