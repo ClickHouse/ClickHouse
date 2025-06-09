@@ -27,6 +27,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/ReplacingSortedTransform.h>
@@ -1071,7 +1072,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            RangesInDataPart(global_ctx->future_part->parts[part_num], part_num, part_starting_offset),
+            RangesInDataPart(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset),
             global_ctx->alter_conversions[part_num],
             global_ctx->merged_part_offsets,
             Names{column_name},
@@ -1651,6 +1652,11 @@ public:
                     cleanup);
                 break;
 
+            case MergeTreeData::MergingParams::Coalescing:
+                merged_transform = std::make_shared<CoalescingSortedTransform>(
+                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes);
+                break;
+
             case MergeTreeData::MergingParams::Graphite:
                 merged_transform = std::make_shared<GraphiteRollupSortedTransform>(
                     header, input_streams_count, sort_description, merge_block_size_rows, merge_block_size_bytes,
@@ -1830,7 +1836,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            RangesInDataPart(global_ctx->future_part->parts[i], i, part_starting_offset),
+            RangesInDataPart(global_ctx->future_part->parts[i], nullptr, i, part_starting_offset),
             global_ctx->alter_conversions[i],
             global_ctx->merged_part_offsets,
             merging_column_names,
