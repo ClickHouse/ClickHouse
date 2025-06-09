@@ -977,6 +977,8 @@ public:
         return storage_settings.get();
     }
 
+    StorageMetadataPtr getInMemoryMetadataPtr() const override;
+
     String getRelativeDataPath() const { return relative_data_path; }
 
     /// Get table path on disk
@@ -1763,6 +1765,9 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
+
+    StorageSnapshotPtr
+    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
