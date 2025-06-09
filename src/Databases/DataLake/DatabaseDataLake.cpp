@@ -1,5 +1,7 @@
 #include <Databases/DataLake/DatabaseDataLake.h>
-#include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
+#include <Core/SettingsEnums.h>
+#include <Databases/DataLake/HiveCatalog.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -52,12 +54,13 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_iceberg;
     extern const SettingsBool allow_experimental_database_unity_catalog;
     extern const SettingsBool allow_experimental_database_glue_catalog;
+    extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool use_hive_partitioning;
 }
-namespace StorageObjectStorageSetting
+namespace DataLakeStorageSetting
 {
-    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
-    extern const StorageObjectStorageSettingsBool iceberg_use_version_hint;
+    extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
+    extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace ErrorCodes
@@ -157,17 +160,32 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 Context::getGlobalContextInstance());
             break;
         }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+        {
+#if USE_HIVE
+            catalog_impl = std::make_shared<DataLake::HiveCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                Context::getGlobalContextInstance());
+            break;
+#else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use 'hive' database engine: ClickHouse was compiled without USE_HIVE built option");
+#endif
+        }
     }
     return catalog_impl;
 }
 
-std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfiguration(DatabaseDataLakeStorageType type) const
+std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfiguration(
+    DatabaseDataLakeStorageType type,
+    DataLakeStorageSettingsPtr storage_settings) const
 {
     /// TODO: add tests for azure, local storage types.
 
     auto catalog = getCatalog();
     switch (catalog->getCatalogType())
     {
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
         {
             switch (type)
@@ -175,24 +193,24 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
 #if USE_AWS_S3
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
-                    return std::make_shared<StorageS3IcebergConfiguration>();
+                    return std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
                 }
 #endif
 #if USE_AZURE_BLOB_STORAGE
                 case DB::DatabaseDataLakeStorageType::Azure:
                 {
-                    return std::make_shared<StorageAzureIcebergConfiguration>();
+                    return std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
                 }
 #endif
 #if USE_HDFS
                 case DB::DatabaseDataLakeStorageType::HDFS:
                 {
-                    return std::make_shared<StorageHDFSIcebergConfiguration>();
+                    return std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
                 }
 #endif
                 case DB::DatabaseDataLakeStorageType::Local:
                 {
-                    return std::make_shared<StorageLocalIcebergConfiguration>();
+                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
                 }
                 /// Fake storage in case when catalog store not only
                 /// primary-type tables (DeltaLake or Iceberg), but for
@@ -204,7 +222,7 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
                 /// dependencies and the most lightweight
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
-                    return std::make_shared<StorageLocalIcebergConfiguration>();
+                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
                 }
 #if !USE_AWS_S3 || !USE_AZURE_BLOB_STORAGE || !USE_HDFS
                 default:
@@ -221,12 +239,12 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
 #if USE_AWS_S3
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
-                    return std::make_shared<StorageS3DeltaLakeConfiguration>();
+                    return std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
                 }
 #endif
                 case DB::DatabaseDataLakeStorageType::Local:
                 {
-                    return std::make_shared<StorageLocalDeltaLakeConfiguration>();
+                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
                 }
                 /// Fake storage in case when catalog store not only
                 /// primary-type tables (DeltaLake or Iceberg), but for
@@ -238,7 +256,7 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
                 /// dependencies and the most lightweight
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
-                    return std::make_shared<StorageLocalDeltaLakeConfiguration>();
+                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
                 }
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -253,12 +271,12 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
 #if USE_AWS_S3
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
-                    return std::make_shared<StorageS3IcebergConfiguration>();
+                    return std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
                 }
 #endif
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
-                    return std::make_shared<StorageLocalIcebergConfiguration>();
+                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
                 }
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -289,23 +307,26 @@ bool DatabaseDataLake::isTableExist(const String & name, ContextPtr /* context_ 
     return getCatalog()->existsTable(namespace_name, table_name);
 }
 
-StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context_) const
+StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context_)  const
 {
-    return tryGetTableImpl(name, context_, false);
+    return tryGetTableImpl(name, context_, false, false);
 }
 
-StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight) const
+StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg) const
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
 
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
-    if (with_vended_credentials)
+    if (!lightweight && with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
 
     auto [namespace_name, table_name] = parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
+        return nullptr;
+
+    if (ignore_if_not_iceberg && !table_metadata.isDefaultReadableTable())
         return nullptr;
 
     if (!lightweight && !table_metadata.isDefaultReadableTable())
@@ -377,9 +398,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             storage_type = table_metadata.getStorageType();
     }
 
-    const auto configuration = getConfiguration(storage_type);
+    auto storage_settings = std::make_shared<DataLakeStorageSettings>();
+    storage_settings->loadFromSettingsChanges(settings.allChanged());
 
-    auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
     if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
         table_specific_properties.has_value())
     {
@@ -394,8 +415,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             }
         }
 
-        (*storage_settings)[DB::StorageObjectStorageSetting::iceberg_metadata_file_path] = metadata_location;
+        (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
     }
+
+    const auto configuration = getConfiguration(storage_type, storage_settings);
 
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(context_);
@@ -405,7 +428,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorage::Configuration::initialize(*configuration, args, context_copy, /* with_table_structure */false, storage_settings);
+    StorageObjectStorage::Configuration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
@@ -426,7 +449,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool /* skip_not_loaded */) const
+    bool skip_not_loaded) const
 {
     Tables tables;
     auto catalog = getCatalog();
@@ -437,7 +460,11 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        auto storage = tryGetTable(table_name, context_);
+        auto storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
+
+        if (storage == nullptr)
+            continue;
+
         [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
         chassert(inserted);
     }
@@ -448,7 +475,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool /*skip_not_loaded*/) const
+    bool skip_not_loaded) const
 {
      Tables tables;
     auto catalog = getCatalog();
@@ -459,9 +486,26 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        auto storage = tryGetTableImpl(table_name, context_, true);
-        [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
-        chassert(inserted);
+        /// NOTE: There are one million of different ways how we can receive
+        /// weird response from different catalogs. tryGetTableImpl will not
+        /// throw only in case of expected errors, but sometimes we can receive
+        /// completely unexpected results for some objects which can be stored
+        /// in catalogs. But this function is used in SHOW TABLES query which
+        /// should return at least properly described tables. That is why we
+        /// have this try/catch here.
+        try
+        {
+            auto storage = tryGetTableImpl(table_name, context_, true, skip_not_loaded);
+            if (storage == nullptr)
+                continue;
+
+            [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
+            chassert(inserted);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("ignoring table {}", table_name));
+        }
     }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
@@ -625,6 +669,19 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 }
 
                 engine_func->name = "DeltaLake";
+                break;
+            }
+            case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+            {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_hms_catalog])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DatabaseDataLake with Icerberg Hive catalog is experimental. "
+                                    "To allow its usage, enable setting allow_experimental_database_hms_catalog");
+                }
+
+                engine_func->name = "Iceberg";
                 break;
             }
         }

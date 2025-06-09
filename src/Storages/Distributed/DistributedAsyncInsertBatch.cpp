@@ -9,6 +9,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include <Core/Settings.h>
 #include <Disks/IDisk.h>
 #include <base/defines.h>
 #include <Interpreters/Context.h>
@@ -263,7 +264,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
 
             if (!remote)
             {
-                Settings insert_settings = distributed_header.insert_settings;
+                Settings insert_settings = *distributed_header.insert_settings;
                 insert_settings.applyChanges(settings_changes);
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
@@ -317,7 +318,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
             ReadBufferFromFile in(file);
             const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 
-            Settings insert_settings = distributed_header.insert_settings;
+            Settings insert_settings = *distributed_header.insert_settings;
             insert_settings.applyChanges(settings_changes);
 
             // This function is called in a separated thread, so we set up the trace context from the file

@@ -73,7 +73,8 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            db_disk->removeRecursive(getTableDataPath(table_name));
+            auto metdata_disk = getDisk();
+            metdata_disk->removeRecursive(getTableDataPath(table_name));
         }
     }
     catch (...)
@@ -128,6 +129,7 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 
 void DatabaseMemory::removeDataPath(ContextPtr)
 {
+    auto db_disk = getDisk();
     db_disk->removeRecursive(data_path);
 }
 
@@ -156,8 +158,8 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
-    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies, loading_dependencies);
-    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
+    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
+    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
@@ -205,7 +207,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
         }
 
         chassert(storage);
-        storage->adjustCreateQueryForBackup(create_table_query);
+        storage->applyMetadataChangesToCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
     }
 

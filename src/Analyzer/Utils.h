@@ -15,6 +15,9 @@ namespace DB
 {
 
 class FunctionNode;
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+
 struct IdentifierResolveScope;
 
 struct NameAndTypePair;
@@ -59,10 +62,18 @@ bool isQueryOrUnionNode(const IQueryTreeNode * node);
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
 
-/* Returns true, if column source is not registered in scopes that appear
+/// Returns true, if node has type QUERY or UNION and uses any columns from outer scope
+bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node);
+
+/* Checks, if column source is not registered in scopes that appear
  * before nearest query scope.
+ * If column appears to be correlated in the scope than it be registered
+ * in corresponding QueryNode or UnionNode.
  */
-bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source);
+bool checkCorrelatedColumn(
+    const IdentifierResolveScope * scope_to_check,
+    const QueryTreeNodePtr & column
+);
 
 DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);
 
@@ -81,7 +92,7 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
 /** Add table expression in tables in select query children.
   * If table expression node is not of identifier node, table node, query node, table function node, join node or array join node type throws logical error exception.
   */
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
+void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const ConvertToASTOptions & convert_to_ast_options);
 
 /// Extract all TableNodes from the query tree.
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);

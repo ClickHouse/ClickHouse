@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <csignal>
 #include <iostream>
-#include <iomanip>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <string_view>
@@ -35,7 +35,6 @@
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ErrorCodes.h>
 #include "IO/WriteBuffer.h"
 
 
@@ -89,7 +88,7 @@ public:
             const String & query_to_execute_,
             size_t max_consecutive_errors_,
             bool continue_on_errors_,
-            bool reconnect_,
+            size_t reconnect_,
             bool display_client_side_time_,
             bool print_stacktrace_,
             const Settings & settings_)
@@ -147,6 +146,9 @@ public:
                 comparison_info_total.emplace_back(std::make_shared<Stats>());
             }
         }
+
+        // Initialize queries_per_connection to track queries for each connection
+        queries_per_connection.resize(connections.size(), 0);
 
         global_context->makeGlobalContext();
         global_context->setSettings(settings);
@@ -217,7 +219,7 @@ private:
     String query_to_execute;
     bool continue_on_errors;
     size_t max_consecutive_errors;
-    bool reconnect;
+    size_t reconnect;
     bool display_client_side_time;
     bool print_stacktrace;
     const Settings & settings;
@@ -234,6 +236,9 @@ private:
     std::atomic<bool> shutdown{false};
 
     std::atomic<size_t> queries_executed{0};
+
+    std::mutex queries_per_connection_mutex;
+    std::vector<size_t> queries_per_connection TSA_GUARDED_BY(queries_per_connection_mutex);
 
     struct Stats
     {
@@ -313,7 +318,9 @@ private:
         std::lock_guard lock(mutex);
 
         log << "\nQueries executed: " << num;
-        if (queries.size() > 1)
+        if (max_iterations > 1)
+            log << " (" << (num * 100.0 / max_iterations) << "%)";
+        else if (queries.size() > 1)
             log << " (" << (num * 100.0 / queries.size()) << "%)";
         log << ".\n" << flush;
     }
@@ -462,18 +469,22 @@ private:
         }
     }
 
-    void execute(Query & query, size_t connection_index)
+    void execute(const Query & query, size_t connection_index)
     {
         Stopwatch watch;
 
-        ConnectionPool::Entry entry = connections[connection_index]->get(
-            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
+        ConnectionPool::Entry entry = connections[connection_index]->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
 
-        if (reconnect)
+        bool should_reconnect = false;
+        {
+            std::lock_guard lock(queries_per_connection_mutex);
+            should_reconnect = reconnect > 0 && (++queries_per_connection[connection_index] % reconnect == 0);
+        }
+
+        if (should_reconnect)
             entry->disconnect();
 
-        RemoteQueryExecutor executor(
-            *entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+        RemoteQueryExecutor executor(*entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
 
         if (!query_id.empty())
             executor.setQueryId(query_id);
@@ -503,7 +514,7 @@ private:
         t_test.add(info_index, duration);
     }
 
-    void report(MultiStats & infos, double seconds)
+    void report(const MultiStats & infos, double seconds)
     {
         std::lock_guard lock(mutex);
 
@@ -566,7 +577,7 @@ private:
 
         if (!cumulative)
         {
-            for (auto & info : infos)
+            for (const auto & info : infos)
                 info->clear();
         }
 
@@ -611,9 +622,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         if (env_quota_key != nullptr)
             env_quota_key_str.emplace(std::string(env_quota_key));
 
-        boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
-        desc.add_options()
-            ("help",                                                            "produce help message")
+        boost::program_options::options_description options_description = createOptionsDescription("Allowed options", getTerminalWidth());
+        options_description.add_options()
+            ("help", "Print usage summary and exit; combine with --verbose to display all options")
+            ("verbose", "Increase output verbosity")
             ("query,q",       value<std::string>()->default_value(""),          "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
@@ -636,43 +648,47 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
-            ("reconnect", "establish new connection for every query")
+            ("reconnect", value<size_t>()->default_value(1), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
 
         Settings settings;
-        settings.addToProgramOptions(desc);
+        auto options_description_non_verbose = options_description;
+        settings.addToProgramOptions(options_description);
 
         boost::program_options::variables_map options;
-        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, options_description), options);
         boost::program_options::notify(options);
 
         clearPasswordFromCommandLine(argc, argv);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
-            std::cout << desc << "\n";
+            if (options.contains("verbose"))
+                std::cout << options_description << "\n";
+            else
+                std::cout << options_description_non_verbose << "\n";
             std::cout << "\nSee also: https://clickhouse.com/docs/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }
 
-        print_stacktrace = options.count("stacktrace");
+        print_stacktrace = options.contains("stacktrace");
 
         /// NOTE Maybe clickhouse-benchmark should also respect .xml configuration of clickhouse-client.
 
-        UInt16 default_port = options.count("secure") ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT;
+        UInt16 default_port = options.contains("secure") ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT;
 
-        Ports ports = options.count("port")
+        Ports ports = options.contains("port")
             ? options["port"].as<Ports>()
             : Ports({default_port});
 
-        Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
+        Strings hosts = options.contains("host") ? options["host"].as<Strings>() : Strings({"localhost"});
 
         String proto_send_chunked {"notchunked"};
         String proto_recv_chunked {"notchunked"};
 
-        if (options.count("proto_caps"))
+        if (options.contains("proto_caps"))
         {
             std::string proto_caps_str = options["proto_caps"].as<std::string>();
 
@@ -718,9 +734,9 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["delay"].as<double>(),
             std::move(hosts),
             std::move(ports),
-            options.count("roundrobin"),
-            options.count("cumulative"),
-            options.count("secure"),
+            options.contains("roundrobin"),
+            options.contains("cumulative"),
+            options.contains("secure"),
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),
@@ -728,7 +744,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             proto_recv_chunked,
             options["quota_key"].as<std::string>(),
             options["stage"].as<std::string>(),
-            options.count("randomize"),
+            options.contains("randomize"),
             options["iterations"].as<size_t>(),
             options["timelimit"].as<double>(),
             options["confidence"].as<size_t>(),
@@ -736,9 +752,9 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["query_id_prefix"].as<std::string>(),
             options["query"].as<std::string>(),
             options["max-consecutive-errors"].as<size_t>(),
-            options.count("ignore-error"),
-            options.count("reconnect"),
-            options.count("client-side-time"),
+            options.contains("ignore-error"),
+            options["reconnect"].as<size_t>(),
+            options.contains("client-side-time"),
             print_stacktrace,
             settings);
         return benchmark.run();

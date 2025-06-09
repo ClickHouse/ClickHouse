@@ -93,6 +93,8 @@ extern const Event ParallelReplicasReadAssignedForStealingMarks;
 
 extern const Event ParallelReplicasUsedCount;
 extern const Event ParallelReplicasUnavailableCount;
+
+extern const Event ParallelReplicasQueryCount;
 }
 
 namespace DB
@@ -169,25 +171,27 @@ public:
     }
 
     Stats stats;
-    size_t replicas_count{0};
+    const size_t replicas_count{0};
     size_t unavailable_replicas_count{0};
-    size_t sent_initial_requests{0};
+    size_t received_initial_requests{0};
     ProgressCallback progress_callback;
 
     explicit ImplInterface(size_t replicas_count_)
         : stats{replicas_count_}
         , replicas_count(replicas_count_)
-    {}
+    {
+    }
 
     virtual ~ImplInterface() = default;
 
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
+    virtual bool isReadingCompleted() const { return false; }
 
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
     {
-        if (++sent_initial_requests > replicas_count)
+        if (++received_initial_requests > replicas_count)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Initiator received more initial requests than there are replicas: replica_num={}", announcement.replica_num);
 
@@ -229,6 +233,8 @@ public:
     void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
 
     void markReplicaAsUnavailable(size_t replica_number) override;
+
+    bool isReadingCompleted() const override;
 
 private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
@@ -299,7 +305,7 @@ private:
     /// The second and all subsequent announcements needed only to understand if we can schedule reading from the given part to the given replica.
     void initializeReadingState(InitialAllRangesAnnouncement announcement);
 
-    void setProgressCallback();
+    void updateQueryProgress();
 
     enum class ScanMode : uint8_t
     {
@@ -356,7 +362,7 @@ DefaultCoordinator::~DefaultCoordinator()
 {
     try
     {
-        LOG_DEBUG(log, "Coordination done: {}", toString(stats));
+        LOG_TRACE(log, "Coordination done: {}", toString(stats));
     }
     catch (...)
     {
@@ -401,28 +407,29 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     if (mark_segment_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Zero value provided for `mark_segment_size`");
 
-    LOG_DEBUG(log, "Reading state is fully initialized: {}, mark_segment_size: {}", fmt::join(all_parts_to_read, "; "), mark_segment_size);
+    LOG_TRACE(log, "Reading state is fully initialized: {}, mark_segment_size: {}", fmt::join(all_parts_to_read, "; "), mark_segment_size);
 }
 
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
     LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
+    chassert(replica_number < replicas_count);
 
     ++unavailable_replicas_count;
     stats[replica_number].is_unavailable = true;
 
-    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
-        setProgressCallback();
-
     for (const auto & segment : distribution_by_hash_queue[replica_number])
     {
+        if (segment.ranges.empty())
+            continue;
+
         chassert(segment.ranges.size() == 1);
         enqueueToStealerOrStealingQueue(segment.info, segment.ranges.front());
     }
     distribution_by_hash_queue[replica_number].clear();
 }
 
-void DefaultCoordinator::setProgressCallback()
+void DefaultCoordinator::updateQueryProgress()
 {
     // Update progress with total rows
     if (progress_callback)
@@ -435,32 +442,34 @@ void DefaultCoordinator::setProgressCallback()
         progress.total_rows_to_read = total_rows_to_read;
         progress_callback(progress);
 
-        LOG_DEBUG(log, "Total rows to read: {}", total_rows_to_read);
+        LOG_TRACE(log, "Total rows to read: {}", total_rows_to_read);
     }
 }
 
 void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    LOG_DEBUG(log, "Initial request: {}", announcement.describe());
+    LOG_TRACE(log, "Initial request: {}", announcement.describe());
 
     const auto replica_num = announcement.replica_num;
-
-    initializeReadingState(std::move(announcement));
 
     if (replica_num >= stats.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
 
-    ++stats[replica_num].number_of_requests;
-
     if (replica_status[replica_num].is_announcement_received)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate announcement received for replica number {}", replica_num);
+
+    initializeReadingState(std::move(announcement));
+
+    ++stats[replica_num].number_of_requests;
+
     replica_status[replica_num].is_announcement_received = true;
 
-    LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
+    LOG_TRACE(log, "Received initial requests: {} Replicas count: {}", received_initial_requests, replicas_count);
 
-    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
-        setProgressCallback();
+    /// Update total rows to read as soon as snapshot is initialized
+    if (received_initial_requests == 1)
+        updateQueryProgress();
 
     /// Sift the queue to move out all invisible segments
     for (auto segment_it = distribution_by_hash_queue[replica_num].begin(); segment_it != distribution_by_hash_queue[replica_num].end();)
@@ -650,9 +659,12 @@ void DefaultCoordinator::processPartsFurther(
 
         RangesInDataPartDescription result{.info = part.description.info};
 
-        while (!part.description.ranges.empty() && current_marks_amount < min_number_of_marks)
+        auto & part_ranges = part.description.ranges;
+        const auto & part_info = part.description.info;
+
+        while (!part_ranges.empty() && current_marks_amount < min_number_of_marks)
         {
-            auto & range = part.description.ranges.front();
+            auto & range = part_ranges.front();
 
             /// Parts are divided into segments of `mark_segment_size` granules staring from 0-th granule
             for (size_t segment_begin = roundDownToMultiple(range.begin, mark_segment_size);
@@ -662,13 +674,13 @@ void DefaultCoordinator::processPartsFurther(
                 const auto cur_segment
                     = MarkRange{std::max(range.begin, segment_begin), std::min(range.end, segment_begin + mark_segment_size)};
 
-                const auto owner = computeConsistentHash(part.description.info.getPartNameV1(), segment_begin, scan_mode);
-                if (owner == replica_num && replica_can_read_part(replica_num, part.description.info))
+                const auto owner = computeConsistentHash(part_info.getPartNameV1(), segment_begin, scan_mode);
+                if (owner == replica_num && replica_can_read_part(replica_num, part_info))
                 {
                     const auto taken = takeFromRange(cur_segment, min_number_of_marks, current_marks_amount, result);
                     if (taken == range.getNumberOfMarks())
                     {
-                        part.description.ranges.pop_front();
+                        part_ranges.pop_front();
                         /// Range is taken fully. Proceed further to the next one.
                         break;
                     }
@@ -681,11 +693,11 @@ void DefaultCoordinator::processPartsFurther(
                 else
                 {
                     chassert(scan_mode == ScanMode::TakeWhatsMineByHash);
-                    enqueueSegment(part.description.info, cur_segment, owner);
+                    enqueueSegment(part_info, cur_segment, owner);
                     range.begin += cur_segment.getNumberOfMarks();
                     if (range.getNumberOfMarks() == 0)
                     {
-                        part.description.ranges.pop_front();
+                        part_ranges.pop_front();
                         /// Range is taken fully. Proceed further to the next one.
                         break;
                     }
@@ -829,7 +841,7 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
 
     sortResponseRanges(response.description);
 
-    LOG_DEBUG(
+    LOG_TRACE(
         log,
         "Going to respond to replica {} with {}; mine_marks={}, stolen_by_hash={}, stolen_rest={}",
         request.replica_num,
@@ -839,6 +851,25 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         stolen_unassigned);
 
     return response;
+}
+
+bool DefaultCoordinator::isReadingCompleted() const
+{
+    for (const auto & part : all_parts_to_read)
+    {
+        auto & part_ranges = part.description.ranges;
+        if (!part_ranges.empty())
+            return false;
+    }
+
+    for (const auto & r : distribution_by_hash_queue)
+        if (!r.empty())
+            return false;
+
+    if (!ranges_for_stealing_queue.empty())
+        return false;
+
+    return true;
 }
 
 
@@ -851,7 +882,7 @@ public:
     {}
     ~InOrderCoordinator() override
     {
-        LOG_DEBUG(log, "Coordination done: {}", toString(stats));
+        LOG_TRACE(log, "Coordination done: {}", toString(stats));
     }
 
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
@@ -957,7 +988,7 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
 
         total_rows_to_read += new_rows_to_read;
 
-        LOG_DEBUG(log, "Updated total rows to read: added {} rows, total {} rows", new_rows_to_read, total_rows_to_read);
+        LOG_TRACE(log, "Updated total rows to read: added {} rows, total {} rows", new_rows_to_read, total_rows_to_read);
     }
 }
 
@@ -1059,10 +1090,20 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
 
+    if (is_reading_completed)
+        return;
+
     std::lock_guard lock(mutex);
 
     if (!pimpl)
         initialize(announcement.mode);
+
+    if (!snapshot_replica_num)
+    {
+        snapshot_replica_num = announcement.replica_num;
+
+        LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Using snapshot from replica num {}", snapshot_replica_num.value());
+    }
 
     pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
@@ -1075,17 +1116,64 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleRequestMicroseconds);
 
-    std::lock_guard lock(mutex);
+    ParallelReadResponse response;
+    response.finish = true;
 
-    if (!pimpl)
-        initialize(request.mode);
+    if (is_reading_completed)
+        return response;
 
-    const auto replica_num = request.replica_num;
-    auto response = pimpl->handleRequest(std::move(request));
-    if (!response.finish)
+    std::set<size_t> replicas_to_exclude;
+    bool reading_assignment_has_been_completed = false;
     {
-        if (replicas_used.insert(replica_num).second)
-            ProfileEvents::increment(ProfileEvents::ParallelReplicasUsedCount);
+        std::lock_guard lock(mutex);
+        if (is_reading_completed)
+            return response;
+
+        if (!pimpl)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got read request from replica {} without ranges announcement", request.replica_num);
+
+        const auto replica_num = request.replica_num;
+        response = pimpl->handleRequest(std::move(request));
+        if (!response.finish)
+        {
+            chassert(!is_reading_completed);
+
+            if (replicas_used.insert(replica_num).second)
+                ProfileEvents::increment(ProfileEvents::ParallelReplicasUsedCount);
+        }
+        else
+        {
+            if (isReadingCompleted())
+            {
+                reading_assignment_has_been_completed = !is_reading_completed.exchange(true);
+                replicas_to_exclude = replicas_used;
+                // Exclude itself from canceling. Reason:
+                // the current protocol requires additional round-trip to finish reading for a replica,
+                // i.e., (1) packet with ranges to read and finish = false and (2) empty packet with finish=true.
+                // So, when replica N will ask for their first task, but all tasks have already been assigned,
+                // the replica N will not be in replicas_used set, but it should be excluded from cancellation.
+                replicas_to_exclude.insert(replica_num);
+            }
+        }
+    }
+
+    if (reading_assignment_has_been_completed && read_completed_callback.has_value())
+    {
+        if (replicas_count > replicas_to_exclude.size())
+        {
+            String replicas{"none"};
+            if (!replicas_to_exclude.empty())
+                replicas = fmt::format("{}", fmt::join(replicas_to_exclude, ", "));
+
+            LOG_DEBUG(
+                getLogger("ParallelReplicasReadingCoordinator"),
+                "All ranges for reading has been assigned to replicas. Cancelling execution for unused replicas. Used replicas: {}",
+                replicas);
+
+            chassert(!replicas_used.empty());
+            (*read_completed_callback)(replicas_to_exclude);
+            read_completed_callback.reset();
+        }
     }
 
     return response;
@@ -1109,6 +1197,8 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
 
 void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 {
+    chassert(!pimpl);
+
     switch (mode)
     {
         case CoordinationMode::Default:
@@ -1132,16 +1222,35 @@ void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_)
 {
+    LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Creating parallel replicas coordinator with replicas_count={}", replicas_count);
 }
 
-ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator() = default;
+ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator()
+{
+    // the profile event is not in constructor to check that coordinator is destroyed
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasQueryCount);
+}
 
 void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)
 {
+    std::lock_guard lock(mutex);
     // store callback since pimpl can be not instantiated yet
     progress_callback = std::move(callback);
     if (pimpl)
         pimpl->setProgressCallback(std::move(progress_callback));
+}
+
+void ParallelReplicasReadingCoordinator::setReadCompletedCallback(ReadCompletedCallback callback)
+{
+    read_completed_callback = std::move(callback);
+}
+
+bool ParallelReplicasReadingCoordinator::isReadingCompleted() const
+{
+    if (pimpl)
+        return pimpl->isReadingCompleted();
+
+    return false;
 }
 
 }

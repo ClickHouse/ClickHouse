@@ -107,8 +107,10 @@ public:
         WAIT_VIEW,
         START_VIEW,
         START_VIEWS,
+        START_REPLICATED_VIEW,
         STOP_VIEW,
         STOP_VIEWS,
+        STOP_REPLICATED_VIEW,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
@@ -127,6 +129,7 @@ public:
 
     ASTPtr database;
     ASTPtr table;
+    bool if_exists = false;
     ASTPtr query_settings;
 
     String getDatabase() const;
