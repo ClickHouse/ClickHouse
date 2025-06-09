@@ -82,7 +82,9 @@ public:
         if (no_sign || (access_key_id.empty() && secret_access_key.empty()))
             set_option("aws_skip_signature", "true");
 
-        set_option("aws_region", region);
+        if (!region.empty())
+            set_option("aws_region", region);
+
         set_option("aws_bucket", url.bucket);
 
         if (url.uri_str.starts_with("http"))
@@ -171,11 +173,15 @@ DeltaLake::KernelHelperPtr getKernelHelper(
             const auto & s3_credentials = s3_client->getCredentials();
             const auto & url = s3_conf->getURL();
 
+            auto region = s3_client->getRegion();
+            if (region.empty() || region == Aws::Region::AWS_GLOBAL)
+                region = s3_client->getRegionForBucket(url.bucket, /* force_detect */true);
+
             return std::make_shared<DeltaLake::S3KernelHelper>(
                 url,
                 s3_credentials.GetAWSAccessKeyId(),
                 s3_credentials.GetAWSSecretKey(),
-                s3_client->getRegionForBucket(url.bucket),
+                std::move(region),
                 s3_credentials.GetSessionToken(),
                 auth_settings[S3AuthSetting::no_sign_request]);
         }

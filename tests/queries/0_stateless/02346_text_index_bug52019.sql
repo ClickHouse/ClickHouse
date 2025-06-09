@@ -11,8 +11,7 @@ CREATE TABLE tab (
     INDEX idx mapKeys(str) TYPE text(tokenizer = 'ngram', ngram_size = 2) GRANULARITY 1)
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
-         min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab (id) VALUES (0);
 

@@ -15,27 +15,23 @@ static const auto compressSetting = CHSetting(
     {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
     false);
 
-static const auto trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
-
 static const auto bytesRangeSetting = CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false);
 
 static const auto highRangeSetting = CHSetting(highRange, {"0", "4", "8", "32", "64", "1024", "4096", "16384", "'10M'"}, false);
 
 static const auto rowsRangeSetting = CHSetting(rowsRange, {"0", "4", "8", "32", "64", "4096", "16384", "'10M'"}, false);
 
-static const auto probRangeSetting = CHSetting(probRange, {"0", "0.1", "0.5", "0.99", "1.0"}, false);
-
 static std::unordered_map<String, CHSetting> mergeTreeTableSettings
     = {{"adaptive_write_buffer_initial_size", bytesRangeSetting},
        {"add_implicit_sign_column_constraint_for_collapsing_engine", trueOrFalseSetting},
        {"add_minmax_index_for_numeric_columns", trueOrFalseSetting},
        {"add_minmax_index_for_string_columns", trueOrFalseSetting},
-       {"allow_experimental_block_number_column", CHSetting(trueOrFalse, {}, true)},
+       {"allow_experimental_block_number_column", trueOrFalseSettingNoOracle},
        {"allow_experimental_replacing_merge_with_cleanup", trueOrFalseSetting},
-       {"allow_floating_point_partition_key", CHSetting(trueOrFalse, {}, true)},
+       {"allow_floating_point_partition_key", trueOrFalseSettingNoOracle},
        {"allow_reduce_blocking_parts_task", trueOrFalseSetting},
        {"allow_remote_fs_zero_copy_replication", trueOrFalseSetting},
-       {"allow_suspicious_indices", CHSetting(trueOrFalse, {}, true)},
+       {"allow_suspicious_indices", trueOrFalseSettingNoOracle},
        {"allow_vertical_merges_from_compact_to_wide_parts", trueOrFalseSetting},
        {"always_fetch_merged_part", trueOrFalseSetting},
        {"always_use_copy_instead_of_hardlinks", trueOrFalseSetting},
@@ -77,8 +73,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"disable_detach_partition_for_zero_copy_replication", trueOrFalseSetting},
        {"disable_fetch_partition_for_zero_copy_replication", trueOrFalseSetting},
        {"disable_freeze_partition_for_zero_copy_replication", trueOrFalseSetting},
-       {"enable_block_number_column", CHSetting(trueOrFalse, {}, true)},
-       {"enable_block_offset_column", CHSetting(trueOrFalse, {}, true)},
+       {"enable_block_number_column", trueOrFalseSettingNoOracle},
+       {"enable_block_offset_column", trueOrFalseSettingNoOracle},
        {"enable_index_granularity_compression", trueOrFalseSetting},
        {"enable_max_bytes_limit_for_min_age_to_force_merge", trueOrFalseSetting},
        {"enable_mixed_granularity_parts", trueOrFalseSetting},
@@ -217,7 +213,8 @@ static std::unordered_map<String, CHSetting> logTableSettings = {};
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 std::unordered_map<String, CHSetting> restoreSettings
-    = {{"allow_different_database_def", CHSetting(trueOrFalse, {}, false)},
+    = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
+       {"allow_different_database_def", CHSetting(trueOrFalse, {}, false)},
        {"allow_different_table_def", CHSetting(trueOrFalse, {}, false)},
        {"allow_non_empty_tables", CHSetting(trueOrFalse, {}, false)},
        {"allow_s3_native_copy", CHSetting(trueOrFalse, {}, false)},
@@ -296,6 +293,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
          {ReplacingMergeTree, mergeTreeTableSettings},
+         {CoalescingMergeTree, mergeTreeTableSettings},
          {SummingMergeTree, mergeTreeTableSettings},
          {AggregatingMergeTree, mergeTreeTableSettings},
          {CollapsingMergeTree, mergeTreeTableSettings},
@@ -320,10 +318,18 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Hudi, {}},
          {DeltaLake, {}},
          {IcebergS3, {}},
+         {IcebergAzure, {}},
+         {IcebergLocal, {}},
          {Merge, {}},
          {Distributed, distributedTableSettings},
          {Dictionary, {}},
-         {GenerateRandom, {}}});
+         {GenerateRandom, {}},
+         {AzureBlobStorage, {}},
+         {AzureQueue, {}},
+         {URL, {}},
+         {KeeperMap, {}},
+         {ExternalDistributed, {}},
+         {MaterializedPostgreSQL, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},

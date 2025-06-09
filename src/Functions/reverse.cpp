@@ -8,8 +8,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <base/map.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -129,7 +129,7 @@ public:
             return FunctionFactory::instance().getImpl("arrayReverse", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionReverse::create(context),
-            collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+            DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
 
