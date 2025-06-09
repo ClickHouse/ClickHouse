@@ -17,116 +17,110 @@
     <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-28', number * 3, number * 3 * number * 3 from numbers(1000)</fill_query>
     <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-29', number * 3, number * 3 from numbers(1000)</fill_query>
 
+    <!-- Individual vector sums -->
     <query>
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-20')
-    from uin_value_details
-) as vec_1,
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-21')
-    from uin_value_details
-) as vec_2
-, numericIndexedVectorPointwiseMultiply(vec_1, vec_2) as vec_3
-, numericIndexedVectorPointwiseDivide(vec_1, vec_2) as vec_4
-select arrayJoin([
-    numericIndexedVectorShortDebugString(vec_1)
-    , toString(numericIndexedVectorAllValueSum(vec_1))
-    , numericIndexedVectorShortDebugString(vec_2)
-    , toString(numericIndexedVectorAllValueSum(vec_2))
-    , numericIndexedVectorShortDebugString(vec_3)
-    , toString(numericIndexedVectorAllValueSum(vec_3))
-    , numericIndexedVectorShortDebugString(vec_4)
-    , toString(numericIndexedVectorAllValueSum(vec_4))
-])
+    SELECT numericIndexedVectorAllValueSum(groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-20')) AS sum_1
+    FROM uin_value_details
     </query>
+
     <query>
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-22')
-    from uin_value_details
-) as vec_1,
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-23')
-    from uin_value_details
-) as vec_2
-, numericIndexedVectorPointwiseMultiply(vec_1, vec_2) as vec_3
-, numericIndexedVectorPointwiseDivide(vec_1, vec_2) as vec_4
-select arrayJoin([
-    numericIndexedVectorShortDebugString(vec_1)
-    , toString(numericIndexedVectorAllValueSum(vec_1))
-    , numericIndexedVectorShortDebugString(vec_2)
-    , toString(numericIndexedVectorAllValueSum(vec_2))
-    , numericIndexedVectorShortDebugString(vec_3)
-    , toString(numericIndexedVectorAllValueSum(vec_3))
-    , numericIndexedVectorShortDebugString(vec_4)
-    , toString(numericIndexedVectorAllValueSum(vec_4))
-])
+    SELECT numericIndexedVectorAllValueSum(groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-21')) AS sum_2
+    FROM uin_value_details
     </query>
+
     <query>
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
-    from uin_value_details
-) as vec_1,
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-27')
-    from uin_value_details
-) as vec_2
-, (
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-28')
-    from uin_value_details
-) as vec_3,
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-29')
-    from uin_value_details
-) as vec_4
-, numericIndexedVectorPointwiseMultiply(vec_1, vec_2) as vec_5
-, numericIndexedVectorPointwiseMultiply(vec_1, vec_3) as vec_6
-, numericIndexedVectorPointwiseMultiply(vec_1, vec_4) as vec_7
-, numericIndexedVectorPointwiseMultiply(vec_2, vec_3) as vec_8
-, numericIndexedVectorPointwiseMultiply(vec_2, vec_4) as vec_9
-, numericIndexedVectorPointwiseMultiply(vec_3, vec_4) as vec_10
-, numericIndexedVectorPointwiseDivide(vec_1, vec_2) as vec_11
-, numericIndexedVectorPointwiseDivide(vec_1, vec_3) as vec_12
-, numericIndexedVectorPointwiseDivide(vec_1, vec_4) as vec_13
-, numericIndexedVectorPointwiseDivide(vec_2, vec_3) as vec_14
-, numericIndexedVectorPointwiseDivide(vec_2, vec_4) as vec_15
-, numericIndexedVectorPointwiseDivide(vec_3, vec_4) as vec_16
-select arrayJoin([
-    numericIndexedVectorShortDebugString(vec_1)
-    , toString(numericIndexedVectorAllValueSum(vec_1))
-    , numericIndexedVectorShortDebugString(vec_2)
-    , toString(numericIndexedVectorAllValueSum(vec_2))
-    , numericIndexedVectorShortDebugString(vec_3)
-    , toString(numericIndexedVectorAllValueSum(vec_3))
-    , numericIndexedVectorShortDebugString(vec_4)
-    , toString(numericIndexedVectorAllValueSum(vec_4))
-    , numericIndexedVectorShortDebugString(vec_5)
-    , toString(numericIndexedVectorAllValueSum(vec_5))
-    , numericIndexedVectorShortDebugString(vec_6)
-    , toString(numericIndexedVectorAllValueSum(vec_6))
-    , numericIndexedVectorShortDebugString(vec_7)
-    , toString(numericIndexedVectorAllValueSum(vec_7))
-    , numericIndexedVectorShortDebugString(vec_8)
-    , toString(numericIndexedVectorAllValueSum(vec_8))
-    , numericIndexedVectorShortDebugString(vec_9)
-    , toString(numericIndexedVectorAllValueSum(vec_9))
-    , numericIndexedVectorShortDebugString(vec_10)
-    , toString(numericIndexedVectorAllValueSum(vec_10))
-    , numericIndexedVectorShortDebugString(vec_11)
-    , toString(numericIndexedVectorAllValueSum(vec_11))
-    , numericIndexedVectorShortDebugString(vec_12)
-    , toString(numericIndexedVectorAllValueSum(vec_12))
-    , numericIndexedVectorShortDebugString(vec_13)
-    , toString(numericIndexedVectorAllValueSum(vec_13))
-    , numericIndexedVectorShortDebugString(vec_14)
-    , toString(numericIndexedVectorAllValueSum(vec_14))
-    , numericIndexedVectorShortDebugString(vec_15)
-    , toString(numericIndexedVectorAllValueSum(vec_15))
-    , numericIndexedVectorShortDebugString(vec_16)
-    , toString(numericIndexedVectorAllValueSum(vec_16))
-])
+    SELECT numericIndexedVectorAllValueSum(groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-22')) AS sum_1
+    FROM uin_value_details
+    </query>
+
+    <query>
+    SELECT numericIndexedVectorAllValueSum(groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-23')) AS sum_2
+    FROM uin_value_details
+    </query>
+
+    <!-- Operations for 2023-12-20 and 2023-12-21 -->
+    <query>
+    WITH
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-20') FROM uin_value_details) AS vec_1,
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-21') FROM uin_value_details) AS vec_2
+    SELECT 
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseMultiply(vec_1, vec_2)) AS sum_multiply,
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseDivide(vec_1, vec_2)) AS sum_divide
+    </query>
+
+    <!-- Operations for 2023-12-22 and 2023-12-23 -->
+    <query>
+    WITH
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-22') FROM uin_value_details) AS vec_1,
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-23') FROM uin_value_details) AS vec_2
+    SELECT 
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseMultiply(vec_1, vec_2)) AS sum_multiply,
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseDivide(vec_1, vec_2)) AS sum_divide
+    </query>
+
+    <!-- All four dates in one query -->
+    <query>
+    SELECT 
+        numericIndexedVectorAllValueSum(groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')) AS sum_26,
+        numericIndexedVectorAllValueSum(groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-27')) AS sum_27,
+        numericIndexedVectorAllValueSum(groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-28')) AS sum_28,
+        numericIndexedVectorAllValueSum(groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-29')) AS sum_29
+    FROM uin_value_details
+    </query>
+
+    <!-- Pairwise operations -->
+    <query>
+    WITH
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26') FROM uin_value_details) AS v1,
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-27') FROM uin_value_details) AS v2
+    SELECT 
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseMultiply(v1, v2)) AS mul_26_27,
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseDivide(v1, v2)) AS div_26_27
+    </query>
+
+    <query>
+    WITH
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26') FROM uin_value_details) AS v1,
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-28') FROM uin_value_details) AS v2
+    SELECT 
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseMultiply(v1, v2)) AS mul_26_28,
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseDivide(v1, v2)) AS div_26_28
+    </query>
+
+    <query>
+    WITH
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26') FROM uin_value_details) AS v1,
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-29') FROM uin_value_details) AS v2
+    SELECT 
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseMultiply(v1, v2)) AS mul_26_29,
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseDivide(v1, v2)) AS div_26_29
+    </query>
+
+    <query>
+    WITH
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-27') FROM uin_value_details) AS v1,
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-28') FROM uin_value_details) AS v2
+    SELECT 
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseMultiply(v1, v2)) AS mul_27_28,
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseDivide(v1, v2)) AS div_27_28
+    </query>
+
+    <query>
+    WITH
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-27') FROM uin_value_details) AS v1,
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-29') FROM uin_value_details) AS v2
+    SELECT 
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseMultiply(v1, v2)) AS mul_27_29,
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseDivide(v1, v2)) AS div_27_29
+    </query>
+
+    <query>
+    WITH
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-28') FROM uin_value_details) AS v1,
+        (SELECT groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-29') FROM uin_value_details) AS v2
+    SELECT 
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseMultiply(v1, v2)) AS mul_28_29,
+        numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseDivide(v1, v2)) AS div_28_29
     </query>
 
     <drop_query>DROP TABLE IF EXISTS uin_value_details</drop_query>
