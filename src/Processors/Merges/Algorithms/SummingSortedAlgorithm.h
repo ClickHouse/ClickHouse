@@ -23,8 +23,7 @@ public:
         /// List of partition key columns. They have to be excluded.
         const Names & partition_and_sorting_required_columns,
         size_t max_block_size_rows,
-        size_t max_block_size_bytes,
-        const String & sum_function_name);
+        size_t max_block_size_bytes);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -45,11 +44,6 @@ public:
         ColumnsDefinition(); /// Is needed because destructor is defined.
         ColumnsDefinition(ColumnsDefinition &&) noexcept; /// Is needed because destructor is defined.
         ~ColumnsDefinition(); /// Is needed because otherwise std::vector's destructor uses incomplete types.
-
-        /// Memory pool for SimpleAggregateFunction
-        /// (only when allocates_memory_in_arena == true).
-        std::unique_ptr<Arena> arena;
-        size_t arena_size = 0;
 
         /// Columns with which values should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
@@ -88,9 +82,14 @@ public:
     private:
         ColumnsDefinition & def;
 
+        /// Memory pool for SimpleAggregateFunction
+        /// (only when allocates_memory_in_arena == true).
+        std::unique_ptr<Arena> arena;
+        size_t arena_size = 0;
+
         bool is_group_started = false;
 
-        std::vector<ColumnPtr> current_row;
+        Row current_row;
         bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
         void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);

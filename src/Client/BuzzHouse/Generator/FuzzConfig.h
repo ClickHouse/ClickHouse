@@ -5,7 +5,6 @@
 #include <fstream>
 #include <optional>
 #include <unordered_map>
-#include <unordered_set>
 
 #include "config.h"
 
@@ -42,8 +41,7 @@ const constexpr uint32_t allow_bool = (1 << 0), allow_unsigned_int = (1 << 1), a
                          allow_nullable = (1 << 16), allow_low_cardinality = (1 << 17), allow_array = (1 << 18), allow_map = (1 << 19),
                          allow_tuple = (1 << 20), allow_variant = (1 << 21), allow_nested = (1 << 22), allow_ipv4 = (1 << 23),
                          allow_ipv6 = (1 << 24), allow_geo = (1 << 25), set_any_datetime_precision = (1 << 26),
-                         set_no_decimal_limit = (1 << 27), allow_fixed_strings = (1 << 28), allow_time = (1 << 29),
-                         allow_time64 = (1 << 30);
+                         set_no_decimal_limit = (1 << 27), allow_fixed_strings = (1 << 28);
 
 using JSONObjectType = JSONParserImpl::Element;
 
@@ -135,24 +133,18 @@ private:
 
 public:
     LoggerPtr log;
-    std::ofstream outf;
     DB::Strings collations, storage_policies, timezones, disks, clusters;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
         minio_server;
     std::unordered_map<String, PerformanceMetric> metrics;
-    std::unordered_set<uint32_t> disallowed_error_codes;
     String host = "localhost";
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, dump_table_oracle_compare_content = true,
-         compare_success_results = false, measure_performance = false, allow_infinite_tables = false, compare_explains = false,
-         allow_memory_tables = true, allow_client_restarts = false;
+         compare_success_results = false, measure_performance = false, allow_infinite_tables = false, compare_explains = false;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000;
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
-             max_columns = 5, time_to_run = 0, type_mask = std::numeric_limits<uint32_t>::max(), port = 9000, secure_port = 9440,
-             use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000;
+             max_columns = 5, time_to_run = 0, type_mask = std::numeric_limits<uint32_t>::max(), port = 9000, secure_port = 9440;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
-                          client_file_path = std::filesystem::temp_directory_path() / "db",
-                          server_file_path = std::filesystem::temp_directory_path() / "db",
-                          fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data";
+                          db_file_path = std::filesystem::temp_directory_path() / "db", fuzz_out = db_file_path / "fuzz.data";
 
     FuzzConfig()
         : cb(nullptr)
@@ -162,21 +154,21 @@ public:
 
     FuzzConfig(DB::ClientBase * c, const String & path);
 
-    bool processServerQuery(bool outlog, const String & query);
+    bool processServerQuery(const String & input) const;
 
 private:
-    void loadServerSettings(DB::Strings & out, bool distinct, const String & table, const String & col);
+    void loadServerSettings(DB::Strings & out, bool distinct, const String & table, const String & col) const;
 
 public:
     void loadServerConfigurations();
 
     String getConnectionHostAndPort(bool secure) const;
 
-    void loadSystemTables(std::unordered_map<String, DB::Strings> & tables);
+    void loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const;
 
-    bool tableHasPartitions(bool detached, const String & database, const String & table);
+    bool tableHasPartitions(bool detached, const String & database, const String & table) const;
 
-    String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table);
+    String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table) const;
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 };

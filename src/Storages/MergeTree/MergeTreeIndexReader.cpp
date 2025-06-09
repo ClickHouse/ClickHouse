@@ -90,18 +90,17 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     stream->seekToStart();
 }
 
-void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
+MergeTreeIndexGranulePtr MergeTreeIndexReader::read(size_t mark)
 {
-    auto load_func = [this, mark](auto & res)
-    {
+    auto load_func = [&] {
         initStreamIfNeeded();
         if (stream_mark != mark)
             stream->seekToMark(mark);
 
-        if (!res)
-            res = index->createIndexGranule();
-        res->deserializeBinary(*stream->getDataBuffer(), version);
+        auto granule = index->createIndexGranule();
+        granule->deserializeBinary(*stream->getDataBuffer(), version);
         stream_mark = mark + 1;
+        return granule;
     };
 
     /// Not all skip indexes are created equal. Vector similarity indexes typically have a high index granularity (e.g. GRANULARITY
@@ -111,29 +110,15 @@ void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
     /// The same cannot be done for other skip indexes. Because their GRANULARITY is small (e.g. 1), the sheer number of skip index granules
     /// would create too much lock contention in the cache (this was learned the hard way).
     if (!index->isVectorSimilarityIndex())
-    {
-        load_func(granule);
-    }
+        return load_func();
     else
     {
         UInt128 key = VectorSimilarityIndexCache::hash(
             part->getDataPartStorage().getFullPath(),
             index->getFileName(),
             mark);
-        granule = vector_similarity_index_cache->getOrSet(key, load_func);
+        return vector_similarity_index_cache->getOrSet(key, load_func);
     }
-}
-
-void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules)
-{
-    if (granules == nullptr)
-        granules = index->createIndexBulkGranules();
-
-    initStreamIfNeeded();
-    if (stream_mark != mark)
-        stream->seekToMark(mark);
-
-    granules->deserializeBinary(current_granule_num, *stream->getDataBuffer(), version);
 }
 
 }

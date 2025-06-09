@@ -234,7 +234,6 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
     /// Add physical column info.
     auto & state = states.emplace_back();
     state.primitive_column = column;
-    state.type = type;
     state.compression = options.compression;
     state.compression_level = options.compression_level;
 
@@ -420,13 +419,6 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             {
                 types(T::BYTE_ARRAY);
             }
-            break;
-        }
-        case TypeIndex::Object:
-        {
-            parq::LogicalType t;
-            t.__set_JSON({});
-            types(T::BYTE_ARRAY, C::JSON, t);
             break;
         }
 

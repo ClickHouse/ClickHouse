@@ -28,7 +28,7 @@ using Storages = std::vector<StoragePtr>;
 MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
     : IAccessStorage(storage_name_)
     , nested_storages(std::make_shared<Storages>())
-    , ids_cache(CurrentMetrics::end(), CurrentMetrics::end(), 512 /* cache size */)
+    , ids_cache(512 /* cache size */)
 {
 }
 

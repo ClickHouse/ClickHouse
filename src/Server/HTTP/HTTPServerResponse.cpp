@@ -9,7 +9,6 @@
 #include <Poco/Net/HTTPFixedLengthStream.h>
 #include <Poco/Net/HTTPHeaderStream.h>
 #include <Poco/Net/HTTPStream.h>
-#include <IO/NullWriteBuffer.h>
 #include <sstream>
 
 
@@ -28,31 +27,13 @@ void HTTPServerResponse::sendContinue()
     hs << getVersion() << " 100 Continue\r\n\r\n";
 }
 
-std::shared_ptr<WriteBuffer> HTTPServerResponse::send()
+std::shared_ptr<WriteBufferFromPocoSocket> HTTPServerResponse::send()
 {
     poco_assert(!stream);
 
-    if (request && request->getMethod() == HTTPRequest::HTTP_HEAD)
+    if ((request && request->getMethod() == HTTPRequest::HTTP_HEAD) || getStatus() < 200 || getStatus() == HTTPResponse::HTTP_NO_CONTENT
+        || getStatus() == HTTPResponse::HTTP_NOT_MODIFIED)
     {
-        // HTTP_HEAD is a special case
-        // client usually reads nothing from socket after headers even when 'Contex-Lenght' is sent
-        // if server wrote a message to the connection with enabled 'Connection: Keep-Alive'
-        // the connection would be poisoned.
-        // Next request over that connection reads previously unreaded message as a HTTP status line
-
-        // Send header
-        Poco::Net::HTTPHeaderOutputStream hs(session);
-        write(hs);
-        // make sure that nothing is sent to the client if it was HTTP_HEAD request
-        stream = std::make_shared<NullWriteBuffer>(write_event);
-
-    }
-    else if (getStatus() < 200 || getStatus() == HTTPResponse::HTTP_NOT_MODIFIED || getStatus() == HTTPResponse::HTTP_NO_CONTENT)
-    {
-        // I really do not know why do we consider this cases as special one
-        // but if we do, then it is safer to close the connection at the end
-        setKeepAlive(false);
-
         // Send header
         Poco::Net::HTTPHeaderOutputStream hs(session);
         write(hs);
@@ -85,7 +66,7 @@ std::shared_ptr<WriteBuffer> HTTPServerResponse::send()
     return stream;
 }
 
-std::pair<std::shared_ptr<WriteBuffer>, std::shared_ptr<WriteBuffer>> HTTPServerResponse::beginSend()
+std::pair<std::shared_ptr<WriteBufferFromPocoSocket>, std::shared_ptr<WriteBufferFromPocoSocket>> HTTPServerResponse::beginSend()
 {
     poco_assert(!stream);
     poco_assert(!header_stream);
@@ -109,7 +90,7 @@ std::pair<std::shared_ptr<WriteBuffer>, std::shared_ptr<WriteBuffer>> HTTPServer
     // Send header
     auto str = header.str();
     header_stream = std::make_shared<AutoFinalizedWriteBuffer<WriteBufferFromPocoSocket>>(session.socket(), write_event, str.size());
-    header_stream->write(str.data(), str.size());
+    header_stream->write(str);
 
     if (getChunkedTransferEncoding())
         stream = std::make_shared<AutoFinalizedWriteBuffer<HTTPWriteBufferChunked>>(session.socket(), write_event);

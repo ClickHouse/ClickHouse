@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -143,7 +142,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         read_task_info.data_part = part_with_ranges.data_part;
 
         const auto & data_part = read_task_info.data_part;
-        /// TODO(ab): Hold parent part in RangesInDataParts during projection analysis
         if (data_part->isProjectionPart())
         {
             read_task_info.parent_part = data_part->storage.getPartIfExists(
@@ -156,7 +154,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         }
 
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
-        read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
         read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, getContext());
 
         LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
@@ -175,8 +172,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
                 .withSubcolumns();
 
             auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
-            auto mutation_steps
-                = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list, storage_snapshot->metadata, getContext());
+            auto mutation_steps = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list, storage_snapshot->metadata, getContext());
             std::move(mutation_steps.begin(), mutation_steps.end(), std::back_inserter(read_task_info.mutation_steps));
         }
 
@@ -192,7 +188,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
         read_task_info.const_virtual_fields = shared_virtual_fields;
         read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);
-        read_task_info.const_virtual_fields.emplace("_part_starting_offset", read_task_info.part_starting_offset_in_query);
 
         if (pool_settings.preferred_block_size_bytes > 0)
         {

@@ -16,7 +16,6 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
@@ -29,13 +28,7 @@ namespace ProfileEvents
 {
     extern const Event QueryCacheHits;
     extern const Event QueryCacheMisses;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric QueryCacheBytes;
-    extern const Metric QueryCacheEntries;
-}
+};
 
 namespace DB
 {
@@ -646,7 +639,7 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
 
 QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
     : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryResultCacheEntryWeight, IsStale>>(
-            CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+          std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
 }

@@ -1,9 +1,4 @@
-import logging
-import time
-
 import pytest
-
-from concurrent.futures import ThreadPoolExecutor
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -260,21 +255,13 @@ def test_user_access_ip_change(cluster_ready, node_name):
         user="root",
     )
 
-
-    assert_eq_with_retry(
-        node3,
-        f"SELECT * FROM remote('{node_name}', 'system', 'one')",
-        "0",
-        retry_count=10,
-        sleep_time=10,
+    assert (
+        node3.query("SELECT * FROM remote('{}', 'system', 'one')".format(node_name))
+        == "0\n"
     )
-
-    assert_eq_with_retry(
-        node4,
-        f"SELECT * FROM remote('{node_name}', 'system', 'one')",
-        "0",
-        retry_count=10,
-        sleep_time=10,
+    assert (
+        node4.query("SELECT * FROM remote('{}', 'system', 'one')".format(node_name))
+        == "0\n"
     )
 
     node.set_hosts(
@@ -285,23 +272,12 @@ def test_user_access_ip_change(cluster_ready, node_name):
     )
 
     node3_ipv6 = node3.ipv6_address
+    cluster.restart_instance_with_ip_change(node3, f"2001:3984:3989::1:88{node_num}3")
     node4_ipv6 = node4.ipv6_address
+    cluster.restart_instance_with_ip_change(node4, f"2001:3984:3989::1:88{node_num}4")
 
-    restart_start_time = time.time()
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        pool.map(
-            lambda x: cluster.restart_instance_with_ip_change(*x),
-            ((node3, f"2001:3984:3989::1:88{node_num}3"), (node4, f"2001:3984:3989::1:88{node_num}4"))
-        )
-    restart_elapsed = time.time() - restart_start_time
-
-    if restart_elapsed < 8:
-        with pytest.raises(QueryRuntimeException):
-            node3.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
-    else:
-        # The server restart took more time than expected, so it's probable that the DNS cache has already been reloaded
-        logging.warning("Spent too much time on restart, skip short-update test")
-
+    with pytest.raises(QueryRuntimeException):
+        node3.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
     with pytest.raises(QueryRuntimeException):
         node4.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
     # now wrong addresses are cached
@@ -324,14 +300,14 @@ def test_user_access_ip_change(cluster_ready, node_name):
 
     assert_eq_with_retry(
         node3,
-        f"SELECT * FROM remote('{node_name}', 'system', 'one')",
+        "SELECT * FROM remote('{}', 'system', 'one')".format(node_name),
         "0",
         retry_count=retry_count,
         sleep_time=1,
     )
     assert_eq_with_retry(
         node4,
-        f"SELECT * FROM remote('{node_name}', 'system', 'one')",
+        "SELECT * FROM remote('{}', 'system', 'one')".format(node_name),
         "0",
         retry_count=retry_count,
         sleep_time=1,

@@ -113,7 +113,7 @@ static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
 static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
 
-ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
+zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
     return getContext()->getZooKeeper();
 }
@@ -1431,7 +1431,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// And QualifiedTableName::parseFromString doesn't handle this.
         auto qualified_name = QualifiedTableName{.database = getDatabaseName(), .table = table_name};
         auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
-        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ast, getContext()->getCurrentDatabase()).dependencies);
+        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ast, getContext()->getCurrentDatabase()));
     }
 
     tables_dependencies.checkNoCyclicDependencies();
@@ -1616,7 +1616,6 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataOnDisk(const String & table_nam
 {
     auto file_path = getObjectMetadataPath(table_name);
     String description = fmt::format("in metadata {}", file_path);
-    auto db_disk = getDisk();
     String query = DB::readMetadataFile(db_disk, file_path);
     return parseQueryFromMetadata(table_name, query, description);
 }
@@ -1964,7 +1963,6 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
-    auto db_disk = getDisk();
     auto file_path = getObjectMetadataPath(table_name);
     return DB::readMetadataFile(db_disk, file_path);
 }
@@ -1995,13 +1993,14 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
 
         StoragePtr storage;
         if (create.uuid != UUIDHelpers::Nil)
+        {
             storage = DatabaseCatalog::instance().tryGetByUUID(create.uuid).second;
+            if (storage)
+                storage->adjustCreateQueryForBackup(create_table_query);
+        }
 
-        /// Pointer `storage` is allowed to be null here (that means that this storage exists on other replicas
-        /// but it has not been created on this replica yet).
-
-        /// There is no need to call `storage->applyMetadataChangesToCreateQueryForBackup()` here
-        /// because a consistent metadata snapshot contains table definitions with already applied metadata changes.
+        /// `storage` is allowed to be null here. In this case it means that this storage exists on other replicas
+        /// but it has not been created on this replica yet.
 
         res.emplace_back(create_table_query, storage);
     }
