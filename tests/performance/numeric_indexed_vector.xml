@@ -129,5 +129,5 @@ select arrayJoin([
 ])
     </query>
 
-    <drop_query>DROP TABLE IF EXISTS uin_value_details;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS uin_value_details</drop_query>
 </test>
