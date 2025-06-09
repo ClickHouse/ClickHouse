@@ -171,7 +171,7 @@ Result
 
 # numericIndexedVectorAllValueSum
 
-Returns sum of all the value in NumericIndexedVector.
+Returns sum of all the values in NumericIndexedVector.
 
 Syntax
 
