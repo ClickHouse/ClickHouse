@@ -622,13 +622,16 @@ void HTTPHandler::processQuery(
     {
         String remaining;
         readStringUntilEOF(remaining, *in_post_maybe_compressed);
-        auto hex_string = hexString(remaining.data(), remaining.size());
+        if (!remaining.empty())
+        {
+            auto hex_string = hexString(remaining.data(), remaining.size());
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "There is still some data in the buffer: {}", hex_string);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "There is still some data in the buffer: {}", hex_string);
 #else
-        LOG_WARNING(log, "There is still some data in the buffer: {}", hex_string);
+            LOG_WARNING(log, "There is still some data in the buffer: {}", hex_string);
 #endif
+        }
     }
 }
 
