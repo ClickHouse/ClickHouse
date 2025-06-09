@@ -36,6 +36,10 @@ public:
 
     bool isSecure() const { return secure; }
 
+    /// Whether getStream() knows where this request ends (from Content-Length or chunked encoding).
+    /// If true, it's safe to drain the stream to eof before reusing the connection.
+    bool isStreamBounded() const { return is_stream_bounded; }
+
     /// Returns the client's address.
     const Poco::Net::SocketAddress & clientAddress() const { return client_address; }
 
@@ -66,6 +70,7 @@ private:
     Poco::Net::SocketAddress server_address;
 
     bool secure;
+    bool is_stream_bounded = false;
 
     void readRequest(ReadBuffer & in);
 };

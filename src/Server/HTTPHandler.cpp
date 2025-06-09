@@ -617,6 +617,19 @@ void HTTPHandler::processQuery(
         {},
         handle_exception_in_output_format,
         query_finish_callback);
+
+    if (request.isStreamBounded())
+    {
+        String remaining;
+        readStringUntilEOF(remaining, *in_post_maybe_compressed);
+        auto hex_string = hexString(remaining.data(), remaining.size());
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "There is still some data in the buffer: {}", hex_string);
+#else
+        LOG_WARNING(log, "There is still some data in the buffer: {}", hex_string);
+#endif
+    }
 }
 
 bool HTTPHandler::trySendExceptionToClient(
