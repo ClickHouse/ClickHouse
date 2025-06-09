@@ -59,6 +59,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
@@ -1823,8 +1824,7 @@ try
 #endif
 
     NamedCollectionFactory::instance().loadIfNot();
-
-    FileCacheFactory::instance().loadDefaultCaches(config());
+    FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
@@ -2124,7 +2124,6 @@ try
             CertificateReloader::instance().tryReloadAll(*config);
 #endif
             NamedCollectionFactory::instance().reloadFromConfig(*config);
-
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
             HTTPConnectionPools::instance().setLimits(
@@ -2491,29 +2490,7 @@ try
         throw;
     }
 
-    bool found_stop_flag = false;
-
-    if (has_zookeeper && global_context->getMacros()->getMacroMap().contains("replica"))
-    {
-        try
-        {
-            auto zookeeper = global_context->getZooKeeper();
-            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
-            stop_flag_path = global_context->getMacros()->expand(stop_flag_path);
-            found_stop_flag = zookeeper->exists(stop_flag_path);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (e.code != Coordination::Error::ZCONNECTIONLOSS)
-                throw;
-            tryLogCurrentException(log);
-        }
-    }
-
-    if (found_stop_flag)
-        LOG_INFO(log, "Found a stop flag for replicated DDL queries. They will be disabled");
-    else
-        DatabaseCatalog::instance().startReplicatedDDLQueries();
+    DatabaseCatalog::instance().startReplicatedDDLQueries();
 
     LOG_DEBUG(log, "Loaded metadata.");
 

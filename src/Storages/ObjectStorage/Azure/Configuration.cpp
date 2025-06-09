@@ -89,6 +89,7 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
 
     return std::make_unique<AzureObjectStorage>(
         "AzureBlobStorage",
+        connection_params.auth_method,
         std::move(client),
         std::move(settings),
         connection_params.getContainer(),
