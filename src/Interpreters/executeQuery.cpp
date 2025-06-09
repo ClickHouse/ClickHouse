@@ -826,7 +826,7 @@ void logExceptionBeforeStart(
         ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
 
     QueryStatusInfoPtr info;
-    if (QueryStatusPtr process_list_elem = context->getProcessListElement())
+    if (QueryStatusPtr process_list_elem = context->getProcessListElementSafe())
     {
         info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
         addStatusInfoToQueryLogElement(elem, *info, ast, context, query_end_time);
