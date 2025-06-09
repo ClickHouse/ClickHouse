@@ -769,7 +769,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
         {
-            {"alter_modify_column_secondary_index_mode", "throw", "throw", "New setting"},
+            {"alter_modify_column_secondary_index_mode", "throw", "rebuild", "New setting. Also changed the previous behavior from 'throw' to 'rebuild'."},
             {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
             {"allow_coalescing_columns_in_partition_or_order_key", true, false, "New setting to allow coalescing of partition or sorting key columns."},
         });
