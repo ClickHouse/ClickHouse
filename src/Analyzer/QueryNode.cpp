@@ -321,12 +321,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     }
 }
 
-bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
+bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
     return is_subquery == rhs_typed.is_subquery &&
-        is_cte == rhs_typed.is_cte &&
+        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name)) &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -336,18 +336,26 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
-        cte_name == rhs_typed.cte_name &&
         projection_columns == rhs_typed.projection_columns &&
         settings_changes == rhs_typed.settings_changes;
 }
 
-void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
+void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) const
 {
     state.update(is_subquery);
-    state.update(is_cte);
 
-    state.update(cte_name.size());
-    state.update(cte_name);
+    if (options.ignore_cte)
+    {
+        state.update(false);
+        state.update(size_t(0));
+        state.update(std::string());
+    }
+    else
+    {
+        state.update(is_cte);
+        state.update(cte_name.size());
+        state.update(cte_name);
+    }
 
     state.update(projection_columns.size());
     for (const auto & projection_column : projection_columns)
@@ -544,7 +552,8 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (is_subquery)
     {
         auto subquery = std::make_shared<ASTSubquery>(std::move(result_select_query));
-        subquery->cte_name = cte_name;
+        if (options.set_subquery_cte_name)
+            subquery->cte_name = cte_name;
         return subquery;
     }
 

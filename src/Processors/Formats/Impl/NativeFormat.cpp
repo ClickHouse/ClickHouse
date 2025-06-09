@@ -83,11 +83,6 @@ public:
 
     String getName() const override { return "Native"; }
 
-    std::string getContentType() const override
-    {
-        return NativeWriter::getContentType();
-    }
-
 protected:
     void consume(Chunk chunk) override
     {
@@ -143,6 +138,7 @@ void registerOutputFormatNative(FormatFactory & factory)
         return std::make_shared<NativeOutputFormat>(buf, sample, settings, settings.client_protocol_version);
     });
     factory.markOutputFormatNotTTYFriendly("Native");
+    factory.setContentType("Native", "application/octet-stream");
 }
 
 

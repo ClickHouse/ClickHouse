@@ -664,9 +664,9 @@ public:
     }
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
-    void updateTreeHashImpl(HashState &, CompareOptions) const override;
+    void updateTreeHashImpl(HashState &, CompareOptions options) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
