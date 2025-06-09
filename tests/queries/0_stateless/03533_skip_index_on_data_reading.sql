@@ -2,6 +2,9 @@
 
 SET use_skip_indexes_on_data_read = 1;
 
+set use_query_condition_cache=0;
+set merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0;
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test
