@@ -548,7 +548,6 @@ throwIf
 tid
 timeSlot
 timeSlots
-timezoneOf
 toBool
 toColumnTypeName
 toDate
@@ -667,7 +666,6 @@ toStartOfWeek
 toString
 toStringCutToZero
 toTime
-toTimezone
 toTypeName
 toUInt128
 toUInt128OrNull
