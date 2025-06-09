@@ -93,7 +93,7 @@ void KeeperClientBase::askConfirmation(const String & prompt, std::function<void
         return;
     }
 
-    sout << prompt << " Continue?\n";
+    cout << prompt << " Continue?\n";
     waiting_confirmation = true;
     confirmation_callback = callback;
 }
@@ -164,7 +164,7 @@ bool KeeperClientBase::processQueryText(const String & text)
 
             if (!res)
             {
-                serr << message << "\n";
+                cerr << message << "\n";
                 return true;
             }
 
@@ -176,13 +176,13 @@ bool KeeperClientBase::processQueryText(const String & text)
     }
     catch (Coordination::Exception & err)
     {
-        serr << err.message() << "\n";
+        cerr << err.message() << "\n";
     }
     return true;
 }
 
 KeeperClientBase::KeeperClientBase(std::ostream & sout_, std::ostream & serr_)
-    : sout(sout_), serr(serr_)
+    : cout(sout_), cerr(serr_)
 {
     loadCommands({
         std::make_shared<LSCommand>(),

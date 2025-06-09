@@ -41,8 +41,8 @@ public:
 
     inline static std::map<String, Command> commands;
 
-    std::ostream & sout;
-    std::ostream & serr;
+    std::ostream & cout;
+    std::ostream & cerr;
 
     bool processQueryText(const String & text);
 

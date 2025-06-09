@@ -47,8 +47,8 @@ public:
 
     inline static std::map<String, Command> commands;
 
-    std::ostream & sout;
-    std::ostream & serr;
+    std::ostream & cout;
+    std::ostream & cerr;
 
 protected:
     void runInteractive();

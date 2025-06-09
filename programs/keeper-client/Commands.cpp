@@ -42,12 +42,12 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
     for (const auto & child : children)
     {
         if (std::exchange(need_space, true))
-            client->sout << " ";
+            client->cout << " ";
 
-        client->sout << child;
+        client->cout << child;
     }
 
-    client->sout << "\n";
+    client->cout << "\n";
 }
 
 bool CDCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -173,7 +173,7 @@ bool GetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
 
 void GetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
-    client->sout << client->zookeeper->get(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
+    client->cout << client->zookeeper->get(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
 bool ExistsCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
@@ -188,7 +188,7 @@ bool ExistsCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
 
 void ExistsCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * client) const
 {
-    client->sout << client->zookeeper->exists(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
+    client->cout << client->zookeeper->exists(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
 bool GetStatCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -212,17 +212,17 @@ void GetStatCommand::execute(const ASTKeeperQuery * query, KeeperClient * client
 
     client->zookeeper->get(path, &stat);
 
-    client->sout << "cZxid = " << stat.czxid << "\n";
-    client->sout << "mZxid = " << stat.mzxid << "\n";
-    client->sout << "pZxid = " << stat.pzxid << "\n";
-    client->sout << "ctime = " << stat.ctime << "\n";
-    client->sout << "mtime = " << stat.mtime << "\n";
-    client->sout << "version = " << stat.version << "\n";
-    client->sout << "cversion = " << stat.cversion << "\n";
-    client->sout << "aversion = " << stat.aversion << "\n";
-    client->sout << "ephemeralOwner = " << stat.ephemeralOwner << "\n";
-    client->sout << "dataLength = " << stat.dataLength << "\n";
-    client->sout << "numChildren = " << stat.numChildren << "\n";
+    client->cout << "cZxid = " << stat.czxid << "\n";
+    client->cout << "mZxid = " << stat.mzxid << "\n";
+    client->cout << "pZxid = " << stat.pzxid << "\n";
+    client->cout << "ctime = " << stat.ctime << "\n";
+    client->cout << "mtime = " << stat.mtime << "\n";
+    client->cout << "version = " << stat.version << "\n";
+    client->cout << "cversion = " << stat.cversion << "\n";
+    client->cout << "aversion = " << stat.aversion << "\n";
+    client->cout << "ephemeralOwner = " << stat.ephemeralOwner << "\n";
+    client->cout << "dataLength = " << stat.dataLength << "\n";
+    client->cout << "numChildren = " << stat.numChildren << "\n";
 }
 
 namespace
@@ -420,7 +420,7 @@ void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClien
             for (const auto & child : backups)
             {
                 auto backup_path = backup_root / child;
-                client->sout << "Found backup " << backup_path << ", checking if it's active\n";
+                client->cout << "Found backup " << backup_path << ", checking if it's active\n";
 
                 String stage_path = backup_path / "stage";
                 auto stages = client->zookeeper->getChildren(stage_path);
@@ -437,11 +437,11 @@ void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClien
 
                 if (is_active)
                 {
-                    client->sout << "Backup " << backup_path << " is active, not going to delete\n";
+                    client->cout << "Backup " << backup_path << " is active, not going to delete\n";
                     continue;
                 }
 
-                client->sout << "Backup " << backup_path << " is not active, deleting it\n";
+                client->cout << "Backup " << backup_path << " is not active, deleting it\n";
                 client->zookeeper->removeRecursive(backup_path);
             }
         });
@@ -485,7 +485,7 @@ void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client)
 
     std::sort(ctx.result.begin(), ctx.result.end(), std::greater());
     for (UInt64 i = 0; i < std::min(ctx.result.size(), static_cast<size_t>(n)); ++i)
-        client->sout << std::get<1>(ctx.result[i]) << "\t" << std::get<0>(ctx.result[i]) << "\n";
+        client->cout << std::get<1>(ctx.result[i]) << "\t" << std::get<0>(ctx.result[i]) << "\n";
 }
 
 bool RMCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -587,7 +587,7 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     }
 
     auto response = client->zookeeper->reconfig(joining, leaving, new_members);
-    client->sout << response.value << '\n';
+    client->cout << response.value << '\n';
 }
 
 bool SyncCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
@@ -602,7 +602,7 @@ bool SyncCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & no
 
 void SyncCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * client) const
 {
-    client->sout << client->zookeeper->sync(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
+    client->cout << client->zookeeper->sync(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
 bool HelpCommand::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
@@ -613,7 +613,7 @@ bool HelpCommand::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery
 void HelpCommand::execute(const ASTKeeperQuery * /* query */, KeeperClient * client) const
 {
     for (const auto & pair : KeeperClient::commands)
-        client->sout << pair.second->generateHelpString() << "\n";
+        client->cout << pair.second->generateHelpString() << "\n";
 }
 
 bool FourLetterWordCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -633,7 +633,7 @@ bool FourLetterWordCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQ
 
 void FourLetterWordCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
-    client->sout << client->executeFourLetterCommand(query->args[0].safeGet<String>()) << "\n";
+    client->cout << client->executeFourLetterCommand(query->args[0].safeGet<String>()) << "\n";
 }
 
 bool GetDirectChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -654,7 +654,7 @@ void GetDirectChildrenNumberCommand::execute(const ASTKeeperQuery * query, Keepe
     Coordination::Stat stat;
     client->zookeeper->get(path, &stat);
 
-    client->sout << stat.numChildren << "\n";
+    client->cout << stat.numChildren << "\n";
 }
 
 bool GetAllChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -695,7 +695,7 @@ void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperCl
         }
     }
 
-    client->sout << totalNumChildren << "\n";
+    client->cout << totalNumChildren << "\n";
 }
 
 namespace

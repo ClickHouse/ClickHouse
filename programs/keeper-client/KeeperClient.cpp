@@ -93,7 +93,7 @@ void KeeperClient::askConfirmation(const String & prompt, std::function<void()> 
         return;
     }
 
-    sout << prompt << " Continue?\n";
+    cout << prompt << " Continue?\n";
     waiting_confirmation = true;
     confirmation_callback = callback;
 }
@@ -277,7 +277,7 @@ bool KeeperClient::processQueryText(const String & text)
 
             if (!res)
             {
-                serr << message << "\n";
+                cerr << message << "\n";
                 return true;
             }
 
@@ -289,7 +289,7 @@ bool KeeperClient::processQueryText(const String & text)
     }
     catch (Coordination::Exception & err)
     {
-        serr << err.message() << "\n";
+        cerr << err.message() << "\n";
     }
     return true;
 }
@@ -332,7 +332,7 @@ void KeeperClient::runInteractiveReplxx()
             break;
     }
 
-    sout << std::endl;
+    cout << std::endl;
 }
 
 void KeeperClient::runInteractiveInputStream()
@@ -342,8 +342,8 @@ void KeeperClient::runInteractiveInputStream()
         if (!processQueryText(input))
             break;
 
-        sout << "\a\a\a\a" << std::endl;
-        serr << std::flush;
+        cout << "\a\a\a\a" << std::endl;
+        cerr << std::flush;
     }
 }
 
@@ -428,7 +428,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
 }
 
 KeeperClient::KeeperClient(std::ostream & sout_, std::ostream & serr_)
-    : sout(sout_), serr(serr_)
+    : cout(sout_), cerr(serr_)
 {
     loadCommands({
         std::make_shared<LSCommand>(),
