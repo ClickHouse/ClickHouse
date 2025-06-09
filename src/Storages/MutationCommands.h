@@ -96,7 +96,7 @@ public:
     bool containBarrierCommand() const;
     NameSet getAllUpdatedColumns() const;
 
-    /// For alter table modify columns, check which option is set and which column is changed.
+    /// For ALTER TABLE MODIFY COLUMNS, check which column is changed.
     NameSet getModifiedColumnsForAlterModifyColumn();
 };
 
