@@ -227,7 +227,6 @@ dictGetUUIDOrDefault
 dictHas
 dictIsIn
 displayName
-divideOrNull
 domain
 domainRFC
 domainWithoutWWW
