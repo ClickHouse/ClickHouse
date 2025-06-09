@@ -11,7 +11,9 @@
 #include <IO/AsynchronousReader.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 #include "config.h"
+
 
 namespace ProfileEvents
 {

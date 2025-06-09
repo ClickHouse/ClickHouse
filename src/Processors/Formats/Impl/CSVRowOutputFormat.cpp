@@ -85,6 +85,8 @@ void registerOutputFormatCSV(FormatFactory & factory)
             return std::make_shared<CSVRowOutputFormat>(buf, sample, with_names, with_types, format_settings);
         });
         factory.markOutputFormatSupportsParallelFormatting(format_name);
+        /// https://www.iana.org/assignments/media-types/text/csv
+        factory.setContentType(format_name, String("text/csv; charset=UTF-8; header=") + (with_names ? "present" : "absent"));
     };
 
     registerWithNamesAndTypes("CSV", register_func);

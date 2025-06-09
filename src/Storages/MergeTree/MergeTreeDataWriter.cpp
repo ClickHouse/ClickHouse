@@ -1,5 +1,7 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/intExp.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/ObjectUtils.h>
@@ -24,6 +26,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/typeid_cast.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Core/Settings.h>
 
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
@@ -184,6 +187,17 @@ void updateTTL(
         for (const auto & val : column_date_time->getData())
             ttl_info.update(val);
     }
+    else if (const ColumnInt32 * column_date_32 = typeid_cast<const ColumnInt32 *>(ttl_column.get()))
+    {
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
+        for (const auto & val : column_date_32->getData())
+            ttl_info.update(date_lut.fromDayNum(ExtendedDayNum(val)));
+    }
+    else if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(ttl_column.get()))
+    {
+        for (const auto & val : column_date_time_64->getData())
+            ttl_info.update(val / intExp10OfSize<Int64>(column_date_time_64->getScale()));
+    }
     else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(ttl_column.get()))
     {
         if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
@@ -194,6 +208,15 @@ void updateTTL(
         else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
         {
             ttl_info.update(column_const->getValue<UInt32>());
+        }
+        else if (typeid_cast<const ColumnInt32 *>(&column_const->getDataColumn()))
+        {
+            const auto & date_lut = DateLUT::serverTimezoneInstance();
+            ttl_info.update(date_lut.fromDayNum(ExtendedDayNum(column_const->getValue<Int32>())));
+        }
+        else if (const ColumnDateTime64 * column_dt64 = typeid_cast<const ColumnDateTime64 *>(&column_const->getDataColumn()))
+        {
+            ttl_info.update(column_const->getValue<DateTime64>() / intExp10OfSize<Int64>(column_dt64->getScale()));
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
@@ -435,7 +458,7 @@ Block MergeTreeDataWriter::mergeBlock(
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
-                    required_columns, block_size + 1, /*block_size_bytes=*/0);
+                    required_columns, block_size + 1, /*block_size_bytes=*/0, "sumWithOverflow");
             }
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0);
@@ -445,6 +468,14 @@ Block MergeTreeDataWriter::mergeBlock(
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
                     block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
+            case MergeTreeData::MergingParams::Coalescing:
+            {
+                auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
+                required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
+                return std::make_shared<SummingSortedAlgorithm>(
+                    block, 1, sort_description, merging_params.columns_to_sum,
+                    required_columns, block_size + 1, /*block_size_bytes=*/0, "last_value");
+            }
         }
     };
 
@@ -757,13 +788,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         Block projection_block;
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
-            projection_block = projection.calculate(block, context);
-            LOG_DEBUG(log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed() / 1000, projection.name, new_data_part->name);
+            projection_block = projection.calculate(block, context, perm_ptr);
+            LOG_DEBUG(
+                log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed() / 1000, projection.name, new_data_part->name);
         }
 
         if (projection_block.rows())
         {
-            auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
+            auto proj_temp_part
+                = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
             for (auto & stream : proj_temp_part->streams)
                 temp_part->streams.emplace_back(std::move(stream));
@@ -803,7 +836,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     size_t expected_size = block.bytes();
     // just check if there is enough space on parent volume
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
-    part_type = data.choosePartFormatOnDisk(expected_size, block.rows()).part_type;
+    part_type = data.choosePartFormat(expected_size, block.rows()).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();

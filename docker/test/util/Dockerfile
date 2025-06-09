@@ -2,18 +2,21 @@
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ARG apt_archive="https://archive.ubuntu.com"
+RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 ARG LLVM_APT_VERSION="1:19.1.4"
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=19
+
+# We need ca-certificates first to be able to update all repos. This is why it's run twice
+RUN apt-get update \
+    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
 
 RUN apt-get update \
     && apt-get install \
         sudo \
         apt-transport-https \
         apt-utils \
-        ca-certificates \
         curl \
         dnsutils \
         gnupg \
@@ -80,5 +83,12 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY --from=clickhouse/cctools:13cfebfd8f1bbc65ab49 /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
+
+COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
+  /opt/openssl-fips/openssl.cnf \
+  /opt/openssl-fips/fipsmodule.cnf \
+  /opt/openssl-fips/fips.so \
+  \
+  /etc/ssl/

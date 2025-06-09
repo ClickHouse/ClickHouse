@@ -482,7 +482,7 @@ Example:
 )",
     .examples{
         {"typical", "SELECT timeDiff(UTCTimestamp(), now());", ""}},
-    .category{"Dates and Times"}}, FunctionFactory::Case::Insensitive);
+    .category = FunctionDocumentation::Category::DateAndTime}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Age)

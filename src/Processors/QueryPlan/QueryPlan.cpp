@@ -31,6 +31,7 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("description", int(description));
     changes.emplace_back("actions", int(actions));
     changes.emplace_back("indexes", int(indexes));
+    changes.emplace_back("projections", int(projections));
     changes.emplace_back("sorting", int(sorting));
     changes.emplace_back("distributed", int(distributed));
 
@@ -249,6 +250,9 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
 
     if (options.indexes)
         step.describeIndexes(map);
+
+    if (options.projections)
+        step.describeProjections(map);
 }
 
 JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const
@@ -368,6 +372,9 @@ static void explainStep(
 
     if (options.indexes)
         step.describeIndexes(settings);
+
+    if (options.projections)
+        step.describeProjections(settings);
 
     if (options.distributed)
         step.describeDistributedPlan(settings, options);
@@ -616,6 +623,84 @@ QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
 std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndResources(QueryPlan && plan)
 {
     return {std::move(plan.nodes), std::move(plan.resources)};
+}
+
+QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
+{
+    std::unordered_set<Node *> used;
+    std::stack<Node *> stack;
+
+    stack.push(subplan_root);
+    used.insert(subplan_root);
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+
+        for (auto * child : node->children)
+        {
+            used.insert(child);
+            stack.push(child);
+        }
+    }
+
+    QueryPlan new_plan;
+    new_plan.root = subplan_root;
+
+    auto it = nodes.begin();
+    while (it != nodes.end())
+    {
+        auto curr = it;
+        ++it;
+
+        if (used.contains(&*curr))
+            new_plan.nodes.splice(new_plan.nodes.end(), nodes, curr);
+    }
+
+    return new_plan;
+}
+
+QueryPlan QueryPlan::clone() const
+{
+    QueryPlan result;
+
+    struct Frame
+    {
+        Node * node;
+        Node * clone;
+        std::vector<Node *> children = {};
+    };
+
+    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
+    result.root = &result.nodes.back();
+
+    std::vector<Frame> nodes_to_process{ Frame{ .node = root, .clone = result.root } };
+
+    while (!nodes_to_process.empty())
+    {
+        auto & frame = nodes_to_process.back();
+        if (frame.children.size() == frame.node->children.size())
+        {
+            frame.clone->step = frame.node->step->clone();
+            frame.clone->children = std::move(frame.children);
+            nodes_to_process.pop_back();
+        }
+        else
+        {
+            size_t next_child = frame.children.size();
+            auto * child = frame.node->children[next_child];
+
+            result.nodes.emplace_back(Node{ .step = {} });
+            result.nodes.back().children.reserve(child->children.size());
+            auto * child_clone = &result.nodes.back();
+
+            frame.children.push_back(child_clone);
+
+            nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
+        }
+    }
+
+    return result;
 }
 
 }

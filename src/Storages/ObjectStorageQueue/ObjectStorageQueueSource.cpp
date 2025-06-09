@@ -9,6 +9,7 @@
 #include <Common/parseGlobs.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
@@ -873,19 +874,17 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             if (commit_settings.max_processed_files_before_commit)
             {
-                if (progress->processed_files.load(std::memory_order_relaxed) >= commit_settings.max_processed_files_before_commit)
+                auto old_processed_files = progress->processed_files.fetch_add(1);
+                if (old_processed_files >= commit_settings.max_processed_files_before_commit)
                 {
                     LOG_TRACE(log, "Number of max processed files before commit reached "
                             "(rows: {}, bytes: {}, files: {}, time: {})",
                             progress->processed_rows.load(), progress->processed_bytes.load(),
                             progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
 
+                    --progress->processed_files;
                     file_iterator->returnForRetry(reader.getObjectInfo(), file_metadata);
                     break;
-                }
-                else
-                {
-                    progress->processed_files += 1;
                 }
             }
 
@@ -960,11 +959,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
 
+            const auto & object_metadata = reader.getObjectInfo()->metadata;
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .size = reader.getObjectInfo()->metadata->size_bytes
+                    .size = object_metadata->size_bytes,
+                    .last_modified = object_metadata->last_modified
                 }, getContext());
 
             return chunk;
