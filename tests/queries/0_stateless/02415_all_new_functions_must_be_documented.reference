@@ -160,7 +160,6 @@ encodeURLComponent
 encodeURLFormComponent
 encodeXMLComponent
 endsWith
-equals
 erf
 erfc
 errorCodeToName
@@ -229,8 +228,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greater
-greaterOrEquals
 greatest
 hasColumnInTable
 hasSubsequence
@@ -285,8 +282,6 @@ leftPad
 leftPadUTF8
 leftUTF8
 lengthUTF8
-less
-lessOrEquals
 lgamma
 like
 log
@@ -365,7 +360,6 @@ normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
 not
-notEquals
 notILike
 notIn
 notInIgnoreSet
@@ -650,13 +644,11 @@ toIntervalSecond
 toIntervalWeek
 toIntervalYear
 toJSONString
-toLastDayOfMonth
 toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
-toMonday
 toMonth
 toNullable
 toQuarter
@@ -669,13 +661,10 @@ toStartOfISOYear
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
-toStartOfMonth
 toStartOfNanosecond
-toStartOfQuarter
 toStartOfSecond
 toStartOfTenMinutes
 toStartOfWeek
-toStartOfYear
 toString
 toStringCutToZero
 toTimezone
@@ -708,7 +697,6 @@ toUUID
 toUUIDOrDefault
 toUUIDOrNull
 toUUIDOrZero
-toUnixTimestamp
 toUnixTimestamp64Micro
 toUnixTimestamp64Milli
 toUnixTimestamp64Nano
