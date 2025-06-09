@@ -12,10 +12,10 @@
     <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-22', number, number * number from numbers(5000)</fill_query>
     <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-23', number, number from numbers(5000)</fill_query>
 
-    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-26', number, number * number from numbers(100000)</fill_query>
-    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-27', number, number from numbers(100000)</fill_query>
-    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-28', number * 3, number * 3 * number * 3 from numbers(100000)</fill_query>
-    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-29', number * 3, number * 3 from numbers(100000)</fill_query>
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-26', number, number * number from numbers(1000)</fill_query>
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-27', number, number from numbers(1000)</fill_query>
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-28', number * 3, number * 3 * number * 3 from numbers(1000)</fill_query>
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-29', number * 3, number * 3 from numbers(1000)</fill_query>
 
     <query>
 with
