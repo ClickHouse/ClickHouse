@@ -7,6 +7,33 @@ class YTsaurusCLI:
         self.cluster = cluster
         self.proxy = proxy
         self.port = port
+    
+    def exec(
+            self,
+            command,
+            retry_count=5,
+            time_to_sleep=10):
+    
+        for retry in range(retry_count):
+            try:
+                self.cluster.exec_in_container(
+                    self.cluster.get_container_id(self.proxy),
+                    [
+                        "bash",
+                        "-c",
+                        command,
+                    ],
+                )
+                break
+            except Exception as e:
+                ## For some reasons ytstaurs can receive queries with not fully loaded resouces.
+                ## And we can have errors like:
+                ## ` Account <acc> is over tablet count limit `
+                ## Haven't found better solution than simple retries.
+                print(f"Exception : {retry}/{retry_count}")
+                if retry == retry_count - 1:
+                    raise e
+                time.sleep(time_to_sleep)
 
     def create_table(
         self,
@@ -71,6 +98,31 @@ class YTsaurusCLI:
                 "echo '{}' | yt {} '{}' --format json".format(
                     data, "insert-rows" if dynamic else "write-table", table_path
                 ),
+            ],
+        )
+    def write_table(
+        self,
+        table_path,
+        data
+    ):
+        self.cluster.exec_in_container(
+            self.cluster.get_container_id(self.proxy),
+            [
+                "bash",
+                "-c",
+                "echo '{}' | yt {} '{}' --format json".format(
+                    data,  "write-table", table_path
+                ),
+            ],
+        )
+
+    def exists(self, table_path):
+        self.cluster.exec_in_container(
+            self.cluster.get_container_id(self.proxy),
+            [
+                "bash",
+                "-c",
+                "yt remove {}".format(self.proxy),
             ],
         )
 
