@@ -13,7 +13,6 @@
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -24,21 +23,16 @@
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/Transforms/CheckConstraintsTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <Processors/Transforms/NestedElementsValidationTransform.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -47,11 +41,11 @@
 #include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
-#include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
 
 #include <memory>
+
 
 namespace DB
 {
@@ -675,7 +669,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         chain.addSource(std::move(planing));
     }
 
-
     auto context_ptr = getContext();
     auto counting = std::make_shared<CountingTransform>(chain.getInputHeader(), context_ptr->getQuota());
     counting->setProcessListElement(context_ptr->getProcessListElement());
@@ -715,8 +708,6 @@ BlockIO InterpreterInsertQuery::execute()
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
-        LOG_ERROR(getLogger("InterpreterInsertQuery"), "Insert queries are prohibited, current database: {}",
-            query.table_id.database_name);
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
     }
 
