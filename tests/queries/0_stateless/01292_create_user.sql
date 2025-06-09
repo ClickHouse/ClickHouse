@@ -253,7 +253,9 @@ WHERE
 SELECT '-- query parameters';
 SET param_u1_01292="u1_01292";
 SET param_u2_01292="u2_01292";
+CREATE USER '{u1_01292:Identifier}'; -- { clientError BAD_ARGUMENTS }
 CREATE USER {u1_01292:Identifier};
+CREATE USER '{u1_01292:Identifier}@192.168.%.%', '{u2_01292:Identifier}@192.168.%.%'; -- { clientError BAD_ARGUMENTS }
 CREATE USER {u1_01292:Identifier}@'192.168.%.%', {u2_01292:Identifier}@'192.168.%.%';
 SHOW CREATE USER u1_01292;
 SHOW CREATE USER u1_01292@'192.168.%.%';

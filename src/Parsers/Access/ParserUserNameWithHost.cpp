@@ -8,10 +8,16 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <boost/algorithm/string/trim.hpp>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -49,7 +55,10 @@ bool parseUserNameWithHost(
                 ASTPtr literal_check_ast;
                 if (ParserIdentifier(allow_query_parameter = true).parse(literal_check_pos, literal_check_ast, literal_check_expected)
                     && literal_check_ast->as<ASTIdentifier &>().isParam())
-                    return false;
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "String literals don't support query parameters substitution, remove single quotes surrounding the query "
+                        "parameter");
             }
             else
             {
