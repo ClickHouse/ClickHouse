@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
+#include <Common/SipHash.h>
 
 #include <bitset>
 #include <cstring>
