@@ -282,9 +282,7 @@ NameSet MutationCommands::getAllUpdatedColumns() const
     return res;
 }
 
-NameSet MutationCommands::getSecondaryIndicesOnColumnAlterModifyOptions(
-    MergeTreeSettingsPtr settings,
-    AlterModifyColumnSecondaryIndexMode & alter_modify_column_secondary_index_mode)
+NameSet MutationCommands::getModifiedColumnsForAlterModifyColumn()
 {
     NameSet altered_columns;
     for (const auto & command : *this)
@@ -292,20 +290,14 @@ NameSet MutationCommands::getSecondaryIndicesOnColumnAlterModifyOptions(
         if (!command.ast)
             continue;
 
-        if (auto * alter_cmd = command.ast->as<ASTAlterCommand>();
-            alter_cmd && alter_cmd->type==ASTAlterCommand::MODIFY_COLUMN)
+        if (auto * alter_cmd = command.ast->as<ASTAlterCommand>(); alter_cmd && alter_cmd->type==ASTAlterCommand::MODIFY_COLUMN)
         {
             if (auto * column_declaration = alter_cmd->col_decl->as<ASTColumnDeclaration>())
                 altered_columns.insert(column_declaration->name);
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cannot parse column declaration of alter command in mutation. It's a bug");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse column declaration of alter command in mutation. It's a bug");
         }
     }
-
-    if (!altered_columns.empty())
-        alter_modify_column_secondary_index_mode = (*settings)[MergeTreeSetting::alter_modify_column_secondary_index_mode];
-
     return altered_columns;
 }
 

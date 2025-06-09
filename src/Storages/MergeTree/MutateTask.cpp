@@ -720,8 +720,8 @@ static NameSet collectFilesToSkip(
     const MergeTreeDataPartPtr & source_part,
     const MergeTreeDataPartPtr & new_part,
     const Block & updated_header,
-    const std::vector<MergeTreeIndexPtr> & indices_to_skip,
     const String & mrk_extension,
+    const std::vector<MergeTreeIndexPtr> & indices_to_skip,
     const std::vector<ProjectionDescriptionRawPtr> & projections_to_skip,
     const std::set<ColumnStatisticsPartPtr> & stats_to_recalc)
 {
@@ -1475,10 +1475,10 @@ private:
         bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
+        NameSet altered_columns = ctx->commands->getModifiedColumnsForAlterModifyColumn();
         AlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode = AlterModifyColumnSecondaryIndexMode::THROW;
-        NameSet altered_columns = ctx->commands->getSecondaryIndicesOnColumnAlterModifyOptions(
-            ctx->data->getSettings(),
-            alter_modify_column_secondary_index_mode);
+        if (!altered_columns.empty())
+            alter_modify_column_secondary_index_mode = (*ctx->data->getSettings())[MergeTreeSetting::alter_modify_column_secondary_index_mode];
 
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
@@ -2513,10 +2513,10 @@ bool MutateTask::prepare()
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
-        AlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode = AlterModifyColumnSecondaryIndexMode::THROW;
-        NameSet altered_columns = ctx->commands->getSecondaryIndicesOnColumnAlterModifyOptions(
-            ctx->data->getSettings(),
-            alter_modify_column_secondary_index_mode);
+        NameSet altered_columns = ctx->commands->getModifiedColumnsForAlterModifyColumn();
+        auto alter_modify_column_secondary_index_mode = AlterModifyColumnSecondaryIndexMode::THROW;
+        if (!altered_columns.empty())
+            alter_modify_column_secondary_index_mode = (*ctx->data->getSettings())[MergeTreeSetting::alter_modify_column_secondary_index_mode];
 
         std::vector<MergeTreeIndexPtr> indices_to_skip;
         ctx->indices_to_recalc = MutationHelpers::getIndicesToRecalculate(
@@ -2559,8 +2559,8 @@ bool MutateTask::prepare()
             ctx->source_part,
             ctx->new_data_part,
             ctx->updated_header,
-            indices_to_skip,
             ctx->mrk_extension,
+            indices_to_skip,
             projections_to_skip,
             ctx->stats_to_recalc);
 

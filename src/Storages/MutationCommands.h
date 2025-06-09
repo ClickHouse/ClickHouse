@@ -102,9 +102,7 @@ public:
     NameSet getAllUpdatedColumns() const;
 
     /// For alter table modify columns, check which option is set and which column is changed.
-    NameSet getSecondaryIndicesOnColumnAlterModifyOptions(
-        MergeTreeSettingsPtr settings,
-        AlterModifyColumnSecondaryIndexMode & alter_modify_column_secondary_index_mode);
+    NameSet getModifiedColumnsForAlterModifyColumn();
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
