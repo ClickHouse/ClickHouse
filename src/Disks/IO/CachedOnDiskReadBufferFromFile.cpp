@@ -835,7 +835,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     if (!original_buffer_size)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Internal buffer cannot be empty (use external buffer: {})", use_external_buffer);
+            "Internal buffer cannot be empty (use external buffer: {}; {})", use_external_buffer, getInfoForLog());
 
     bool implementation_buffer_can_be_reused = false;
     SCOPE_EXIT({
