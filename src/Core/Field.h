@@ -163,6 +163,7 @@ template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = tr
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal64>> = true;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal128>> = true;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal256>> = true;
+template <> constexpr inline bool is_decimal_field<DecimalField<DateTime64>> = true;
 
 template <typename T, typename SFINAE = void>
 struct NearestFieldTypeImpl;
