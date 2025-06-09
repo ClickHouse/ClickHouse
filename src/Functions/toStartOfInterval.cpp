@@ -429,7 +429,86 @@ private:
 
 REGISTER_FUNCTION(ToStartOfInterval)
 {
-    factory.registerFunction<FunctionToStartOfInterval>();
+    FunctionDocumentation::Description description_toStartOfInterval = R"(
+This function generalizes other `toStartOf*()` functions with `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])` syntax.
+
+For example,
+- `toStartOfInterval(t, INTERVAL 1 YEAR)` returns the same as `toStartOfYear(t)`,
+- `toStartOfInterval(t, INTERVAL 1 MONTH)` returns the same as `toStartOfMonth(t)`,
+- `toStartOfInterval(t, INTERVAL 1 DAY)` returns the same as `toStartOfDay(t)`,
+- `toStartOfInterval(t, INTERVAL 15 MINUTE)` returns the same as `toStartOfFifteenMinutes(t)`.
+
+The calculation is performed relative to specific points in time:
+
+| Interval    | Start                  |
+|-------------|------------------------|
+| YEAR        | year 0                 |
+| QUARTER     | 1900 Q1                |
+| MONTH       | 1900 January           |
+| WEEK        | 1970, 1st week (01-05) |
+| DAY         | 1970-01-01             |
+| HOUR        | (*)                    |
+| MINUTE      | 1970-01-01 00:00:00    |
+| SECOND      | 1970-01-01 00:00:00    |
+| MILLISECOND | 1970-01-01 00:00:00    |
+| MICROSECOND | 1970-01-01 00:00:00    |
+| NANOSECOND  | 1970-01-01 00:00:00    |
+
+(*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
+    hour values between 1 and 23 are useful.
+
+If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
+
+The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function.
+    )";
+
+    FunctionDocumentation::Syntax syntax_toStartOfInterval = R"(
+toStartOfInterval(value, INTERVAL x unit[, time_zone])
+toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
+    )";
+
+    FunctionDocumentation::Arguments arguments_toStartOfInterval = {
+        {"value", "Date or DateTime value to round down."},
+        {"x", "Interval length number."},
+        {"unit", "Interval unit (YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND)."},
+        {"time_zone", "Optional. Time zone name as a string."},
+        {"origin", "Optional. Origin point for calculation (second overload only)."}
+    };
+
+    FunctionDocumentation::ReturnedValue returned_value_toStartOfInterval = "Returns the start of the interval containing the input value. [`Date`](../data-types/date.md).";
+
+    FunctionDocumentation::Examples examples_toStartOfInterval = {
+        {"Basic interval rounding", R"(
+SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
+        )",
+        R"(
+┌─toStartOfInt⋯alMonth(1))─┐
+│               2023-01-01 │
+└──────────────────────────┘
+        )"},
+        {"Using origin point", R"(
+SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'))
+        )",
+        R"(
+┌─toStartOfInt⋯14:35:30'))─┐
+│      2023-01-01 14:44:30 │
+└──────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toStartOfInterval = {20, 1};
+    FunctionDocumentation::Category category_toStartOfInterval = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_toStartOfInterval = {
+        description_toStartOfInterval,
+        syntax_toStartOfInterval,
+        arguments_toStartOfInterval,
+        returned_value_toStartOfInterval,
+        examples_toStartOfInterval,
+        aliases_toStartOfInterval,
+        introduced_in_toStartOfInterval,
+        category_toStartOfInterval
+    };
+
+    factory.registerFunction<FunctionToStartOfInterval>(documentation_toStartOfInterval);
     factory.registerAlias("time_bucket", "toStartOfInterval", FunctionFactory::Case::Insensitive);
     factory.registerAlias("date_bin", "toStartOfInterval", FunctionFactory::Case::Insensitive);
 }
