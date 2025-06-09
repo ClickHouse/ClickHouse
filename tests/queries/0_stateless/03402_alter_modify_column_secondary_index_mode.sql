@@ -63,7 +63,7 @@ SELECT * from test_compact;
 ALTER TABLE test_wide UPDATE b = '3' WHERE b = '2' SETTINGS mutations_sync = 2;
 SELECT * from test_wide;
 
-SELECT 'Check behavior with REBUILD';
+SELECT 'Check behavior with REBUILD'; -- that's the default
 
 ALTER TABLE test_compact MODIFY SETTING alter_modify_column_secondary_index_mode = 'rebuild';
 ALTER TABLE test_wide MODIFY SETTING alter_modify_column_secondary_index_mode = 'rebuild';
