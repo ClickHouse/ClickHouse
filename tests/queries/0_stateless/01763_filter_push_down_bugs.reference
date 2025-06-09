@@ -13,12 +13,12 @@ Expression ((Projection + Before ORDER BY))
         ReadFromMergeTree (default.t1)
         Indexes:
           PrimaryKey
-            Keys: 
+            Keys:
               id
             Condition: (id in [101, 101])
             Parts: 1/1
             Granules: 1/1
-            Search algorithm: binary search
+            Search Algorithm: binary search
       Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
         ReadFromMergeTree (default.t2)
         Indexes:
@@ -33,12 +33,12 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.t1)
         Indexes:
           PrimaryKey
-            Keys: 
+            Keys:
               id
             Condition: (id in [101, 101])
             Parts: 1/1
             Granules: 1/1
-            Search algorithm: binary search
+            Search Algorithm: binary search
       Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
         ReadFromMergeTree (default.t2)
         Indexes:

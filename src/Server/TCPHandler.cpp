@@ -2125,8 +2125,8 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
         }
         else
         {
-            // In a cluster, query originator may have an access to the external auth provider (like LDAP server),
-            // that grants specific roles to the user. We want these roles to be granted to the user on other nodes of cluster when
+            // In a cluster, query originator may have an access to the external auth provider with role mapping (like LDAP server),
+            // that grants specific roles to the user. We want these roles to be granted to the effective user on other nodes of cluster when
             // query is executed.
             Strings external_roles;
             if (!received_extra_roles.empty())

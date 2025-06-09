@@ -649,6 +649,12 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
     return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).text;
 }
 
+std::string getExceptionMessageForLogging(Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
+{
+    e.markAsLogged();
+    return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).text;
+}
+
 PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
     WriteBufferFromOwnString stream;

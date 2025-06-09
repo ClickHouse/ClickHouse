@@ -28,6 +28,7 @@ function check_refcnt_for_table()
         --format Null
         --max_threads 1
         --max_block_size 1
+        --enable_shared_storage_snapshot_in_query 0
         --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0.0
         --query_id "$query_id"
         --send_logs_level "test"
@@ -38,6 +39,7 @@ function check_refcnt_for_table()
     # - query may sleep 0.1*(2000/4)=50 seconds maximum, it is enough to check system.parts
     # - "part = 1" condition should prune all parts except first
     # - max_block_size=1 with index_granularity=1 will allow to cancel the query earlier
+    # - enable_shared_storage_snapshot_in_query=0 will release unrelated parts earlier
     $CLICKHOUSE_CLIENT "${args[@]}" -q "select sleepEachRow(0.1) from $table where part = 1" &
     PID=$!
 

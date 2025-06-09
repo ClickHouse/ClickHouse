@@ -112,7 +112,6 @@ cbrt
 ceil
 char
 cityHash64
-clamp
 coalesce
 concat
 concatAssumeInjective
@@ -151,7 +150,6 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
 demangle
-divideOrNull
 dotProduct
 dumpColumnStructure
 e
@@ -161,7 +159,6 @@ encodeURLComponent
 encodeURLFormComponent
 encodeXMLComponent
 endsWith
-equals
 erf
 erfc
 errorCodeToName
@@ -230,9 +227,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greater
-greaterOrEquals
-greatest
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -247,7 +241,6 @@ hopStart
 hostName
 hypot
 identity
-if
 ifNull
 ignore
 ilike
@@ -258,7 +251,6 @@ initcap
 initcapUTF8
 initialQueryID
 initializeAggregation
-intDivOrNull
 intExp10
 intExp2
 intHash32
@@ -281,14 +273,11 @@ joinGetOrNull
 jumpConsistentHash
 kafkaMurmurHash
 kostikConsistentHash
-least
 left
 leftPad
 leftPadUTF8
 leftUTF8
 lengthUTF8
-less
-lessOrEquals
 lgamma
 like
 log
@@ -299,10 +288,6 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
-makeDate
-makeDate32
-makeDateTime
-makeDateTime64
 map
 mapAdd
 mapFromArrays
@@ -315,12 +300,10 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-moduloOrNull
 monthName
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
-multiIf
 multiMatchAllIndices
 multiMatchAny
 multiMatchAnyIndex
@@ -372,7 +355,6 @@ normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
 not
-notEquals
 notILike
 notIn
 notInIgnoreSet
@@ -657,13 +639,11 @@ toIntervalSecond
 toIntervalWeek
 toIntervalYear
 toJSONString
-toLastDayOfMonth
 toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
-toMonday
 toMonth
 toNullable
 toQuarter
@@ -680,18 +660,14 @@ toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
 toStartOfHour
-toStartOfISOYear
 toStartOfInterval
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
-toStartOfMonth
 toStartOfNanosecond
-toStartOfQuarter
 toStartOfSecond
 toStartOfTenMinutes
 toStartOfWeek
-toStartOfYear
 toString
 toStringCutToZero
 toTime
@@ -725,7 +701,6 @@ toUUID
 toUUIDOrDefault
 toUUIDOrNull
 toUUIDOrZero
-toUnixTimestamp
 toUnixTimestamp64Micro
 toUnixTimestamp64Milli
 toUnixTimestamp64Nano

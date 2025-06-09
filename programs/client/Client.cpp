@@ -80,7 +80,7 @@ void Client::processError(std::string_view query) const
             stderr,
             "Received exception from server (version {}):\n{}\n",
             server_version,
-            getExceptionMessage(*server_exception, print_stack_trace, true));
+            getExceptionMessageForLogging(*server_exception, print_stack_trace, true));
 
         if (server_exception->code() == ErrorCodes::USER_EXPIRED)
         {
@@ -432,10 +432,10 @@ try
 
     return 0;
 }
-catch (const Exception & e)
+catch (Exception & e)
 {
     bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
-    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl << std::endl;
+    std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return static_cast<UInt8>(e.code()) ? e.code() : -1;
 }
@@ -500,7 +500,7 @@ void Client::connect()
 
             break;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// This problem can't be fixed with reconnection so it is not attempted
             if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
@@ -513,7 +513,7 @@ void Client::connect()
             {
                 std::cerr << "Connection attempt to database at " << connection_parameters.host << ":" << connection_parameters.port
                           << " resulted in failure" << std::endl
-                          << getExceptionMessage(e, false) << std::endl
+                          << getExceptionMessageForLogging(e, false) << std::endl
                           << "Attempting connection to the next provided address" << std::endl;
             }
         }
@@ -761,9 +761,9 @@ void Client::processOptions(
             if (number_of_external_tables_with_stdin_source > 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more external tables has stdin (-) set as --file field");
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            std::cerr << getExceptionMessage(e, false) << std::endl;
+            std::cerr << getExceptionMessageForLogging(e, false) << std::endl;
             std::cerr << "Table №" << i << std::endl << std::endl;
             /// Avoid the case when error exit code can possibly overflow to normal (zero).
             auto exit_code = e.code() % 256;
@@ -1024,8 +1024,8 @@ void Client::readArguments(
             if (arg == "--file"sv || arg == "--name"sv || arg == "--structure"sv || arg == "--types"sv)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter must be in external group, try add --external before {}", arg);
 
-            /// Parameter arg after underline.
-            if (arg.starts_with("--param_"))
+            /// Parameter arg after underline or dash.
+            if (arg.starts_with("--param_") || arg.starts_with("--param-"))
             {
                 auto param_continuation = arg.substr(strlen("--param_"));
                 auto equal_pos = param_continuation.find_first_of('=');
@@ -1144,9 +1144,9 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         client.init(argc, argv);
         return client.run();
     }
-    catch (const DB::Exception & e)
+    catch (DB::Exception & e)
     {
-        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        std::cerr << DB::getExceptionMessageForLogging(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }
