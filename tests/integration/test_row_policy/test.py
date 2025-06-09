@@ -865,7 +865,7 @@ def test_policy_on_distributed_table_via_role():
         "CREATE TABLE local_tbl engine=MergeTree ORDER BY tuple() as select * FROM numbers(10)"
     )
     node.query(
-        "CREATE TABLE dist_tbl ENGINE=Distributed( 'test_cluster_two_shards_localhost', default, local_tbl) AS local_tbl"
+        "CREATE TABLE dist_tbl ENGINE=Distributed( 'test_cluster_two_shards_same_node', default, local_tbl) AS local_tbl"
     )
 
     node.query("CREATE ROLE OR REPLACE 'role1'")
