@@ -1,6 +1,7 @@
 -- Tags: no-parallel, no-fasttest
 
-CREATE OR REPLACE TABLE to_insert (value UInt64) ENGINE = Memory();
+DROP TABLE IF EXISTS to_insert;
+CREATE TABLE to_insert (value UInt64) ENGINE = Memory();
 
 INSERT INTO table_that_do_not_exists VALUES (42); -- { serverError UNKNOWN_TABLE }
 INSERT INTO to_insert SELECT throwIf(1); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
