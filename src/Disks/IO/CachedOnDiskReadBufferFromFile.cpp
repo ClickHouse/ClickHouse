@@ -845,6 +845,12 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             if (std::uncaught_exceptions() > 0)
                 nextimpl_step_log_info = getInfoForLog();
 
+            if (!use_external_buffer)
+            {
+                chassert(internal_buffer.size());
+                chassert(internal_buffer.begin());
+            }
+
             if (file_segments->empty())
                 return;
 
