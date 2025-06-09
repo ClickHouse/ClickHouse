@@ -57,7 +57,6 @@ public:
     /// Returns the information about quota consumption.
     std::optional<QuotaUsage> getUsage() const;
 
-    bool isEmpty() const { return empty; }
 
 private:
     friend class QuotaCache;
