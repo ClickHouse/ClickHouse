@@ -8,6 +8,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function test_snapshot_sharing()
 {
+    local delay=$1 && shift
+
+    local query_settings=( "$@" )
+    query_settings+=( "--merge_tree_storage_snapshot_sleep_ms=$((delay*1000))" )
+
     $CLICKHOUSE_CLIENT -nm --query "
     DROP TABLE IF EXISTS events;
     CREATE TABLE events
@@ -22,14 +27,14 @@ function test_snapshot_sharing()
     "
 
     local query_id="${CLICKHOUSE_DATABASE}_${RANDOM}${RANDOM}_sharing"
-    $CLICKHOUSE_CLIENT --query_id="$query_id" "$@" --query "
+    $CLICKHOUSE_CLIENT --query_id="$query_id" "${query_settings[@]}" --query "
         SELECT count() FROM events WHERE (_part, _part_offset) IN (
             SELECT _part, _part_offset FROM events WHERE user_id = 2
         )" &
     PID=$!
 
     local found_delay=0
-    for _ in {1..20}; do
+    for _ in $( seq 1 $(((delay+1)*10)) ); do
         $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
         if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND message_format_string = 'Injecting {}ms artificial delay before taking storage snapshot' SETTINGS max_rows_to_read = 0") -eq 2 ]]; then
             found_delay=1
@@ -39,7 +44,7 @@ function test_snapshot_sharing()
     done
     if [ $found_delay -eq 0 ]; then
         wait $PID
-        echo "No delay has been injected"
+        echo "No delay has been injected (for query_id: $query_id)"
         return
     fi
 
@@ -66,7 +71,7 @@ function test_snapshot_shared()
 {
     local result
     for _ in {1..10}; do
-        result=$(test_snapshot_sharing --enable_shared_storage_snapshot_in_query=1 --merge_tree_storage_snapshot_sleep_ms=1000)
+        result=$(test_snapshot_sharing 1 --enable_shared_storage_snapshot_in_query=1)
         if [ "$result" = 1 ]; then
             echo "With snapshot sharing enabled: $result"
             return
@@ -81,7 +86,7 @@ function test_snapshot_not_shared()
     local result
     for _ in {1..10}; do
         # NOTE: when snapshot should not be shared, the test is sensitive to the merge_tree_storage_snapshot_sleep_ms
-        result=$(test_snapshot_sharing --enable_shared_storage_snapshot_in_query=0 --merge_tree_storage_snapshot_sleep_ms=5000)
+        result=$(test_snapshot_sharing 5 --enable_shared_storage_snapshot_in_query=0)
         if [ "$result" = 0 ]; then
             echo "With snapshot sharing disabled: $result"
             return
