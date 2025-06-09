@@ -116,6 +116,8 @@ public:
     T getScaleMultiplier() const;
     UInt32 getScale() const { return scale; }
 
+    explicit operator bool() const { return dec.value != 0; }
+
     template <typename U>
     bool operator < (const DecimalField<U> & r) const
     {
