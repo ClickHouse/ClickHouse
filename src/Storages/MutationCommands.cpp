@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
 bool MutationCommand::isBarrierCommand() const
 {
     return type == RENAME_COLUMN;

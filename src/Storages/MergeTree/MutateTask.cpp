@@ -692,7 +692,6 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     QueryPipelineBuilder & builder,
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & materialized_indices,
-    const NameSet & modified_columns_by_alter_modify_column,
     std::vector<MergeTreeIndexPtr> & indices_to_skip,
     const std::shared_ptr<MutationContext> & ctx)
 {
@@ -702,6 +701,8 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
     bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
+
+    NameSet modified_columns_by_alter_modify_column = ctx->commands->getModifiedColumnsForAlterModifyColumn();
     auto alter_modify_column_secondary_index_mode = (*ctx->data->getSettings())[MergeTreeSetting::alter_modify_column_secondary_index_mode];
 
     for (const auto & index : indices)
@@ -2513,15 +2514,12 @@ bool MutateTask::prepare()
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
-        NameSet modified_columns_by_alter_modify_column = ctx->commands->getModifiedColumnsForAlterModifyColumn();
-
         std::vector<MergeTreeIndexPtr> indices_to_skip;
         ctx->indices_to_recalc = MutationHelpers::getIndicesToRecalculate(
             ctx->source_part,
             ctx->mutating_pipeline_builder,
             ctx->metadata_snapshot,
             ctx->materialized_indices,
-            modified_columns_by_alter_modify_column,
             indices_to_skip,
             ctx);
 
