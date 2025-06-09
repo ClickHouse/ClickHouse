@@ -1810,7 +1810,7 @@ namespace ErrorCodes
     of on table initialization.
     )", 0) \
     /** Secondary Index settings. */ \
-    DECLARE(SecondaryIndicesOnColumnsAlterModify, secondary_indices_on_columns_alter_modify, SecondaryIndicesOnColumnsAlterModify::THROW, R"(
+    DECLARE(AlterModifyColumnSecondaryIndexMode, alter_modify_column_secondary_index_mode, AlterModifyColumnSecondaryIndexMode::THROW, R"(
     Specifies what happens if ALTER MODIFY is run for a column with a secondary index. Possible values:
     - `throw` returns an error (the ALTER MODIFY statement is not run).
     - `drop` removes existing secondary indexes.

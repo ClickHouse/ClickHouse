@@ -1,4 +1,4 @@
--- Tests the behavior of MergeTree setting 'secondary_indices_on_columns_alter_modify' with tables in compact and wide format
+-- Tests the behavior of MergeTree setting 'alter_modify_column_secondary_index_mode' with tables in compact and wide format
 
 DROP TABLE IF EXISTS test_compact;
 DROP TABLE IF EXISTS test_wide;
@@ -33,8 +33,8 @@ ALTER TABLE test_wide MODIFY COLUMN b String; -- { serverError ALTER_OF_COLUMN_I
 
 SELECT 'Check behavior with THROW';
 
-ALTER TABLE test_compact MODIFY SETTING secondary_indices_on_columns_alter_modify = 'throw';
-ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter_modify = 'throw';
+ALTER TABLE test_compact MODIFY SETTING alter_modify_column_secondary_index_mode = 'throw';
+ALTER TABLE test_wide MODIFY SETTING alter_modify_column_secondary_index_mode = 'throw';
 
 -- ALTER TABLE MODIFY COLUMN is expected to throw
 ALTER TABLE test_compact MODIFY COLUMN b String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
@@ -52,8 +52,8 @@ SELECT b from test_wide;
 
 SELECT 'Check behavior with DROP';
 
-ALTER TABLE test_compact MODIFY SETTING secondary_indices_on_columns_alter_modify = 'drop';
-ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter_modify = 'drop';
+ALTER TABLE test_compact MODIFY SETTING alter_modify_column_secondary_index_mode = 'drop';
+ALTER TABLE test_wide MODIFY SETTING alter_modify_column_secondary_index_mode = 'drop';
 
 -- ALTER TABLE MODIFY COLUMN must work now and the indexes must be dropped
 ALTER TABLE test_compact MODIFY COLUMN b String;
@@ -64,8 +64,8 @@ SELECT marks_bytes == 0 FROM system.data_skipping_indices WHERE table = 'test_wi
 
 SELECT 'Check behavior with REBUILD';
 
-ALTER TABLE test_compact MODIFY SETTING secondary_indices_on_columns_alter_modify = 'rebuild';
-ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter_modify = 'rebuild';
+ALTER TABLE test_compact MODIFY SETTING alter_modify_column_secondary_index_mode = 'rebuild';
+ALTER TABLE test_wide MODIFY SETTING alter_modify_column_secondary_index_mode = 'rebuild';
 
 -- Expect that ALTER TABLE MODIFY COLUMN works and the indexes must be rebuild
 ALTER TABLE test_compact MODIFY COLUMN b Int32;
@@ -76,8 +76,8 @@ SELECT marks_bytes > 0 FROM system.data_skipping_indices WHERE table = 'test_wid
 
 SELECT 'Check behavior with IGNORE';
 
-ALTER TABLE test_compact MODIFY SETTING secondary_indices_on_columns_alter_modify = 'ignore';
-ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter_modify = 'ignore';
+ALTER TABLE test_compact MODIFY SETTING alter_modify_column_secondary_index_mode = 'ignore';
+ALTER TABLE test_wide MODIFY SETTING alter_modify_column_secondary_index_mode = 'ignore';
 
 ALTER TABLE test_compact MODIFY COLUMN b String;
 ALTER TABLE test_wide MODIFY COLUMN b String;

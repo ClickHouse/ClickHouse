@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsSecondaryIndicesOnColumnsAlterModify secondary_indices_on_columns_alter_modify;
+    extern const MergeTreeSettingsAlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode;
 }
 
 bool MutationCommand::isBarrierCommand() const
@@ -284,7 +284,7 @@ NameSet MutationCommands::getAllUpdatedColumns() const
 
 NameSet MutationCommands::getSecondaryIndicesOnColumnAlterModifyOptions(
     MergeTreeSettingsPtr settings,
-    SecondaryIndicesOnColumnsAlterModify & secondary_indices_alter_mode)
+    AlterModifyColumnSecondaryIndexMode & alter_modify_column_secondary_index_mode)
 {
     NameSet altered_columns;
     for (const auto & command : *this)
@@ -304,7 +304,7 @@ NameSet MutationCommands::getSecondaryIndicesOnColumnAlterModifyOptions(
     }
 
     if (!altered_columns.empty())
-        secondary_indices_alter_mode = (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify];
+        alter_modify_column_secondary_index_mode = (*settings)[MergeTreeSetting::alter_modify_column_secondary_index_mode];
 
     return altered_columns;
 }

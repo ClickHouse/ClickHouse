@@ -22,7 +22,7 @@ class ReadBuffer;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
-enum class SecondaryIndicesOnColumnsAlterModify : uint8_t;
+enum class AlterModifyColumnSecondaryIndexMode : uint8_t;
 
 /// Represents set of actions which should be applied
 /// to values from set of columns which satisfy predicate.
@@ -104,7 +104,7 @@ public:
     /// For alter table modify columns, check which option is set and which column is changed.
     NameSet getSecondaryIndicesOnColumnAlterModifyOptions(
         MergeTreeSettingsPtr settings,
-        SecondaryIndicesOnColumnsAlterModify & secondary_indices_alter_mode);
+        AlterModifyColumnSecondaryIndexMode & alter_modify_column_secondary_index_mode);
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

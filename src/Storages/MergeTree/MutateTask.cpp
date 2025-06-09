@@ -73,7 +73,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
-    extern const MergeTreeSettingsSecondaryIndicesOnColumnsAlterModify secondary_indices_on_columns_alter_modify;
+    extern const MergeTreeSettingsAlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
@@ -607,7 +607,7 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     const NameSet & materialized_indices,
     std::vector<MergeTreeIndexPtr> & indices_to_skip,
     const NameSet & alter_column_names,
-    SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode,
+    AlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode,
     ContextPtr context)
 {
     /// Checks if columns used in skipping indexes modified.
@@ -619,7 +619,7 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
 
     for (const auto & index : indices)
     {
-        if (secondary_indices_alter_mode == SecondaryIndicesOnColumnsAlterModify::DROP &&
+        if (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::DROP &&
             std::any_of(index.column_names.begin(),
                         index.column_names.end(),
                         [&](String s) { return alter_column_names.contains(s); }))
@@ -631,7 +631,7 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         bool need_recalculate =
             materialized_indices.contains(index.name)
             || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name))
-            || (secondary_indices_alter_mode == SecondaryIndicesOnColumnsAlterModify::REBUILD
+            || (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::REBUILD
                 && std::any_of(index.column_names.begin(), index.column_names.end(),
                     [&](String s) { return alter_column_names.contains(s); }));
 
@@ -1475,10 +1475,10 @@ private:
         bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
-        SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode = SecondaryIndicesOnColumnsAlterModify::THROW;
+        AlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode = AlterModifyColumnSecondaryIndexMode::THROW;
         NameSet altered_columns = ctx->commands->getSecondaryIndicesOnColumnAlterModifyOptions(
             ctx->data->getSettings(),
-            secondary_indices_alter_mode);
+            alter_modify_column_secondary_index_mode);
 
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
@@ -1486,7 +1486,7 @@ private:
             if (removed_indices.contains(idx.name))
                 continue;
 
-            if (secondary_indices_alter_mode == SecondaryIndicesOnColumnsAlterModify::DROP &&
+            if (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::DROP &&
                 std::any_of(idx.column_names.begin(),
                             idx.column_names.end(),
                             [&](const String & column) { return altered_columns.contains(column); }))
@@ -1495,7 +1495,7 @@ private:
             bool need_recalculate =
                 ctx->materialized_indices.contains(idx.name)
                 || (!is_full_part_storage && ctx->source_part->hasSecondaryIndex(idx.name))
-                || (secondary_indices_alter_mode == SecondaryIndicesOnColumnsAlterModify::REBUILD &&
+                || (alter_modify_column_secondary_index_mode == AlterModifyColumnSecondaryIndexMode::REBUILD &&
                     std::any_of(idx.column_names.begin(), idx.column_names.end(),
                         [&](const String & column) { return altered_columns.contains(column); }));
 
@@ -1911,8 +1911,8 @@ private:
         ctx->new_data_part->checksums = ctx->source_part->checksums;
 
         /// Remove dropped secondary indices from checksums, to avoid complain of broken parts.
-        if ((*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify] ==
-            SecondaryIndicesOnColumnsAlterModify::DROP)
+        if ((*settings)[MergeTreeSetting::alter_modify_column_secondary_index_mode] ==
+            AlterModifyColumnSecondaryIndexMode::DROP)
         {
             NameSet secondary_indices_rebuild;
             for (const auto & idx : ctx->indices_to_recalc)
@@ -2513,10 +2513,10 @@ bool MutateTask::prepare()
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
-        SecondaryIndicesOnColumnsAlterModify secondary_indices_alter_mode = SecondaryIndicesOnColumnsAlterModify::THROW;
+        AlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode = AlterModifyColumnSecondaryIndexMode::THROW;
         NameSet altered_columns = ctx->commands->getSecondaryIndicesOnColumnAlterModifyOptions(
             ctx->data->getSettings(),
-            secondary_indices_alter_mode);
+            alter_modify_column_secondary_index_mode);
 
         std::vector<MergeTreeIndexPtr> indices_to_skip;
         ctx->indices_to_recalc = MutationHelpers::getIndicesToRecalculate(
@@ -2526,7 +2526,7 @@ bool MutateTask::prepare()
             ctx->materialized_indices,
             indices_to_skip,
             altered_columns,
-            secondary_indices_alter_mode,
+            alter_modify_column_secondary_index_mode,
             ctx->context);
 
         auto lightweight_mutation_projection_mode = (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode];

@@ -48,7 +48,7 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64) \
-    M(CLASS_NAME, SecondaryIndicesOnColumnsAlterModify)
+    M(CLASS_NAME, AlterModifyColumnSecondaryIndexMode)
 
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_TRAIT)
 
