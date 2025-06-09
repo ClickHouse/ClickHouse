@@ -126,7 +126,6 @@ private:
     StalledStatus stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 
     const std::atomic<bool> & stopped;
-    bool is_subscribed = false;
 
     // order is important, need to be destructed before consumer
     Messages messages;

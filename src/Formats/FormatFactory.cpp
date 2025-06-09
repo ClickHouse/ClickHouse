@@ -334,6 +334,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.native.encode_types_in_binary_format = settings[Setting::output_format_native_encode_types_in_binary_format];
     format_settings.native.decode_types_in_binary_format = settings[Setting::input_format_native_decode_types_in_binary_format];
     format_settings.native.write_json_as_string = settings[Setting::output_format_native_write_json_as_string];
+    format_settings.native.use_flattened_dynamic_and_json_serialization = settings[Setting::output_format_native_use_flattened_dynamic_and_json_serialization];
     format_settings.max_parser_depth = settings[Setting::max_parser_depth];
     format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
@@ -616,22 +617,9 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     return format;
 }
 
-String FormatFactory::getContentType(
-    const String & name,
-    const ContextPtr & context,
-    const std::optional<FormatSettings> & _format_settings) const
+String FormatFactory::getContentType(const String & name, const std::optional<FormatSettings> & settings) const
 {
-    const auto & output_getter = getCreators(name).output_creator;
-    if (!output_getter)
-        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
-
-    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-
-    Block empty_block;
-    WriteBufferFromOwnString empty_buffer;
-    auto format = output_getter(empty_buffer, empty_block, format_settings);
-
-    return format->getContentType();
+    return getCreators(name).content_type(settings);
 }
 
 SchemaReaderPtr FormatFactory::getSchemaReader(
@@ -858,6 +846,16 @@ void FormatFactory::markOutputFormatNotTTYFriendly(const String & name)
     if (!target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as non-TTY-friendly", name);
     target = false;
+}
+
+void FormatFactory::setContentType(const String & name, const String & content_type)
+{
+    getOrCreateCreators(name).content_type = [=](const std::optional<FormatSettings> &){ return content_type; };
+}
+
+void FormatFactory::setContentType(const String & name, ContentTypeGetter content_type)
+{
+    getOrCreateCreators(name).content_type = content_type;
 }
 
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const

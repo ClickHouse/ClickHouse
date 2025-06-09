@@ -45,7 +45,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* format_settings */ std::nullopt, /// No format_settings
             /* mode */ LoadingStrictnessLevel::CREATE,
             /* distributed_processing */ true,
-            /*partition_by_=*/nullptr);
+            /* partition_by_ */nullptr,
+            /* is_table_function */true);
     }
     else
     {

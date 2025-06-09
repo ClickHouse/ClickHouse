@@ -36,6 +36,12 @@ const auto threadSetting = CHSetting(
     {"0", "1", std::to_string(std::thread::hardware_concurrency())},
     false);
 
+const auto probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);
+
+const auto trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
+
+const auto trueOrFalseSettingNoOracle = CHSetting(trueOrFalse, {}, false);
+
 extern std::unordered_map<String, CHSetting> hotSettings;
 
 extern std::unordered_map<String, CHSetting> serverSettings;
@@ -114,6 +120,7 @@ const std::unordered_map<String, CHSetting> mergeTreeColumnSettings
 const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings
     = {{MergeTree, mergeTreeColumnSettings},
        {ReplacingMergeTree, mergeTreeColumnSettings},
+       {CoalescingMergeTree, mergeTreeColumnSettings},
        {SummingMergeTree, mergeTreeColumnSettings},
        {AggregatingMergeTree, mergeTreeColumnSettings},
        {CollapsingMergeTree, mergeTreeColumnSettings},
@@ -138,10 +145,18 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
        {Hudi, {}},
        {DeltaLake, {}},
        {IcebergS3, {}},
+       {IcebergAzure, {}},
+       {IcebergLocal, {}},
        {Merge, {}},
        {Distributed, {}},
        {Dictionary, {}},
-       {GenerateRandom, {}}};
+       {GenerateRandom, {}},
+       {AzureBlobStorage, {}},
+       {AzureQueue, {}},
+       {URL, {}},
+       {KeeperMap, {}},
+       {ExternalDistributed, {}},
+       {MaterializedPostgreSQL, {}}};
 
 const std::unordered_map<String, CHSetting> backupSettings
     = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
@@ -171,6 +186,6 @@ extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSettin
 
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);
-void loadSystemTables(const FuzzConfig & fc);
+void loadSystemTables(FuzzConfig & fc);
 
 }

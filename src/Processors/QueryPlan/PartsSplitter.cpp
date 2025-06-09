@@ -1,10 +1,4 @@
-#include <algorithm>
-#include <limits>
-#include <memory>
-#include <numeric>
-#include <queue>
-#include <unordered_map>
-#include <vector>
+#include <Processors/QueryPlan/PartsSplitter.h>
 
 #include <Core/Field.h>
 #include <Common/logger_useful.h>
@@ -20,7 +14,6 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -250,6 +243,7 @@ public:
         {
             ranges_in_data_parts.emplace_back(
                 initial_ranges_in_data_parts[part_index].data_part,
+                initial_ranges_in_data_parts[part_index].parent_part,
                 initial_ranges_in_data_parts[part_index].part_index_in_query,
                 initial_ranges_in_data_parts[part_index].part_starting_offset_in_query,
                 MarkRanges{mark_range});
