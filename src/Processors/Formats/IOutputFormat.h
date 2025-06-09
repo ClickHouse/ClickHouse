@@ -2,6 +2,7 @@
 
 #include <string>
 #include <IO/Progress.h>
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/Stopwatch.h>
@@ -9,6 +10,7 @@
 namespace DB
 {
 
+class Block;
 class WriteBuffer;
 
 /** Output format have three inputs and no outputs. It writes data from WriteBuffer.
@@ -34,13 +36,13 @@ public:
     void setAutoFlush() { auto_flush = true; }
 
     /// Value for rows_before_limit_at_least field.
-    virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) { }
+    virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) {}
 
     /// Counter to calculate rows_before_limit_at_least in processors pipeline.
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
 
     /// Value for rows_before_aggregation field.
-    virtual void setRowsBeforeAggregation(size_t /*rows_before_aggregation*/) { }
+    virtual void setRowsBeforeAggregation(size_t /*rows_before_aggregation*/) {}
 
     /// Counter to calculate rows_before_aggregation in processors pipeline.
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation_counter.swap(counter); }
@@ -49,8 +51,8 @@ public:
     /// Passed values are deltas, that must be summarized.
     virtual void onProgress(const Progress & progress);
 
-    /// Content-Type to set when sending HTTP response.
-    virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
+    /// Set initial progress values on initialization of the format, before it starts writing the data.
+    void setProgress(Progress progress);
 
     InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
 
@@ -63,17 +65,8 @@ public:
 
     virtual bool expectMaterializedColumns() const { return true; }
 
-    void setTotals(const Block & totals)
-    {
-        writeSuffixIfNeeded();
-        consumeTotals(Chunk(totals.getColumns(), totals.rows()));
-        are_totals_written = true;
-    }
-    void setExtremes(const Block & extremes)
-    {
-        writeSuffixIfNeeded();
-        consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
-    }
+    void setTotals(const Block & totals);
+    void setExtremes(const Block & extremes);
 
     virtual bool supportsWritingException() const { return false; }
     virtual void setException(const String & /*exception_message*/) {}
@@ -107,6 +100,11 @@ public:
             writePrefix();
             need_write_prefix = false;
         }
+    }
+
+    void setProgressWriteFrequencyMicroseconds(size_t value)
+    {
+        progress_write_frequency_us = value;
     }
 
 protected:
@@ -209,6 +207,9 @@ protected:
     Statistics statistics;
     std::atomic_bool has_progress_update_to_write = false;
 
+    /// To serialize the calls to writeProgress (which could be called from another thread) and other writing methods.
+    std::mutex writing_mutex;
+
 private:
     size_t rows_read_before = 0;
     bool are_totals_written = false;
@@ -217,8 +218,8 @@ private:
     size_t result_rows = 0;
     size_t result_bytes = 0;
 
-    /// To serialize the calls to writeProgress (which could be called from another thread) and other writing methods.
-    std::mutex writing_mutex;
+    UInt64 progress_write_frequency_us = 0;
+    std::atomic<UInt64> prev_progress_write_ns = 0;
 };
 
 }

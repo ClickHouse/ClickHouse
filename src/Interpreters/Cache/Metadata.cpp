@@ -2,6 +2,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Context.h>
+#include "Common/ProfileEvents.h"
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -12,12 +13,14 @@ namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
     extern const Metric FilesystemCacheDelayedCleanupElements;
+    extern const Metric FilesystemCacheKeys;
 }
 
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheLockKeyMicroseconds;
     extern const Event FilesystemCacheLockMetadataMicroseconds;
+    extern const Event FilesystemCacheCreatedKeyDirectories;
 }
 
 namespace DB
@@ -120,32 +123,39 @@ LockedKeyPtr KeyMetadata::lockNoStateCheck()
 
 bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 {
-    if (!created_base_directory.exchange(true))
+    if (created_base_directory.load())
+        return true;
+
+    std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
+
+    if (created_base_directory.load(std::memory_order_relaxed))
+        return true;
+
+    try
     {
-        try
-        {
-            std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
-            fs::create_directories(getPath());
-        }
-        catch (const fs::filesystem_error & e)
-        {
-            created_base_directory = false;
-
-            if (!throw_if_failed &&
-                (e.code() == std::errc::no_space_on_device
-                 || e.code() == std::errc::read_only_file_system
-                 || e.code() == std::errc::permission_denied
-                 || e.code() == std::errc::too_many_files_open
-                 || e.code() == std::errc::operation_not_permitted))
-            {
-                LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
-                          "because no space left on device", key);
-
-                return false;
-            }
-            throw;
-        }
+        fs::create_directories(getPath());
+        created_base_directory.store(true);
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedKeyDirectories);
     }
+    catch (const fs::filesystem_error & e)
+    {
+        created_base_directory = false;
+
+        if (!throw_if_failed &&
+            (e.code() == std::errc::no_space_on_device
+                || e.code() == std::errc::read_only_file_system
+                || e.code() == std::errc::permission_denied
+                || e.code() == std::errc::too_many_files_open
+                || e.code() == std::errc::operation_not_permitted))
+        {
+            LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
+                        "because no space left on device", key);
+
+            return false;
+        }
+        throw;
+    }
+
     return true;
 }
 
@@ -285,6 +295,8 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
 
         it = bucket.emplace(
             key, std::make_shared<KeyMetadata>(key, user, this, is_initial_load)).first;
+
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
     }
 
     it->second->assertAccess(user.user_id);
@@ -392,6 +404,8 @@ CacheMetadata::removeEmptyKey(
 
     locked_key.markAsRemoved();
     auto next_it = bucket.erase(it);
+
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheKeys);
 
     LOG_DEBUG(log, "Key {} is removed from metadata", key);
 
@@ -943,7 +957,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     LOG_TEST(
         key_metadata->logger(), "Remove from cache. Key: {}, offset: {}, size: {}",
-        getKey(), file_segment->offset(), file_segment->reserved_size);
+        getKey(), file_segment->offset(), file_segment->reserved_size.load());
 
     chassert(can_be_broken || file_segment->assertCorrectnessUnlocked(segment_lock));
 
@@ -998,42 +1012,6 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     }
 
     return key_metadata->erase(it);
-}
-
-void LockedKey::shrinkFileSegmentToDownloadedSize(
-    size_t offset,
-    const FileSegmentGuard::Lock & segment_lock)
-{
-    /**
-     * In case file was partially downloaded and it's download cannot be continued
-     * because of no space left in cache, we need to be able to cut file segment's size to downloaded_size.
-     */
-
-    auto file_segment_metadata = getByOffset(offset);
-    const auto & file_segment = file_segment_metadata->file_segment;
-    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
-
-    const size_t downloaded_size = file_segment->getDownloadedSize();
-    if (downloaded_size == file_segment->range().size())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Nothing to reduce, file segment fully downloaded: {}",
-            file_segment->getInfoForLogUnlocked(segment_lock));
-    }
-
-    chassert(file_segment->reserved_size >= downloaded_size);
-    int64_t diff = file_segment->reserved_size - downloaded_size;
-
-    file_segment_metadata->file_segment = std::make_shared<FileSegment>(
-        getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED,
-        CreateFileSegmentSettings(file_segment->getKind()), false,
-        file_segment->cache, key_metadata, file_segment->queue_iterator);
-
-    if (diff)
-        file_segment_metadata->getQueueIterator()->decrementSize(diff);
-
-    chassert(file_segment_metadata->file_segment->assertCorrectnessUnlocked(segment_lock));
 }
 
 bool LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)

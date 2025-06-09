@@ -68,21 +68,16 @@ public:
             {
                 pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
                 {
+                    ThreadGroupSwitcher switcher(thread_group, "HashedDictLoad");
+
                     WorkerStatistic statistic;
                     SCOPE_EXIT_SAFE(
                         LOG_TRACE(dictionary.log, "Finished worker for dictionary {} shard {}, processed {} blocks, {} rows, total time {}ms",
                             dictionary_name, shard, statistic.total_blocks, statistic.total_rows, statistic.total_elapsed_ms);
-
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
                     );
 
                     /// Do not account memory that was occupied by the dictionaries for the query/user context.
                     MemoryTrackerBlockerInThread memory_blocker;
-
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
-                    setThreadName("HashedDictLoad");
 
                     LOG_TRACE(dictionary.log, "Starting worker for dictionary {}, shard {}", dictionary_name, shard);
 
@@ -220,9 +215,9 @@ private:
         size_t columns = block.columns();
         for (size_t col = 0; col < columns; ++col)
         {
-            MutableColumns splitted_columns = block.getByPosition(col).column->scatter(shards, selector);
+            MutableColumns split_columns = block.getByPosition(col).column->scatter(shards, selector);
             for (size_t shard = 0; shard < shards; ++shard)
-                out_blocks[shard].getByPosition(col).column = std::move(splitted_columns[shard]);
+                out_blocks[shard].getByPosition(col).column = std::move(split_columns[shard]);
         }
 
         return out_blocks;

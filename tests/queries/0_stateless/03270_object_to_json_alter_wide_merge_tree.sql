@@ -1,11 +1,13 @@
--- Tags: long
+-- Tags: long, no-object-storage
+-- - no-object-storage: too slow
 
 set allow_experimental_object_type = 1;
-set allow_experimental_json_type = 1;
+SET enable_json_type = 1;
 set max_block_size = 100;
 set max_insert_block_size = 100;
 set min_insert_block_size_rows = 100;
 set output_format_json_quote_64bit_integers = 0;
+set max_execution_time = 300;
 
 drop table if exists test;
 

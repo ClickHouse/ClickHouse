@@ -1,16 +1,15 @@
 #pragma once
 
 #include <IO/Progress.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/EventRateMeter.h>
 
 #include <iostream>
 #include <mutex>
-#include <queue>
+#include <unistd.h>
 #include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {

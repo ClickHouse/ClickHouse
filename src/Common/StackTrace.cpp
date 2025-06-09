@@ -4,12 +4,12 @@
 #include <base/constexpr_helpers.h>
 #include <base/demangle.h>
 
-#include <Common/scope_guard_safe.h>
+#include <base/MemorySanitizer.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/SharedMutex.h>
 #include <Common/SymbolIndex.h>
+#include <Common/scope_guard_safe.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -54,6 +54,11 @@ bool shouldShowAddress(const void * addr)
 
     return show_addresses.load(std::memory_order_relaxed);
 }
+}
+
+StackTrace::StackTrace()
+{
+    tryCapture();
 }
 
 void StackTrace::setShowAddresses(bool show)
@@ -364,7 +369,10 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
         /// Skip excessive stack frames that we have created while finding stack trace.
         for (size_t i = 0; i < size; ++i)
         {
-            if (frame_pointers[i] == caller_address)
+            if (frame_pointers[i] == caller_address ||
+                /// This compensates for a hack in libunwind, see the "+ 1" in
+                /// UnwindCursor<A, R>::stepThroughSigReturn.
+                frame_pointers[i] == reinterpret_cast<void *>(reinterpret_cast<char *>(caller_address) + 1))
             {
                 offset = i;
                 break;

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/FieldVisitors.h>
 #include <Storages/ColumnsDescription.h>
@@ -11,6 +10,7 @@
 namespace DB
 {
 
+class Block;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 class ColumnsDescription;

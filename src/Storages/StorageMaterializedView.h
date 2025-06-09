@@ -20,7 +20,8 @@ public:
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
         LoadingStrictnessLevel mode,
-        const String & comment);
+        const String & comment,
+        bool is_restore_from_backup);
 
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
@@ -30,10 +31,11 @@ public:
 
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
+    std::optional<NameSet> supportedPrewhereColumns() const override;
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
-    bool supportsDynamicSubcolumns() const override { return getTargetTable()->supportsDynamicSubcolumns(); }
+    bool supportsDynamicSubcolumns() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
@@ -68,10 +70,13 @@ public:
     void renameInMemory(const StorageID & new_table_id) override;
 
     void startup() override;
+    void flushAndPrepareForShutdown() override;
     void shutdown(bool is_drop) override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
+
+    bool canCreateOrDropOtherTables() const;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
@@ -96,10 +101,13 @@ public:
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void finalizeRestoreFromBackup() override;
     bool supportsBackupPartition() const override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    static String generateInnerTableName(const StorageID & view_id);
+
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
 private:
@@ -120,7 +128,7 @@ private:
 
     void checkStatementCanBeForwarded() const;
 
-    ContextMutablePtr createRefreshContext() const;
+    ContextMutablePtr createRefreshContext(const String & log_comment) const;
     /// Prepare to refresh a refreshable materialized view: create temporary table (if needed) and
     /// form the insert-select query.
     /// out_temp_table_id may be assigned before throwing an exception, in which case the caller
@@ -128,7 +136,7 @@ private:
     std::tuple<std::shared_ptr<ASTInsertQuery>, std::unique_ptr<CurrentThread::QueryScope>>
     prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const;
     std::optional<StorageID> exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context) const;
-    void dropTempTable(StorageID table, ContextMutablePtr refresh_context);
+    void dropTempTable(StorageID table, ContextMutablePtr refresh_context, String & out_exception);
 
     void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
 };

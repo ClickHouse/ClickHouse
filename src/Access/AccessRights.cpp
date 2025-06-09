@@ -2,7 +2,6 @@
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 
 #include <boost/container/small_vector.hpp>
 #include <list>
@@ -1155,7 +1154,13 @@ private:
 
         calculateMinMaxFlags();
 
-        auto new_flags = function(flags, min_flags_with_children, max_flags_with_children, level, grant_option);
+        auto new_flags = function(
+            flags,
+            min_flags_with_children,
+            max_flags_with_children,
+            level,
+            grant_option,
+            isLeaf() || wildcard_grant);
 
         if (new_flags != flags)
         {

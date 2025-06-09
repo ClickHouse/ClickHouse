@@ -2,6 +2,7 @@ import logging
 import random
 import string
 import time
+import uuid
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -233,62 +234,42 @@ def check(
 ):
     if expect_broken_part == "proj1":
         assert expected_error in node.query_and_get_error(
-            f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection_name = 'proj1'"
+            f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection = 1, preferred_optimize_projection_name = 'proj1', force_optimize_projection_name = 'proj1'"
         )
     else:
-        query_id = node.query(
-            f"SELECT queryID() FROM (SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection_name = 'proj1')"
+        query_id = uuid.uuid4().hex
+        node.query(
+            f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection = 1, preferred_optimize_projection_name = 'proj1', force_optimize_projection_name = 'proj1'",
+            query_id=query_id,
         ).strip()
-        for _ in range(10):
-            node.query("SYSTEM FLUSH LOGS")
-            res = node.query(
-                f"""
-            SELECT query, splitByChar('.', arrayJoin(projections))[-1]
-            FROM system.query_log
-            WHERE query_id='{query_id}' AND type='QueryFinish'
-            """
-            )
-            if res != "":
-                break
-        if res == "":
-            res = node.query(
-                """
-                SELECT query_id, query, splitByChar('.', arrayJoin(projections))[-1]
-                FROM system.query_log ORDER BY query_start_time_microseconds DESC
-            """
-            )
-            print(f"Looked for query id {query_id}, but to no avail: {res}")
-            assert False
+        node.query("SYSTEM FLUSH LOGS")
+        res = node.query(
+            f"""
+        SELECT splitByChar('.', arrayJoin(projections))[-1]
+        FROM system.query_log
+        WHERE query_id='{query_id}' AND type='QueryFinish'
+        """
+        )
         assert "proj1" in res
 
     if expect_broken_part == "proj2":
         assert expected_error in node.query_and_get_error(
-            f"SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection_name = 'proj2'"
+            f"SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection = 1, preferred_optimize_projection_name = 'proj2', force_optimize_projection_name = 'proj2'"
         )
     else:
-        query_id = node.query(
-            f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection_name = 'proj2')"
+        query_id = uuid.uuid4().hex
+        node.query(
+            f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection = 1, preferred_optimize_projection_name = 'proj2', force_optimize_projection_name = 'proj2')",
+            query_id=query_id,
         ).strip()
-        for _ in range(10):
-            node.query("SYSTEM FLUSH LOGS")
-            res = node.query(
-                f"""
-            SELECT query, splitByChar('.', arrayJoin(projections))[-1]
-            FROM system.query_log
-            WHERE query_id='{query_id}' AND type='QueryFinish'
-            """
-            )
-            if res != "":
-                break
-        if res == "":
-            res = node.query(
-                """
-                SELECT query_id, query, splitByChar('.', arrayJoin(projections))[-1]
-                FROM system.query_log ORDER BY query_start_time_microseconds DESC
-            """
-            )
-            print(f"Looked for query id {query_id}, but to no avail: {res}")
-            assert False
+        node.query("SYSTEM FLUSH LOGS")
+        res = node.query(
+            f"""
+        SELECT splitByChar('.', arrayJoin(projections))[-1]
+        FROM system.query_log
+        WHERE query_id='{query_id}' AND type='QueryFinish'
+        """
+        )
         assert "proj2" in res
 
     if do_check_command:
@@ -353,12 +334,12 @@ def test_broken_ignored(cluster):
     insert(node, table_name, 20, 5)
     insert(node, table_name, 25, 5)
 
-    # Part all_3_3_0 has 'proj' and 'proj2' projections, but 'proj2' is broken and server does NOT know it yet.
+    # Part all_3_3_0 has 'proj1' and 'proj2' projections, but 'proj2' is broken and server does NOT know it yet.
     # Parts all_4_4_0 and all_5_5_0 have both non-broken projections.
     # So a merge will be create for future part all_3_5_1.
     # During merge it will fail to read from 'proj2' of part all_3_3_0 and proj2 will be marked broken.
     # Merge will be retried and on second attempt it will succeed.
-    # The result part all_3_5_1 will have only 1 projection - 'proj', because
+    # The result part all_3_5_1 will have only 1 projection - 'proj1', because
     # it will skip 'proj2' as it will see that one part does not have it anymore in the set of valid projections.
     optimize(node, table_name, 0, 1)
     time.sleep(5)

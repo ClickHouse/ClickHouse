@@ -4,8 +4,10 @@ import datetime
 import decimal
 import logging
 import os
+import random
 import uuid
 
+import psycopg
 import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
@@ -56,7 +58,13 @@ def started_cluster():
 def test_psql_client(started_cluster):
     node = cluster.instances["node"]
 
-    for query_file in ["query1.sql", "query2.sql", "query3.sql", "query4.sql"]:
+    for query_file in [
+        "query1.sql",
+        "query2.sql",
+        "query3.sql",
+        "query4.sql",
+        "query5.sql",
+    ]:
         started_cluster.copy_file_to_container(
             started_cluster.postgres_id,
             os.path.join(SCRIPT_DIR, "queries", query_file),
@@ -64,7 +72,7 @@ def test_psql_client(started_cluster):
         )
     cmd_prefix = [
         "/usr/bin/psql",
-        f"sslmode=require host={node.hostname} port={server_port} user=default dbname=default password=123",
+        f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
     cmd_prefix += ["--no-align", "--field-separator=' '"]
 
@@ -110,6 +118,61 @@ def test_psql_client(started_cluster):
     assert res == "\n".join(
         ["SELECT 0", "INSERT 0 0", "tmp_column", "0", "1", "(2 rows)", "SELECT 0\n"]
     )
+
+    res = started_cluster.exec_in_container(
+        started_cluster.postgres_id, cmd_prefix + ["-f", "/query5.sql"], shell=True
+    )
+    logging.debug(res)
+    assert res == "\n".join(
+        [
+            "SELECT 0",
+            "SELECT 0",
+            "SELECT 0",
+            "INSERT 0 0",
+            "SELECT 0",
+            "INSERT 0 0",
+            "SELECT 0\n",
+        ]
+    )
+
+
+def test_new_user(started_cluster):
+    node = cluster.instances["node"]
+
+    db_id = f"x_{random.randint(0, 1000000)}"
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    cur = ch.cursor()
+    cur.execute(f"CREATE DATABASE {db_id}")
+    cur.execute(f"USE {db_id}")
+    cur.execute("CREATE USER IF NOT EXISTS name7 IDENTIFIED WITH scram_sha256_password BY 'my_password'")
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="name7",
+        password="my_password",
+        database=db_id,
+    )
+    cur = ch.cursor()
+    cur.execute("select 1;")
+    assert cur.fetchall() == [(1,)]
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    cur = ch.cursor()
+    cur.execute(f"DROP DATABASE {db_id}")
 
 
 def test_python_client(started_cluster):
@@ -160,6 +223,38 @@ def test_python_client(started_cluster):
         uuid.UUID("61f0c404-5cb3-11e7-907b-a6006ad3dba0"),
     )
     cur.execute("DROP DATABASE x")
+
+
+def test_prepared_statement(started_cluster):
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("drop table if exists test;")
+
+    cur.execute(
+        """CREATE TABLE test(
+            id INT
+        ) ENGINE = Memory;"""
+    )
+
+    cur.execute("INSERT INTO test (id) VALUES (1), (2), (3);")
+
+    cur.execute("SELECT * FROM test WHERE id > %s;", ('2',), prepare=True)
+    assert cur.fetchall() == [(3,)]
+
+    cur.execute("PREPARE select_test AS SELECT * FROM test WHERE id = $1;")
+    cur.execute("EXECUTE select_test(1);")
+    assert cur.fetchall() == [(1,)]
+
+    cur.execute("DEALLOCATE select_test;")
+    with pytest.raises(Exception) as exc:
+        cur.execute("EXECUTE select_test(1);")
 
 
 def test_java_client(started_cluster):

@@ -112,7 +112,7 @@ public:
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -122,8 +122,10 @@ public:
     ColumnCheckpointPtr getCheckpoint() const override;
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
-    void forEachSubcolumn(MutableColumnCallback callback) override;
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachSubcolumn(ColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     bool structureEquals(const IColumn & rhs) const override;
     bool isCollationSupported() const override;
     ColumnPtr compress(bool force_compression) const override;

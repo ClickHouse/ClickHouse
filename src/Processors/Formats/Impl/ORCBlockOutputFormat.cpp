@@ -23,6 +23,8 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include <Processors/Port.h>
+
 namespace DB
 {
 
@@ -587,6 +589,7 @@ void registerOutputFormatORC(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("ORC");
     factory.markOutputFormatPrefersLargeBlocks("ORC");
     factory.markOutputFormatNotTTYFriendly("ORC");
+    factory.setContentType("ORC", "application/octet-stream");
 }
 
 }

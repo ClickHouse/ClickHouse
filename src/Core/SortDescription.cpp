@@ -1,10 +1,13 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <IO/Operators.h>
+#include <Columns/IColumn.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>

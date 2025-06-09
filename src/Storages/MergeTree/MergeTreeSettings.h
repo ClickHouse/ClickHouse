@@ -44,6 +44,7 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MaxThreads) \
     M(CLASS_NAME, MergeSelectorAlgorithm) \
     M(CLASS_NAME, Milliseconds) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64)
@@ -91,6 +92,9 @@ struct MergeTreeSettings
     static bool isReadonlySetting(const String & name);
     static void checkCanSet(std::string_view name, const Field & value);
     static bool isPartFormatSetting(const String & name);
+
+    /// Cloud only
+    static bool isSMTReadonlySetting(const String & name);
 
 private:
     std::unique_ptr<MergeTreeSettingsImpl> impl;

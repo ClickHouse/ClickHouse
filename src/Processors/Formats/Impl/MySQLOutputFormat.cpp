@@ -8,6 +8,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 
+#include <Processors/Port.h>
+
 namespace DB
 {
 
@@ -144,6 +146,7 @@ void registerOutputFormatMySQLWire(FormatFactory & factory)
            const Block & sample,
            const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, sample, settings); });
     factory.markOutputFormatNotTTYFriendly("MySQLWire");
+    factory.setContentType("MySQLWire", "application/octet-stream");
 }
 
 }

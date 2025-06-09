@@ -1,18 +1,24 @@
 #pragma once
 
 #include <Core/Types.h>
-
-#include <memory>
-#include <vector>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/PODArray_fwd.h>
+
+#include <memory>
+#include <vector>
 
 namespace DB
 {
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
+using IColumnPermutation = PaddedPODArray<size_t>;
 
 /// Description of projections for Storage
 struct ProjectionDescription
@@ -60,6 +66,8 @@ struct ProjectionDescription
     /// partition columns.
     std::vector<size_t> partition_value_indices;
 
+    bool with_parent_part_offset = false;
+
     /// Parse projection from definition AST
     static ProjectionDescription
     getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
@@ -91,7 +99,19 @@ struct ProjectionDescription
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 
-    Block calculate(const Block & block, ContextPtr context) const;
+    /**
+     * @brief Calculates the projection result for a given input block.
+     *
+     * @param block The input block used to evaluate the projection.
+     * @param context The query context. A copy will be made internally with adjusted settings.
+     * @param perm_ptr Optional pointer to a permutation vector. If provided, it is used to map
+     *        the output rows back to their original order in the parent block. This is necessary
+     *        when generating the `_part_offset` column, which acts as `_parent_part_offset` in
+     *        the projection index and reflects the position of each row in the parent part.
+     *
+     * @return The resulting block after executing the projection query.
+     */
+    Block calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
 
     String getDirectoryName() const { return name + ".proj"; }
 };

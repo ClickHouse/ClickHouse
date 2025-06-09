@@ -108,13 +108,13 @@ std::unique_ptr<IInterpreterUnionOrSelectQuery>
 InterpreterSelectIntersectExceptQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, SelectQueryOptions());
+        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options);
 
     if (ast_ptr_->as<ASTSelectQuery>())
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, SelectQueryOptions());
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options);
 
     if (ast_ptr_->as<ASTSelectIntersectExceptQuery>())
-        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, SelectQueryOptions());
+        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query: {}", ast_ptr_->getID());
 }
@@ -181,9 +181,7 @@ BlockIO InterpreterSelectIntersectExceptQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto builder = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
+    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 

@@ -1,6 +1,8 @@
+#include <Core/Block.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 
@@ -156,6 +158,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
 
     factory.markOutputFormatSupportsParallelFormatting("JSON");
     factory.markFormatHasNoAppendSupport("JSON");
+    factory.setContentType("JSON", "application/json; charset=UTF-8");
 
     factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
@@ -167,6 +170,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
 
     factory.markOutputFormatSupportsParallelFormatting("JSONStrings");
     factory.markFormatHasNoAppendSupport("JSONStrings");
+    factory.setContentType("JSONStrings", "application/json; charset=UTF-8");
 }
 
 }

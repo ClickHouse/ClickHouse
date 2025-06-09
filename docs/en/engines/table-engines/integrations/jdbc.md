@@ -1,10 +1,16 @@
 ---
-slug: /en/engines/table-engines/integrations/jdbc
+description: 'Allows ClickHouse to connect to external databases via JDBC.'
+sidebar_label: 'JDBC'
 sidebar_position: 100
-sidebar_label: JDBC
+slug: /engines/table-engines/integrations/jdbc
+title: 'JDBC'
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # JDBC
+
+<CloudNotSupportedBadge/>
 
 :::note
 clickhouse-jdbc-bridge contains experimental codes and is no longer supported. It may contain reliability issues and security vulnerabilities. Use it at your own risk. 
@@ -19,7 +25,7 @@ This engine supports the [Nullable](../../../sql-reference/data-types/nullable.m
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     columns list...
@@ -39,11 +45,13 @@ ENGINE = JDBC(datasource_uri, external_database, external_table)
 
 - `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
 
+- These parameters can also be passed using [named collections](operations/named-collections.md).
+
 ## Usage Example {#usage-example}
 
-Creating a table in MySQL server by connecting directly with it’s console client:
+Creating a table in MySQL server by connecting directly with it's console client:
 
-``` text
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -66,7 +74,7 @@ mysql> select * from test;
 
 Creating a table in ClickHouse server and selecting data from it:
 
-``` sql
+```sql
 CREATE TABLE jdbc_table
 (
     `int_id` Int32,
@@ -77,18 +85,18 @@ CREATE TABLE jdbc_table
 ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
 ```
 
-``` sql
+```sql
 SELECT *
 FROM jdbc_table
 ```
 
-``` text
+```text
 ┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
 │      1 │         ᴺᵁᴸᴸ │     2 │           ᴺᵁᴸᴸ │
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-``` sql
+```sql
 INSERT INTO jdbc_table(`int_id`, `float`)
 SELECT toInt32(number), toFloat32(number * 1.0)
 FROM system.numbers

@@ -8,6 +8,7 @@
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -41,7 +42,10 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
 
         name_widths[i] = width;
         max_name_width = std::max(width, max_name_width);
-        names_and_paddings[i] = name_cut + ": ";
+        if (color)
+            names_and_paddings[i] = "\033[1m" + name_cut + ":\033[0m ";
+        else
+            names_and_paddings[i] = name_cut + ": ";
     }
 
     for (size_t i = 0; i < columns; ++i)

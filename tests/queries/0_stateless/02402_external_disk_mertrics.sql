@@ -2,7 +2,7 @@
 
 SET max_bytes_before_external_sort = 33554432;
 SET max_bytes_ratio_before_external_sort = 0;
-set max_block_size = 1048576;
+SET max_block_size = 1048576;
 
 SELECT number FROM (SELECT number FROM numbers(2097152)) ORDER BY number * 1234567890123456789 LIMIT 2097142, 10
 SETTINGS log_comment='02402_external_disk_mertrics/sort'
@@ -30,7 +30,7 @@ ORDER BY n
 SETTINGS log_comment='02402_external_disk_mertrics/join'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     if(
@@ -85,6 +85,7 @@ SELECT
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
 -- Do not check values because they can be not recorded, just existence
+SYSTEM FLUSH LOGS metric_log;
 SELECT
     CurrentMetric_TemporaryFilesForAggregation,
     CurrentMetric_TemporaryFilesForJoin,

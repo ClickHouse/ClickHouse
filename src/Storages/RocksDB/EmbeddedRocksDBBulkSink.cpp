@@ -21,7 +21,6 @@
 #include <Common/SipHash.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>

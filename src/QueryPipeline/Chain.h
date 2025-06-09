@@ -3,9 +3,14 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#include "base/defines.h"
+#include <memory>
 
 namespace DB
 {
+
+class InsertDependenciesBuilder;
+using InsertDependenciesBuilderConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
 
 /// Has one unconnected input port and one unconnected output port.
 /// There may be other ports on the processors, but they must all be connected.
@@ -34,7 +39,8 @@ public:
 
     void addSource(ProcessorPtr processor);
     void addSink(ProcessorPtr processor);
-    void appendChain(Chain chain);
+    Chain & appendChain(Chain chain);
+    static Chain concat(Chain lhs, Chain rhs);
 
     IProcessor & getSource();
     IProcessor & getSink();
@@ -42,8 +48,8 @@ public:
     InputPort & getInputPort() const;
     OutputPort & getOutputPort() const;
 
-    const Block & getInputHeader() const { return getInputPort().getHeader(); }
-    const Block & getOutputHeader() const { return getOutputPort().getHeader(); }
+    const Block & getInputHeader() const;
+    const Block & getOutputHeader() const;
 
     const std::list<ProcessorPtr> & getProcessors() const { return processors; }
     static std::list<ProcessorPtr> getProcessors(Chain chain) { return std::move(chain.processors); }
@@ -51,6 +57,11 @@ public:
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void addInterpreterContext(ContextPtr context) { holder.interpreter_context.emplace_back(std::move(context)); }
+    void addInsertDependenciesBuilder(InsertDependenciesBuilderConstPtr insert_dependencies)
+    {
+        holder.insert_dependencies_holders.push_back(insert_dependencies);
+    }
+
 
     void attachResources(QueryPlanResourceHolder holder_)
     {

@@ -1,8 +1,6 @@
-#include <exception>
 #include <optional>
 #include <string_view>
 
-#include <type_traits>
 #include <unordered_map>
 #include <base/defines.h>
 
@@ -15,6 +13,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -457,7 +456,7 @@ public:
             if (!this->contains(attr_name))
                 (*this)[attr_name] = Array();
 
-            Array & values = (*this)[attr_name].safeGet<Array &>();
+            Array & values = (*this)[attr_name].safeGet<Array>();
             if (values.size() < *collect_values_limit)
             {
                 values.push_back(std::move(field));
@@ -491,7 +490,7 @@ public:
             auto it = this->find(attr_name);
             if (it == this->end())
                 return false;
-            return it->second.safeGet<const Array &>().size() >= *collect_values_limit;
+            return it->second.safeGet<Array>().size() >= *collect_values_limit;
         }
 
         return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
@@ -976,7 +975,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
 
 void registerDictionaryRegExpTree(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string &,
+    auto create_layout = [=](const std::string & /*name*/,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,

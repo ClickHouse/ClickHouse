@@ -48,26 +48,43 @@ void ASTCreateResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
         else
             first = false;
 
-        switch (operation.mode)
+        if (operation.mode == ResourceAccessMode::MasterThread)
         {
-            case AccessMode::Read:
-            {
-                ostr << (format.hilite ? hilite_keyword : "") << "READ ";
-                break;
-            }
-            case AccessMode::Write:
-            {
-                ostr << (format.hilite ? hilite_keyword : "") << "WRITE ";
-                break;
-            }
+            ostr << (format.hilite ? hilite_keyword : "") << "MASTER THREAD" << (format.hilite ? hilite_none : "");
         }
-        if (operation.disk)
+        else if (operation.mode == ResourceAccessMode::WorkerThread)
         {
-            ostr << "DISK " << (format.hilite ? hilite_none : "");
-            ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(*operation.disk) << (format.hilite ? hilite_none : "");
+            ostr << (format.hilite ? hilite_keyword : "") << "WORKER THREAD" << (format.hilite ? hilite_none : "");
+        }
+        else if (operation.mode == ResourceAccessMode::Query)
+        {
+            ostr << (format.hilite ? hilite_keyword : "") << "QUERY" << (format.hilite ? hilite_none : "");
         }
         else
-            ostr << "ANY DISK" << (format.hilite ? hilite_none : "");
+        {
+            switch (operation.mode)
+            {
+                case ResourceAccessMode::DiskRead:
+                {
+                    ostr << (format.hilite ? hilite_keyword : "") << "READ ";
+                    break;
+                }
+                case ResourceAccessMode::DiskWrite:
+                {
+                    ostr << (format.hilite ? hilite_keyword : "") << "WRITE ";
+                    break;
+                }
+                default:
+                    chassert(false);
+            }
+            if (operation.disk)
+            {
+                ostr << "DISK " << (format.hilite ? hilite_none : "");
+                ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(*operation.disk) << (format.hilite ? hilite_none : "");
+            }
+            else
+                ostr << "ANY DISK" << (format.hilite ? hilite_none : "");
+        }
     }
 
     ostr << ")";

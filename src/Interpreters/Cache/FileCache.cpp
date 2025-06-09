@@ -17,6 +17,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/ServerUUID.h>
+#include <Core/BackgroundSchedulePool.h>
 
 #include <exception>
 #include <filesystem>
@@ -52,6 +53,31 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
+    extern const FileCacheSettingsUInt64 max_size;
+    extern const FileCacheSettingsUInt64 max_elements;
+    extern const FileCacheSettingsUInt64 max_file_segment_size;
+    extern const FileCacheSettingsUInt64 boundary_alignment;
+    extern const FileCacheSettingsFileCachePolicy cache_policy;
+    extern const FileCacheSettingsDouble slru_size_ratio;
+    extern const FileCacheSettingsUInt64 load_metadata_threads;
+    extern const FileCacheSettingsBool load_metadata_asynchronously;
+    extern const FileCacheSettingsUInt64 background_download_threads;
+    extern const FileCacheSettingsUInt64 background_download_queue_size_limit;
+    extern const FileCacheSettingsUInt64 background_download_max_file_segment_size;
+    extern const FileCacheSettingsDouble keep_free_space_size_ratio;
+    extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
+    extern const FileCacheSettingsUInt64 keep_free_space_remove_batch;
+    extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
+    extern const FileCacheSettingsUInt64 bypass_cache_threshold;
+    extern const FileCacheSettingsBool write_cache_per_user_id_directory;
+    extern const FileCacheSettingsUInt64 cache_hits_threshold;
+    extern const FileCacheSettingsBool enable_filesystem_query_cache_limit;
+    extern const FileCacheSettingsBool allow_dynamic_cache_resize;
+}
+
 namespace
 {
     std::string getCommonUserID()
@@ -84,41 +110,54 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, bool releas
 }
 
 FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
-    : max_file_segment_size(settings.max_file_segment_size)
-    , bypass_cache_threshold(settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0)
-    , boundary_alignment(settings.boundary_alignment)
-    , background_download_max_file_segment_size(settings.background_download_max_file_segment_size)
-    , load_metadata_threads(settings.load_metadata_threads)
-    , load_metadata_asynchronously(settings.load_metadata_asynchronously)
-    , write_cache_per_user_directory(settings.write_cache_per_user_id_directory)
-    , keep_current_size_to_max_ratio(1 - settings.keep_free_space_size_ratio)
-    , keep_current_elements_to_max_ratio(1 - settings.keep_free_space_elements_ratio)
-    , keep_up_free_space_remove_batch(settings.keep_free_space_remove_batch)
+    : max_file_segment_size(settings[FileCacheSetting::max_file_segment_size])
+    , bypass_cache_threshold(settings[FileCacheSetting::enable_bypass_cache_with_threshold] ? settings[FileCacheSetting::bypass_cache_threshold] : 0)
+    , boundary_alignment(settings[FileCacheSetting::boundary_alignment])
+    , background_download_max_file_segment_size(settings[FileCacheSetting::background_download_max_file_segment_size])
+    , load_metadata_threads(settings[FileCacheSetting::load_metadata_threads])
+    , load_metadata_asynchronously(settings[FileCacheSetting::load_metadata_asynchronously])
+    , write_cache_per_user_directory(settings[FileCacheSetting::write_cache_per_user_id_directory])
+    , allow_dynamic_cache_resize(settings[FileCacheSetting::allow_dynamic_cache_resize])
+    , keep_current_size_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_size_ratio])
+    , keep_current_elements_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_elements_ratio])
+    , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
     , log(getLogger("FileCache(" + cache_name + ")"))
-    , metadata(settings.base_path,
-               settings.background_download_queue_size_limit,
-               settings.background_download_threads,
+    , metadata(settings[FileCacheSetting::path],
+               settings[FileCacheSetting::background_download_queue_size_limit],
+               settings[FileCacheSetting::background_download_threads],
                write_cache_per_user_directory)
 {
-    if (settings.cache_policy == "LRU")
+    switch (settings[FileCacheSetting::cache_policy].value)
     {
-        main_priority = std::make_unique<LRUFileCachePriority>(
-            settings.max_size, settings.max_elements, nullptr, cache_name);
+        case FileCachePolicy::LRU:
+        {
+            main_priority = std::make_unique<LRUFileCachePriority>(
+                settings[FileCacheSetting::max_size],
+                settings[FileCacheSetting::max_elements],
+                cache_name);
+            break;
+        }
+        case FileCachePolicy::SLRU:
+        {
+            main_priority = std::make_unique<SLRUFileCachePriority>(
+                settings[FileCacheSetting::max_size],
+                settings[FileCacheSetting::max_elements],
+                settings[FileCacheSetting::slru_size_ratio],
+                cache_name);
+            break;
+        }
     }
-    else if (settings.cache_policy == "SLRU")
+
+    LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
+
+    if (settings[FileCacheSetting::cache_hits_threshold])
     {
-        main_priority = std::make_unique<SLRUFileCachePriority>(
-            settings.max_size, settings.max_elements, settings.slru_size_ratio, nullptr, nullptr, cache_name);
+        stash = std::make_unique<HitsCountStash>(
+            settings[FileCacheSetting::cache_hits_threshold],
+            settings[FileCacheSetting::max_elements]);
     }
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy: {}", settings.cache_policy);
 
-    LOG_DEBUG(log, "Using {} cache policy", settings.cache_policy);
-
-    if (settings.cache_hits_threshold)
-        stash = std::make_unique<HitsCountStash>(settings.cache_hits_threshold, settings.max_elements);
-
-    if (settings.enable_filesystem_query_cache_limit)
+    if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
         query_limit = std::make_unique<FileCacheQueryLimit>();
 }
 
@@ -188,7 +227,21 @@ void FileCache::initialize()
         {
             if (!need_to_load_metadata)
                 fs::create_directories(getBasePath());
+
+            auto fs_info = std::filesystem::space(getBasePath());
+            const size_t size_limit = main_priority->getSizeLimit(lockCache());
+            if (fs_info.capacity < size_limit)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "The total capacity of the disk containing cache path {} is less than the specified max_size {} bytes",
+                                getBasePath(), std::to_string(size_limit));
+
             status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
+        }
+        catch (const std::filesystem::filesystem_error & e)
+        {
+            init_exception = std::current_exception();
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to retrieve filesystem information for cache path {}. Error: {}",
+                            getBasePath(), e.what());
         }
         catch (...)
         {
@@ -280,17 +333,17 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
             return false;
 
         FileSegmentPtr file_segment;
-        if (!file_segment_metadata.isEvictingOrRemoved(locked_key))
-        {
-            file_segment = file_segment_metadata.file_segment;
-        }
-        else
+        if (file_segment_metadata.isEvictingOrRemoved(locked_key))
         {
             file_segment = std::make_shared<FileSegment>(
                 locked_key.getKey(),
                 file_segment_metadata.file_segment->offset(),
                 file_segment_metadata.file_segment->range().size(),
                 FileSegment::State::DETACHED);
+        }
+        else
+        {
+            file_segment = file_segment_metadata.file_segment;
         }
 
         result.push_back(file_segment);
@@ -599,7 +652,7 @@ FileCache::getOrSet(
 
     assertInitialized();
 
-    FileSegment::Range initial_range(offset, offset + size - 1);
+    FileSegment::Range initial_range(offset, std::min(offset + size, file_size) - 1);
     /// result_range is initial range, which will be adjusted according to
     /// 1. aligned_offset, aligned_end_offset
     /// 2. max_file_segments_limit
@@ -636,7 +689,10 @@ FileCache::getOrSet(
 
     if (aligned_offset < result_range.left && has_uncovered_prefix)
     {
-        auto prefix_range = FileSegment::Range(aligned_offset, file_segments.empty() ? result_range.left - 1 : file_segments.front()->range().left - 1);
+        auto prefix_range = FileSegment::Range(
+            aligned_offset,
+            file_segments.empty() ? result_range.left - 1 : file_segments.front()->range().left - 1);
+
         auto prefix_file_segments = getImpl(*locked_key, prefix_range, /* file_segments_limit */0);
 
         if (prefix_file_segments.empty())
@@ -705,7 +761,9 @@ FileCache::getOrSet(
     {
         auto ranges = splitRange(result_range.left, initial_range.size() + (initial_range.left - result_range.left), result_range.size());
         size_t file_segments_count = file_segments.size();
-        file_segments.splice(file_segments.end(), createFileSegmentsFromRanges(*locked_key, ranges, file_segments_count, file_segments_limit, create_settings));
+        file_segments.splice(
+            file_segments.end(),
+            createFileSegmentsFromRanges(*locked_key, ranges, file_segments_count, file_segments_limit, create_settings));
     }
     else
     {
@@ -717,17 +775,24 @@ FileCache::getOrSet(
 
         if (!file_segments.front()->range().contains(result_range.left))
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} to include {} "
-                            "(end offset: {}, aligned offset: {}, aligned end offset: {})",
-                            file_segments.front()->range().toString(), offset, result_range.right, aligned_offset, aligned_end_offset);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Expected {} to include {} "
+                "(end offset: {}, aligned offset: {}, aligned end offset: {})",
+                file_segments.front()->range().toString(), offset,
+                result_range.right, aligned_offset, aligned_end_offset);
         }
     }
 
+    /// Compare with initial_range and not result_range,
+    /// See comment in splitRange for explanation.
     chassert(file_segments_limit
-             ? file_segments.back()->range().left <= result_range.right
-             : file_segments.back()->range().contains(result_range.right),
-             fmt::format("Unexpected state. Back: {}, result range: {}, limit: {}",
-                         file_segments.back()->range().toString(), result_range.toString(), file_segments_limit));
+             ? file_segments.back()->range().left <= initial_range.right
+             : file_segments.back()->range().contains(initial_range.right),
+             fmt::format(
+                 "Unexpected state. Back: {}, result range: {}, "
+                 "limit: {}, initial offset: {}, initial size: {}, file size: {}",
+                 file_segments.back()->range().toString(), result_range.toString(),
+                 file_segments_limit, offset, size, file_size));
 
     chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
 
@@ -832,7 +897,16 @@ KeyMetadata::iterator FileCache::addFileSegment(
         result_state = state;
     }
 
-    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, create_settings, metadata.isBackgroundDownloadEnabled(), this, locked_key.getKeyMetadata());
+    auto file_segment = std::make_shared<FileSegment>(
+        key,
+        offset,
+        size,
+        result_state,
+        create_settings,
+        metadata.isBackgroundDownloadEnabled(),
+        this,
+        locked_key.getKeyMetadata());
+
     auto file_segment_metadata = std::make_shared<FileSegmentMetadata>(std::move(file_segment));
 
     auto [file_segment_metadata_it, inserted] = locked_key.emplace(offset, file_segment_metadata);
@@ -912,7 +986,15 @@ bool FileCache::tryReserve(
     /// A file_segment_metadata acquires a priority iterator
     /// on first successful space reservation attempt,
     /// so queue_iterator == nullptr, if no space reservation took place yet.
-    chassert(!queue_iterator || file_segment.getReservedSize() > 0);
+    if (queue_iterator)
+    {
+        chassert(file_segment.getReservedSize() > 0);
+        chassert(!queue_iterator->getEntry()->isEvicting(cache_lock));
+    }
+    else
+    {
+        chassert(file_segment.getReservedSize() == 0);
+    }
 
     /// If it is the first space reservatiob attempt for a file segment
     /// we need to make space for 1 element in cache,
@@ -959,12 +1041,6 @@ bool FileCache::tryReserve(
         return false;
     }
 
-    if (!file_segment.getKeyMetadata()->createBaseDirectory())
-    {
-        failure_reason = "not enough space on device";
-        return false;
-    }
-
     if (eviction_candidates.size() > 0)
     {
         cache_lock.unlock();
@@ -979,6 +1055,22 @@ bool FileCache::tryReserve(
             /// Invalidate queue entries if some succeeded to be removed.
             eviction_candidates.finalize(query_context.get(), cache_lock);
             throw;
+        }
+
+        const auto & failed_candidates = eviction_candidates.getFailedCandidates();
+        if (failed_candidates.size() > 0)
+        {
+            /// Process this case the same as any other exception
+            /// from eviction_candidates.evict() above.
+            {
+                cache_lock.lock();
+                /// Invalidate queue entries if some succeeded to be removed.
+                eviction_candidates.finalize(query_context.get(), cache_lock);
+            }
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Failed to evict {} file segments (first error: {})",
+                failed_candidates.size(), failed_candidates.getFirstErrorMessage());
         }
 
         cache_lock.lock();
@@ -1024,6 +1116,13 @@ bool FileCache::tryReserve(
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
+
+    cache_lock.unlock();
+    if (!file_segment.getKeyMetadata()->createBaseDirectory())
+    {
+        failure_reason = "not enough space on device";
+        return false;
+    }
 
     return true;
 }
@@ -1496,7 +1595,7 @@ void FileCache::deactivateBackgroundOperations()
 std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const UserID & user_id)
 {
     assertInitialized();
-#ifndef NDEBUG
+#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
 #endif
 
@@ -1549,6 +1648,11 @@ size_t FileCache::getUsedCacheSize() const
     return main_priority->getSizeApprox();
 }
 
+size_t FileCache::getMaxCacheSize() const
+{
+    return main_priority->getSizeLimitApprox();
+}
+
 size_t FileCache::getFileSegmentsNum() const
 {
     /// We use this method for metrics, so it is ok to get approximate result.
@@ -1564,6 +1668,13 @@ void FileCache::assertCacheCorrectness()
             chassert(file_segment_metadata->file_segment->assertCorrectness());
         }
     }, getInternalUser().user_id);
+
+    main_priority->iterate([](LockedKey &, const FileSegmentMetadataPtr & file_segment_metadata)
+    {
+        chassert(file_segment_metadata->file_segment->assertCorrectness());
+        return IFileCachePriority::IterationResult::CONTINUE;
+    },
+    lockCache());
 }
 
 void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings)
@@ -1573,52 +1684,54 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
     std::lock_guard lock(apply_settings_mutex);
 
-    if (new_settings.background_download_queue_size_limit != actual_settings.background_download_queue_size_limit
-        && metadata.setBackgroundDownloadQueueSizeLimit(new_settings.background_download_queue_size_limit))
+    if (new_settings[FileCacheSetting::background_download_queue_size_limit] != actual_settings[FileCacheSetting::background_download_queue_size_limit]
+        && metadata.setBackgroundDownloadQueueSizeLimit(new_settings[FileCacheSetting::background_download_queue_size_limit]))
     {
         LOG_INFO(log, "Changed background_download_queue_size from {} to {}",
-                 actual_settings.background_download_queue_size_limit,
-                 new_settings.background_download_queue_size_limit);
+                 actual_settings[FileCacheSetting::background_download_queue_size_limit].value,
+                 new_settings[FileCacheSetting::background_download_queue_size_limit].value);
 
-        actual_settings.background_download_queue_size_limit = new_settings.background_download_queue_size_limit;
+        actual_settings[FileCacheSetting::background_download_queue_size_limit] = new_settings[FileCacheSetting::background_download_queue_size_limit];
     }
 
-    if (new_settings.background_download_threads != actual_settings.background_download_threads)
+    if (new_settings[FileCacheSetting::background_download_threads] != actual_settings[FileCacheSetting::background_download_threads])
     {
         bool updated = false;
         try
         {
-            updated = metadata.setBackgroundDownloadThreads(new_settings.background_download_threads);
+            updated = metadata.setBackgroundDownloadThreads(new_settings[FileCacheSetting::background_download_threads]);
         }
         catch (...)
         {
-            actual_settings.background_download_threads = metadata.getBackgroundDownloadThreads();
+            actual_settings[FileCacheSetting::background_download_threads] = metadata.getBackgroundDownloadThreads();
             throw;
         }
 
         if (updated)
         {
             LOG_INFO(log, "Changed background_download_threads from {} to {}",
-                    actual_settings.background_download_threads,
-                    new_settings.background_download_threads);
+                    actual_settings[FileCacheSetting::background_download_threads].value,
+                    new_settings[FileCacheSetting::background_download_threads].value);
 
-            actual_settings.background_download_threads = new_settings.background_download_threads;
+            actual_settings[FileCacheSetting::background_download_threads] = new_settings[FileCacheSetting::background_download_threads];
         }
     }
 
-    if (new_settings.background_download_max_file_segment_size != actual_settings.background_download_max_file_segment_size)
+    if (new_settings[FileCacheSetting::background_download_max_file_segment_size] != actual_settings[FileCacheSetting::background_download_max_file_segment_size])
     {
-        background_download_max_file_segment_size = new_settings.background_download_max_file_segment_size;
+        background_download_max_file_segment_size = new_settings[FileCacheSetting::background_download_max_file_segment_size];
 
         LOG_INFO(log, "Changed background_download_max_file_segment_size from {} to {}",
-                actual_settings.background_download_max_file_segment_size,
-                new_settings.background_download_max_file_segment_size);
+                actual_settings[FileCacheSetting::background_download_max_file_segment_size].value,
+                new_settings[FileCacheSetting::background_download_max_file_segment_size].value);
 
-        actual_settings.background_download_max_file_segment_size = new_settings.background_download_max_file_segment_size;
+        actual_settings[FileCacheSetting::background_download_max_file_segment_size] = new_settings[FileCacheSetting::background_download_max_file_segment_size];
     }
 
-    if (new_settings.max_size != actual_settings.max_size
-        || new_settings.max_elements != actual_settings.max_elements)
+    const bool cache_size_changed = new_settings[FileCacheSetting::max_size] != actual_settings[FileCacheSetting::max_size]
+        || new_settings[FileCacheSetting::max_elements] != actual_settings[FileCacheSetting::max_elements];
+
+    if (allow_dynamic_cache_resize && cache_size_changed)
     {
         EvictionCandidates eviction_candidates;
         bool modified_size_limit = false;
@@ -1643,14 +1756,17 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
             FileCacheReserveStat stat;
             if (main_priority->collectCandidatesForEviction(
-                    new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */,
+                    new_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_elements], 0/* max_candidates_to_evict */,
                     stat, eviction_candidates, cache_lock) == IFileCachePriority::CollectStatus::SUCCESS)
             {
                 if (eviction_candidates.size() == 0)
                 {
                     main_priority->modifySizeLimits(
-                        new_settings.max_size, new_settings.max_elements,
-                        new_settings.slru_size_ratio, cache_lock);
+                        new_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_elements],
+                        new_settings[FileCacheSetting::slru_size_ratio], cache_lock);
+
+                    actual_settings[FileCacheSetting::max_size] = new_settings[FileCacheSetting::max_size];
+                    actual_settings[FileCacheSetting::max_elements] = new_settings[FileCacheSetting::max_elements];
                 }
                 else
                 {
@@ -1665,8 +1781,10 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                     /// Modify cache size limits.
                     /// From this point cache eviction will follow them.
                     main_priority->modifySizeLimits(
-                        new_settings.max_size, new_settings.max_elements,
-                        new_settings.slru_size_ratio, cache_lock);
+                        new_settings[FileCacheSetting::max_size],
+                        new_settings[FileCacheSetting::max_elements],
+                        new_settings[FileCacheSetting::slru_size_ratio],
+                        cache_lock);
 
                     cache_lock.unlock();
 
@@ -1688,6 +1806,71 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
                     /// Do actual eviction from filesystem.
                     eviction_candidates.evict();
+
+                    auto failed_candidates = eviction_candidates.getFailedCandidates();
+                    if (failed_candidates.total_cache_size)
+                    {
+                        actual_settings[FileCacheSetting::max_size] = std::min<size_t>(
+                            actual_settings[FileCacheSetting::max_size].value,
+                            new_settings[FileCacheSetting::max_size] + failed_candidates.total_cache_size);
+
+                        actual_settings[FileCacheSetting::max_elements] = std::min<size_t>(
+                            actual_settings[FileCacheSetting::max_elements].value,
+                            new_settings[FileCacheSetting::max_elements] + failed_candidates.total_cache_elements);
+
+                        cache_lock.lock();
+
+                        /// Increase the max size and max elements
+                        /// to the size and number of failed candidates.
+                        main_priority->modifySizeLimits(
+                            actual_settings[FileCacheSetting::max_size],
+                            actual_settings[FileCacheSetting::max_elements],
+                            new_settings[FileCacheSetting::slru_size_ratio],
+                            cache_lock);
+
+                        LOG_TRACE(
+                            log, "Having {} failed candidates with total size {}",
+                            failed_candidates.total_cache_elements, failed_candidates.total_cache_size);
+
+                        /// Add failed candidates back to queue.
+                        for (const auto & [key_metadata, key_candidates, _] : failed_candidates.failed_candidates_per_key)
+                        {
+                            chassert(!key_candidates.empty());
+
+                            auto locked_key = key_metadata->tryLock();
+                            if (!locked_key)
+                            {
+                                /// Key cannot be removed,
+                                /// because if we failed to remove something from it above,
+                                /// then we did not remove it from key metadata,
+                                /// so key lock must remain valid.
+                                chassert(false);
+                                continue;
+                            }
+
+                            for (const auto & candidate : key_candidates)
+                            {
+                                const auto & file_segment = candidate->file_segment;
+
+                                LOG_TRACE(log, "Adding back file segment after failed eviction: {}:{}",
+                                          file_segment->key(), file_segment->offset());
+
+                                auto queue_iterator = main_priority->add(
+                                    key_metadata,
+                                    file_segment->offset(),
+                                    file_segment->getDownloadedSize(),
+                                    getCommonUser(),
+                                    cache_lock,
+                                    false);
+                                file_segment->setQueueIterator(queue_iterator);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        actual_settings[FileCacheSetting::max_size] = new_settings[FileCacheSetting::max_size];
+                        actual_settings[FileCacheSetting::max_elements] = new_settings[FileCacheSetting::max_elements];
+                    }
                 }
 
                 modified_size_limit = true;
@@ -1697,14 +1880,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         if (modified_size_limit)
         {
             LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
-                    actual_settings.max_size, new_settings.max_size,
-                    actual_settings.max_elements, new_settings.max_elements);
-
-            chassert(main_priority->getSizeApprox() <= new_settings.max_size);
-            chassert(main_priority->getElementsCountApprox() <= new_settings.max_elements);
-
-            actual_settings.max_size = new_settings.max_size;
-            actual_settings.max_elements = new_settings.max_elements;
+                    actual_settings[FileCacheSetting::max_size].value, new_settings[FileCacheSetting::max_size].value,
+                    actual_settings[FileCacheSetting::max_elements].value, new_settings[FileCacheSetting::max_elements].value);
         }
         else
         {
@@ -1713,14 +1890,31 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                 "`max_size` and `max_elements` settings will remain inconsistent with config.xml. "
                 "Next attempt to update them will happen on the next config reload. "
                 "You can trigger it with SYSTEM RELOAD CONFIG.",
-                actual_settings.max_size, new_settings.max_size,
-                actual_settings.max_elements, new_settings.max_elements);
+                actual_settings[FileCacheSetting::max_size].value, new_settings[FileCacheSetting::max_size].value,
+                actual_settings[FileCacheSetting::max_elements].value, new_settings[FileCacheSetting::max_elements].value);
         }
+
+        chassert(main_priority->getSizeApprox() <= actual_settings[FileCacheSetting::max_size]);
+        chassert(main_priority->getElementsCountApprox() <= actual_settings[FileCacheSetting::max_elements]);
+
+        chassert(main_priority->getSizeLimit(lockCache()) == actual_settings[FileCacheSetting::max_size]);
+        chassert(main_priority->getElementsLimit(lockCache()) == actual_settings[FileCacheSetting::max_elements]);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+        assertCacheCorrectness();
+#endif
+    }
+    else if (cache_size_changed)
+    {
+        LOG_WARNING(
+            log, "Filesystem cache size was modified, "
+            "but dynamic cache resize is disabled, therefore cache size will not be changed without server restart. "
+            "To enable dynamic cache resize, add `allow_dynamic_cache_resize` to cache configuration");
     }
 
-    if (new_settings.max_file_segment_size != actual_settings.max_file_segment_size)
+    if (new_settings[FileCacheSetting::max_file_segment_size] != actual_settings[FileCacheSetting::max_file_segment_size])
     {
-        max_file_segment_size = actual_settings.max_file_segment_size = new_settings.max_file_segment_size;
+        max_file_segment_size = actual_settings[FileCacheSetting::max_file_segment_size] = new_settings[FileCacheSetting::max_file_segment_size];
     }
 }
 

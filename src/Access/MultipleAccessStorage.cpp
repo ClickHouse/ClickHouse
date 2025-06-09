@@ -28,7 +28,7 @@ using Storages = std::vector<StoragePtr>;
 MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
     : IAccessStorage(storage_name_)
     , nested_storages(std::make_shared<Storages>())
-    , ids_cache(512 /* cache size */)
+    , ids_cache(CurrentMetrics::end(), CurrentMetrics::end(), 512 /* cache size */)
 {
 }
 
@@ -440,6 +440,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 std::optional<AuthResult>
 MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address,
                                         const ExternalAuthenticators & external_authenticators,
+                                        const ClientInfo & client_info,
                                         bool throw_if_user_not_exists,
                                         bool allow_no_password, bool allow_plaintext_password) const
 {
@@ -448,7 +449,7 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
     {
         const auto & storage = (*storages)[i];
         bool is_last_storage = (i == storages->size() - 1);
-        auto auth_result = storage->authenticate(credentials, address, external_authenticators,
+        auto auth_result = storage->authenticate(credentials, address, external_authenticators, client_info,
                                         (throw_if_user_not_exists && is_last_storage),
                                         allow_no_password, allow_plaintext_password);
         if (auth_result)

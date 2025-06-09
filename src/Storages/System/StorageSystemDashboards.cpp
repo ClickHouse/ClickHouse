@@ -162,6 +162,17 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         },
         {
             { "dashboard", "Overview" },
+            { "title", "In-Memory Caches (bytes)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric
+FROM merge('system', '^metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Overview" },
             { "title", "Load Average (15 minutes)" },
             { "query", trim(R"EOQ(
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
@@ -220,9 +231,10 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
             { "title", "Concurrent network connections" },
             { "query", trim(R"EOQ(
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
-    sum(CurrentMetric_TCPConnection) AS TCP_Connections,
-    sum(CurrentMetric_MySQLConnection) AS MySQL_Connections,
-    sum(CurrentMetric_HTTPConnection) AS HTTP_Connections
+    max(CurrentMetric_TCPConnection) AS TCP_Connections,
+    max(CurrentMetric_MySQLConnection) AS MySQL_Connections,
+    max(CurrentMetric_HTTPConnection) AS HTTP_Connections,
+    max(CurrentMetric_InterserverConnection) AS Interserver_Connections
 FROM merge('system', '^metric_log')
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
@@ -364,6 +376,17 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         },
         {
             { "dashboard", "Overview (host)" },
+            { "title", "In-Memory Caches (bytes)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric
+FROM merge('system', '^metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Overview (host)" },
             { "title", "Load Average (15 minutes)" },
             { "query", trim(R"EOQ(
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t, hostname, avg(value)
@@ -487,6 +510,11 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
             { "dashboard", "Cloud overview" },
             { "title", "Memory (tracked, bytes)" },
             { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(CurrentMetric_MemoryTracking) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "In-Memory Caches (bytes)" },
+            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric\n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
         },
         {
             { "dashboard", "Cloud overview" },
@@ -628,6 +656,11 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
             { "dashboard", "Cloud overview (host)" },
             { "title", "Memory (tracked, bytes)" },
             { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(CurrentMetric_MemoryTracking) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+        },
+        {
+            { "dashboard", "Cloud overview (host)" },
+            { "title", "In-Memory Caches (bytes)" },
+            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
         },
         {
             { "dashboard", "Cloud overview (host)" },
