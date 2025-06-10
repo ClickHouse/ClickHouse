@@ -288,8 +288,8 @@ private:
     LocalCacheWriterPtr cache_writer;
 
     /// downloaded_size should always be less or equal to reserved_size
-    std::atomic<size_t> downloaded_size = 0;
-    std::atomic<size_t> reserved_size = 0;
+    std::atomic<size_t> downloaded_size = 0; /// Contains non-aligned size
+    std::atomic<size_t> reserved_size = 0; /// Contains non-aligned size
     mutable std::mutex write_mutex;
 
     mutable FileSegmentGuard segment_guard;

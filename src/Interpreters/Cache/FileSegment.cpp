@@ -8,6 +8,7 @@
 #include <base/EnumReflection.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -167,9 +168,9 @@ size_t FileSegment::getSize(FileSegment::SizeAlignment alignment) const
         case FileSegment::SizeAlignment::NOT_ALIGNED:
             return size;
         case FileSegment::SizeAlignment::DEFAULT_ALIGNMENT:
-            auto locked_key = getKeyMetadata();
-            chassert(locked_key);
-            return locked_key->useRealDiskSize() ? locked_key->alignFileSize(size) : size;
+            auto metadata = getKeyMetadata();
+            chassert(metadata);
+            return metadata->useRealDiskSize() ? metadata->alignFileSize(size) : size;
     }
     chassert(false);
     return 0;
@@ -956,7 +957,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
         const auto & entry = it->getEntry();
         if (download_state != State::DOWNLOADING && entry->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED) != reserved_size)
-            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED), reserved_size.load()));
+            throw_logical(fmt::format("Expected entry non-aligned size == reserved_size ({} == {})", entry->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED), reserved_size.load()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -1002,6 +1003,9 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
             chassert(file_size == range().size());
             chassert(downloaded_size == range().size());
+
+            const auto stat = getStatVFS(getPath());
+            chassert(stat.f_bsize * stat.f_blocks == getSize(SizeAlignment::ALIGNED));
 
             chassert(queue_iterator || on_delayed_removal);
             check_iterator(queue_iterator);

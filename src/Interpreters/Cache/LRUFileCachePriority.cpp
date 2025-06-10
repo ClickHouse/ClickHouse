@@ -6,7 +6,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
-#include "base/defines.h"
 
 namespace CurrentMetrics
 {
@@ -213,7 +212,7 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Mismatch of file segment size in file segment metadata "
+                "Mismatch of file segment non-aligned size in file segment metadata "
                 "and priority queue: {} != {} ({})",
                 entry.getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED), metadata->size(FileSegment::SizeAlignment::NOT_ALIGNED), metadata->file_segment->getInfoForLog());
         }
@@ -222,7 +221,7 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Mismatch of entry file segment size in file segment metadata "
+                "Mismatch of file segment size in file segment metadata "
                 "and priority queue: {} != {} ({})",
                 entry.getSize(), metadata->size(), metadata->file_segment->getInfoForLog()
             );
