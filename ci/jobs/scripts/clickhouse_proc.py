@@ -1,6 +1,7 @@
 import glob
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -1015,3 +1016,20 @@ quit
                     )
                     res = False
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
+
+
+if __name__ == "__main__":
+    ch = ClickHouseProc()
+    command = sys.argv[1]
+    if command == "logs_export_config":
+        ch.create_log_export_config()
+    elif command == "logs_export_start":
+        ch.start_log_exports()
+    elif command == "logs_export_stop":
+        ch.stop_log_exports()
+    elif command == "start_minio":
+        param = sys.argv[2]
+        assert param in ["stateless"]
+        ch.start_minio(param)
+    else:
+        raise ValueError(f"Unknown command: {command}")
