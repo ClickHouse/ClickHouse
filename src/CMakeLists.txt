@@ -705,6 +705,10 @@ if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
 endif()
 
+if (TARGET ch_contrib::arrow)
+    dbms_target_link_libraries(PUBLIC ch_contrib::arrow)
+endif()
+
 if (ENABLE_BUZZHOUSE)
     dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
 endif()
@@ -755,10 +759,4 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
-
-    if (TARGET ch_contrib::arrow)
-        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::arrow)
-    endif()
 endif ()
-
-target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::arrow)
