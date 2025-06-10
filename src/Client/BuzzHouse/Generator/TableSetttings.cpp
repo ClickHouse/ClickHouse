@@ -199,7 +199,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 std::unordered_map<String, CHSetting> restoreSettings
-    = {{"allow_different_database_def", CHSetting(trueOrFalse, {}, false)},
+    = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
+       {"allow_different_database_def", CHSetting(trueOrFalse, {}, false)},
        {"allow_different_table_def", CHSetting(trueOrFalse, {}, false)},
        {"allow_non_empty_tables", CHSetting(trueOrFalse, {}, false)},
        {"allow_s3_native_copy", CHSetting(trueOrFalse, {}, false)},
