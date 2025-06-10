@@ -314,13 +314,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         if (!has_to)
         {
-            SQLRelation rel("v" + std::to_string(next.tname));
-
-            for (uint32_t i = 0; i < view_ncols; i++)
-            {
-                rel.cols.emplace_back(SQLRelationCol(rel.name, {"c" + std::to_string(i)}));
-            }
-            generateEngineDetails(rg, rel, next, true, te);
+            generateEngineDetails(rg, createViewRelation("", next), next, true, te);
         }
         if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 16)
         {
@@ -1201,7 +1195,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 {
                     flatTableColumnPath(
                         flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-                    generateTableKey(rg, createTableRelation(rg, true, "", t), t.teng, true, tkey);
+                    generateTableKey(rg, createTableRelation(rg, true, true, "", t), t.teng, true, tkey);
                     this->entries.clear();
                 }
             }
