@@ -623,7 +623,15 @@ void HTTPHandler::processQuery(
     /// cases with compression end marker and HTTP chunked encoding end marker.
     /// If `has_external_data` is true, HTMLForm is responsible for reading all data, and
     /// `in_post_maybe_compressed` is not usable here.
-    if (!has_external_data && request.isStreamBounded())
+    /// If the query throws exception, the request is instead drained by drainRequestIfNeeded when
+    /// sending exception to client.
+    ///
+    /// We could just call drainRequestIfNeeded here, but then we wouldn't be able to print a warning
+    /// if there's still data: it's possible for `in_post_maybe_compressed` to have no bytes left
+    /// while its underlying buffer request.getStream() has bytes left (some compression footer).
+    /// In particular LZ4 has 4 zero bytes at the end that we only drain in the next nextImpl()
+    /// call *after* all decompressed bytes were consumed.
+    if (!has_external_data && request.isStreamBounded() && response.getKeepAlive())
     {
         String remaining;
         readStringUntilEOF(remaining, *in_post_maybe_compressed);

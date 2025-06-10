@@ -42,7 +42,7 @@ def yield_then_sleep(data):
 #    indicator) doesn't get read by IInputFormat.
 #  * Payload needs to be bigger than DBMS_DEFAULT_MAX_QUERY_SIZE (262144 bytes). Otherwise
 #    executeQuery accidentally reads it while buffering the query.
-def test_http_delay(started_cluster):
+def test_delay(started_cluster):
     node.query("create table t (x Int64) engine Memory")
 
     conn = http.client.HTTPConnection(node.ip_address, 8123)
@@ -62,7 +62,7 @@ def test_http_delay(started_cluster):
 
     node.query("drop table t")
 
-def test_http_param(started_cluster):
+def test_form(started_cluster):
     conn = http.client.HTTPConnection(node.ip_address, 8123)
 
     boundary = "------------------------1234567890abcdef"
@@ -96,3 +96,21 @@ def test_http_param(started_cluster):
     resp = conn.getresponse()
     assert resp.status == 200
     assert resp.read() == b"42\n"
+
+def test_invalid_data(started_cluster):
+    node.query("create table t (x Int64) engine Memory")
+
+    conn = http.client.HTTPConnection(node.ip_address, 8123)
+    data = b"\0" * 300000
+    conn.request('POST', '/?query=insert%20into%20t%20format%20ArrowStream', body=data, headers={'Content-Length': f'{len(data)}', 'Connection': 'keep-alive'})
+    resp = conn.getresponse()
+    assert resp.status != 200
+    maybe_keepalive = resp.getheader('Connection')
+    resp.read()
+    if maybe_keepalive is not None and maybe_keepalive.lower() == 'keep-alive':
+        conn.request('GET', '/?query=select%2042')
+        resp = conn.getresponse()
+        assert resp.status == 200
+        assert resp.read() == b"42\n"
+
+    node.query("drop table t")
