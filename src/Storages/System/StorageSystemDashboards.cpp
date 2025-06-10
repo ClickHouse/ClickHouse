@@ -164,7 +164,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
             { "dashboard", "Overview" },
             { "title", "In-Memory Caches (bytes)" },
             { "query", trim(R"EOQ(
-SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
 FROM merge('system', '^metric_log')
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
@@ -378,7 +378,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
             { "dashboard", "Overview (host)" },
             { "title", "In-Memory Caches (bytes)" },
             { "query", trim(R"EOQ(
-SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
 FROM merge('system', '^metric_log')
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t, hostname
@@ -456,7 +456,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
             { "dashboard", "Memory (host)" },
             { "title", "In-Memory Caches" },
             { "query", trim(R"EOQ(
-SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
 FROM merge('system', '^metric_log')
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t, hostname
@@ -814,7 +814,7 @@ SELECT
   toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
   avg(metric)
 FROM (
-  SELECT event_time, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric
+  SELECT event_time, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
   FROM clusterAllReplicas(default, merge('system', '^metric_log'))
   WHERE event_date >= toDate(now() - {seconds:UInt32})
     AND event_time >= now() - {seconds:UInt32}
@@ -1284,7 +1284,7 @@ SELECT
  hostname,
   avg(metric)
 FROM (
-  SELECT event_time, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric
+  SELECT event_time, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
   FROM clusterAllReplicas(default, merge('system', '^metric_log'))
   WHERE event_date >= toDate(now() - {seconds:UInt32})
     AND event_time >= now() - {seconds:UInt32}
@@ -1526,7 +1526,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
             { "dashboard", "Cloud Memory (host)" },
             { "title", "In-Memory Caches" },
             { "query", trim(R"EOQ(
-SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
 FROM clusterAllReplicas(default, merge('system', '^metric_log'))
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t, hostname
