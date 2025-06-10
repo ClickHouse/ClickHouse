@@ -25,30 +25,30 @@ SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate('2025-01-01'), toDate('202
 SELECT 'Non-unique dates -> NaN:';
 SELECT xirr([-100, 10], [toDate('2020-01-01'), toDate('2020-01-01')]);
 
-
 CREATE TABLE IF NOT EXISTS 3533_xirr_test (
     tag String,
     date Date,
     date32 Date32,
-    value Float64
+    value Float64,
+    r Float64
 ) ENGINE = Memory;
 
 INSERT INTO 3533_xirr_test VALUES
-('a', '2020-01-01', '2020-01-01', -10000),
-('a', '2020-06-01', '2020-06-01', 3000),
-('a', '2020-12-31', '2020-12-31', 8000),
-('b', '2020-03-15', '2020-03-15', -5000),
-('b', '2020-09-15', '2020-09-15', 2500),
-('b', '2021-03-15', '2021-03-15', 3000),
-('c', '2019-12-31', '2019-12-31', -15000),
-('c', '2020-04-30', '2020-04-30', 5000),
-('c', '2020-08-31', '2020-08-31', 6000),
-('c', '2020-12-31', '2020-12-31', 5000),
-('c', '2021-02-28', '2021-02-28', 2000),
-('d', '2020-01-01', '2020-01-01', -10000),
-('d', '2020-03-01', '2020-03-01', 5750),
-('d', '2020-10-30', '2020-10-30', 4250),
-('d', '2021-02-15', '2021-02-15', 3250)
+('a', '2020-01-01', '2020-01-01', -10000, 0.08),
+('a', '2020-06-01', '2020-06-01', 3000, 0.08),
+('a', '2020-12-31', '2020-12-31', 8000, 0.08),
+('b', '2020-03-15', '2020-03-15', -5000, 0.09),
+('b', '2020-09-15', '2020-09-15', 2500, 0.09),
+('b', '2021-03-15', '2021-03-15', 3000, 0.09),
+('c', '2019-12-31', '2019-12-31', -15000, 0.10),
+('c', '2020-04-30', '2020-04-30', 5000, 0.10),
+('c', '2020-08-31', '2020-08-31', 6000, 0.10),
+('c', '2020-12-31', '2020-12-31', 5000, 0.10),
+('c', '2021-02-28', '2021-02-28', 2000, 0.10),
+('d', '2020-01-01', '2020-01-01', -10000, 0.11),
+('d', '2020-03-01', '2020-03-01', 5750, 0.11),
+('d', '2020-10-30', '2020-10-30', 4250, 0.11),
+('d', '2021-02-15', '2021-02-15', 3250, 0.11)
 ;
 
 SELECT
@@ -71,9 +71,49 @@ FROM (
 GROUP BY tag
 ORDER BY tag;
 
-DROP TABLE IF EXISTS 3533_xirr_test;
+SELECT 'XNPV:';
+SELECT round(xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6);
+SELECT round(xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 'ACT_365_25'), 6);
+
+SELECT tag, 
+    round(xnpv(any(r), groupArray(value), groupArray(date)), 6) AS xnpv_f64_date,
+    round(xnpv(any(r), groupArray(value), groupArray(date32)), 6) AS xnpv_f64_date32,
+    round(xnpv(any(toFloat32(r)), groupArray(toFloat32(value)), groupArray(date)), 6) AS xnpv_f32_date
+FROM (
+    SELECT 
+        tag,
+        date,
+        date32,
+        value,
+        r
+    FROM 3533_xirr_test
+    ORDER BY tag, date
+)
+GROUP BY tag
+ORDER BY tag;
+
 
 SELECT 'NPV:';
-SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.]);
-SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], True);
-SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False);
+SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.]), 6);
+SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], True), 6);
+SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False), 6);
+
+SELECT tag, 
+    round(npv(any(r), groupArray(value)), 6) AS xnpv_f64_date,
+    round(npv(any(r), groupArray(value)), 6) AS xnpv_f64_date32,
+    round(npv(any(toFloat32(r)), groupArray(toFloat32(value))), 6) AS xnpv_f32_date
+FROM (
+    SELECT 
+        tag,
+        date,
+        date32,
+        value,
+        r
+    FROM 3533_xirr_test
+    ORDER BY tag, date
+)
+GROUP BY tag
+ORDER BY tag;
+
+
+DROP TABLE IF EXISTS 3533_xirr_test;

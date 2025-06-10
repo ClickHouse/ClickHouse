@@ -135,6 +135,13 @@ struct XnpvCalculator
     std::span<D> dates;
 };
 
+template <DayCountType day_count, typename T, typename D>
+double xnpv(double rate, std::span<T> cashflows, std::span<D> dates)
+{
+    auto calc = XnpvCalculator<T, D, day_count>(cashflows, dates);
+    return calc.calculate(rate);
+}
+
 struct XirrCalculator
 {
     static constexpr int MAX_ITERATIONS = 100;
@@ -297,16 +304,10 @@ public:
         if (!cashflow_array || !date_array)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Both cashflow and date arguments must be arrays");
 
-        auto result_col = ColumnVector<Float64>::create(input_rows_count);
-        auto & result_data = result_col->getData();
-
         const ColumnArray::Offsets & cashflow_offsets = cashflow_array->getOffsets();
         const ColumnArray::Offsets & date_offsets = date_array->getOffsets();
         if (cashflow_offsets.size() != date_offsets.size())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same number of rows");
-
-        const auto * cashflow_data = &cashflow_array->getData();
-        const auto * date_data = &date_array->getData();
 
         double guess = 0.1;
         if (arguments.size() > 2)
@@ -328,18 +329,23 @@ public:
             day_count = parsed_day_count.value();
         }
 
-        auto process_arrays = [&]<typename CashFlowCol, typename DateTypeCol>(const CashFlowCol * cashflow_values, const DateTypeCol * date_values)
+        auto result_col = ColumnVector<Float64>::create(input_rows_count);
+        auto & result_data = result_col->getData();
+
+        auto process_arrays
+            = [&]<typename CashFlowCol, typename DateTypeCol>(const CashFlowCol * cashflow_values, const DateTypeCol * date_values)
         {
             using CashFlowType = const typename CashFlowCol::ValueType;
             using DateType = const typename DateTypeCol::ValueType;
-            auto * xirr_fptr = [&]() -> std::expected<double, XirrCalculator::XirrErrorCode>(*)(std::span<CashFlowType>, std::span<DateType>, double)
+            auto * xirr_fptr
+                = [&]() -> std::expected<double, XirrCalculator::XirrErrorCode> (*)(std::span<CashFlowType>, std::span<DateType>, double)
             {
                 switch (day_count)
                 {
-                case DayCountType::ACT_365F:
-                    return &XirrCalculator::calculateXirr<DayCountType::ACT_365F>;
-                case DayCountType::ACT_365_25:
-                    return &XirrCalculator::calculateXirr<DayCountType::ACT_365_25>;
+                    case DayCountType::ACT_365F:
+                        return &XirrCalculator::calculateXirr<DayCountType::ACT_365F>;
+                    case DayCountType::ACT_365_25:
+                        return &XirrCalculator::calculateXirr<DayCountType::ACT_365_25>;
                 }
             }();
 
@@ -363,7 +369,125 @@ public:
                 previous_offset = current_offset;
             }
         };
+
+        const auto * cashflow_data = &cashflow_array->getData();
+        const auto * date_data = &date_array->getData();
         dispatchCashflowDate(cashflow_data, date_data, process_arrays);
+
+        return result_col;
+    }
+};
+
+class FunctionXnpv : public IFunction
+{
+public:
+    static constexpr auto name = "xnpv";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionXnpv>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+
+    bool isDeterministic() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto mandatory_args = FunctionArgumentDescriptors{
+            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "FloatXX"},
+            {"cashflow", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn), nullptr, "Array[Number]"},
+            {"date", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isXirrDateColumn), nullptr, "Array[NativeNumber]"},
+        };
+
+        auto optional_args = FunctionArgumentDescriptors{
+            {"daycount", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto rate_col = arguments[0].column->convertToFullColumnIfConst();
+        auto cashflow_col = arguments[1].column->convertToFullColumnIfConst();
+        auto date_col = arguments[2].column->convertToFullColumnIfConst();
+
+        const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
+        const auto * date_array = checkAndGetColumn<ColumnArray>(date_col.get());
+
+        if (!cashflow_array || !date_array)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Both cashflow and date arguments must be arrays");
+
+        const ColumnArray::Offsets & cashflow_offsets = cashflow_array->getOffsets();
+        const ColumnArray::Offsets & date_offsets = date_array->getOffsets();
+        if (cashflow_offsets.size() != date_offsets.size())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same number of rows");
+
+        DayCountType day_count = DayCountType::ACT_365F;
+        if (arguments.size() > 3)
+        {
+            if (!isColumnConst(*arguments[3].column) || !isString(arguments[3].type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Fourth argument (daycount) must be a constant string");
+            auto day_count_str = arguments[3].column->getDataAt(0).toString();
+            auto parsed_day_count = parseDayCount(day_count_str);
+            if (!parsed_day_count.has_value())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count type: {}", day_count_str);
+            day_count = parsed_day_count.value();
+        }
+
+        auto result_col = ColumnVector<Float64>::create(input_rows_count);
+        auto & result_data = result_col->getData();
+
+        auto process_arrays = [&]<typename CashFlowCol, typename DateTypeCol>(
+                                  const CashFlowCol * cashflow_values, const DateTypeCol * date_values, const auto & rate_pod)
+        {
+            using CashFlowType = const typename CashFlowCol::ValueType;
+            using DateType = const typename DateTypeCol::ValueType;
+            auto * xnpv_fptr = [&]() -> double (*)(double, std::span<CashFlowType>, std::span<DateType>)
+            {
+                switch (day_count)
+                {
+                    case DayCountType::ACT_365F:
+                        return &xnpv<DayCountType::ACT_365F>;
+                    case DayCountType::ACT_365_25:
+                        return &xnpv<DayCountType::ACT_365_25>;
+                }
+            }();
+
+            ColumnArray::Offset previous_offset = 0;
+            for (size_t i = 0; i < cashflow_offsets.size(); ++i)
+            {
+                const auto current_offset = cashflow_offsets[i];
+                if (current_offset != date_offsets[i])
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size for each row");
+                const auto rate = rate_pod[i];
+
+                const auto length = current_offset - previous_offset;
+                auto cashflow_span = std::span<CashFlowType>(cashflow_values->getData().data() + previous_offset, length);
+                auto date_span = std::span<DateType>(date_values->getData().data() + previous_offset, length);
+
+                result_data[i] = xnpv_fptr(rate, cashflow_span, date_span);
+
+                previous_offset = current_offset;
+            }
+        };
+
+        auto dispatch = [&](const auto * cashflow_data, const auto * date_data)
+        {
+            if (const auto * rate_f64 = checkAndGetColumn<ColumnVector<Float64>>(rate_col.get()))
+                process_arrays(cashflow_data, date_data, rate_f64->getData());
+            else if (const auto * rate_f32 = checkAndGetColumn<ColumnVector<Float32>>(rate_col.get()))
+                process_arrays(cashflow_data, date_data, rate_f32->getData());
+            else
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Rate argument must be a FloatXX column");
+        };
+
+        const auto * cashflow_data = &cashflow_array->getData();
+        const auto * date_data = &date_array->getData();
+        dispatchCashflowDate(cashflow_data, date_data, dispatch);
 
         return result_col;
     }
@@ -407,11 +531,6 @@ public:
         if (!cashflow_array)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow argument must be an array");
 
-        const auto * rate_f64 = checkAndGetColumn<ColumnVector<Float64>>(rate_col.get());
-        if (!rate_f64)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Rate argument must be a Float64 column");
-        const auto & rate_pod = rate_f64->getData();
-
         bool start_from_zero = true;
         if (arguments.size() > 2)
         {
@@ -424,9 +543,8 @@ public:
         auto & result_data = result_col->getData();
 
         const ColumnArray::Offsets & cashflow_offsets = cashflow_array->getOffsets();
-        const auto * cashflow_data = &cashflow_array->getData();
 
-        auto process_array = [&](const auto * cashflow_values)
+        auto process_array = [&](const auto * cashflow_values, const auto & rate_pod)
         {
             ColumnArray::Offset previous_offset = 0;
             for (size_t i = 0; i < cashflow_offsets.size(); ++i)
@@ -441,18 +559,31 @@ public:
                 previous_offset = current_offset;
             }
         };
+
+        auto dispatch = [&](const auto * cashflow_data)
+        {
+            if (const auto * rate_f64 = checkAndGetColumn<ColumnVector<Float64>>(rate_col.get()))
+                process_array(cashflow_data, rate_f64->getData());
+            else if (const auto * rate_f32 = checkAndGetColumn<ColumnVector<Float32>>(rate_col.get()))
+                process_array(cashflow_data, rate_f32->getData());
+            else
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Rate argument must be a FloatXX column");
+        };
+
+        const auto * cashflow_data = &cashflow_array->getData();
+
         if (const auto * cf64 = typeid_cast<const ColumnVector<Float64> *>(cashflow_data))
-            process_array(cf64);
+            dispatch(cf64);
         else if (const auto * cf32 = typeid_cast<const ColumnVector<Float32> *>(cashflow_data))
-            process_array(cf32);
+            dispatch(cf32);
         else if (const auto * ci8 = typeid_cast<const ColumnVector<Int8> *>(cashflow_data))
-            process_array(ci8);
+            dispatch(ci8);
         else if (const auto * ci16 = typeid_cast<const ColumnVector<Int16> *>(cashflow_data))
-            process_array(ci16);
+            dispatch(ci16);
         else if (const auto * ci32 = typeid_cast<const ColumnVector<Int32> *>(cashflow_data))
-            process_array(ci32);
+            dispatch(ci32);
         else if (const auto * ci64 = typeid_cast<const ColumnVector<Int64> *>(cashflow_data))
-            process_array(ci64);
+            dispatch(ci64);
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must contain numeric values");
 
@@ -482,6 +613,25 @@ REGISTER_FUNCTION(FunctionXirr)
     });
 }
 
+REGISTER_FUNCTION(FunctionXnpv)
+{
+    factory.registerFunction<FunctionXnpv>(FunctionDocumentation{
+        .description = "Calculates the XNPV (Extended Net Present Value) for a series of cash flows and their corresponding dates.",
+        .arguments = {
+            {"rate", "The discount rate as a FloatXX."},
+            {"cashflow", "An array of cash flows."},
+            {"date", "An array of dates corresponding to the cash flows."},
+        },
+        .returned_value = "Returns the XNPV value as a Float64.",
+        .examples = {
+            {"simple_example", "SELECT xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')])", "3065.2226681795255"},
+            {"simple_example", "SELECT xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 'ACT_365_25')", "2507.067268742502"},
+        },
+        .introduced_in = {25, 6},
+        .category = FunctionDocumentation::Category::Financial,
+    });
+}
+
 REGISTER_FUNCTION(FunctionNPV)
 {
     factory.registerFunction<FunctionNPV>(FunctionDocumentation{
@@ -502,4 +652,3 @@ REGISTER_FUNCTION(FunctionNPV)
 }
 
 }
-

@@ -71,3 +71,98 @@ SELECT round(
 
 - The function uses Newton-Raphson and TOMS748 methods for finding the root.
 - The dates array must be sorted in ascending order with unique values.
+
+## xnpv {#xnpv}
+
+Calculates the Extended Net Present Value (XNPV) for a series of cash flows occurring at irregular intervals. XNPV considers the specific timing of each cash flow when calculating present value.
+
+**Syntax**
+
+```sql
+xnpv(rate, cashflows, dates[, daycount])
+```
+
+**Arguments**
+
+- `rate` — The discount rate to apply. Type: Float64.
+- `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
+- `dates` — Array of dates corresponding to each cash flow. Must have the same size as cashflows array. Type: Array of Date or Date32.
+- `daycount` — Optional day count convention. Supported values:
+  - 'ACT_365F' (default) — Actual/365 Fixed
+  - 'ACT_365_25' — Actual/365.25
+
+**Returned value**
+
+- Returns the net present value as a Float64 value.
+
+**Examples**
+
+Basic usage:
+```sql
+SELECT xnpv(0.1, [-10_000., 5750., 4250., 3250.], 
+    [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')])
+```
+```text
+┌─xnpv()─────────────┐
+│ 3065.2226681795255 │
+└────────────────────┘
+```
+
+Using different day count convention:
+```sql
+SELECT xnpv(0.1, [-10_000., 5750., 4250., 3250.], 
+    [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 
+    'ACT_365_25')
+```
+```text
+┌─xnpv()─────────────┐
+│ 2507.067268742502  │
+└────────────────────┘
+```
+
+## npv {#npv}
+
+Calculates the Net Present Value (NPV) of a series of cash flows assuming equal time intervals between each cash flow.
+
+**Syntax**
+
+```sql
+npv(rate, cashflows[, start_from_zero])
+```
+
+**Arguments**
+
+- `rate` — The discount rate to apply. Type: Float64.
+- `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
+- `start_from_zero` — Optional boolean parameter indicating whether to start the NPV calculation from period 0 (true) or period 1 (false). Default: true.
+
+**Returned value**
+
+- Returns the net present value as a Float64 value.
+
+**Examples**
+
+Basic usage:
+```sql
+SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.])
+```
+```text
+┌─npv()──────────────┐
+│ 3065.2226681795255 │
+└───────────────────┘
+```
+
+With start_from_zero = false (Excel compatibility mode):
+```sql
+SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False)
+```
+```text
+┌─npv()──────────────┐
+│ 2838.1691372032656 │
+└────────────────────┘
+```
+
+**Notes**
+
+- When `start_from_zero = true`, the first cash flow is discounted by `(1 + rate)^0`, which equals 1
+- When `start_from_zero = false`, the first cash flow is discounted by `(1 + rate)^1`, matching Excel's NPV function behavior
