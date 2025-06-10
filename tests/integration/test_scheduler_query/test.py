@@ -105,19 +105,23 @@ class QueryPool:
         self.stop_event: threading.Event = threading.Event()
         self.threads: list[threading.Thread] = []
         self.stopped: bool = True
+        self.error: str
 
     def start(self) -> None:
         assert self.stopped, "Pool is already running"
 
-        def query_thread() -> None:
+        def query_thread(self) -> None:
             while not self.stop_event.is_set():
-                node.query(
-                    f"select count(*) from numbers_mt(100000000) settings "
-                    f"workload='{self.workload}', max_threads=2"
-                )
+                try:
+                    node.query(
+                        f"select count(*) from numbers_mt(100000000) settings "
+                        f"workload='{self.workload}', max_threads=2"
+                    )
+                except ex:
+                    self.error = str(ex)
 
         for _ in range(self.num_queries):
-            self.threads.append(threading.Thread(target=query_thread, args=()))
+            self.threads.append(threading.Thread(target=query_thread, args=(self)))
         for thread in self.threads:
             thread.start()
 
@@ -194,3 +198,32 @@ def test_max_concurrent_queries() -> None:
     production.stop()
     development.stop()
     admin.stop()
+
+def test_max_waiting_queries() -> None:
+    node.query(
+        f"""
+        create resource query (query);
+        create workload all settings max_concurrent_queries=1 max_waiting_queries=1;
+        """
+    )
+
+    def concurrent_queries() -> int:
+        return int(
+            node.query(
+                f"select value from system.metrics where name='ConcurrentQueryAcquired'"
+            ).strip()
+        )
+
+    def ensure_total_concurrency(limit: int) -> None:
+        for _ in range(10):
+            assert concurrent_queries() <= limit
+            time.sleep(0.1)
+        while concurrent_queries() < limit:
+            time.sleep(0.1)
+
+    pool_all = QueryPool(6, "all")
+
+    pool_all.start()
+    ensure_total_concurrency(1)
+    pool_all.stop()
+    assert "Queue limit has been reached" in pool_all.error
