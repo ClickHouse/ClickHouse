@@ -94,7 +94,7 @@ python-snappy==0.7.3
 pytz==2023.3.post1
 redis==5.0.1
 requests-kerberos==0.14.0
-requests==2.32.3
+requests==2.32.4
 rich==13.9.4
 s3transfer==0.11.4
 setuptools==78.1.1
