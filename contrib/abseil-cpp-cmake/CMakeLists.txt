@@ -2134,6 +2134,26 @@ absl_cc_library(
 
 absl_cc_library(
   NAME
+    log_internal_structured_proto
+  SRCS
+    "${DIR}/internal/structured_proto.cc"
+  HDRS
+    "${DIR}/internal/structured_proto.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  LINKOPTS
+    ${ABSL_DEFAULT_LINKOPTS}
+  DEPS
+    absl::log_internal_proto
+    absl::config
+    absl::span
+    absl::strings
+    absl::variant
+  PUBLIC
+)
+
+absl_cc_library(
+  NAME
     vlog_config_internal
   SRCS
     "${DIR}/internal/vlog_config.cc"
