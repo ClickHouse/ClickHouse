@@ -4973,6 +4973,7 @@
 "wordShingleSimHashCaseInsensitiveUTF8"
 "wordShingleSimHashUTF8"
 "wyHash64"
+"xirr"
 "xor"
 "xxHash32"
 "xxHash64"
