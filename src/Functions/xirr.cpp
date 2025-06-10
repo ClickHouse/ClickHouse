@@ -151,7 +151,7 @@ struct XirrCalculator
     };
 
     template <DayCountType day_count, typename T, typename D>
-    static std::expected<double, XirrErrorCode> calculateXirr(std::span<T> cashflows, std::span<D> & dates, double guess)
+    static std::expected<double, XirrErrorCode> calculateXirr(std::span<T> cashflows, std::span<D> dates, double guess)
     {
         if (cashflows.size() != dates.size()) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size");
@@ -297,8 +297,21 @@ public:
             day_count = parsed_day_count.value();
         }
 
-        auto process_arrays = [&](const auto * cashflow_values, const auto * date_values)
+        auto process_arrays = [&]<typename CashFlowCol, typename DateTypeCol>(const CashFlowCol * cashflow_values, const DateTypeCol * date_values)
         {
+            using CashFlowType = const typename CashFlowCol::ValueType;
+            using DateType = const typename DateTypeCol::ValueType;
+            auto * xirr_fptr = [&]() -> std::expected<double, XirrCalculator::XirrErrorCode>(*)(std::span<CashFlowType>, std::span<DateType>, double)
+            {
+                switch (day_count)
+                {
+                case DayCountType::ACT_365F:
+                    return &XirrCalculator::calculateXirr<DayCountType::ACT_365F>;
+                case DayCountType::ACT_365_25:
+                    return &XirrCalculator::calculateXirr<DayCountType::ACT_365_25>;
+                }
+            }();
+
             ColumnArray::Offset previous_offset = 0;
             for (size_t i = 0; i < cashflow_offsets.size(); ++i)
             {
@@ -307,19 +320,10 @@ public:
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size for each row");
 
                 const auto length = current_offset - previous_offset;
-                auto cashflow_span = std::span(cashflow_values->getData().data() + previous_offset, length);
-                auto date_span = std::span(date_values->getData().data() + previous_offset, length);
+                auto cashflow_span = std::span<CashFlowType>(cashflow_values->getData().data() + previous_offset, length);
+                auto date_span = std::span<DateType>(date_values->getData().data() + previous_offset, length);
 
-                auto xirr = [&]
-                {
-                    switch (day_count)
-                    {
-                        case DayCountType::ACT_365F:
-                            return XirrCalculator::calculateXirr<DayCountType::ACT_365F>(cashflow_span, date_span, guess);
-                        case DayCountType::ACT_365_25:
-                            return XirrCalculator::calculateXirr<DayCountType::ACT_365_25>(cashflow_span, date_span, guess);
-                    }
-                }();
+                auto xirr = xirr_fptr(cashflow_span, date_span, guess);
                 if (xirr.has_value()) [[likely]]
                     result_data[i] = xirr.value();
                 else
