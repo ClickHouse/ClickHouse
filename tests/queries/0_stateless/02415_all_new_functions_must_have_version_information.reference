@@ -423,7 +423,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-moduloOrNull
 monthName
 mortonDecode
 mortonEncode
