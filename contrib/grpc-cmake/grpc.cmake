@@ -1469,7 +1469,6 @@ target_include_directories(grpc_unsecure
 )
 target_link_libraries(grpc_unsecure
   ${_gRPC_ALLTARGETS_LIBRARIES}
-  upb_collections_lib
   upb
   ${_gRPC_ZLIB_LIBRARIES}
   absl::algorithm_container
@@ -1602,7 +1601,6 @@ target_include_directories(upb_json_lib
 )
 target_link_libraries(upb_json_lib
   ${_gRPC_ALLTARGETS_LIBRARIES}
-  upb_collections_lib
   upb
 )
 
@@ -1629,7 +1627,6 @@ target_include_directories(upb_textformat_lib
 )
 target_link_libraries(upb_textformat_lib
   ${_gRPC_ALLTARGETS_LIBRARIES}
-  upb_collections_lib
   upb
 )
 
@@ -1746,7 +1743,6 @@ add_library(grpc++_unsecure
   ${_gRPC_SOURCE_DIR}/src/cpp/client/insecure_credentials.cc
   ${_gRPC_SOURCE_DIR}/src/cpp/common/alarm.cc
   ${_gRPC_SOURCE_DIR}/src/cpp/common/channel_arguments.cc
-  # ${_gRPC_SOURCE_DIR}/src/cpp/common/channel_filter.cc
   ${_gRPC_SOURCE_DIR}/src/cpp/common/completion_queue_cc.cc
   ${_gRPC_SOURCE_DIR}/src/cpp/common/insecure_create_auth_context.cc
   ${_gRPC_SOURCE_DIR}/src/cpp/common/resource_quota_cc.cc
