@@ -23,6 +23,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <utility>
 
 namespace DB
 {
@@ -224,6 +225,36 @@ bool isXirrDateColumn(const IDataType & type)
     return isArray(type) && isDateOrDate32(checkAndGetDataType<DataTypeArray>(type).getNestedType());
 }
 
+template <typename T, typename F>
+void dispatchDate(const T * cashflow_data, const IColumn * date_data, F && f)
+{
+    if (const auto * d = typeid_cast<const ColumnDate *>(date_data))
+        f(cashflow_data, d);
+    else if (const auto * d32 = typeid_cast<const ColumnDate32 *>(date_data))
+        f(cashflow_data, d32);
+    else
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Date array must contain Date or Date32 values");
+}
+
+template <typename F>
+void dispatchCashflowDate(const IColumn * cashflow_data, const IColumn * date_data, F && f)
+{
+    if (const auto * cf64 = typeid_cast<const ColumnVector<Float64> *>(cashflow_data))
+        dispatchDate(cf64, date_data, std::forward<F>(f));
+    else if (const auto * cf32 = typeid_cast<const ColumnVector<Float32> *>(cashflow_data))
+        dispatchDate(cf32, date_data, std::forward<F>(f));
+    else if (const auto * ci8 = typeid_cast<const ColumnVector<Int8> *>(cashflow_data))
+        dispatchDate(ci8, date_data, std::forward<F>(f));
+    else if (const auto * ci16 = typeid_cast<const ColumnVector<Int16> *>(cashflow_data))
+        dispatchDate(ci16, date_data, std::forward<F>(f));
+    else if (const auto * ci32 = typeid_cast<const ColumnVector<Int32> *>(cashflow_data))
+        dispatchDate(ci32, date_data, std::forward<F>(f));
+    else if (const auto * ci64 = typeid_cast<const ColumnVector<Int64> *>(cashflow_data))
+        dispatchDate(ci64, date_data, std::forward<F>(f));
+    else
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must contain numeric values");
+}
+
 class FunctionXirr : public IFunction
 {
 public:
@@ -332,34 +363,7 @@ public:
                 previous_offset = current_offset;
             }
         };
-        auto dispatch_date = [&](const auto * typed_cashflow_data, const IColumn * generic_date_data)
-        {
-            if (const auto * d = typeid_cast<const ColumnDate *>(generic_date_data))
-                process_arrays(typed_cashflow_data, d);
-            else if (const auto * d32 = typeid_cast<const ColumnDate32 *>(generic_date_data))
-                process_arrays(typed_cashflow_data, d32);
-            else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Date array must contain Date or Date32 values");
-        };
-        auto dispatch_cashflow = [&](const IColumn * generic_cashflow_data, const IColumn * generic_date_data)
-        {
-            if (const auto * cf64 = typeid_cast<const ColumnVector<Float64> *>(generic_cashflow_data))
-                dispatch_date(cf64, generic_date_data);
-            else if (const auto * cf32 = typeid_cast<const ColumnVector<Float32> *>(generic_cashflow_data))
-                dispatch_date(cf32, generic_date_data);
-            else if (const auto * ci8 = typeid_cast<const ColumnVector<Int8> *>(generic_cashflow_data))
-                dispatch_date(ci8, generic_date_data);
-            else if (const auto * ci16 = typeid_cast<const ColumnVector<Int16> *>(generic_cashflow_data))
-                dispatch_date(ci16, generic_date_data);
-            else if (const auto * ci32 = typeid_cast<const ColumnVector<Int32> *>(generic_cashflow_data))
-                dispatch_date(ci32, generic_date_data);
-            else if (const auto * ci64 = typeid_cast<const ColumnVector<Int64> *>(generic_cashflow_data))
-                dispatch_date(ci64, generic_date_data);
-            else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must contain numeric values");
-        };
-
-        dispatch_cashflow(cashflow_data, date_data);
+        dispatchCashflowDate(cashflow_data, date_data, process_arrays);
 
         return result_col;
     }
