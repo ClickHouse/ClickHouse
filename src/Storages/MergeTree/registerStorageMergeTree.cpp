@@ -489,7 +489,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     ASTs & engine_args = args.engine_args;
-    auto context = args.getContext();
+    /// Some internals may creates InterpreterSelectQuery, and it is prohibited with global context, so let's make a copy.
+    /// Note, that we should not use args.local_context, since it may tune some settings, i.e. max_ast_depth, and on restart this table may not be attached anymore.
+    auto context = Context::createCopy(args.getContext());
     size_t arg_num = 0;
     size_t arg_cnt = engine_args.size();
 
