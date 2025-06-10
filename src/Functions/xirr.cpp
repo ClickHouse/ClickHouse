@@ -20,7 +20,9 @@
 #include <algorithm>
 #include <expected>
 #include <limits>
+#include <optional>
 #include <span>
+#include <string_view>
 
 namespace DB
 {
@@ -32,6 +34,88 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 
 namespace
 {
+
+enum class DayCountType
+{
+    ACT_365F,
+    ACT_365_25,
+};
+
+std::optional<DayCountType> parseDayCount(std::string_view day_count)
+{
+    using enum DayCountType;
+    if (day_count == "ACT_365F")
+        return ACT_365F;
+    if (day_count == "ACT_365_25")
+        return ACT_365_25;
+    return std::nullopt;
+}
+
+constexpr int daysBetweenAct(int d1, int d2)
+{
+    return d2 - d1;
+}
+
+template<DayCountType day_count, typename D>
+constexpr double yearFraction(D d1, D d2)
+{
+    if constexpr (day_count == DayCountType::ACT_365F)
+        return daysBetweenAct(d1, d2) / 365.0;
+    else if constexpr (day_count == DayCountType::ACT_365_25)
+        return daysBetweenAct(d1, d2) / 365.25;
+    else
+        []<bool flag = false>() {static_assert(flag, "Unsupported DayCountType");}();
+}
+
+template<typename T, typename D, DayCountType day_count>
+struct NpvCalculator
+{
+    NpvCalculator(std::span<T> cashflows_, std::span<D> dates_)
+        : cashflows(cashflows_), dates(dates_)
+    {
+        if (cashflows.size() != dates.size()) [[unlikely]]
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size");
+    }
+
+    double calculate(double rate) const
+    {
+        if (rate <= -1.0)
+            return std::numeric_limits<double>::infinity();
+
+        double npv = 0.0;
+
+        for (size_t i = 0; i < cashflows.size(); ++i)
+        {
+            double time = yearFraction<day_count>(dates[0], dates[i]);
+            if (time == 0.0)
+                npv += cashflows[i];
+            else
+                npv += cashflows[i] / std::pow(1.0 + rate, time);
+        }
+
+        return npv;
+    }
+
+    double derivative(double rate) const
+    {
+        if (rate <= -1.0)
+            return std::numeric_limits<double>::infinity();
+
+        double derivative = 0.0;
+
+        for (size_t i = 0; i < cashflows.size(); ++i)
+        {
+            double time = yearFraction<day_count>(dates[0], dates[i]);
+            if (time != 0.0)
+                derivative -= cashflows[i] * time / std::pow(1.0 + rate, time + 1);
+        }
+
+        return derivative;
+    }
+
+    std::span<T> cashflows;
+    std::span<D> dates;
+};
 
 struct XirrCalculator
 {
@@ -49,7 +133,7 @@ struct XirrCalculator
         OTHER_ERROR
     };
 
-    template <typename T, typename D>
+    template <DayCountType day_count, typename T, typename D>
     static std::expected<double, XirrErrorCode> calculateXirr(std::span<T> cashflows, std::span<D> & dates, double guess)
     {
         if (cashflows.size() != dates.size()) [[unlikely]]
@@ -67,41 +151,10 @@ struct XirrCalculator
                 return std::unexpected(XirrErrorCode::INPUT_DATES_NOT_SORTED_UNIQUE);
         }
 
-        auto npv_function = [&](double rate)
-        {
-            if (rate <= -1.0)
-                return std::numeric_limits<double>::infinity();
+        auto npv = NpvCalculator<T, D, day_count>(cashflows, dates);
 
-            double npv = 0.0;
-
-            for (size_t i = 0; i < cashflows.size(); ++i)
-            {
-                double time = (dates[i] - dates[0]) / 365.0;
-                if (time == 0.0)
-                    npv += cashflows[i];
-                else
-                    npv += cashflows[i] / std::pow(1.0 + rate, time);
-            }
-
-            return npv;
-        };
-
-        auto npv_derivative = [&](double rate)
-        {
-            if (rate <= -1.0)
-                return std::numeric_limits<double>::infinity();
-
-            double derivative = 0.0;
-
-            for (size_t i = 0; i < cashflows.size(); ++i)
-            {
-                double time = (dates[i] - dates[0]) / 365.0;
-                if (time != 0.0)
-                    derivative -= cashflows[i] * time / std::pow(1.0 + rate, time + 1);
-            }
-
-            return derivative;
-        };
+        auto npv_function = [&](double rate) { return npv.calculate(rate); };
+        auto npv_derivative = [&](double rate) { return npv.derivative(rate); };
 
         try
         {
@@ -177,6 +230,7 @@ public:
 
         auto optional_args = FunctionArgumentDescriptors{
             {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "FloatXX"},
+            {"daycount", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
@@ -214,6 +268,18 @@ public:
             guess = arguments[2].column->getFloat64(0);
         }
 
+        DayCountType day_count = DayCountType::ACT_365F;
+        if (arguments.size() > 3)
+        {
+            if (!isColumnConst(*arguments[3].column) || !isString(arguments[3].type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Fourth argument (daycount) must be a constant string");
+            auto day_count_str = arguments[3].column->getDataAt(0).toString();
+            auto parsed_day_count = parseDayCount(day_count_str);
+            if (!parsed_day_count.has_value())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count type: {}", day_count_str);
+            day_count = parsed_day_count.value();
+        }
+
         auto process_arrays = [&](const auto * cashflow_values, const auto * date_values)
         {
             ColumnArray::Offset previous_offset = 0;
@@ -227,7 +293,15 @@ public:
                 auto cashflow_span = std::span(cashflow_values->getData().data() + previous_offset, length);
                 auto date_span = std::span(date_values->getData().data() + previous_offset, length);
 
-                auto xirr = XirrCalculator::calculateXirr(cashflow_span, date_span, guess);
+                auto xirr = [&]
+                {
+                    switch (day_count) {
+                    case DayCountType::ACT_365F:
+                        return XirrCalculator::calculateXirr<DayCountType::ACT_365F>(cashflow_span, date_span, guess);
+                    case DayCountType::ACT_365_25:
+                        return XirrCalculator::calculateXirr<DayCountType::ACT_365_25>(cashflow_span, date_span, guess);
+                    }
+                }();
                 if (xirr.has_value()) [[likely]]
                     result_data[i] = xirr.value();
                 else
@@ -283,6 +357,7 @@ REGISTER_FUNCTION(FunctionXirr)
         .examples = {
             {"simple_example", "SELECT xirr([-10000, 5750, 4250,3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')])","0.6342972615260243"},
             {"simple_example_with_guess", "SELECT xirr([-10000, 5750, 4250,3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 0.5)","0.6342972615260243"},
+            {"simple_example_daycount", "SELECT round(xirr([100000, -110000], [toDate('2020-01-01'), toDate('2021-01-01')], 0.1, 'ACT_365_25'), 6) AS xirr_365_25;", "0.099785"},
         },
         .introduced_in = {25, 6},
         .category = FunctionDocumentation::Category::Financial,

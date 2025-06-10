@@ -2,12 +2,17 @@ SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate('2020-01-01'), toDate('202
 SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 0.5), 6) AS xirr_rate;
 SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate;
 
+SELECT 'Different day count modes:';
+SELECT round(xirr([100000, -110000], [toDate('2020-01-01'), toDate('2021-01-01')], 0.1, 'ACT_365F'), 6) AS xirr_365,
+    round(xirr([100000, -110000], [toDate('2020-01-01'), toDate('2021-01-01')], 0.1, 'ACT_365_25'), 6) AS xirr_365_25;
+
 SELECT xirr(123, toDate('2020-01-01')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT xirr([123], toDate('2020-01-01')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT xirr(123, [toDate('2020-01-01')]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT round(xirr([-10000], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT round(xirr([-10000, NULL, 4250, 3250], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT xirr([-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 1);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT xirr([-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 1.0, 'QWERTY');  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'Zero cashflow entries -> NaN:';
 SELECT xirr([]::Array(Float32), []::Array(Date));
