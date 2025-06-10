@@ -2,6 +2,8 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/IColumn.h>
+#include "Common/Exception.h"
+#include <Common/FunctionDocumentation.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -10,12 +12,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
-#include "Common/Exception.h"
-#include <Common/FunctionDocumentation.h>
-#include <Common/assert_cast.h>
-#include <Common/register_objects.h>
 
 #include <boost/math/tools/roots.hpp>
 
