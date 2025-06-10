@@ -43,7 +43,7 @@ possible_properties = {
         0, multiprocessing.cpu_count()
     ),
     "background_common_pool_size": lambda: random.randint(
-        0, multiprocessing.cpu_count()
+        1, multiprocessing.cpu_count()
     ),
     "background_distributed_schedule_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
@@ -330,7 +330,7 @@ def add_single_disk(
                 if object_storage_type == "web"
                 else ["local", "plain", "plain_rewritable"]
             )
-            if is_private_binary:
+            if is_private_binary and object_storage_type != "web":
                 # Increased probability
                 possible_metadata_types.extend(["keeper", "keeper", "keeper"])
             metadata_type = random.choice(possible_metadata_types)
