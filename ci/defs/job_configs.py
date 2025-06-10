@@ -726,7 +726,11 @@ class JobConfigs:
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./docker/test/fuzzer", "./tests/ci/ci_fuzzer_check.py"],
+            include_paths=[
+                "./docker/test/fuzzer",
+                "./tests/ci/ci_fuzzer_check.py",
+                "./tests/queries/0_stateless/",
+            ],
         ),
         allow_merge_on_failure=True,
     ).parametrize(
