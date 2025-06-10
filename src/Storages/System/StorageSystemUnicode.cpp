@@ -255,8 +255,8 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
                 UChar s[2];
                 int32_t length = 0;
                 U16_APPEND_UNSAFE(s, length, code);
-                auto len = u_strFoldCase(buffer, 32, s, 2, U_FOLD_CASE_DEFAULT, &err_code);
-                icu::UnicodeString str(buffer, len);
+                auto _ = u_strFoldCase(buffer, 32, s, 2, U_FOLD_CASE_DEFAULT, &err_code);
+                icu::UnicodeString str(buffer);
                 str.toUTF8String(ret);
             }
             else if (prop == UCHAR_LOWERCASE_MAPPING)
@@ -265,8 +265,8 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
                 UChar s[2];
                 int32_t length = 0;
                 U16_APPEND_UNSAFE(s, length, code);
-                auto len = u_strToLower(buffer, 32, s, 1, "", &err_code);
-                icu::UnicodeString str(buffer, len);
+                auto _ = u_strToLower(buffer, 32, s, 2, "", &err_code);
+                icu::UnicodeString str(buffer);
                 str.toUTF8String(ret);
             }
             else if (prop == UCHAR_NAME)
@@ -276,14 +276,43 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
             }
             else if (prop == UCHAR_SIMPLE_CASE_FOLDING)
             {
-                auto fc = u_foldCase(code, U_FOLD_CASE_DEFAULT);
-                icu::UnicodeString str(fc);
+                auto cp = u_foldCase(code, U_FOLD_CASE_DEFAULT);
+                icu::UnicodeString str(cp);
                 str.toUTF8String(ret);
             }
             else if (prop == UCHAR_SIMPLE_LOWERCASE_MAPPING)
             {
-                auto tl = u_tolower(code);
-                icu::UnicodeString str(tl);
+                auto cp = u_tolower(code);
+                icu::UnicodeString str(cp);
+                str.toUTF8String(ret);
+            }
+            // Now there is no code point where the two properties are different
+            else if (prop == UCHAR_SIMPLE_TITLECASE_MAPPING || prop == UCHAR_TITLECASE_MAPPING)
+            {
+                auto cp = u_totitle(code);
+                icu::UnicodeString str(cp);
+                str.toUTF8String(ret);
+            }
+            else if (prop == UCHAR_SIMPLE_UPPERCASE_MAPPING)
+            {
+                auto cp = u_toupper(code);
+                icu::UnicodeString str(cp);
+                str.toUTF8String(ret);
+            }
+            else if (prop == UCHAR_UPPERCASE_MAPPING)
+            {
+                err_code = U_ZERO_ERROR;
+                UChar s[2];
+                int32_t length = 0;
+                U16_APPEND_UNSAFE(s, length, code);
+                auto _ = u_strToUpper(buffer, 32, s, 2, "", &err_code);
+                icu::UnicodeString str(buffer);
+                str.toUTF8String(ret);
+            }
+            else if (prop == UCHAR_BIDI_PAIRED_BRACKET)
+            {
+                auto cp = u_getBidiPairedBracket(code);
+                icu::UnicodeString str(cp);
                 str.toUTF8String(ret);
             }
 
