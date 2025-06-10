@@ -5,25 +5,21 @@ Expression ((Project names + Projection))
         Expression ((Before GROUP BY + Change column names to column identifiers))
           ReadFromMergeTree (default.t)
       ReadFromRemoteParallelReplicas
-        BlocksMarshalling
-          Aggregating
-            Expression ((Before GROUP BY + Change column names to column identifiers))
-              ReadFromMergeTree (default.t)
-        BlocksMarshalling
-          Aggregating
-            Expression ((Before GROUP BY + Change column names to column identifiers))
-              ReadFromMergeTree (default.t)
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t)
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t)
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
     ReadFromMergeTree (default.t)
   Expression (Project names)
     ReadFromRemoteParallelReplicas
-      BlocksMarshalling
-        Expression ((Projection + Change column names to column identifiers))
-          ReadFromMergeTree (default.t)
-      BlocksMarshalling
-        Expression ((Projection + Change column names to column identifiers))
-          ReadFromMergeTree (default.t)
+      Expression ((Projection + Change column names to column identifiers))
+        ReadFromMergeTree (default.t)
+      Expression ((Projection + Change column names to column identifiers))
+        ReadFromMergeTree (default.t)
 Expression ((Project names + Projection))
   MergingAggregated
     Union
@@ -31,7 +27,6 @@ Expression ((Project names + Projection))
         Expression ((Before GROUP BY + Change column names to column identifiers))
           ReadFromMergeTree (default.t)
       ReadFromRemote (Read from remote replica)
-        BlocksMarshalling
-          Aggregating
-            Expression ((Before GROUP BY + Change column names to column identifiers))
-              ReadFromMergeTree (default.t)
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t)
