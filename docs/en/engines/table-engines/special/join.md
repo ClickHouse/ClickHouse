@@ -14,6 +14,10 @@ Optional prepared data structure for usage in [JOIN](/sql-reference/statements/s
 This is not an article about the [JOIN clause](/sql-reference/statements/select/join) itself.
 :::
 
+:::note
+In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
+:::
+
 ## Creating a Table {#creating-a-table}
 
 ```sql
