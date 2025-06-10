@@ -126,7 +126,7 @@ void StatementGenerator::flatColumnPath(const uint32_t flags, const std::unorder
     }
 }
 
-const SQLRelation StatementGenerator::createTableRelation(
+SQLRelation StatementGenerator::createTableRelation(
     RandomGenerator & rg, const bool all_cols, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
 {
     SQLRelation rel(rel_name);
@@ -208,7 +208,7 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
-const SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const SQLView & v)
+SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const SQLView & v)
 {
     SQLRelation rel(rel_name);
 
