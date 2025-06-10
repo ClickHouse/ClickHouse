@@ -398,9 +398,9 @@ def add_single_disk(
             endpoint_xml.text = f"http://nginx:80/data{i}/"
         elif object_storage_type == "local":
             path_xml = ET.SubElement(next_disk, "path")
-            path_xml.text = f"disk{i}/"
+            path_xml.text = f"/var/lib/clickhouse/disk{i}/"
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
-            allowed_path_xml.text = f"disk{i}/"
+            allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
 
         # Add a endpoint_subpath
         if metadata_type == "plain_rewritable" and random.randint(1, 100) <= 70:
@@ -420,9 +420,9 @@ def add_single_disk(
         disk_xml.text = f"disk{prev_disk}"
         if disk_type == "cache" or random.randint(1, 2) == 1:
             path_xml = ET.SubElement(next_disk, "path")
-            path_xml.text = f"disk{i}/"
+            path_xml.text = f"/var/lib/clickhouse/disk{i}/"
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
-            allowed_path_xml.text = f"disk{i}/"
+            allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
 
         if disk_type == "cache":
             max_size_xml = ET.SubElement(next_disk, "max_size")
