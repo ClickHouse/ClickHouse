@@ -1,0 +1,11 @@
+LZ4	130	1	1	0	0	0	0	Extremely fast; good compression; balanced speed and efficiency.
+15
+codec
+method_byte
+compression
+generic_compression
+encription
+floating_point_timeseries
+delta_compression
+experimental
+notes
