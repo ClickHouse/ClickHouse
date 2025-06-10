@@ -209,7 +209,7 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/arrowflight",
+        name="clickhouse/arrowflight-server-test",
         path="./docker/test/integration/arrowflight",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
