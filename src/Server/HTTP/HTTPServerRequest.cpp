@@ -56,11 +56,15 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     /// and retry with exactly the same (incomplete) set of rows.
     /// That's why we have to check body size if it's provided.
     if (getChunkedTransferEncoding())
+    {
         stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), HTTP_MAX_CHUNK_SIZE);
+        stream_is_bounded = true;
+    }
     else if (hasContentLength())
     {
         size_t content_length = getContentLength();
         stream = std::make_unique<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
+        stream_is_bounded = true;
     }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
     {

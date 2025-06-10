@@ -617,31 +617,6 @@ void HTTPHandler::processQuery(
         {},
         handle_exception_in_output_format,
         query_finish_callback);
-
-    /// HTTPChunkedReadBuffer doesn't consume the final \r\n0\r\n\r\n if the caller reads exactly all bytes,
-    /// without checking for eof() (i.e. trying to read past the end) after that.
-    /// If those leftovers are then seen by the next request's HTTPServerRequest::readRequest,
-    /// it would in theory produce the error:
-    /// Invalid HTTP version string: /?query=I,
-    /// because that extra 0 field shifts all fields by one, and uri ends up interpreted as version.
-    /// There are a few options how to prevent that:
-    /// 1. Officially require that IInputFormat must drain the input buffer, make sure all implementations do that.
-    /// 2. Make the HTTP handler drain the request's POST read buffer after the request.
-    /// 3. Make HTTPChunkedReadBuffer eagerly drain the final \r\n0\r\n\r\n before returning the final bytes of data,
-    //     but that seems very inconvenient to implement because of how zero-copying is done in HTTPChunkedReadBuffer::nextImpl()
-    /// You can find an option (2) implemented below.
-    if (in_post_maybe_compressed->available())
-    {
-        String remaining;
-        readStringUntilEOF(remaining, *in_post_maybe_compressed);
-        auto hex_string = hexString(remaining.data(), remaining.size());
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "There is still some data in the buffer: {}", hex_string);
-#else
-        LOG_WARNING(log, "There is still some data in the buffer: {}", hex_string);
-#endif
-    }
 }
 
 bool HTTPHandler::trySendExceptionToClient(
