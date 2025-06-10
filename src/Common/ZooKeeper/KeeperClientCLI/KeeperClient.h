@@ -27,7 +27,7 @@ static const NameSet four_letter_word_commands
 class KeeperClientBase
 {
 public:
-    KeeperClientBase(std::ostream & sout_ = std::cout, std::ostream & serr_ = std::cerr);
+    KeeperClientBase(std::ostream & cout_ = std::cout, std::ostream & cerr_ = std::cerr);
 
     fs::path getAbsolutePath(const String & relative) const;
 

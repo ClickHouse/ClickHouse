@@ -181,8 +181,8 @@ bool KeeperClientBase::processQueryText(const String & text)
     return true;
 }
 
-KeeperClientBase::KeeperClientBase(std::ostream & sout_, std::ostream & serr_)
-    : cout(sout_), cerr(serr_)
+KeeperClientBase::KeeperClientBase(std::ostream & cout_, std::ostream & cerr_)
+    : cout(cout_), cerr(cerr_)
 {
     loadCommands({
         std::make_shared<LSCommand>(),
