@@ -9,6 +9,7 @@
 
 #include <Core/NamesAndTypes.h>
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 #include <IO/WriteBuffer.h>
@@ -143,7 +144,7 @@ DataTypePtr QueryNode::getResultType() const
     {
         if (projection_columns.size() == 1)
         {
-            return projection_columns[0].type;
+            return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
         }
         else
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
