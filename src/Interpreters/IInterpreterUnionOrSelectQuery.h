@@ -1,9 +1,8 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -13,7 +12,11 @@ namespace DB
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_);
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
+        : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
+    {
+    }
+
     IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_);
 
     virtual void buildQueryPlan(QueryPlan & query_plan) = 0;

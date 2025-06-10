@@ -4,7 +4,6 @@ import datetime
 import json
 import logging
 import os
-import sys
 from ast import literal_eval
 from dataclasses import asdict, dataclass
 from html import escape
@@ -21,18 +20,9 @@ from typing import (
     Union,
 )
 
-from build_download_helper import APIException, get_gh_api
+from build_download_helper import get_gh_api
 from ci_config import CI
-from ci_utils import Shell, cd
-from env_helper import (
-    GITHUB_JOB,
-    GITHUB_REPOSITORY,
-    GITHUB_RUN_ID,
-    GITHUB_RUN_URL,
-    GITHUB_WORKSPACE,
-    REPO_COPY,
-    REPORT_PATH,
-)
+from env_helper import REPORT_PATH, GITHUB_WORKSPACE
 
 logger = logging.getLogger(__name__)
 
@@ -47,106 +37,6 @@ SKIPPED: Final = "SKIPPED"
 
 StatusType = Literal["error", "failure", "pending", "success"]
 STATUSES = [ERROR, FAILURE, PENDING, SUCCESS]  # type: List[StatusType]
-
-# These parameters are set only on demand, and only once
-_GITHUB_JOB_ID = ""
-_GITHUB_JOB_URL = ""
-_GITHUB_JOB_API_URL = ""
-
-
-def GITHUB_JOB_ID(safe: bool = True) -> str:
-    # pylint:disable=global-statement
-    global _GITHUB_JOB_ID
-    global _GITHUB_JOB_URL
-    global _GITHUB_JOB_API_URL
-    if _GITHUB_JOB_ID:
-        return _GITHUB_JOB_ID
-    try:
-        _GITHUB_JOB_ID, _GITHUB_JOB_URL, _GITHUB_JOB_API_URL = get_job_id_url(
-            GITHUB_JOB
-        )
-    except APIException as e:
-        logging.warning("Unable to retrieve the job info from GH API: %s", e)
-        if not safe:
-            raise e
-    return _GITHUB_JOB_ID
-
-
-def GITHUB_JOB_URL(safe: bool = True) -> str:
-    try:
-        GITHUB_JOB_ID()
-    except APIException:
-        if safe:
-            logging.warning("Using run URL as a fallback to not fail the job")
-            return GITHUB_RUN_URL
-        raise
-
-    return _GITHUB_JOB_URL
-
-
-def GITHUB_JOB_API_URL(safe: bool = True) -> str:
-    GITHUB_JOB_ID(safe)
-    return _GITHUB_JOB_API_URL
-
-
-def get_job_id_url(job_name: str) -> Tuple[str, str, str]:
-    job_id = ""
-    job_url = ""
-    job_api_url = ""
-    if GITHUB_RUN_ID == "0":
-        job_id = "0"
-    if job_id:
-        return job_id, job_url, job_api_url
-    jobs = []
-    page = 1
-    while not job_id:
-        response = get_gh_api(
-            f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-            f"actions/runs/{GITHUB_RUN_ID}/jobs?per_page=100&page={page}"
-        )
-        page += 1
-        data = response.json()
-        jobs.extend(data["jobs"])
-        for job in data["jobs"]:
-            if job["name"] != job_name:
-                continue
-            job_id = job["id"]
-            job_url = job["html_url"]
-            job_api_url = job["url"]
-            return job_id, job_url, job_api_url
-        if (
-            len(jobs) >= data["total_count"]  # just in case of inconsistency
-            or len(data["jobs"]) == 0  # if we excided pages
-        ):
-            job_id = "0"
-
-    if not job_url:
-        # This is a terrible workaround for the case of another broken part of
-        # GitHub actions. For nested workflows it doesn't provide a proper job_name
-        # value, but only the final one. So, for `OriginalJob / NestedJob / FinalJob`
-        # full name, job_name contains only FinalJob
-        matched_jobs = []
-        for job in jobs:
-            nested_parts = job["name"].split(" / ")
-            if len(nested_parts) <= 1:
-                continue
-            if nested_parts[-1] == job_name:
-                matched_jobs.append(job)
-        if len(matched_jobs) == 1:
-            # The best case scenario
-            job_id = matched_jobs[0]["id"]
-            job_url = matched_jobs[0]["html_url"]
-            job_api_url = matched_jobs[0]["url"]
-            return job_id, job_url, job_api_url
-        if matched_jobs:
-            logging.error(
-                "We could not get the ID and URL for the current job name %s, there "
-                "are more than one jobs match it for the nested workflows. Please, "
-                "refer to https://github.com/actions/runner/issues/2577",
-                job_name,
-            )
-
-    return job_id, job_url, job_api_url
 
 
 # The order of statuses from the worst to the best
@@ -417,54 +307,9 @@ class JobReport:
     dummy: bool = False
     exit_code: int = -1
 
-    def to_praktika_result(self, job_name):
-        # ugly WA to exclude ci.py file form import
-        Shell.check("mkdir -p /tmp/praktika/")
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        sys.path.append(current_dir + "/../../ci")
-        sys.path.append(current_dir + "/../../")
-        if current_dir in sys.path:
-            sys.path.remove(current_dir)
-        from praktika.result import (  # pylint: disable=import-error,import-outside-toplevel
-            Result,
-        )
-
-        if self.start_time:
-            dt = datetime.datetime.strptime(self.start_time, "%Y-%m-%d %H:%M:%S")
-            timestamp = dt.timestamp()
-        else:
-            timestamp = None
-
-        sub_results = []
-        for r in self.test_results:
-            sub_results.append(
-                Result(
-                    name=r.name,
-                    status=r.status,
-                    info=r.raw_logs,
-                    links=list(r.log_urls) if r.log_urls else [],
-                    duration=r.time,
-                    files=[str(f) for f in r.log_files] if r.log_files else [],
-                )
-            )
-
-        return Result(
-            name=job_name,
-            status=self.status,
-            start_time=timestamp,
-            duration=self.duration,
-            results=sub_results,
-            files=(
-                [str(f) for f in self.additional_files] if self.additional_files else []
-            ),
-            info=self.description,
-        )
-
     @staticmethod
     def get_start_time_from_current():
-        return datetime.datetime.now(datetime.timezone.utc).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        return datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
     @classmethod
     def create_dummy(cls, status: str, job_skipped: bool) -> "JobReport":
@@ -486,20 +331,11 @@ class JobReport:
             start_time = datetime.datetime.strptime(
                 self.start_time, "%Y-%m-%d %H:%M:%S"
             )
-            current_time = datetime.datetime.now()
+            current_time = datetime.datetime.utcnow()
             self.duration = (current_time - start_time).total_seconds()
 
     def __post_init__(self):
-        assert self.status.lower() in (
-            SUCCESS,
-            ERROR,
-            FAILURE,
-            PENDING,
-            SKIPPED.lower(),
-        ), f"Invalid status [{self.status}]"
-        self.additional_files = sorted(  # type: ignore[assignment]
-            self.additional_files, key=lambda x: str(x).rsplit("/", maxsplit=1)[-1]
-        )
+        assert self.status in (SUCCESS, ERROR, FAILURE, PENDING)
 
     @classmethod
     def exist(cls) -> bool:
@@ -531,14 +367,6 @@ class JobReport:
         to_file = to_file or JOB_REPORT_FILE
         with open(to_file, "w", encoding="utf-8") as json_file:
             json.dump(asdict(self), json_file, default=path_converter, indent=2)
-
-        # temporary WA to ease integration with praktika
-        check_name = os.getenv("JOB_NAME", "")
-        if check_name:
-            with cd(REPO_COPY):
-                self.to_praktika_result(job_name=check_name).dump()
-
-        return self
 
 
 def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestResults:
@@ -917,15 +745,16 @@ def create_test_html_report(
         def sort_key(status):
             if "fail" in status.lower():
                 return 0
-            if "error" in status.lower():
+            elif "error" in status.lower():
                 return 1
-            if "not" in status.lower():
+            elif "not" in status.lower():
                 return 2
-            if "ok" in status.lower():
+            elif "ok" in status.lower():
                 return 10
-            if "success" in status.lower():
+            elif "success" in status.lower():
                 return 9
-            return 5
+            else:
+                return 5
 
         test_results.sort(key=lambda result: sort_key(result.status))
 

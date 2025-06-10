@@ -36,6 +36,9 @@ endif ()
 
 if (CMAKE_CROSSCOMPILING)
     if (OS_DARWIN)
+        # FIXME: broken dependencies
+        set (ENABLE_GRPC OFF CACHE INTERNAL "") # no protobuf -> no grpc
+        set (ENABLE_ICU OFF CACHE INTERNAL "")
         set (ENABLE_FASTOPS OFF CACHE INTERNAL "")
     elseif (OS_LINUX OR OS_ANDROID)
         if (ARCH_PPC64LE)

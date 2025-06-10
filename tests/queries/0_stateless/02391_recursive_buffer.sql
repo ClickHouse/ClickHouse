@@ -4,7 +4,7 @@
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (key UInt32) Engine = Buffer(currentDatabase(), test, 16, 10, 100, 10000, 1000000, 10000000, 100000000);
 SELECT * FROM test; -- { serverError INFINITE_LOOP }
-SELECT * FROM system.tables WHERE table = 'test' AND database = currentDatabase() FORMAT Null;
+SELECT * FROM system.tables WHERE table = 'test' AND database = currentDatabase() FORMAT Null; -- { serverError INFINITE_LOOP }
 DROP TABLE test;
 
 DROP TABLE IF EXISTS test1;

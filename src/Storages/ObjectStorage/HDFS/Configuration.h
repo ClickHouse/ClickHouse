@@ -14,7 +14,6 @@ class StorageHDFSConfiguration : public StorageObjectStorage::Configuration
 public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
-    static constexpr auto type = ObjectStorageType::HDFS;
     static constexpr auto type_name = "hdfs";
     static constexpr auto engine_name = "HDFS";
     /// All possible signatures for HDFS engine with structure argument (for example for hdfs table function).
@@ -33,8 +32,8 @@ public:
         " - uri, format, compression_method\n";
 
     StorageHDFSConfiguration() = default;
+    StorageHDFSConfiguration(const StorageHDFSConfiguration & other);
 
-    ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return engine_name; }
 
@@ -53,6 +52,7 @@ public:
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
+    ConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
 

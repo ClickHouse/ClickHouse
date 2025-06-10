@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 /// Embedded timezones.
-std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-linkage)
+std::string_view getTimeZone(const char * name);
 
 
 namespace
@@ -267,9 +267,11 @@ namespace cctz_extension
                     size -= offset;
                     return 0;
                 }
-
-                errno = EINVAL;
-                return -1;
+                else
+                {
+                    errno = EINVAL;
+                    return -1;
+                }
             }
         private:
             const char * data;

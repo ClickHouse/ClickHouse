@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-debug, no-random-settings, no-random-merge-tree-settings, no-fasttest
-# no-fasttest: Busy slow wait
+# Tags: no-debug
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -48,7 +47,7 @@ function wait_for_queries_start()
     done
 }
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS session_log"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.session_log WHERE user = '${TEST_USER}'"
 
 # DROP USE CASE
@@ -103,7 +102,7 @@ ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC" >/dev/null
 
 wait
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS session_log"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 
 echo "port_0_sessions:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user = '${TEST_USER}' AND client_port = 0"

@@ -33,36 +33,6 @@ struct HDFSClusterDefinition
     static constexpr auto storage_type_name = "HDFSCluster";
 };
 
-struct IcebergS3ClusterDefinition
-{
-    static constexpr auto name = "icebergS3Cluster";
-    static constexpr auto storage_type_name = "IcebergS3Cluster";
-};
-
-struct IcebergAzureClusterDefinition
-{
-    static constexpr auto name = "icebergAzureCluster";
-    static constexpr auto storage_type_name = "IcebergAzureCluster";
-};
-
-struct IcebergHDFSClusterDefinition
-{
-    static constexpr auto name = "icebergHDFSCluster";
-    static constexpr auto storage_type_name = "IcebergHDFSCluster";
-};
-
-struct DeltaLakeClusterDefinition
-{
-    static constexpr auto name = "deltaLakeCluster";
-    static constexpr auto storage_type_name = "DeltaLakeS3Cluster";
-};
-
-struct HudiClusterDefinition
-{
-    static constexpr auto name = "hudiCluster";
-    static constexpr auto storage_type_name = "HudiS3Cluster";
-};
-
 /**
 * Class implementing s3/hdfs/azureBlobStorageCluster(...) table functions,
 * which allow to process many files from S3/HDFS/Azure blob storage on a specific cluster.
@@ -71,8 +41,8 @@ struct HudiClusterDefinition
 * On worker node it asks initiator about next task to process, processes it.
 * This is repeated until the tasks are finished.
 */
-template <typename Definition, typename Configuration, bool is_data_lake = false>
-class TableFunctionObjectStorageCluster : public ITableFunctionCluster<TableFunctionObjectStorage<Definition, Configuration, is_data_lake>>
+template <typename Definition, typename Configuration>
+class TableFunctionObjectStorageCluster : public ITableFunctionCluster<TableFunctionObjectStorage<Definition, Configuration>>
 {
 public:
     static constexpr auto name = Definition::name;
@@ -80,7 +50,7 @@ public:
     String getName() const override { return name; }
 
 protected:
-    using Base = TableFunctionObjectStorage<Definition, Configuration, is_data_lake>;
+    using Base = TableFunctionObjectStorage<Definition, Configuration>;
 
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -109,25 +79,4 @@ using TableFunctionAzureBlobCluster = TableFunctionObjectStorageCluster<AzureClu
 #if USE_HDFS
 using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
-
-#if USE_AVRO && USE_AWS_S3
-using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_HDFS
-using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration, true>;
-#endif
-
-#if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
-using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
-#endif
-
-#if USE_AWS_S3
-using TableFunctionHudiCluster = TableFunctionObjectStorageCluster<HudiClusterDefinition, StorageS3HudiConfiguration, true>;
-#endif
-
 }

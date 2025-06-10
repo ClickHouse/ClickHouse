@@ -4,29 +4,27 @@
 #include <vector>
 #include <algorithm>
 
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/IColumn.h>
+#include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
+#include <Core/callOnTypeIndex.h>
+#include <Core/SortDescription.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
-#include <Core/SortDescription.h>
-#include <Core/callOnTypeIndex.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeIPv4andIPv6.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <Columns/IColumn.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 
 #include "config.h"
 
@@ -37,8 +35,10 @@
 namespace DB
 {
 
-class Block;
-using IColumnPermutation = PaddedPODArray<size_t>;
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 /** Cursor allows to compare rows in different blocks (and parts).
   * Cursor moves inside single block.
@@ -71,7 +71,7 @@ struct SortCursorImpl
     /** We could use SortCursorImpl in case when columns aren't sorted
       *  but we have their sorted permutation
       */
-    IColumnPermutation * permutation = nullptr;
+    IColumn::Permutation * permutation = nullptr;
 
 #if USE_EMBEDDED_COMPILER
     std::vector<ColumnData> raw_sort_columns_data;
@@ -79,7 +79,7 @@ struct SortCursorImpl
 
     SortCursorImpl() = default;
 
-    SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0, IColumnPermutation * perm = nullptr)
+    SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0, IColumn::Permutation * perm = nullptr)
         : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
     {
         reset(block, perm);
@@ -91,7 +91,7 @@ struct SortCursorImpl
         size_t num_rows,
         const SortDescription & desc_,
         size_t order_ = 0,
-        IColumnPermutation * perm = nullptr)
+        IColumn::Permutation * perm = nullptr)
         : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
     {
         reset(columns, header, num_rows, perm);
@@ -100,10 +100,45 @@ struct SortCursorImpl
     bool empty() const { return rows == 0; }
 
     /// Set the cursor to the beginning of the new block.
-    void reset(const Block & block, IColumnPermutation * perm = nullptr);
+    void reset(const Block & block, IColumn::Permutation * perm = nullptr)
+    {
+        if (block.getColumns().empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column list in block");
+        reset(block.getColumns(), block, block.getColumns()[0]->size(), perm);
+    }
 
     /// Set the cursor to the beginning of the new block.
-    void reset(const Columns & columns, const Block & block, UInt64 num_rows, IColumnPermutation * perm = nullptr);
+    void reset(const Columns & columns, const Block & block, UInt64 num_rows, IColumn::Permutation * perm = nullptr)
+    {
+        all_columns.clear();
+        sort_columns.clear();
+#if USE_EMBEDDED_COMPILER
+        raw_sort_columns_data.clear();
+#endif
+
+        size_t num_columns = columns.size();
+
+        for (size_t j = 0; j < num_columns; ++j)
+            all_columns.push_back(columns[j].get());
+
+        for (size_t j = 0, size = desc.size(); j < size; ++j)
+        {
+            auto & column_desc = desc[j];
+            size_t column_number = block.getPositionByName(column_desc.column_name);
+            sort_columns.push_back(columns[column_number].get());
+
+#if USE_EMBEDDED_COMPILER
+            if (desc.compiled_sort_description)
+                raw_sort_columns_data.emplace_back(getColumnData(sort_columns.back()));
+#endif
+            need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->isCollationSupported();
+            has_collation |= need_collation[j];
+        }
+
+        pos = 0;
+        rows = num_rows;
+        permutation = perm;
+    }
 
     size_t getRow() const
     {
@@ -171,15 +206,6 @@ struct SortCursorHelper
         /// The last row of this cursor is no larger than the first row of the another cursor.
         return !derived().greaterAt(rhs.derived(), impl->rows - 1, 0);
     }
-
-    bool ALWAYS_INLINE totallyLess(const SortCursorHelper & rhs) const
-    {
-        if (impl->rows == 0 || rhs.impl->rows == 0)
-            return false;
-
-        /// The last row of this cursor is less than the first row of the another cursor.
-        return rhs.derived().template greaterAt<false>(derived(), 0, impl->rows - 1);
-    }
 };
 
 
@@ -188,7 +214,6 @@ struct SortCursor : SortCursorHelper<SortCursor>
     using SortCursorHelper<SortCursor>::SortCursorHelper;
 
     /// The specified row of this cursor is greater than the specified row of another cursor.
-    template <bool consider_order = true>
     bool ALWAYS_INLINE greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
 #if USE_EMBEDDED_COMPILER
@@ -204,10 +229,7 @@ struct SortCursor : SortCursorHelper<SortCursor>
             if (res < 0)
                 return false;
 
-            if constexpr (consider_order)
-                return impl->order > rhs.impl->order;
-            else
-                return false;
+            return impl->order > rhs.impl->order;
         }
 #endif
 
@@ -224,10 +246,7 @@ struct SortCursor : SortCursorHelper<SortCursor>
                 return false;
         }
 
-        if constexpr (consider_order)
-            return impl->order > rhs.impl->order;
-        else
-            return false;
+        return impl->order > rhs.impl->order;
     }
 };
 
@@ -237,7 +256,6 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
 {
     using SortCursorHelper<SimpleSortCursor>::SortCursorHelper;
 
-    template <bool consider_order = true>
     bool ALWAYS_INLINE greaterAt(const SimpleSortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         int res = 0;
@@ -259,10 +277,12 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
             res = direction * impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
         }
 
-        if constexpr (consider_order)
-            return res ? res > 0 : impl->order > rhs.impl->order;
-        else
-            return res > 0;
+        if (res > 0)
+            return true;
+        if (res < 0)
+            return false;
+
+        return impl->order > rhs.impl->order;
     }
 };
 
@@ -271,7 +291,6 @@ struct SpecializedSingleColumnSortCursor : SortCursorHelper<SpecializedSingleCol
 {
     using SortCursorHelper<SpecializedSingleColumnSortCursor>::SortCursorHelper;
 
-    template <bool consider_order = true>
     bool ALWAYS_INLINE greaterAt(const SortCursorHelper<SpecializedSingleColumnSortCursor> & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         auto & this_impl = this->impl;
@@ -289,69 +308,20 @@ struct SpecializedSingleColumnSortCursor : SortCursorHelper<SpecializedSingleCol
 
         int res = desc.direction * lhs_column.compareAt(lhs_pos, rhs_pos, rhs_column, desc.nulls_direction);
 
-        if constexpr (consider_order)
-            return res ? res > 0 : this_impl->order > rhs.impl->order;
-        else
-            return res > 0;
+        if (res > 0)
+            return true;
+        if (res < 0)
+            return false;
+
+        return this_impl->order > rhs.impl->order;
     }
 };
-
-template <typename ColumnType>
-struct SpecializedSingleNullableColumnSortCursor : SortCursorHelper<SpecializedSingleNullableColumnSortCursor<ColumnType>>
-{
-    using SortCursorHelper<SpecializedSingleNullableColumnSortCursor>::SortCursorHelper;
-
-    template <bool consider_order = true>
-    bool ALWAYS_INLINE greaterAt(const SortCursorHelper<SpecializedSingleNullableColumnSortCursor> & rhs, size_t lhs_pos, size_t rhs_pos) const
-    {
-        auto & this_impl = this->impl;
-
-        auto & lhs_columns = this_impl->sort_columns;
-        auto & rhs_columns = rhs.impl->sort_columns;
-
-        assert(lhs_columns.size() == 1);
-        assert(rhs_columns.size() == 1);
-
-        const auto & lhs_column = assert_cast<const ColumnNullable &>(*lhs_columns[0]);
-        const auto & rhs_column = assert_cast<const ColumnNullable &>(*rhs_columns[0]);
-        const auto & lhs_nullmap = lhs_column.getNullMapData();
-        const auto & rhs_nullmap = rhs_column.getNullMapData();
-        const auto & denull_lhs_column = assert_cast<const ColumnType &>(lhs_column.getNestedColumn());
-        const auto & denull_rhs_column = assert_cast<const ColumnType &>(rhs_column.getNestedColumn());
-
-        const auto & desc = this->impl->desc[0];
-
-        auto get_compare_result = [&]() -> int
-        {
-            bool lval_is_null = lhs_nullmap[lhs_pos];
-            bool rval_is_null = rhs_nullmap[rhs_pos];
-
-            if (unlikely(lval_is_null || rval_is_null))
-            {
-                if (lval_is_null && rval_is_null)
-                    return 0;
-                return lval_is_null ? desc.nulls_direction : -desc.nulls_direction;
-            }
-
-            return denull_lhs_column.compareAt(lhs_pos, rhs_pos, denull_rhs_column, desc.nulls_direction);
-        };
-
-
-        int res = desc.direction * get_compare_result();
-        if constexpr (consider_order)
-            return res ? res > 0 : this_impl->order > rhs.impl->order;
-        else
-            return res > 0;
-    }
-};
-
 
 /// Separate comparator for locale-sensitive string comparisons
 struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
 {
     using SortCursorHelper<SortCursorWithCollation>::SortCursorHelper;
 
-    template <bool consider_order = true>
     bool ALWAYS_INLINE greaterAt(const SortCursorWithCollation & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
@@ -371,10 +341,7 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
             if (res < 0)
                 return false;
         }
-        if constexpr (consider_order)
-            return impl->order > rhs.impl->order;
-        else
-            return false;
+        return impl->order > rhs.impl->order;
     }
 };
 
@@ -601,32 +568,14 @@ private:
         else
             return;
 
-        /// Linear detection at most 16 elements to quickly find a small batch size.
-        /// This heuristic helps to avoid the overhead of binary search for small batches.
-        constexpr size_t max_linear_detection = 16;
-        size_t i = 0;
-        while (i < max_linear_detection && min_cursor_pos + batch_size < min_cursor_size
-               && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
+        if (unlikely(begin_cursor.totallyLessOrEquals(next_child_cursor)))
         {
-            ++batch_size;
-            ++i;
-        }
-
-        if (i < max_linear_detection)
+            batch_size = min_cursor_size - min_cursor_pos;
             return;
-
-        /// Binary search for the rest of elements in case of large batch size especially when sort columns have low cardinality.
-        size_t start_offset = batch_size;
-        size_t end_offset = min_cursor_size - min_cursor_pos;
-        while (start_offset < end_offset)
-        {
-            size_t mid_offset = start_offset + (end_offset - start_offset) / 2;
-            if (next_child_cursor.greaterWithOffset(begin_cursor, 0, mid_offset))
-                start_offset = mid_offset + 1;
-            else
-                end_offset = mid_offset;
         }
-        batch_size = start_offset;
+
+        while (min_cursor_pos + batch_size < min_cursor_size && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
+            ++batch_size;
     }
 };
 
@@ -662,40 +611,21 @@ public:
             initializeQueues<SortCursorWithCollation>();
             return;
         }
-        if (sort_description.size() == 1)
+        else if (sort_description.size() == 1)
         {
-            bool result = false;
-            if (!sort_description_types[0]->isNullable())
-            {
-                TypeIndex column_type_index = sort_description_types[0]->getTypeId();
-                result = callOnIndexAndDataType<void>(
-                    column_type_index,
-                    [&](const auto & types)
-                    {
-                        using Types = std::decay_t<decltype(types)>;
-                        using ColumnDataType = typename Types::LeftType;
-                        using ColumnType = typename ColumnDataType::ColumnType;
+            TypeIndex column_type_index = sort_description_types[0]->getTypeId();
 
-                        initializeQueues<SpecializedSingleColumnSortCursor<ColumnType>>();
-                        return true;
-                    });
-            }
-            else
-            {
-                DataTypePtr denull_type = removeNullable(sort_description_types[0]);
-                TypeIndex column_type_index = denull_type->getTypeId();
-                result = callOnIndexAndDataType<void>(
-                    column_type_index,
-                    [&](const auto & types)
-                    {
-                        using Types = std::decay_t<decltype(types)>;
-                        using ColumnDataType = typename Types::LeftType;
-                        using ColumnType = typename ColumnDataType::ColumnType;
+            bool result = callOnIndexAndDataType<void>(
+                column_type_index,
+                [&](const auto & types)
+                {
+                    using Types = std::decay_t<decltype(types)>;
+                    using ColumnDataType = typename Types::LeftType;
+                    using ColumnType = typename ColumnDataType::ColumnType;
 
-                        initializeQueues<SpecializedSingleNullableColumnSortCursor<ColumnType>>();
-                        return true;
-                    });
-            }
+                    initializeQueues<SpecializedSingleColumnSortCursor<ColumnType>>();
+                    return true;
+                });
 
             if (!result)
                 initializeQueues<SimpleSortCursor>();
@@ -738,7 +668,19 @@ private:
         batch_queue_variants = SortingQueueBatch<Cursor>();
     }
 
-    static DataTypes extractSortDescriptionTypesFromHeader(const Block & header, const SortDescription & sort_description);
+    static DataTypes extractSortDescriptionTypesFromHeader(const Block & header, const SortDescription & sort_description)
+    {
+        size_t sort_description_size = sort_description.size();
+        DataTypes data_types(sort_description_size);
+
+        for (size_t i = 0; i < sort_description_size; ++i)
+        {
+            const auto & column_sort_description = sort_description[i];
+            data_types[i] = header.getByName(column_sort_description.column_name).type;
+        }
+
+        return data_types;
+    }
 
     template <SortingQueueStrategy strategy>
     using QueueVariants = std::variant<
@@ -756,7 +698,6 @@ private:
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int128>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int256>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Float32>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Float64>>, strategy>,
 
@@ -772,36 +713,6 @@ private:
 
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnString>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnFixedString>, strategy>,
-
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt8>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt256>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int8>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int256>>, strategy>,
-
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float64>>, strategy>,
-
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
-
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UUID>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv4>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv6>>, strategy>,
-
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnString>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnFixedString>, strategy>,
 
         SortingQueueImpl<SimpleSortCursor, strategy>,
         SortingQueueImpl<SortCursor, strategy>,
@@ -823,7 +734,7 @@ bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t 
         int res = elem.base.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.base.nulls_direction);
         if (res < 0)
             return true;
-        if (res > 0)
+        else if (res > 0)
             return false;
     }
 

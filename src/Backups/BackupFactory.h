@@ -35,7 +35,6 @@ public:
         String s3_storage_class;
         ContextPtr context;
         bool is_internal_backup = false;
-        bool is_lightweight_snapshot = false;
         std::shared_ptr<IBackupCoordination> backup_coordination;
         std::optional<UUID> backup_uuid;
         bool deduplicate_files = true;
@@ -46,8 +45,6 @@ public:
         bool azure_attempt_to_create_container = true;
         ReadSettings read_settings;
         WriteSettings write_settings;
-
-        CreateParams getCreateParamsForBaseBackup(BackupInfo base_backup_info_, String old_password) const;
     };
 
     static BackupFactory & instance();

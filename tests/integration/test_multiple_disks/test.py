@@ -7,7 +7,6 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
-
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -85,10 +84,6 @@ def test_system_tables(start_cluster):
             "keep_free_space": "0",
         },
     ]
-    if node1.with_remote_database_disk:
-        expected_disks_data.append(
-            {"name": "disk_db_remote", "path": "", "keep_free_space": "0"}
-        )
 
     click_disk_data = json.loads(
         node1.query("SELECT name, path, keep_free_space FROM system.disks FORMAT JSON")

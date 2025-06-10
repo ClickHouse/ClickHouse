@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <IO/Progress.h>
+#include <IO/WriteBuffer.h>
 #include <IO/PeekableWriteBuffer.h>
 #include <Common/Stopwatch.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
@@ -23,6 +25,8 @@ public:
         bool yield_strings_);
 
     String getName() const override { return "JSONRowOutputFormat"; }
+
+    void onProgress(const Progress & value) override;
 
     String getContentType() const override { return "application/json; charset=UTF-8"; }
 

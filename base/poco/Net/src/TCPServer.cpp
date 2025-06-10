@@ -152,11 +152,6 @@ void TCPServer::run()
                         ErrorHandler::logMessage(Message::PRIO_WARNING, "Filtered out connection from " + ss.peerAddress().toString());
                     }
                 }
-                // Termination request
-                catch (Poco::InvalidArgumentException&)
-                {
-                    break;
-                }
                 catch (Poco::Exception& exc)
                 {
                     ErrorHandler::handle(exc);
