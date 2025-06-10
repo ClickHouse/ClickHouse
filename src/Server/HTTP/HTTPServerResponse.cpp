@@ -132,23 +132,9 @@ void HTTPServerResponse::redirect(const std::string & uri, HTTPStatus status)
 
 void HTTPServerResponse::allowKeepAliveIFFRequestIsFullyRead()
 {
-    /// HTTPChunkedReadBuffer doesn't consume the final \r\n0\r\n\r\n if the caller reads exactly all bytes,
-    /// without checking for eof() (i.e. trying to read past the end) after that.
-    /// If those leftovers are then seen by the next request's HTTPServerRequest::readRequest,
-    /// it would in theory produce the error:
-    /// Invalid HTTP version string: /?query=I,
-    /// because that extra 0 field shifts all fields by one, and uri ends up interpreted as version.
-
-    /// We should not drain all the data here, we do not know how many data is left there.
-    /// HTTP handler is responsible to read all the real data from the request.
-    /// If it failed to do it, then something is wrong here, connection should be closed.
-    /// However we should read the final empty chunk as part of HTTP transfer chunk encoding format if it is left in request stream.
-    /// If request stream consists only that final empty chunk than the connection should be reused.
-
-    /// method HTTPServerRequest::canKeepAlive check that request stream is bounded and is fully read,
-    /// by calling ReadBuffer::eof method, which reads no more than buffer size bytes,
-    /// it correctly understands if the stream is ended or not
-
+    /// Connection can only be reused if we've fully read the previous request and all its POST data.
+    /// Otherwise we'd misinterpret the leftover data as part of the next request's header.
+    /// HTTPServerRequest::canKeepAlive() checks that request stream is bounded and is fully read.
     if (!request || !request->canKeepAlive())
         setKeepAlive(false);
 }

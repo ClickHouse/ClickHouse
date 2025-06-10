@@ -1,5 +1,8 @@
 import pytest
-import time, http.client
+import time
+import http.client
+import random
+import lz4.frame
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -27,12 +30,18 @@ def make_arrow_stream_data():
     footer = "ffffffff00000000"
     num_values = 37000
 
-    return bytes.fromhex(header) + b"xxxxxxxx" * num_values + bytes.fromhex(footer)
+    values = random.randbytes(num_values * 8)
+    return bytes.fromhex(header) + values + bytes.fromhex(footer)
 
 def yield_then_sleep(data):
     yield data
     # Make the HTTP client wait after the data chunk but before sending the final "0\r\n\r\n" bytes.
     time.sleep(1)
+
+def yield_with_sleep_in_between(part1, part2):
+    yield part1
+    time.sleep(1)
+    yield part2
 
 # This used to break because the server didn't drain the final empty chunk from HTTP chunked encoded
 # data, then tried to parse the next request from the same connection and misinterpreted the
@@ -54,16 +63,37 @@ def test_delay(started_cluster):
         assert resp.status == 200
         body = resp.read()
         assert body == b""
-        if (resp.getheader('Connection').lower() == 'close'):
-            return
         assert resp.getheader('Connection').lower() == 'keep-alive'
 
-        conn.request('GET', '/?query=select%2042')
+        conn.request('GET', '/?query=select%20count%28%29%20from%20test_delay')
         resp = conn.getresponse()
         assert resp.status == 200
-        assert resp.read() == b"42\n"
+        assert resp.read() == b"37000\n"
     finally:
         node.query("drop table test_delay")
+
+
+def test_delay_compressed(started_cluster):
+    try:
+        node.query("create table test_delay_compressed (x Int64) engine Memory")
+
+        conn = http.client.HTTPConnection(node.ip_address, 8123)
+        data = make_arrow_stream_data()
+        compressed = lz4.frame.compress(data)
+        assert compressed[-4:] == b'\0\0\0\0'
+        conn.request('POST', '/?query=insert%20into%20test_delay_compressed%20format%20ArrowStream', body=yield_with_sleep_in_between(compressed[:-4], compressed[-4:]), headers={'Transfer-Encoding': 'chunked', 'Connection': 'keep-alive', 'Content-Encoding': 'lz4'}, encode_chunked=True)
+        resp = conn.getresponse()
+        assert resp.status == 200
+        body = resp.read()
+        assert body == b""
+        assert resp.getheader('Connection').lower() == 'keep-alive'
+
+        conn.request('GET', '/?query=select%20count%28%29%20from%20test_delay_compressed')
+        resp = conn.getresponse()
+        assert resp.status == 200
+        assert resp.read() == b"37000\n"
+    finally:
+        node.query("drop table test_delay_compressed")
 
 
 def test_form(started_cluster):
