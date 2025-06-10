@@ -440,6 +440,146 @@ GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
 )EOQ") }
         },
+        /// Memory usage per host dashboard for self-managed ClickHouse
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Tracked memory by ClickHouse" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(CurrentMetric_MemoryTracking)
+FROM merge('system', '^metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "In-Memory Caches" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric
+FROM merge('system', '^metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Primary key" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'TotalPrimaryKeyBytesInMemoryAllocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Index Granularity" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'TotalIndexGranularityBytesInMemoryAllocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Tracked memory by kernel (RSS)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'MemoryResident'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Tracked memory by allocator" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'jemalloc.allocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Resident memory used by allocator (includes allocator metadata)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'jemalloc.resident'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "ClickHouse vs Kernel Drift" },
+            { "query", trim(R"EOQ(
+SELECT
+    t,
+    hostname,
+    metrics.value - async_metrics.value AS drift
+FROM
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(CurrentMetric_MemoryTracking) AS value
+    FROM merge('system', '^metric_log')
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32}))
+    GROUP BY ALL
+) AS metrics
+JOIN
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(value) AS value
+    FROM merge('system', '^asynchronous_metric_log')
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32})) AND (metric = 'MemoryResident')
+    GROUP BY ALL
+) AS async_metrics USING (t, hostname)
+ORDER BY t ASC WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "ClickHouse vs Allocator Drift" },
+            { "query", trim(R"EOQ(
+SELECT
+    t,
+    hostname,
+    metrics.value - async_metrics.value AS drift
+FROM
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(CurrentMetric_MemoryTracking) AS value
+    FROM merge('system', '^metric_log')
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32}))
+    GROUP BY ALL
+) AS metrics
+JOIN
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(value) AS value
+    FROM merge('system', '^asynchronous_metric_log')
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32})) AND (metric = 'jemalloc.allocated')
+    GROUP BY ALL
+) AS async_metrics USING (t, hostname)
+ORDER BY t ASC WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
         /// Default dashboard for ClickHouse Cloud
         {
             { "dashboard", "Cloud overview" },
@@ -1368,6 +1508,146 @@ FROM (
   GROUP BY event_time, hostname)
 GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        /// Memory usage per host dashboard in ClickHouse Cloud
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Tracked memory by ClickHouse" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(CurrentMetric_MemoryTracking)
+FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "In-Memory Caches" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY sum]) AS metric
+FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Primary key" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'TotalPrimaryKeyBytesInMemoryAllocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Index Granularity" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'TotalIndexGranularityBytesInMemoryAllocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Tracked memory by kernel (RSS)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'MemoryResident'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Tracked memory by allocator" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'jemalloc.allocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Resident memory used by allocator (includes allocator metadata)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'jemalloc.resident'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "ClickHouse vs Kernel Drift" },
+            { "query", trim(R"EOQ(
+SELECT
+    t,
+    hostname,
+    metrics.value - async_metrics.value AS drift
+FROM
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(CurrentMetric_MemoryTracking) AS value
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32}))
+    GROUP BY ALL
+) AS metrics
+JOIN
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(value) AS value
+    FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32})) AND (metric = 'MemoryResident')
+    GROUP BY ALL
+) AS async_metrics USING (t, hostname)
+ORDER BY t ASC WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "ClickHouse vs Allocator Drift" },
+            { "query", trim(R"EOQ(
+SELECT
+    t,
+    hostname,
+    metrics.value - async_metrics.value AS drift
+FROM
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(CurrentMetric_MemoryTracking) AS value
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32}))
+    GROUP BY ALL
+) AS metrics
+JOIN
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(value) AS value
+    FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32})) AND (metric = 'jemalloc.allocated')
+    GROUP BY ALL
+) AS async_metrics USING (t, hostname)
+ORDER BY t ASC WITH FILL STEP {rounding:UInt32}
 )EOQ") }
         },
     };
