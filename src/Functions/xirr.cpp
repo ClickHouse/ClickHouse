@@ -445,35 +445,36 @@ public:
         {
             using CashFlowType = const typename CashFlowCol::ValueType;
             using DateType = const typename DateTypeCol::ValueType;
-            auto * xirr_fptr = [&]() -> std::expected<double, SolverErrorCode> (*)(std::span<CashFlowType>, std::span<DateType>, double)
+
+            auto loop = [&]<DayCountType day_count_type>
             {
-                switch (day_count)
+                ColumnArray::Offset previous_offset = 0;
+                for (size_t i = 0; i < cashflow_offsets.size(); ++i)
                 {
-                    case DayCountType::ACT_365F:
-                        return &calculateXirr<DayCountType::ACT_365F>;
-                    case DayCountType::ACT_365_25:
-                        return &calculateXirr<DayCountType::ACT_365_25>;
+                    const auto current_offset = cashflow_offsets[i];
+                    if (current_offset != date_offsets[i])
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size for each row");
+
+                    const auto length = current_offset - previous_offset;
+                    auto cashflow_span = std::span<CashFlowType>(cashflow_values->getData().data() + previous_offset, length);
+                    auto date_span = std::span<DateType>(date_values->getData().data() + previous_offset, length);
+
+                    auto xirr = calculateXirr<day_count_type, CashFlowType, DateType>(cashflow_span, date_span, guess);
+                    if (xirr.has_value()) [[likely]]
+                        result_data[i] = xirr.value();
+                    else
+                        result_data[i] = std::numeric_limits<double>::quiet_NaN();
+
+                    previous_offset = current_offset;
                 }
-            }();
-
-            ColumnArray::Offset previous_offset = 0;
-            for (size_t i = 0; i < cashflow_offsets.size(); ++i)
+            };
+            switch (day_count)
             {
-                const auto current_offset = cashflow_offsets[i];
-                if (current_offset != date_offsets[i])
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size for each row");
-
-                const auto length = current_offset - previous_offset;
-                auto cashflow_span = std::span<CashFlowType>(cashflow_values->getData().data() + previous_offset, length);
-                auto date_span = std::span<DateType>(date_values->getData().data() + previous_offset, length);
-
-                auto xirr = xirr_fptr(cashflow_span, date_span, guess);
-                if (xirr.has_value()) [[likely]]
-                    result_data[i] = xirr.value();
-                else
-                    result_data[i] = std::numeric_limits<double>::quiet_NaN();
-
-                previous_offset = current_offset;
+                case DayCountType::ACT_365F:
+                    return loop.template operator()<DayCountType::ACT_365F>();
+                case DayCountType::ACT_365_25:
+                    return loop.template operator()<DayCountType::ACT_365_25>();
             }
         };
 
@@ -653,32 +654,32 @@ public:
         {
             using CashFlowType = const typename CashFlowCol::ValueType;
             using DateType = const typename DateTypeCol::ValueType;
-            auto * xnpv_fptr = [&]() -> double (*)(double, std::span<CashFlowType>, std::span<DateType>)
+            auto loop = [&]<DayCountType day_count_type>
             {
-                switch (day_count)
+                ColumnArray::Offset previous_offset = 0;
+                for (size_t i = 0; i < cashflow_offsets.size(); ++i)
                 {
-                    case DayCountType::ACT_365F:
-                        return &xnpv<DayCountType::ACT_365F>;
-                    case DayCountType::ACT_365_25:
-                        return &xnpv<DayCountType::ACT_365_25>;
+                    const auto current_offset = cashflow_offsets[i];
+                    if (current_offset != date_offsets[i])
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size for each row");
+                    const auto rate = rate_pod[i];
+
+                    const auto length = current_offset - previous_offset;
+                    auto cashflow_span = std::span<CashFlowType>(cashflow_values->getData().data() + previous_offset, length);
+                    auto date_span = std::span<DateType>(date_values->getData().data() + previous_offset, length);
+
+                    result_data[i] = xnpv<day_count_type, CashFlowType, DateType>(rate, cashflow_span, date_span);
+
+                    previous_offset = current_offset;
                 }
-            }();
-
-            ColumnArray::Offset previous_offset = 0;
-            for (size_t i = 0; i < cashflow_offsets.size(); ++i)
+            };
+            switch (day_count)
             {
-                const auto current_offset = cashflow_offsets[i];
-                if (current_offset != date_offsets[i])
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size for each row");
-                const auto rate = rate_pod[i];
-
-                const auto length = current_offset - previous_offset;
-                auto cashflow_span = std::span<CashFlowType>(cashflow_values->getData().data() + previous_offset, length);
-                auto date_span = std::span<DateType>(date_values->getData().data() + previous_offset, length);
-
-                result_data[i] = xnpv_fptr(rate, cashflow_span, date_span);
-
-                previous_offset = current_offset;
+                case DayCountType::ACT_365F:
+                    return loop.template operator()<DayCountType::ACT_365F>();
+                case DayCountType::ACT_365_25:
+                    return loop.template operator()<DayCountType::ACT_365_25>();
             }
         };
 
@@ -757,26 +758,26 @@ public:
         auto process_array = [&]<typename CashFlowCol>(const CashFlowCol * cashflow_values, const auto & rate_pod)
         {
             using CashFlowType = const typename CashFlowCol::ValueType;
-            auto * npv_fptr = [&]() -> double (*)(double, std::span<CashFlowType>)
+            auto loop = [&]<IndexMode index_mode>()
             {
-                if (start_from_zero)
-                    return &npv<IndexMode::ZeroBased, CashFlowType>;
-                else
-                    return &npv<IndexMode::OneBased, CashFlowType>;
-            }();
+                ColumnArray::Offset previous_offset = 0;
+                for (size_t i = 0; i < cashflow_offsets.size(); ++i)
+                {
+                    const auto current_offset = cashflow_offsets[i];
+                    const auto length = current_offset - previous_offset;
+                    const auto rate = rate_pod[i];
+                    auto cashflow_span = std::span(cashflow_values->getData().data() + previous_offset, length);
 
-            ColumnArray::Offset previous_offset = 0;
-            for (size_t i = 0; i < cashflow_offsets.size(); ++i)
-            {
-                const auto current_offset = cashflow_offsets[i];
-                const auto length = current_offset - previous_offset;
-                const auto rate = rate_pod[i];
-                auto cashflow_span = std::span(cashflow_values->getData().data() + previous_offset, length);
+                    result_data[i] = npv<index_mode, CashFlowType>(rate, cashflow_span);
 
-                result_data[i] = npv_fptr(rate, cashflow_span);
+                    previous_offset = current_offset;
+                }
+            };
 
-                previous_offset = current_offset;
-            }
+            if (start_from_zero)
+                loop.template operator()<IndexMode::ZeroBased>();
+            else
+                loop.template operator()<IndexMode::OneBased>();
         };
 
         auto dispatch = [&](const auto * cashflow_data)
