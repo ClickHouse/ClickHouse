@@ -624,7 +624,7 @@ void StorageURLSink::initBuffers()
     if (write_buf)
         return;
 
-    std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
+    std::string content_type = FormatFactory::instance().getContentType(format, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
     auto poco_uri = Poco::URI(uri);

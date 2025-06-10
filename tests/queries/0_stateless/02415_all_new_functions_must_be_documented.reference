@@ -112,7 +112,6 @@ cbrt
 ceil
 char
 cityHash64
-clamp
 coalesce
 concat
 concatAssumeInjective
@@ -160,7 +159,6 @@ encodeURLComponent
 encodeURLFormComponent
 encodeXMLComponent
 endsWith
-equals
 erf
 erfc
 errorCodeToName
@@ -229,9 +227,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greater
-greaterOrEquals
-greatest
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -246,7 +241,6 @@ hopStart
 hostName
 hypot
 identity
-if
 ifNull
 ignore
 ilike
@@ -279,14 +273,11 @@ joinGetOrNull
 jumpConsistentHash
 kafkaMurmurHash
 kostikConsistentHash
-least
 left
 leftPad
 leftPadUTF8
 leftUTF8
 lengthUTF8
-less
-lessOrEquals
 lgamma
 like
 log
@@ -313,7 +304,6 @@ monthName
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
-multiIf
 multiMatchAllIndices
 multiMatchAny
 multiMatchAnyIndex
@@ -365,7 +355,6 @@ normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
 not
-notEquals
 notILike
 notIn
 notInIgnoreSet

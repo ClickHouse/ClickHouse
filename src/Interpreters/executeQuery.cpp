@@ -1828,7 +1828,7 @@ void executeQuery(
                 if (output_format && output_format->supportsWritingException())
                 {
                     /// Force an update of the headers before we start writing
-                    result_details.content_type = output_format->getContentType();
+                    result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
                     result_details.format = format_name;
 
                     fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
@@ -1964,7 +1964,7 @@ void executeQuery(
                 output_format->onProgress(progress);
             });
 
-            result_details.content_type = output_format->getContentType();
+            result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
             result_details.format = format_name;
 
             pipeline.complete(output_format);

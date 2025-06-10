@@ -33,7 +33,24 @@ ENGINE = MergeTree
 ORDER BY timestamp;
 INSERT INTO t1 VALUES ('2025-05-21 00:00:00');"
 
-$CLICKHOUSE_CLIENT -n -q "SELECT * FROM t1 WHERE toDayOfMonth(timestamp) = 1 FORMAT Null;" --query-id="${query_prefix}_generic"
+$CLICKHOUSE_CLIENT -n -q "SELECT * FROM t1 WHERE toDayOfMonth(timestamp) = 1 FORMAT Null;" --query-id="${query_prefix}_generic1"
+
+# Non-native integer type edge case in ToNumberMonotonicity
+# See: https://github.com/ClickHouse/ClickHouse/issues/80742
+$CLICKHOUSE_CLIENT -n -q "
+DROP TABLE IF EXISTS t2;
+CREATE TABLE t2
+(
+  a UInt128,
+  b UInt64
+)
+ENGINE = MergeTree
+ORDER BY a
+SETTINGS index_granularity = 64, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0;
+INSERT INTO t2 SELECT number, number FROM numbers(10000);"
+
+$CLICKHOUSE_CLIENT -n -q "SELECT count() FROM t2 WHERE (a < toUInt256(200)) FORMAT Null;" --query-id="${query_prefix}_generic2"
+
 $CLICKHOUSE_CLIENT -n -q "SYSTEM FLUSH LOGS query_log;"
 
 $CLICKHOUSE_CLIENT -n -q "SELECT sum(ProfileEvents['IndexBinarySearchAlgorithm']), sum(ProfileEvents['IndexGenericExclusionSearchAlgorithm']) FROM system.query_log

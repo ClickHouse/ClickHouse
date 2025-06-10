@@ -1665,12 +1665,13 @@ void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_role
 
 void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> &)
 {
+    // External roles are roles received from other node, current roles is a collection of roles that were assigned locally
     if (!new_external_roles.empty())
     {
-        if (current_roles)
-            current_roles->insert(current_roles->end(), new_external_roles.begin(), new_external_roles.end());
+        if (external_roles)
+            external_roles->insert(external_roles->end(), new_external_roles.begin(), new_external_roles.end());
         else
-            current_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
+            external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
         need_recalculate_access = true;
     }
 }
@@ -5580,10 +5581,21 @@ void Context::setGoogleProtosPath(const String & path)
 
 std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> Context::getSampleBlockCache() const
 {
-    assert(hasQueryContext());
+    chassert(hasQueryContext());
     return std::make_pair(&getQueryContext()->sample_block_cache, std::unique_lock(getQueryContext()->sample_block_cache_mutex));
 }
 
+std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> Context::getStorageMetadataCache() const
+{
+    chassert(hasQueryContext());
+    return std::make_pair(&getQueryContext()->storage_metadata_cache, std::unique_lock(getQueryContext()->storage_metadata_cache_mutex));
+}
+
+std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> Context::getStorageSnapshotCache() const
+{
+    chassert(hasQueryContext());
+    return std::make_pair(&getQueryContext()->storage_snapshot_cache, std::unique_lock(getQueryContext()->storage_snapshot_cache_mutex));
+}
 
 bool Context::hasQueryParameters() const
 {

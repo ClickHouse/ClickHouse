@@ -164,7 +164,7 @@ void LocalServer::processError(std::string_view) const
         String message;
         if (server_exception)
         {
-            message = getExceptionMessage(*server_exception, print_stack_trace, true);
+            message = getExceptionMessageForLogging(*server_exception, print_stack_trace, true);
         }
         else if (client_exception)
         {
@@ -671,10 +671,10 @@ try
 
     return Application::EXIT_OK;
 }
-catch (const DB::Exception & e)
+catch (DB::Exception & e)
 {
     bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
-    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
+    std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl;
     auto code = DB::getCurrentExceptionCode();
     return static_cast<UInt8>(code) ? code : 1;
 }
@@ -1112,8 +1112,8 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
     {
         std::string_view arg = argv[arg_num];
 
-        /// Parameter arg after underline.
-        if (arg.starts_with("--param_"))
+        /// Parameter arg after underline or dash.
+        if (arg.starts_with("--param_") || arg.starts_with("--param-"))
         {
             auto param_continuation = arg.substr(strlen("--param_"));
             auto equal_pos = param_continuation.find_first_of('=');
@@ -1156,9 +1156,9 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
         app.init(argc, argv);
         return app.run();
     }
-    catch (const DB::Exception & e)
+    catch (DB::Exception & e)
     {
-        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        std::cerr << DB::getExceptionMessageForLogging(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }

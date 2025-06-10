@@ -94,6 +94,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -533,6 +534,54 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     return QueryProcessingStage::WithMergeableState;
 }
 
+/// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp
+/// Will skip merging step in the initial server when the following conditions are met:
+/// 1. Sharding key columns should be a subset of expression columns.
+/// 2. Sharding key expression is a deterministic function of col1, ..., coln and expression key is injective functions of these col1, ..., coln.
+/// 3. If the expression contains non-injective function, return false.
+bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
+    const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const
+{
+    ColumnsWithTypeAndName empty_input_columns;
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    // When comparing sharding key expressions, we need to ignore table qualifiers in column names
+    // because the sharding key is defined without table qualifiers, but the query expression
+    // may have internal table aliases (e.g. __table1.id). Setting use_column_identifier_as_action_node_name=false
+    // makes the DAG builder use plain column names without table qualifiers.
+    auto [expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        expr,
+        empty_input_columns,
+        query_info.planner_context,
+        empty_correlated_columns_set,
+        false /* use_column_identifier_as_action_node_name */);
+
+    correlated_subtrees.assertEmpty("in sharding key expression");
+
+    if (expression_dag.hasArrayJoin() || expression_dag.hasStatefulFunctions() || expression_dag.hasNonDeterministic())
+        return false;
+
+    const auto & expr_key_required_columns = expression_dag.getRequiredColumnsNames();
+
+    const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
+
+    for (const auto & col : sharding_key_dag.getRequiredColumnsNames())
+    {
+        if (std::ranges::find(expr_key_required_columns, col) == expr_key_required_columns.end())
+            return false;
+    }
+
+    auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(expression_dag);
+    for (const auto & node : irreducibe_nodes)
+    {
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !isInjectiveFunction(node))
+        {
+            return false;
+        }
+    }
+    const auto matches = matchTrees(expression_dag.getOutputs(), sharding_key_dag);
+    return allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches);
+}
+
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
@@ -543,32 +592,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
         default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     const auto & query_node = query_info.query_tree->as<const QueryNode &>();
-
-    auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
-    {
-        std::unordered_set<std::string> expr_columns;
-        for (const auto & expr : exprs)
-        {
-            const auto * id = expr->as<const ColumnNode>();
-            if (!id)
-                continue;
-            auto source = id->getColumnSourceOrNull();
-            if (!source)
-                continue;
-
-            if (source.get() != query_info.table_expression.get())
-                continue;
-
-            expr_columns.emplace(id->getColumnName());
-        }
-        for (const auto & column : sharding_key_expr->getRequiredColumns())
-        {
-            if (!expr_columns.contains(column))
-                return false;
-        }
-
-        return true;
-    };
 
     // GROUP BY qualifiers
     // - TODO: WITH TOTALS can be implemented
@@ -586,21 +609,21 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     // DISTINCT
     if (query_node.isDistinct())
     {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getProjection()))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getProjectionNode(), query_info))
             return {};
     }
 
     // GROUP BY
     if (query_info.has_aggregates || query_node.hasGroupBy())
     {
-        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !expr_contains_sharding_key(query_node.getGroupBy()))
+        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || query_node.isGroupByWithGroupingSets() || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getGroupByNode(), query_info))
             return {};
     }
 
     // LIMIT BY
     if (query_node.hasLimitBy())
     {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getLimitBy()))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getLimitByNode(), query_info))
             return {};
     }
 

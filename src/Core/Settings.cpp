@@ -4922,6 +4922,45 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
+If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
+This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
+
+This is required for queries where internal consistency of data parts is important. Example:
+
+```sql
+SELECT
+    count()
+FROM events
+WHERE (_part, _part_offset) IN (
+    SELECT _part, _part_offset
+    FROM events
+    WHERE user_id = 42
+)
+```
+
+Without this setting, the outer and inner queries may operate on different data snapshots, leading to incorrect results.
+
+:::note
+Enabling this setting disables the optimization which removes unnecessary data parts from snapshots once the planning stage is complete.
+As a result, long-running queries may hold onto obsolete parts for their entire duration, delaying part cleanup and increasing storage pressure.
+
+This setting currently applies only to tables from the MergeTree family.
+:::
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(UInt64, merge_tree_storage_snapshot_sleep_ms, 0, R"(
+Inject artificial delay (in milliseconds) when creating a storage snapshot for MergeTree tables.
+Used for testing and debugging purposes only.
+
+Possible values:
+- 0 - No delay (default)
+- N - Delay in milliseconds
+)", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \
