@@ -72,3 +72,8 @@ GROUP BY tag
 ORDER BY tag;
 
 DROP TABLE IF EXISTS 3533_xirr_test;
+
+SELECT 'NPV:';
+SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.]);
+SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], True);
+SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False);

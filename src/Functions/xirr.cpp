@@ -2,8 +2,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/IColumn.h>
-#include "Common/Exception.h"
-#include <Common/FunctionDocumentation.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -14,6 +12,8 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
+#include "Common/Exception.h"
+#include <Common/FunctionDocumentation.h>
 
 #include <boost/math/tools/roots.hpp>
 
@@ -56,7 +56,7 @@ constexpr int daysBetweenAct(int d1, int d2)
     return d2 - d1;
 }
 
-template<DayCountType day_count, typename D>
+template <DayCountType day_count, typename D>
 constexpr double yearFraction(D d1, D d2)
 {
     if constexpr (day_count == DayCountType::ACT_365F)
@@ -64,14 +64,31 @@ constexpr double yearFraction(D d1, D d2)
     else if constexpr (day_count == DayCountType::ACT_365_25)
         return daysBetweenAct(d1, d2) / 365.25;
     else
-        []<bool flag = false>() {static_assert(flag, "Unsupported DayCountType");}();
+        []<bool flag = false>() { static_assert(flag, "Unsupported DayCountType"); }();
 }
 
-template<typename T, typename D, DayCountType day_count>
-struct NpvCalculator
+template <typename T>
+double npv(double rate, std::span<T> cashflows, bool start_from_zero)
 {
-    NpvCalculator(std::span<T> cashflows_, std::span<D> dates_)
-        : cashflows(cashflows_), dates(dates_)
+    if (rate == 0)
+        return std::accumulate(cashflows.begin(), cashflows.end(), 0.0);
+    if (rate <= -1.0)
+        return std::numeric_limits<double>::infinity();
+    double npv_value = 0.0;
+    for (std::size_t idx = 0; idx < cashflows.size(); ++idx)
+    {
+        const double i = static_cast<double>(idx) + (start_from_zero ? 0.0 : 1.0);
+        npv_value += cashflows[idx] / std::pow(1.0 + rate, i);
+    }
+    return npv_value;
+}
+
+template <typename T, typename D, DayCountType day_count>
+struct XnpvCalculator
+{
+    XnpvCalculator(std::span<T> cashflows_, std::span<D> dates_)
+        : cashflows(cashflows_)
+        , dates(dates_)
     {
         if (cashflows.size() != dates.size()) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size");
@@ -151,7 +168,7 @@ struct XirrCalculator
                 return std::unexpected(XirrErrorCode::INPUT_DATES_NOT_SORTED_UNIQUE);
         }
 
-        auto npv = NpvCalculator<T, D, day_count>(cashflows, dates);
+        auto npv = XnpvCalculator<T, D, day_count>(cashflows, dates);
 
         auto npv_function = [&](double rate) { return npv.calculate(rate); };
         auto npv_derivative = [&](double rate) { return npv.derivative(rate); };
@@ -263,7 +280,7 @@ public:
         double guess = 0.1;
         if (arguments.size() > 2)
         {
-            if(!isColumnConst(*arguments[2].column))
+            if (!isColumnConst(*arguments[2].column))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (guess) must be a constant");
             guess = arguments[2].column->getFloat64(0);
         }
@@ -295,11 +312,12 @@ public:
 
                 auto xirr = [&]
                 {
-                    switch (day_count) {
-                    case DayCountType::ACT_365F:
-                        return XirrCalculator::calculateXirr<DayCountType::ACT_365F>(cashflow_span, date_span, guess);
-                    case DayCountType::ACT_365_25:
-                        return XirrCalculator::calculateXirr<DayCountType::ACT_365_25>(cashflow_span, date_span, guess);
+                    switch (day_count)
+                    {
+                        case DayCountType::ACT_365F:
+                            return XirrCalculator::calculateXirr<DayCountType::ACT_365F>(cashflow_span, date_span, guess);
+                        case DayCountType::ACT_365_25:
+                            return XirrCalculator::calculateXirr<DayCountType::ACT_365_25>(cashflow_span, date_span, guess);
                     }
                 }();
                 if (xirr.has_value()) [[likely]]
@@ -342,6 +360,98 @@ public:
         return result_col;
     }
 };
+
+class FunctionNPV : public IFunction
+{
+public:
+    static constexpr auto name = "npv";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNPV>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+    bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto mandatory_args = FunctionArgumentDescriptors{
+            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "FloatXX"},
+            {"cashflow", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn), nullptr, "Array[Number]"},
+        };
+
+        auto optional_args = FunctionArgumentDescriptors{
+            {"start_from_zero", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Bool"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto rate_col = arguments[0].column->convertToFullColumnIfConst();
+        auto cashflow_col = arguments[1].column->convertToFullColumnIfConst();
+
+        const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
+        if (!cashflow_array)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow argument must be an array");
+
+        const auto * rate_f64 = checkAndGetColumn<ColumnVector<Float64>>(rate_col.get());
+        if (!rate_f64)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Rate argument must be a Float64 column");
+        const auto & rate_pod = rate_f64->getData();
+
+        bool start_from_zero = true;
+        if (arguments.size() > 2)
+        {
+            if (!isColumnConst(*arguments[2].column) || !isInteger(arguments[2].type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (start_from_zero) must be a constant boolean");
+            start_from_zero = arguments[2].column->getUInt(0) != 0;
+        }
+
+        auto result_col = ColumnVector<Float64>::create(input_rows_count);
+        auto & result_data = result_col->getData();
+
+        const ColumnArray::Offsets & cashflow_offsets = cashflow_array->getOffsets();
+        const auto * cashflow_data = &cashflow_array->getData();
+
+        auto process_array = [&](const auto * cashflow_values)
+        {
+            ColumnArray::Offset previous_offset = 0;
+            for (size_t i = 0; i < cashflow_offsets.size(); ++i)
+            {
+                const auto current_offset = cashflow_offsets[i];
+                const auto length = current_offset - previous_offset;
+                const auto rate = rate_pod[i];
+                auto cashflow_span = std::span(cashflow_values->getData().data() + previous_offset, length);
+
+                result_data[i] = npv(rate, cashflow_span, start_from_zero);
+
+                previous_offset = current_offset;
+            }
+        };
+        if (const auto * cf64 = typeid_cast<const ColumnVector<Float64> *>(cashflow_data))
+            process_array(cf64);
+        else if (const auto * cf32 = typeid_cast<const ColumnVector<Float32> *>(cashflow_data))
+            process_array(cf32);
+        else if (const auto * ci8 = typeid_cast<const ColumnVector<Int8> *>(cashflow_data))
+            process_array(ci8);
+        else if (const auto * ci16 = typeid_cast<const ColumnVector<Int16> *>(cashflow_data))
+            process_array(ci16);
+        else if (const auto * ci32 = typeid_cast<const ColumnVector<Int32> *>(cashflow_data))
+            process_array(ci32);
+        else if (const auto * ci64 = typeid_cast<const ColumnVector<Int64> *>(cashflow_data))
+            process_array(ci64);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must contain numeric values");
+
+        return result_col;
+    }
+};
+
 }
 
 REGISTER_FUNCTION(FunctionXirr)
@@ -364,4 +474,24 @@ REGISTER_FUNCTION(FunctionXirr)
     });
 }
 
+REGISTER_FUNCTION(FunctionNPV)
+{
+    factory.registerFunction<FunctionNPV>(FunctionDocumentation{
+        .description = "Calculates the Net Present Value (NPV) of a series of cash flows given a discount rate.",
+        .arguments = {
+            {"rate", "The discount rate as a FloatXX."},
+            {"cashflow", "An array of cash flows."},
+            {"start_from_zero", "A boolean indicating whether to start the NPV calculation from zero. Default is true."},
+        },
+        .returned_value = "Returns the NPV value as a Float64.",
+        .examples = {
+            {"simple_example", "SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.])", "3065.2226681795255"},
+            {"simple_example_exel", "SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False)", "2838.1691372032656"},
+        },
+        .introduced_in = {25, 6},
+        .category = FunctionDocumentation::Category::Financial,
+    });
 }
+
+}
+
