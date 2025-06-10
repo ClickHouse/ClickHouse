@@ -308,11 +308,12 @@ void tryLogCurrentException(const AtomicLogger & logger, const std::string & sta
   * check_embedded_stacktrace - if DB::Exception has embedded stacktrace then
   *  only this stack trace will be printed.
   * with_extra_info - add information about the filesystem in case of "No space left on device" and similar.
+  * with_version_info - add ClickHouse version
   */
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace = false,
-                                       bool with_extra_info = true);
+                                       bool with_extra_info = true, bool with_version_info = true);
 PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, bool check_embedded_stacktrace = false,
-                                       bool with_extra_info = true);
+                                       bool with_extra_info = true, bool with_version_info = true);
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();

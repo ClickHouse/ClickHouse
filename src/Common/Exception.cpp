@@ -480,12 +480,17 @@ std::string getExtraExceptionInfo(const std::exception & e)
     return msg;
 }
 
-std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
+std::string getVersionInfo()
 {
-    return getCurrentExceptionMessageAndPattern(with_stacktrace, check_embedded_stacktrace, with_extra_info).text;
+    return fmt::format(" (version {}{})", VERSION_STRING, VERSION_OFFICIAL);
 }
 
-PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
+std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/, bool with_version_info /*= true*/)
+{
+    return getCurrentExceptionMessageAndPattern(with_stacktrace, check_embedded_stacktrace, with_extra_info, with_version_info).text;
+}
+
+PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/, bool with_version_info /*= true*/)
 {
     WriteBufferFromOwnString stream;
     std::string_view message_format_string;
@@ -499,7 +504,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
     {
         stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace)
                << (with_extra_info ? getExtraExceptionInfo(e) : "")
-               << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+               << (with_version_info ? getVersionInfo() : "");
         message_format_string = e.tryGetMessageFormatString();
         message_format_string_args = e.getMessageFormatStringArgs();
     }
@@ -511,7 +516,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
                 << ", " << e.displayText()
                 << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
-                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+                << (with_version_info ? getVersionInfo() : "");
         }
         catch (...) {} // NOLINT(bugprone-empty-catch)
     }
@@ -528,7 +533,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
             stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what()
                 << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
-                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+                << (with_version_info ? getVersionInfo() : "");
         }
         catch (...) {} // NOLINT(bugprone-empty-catch)
 
@@ -557,7 +562,8 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
             if (status)
                 name += " (demangling status: " + toString(status) + ")";
 
-            stream << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+            stream << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name
+                   << (with_version_info ? getVersionInfo() : "");
         }
         catch (...) {} // NOLINT(bugprone-empty-catch)
     }
