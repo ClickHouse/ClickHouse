@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/Names.h>
 
 #include <map>
 #include <optional>
@@ -87,6 +88,7 @@ struct MergeTreeDataPartChecksums
     String getSerializedString() const;
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);
 
+    NameSet getAllFiles() const;
     UInt64 getTotalSizeOnDisk() const;
     UInt64 getTotalSizeUncompressedOnDisk() const;
 };

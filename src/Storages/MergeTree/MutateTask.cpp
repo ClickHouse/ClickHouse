@@ -47,6 +47,7 @@
 #include "Core/SettingsEnums.h"
 #include "QueryPipeline/QueryPipelineBuilder.h"
 #include "Storages/ColumnsDescription.h"
+#include "Storages/MergeTree/MergeTreeDataPartChecksum.h"
 #include "Storages/MergeTree/MergeTreeDataPartTTLInfo.h"
 #include "Storages/ProjectionsDescription.h"
 #include "base/defines.h"
@@ -179,6 +180,28 @@ struct MutatedData
     bool isAnyColumnMutated() const { return affects_all_columns || !updated_columns.empty() || !updated_by_ttl_columns.empty(); }
 };
 
+struct FilesToRename
+{
+    FilesToRename() = default;
+    explicit FilesToRename(NameSet source_files_) : source_files(std::move(source_files_)) {}
+
+    void add(const String & rename_from, const String & rename_to)
+    {
+        if (rename_to.empty() && !source_files.contains(rename_from))
+            return;
+
+        if (renamed_files.emplace(rename_from).second)
+            files_to_rename.emplace_back(rename_from, rename_to);
+    }
+
+    const NameToNameVector & getFilesToRename() const { return files_to_rename; }
+
+private:
+    NameSet source_files;
+    NameSet renamed_files;
+    NameToNameVector files_to_rename;
+};
+
 struct MutationContext
 {
     MergeTreeData * data;
@@ -228,16 +251,19 @@ struct MutationContext
 
     NameSet projections_to_drop;
     std::set<ProjectionDescriptionRawPtr> projections_to_build;
-    std::set<ProjectionDescriptionRawPtr> projections_to_hardlink;
 
-    NameSet dropped_indices;
+    NameSet indices_to_drop;
     std::set<MergeTreeIndexPtr> indices_to_build;
+
+    NameSet statistics_to_drop;
+    std::set<ColumnStatisticsPartPtr> statistics_to_build;
+
+    ColumnsDescription new_part_columns;
 
     NameSet ttls_to_calculate;
     NameSet ttls_to_materialize;
 
-    NameSet dropped_statistics;
-    std::set<ColumnStatisticsPartPtr> statistics_to_build;
+    FilesToRename files_to_rename;
 
     enum class Mode
     {
@@ -251,7 +277,7 @@ struct MutationContext
 
     MergeTreeData::DataPart::Checksums existing_indices_stats_checksums;
     NameSet files_to_skip;
-    NameToNameVector files_to_rename;
+    // NameToNameVector files_to_rename;
 
     bool need_sync;
     MergeTreeTransactionPtr txn;
@@ -329,18 +355,19 @@ static void analyzeProjectionCommands(MutationContext & ctx)
 
     auto add_projection_to_drop = [&](const MutationCommand & command)
     {
-        ctx.for_file_renames.push_back(command);
         ctx.projections_to_drop.insert(command.projection_name);
+        ctx.files_to_rename.add(command.projection_name + ".proj", "");
     };
 
-    NameSet modfied_columns;
+    NameSet modified_columns;
     const auto & projections = ctx.metadata_snapshot->getProjections();
 
     for (const auto & command : ctx.commands_for_part)
     {
         if (command.type == MutationCommand::DROP_PROJECTION)
         {
-            add_projection_to_drop(command);
+            if (ctx.source_part->hasProjection(command.projection_name))
+                add_projection_to_drop(command);
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
@@ -351,7 +378,7 @@ static void analyzeProjectionCommands(MutationContext & ctx)
         {
             auto column_in_part = ctx.source_part->tryGetColumn(command.column_name);
             if (column_in_part && command.data_type && !column_in_part->type->equals(*command.data_type))
-                modfied_columns.insert(command.column_name);
+                modified_columns.insert(command.column_name);
         }
     }
 
@@ -371,7 +398,7 @@ static void analyzeProjectionCommands(MutationContext & ctx)
         /// Check if the type of this column is changed and there are projections that
         /// have this column in the primary key. We should rebuild such projections.
         const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
-        bool modified_pk_column = std::ranges::any_of(pk_columns, [&](const auto & pk_column) { return modfied_columns.contains(pk_column); });
+        bool modified_pk_column = std::ranges::any_of(pk_columns, [&](const auto & pk_column) { return modified_columns.contains(pk_column); });
 
         if (modified_pk_column)
         {
@@ -392,6 +419,27 @@ static void analyzeProjectionCommands(MutationContext & ctx)
     }
 }
 
+static void addIndexFilesToRename(const String & index_name, MutationContext & ctx)
+{
+    static const std::array<String, 2> suffixes = {".idx2", ".idx"};
+    static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* means generalized inverted index (aka. full-text-index)
+
+    for (const auto & suffix : suffixes)
+    {
+        const String filename = INDEX_FILE_PREFIX + index_name + suffix;
+        const String filename_mrk = INDEX_FILE_PREFIX + index_name + ctx.mrk_extension;
+
+        ctx.files_to_rename.add(filename, "");
+        ctx.files_to_rename.add(filename_mrk, "");
+    }
+
+    for (const auto & gin_suffix : gin_suffixes)
+    {
+        const String filename = INDEX_FILE_PREFIX + index_name + gin_suffix;
+        ctx.files_to_rename.add(filename, "");
+    }
+}
+
 static void analyzeSkipIndicesCommands(MutationContext & ctx)
 {
     auto add_index_to_build = [&](const IndexDescription & index)
@@ -402,6 +450,12 @@ static void analyzeSkipIndicesCommands(MutationContext & ctx)
         auto required_columns = index.expression->getRequiredColumns();
         for (const auto & column : required_columns)
             ctx.mutated_data.readonly_columns.insert(column);
+    };
+
+    auto add_index_to_drop = [&](const String & index_name)
+    {
+        ctx.indices_to_drop.insert(index_name);
+        addIndexFilesToRename(index_name, ctx);
     };
 
     const auto & indices = ctx.metadata_snapshot->getSecondaryIndices();
@@ -416,8 +470,8 @@ static void analyzeSkipIndicesCommands(MutationContext & ctx)
     {
         if (command.type == MutationCommand::DROP_INDEX)
         {
-            ctx.dropped_indices.insert(command.index_name);
-            ctx.for_file_renames.push_back(command);
+            if (ctx.source_part->hasSecondaryIndex(command.index_name))
+                add_index_to_drop(command.index_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
@@ -434,7 +488,7 @@ static void analyzeSkipIndicesCommands(MutationContext & ctx)
 
     for (const auto & index : indices)
     {
-        if (ctx.dropped_indices.contains(index.name) || !ctx.source_part->hasSecondaryIndex(index.name))
+        if (ctx.indices_to_drop.contains(index.name) || !ctx.source_part->hasSecondaryIndex(index.name))
             continue;
 
         auto required_columns = index.expression->getRequiredColumns();
@@ -452,6 +506,12 @@ static void analyzeStatisticsCommands(MutationContext & ctx)
         ctx.mutated_data.readonly_columns.insert(column.name);
     };
 
+    auto add_statistic_to_drop = [&](const String & column_name)
+    {
+        ctx.statistics_to_drop.insert(column_name);
+        ctx.files_to_rename.add(STATS_FILE_PREFIX + column_name + STATS_FILE_SUFFIX, "");
+    };
+
     const auto & table_columns = ctx.metadata_snapshot->getColumns();
 
     for (const auto & command : ctx.commands_for_part)
@@ -459,9 +519,7 @@ static void analyzeStatisticsCommands(MutationContext & ctx)
         if (command.type == MutationCommand::DROP_STATISTICS)
         {
             for (const auto & column_name : command.statistics_columns)
-                ctx.dropped_statistics.insert(column_name);
-
-            ctx.for_file_renames.push_back(command);
+                add_statistic_to_drop(column_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
@@ -478,7 +536,7 @@ static void analyzeStatisticsCommands(MutationContext & ctx)
 
     for (const auto & column : table_columns)
     {
-        if (ctx.dropped_statistics.contains(column.name) || column.statistics.empty())
+        if (ctx.statistics_to_drop.contains(column.name) || column.statistics.empty())
             continue;
 
         if (ctx.mutated_data.needRebuildDependency({column.name}, DependencyType::STATISTICS))
@@ -641,6 +699,7 @@ void addColumnsRequiredForDependencies(MutationContext & ctx)
 static void analyzeCommandsForSomeColumnsMode(MutationContext & ctx, const AlterConversionsPtr & alter_conversions)
 {
     ctx.mutated_data = MutatedData(ctx.data->getSettings());
+    ctx.files_to_rename = FilesToRename(ctx.source_part->checksums.getAllFiles());
 
     analyzeDataCommands(ctx);
     analyzeTTLCommands(ctx);
@@ -649,26 +708,30 @@ static void analyzeCommandsForSomeColumnsMode(MutationContext & ctx, const Alter
     analyzeStatisticsCommands(ctx);
     addColumnsRequiredForDependencies(ctx);
 
-    auto part_columns = ctx.source_part->getColumnsDescription();
+    ctx.new_part_columns = ctx.source_part->getColumnsDescription();
 
     for (const auto & command : ctx.commands_for_part)
     {
         /// If we don't have this column in source part, we don't need to materialize it.
-        if (!part_columns.has(command.column_name))
+        if (!ctx.new_part_columns.has(command.column_name))
             continue;
 
         if (command.type == MutationCommand::Type::READ_COLUMN)
         {
             ctx.for_interpreter.push_back(command);
             ctx.for_file_renames.push_back(command);
+
+            if (command.data_type)
+                ctx.new_part_columns.modify(command.column_name, [&](auto & column) { column.type = command.data_type; });
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
             ctx.for_file_renames.push_back(command);
+            ctx.new_part_columns.remove(command.column_name);
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
-            part_columns.rename(command.column_name, command.rename_to);
+            ctx.new_part_columns.rename(command.column_name, command.rename_to);
             ctx.for_file_renames.push_back(command);
         }
     }
@@ -686,8 +749,9 @@ static void analyzeCommandsForSomeColumnsMode(MutationContext & ctx, const Alter
 
 static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterConversionsPtr & alter_conversions)
 {
-    ctx.mutated_data = MutatedData(ctx.data->getSettings());
     ctx.execution_mode = MutationContext::Mode::AllColumns;
+    ctx.mutated_data = MutatedData(ctx.data->getSettings());
+    ctx.files_to_rename = FilesToRename(ctx.source_part->checksums.getAllFiles());
 
     analyzeDataCommands(ctx);
     analyzeTTLCommands(ctx);
@@ -1170,82 +1234,35 @@ static NameSet collectFilesToSkip(
 /// source_part and return set of files, that have to be removed or renamed
 /// from filesystem and in-memory checksums. Ordered result is important,
 /// because we can apply renames that affects each other: x -> z, y -> x.
-static NameToNameVector collectFilesForRenames(
-    MergeTreeData::DataPartPtr source_part,
-    MergeTreeData::DataPartPtr new_part,
-    const MutationCommands & commands_for_removes,
-    const String & mrk_extension)
+static void collectFilesForRenames(MutationContext & ctx)
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
-    auto stream_counts = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
-    NameToNameVector rename_vector;
-    NameSet collected_names;
-
-    auto add_rename = [&rename_vector, &collected_names] (const std::string & file_rename_from, const std::string & file_rename_to)
-    {
-        if (collected_names.emplace(file_rename_from).second)
-            rename_vector.emplace_back(file_rename_from, file_rename_to);
-    };
+    auto stream_counts = getStreamCounts(ctx.source_part, ctx.source_part->checksums, ctx.source_part->getColumns().getNames());
 
     /// Remove old data
-    for (const auto & command : commands_for_removes)
+    for (const auto & command : ctx.for_file_renames)
     {
-        if (command.type == MutationCommand::Type::DROP_INDEX)
-        {
-            static const std::array<String, 2> suffixes = {".idx2", ".idx"};
-            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* means generalized inverted index (aka. full-text-index)
-
-            for (const auto & suffix : suffixes)
-            {
-                const String filename = INDEX_FILE_PREFIX + command.index_name + suffix;
-                const String filename_mrk = INDEX_FILE_PREFIX + command.index_name + mrk_extension;
-
-                if (source_part->checksums.has(filename))
-                {
-                    add_rename(filename, "");
-                    add_rename(filename_mrk, "");
-                }
-            }
-            for (const auto & gin_suffix : gin_suffixes)
-            {
-                const String filename = INDEX_FILE_PREFIX + command.column_name + gin_suffix;
-                if (source_part->checksums.has(filename))
-                    add_rename(filename, "");
-            }
-        }
-        else if (command.type == MutationCommand::Type::DROP_PROJECTION)
-        {
-            if (source_part->checksums.has(command.projection_name + ".proj"))
-                add_rename(command.projection_name + ".proj", "");
-        }
-        else if (command.type == MutationCommand::Type::DROP_STATISTICS)
-        {
-            for (const auto & statistics_column_name : command.statistics_columns)
-                if (source_part->checksums.has(STATS_FILE_PREFIX + statistics_column_name + STATS_FILE_SUFFIX))
-                    add_rename(STATS_FILE_PREFIX + statistics_column_name + STATS_FILE_SUFFIX, "");
-        }
-        else if (isWidePart(source_part))
+        if (isWidePart(ctx.source_part))
         {
             if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, source_part->checksums);
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ctx.source_part->checksums);
 
                     /// Delete files if they are no longer shared with another column.
                     if (stream_name && --stream_counts[*stream_name] == 0)
                     {
-                        add_rename(*stream_name + ".bin", "");
-                        add_rename(*stream_name + mrk_extension, "");
+                        ctx.files_to_rename.add(*stream_name + ".bin", "");
+                        ctx.files_to_rename.add(*stream_name + ctx.mrk_extension, "");
                     }
                 };
 
-                if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                if (auto serialization = ctx.source_part->tryGetSerialization(command.column_name))
                     serialization->enumerateStreams(callback);
 
-                /// if we drop a column with statistics, we should also drop the stat file.
-                if (source_part->checksums.has(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
-                    add_rename(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, "");
+                /// If we drop a column with statistics, we should also drop the stat file.
+                ctx.files_to_rename.add(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, "");
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
@@ -1257,12 +1274,12 @@ static NameToNameVector collectFilesForRenames(
                     String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path);
                     String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
 
-                    auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, source_part->checksums);
+                    auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, ctx.source_part->checksums);
                     if (!stream_from)
                         return;
 
                     String stream_to;
-                    auto storage_settings = source_part->storage.getSettings();
+                    auto storage_settings = ctx.source_part->storage.getSettings();
 
                     if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_to.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
                         stream_to = sipHash128String(full_stream_to);
@@ -1271,17 +1288,17 @@ static NameToNameVector collectFilesForRenames(
 
                     if (stream_from != stream_to)
                     {
-                        add_rename(*stream_from + ".bin", stream_to + ".bin");
-                        add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);
+                        ctx.files_to_rename.add(*stream_from + ".bin", stream_to + ".bin");
+                        ctx.files_to_rename.add(*stream_from + ctx.mrk_extension, stream_to + ctx.mrk_extension);
                     }
                 };
 
-                if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                if (auto serialization = ctx.source_part->tryGetSerialization(command.column_name))
                     serialization->enumerateStreams(callback);
 
                 /// if we rename a column with statistics, we should also rename the stat file.
-                if (source_part->checksums.has(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
-                    add_rename(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, STATS_FILE_PREFIX + command.rename_to + STATS_FILE_SUFFIX);
+                if (ctx.source_part->checksums.has(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
+                    ctx.files_to_rename.add(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, STATS_FILE_PREFIX + command.rename_to + STATS_FILE_SUFFIX);
             }
             else if (command.type == MutationCommand::Type::READ_COLUMN)
             {
@@ -1289,28 +1306,25 @@ static NameToNameVector collectFilesForRenames(
                 /// but were removed in new_part by MODIFY COLUMN from
                 /// type with higher number of streams (e.g. LowCardinality -> String).
 
-                auto old_streams = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
-                auto new_streams = getStreamCounts(new_part, source_part->checksums, source_part->getColumns().getNames());
+                auto old_streams = getStreamCounts(ctx.source_part, ctx.source_part->checksums, ctx.source_part->getColumns().getNames());
+                auto new_streams = getStreamCounts(ctx.new_data_part, ctx.source_part->checksums, ctx.source_part->getColumns().getNames());
 
                 for (const auto & [old_stream, _] : old_streams)
                 {
                     if (!new_streams.contains(old_stream) && --stream_counts[old_stream] == 0)
                     {
-                        add_rename(old_stream + ".bin", "");
-                        add_rename(old_stream + mrk_extension, "");
+                        ctx.files_to_rename.add(old_stream + ".bin", "");
+                        ctx.files_to_rename.add(old_stream + ctx.mrk_extension, "");
                     }
                 }
             }
         }
     }
 
-    if (!source_part->getSerializationInfos().empty()
-        && new_part->getSerializationInfos().empty())
+    if (!ctx.source_part->getSerializationInfos().empty() && ctx.new_data_part->getSerializationInfos().empty())
     {
-        rename_vector.emplace_back(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
+        ctx.files_to_rename.add(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
     }
-
-    return rename_vector;
 }
 
 
@@ -1774,7 +1788,7 @@ private:
 
         for (const auto & idx : all_indices)
         {
-            if (ctx->dropped_indices.contains(idx.name) || skip_indices_to_build_names.contains(idx.name))
+            if (ctx->indices_to_drop.contains(idx.name) || skip_indices_to_build_names.contains(idx.name))
                 continue;
 
             auto prefix = fmt::format("{}{}.", INDEX_FILE_PREFIX, idx.name);
@@ -1794,7 +1808,7 @@ private:
         const auto & columns = ctx->metadata_snapshot->getColumns();
         for (const auto & column : columns)
         {
-            if (column.statistics.empty() || ctx->dropped_statistics.contains(column.name))
+            if (column.statistics.empty() || ctx->statistics_to_drop.contains(column.name))
                 continue;
 
             /// We do not hard-link statistics which
@@ -2019,9 +2033,10 @@ private:
         auto settings = ctx->source_part->storage.getSettings();
 
         NameSet hardlinked_files;
+        const auto & files_to_rename_map = ctx->files_to_rename.getFilesToRename();
 
         /// NOTE: Renames must be done in order
-        for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
+        for (const auto & [rename_from, rename_to] : files_to_rename_map)
         {
             if (rename_to.empty()) /// It's DROP COLUMN
             {
@@ -2042,12 +2057,12 @@ private:
 
             String file_name = it->name();
 
-            auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&file_name](const auto & rename_pair)
+            auto rename_it = std::find_if(files_to_rename_map.begin(), files_to_rename_map.end(), [&file_name](const auto & rename_pair)
             {
                 return rename_pair.first == file_name;
             });
 
-            if (rename_it != ctx->files_to_rename.end())
+            if (rename_it != files_to_rename_map.end())
             {
                 /// RENAMEs and DROPs already processed
                 continue;
@@ -2150,7 +2165,9 @@ private:
             ctx->out.reset();
         }
 
-        for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
+        const auto & files_to_rename_map = ctx->files_to_rename.getFilesToRename();
+
+        for (const auto & [rename_from, rename_to] : files_to_rename_map)
         {
             if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
             {
@@ -2584,11 +2601,7 @@ bool MutateTask::prepare()
             projections_to_skip,
             ctx->statistics_to_build);
 
-        ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
-            ctx->source_part,
-            ctx->new_data_part,
-            ctx->for_file_renames,
-            ctx->mrk_extension);
+        MutationHelpers::collectFilesForRenames(*ctx);
 
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse has to follow the common procedure when deleting new part in temporary state
