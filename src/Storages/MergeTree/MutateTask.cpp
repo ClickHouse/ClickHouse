@@ -45,6 +45,7 @@
 #include "Columns/ColumnsCommon.h"
 #include "Core/Names.h"
 #include "Core/SettingsEnums.h"
+#include "DataTypes/IDataType.h"
 #include "QueryPipeline/QueryPipelineBuilder.h"
 #include "Storages/ColumnsDescription.h"
 #include "Storages/MergeTree/MergeTreeDataPartChecksum.h"
@@ -259,6 +260,7 @@ struct MutationContext
     std::set<ColumnStatisticsPartPtr> statistics_to_build;
 
     ColumnsDescription new_part_columns;
+    SerializationInfoByName new_serialization_infos;
 
     NameSet ttls_to_calculate;
     NameSet ttls_to_materialize;
@@ -696,6 +698,107 @@ void addColumnsRequiredForDependencies(MutationContext & ctx)
     }
 }
 
+static void modifyColumn(MutationContext & ctx, const String & column_name, const DataTypePtr & new_type)
+{
+    ctx.new_part_columns.modify(column_name, [&](auto & column) { column.type = new_type; });
+
+    auto it = ctx.new_serialization_infos.find(column_name);
+    if (it == ctx.new_serialization_infos.end())
+        return;
+
+    auto old_info = it->second;
+    auto old_type = ctx.new_part_columns.getPhysical(column_name).type;
+
+    SerializationInfo::Settings settings
+    {
+        .ratio_of_defaults_for_sparse = (*ctx.data->getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        .choose_kind = false
+    };
+
+    ctx.new_serialization_infos.erase(it);
+
+    if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
+        return;
+
+    auto new_info = new_type->createSerializationInfo(settings);
+
+    if (!old_info->structureEquals(*new_info))
+    {
+        ctx.new_serialization_infos.emplace(column_name, std::move(new_info));
+    }
+    else
+    {
+        new_info = old_info->createWithType(*old_type, *new_type, settings);
+        ctx.new_serialization_infos.emplace(column_name, std::move(new_info));
+    }
+}
+
+static void renameColumn(MutationContext & ctx, const String & rename_from, const String & rename_to)
+{
+    LOG_DEBUG(getLogger("KEK"), "rename {} to {}", rename_from, rename_to);
+
+    ctx.new_part_columns.rename(rename_from, rename_to);
+
+    auto it = ctx.new_serialization_infos.find(rename_from);
+    if (it == ctx.new_serialization_infos.end())
+        return;
+
+    auto new_info = it->second;
+    ctx.new_serialization_infos.erase(it);
+    ctx.new_serialization_infos.emplace(rename_to, std::move(new_info));
+}
+
+static void dropColumn(MutationContext & ctx, const String & column_name)
+{
+    ctx.new_part_columns.remove(column_name);
+    ctx.new_serialization_infos.erase(column_name);
+}
+
+void analyzeMetadataCommandsForSomeColumnsMode(MutationContext & ctx, const AlterConversionsPtr & alter_conversions)
+{
+    ctx.new_part_columns = ctx.source_part->getColumnsDescription();
+    ctx.new_serialization_infos = ctx.source_part->getSerializationInfos();
+
+    for (const auto & command : ctx.commands_for_part)
+    {
+        /// If we don't have this column in source part, we don't need to materialize it.
+        if (!ctx.new_part_columns.has(command.column_name))
+        {
+            continue;
+        }
+        else if (command.type == MutationCommand::Type::READ_COLUMN)
+        {
+            ctx.for_interpreter.push_back(command);
+            ctx.for_file_renames.push_back(command);
+
+            if (command.data_type)
+                modifyColumn(ctx, command.column_name, command.data_type);
+        }
+        else if (command.type == MutationCommand::Type::DROP_COLUMN)
+        {
+            ctx.for_file_renames.push_back(command);
+            dropColumn(ctx, command.column_name);
+        }
+        else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+        {
+            ctx.for_file_renames.push_back(command);
+            renameColumn(ctx, command.column_name, command.rename_to);
+        }
+    }
+
+    /// We don't add renames from commands, instead we take them from rename_map.
+    /// It's important because required renames depend not only on part's data version (i.e. mutation version)
+    /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
+    /// can be deduced based on difference between part's schema and table schema.
+    for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
+    {
+        if (ctx.new_part_columns.has(rename_from))
+            renameColumn(ctx, rename_from, rename_to);
+
+        ctx.for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
+    }
+}
+
 static void analyzeCommandsForSomeColumnsMode(MutationContext & ctx, const AlterConversionsPtr & alter_conversions)
 {
     ctx.mutated_data = MutatedData(ctx.data->getSettings());
@@ -707,42 +810,7 @@ static void analyzeCommandsForSomeColumnsMode(MutationContext & ctx, const Alter
     analyzeSkipIndicesCommands(ctx);
     analyzeStatisticsCommands(ctx);
     addColumnsRequiredForDependencies(ctx);
-
-    ctx.new_part_columns = ctx.source_part->getColumnsDescription();
-
-    for (const auto & command : ctx.commands_for_part)
-    {
-        /// If we don't have this column in source part, we don't need to materialize it.
-        if (!ctx.new_part_columns.has(command.column_name))
-            continue;
-
-        if (command.type == MutationCommand::Type::READ_COLUMN)
-        {
-            ctx.for_interpreter.push_back(command);
-            ctx.for_file_renames.push_back(command);
-
-            if (command.data_type)
-                ctx.new_part_columns.modify(command.column_name, [&](auto & column) { column.type = command.data_type; });
-        }
-        else if (command.type == MutationCommand::Type::DROP_COLUMN)
-        {
-            ctx.for_file_renames.push_back(command);
-            ctx.new_part_columns.remove(command.column_name);
-        }
-        else if (command.type == MutationCommand::Type::RENAME_COLUMN)
-        {
-            ctx.new_part_columns.rename(command.column_name, command.rename_to);
-            ctx.for_file_renames.push_back(command);
-        }
-    }
-
-    /// We don't add renames from commands, instead we take them from rename_map.
-    /// It's important because required renames depend not only on part's data version (i.e. mutation version)
-    /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
-    /// can be deduced based on difference between part's schema and table schema.
-
-    for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
-        ctx.for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
+    analyzeMetadataCommandsForSomeColumnsMode(ctx, alter_conversions);
 
     ctx.execution_mode = ctx.mutated_data.affects_all_columns ? MutationContext::Mode::AllColumns : MutationContext::Mode::SomeColumns;
 }
@@ -760,29 +828,33 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     analyzeStatisticsCommands(ctx);
     addColumnsRequiredForDependencies(ctx);
 
-    auto part_columns = ctx.source_part->getColumnsDescription();
+    ctx.new_part_columns = ctx.source_part->getColumnsDescription();
+    ctx.new_serialization_infos = ctx.source_part->getSerializationInfos();
 
     NameSet dropped_columns;
     bool need_mutate_columns = ctx.mutated_data.isAnyColumnMutated();
 
     for (const auto & command : ctx.commands_for_part)
     {
-        bool has_column = part_columns.has(command.column_name);
-        bool has_nested_column = part_columns.hasNested(command.column_name);
+        bool has_column = ctx.new_part_columns.has(command.column_name);
+        bool has_nested_column = ctx.new_part_columns.hasNested(command.column_name);
 
         if (!has_column && !has_nested_column)
             continue;
 
         if (command.type == MutationCommand::Type::READ_COLUMN)
         {
-            ctx.for_interpreter.push_back(command);
             need_mutate_columns = true;
+            ctx.for_interpreter.push_back(command);
+
+            if (command.data_type)
+                modifyColumn(ctx, command.column_name, command.data_type);
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
             if (has_nested_column)
             {
-                const auto & nested = part_columns.getNested(command.column_name);
+                const auto & nested = ctx.new_part_columns.getNested(command.column_name);
                 chassert(!nested.empty());
 
                 for (const auto & nested_column : nested)
@@ -794,6 +866,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
             }
 
             need_mutate_columns = true;
+            dropColumn(ctx, command.column_name);
         }
     }
 
@@ -803,7 +876,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     /// can be deduced based on difference between part's schema and table schema.
     for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
     {
-        if (part_columns.has(rename_from))
+        if (ctx.new_part_columns.has(rename_from))
         {
             /// Actual rename
             ctx.for_interpreter.push_back(
@@ -821,7 +894,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
                 .rename_to = rename_to
             });
 
-            part_columns.rename(rename_from, rename_to);
+            renameColumn(ctx, rename_from, rename_to);
             need_mutate_columns = true;
         }
     }
@@ -829,7 +902,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     UNUSED(need_mutate_columns);
 
     /// If it's compact part, then we don't need to actually remove files from disk we just don't read dropped columns
-    for (const auto & column : part_columns)
+    for (const auto & column : ctx.new_part_columns)
     {
         if (dropped_columns.contains(column.name))
         {
@@ -894,193 +967,6 @@ static void analyzeCommands(MutationContext & ctx, const AlterConversionsPtr & a
     {
         analyzeCommandsForSomeColumnsMode(ctx, alter_conversions);
     }
-}
-
-/// Get the columns list of the resulting part in the same order as storage_columns.
-static std::pair<NamesAndTypesList, SerializationInfoByName> getColumnsForNewDataPart(const MutationContext & ctx)
-{
-    NameSet removed_columns;
-    NameToNameMap renamed_columns_to_from;
-    NameToNameMap renamed_columns_from_to;
-    const auto & part_columns = ctx.source_part->getColumnsDescription();
-
-    for (const auto & command : ctx.for_file_renames)
-    {
-        if (!part_columns.has(command.column_name))
-            continue;
-
-        if (command.type == MutationCommand::DROP_COLUMN)
-        {
-            removed_columns.insert(command.column_name);
-        }
-        else if (command.type == MutationCommand::RENAME_COLUMN)
-        {
-            renamed_columns_to_from.emplace(command.rename_to, command.column_name);
-            renamed_columns_from_to.emplace(command.column_name, command.rename_to);
-        }
-    }
-
-    NamesAndTypesList storage_columns = ctx.storage_columns;
-    NameSet storage_columns_set = storage_columns.getNameSet();
-
-    bool deleted_mask_updated = ctx.mutated_data.has_lightweight_delete
-        && ctx.source_part->supportLightweightDeleteMutate()
-        && !storage_columns_set.contains(RowExistsColumn::name);
-
-    auto persistent_virtuals = ctx.data->getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
-
-    for (const auto & [name, type] : persistent_virtuals)
-    {
-        if (storage_columns_set.contains(name))
-            continue;
-
-        bool need_column = false;
-        if (name == RowExistsColumn::name)
-            need_column = deleted_mask_updated || (part_columns.has(name) && !ctx.mutated_data.affects_all_columns);
-        else
-            need_column = part_columns.has(name);
-
-        if (need_column)
-        {
-            storage_columns.emplace_back(name, type);
-            storage_columns_set.insert(name);
-        }
-    }
-
-    SerializationInfoByName new_serialization_infos;
-    const auto & serialization_infos = ctx.source_part->getSerializationInfos();
-
-    for (const auto & [name, old_info] : serialization_infos)
-    {
-        auto it = renamed_columns_from_to.find(name);
-        auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
-
-        /// Column can be removed only in this data part by CLEAR COLUMN query.
-        if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
-            continue;
-
-        /// In compact part we read all columns and all of them are in @updated_header.
-        /// But in wide part we must keep serialization infos for columns that are not touched by mutation.
-        if (!ctx.updated_header.has(new_name))
-        {
-            if (isWidePart(ctx.source_part))
-                new_serialization_infos.emplace(new_name, old_info);
-            continue;
-        }
-
-        auto old_type = part_columns.getPhysical(name).type;
-        auto new_type = ctx.updated_header.getByName(new_name).type;
-
-        SerializationInfo::Settings settings
-        {
-            .ratio_of_defaults_for_sparse = (*ctx.data->getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-            .choose_kind = false
-        };
-
-        if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
-            continue;
-
-        auto new_info = new_type->createSerializationInfo(settings);
-        if (!old_info->structureEquals(*new_info))
-        {
-            new_serialization_infos.emplace(new_name, std::move(new_info));
-            continue;
-        }
-
-        new_info = old_info->createWithType(*old_type, *new_type, settings);
-        new_serialization_infos.emplace(new_name, std::move(new_info));
-    }
-
-    /// In compact parts we read all columns, because they all stored in a single file
-    if (ctx.execution_mode == MutationContext::Mode::AllColumns)
-        return {ctx.updated_header.getNamesAndTypesList(), new_serialization_infos};
-
-    const auto & source_columns = ctx.source_part->getColumns();
-    std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
-    for (const auto & it : source_columns)
-        source_columns_name_to_type[it.name] = it.type;
-
-    for (auto it = storage_columns.begin(); it != storage_columns.end();)
-    {
-        if (ctx.updated_header.has(it->name))
-        {
-            auto updated_type = ctx.updated_header.getByName(it->name).type;
-            if (updated_type != it->type)
-                it->type = updated_type;
-            ++it;
-        }
-        else
-        {
-            auto source_col = source_columns_name_to_type.find(it->name);
-            if (source_col == source_columns_name_to_type.end())
-            {
-                /// Source part doesn't have column but some other column
-                /// was renamed to it's name.
-                auto renamed_it = renamed_columns_to_from.find(it->name);
-                if (renamed_it != renamed_columns_to_from.end())
-                {
-                    source_col = source_columns_name_to_type.find(renamed_it->second);
-                    if (source_col == source_columns_name_to_type.end())
-                        it = storage_columns.erase(it);
-                    else
-                    {
-                        /// Take a type from source part column.
-                        /// It may differ from column type in storage.
-                        it->type = source_col->second;
-                        ++it;
-                    }
-                }
-                else
-                    it = storage_columns.erase(it);
-            }
-            else
-            {
-                /// Check that this column was renamed to some other name
-                bool was_renamed = renamed_columns_from_to.contains(it->name);
-                bool was_removed = removed_columns.contains(it->name);
-
-                /// If we want to rename this column to some other name, than it
-                /// should it's previous version should be dropped or removed
-                if (renamed_columns_to_from.contains(it->name) && !was_renamed && !was_removed)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Incorrect mutation commands, trying to rename column {} to {}, "
-                        "but part {} already has column {}",
-                        renamed_columns_to_from[it->name], it->name, ctx.source_part->name, it->name);
-
-                /// Column was renamed and no other column renamed to it's name
-                /// or column is dropped.
-                if (!renamed_columns_to_from.contains(it->name) && (was_renamed || was_removed))
-                {
-                    it = storage_columns.erase(it);
-                }
-                else
-                {
-                    if (was_removed)
-                    { /// DROP COLUMN xxx, RENAME COLUMN yyy TO xxx
-                        auto renamed_from = renamed_columns_to_from.at(it->name);
-                        auto maybe_name_and_type = source_columns.tryGetByName(renamed_from);
-                        if (!maybe_name_and_type)
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Got incorrect mutation commands, column {} was renamed from {}, but it doesn't exist in source columns {}",
-                                it->name, renamed_from, source_columns.toString());
-
-                        it->type = maybe_name_and_type->type;
-                    }
-                    else
-                    {
-                        /// Take a type from source part column.
-                        /// It may differ from column type in storage.
-                        it->type = source_col->second;
-                    }
-                    ++it;
-                }
-            }
-        }
-    }
-
-    return {storage_columns, new_serialization_infos};
 }
 
 static void addTransformToBuildIndices(QueryPipelineBuilder & builder, const std::set<MergeTreeIndexPtr> & indices_to_build, const ContextPtr & context)
@@ -2542,9 +2428,11 @@ bool MutateTask::prepare()
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
-    auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(*ctx);
+    ctx->new_data_part->setColumns(
+        ctx->new_part_columns.getAllPhysical(),
+        ctx->new_serialization_infos,
+        ctx->metadata_snapshot->getMetadataVersion());
 
-    ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
     /// Don't change granularity type while mutating subset of columns
