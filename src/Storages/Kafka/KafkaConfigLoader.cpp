@@ -374,7 +374,7 @@ void updateGlobalConfiguration(
             LOG_TRACE(params.log, "client.rack set to {}.", rack);
         }
         else
-            LOG_ERROR(params.log, "Failed to deeermine client.rack.");
+            LOG_ERROR(params.log, "Failed to determine client.rack.");
     }
 
 #if USE_KRB5

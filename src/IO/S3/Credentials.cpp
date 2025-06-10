@@ -268,7 +268,7 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException(bool is_zone_id)
     String token_str;
     static std::mutex t_mutex;
 
-    /// Token is a part of IMDSv2
+    /// IMDSv2
     {
         /// Lets serialize token retrieval as we do in AWSEC2MetadataClient::getEC2MetadataToken
         std::lock_guard<std::mutex> lock(t_mutex);
@@ -287,10 +287,7 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException(bool is_zone_id)
         Poco::Net::HTTPResponse token_response;
         std::istream & token_rs = token_session.receiveResponse(token_response);
         if (token_response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
-        {
             Poco::StreamCopier::copyToString(token_rs, token_str);
-            LOG_TRACE(logger, "token_str is {}", token_str);
-        }
         else
             LOG_WARNING(
                 logger,
@@ -305,7 +302,6 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException(bool is_zone_id)
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
     if (!token_str.empty())
         request.set(EC2_IMDS_TOKEN_HEADER, token_str);
-    LOG_TRACE(logger, "request {}", request.getURI());
     session.sendRequest(request);
 
     Poco::Net::HTTPResponse response;
