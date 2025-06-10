@@ -87,6 +87,25 @@ parser.add_argument(
     help="Probability to set random storage policies",
 )
 parser.add_argument(
+    "--add-remote-server-settings-prob",
+    type=int,
+    default=80,
+    choices=range(0, 101),
+    help="Probability to set random servers",
+)
+parser.add_argument(
+    "--min-servers",
+    type=int,
+    default=1,
+    help="Minimum number of remote servers to generate",
+)
+parser.add_argument(
+    "--max-servers",
+    type=int,
+    default=3,
+    help="Maximum number of remote servers to generate",
+)
+parser.add_argument(
     "--change-server-version-prob",
     type=int,
     default=80,
@@ -193,7 +212,9 @@ args = parser.parse_args()
 if len(args.replica_values) != len(args.shard_values):
     raise f"The length of replica values {len(args.replica_values)} is not the same as shard values {len(args.shard_values)}"
 if args.min_disks > args.max_disks:
-    raise f"The min disk value {args.min_disks} is greater max disk value {args.max_disks}"
+    raise f"The min disks value {args.min_disks} is greater than max disks value {args.max_disks}"
+if args.min_servers > args.max_servers:
+    raise f"The min servers value {args.min_servers} is greater than max servers value {args.max_servers}"
 
 logging.basicConfig(
     filename=args.log_path,
@@ -238,7 +259,7 @@ server_settings = args.server_config
 modified_server_settings = False
 if server_settings is not None:
     modified_server_settings, server_settings = modify_server_settings(
-        args, cluster, is_private_binary, server_settings
+        args, cluster, len(args.replica_values), is_private_binary, server_settings
     )
 
 

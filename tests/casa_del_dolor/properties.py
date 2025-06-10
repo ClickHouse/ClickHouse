@@ -3,7 +3,6 @@ import tempfile
 import multiprocessing
 import random
 import typing
-import itertools
 
 from integration.helpers.cluster import ClickHouseCluster
 
@@ -268,6 +267,46 @@ def add_settings_from_dict(d: dict[str, Parameter], xml_element: ET.Element):
         new_element.text = str(generator())
 
 
+def add_single_cluster(
+    i: int,
+    existing_nodes: list[str],
+    next_cluster: ET.Element,
+):
+    number_elements = (
+        1 if random.randint(1, 4) == 1 else random.randint(1, len(existing_nodes))
+    )
+    next_shard_xml = None
+
+    input_nodes = list(existing_nodes)  # Do deep copy
+    random.shuffle(input_nodes)
+    # Add secret
+    if random.randint(1, 100) <= 30:
+        secret_xml = ET.SubElement(next_cluster, "secret")
+        secret_xml.text = f"{i % 10}23457"
+
+    for j in range(0, number_elements):
+        if next_shard_xml is None or random.randint(1, 3) == 1:
+            next_shard_xml = ET.SubElement(next_cluster, "shard")
+            # Add internal replication
+            if random.randint(1, 100) <= 40:
+                internal_replication_xml = ET.SubElement(
+                    next_shard_xml, "internal_replication"
+                )
+                internal_replication_xml.text = (
+                    "false" if random.randint(1, 4) <= 3 else "true"
+                )
+        next_replica_xml = ET.SubElement(next_shard_xml, "replica")
+        next_host_xml = ET.SubElement(next_replica_xml, "host")
+        next_host_xml.text = input_nodes[j]
+        next_port_xml = ET.SubElement(next_replica_xml, "port")
+        if random.randint(1, 100) <= 25:
+            secure_xml = ET.SubElement(next_replica_xml, "secure")
+            secure_xml.text = "1"
+            next_port_xml.text = "9440"
+        else:
+            next_port_xml.text = "9000"
+
+
 def add_single_disk(
     i: int,
     args,
@@ -411,7 +450,11 @@ def add_single_disk(
 
 
 def modify_server_settings(
-    args, cluster: ClickHouseCluster, is_private_binary: bool, input_config_path: str
+    args,
+    cluster: ClickHouseCluster,
+    number_replicas: int,
+    is_private_binary: bool,
+    input_config_path: str,
 ) -> tuple[bool, str]:
     modified = False
     # Parse the existing XML file
@@ -419,6 +462,31 @@ def modify_server_settings(
     root = tree.getroot()
     if root.tag != "clickhouse":
         raise Exception("<clickhouse> element not found")
+
+    # Add remote server configurations
+    if (
+        root.find("remote_servers") is None
+        and random.randint(1, 100) <= args.add_remote_server_settings_prob
+    ):
+        modified = True
+
+        existing_nodes = [f"node{i}" for i in range(0, number_replicas)]
+        remote_server_config = ET.SubElement(root, "remote_servers")
+
+        # Remove default cluster
+        if random.randint(1, 2) == 1:
+            default_cluster = ET.SubElement(
+                remote_server_config, "default", attrib={"remove": "remove"}
+            )
+            default_cluster.text = ""
+
+        number_clusters = random.randint(args.min_servers, args.max_servers)
+        for i in range(0, number_clusters):
+            add_single_cluster(
+                i,
+                existing_nodes,
+                ET.SubElement(remote_server_config, f"cluster{i}"),
+            )
 
     # Add disk configurations
     if (
@@ -464,7 +532,6 @@ def modify_server_settings(
             number_bottom_disks = len(bottom_disks)
             policies_element = ET.SubElement(storage_config, "policies")
             number_policies = random.randint(args.min_disks, args.max_disks)
-            disk_permutations = list(itertools.permutations(bottom_disks))
 
             for i in range(0, number_policies):
                 next_policy_xml = ET.SubElement(policies_element, f"policy{i}")
@@ -477,7 +544,8 @@ def modify_server_settings(
                     if random.randint(1, 2) == 1
                     else random.randint(1, number_bottom_disks)
                 )
-                inputs = random.choice(disk_permutations)
+                input_disks = list(bottom_disks)  # Do copy
+                random.shuffle(input_disks)
                 for i in range(0, number_elements):
                     if main_xml is None or random.randint(1, 3) == 1:
                         if main_xml is not None and random.randint(1, 100) <= 70:
@@ -485,7 +553,7 @@ def modify_server_settings(
                         main_xml = ET.SubElement(volumes_xml, f"volume{volume_counter}")
                         volume_counter += 1
                     disk_xml = ET.SubElement(main_xml, "disk")
-                    disk_xml.text = f"disk{inputs[i]}"
+                    disk_xml.text = f"disk{input_disks[i]}"
                 if main_xml is not None and random.randint(1, 100) <= 70:
                     add_settings_from_dict(policy_properties, main_xml)
                 if random.randint(1, 100) <= 70:
@@ -496,6 +564,7 @@ def modify_server_settings(
         allowed_path_xml2 = ET.SubElement(backups_element, "allowed_path")
         allowed_path_xml2.text = "/var/lib/clickhouse/user_files/"
 
+    # Add keeper_map_path_prefix
     if args.add_keeper_map_prefix:
         modified = True
         new_element = ET.SubElement(root, "keeper_map_path_prefix")
