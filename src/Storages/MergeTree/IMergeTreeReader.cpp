@@ -183,8 +183,9 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             }
         }
 
-
         auto context_copy = Context::createCopy(data_part_info_for_read->getContext());
+        /// Default/materialized expression can contain experimental/suspicious types that can be disabled in current context.
+        /// We should not perform any checks during reading from an existing table.
         enableAllExperimentalSettings(context_copy);
         auto dag = DB::evaluateMissingDefaults(
             additional_columns, full_requested_columns,
