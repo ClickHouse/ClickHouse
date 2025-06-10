@@ -61,7 +61,6 @@ MACStringToOUI
 URLHash
 URLHierarchy
 URLPathHierarchy
-UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
 UUIDToNum
@@ -164,8 +163,6 @@ cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 damerauLevenshteinDistance
-dateDiff
-dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
@@ -273,8 +270,6 @@ firstSignificantSubdomainRFC
 flattenTuple
 floor
 format
-formatDateTime
-formatDateTimeInJodaSyntax
 formatQuery
 formatQueryOrNull
 formatQuerySingleLine
@@ -288,9 +283,6 @@ formatRowNoNewline
 fragment
 fromDaysSinceYearZero
 fromDaysSinceYearZero32
-fromModifiedJulianDay
-fromModifiedJulianDayOrNull
-fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
@@ -413,7 +405,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-monthName
 mortonDecode
 mortonEncode
 multiFuzzyMatchAllIndices
@@ -813,8 +804,6 @@ toLastDayOfWeek
 toLowCardinality
 toMillisecond
 toMinute
-toModifiedJulianDay
-toModifiedJulianDayOrNull
 toMonth
 toNullable
 toQuarter
@@ -868,7 +857,6 @@ toUInt8
 toUInt8OrDefault
 toUInt8OrNull
 toUInt8OrZero
-toUTCTimestamp
 toUUID
 toUUIDOrDefault
 toUUIDOrNull
