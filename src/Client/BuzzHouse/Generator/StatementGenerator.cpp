@@ -320,11 +320,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             {
                 rel.cols.emplace_back(SQLRelationCol(rel.name, {"c" + std::to_string(i)}));
             }
-            this->levels[this->current_level].rels.emplace_back(rel);
-            this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-            this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
-            generateEngineDetails(rg, next, true, te);
-            this->levels.clear();
+            generateEngineDetails(rg, rel, next, true, te);
         }
         if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 16)
         {
@@ -800,9 +796,6 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         const uint32_t nrows = (rg.nextSmallNumber() % 3) + 1;
         ValuesStatement * vs = ins->mutable_values();
 
-        this->levels[this->current_level] = QueryLevel(this->current_level);
-        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
         for (uint32_t i = 0; i < nrows; i++)
         {
             bool first = true;
@@ -822,12 +815,15 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
                 }
                 else
                 {
+                    this->levels[this->current_level] = QueryLevel(this->current_level);
+                    this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+                    this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
                     generateExpression(rg, expr);
+                    this->levels.clear();
                 }
                 first = false;
             }
         }
-        this->levels.clear();
     }
     else
     {
@@ -1205,9 +1201,8 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 {
                     flatTableColumnPath(
                         flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-                    generateTableKey(rg, t.teng, true, tkey);
+                    generateTableKey(rg, createTableRelation(rg, true, "", t), t.teng, true, tkey);
                     this->entries.clear();
-                    this->levels.clear();
                 }
             }
             else if (heavy_delete && nopt < (heavy_delete + alter_order_by + 1))
@@ -1365,9 +1360,6 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                         columnPathRef(
                             this->entries[j], j == 0 ? upt->mutable_update()->mutable_col() : upt->add_other_updates()->mutable_col());
                     }
-                    addTableRelation(rg, true, "", t);
-                    this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-                    this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
                     for (uint32_t j = 0; j < nupdates; j++)
                     {
                         const ColumnPathChain & entry = this->entries[j];
@@ -1401,10 +1393,13 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                         }
                         else
                         {
+                            addTableRelation(rg, true, "", t);
+                            this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+                            this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
                             generateExpression(rg, expr);
+                            this->levels.clear();
                         }
                     }
-                    this->levels.clear();
                     this->entries.clear();
                 }
 
