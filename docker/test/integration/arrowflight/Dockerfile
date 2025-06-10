@@ -1,4 +1,4 @@
-# docker build -t clickhouse/arrowflight .
+# docker build -t clickhouse/arrowflight-server-test .
 FROM python:3.9-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
