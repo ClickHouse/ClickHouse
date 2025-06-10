@@ -295,7 +295,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             auto pool = std::is_same_v<Thread, std::thread> ? "global" : "local";
             throw DB::Exception(
                 DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
-                "Cannot schedule task (pool={}, threads={}, jobs={}): {}",
+                "Cannot schedule a task (pool={}, threads={}, jobs={}): {}",
                 pool,
                 threads.size(),
                 scheduled_jobs,
