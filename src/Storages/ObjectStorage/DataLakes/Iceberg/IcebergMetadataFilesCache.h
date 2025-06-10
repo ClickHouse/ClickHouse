@@ -3,10 +3,9 @@
 
 #if USE_AVRO
 
+#include <Core/Settings.h>
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
@@ -21,8 +20,7 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
-    extern const Metric IcebergMetadataFilesCacheBytes;
-    extern const Metric IcebergMetadataFilesCacheFiles;
+    extern const Metric IcebergMetadataFilesCacheSize;
 }
 
 namespace DB
@@ -52,19 +50,23 @@ struct IcebergMetadataFilesCacheCell : private boost::noncopyable
     explicit IcebergMetadataFilesCacheCell(String && metadata_json_str)
         : cached_element(std::move(metadata_json_str))
         , memory_bytes(std::get<String>(cached_element).capacity() + SIZE_IN_MEMORY_OVERHEAD)
+        , metric_increment{CurrentMetrics::IcebergMetadataFilesCacheSize, memory_bytes}
     {
     }
     explicit IcebergMetadataFilesCacheCell(ManifestFileCacheKeys && manifest_file_cache_keys_)
         : cached_element(std::move(manifest_file_cache_keys_))
         , memory_bytes(getMemorySizeOfManifestCacheKeys(std::get<ManifestFileCacheKeys>(cached_element)) + SIZE_IN_MEMORY_OVERHEAD)
+        , metric_increment{CurrentMetrics::IcebergMetadataFilesCacheSize, memory_bytes}
     {
     }
     explicit IcebergMetadataFilesCacheCell(Iceberg::ManifestFilePtr manifest_file_)
         : cached_element(manifest_file_)
         , memory_bytes(std::get<Iceberg::ManifestFilePtr>(cached_element)->getSizeInMemory() + SIZE_IN_MEMORY_OVERHEAD)
+        , metric_increment{CurrentMetrics::IcebergMetadataFilesCacheSize, memory_bytes}
     {
     }
 private:
+    CurrentMetrics::Increment metric_increment;
     static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200; /// we always underestimate the size of an object;
 
     static size_t getMemorySizeOfManifestCacheKeys(const ManifestFileCacheKeys & manifest_file_cache_keys)
@@ -93,7 +95,7 @@ public:
     using Base = CacheBase<String, IcebergMetadataFilesCacheCell, std::hash<String>, IcebergMetadataFilesCacheWeightFunction>;
 
     IcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
-        : Base(cache_policy, CurrentMetrics::IcebergMetadataFilesCacheBytes, CurrentMetrics::IcebergMetadataFilesCacheFiles, max_size_in_bytes, max_count, size_ratio)
+        : Base(cache_policy, max_size_in_bytes, max_count, size_ratio)
     {}
 
     static String getKey(StorageObjectStorage::ConfigurationPtr config, const String & data_path)

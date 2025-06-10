@@ -120,10 +120,6 @@ public:
 
     virtual ObjectStorageType getType() const = 0;
 
-    /// The logical root or base path used to group a set of related objects.
-    virtual std::string getRootPrefix() const { return ""; }
-
-    /// Common object key prefix relative to the root path.
     virtual std::string getCommonKeyPrefix() const = 0;
 
     virtual std::string getDescription() const = 0;

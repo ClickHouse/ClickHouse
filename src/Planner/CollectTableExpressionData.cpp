@@ -47,25 +47,21 @@ public:
             return;
         }
 
-        if (auto * function_node = node->as<FunctionNode>())
+        if (isExistsFunction(node))
         {
             /// Add used in correlated subquery columns to the table expression data.
             /// These columns can be used only by correlated subquery, but still they
             /// must be read by query plan for current query.
             ///
             /// Example: SELECT 1 FROM table as t WHERE EXISTS (SELECT * FROM numbers(10) WHERE t.id = number);
-            for (const auto & argument : function_node->getArguments().getNodes())
-            {
-                if (!isCorrelatedQueryOrUnionNode(argument))
-                    continue;
+            auto * function_node = node->as<FunctionNode>();
+            const auto & subquery_argument = function_node->getArguments().getNodes().front();
+            auto * query_node = subquery_argument->as<QueryNode>();
+            auto * union_node = subquery_argument->as<UnionNode>();
+            chassert(query_node != nullptr || union_node != nullptr);
 
-                auto * query_node = argument->as<QueryNode>();
-                auto * union_node = argument->as<UnionNode>();
-                chassert(query_node != nullptr || union_node != nullptr);
-
-                auto & correlated_columns = query_node ? query_node->getCorrelatedColumnsNode() : union_node->getCorrelatedColumnsNode();
-                visit(correlated_columns);
-            }
+            auto & correlated_columns = query_node ? query_node->getCorrelatedColumnsNode() : union_node->getCorrelatedColumnsNode();
+            visit(correlated_columns);
             return;
         }
 
@@ -207,6 +203,11 @@ public:
     static bool isIndexHintFunction(const QueryTreeNodePtr & node)
     {
         return node->as<FunctionNode>() && node->as<FunctionNode>()->getFunctionName() == "indexHint";
+    }
+
+    static bool isExistsFunction(const QueryTreeNodePtr & node)
+    {
+        return node->as<FunctionNode>() && node->as<FunctionNode>()->getFunctionName() == "exists";
     }
 
     static bool isColumnSourceMergeTree(const ColumnNode & node)

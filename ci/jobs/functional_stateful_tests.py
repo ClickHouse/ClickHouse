@@ -104,7 +104,9 @@ def main():
             f"clickhouse-server --version",
         ]
         results.append(
-            Result.from_commands_run(name="Install ClickHouse", command=commands)
+            Result.from_commands_run(
+                name="Install ClickHouse", command=commands, with_log=True
+            )
         )
         res = results[-1].is_ok()
 

@@ -1,6 +1,5 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
@@ -9,19 +8,13 @@ namespace ProfileEvents
 {
     extern const Event QueryConditionCacheHits;
     extern const Event QueryConditionCacheMisses;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric QueryConditionCacheBytes;
-    extern const Metric QueryConditionCacheEntries;
-}
+};
 
 namespace DB
 {
 
 QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-    : cache(cache_policy, CurrentMetrics::QueryConditionCacheBytes, CurrentMetrics::QueryConditionCacheEntries, max_size_in_bytes, 0, size_ratio)
+    : cache(cache_policy, max_size_in_bytes, 0, size_ratio)
 {
 }
 
@@ -34,29 +27,7 @@ void QueryConditionCache::write(
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
     auto [entry, inserted] = cache.getOrSet(key, load_func);
 
-    /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
-    {
-        std::shared_lock shared_lock(entry->mutex); /// cheap
-
-        bool need_not_update_marks = true;
-        for (const auto & mark_range : mark_ranges)
-        {
-            /// If the bits are already in the desired state (false), we don't need to update them.
-            need_not_update_marks = std::all_of(entry->matching_marks.begin() + mark_range.begin,
-                                                entry->matching_marks.begin() + mark_range.end,
-                                                [](auto b) { return b == false; });
-            if (!need_not_update_marks)
-                break;
-        }
-
-        /// Do we either have no final mark or final mark is already in the desired state?
-        bool need_not_update_final_mark = !has_final_mark || entry->matching_marks[marks_count - 1] == false;
-
-        if (need_not_update_marks && need_not_update_final_mark)
-            return;
-    }
-
-    std::lock_guard lock(entry->mutex); /// (*)
+    std::lock_guard lock(entry->mutex);
 
     chassert(marks_count == entry->matching_marks.size());
 
@@ -67,7 +38,7 @@ void QueryConditionCache::write(
     if (has_final_mark)
         entry->matching_marks[marks_count - 1] = false;
 
-    LOG_TEST(
+    LOG_TRACE(
         logger,
         "{} entry for table_id: {}, part_name: {}, condition_hash: {}, condition: {}, marks_count: {}, has_final_mark: {}",
         inserted ? "Inserted" : "Updated",
@@ -89,7 +60,7 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
         std::shared_lock lock(entry->mutex);
 
-        LOG_TEST(
+        LOG_TRACE(
             logger,
             "Read entry for table_uuid: {}, part: {}, condition_hash: {}",
             table_id,
@@ -102,7 +73,7 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     {
         ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
 
-        LOG_TEST(
+        LOG_DEBUG(
             logger,
             "Could not find entry for table_uuid: {}, part: {}, condition_hash: {}",
             table_id,
@@ -161,5 +132,4 @@ size_t QueryConditionCache::QueryConditionCacheEntryWeight::operator()(const Ent
     size_t memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
     return memory + sizeof(decltype(entry.matching_marks));
 }
-
 }

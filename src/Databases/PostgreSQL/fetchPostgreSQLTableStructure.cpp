@@ -3,6 +3,7 @@
 #if USE_LIBPQXX
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -110,7 +111,7 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
         /// there will be Numeric(x, y), otherwise just Numeric
         UInt32 precision;
         UInt32 scale;
-        if (type.ends_with(")"))
+        if (type.ends_with(')'))
         {
             res = DataTypeFactory::instance().get(type);
             precision = getDecimalPrecision(*res);
@@ -134,9 +135,26 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
         }
     }
+    else if (type.starts_with("character("))
+    {
+        if (type.ends_with(')'))
+        {
+            const auto open_parenthesis = type.rfind('(');
+            if (open_parenthesis != String::npos)
+            {
+                const auto close_parenthesis = type.size() - 1;
+                if (open_parenthesis + 1 != close_parenthesis)
+                {
+                    const auto size = parseFromString<size_t>(type.substr(open_parenthesis + 1, close_parenthesis - open_parenthesis - 1));
+                    res = std::make_shared<DataTypeFixedString>(size);
+                }
+            }
+        }
+    }
 
     if (!res)
         res = std::make_shared<DataTypeString>();
+
     if (is_nullable)
         res = std::make_shared<DataTypeNullable>(res);
 

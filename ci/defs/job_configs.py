@@ -2,22 +2,6 @@ from praktika import Job
 
 from ci.defs.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
-build_digest_config = Job.CacheDigestConfig(
-    include_paths=[
-        "./src",
-        "./contrib/",
-        "./CMakeLists.txt",
-        "./PreLoad.cmake",
-        "./cmake",
-        "./base",
-        "./programs",
-        "./rust",
-        "./ci/jobs/build_clickhouse.py",
-        "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
-    ],
-    with_git_submodules=True,
-)
-
 
 class JobConfigs:
     docker_build_arm = Job.Config(
@@ -113,7 +97,20 @@ class JobConfigs:
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 4,
         allow_merge_on_failure=True,
-        digest_config=build_digest_config,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./src",
+                "./contrib/",
+                "./CMakeLists.txt",
+                "./PreLoad.cmake",
+                "./cmake",
+                "./base",
+                "./programs",
+                "./rust",
+                "./ci/jobs/build_clickhouse.py",
+            ],
+            with_git_submodules=True,
+        ),
     ).parametrize(
         parameter=[
             BuildTypes.ARM_TIDY,
@@ -130,11 +127,21 @@ class JobConfigs:
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 2,
-        digest_config=build_digest_config,
-        post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
-            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
-        ],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./src",
+                "./contrib/",
+                "./CMakeLists.txt",
+                "./PreLoad.cmake",
+                "./cmake",
+                "./base",
+                "./programs",
+                "./rust",
+                "./ci/jobs/build_clickhouse.py",
+            ],
+            with_git_submodules=True,
+        ),
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
@@ -146,8 +153,6 @@ class JobConfigs:
             BuildTypes.AMD_BINARY,
             BuildTypes.ARM_RELEASE,
             BuildTypes.ARM_ASAN,
-            BuildTypes.ARM_COVERAGE,
-            BuildTypes.ARM_BINARY,
         ],
         provides=[
             [
@@ -193,8 +198,6 @@ class JobConfigs:
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
             ],
-            [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
-            [ArtifactNames.CH_ARM_BIN],
         ],
         runs_on=[
             RunnerLabels.BUILDER_AMD,
@@ -204,8 +207,6 @@ class JobConfigs:
             RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_ARM,
-            RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
         ],
@@ -218,13 +219,25 @@ class JobConfigs:
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 2,
-        digest_config=build_digest_config,
-        post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
-            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
-        ],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./src",
+                "./contrib/",
+                "./CMakeLists.txt",
+                "./PreLoad.cmake",
+                "./cmake",
+                "./base",
+                "./programs",
+                "./rust",
+                "./ci/jobs/build_clickhouse.py",
+            ],
+            with_git_submodules=True,
+        ),
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
     ).parametrize(
         parameter=[
+            BuildTypes.ARM_COVERAGE,
+            BuildTypes.ARM_BINARY,
             BuildTypes.AMD_DARWIN,
             BuildTypes.ARM_DARWIN,
             BuildTypes.ARM_V80COMPAT,
@@ -238,6 +251,8 @@ class JobConfigs:
             BuildTypes.FUZZERS,
         ],
         provides=[
+            [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
+            [ArtifactNames.CH_ARM_BIN],
             [ArtifactNames.CH_AMD_DARWIN_BIN],
             [ArtifactNames.CH_ARM_DARWIN_BIN],
             [ArtifactNames.CH_ARM_V80COMPAT],
@@ -251,12 +266,14 @@ class JobConfigs:
             [],  # no need for fuzzers artifacts in normal pr run [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         ],
         runs_on=[
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_COVERAGE
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_BINARY
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_DARWIN,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_V80COMPAT,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_FREEBSD,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.PPC64LE,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COMPAT,
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.AMD_COMPAT,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_MUSL,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.RISCV64,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.S390X,
@@ -264,7 +281,6 @@ class JobConfigs:
             RunnerLabels.BUILDER_ARM,  # fuzzers
         ],
     )
-    builds_for_tests = [b.name for b in build_jobs] + [tidy_build_jobs[0]]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=["..."],
@@ -336,10 +352,8 @@ class JobConfigs:
             "release, old analyzer, s3, DatabaseReplicated, 1/2",
             "release, old analyzer, s3, DatabaseReplicated, 2/2",
             "release, ParallelReplicas, s3 storage",
-            "debug, AsyncInsert, s3 storage",
         ],
         runs_on=[
-            RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
@@ -354,7 +368,6 @@ class JobConfigs:
             ["Build (amd_release)"],
             ["Build (amd_release)"],
             ["Build (amd_release)"],
-            ["Build (amd_debug)"],
         ],
     )
     functional_tests_jobs_coverage = Job.Config(
@@ -853,13 +866,9 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./ci/jobs/clickbench.py",
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/clickbench.py",
-                "./ci/jobs/scripts/clickbench/",
-                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-            ],
+            include_paths=["./ci/jobs/clickbench.py", "./ci/jobs/scripts/clickbench/"],
         ),
-        run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
+        run_in_docker="clickhouse/stateless-test+--shm-size=16g",
     ).parametrize(
         parameter=[
             BuildTypes.AMD_RELEASE,
@@ -886,7 +895,7 @@ class JobConfigs:
             ],
         ),
         run_in_docker="clickhouse/docs-builder",
-        requires=[JobNames.STYLE_CHECK, ArtifactNames.CH_ARM_BIN],
+        requires=[JobNames.STYLE_CHECK],
     )
     docker_sever = Job.Config(
         name=JobNames.DOCKER_SERVER,

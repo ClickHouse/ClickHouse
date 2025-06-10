@@ -3,8 +3,8 @@
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Interpreters/ClientInfo.h>
 #include <Storages/IStorage_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
 
@@ -28,7 +28,7 @@ class RemoteQueryExecutorReadContext;
 class ParallelReplicasReadingCoordinator;
 
 /// This is the same type as StorageS3Source::IteratorWrapper
-using TaskIterator = std::function<String(size_t)>;
+using TaskIterator = std::function<String()>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
@@ -304,9 +304,7 @@ private:
       */
     bool got_duplicated_part_uuids = false;
 
-#if defined(OS_LINUX)
     bool packet_in_progress = false;
-#endif
 
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;

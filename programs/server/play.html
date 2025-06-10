@@ -713,7 +713,7 @@
             <div id="inputs">
                 <input spellcheck="false" class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
             </div>
-            <div id="query_div"><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
+            <div id="query_div"><textarea autofocus spellcheck="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
             <div id="run_div">
                 <button class="shadow" id="run">Run</button>
                 <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
@@ -1293,7 +1293,6 @@ let in_flight = false;
 async function post()
 {
     ++request_num;
-    document.body.scrollTo(0, 0);
     let query = query_area.value;
     in_flight = true;
     let run = document.getElementById('run');
@@ -1339,7 +1338,14 @@ let user_prefers_tab_navigation = false;
 
 query_area.onkeydown = (e) => {
     if (e.key == 'Tab' && !event.shiftKey && !user_prefers_tab_navigation) {
-        document.execCommand('insertText', false, '    ');
+        let elem = e.target;
+        let selection_start = elem.selectionStart;
+        let selection_end = elem.selectionEnd;
+
+        elem.value = elem.value.substring(0, elem.selectionStart) + '    ' + elem.value.substring(elem.selectionEnd);
+        elem.selectionStart = selection_start + 4;
+        elem.selectionEnd = selection_start + 4;
+
         e.preventDefault();
         return false;
     } else if (e.key === 'Enter' && !(event.metaKey || event.ctrlKey)) {
@@ -1514,7 +1520,7 @@ document.addEventListener('keydown', e => {
 function transposeTableIfNeeded()
 {
     let table = document.getElementById('data-table');
-    if (Object.keys(header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
+    if (table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
 
     let heads = table.tHead.childNodes;
     let values = table.rows[0]?.cells;

@@ -6,11 +6,11 @@
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Common/logger_useful.h>
 #include "Storages/ColumnsDescription.h"
@@ -28,12 +28,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int FORMAT_VERSION_TOO_OLD;
+extern const int FORMAT_VERSION_TOO_OLD;
 }
 
-namespace DataLakeStorageSetting
+namespace StorageObjectStorageSetting
 {
-    extern DataLakeStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
+extern const StorageObjectStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
 }
 
 
@@ -46,11 +46,7 @@ class DataLakeConfiguration : public BaseStorageConfiguration, public std::enabl
 public:
     using Configuration = StorageObjectStorage::Configuration;
 
-    explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
-
     bool isDataLakeConfiguration() const override { return true; }
-
-    const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 
@@ -107,15 +103,9 @@ public:
 
     bool hasExternalDynamicMetadata() override
     {
-        return (*settings)[DataLakeStorageSetting::allow_dynamic_metadata_for_data_lakes]
+        return BaseStorageConfiguration::getSettingsRef()[StorageObjectStorageSetting::allow_dynamic_metadata_for_data_lakes]
             && current_metadata
             && current_metadata->supportsSchemaEvolution();
-    }
-
-    IDataLakeMetadata * getExternalMetadata(ObjectStoragePtr object_storage, ContextPtr context) override
-    {
-        updateMetadataObjectIfNeeded(object_storage, context);
-        return current_metadata.get();
     }
 
     ColumnsDescription updateAndGetCurrentSchema(
@@ -128,8 +118,6 @@ public:
     }
 
     bool supportsFileIterator() const override { return true; }
-
-    bool supportsWrites() const override { return current_metadata->supportsWrites(); }
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -155,12 +143,9 @@ public:
     }
 #endif
 
-    void modifyFormatSettings(FormatSettings & settings_) const override { current_metadata->modifyFormatSettings(settings_); }
-
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
-    const DataLakeStorageSettingsPtr settings;
 
     ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
