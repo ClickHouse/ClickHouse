@@ -696,15 +696,16 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                 file_segment.completePartAndResetDownloader();
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
-                LOG_TEST(log, "Bypassing cache because for {}", file_segment.getInfoForLog());
+                LOG_TEST(log, "Bypassing cache for {}", file_segment.getInfoForLog());
 
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
-                {
-                    SwapHelper swap(*this, *implementation_buffer);
-                    resetWorkingBuffer();
-                    implementation_buffer = getRemoteReadBuffer(file_segment, read_type);
-                }
+                swap(*implementation_buffer);
+                resetWorkingBuffer();
+
+                implementation_buffer = getRemoteReadBuffer(file_segment, read_type);
+
+                swap(*implementation_buffer);
 
                 implementation_buffer->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]
                 implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
