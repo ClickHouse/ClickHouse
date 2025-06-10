@@ -133,6 +133,7 @@ void CompressionCodecFactory::getMutableColumns(MutableColumns & res_columns) co
             res_columns[5]->insert(tmp->isFloatingPointTimeSeriesCodec());
             res_columns[6]->insert(tmp->isDeltaCompression());
             res_columns[7]->insert(tmp->isExperimental());
+            res_columns[8]->insert(tmp->getNotes());
         }
     );
 }

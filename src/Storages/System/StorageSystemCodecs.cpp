@@ -22,6 +22,7 @@ ColumnsDescription StorageSystemCodecs::getColumnsDescription()
         { "floating_point_timeseries", std::make_shared<DataTypeUInt8>(), "The codec is for floating point timeseries codec."},
         { "delta_compression",         std::make_shared<DataTypeUInt8>(), "The codec is for delta compression."},
         { "experimental",              std::make_shared<DataTypeUInt8>(), "The codec is experimental."},
+        { "notes",              std::make_shared<DataTypeString>(), "Performance notes."},
     };
 }
 
