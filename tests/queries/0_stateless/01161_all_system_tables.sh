@@ -22,7 +22,7 @@ function run_selects()
     readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT database || '.' || name FROM system.tables
     WHERE database in ('system', 'information_schema', 'INFORMATION_SCHEMA') and name != 'zookeeper' and name != 'models'
     AND sipHash64(name || toString($RAND)) % $THREADS = $thread_num AND name NOT LIKE '%\\_sender' AND name NOT LIKE '%\\_watcher'
-    AND name != 'coverage_log' AND name != 'query_log' AND name != 'text_log'")
+    AND name NOT LIKE '%_log'")
 
     for t in "${tables_arr[@]}"
     do
