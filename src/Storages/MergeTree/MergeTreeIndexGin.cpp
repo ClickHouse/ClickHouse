@@ -51,7 +51,7 @@ MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(
 void MergeTreeIndexGranuleGin::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty GIN index {}.", backQuote(index_name));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty text index {}.", backQuote(index_name));
 
     const auto & size_type = std::make_shared<DataTypeUInt32>();
     auto size_serialization = size_type->getDefaultSerialization();
@@ -736,14 +736,15 @@ MergeTreeIndexGranulePtr MergeTreeIndexGin::createIndexGranule() const
 {
     /// Index type 'inverted' was renamed to 'full_text' in May 2024.
     /// Index type 'full_text' was renamed to 'gin' in April 2025.
+    /// Index type 'gin' was renamed to 'text' in May 2025.
     ///
     /// Tables with old indexes can be loaded during a transition period. We still want let users know that they should drop existing
     /// indexes and re-create them. Function `createIndexGranule` is called whenever the index is used by queries. Reject the query if we
     /// have an old index.
     ///
-    /// TODO: remove this one year after GIN indexes became GA.
-    if (index.type == INVERTED_INDEX_NAME || index.type == FULL_TEXT_INDEX_NAME)
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' and 'full_text' are no longer supported. Please drop and recreate the index as type 'gin'");
+    /// TODO: remove this one year after text indexes became GA.
+    if (index.type == INVERTED_INDEX_NAME || index.type == FULL_TEXT_INDEX_NAME || index.type == GIN_INDEX_NAME)
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted', 'full_text' and 'gin' are no longer supported. Please drop and recreate the index as type 'text'");
 
     return std::make_shared<MergeTreeIndexGranuleGin>(index.name, index.column_names.size(), gin_filter_params);
 }
@@ -774,11 +775,11 @@ std::unordered_map<String, Field> convertArgumentsToOptionsMap(const FieldVector
     for (const Field & argument : arguments)
     {
         if (argument.getType() != Field::Types::Tuple)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Arguments of GIN index must be key-value pair (identifier = literal)");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Arguments of text index must be key-value pair (identifier = literal)");
         Tuple tuple = argument.template safeGet<Tuple>();
         String key = tuple[0].safeGet<String>();
         if (options.contains(key))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN index '{}' argument is specified more than once", key);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index '{}' argument is specified more than once", key);
         options[key] = tuple[1];
     }
     return options;
@@ -794,7 +795,7 @@ std::optional<Type> getOption(const std::unordered_map<String, Field> & options,
         if (value.getType() != expected_type)
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "GIN index argument '{}' expected to be {}, but got {}",
+                "Text index argument '{}' expected to be {}, but got {}",
                 option,
                 fieldTypeToString(expected_type),
                 value.getTypeName());
@@ -837,7 +838,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     /// Check that tokenizer is present and supported
     std::optional<String> tokenizer = getOption<String>(options, ARGUMENT_TOKENIZER);
     if (!tokenizer)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN index must have an '{}' argument", ARGUMENT_TOKENIZER);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index must have an '{}' argument", ARGUMENT_TOKENIZER);
 
     const bool is_supported_tokenizer = (tokenizer.value() == SplitTokenExtractor::getExternalName()
                                       || tokenizer.value() == NoOpTokenExtractor::getExternalName()
@@ -845,7 +846,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!is_supported_tokenizer)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "GIN index '{}' argument supports only 'default', 'ngram', and 'noop', but got {}",
+            "Text index '{}' argument supports only 'default', 'ngram', and 'noop', but got {}",
             ARGUMENT_TOKENIZER,
             tokenizer.value());
 
@@ -855,7 +856,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
         if (ngram_size < 2 || ngram_size > 8)
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "GIN index '{}' argument must be between 2 and 8, but got {}", ARGUMENT_NGRAM_SIZE, ngram_size);
+                "Text index '{}' argument must be between 2 and 8, but got {}", ARGUMENT_NGRAM_SIZE, ngram_size);
     }
 
     /// Check that max_rows_per_postings_list is valid (if present)
@@ -863,13 +864,13 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (max_rows_per_postings_list != UNLIMITED_ROWS_PER_POSTINGS_LIST && max_rows_per_postings_list < MIN_ROWS_PER_POSTINGS_LIST)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "GIN index '{}' should not be less than {}", ARGUMENT_MAX_ROWS, MIN_ROWS_PER_POSTINGS_LIST);
+            "Text index '{}' should not be less than {}", ARGUMENT_MAX_ROWS, MIN_ROWS_PER_POSTINGS_LIST);
 
     GinFilterParameters gin_filter_params(tokenizer.value(), max_rows_per_postings_list); /// Just validate
 
     /// Check that the index is created on a single column
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "GIN index must be created on a single column");
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
     WhichDataType data_type(index.data_types[0]);
     if (data_type.isArray())
@@ -888,7 +889,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!data_type.isString() && !data_type.isFixedString())
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "GIN index can be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
+            "Text index can be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
 
 }
 

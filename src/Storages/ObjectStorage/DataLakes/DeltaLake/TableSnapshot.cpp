@@ -342,7 +342,6 @@ private:
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
-    bool,
     LoggerPtr log_)
     : helper(helper_)
     , object_storage(object_storage_)

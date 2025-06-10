@@ -117,6 +117,8 @@ void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory)
         return std::make_shared<JSONCompactEachRowWithProgressRowOutputFormat>(buf, sample, settings, false, false);
     });
 
+    factory.setContentType("JSONCompactEachRowWithProgress", "application/json; charset=UTF-8");
+
     factory.registerOutputFormat("JSONCompactStringsEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
@@ -126,6 +128,8 @@ void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory)
         settings.json.serialize_as_strings = true;
         return std::make_shared<JSONCompactEachRowWithProgressRowOutputFormat>(buf, sample, settings, false, false);
     });
+
+    factory.setContentType("JSONCompactStringsEachRowWithProgress", "application/json; charset=UTF-8");
 }
 
 }

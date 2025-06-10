@@ -232,7 +232,7 @@ public:
     ///
     /// Must not be called after beginSend(), sendFile(), sendBuffer()
     /// or redirect() has been called.
-    std::shared_ptr<WriteBufferFromPocoSocket> send();
+    std::shared_ptr<WriteBuffer> send();
 
     /// Sends the response headers to the client
     /// but do not finish headers with \r\n,
@@ -240,7 +240,7 @@ public:
     ///
     /// Must not be called after send(), sendFile(), sendBuffer()
     /// or redirect() has been called.
-    std::pair<std::shared_ptr<WriteBufferFromPocoSocket>, std::shared_ptr<WriteBufferFromPocoSocket>> beginSend();
+    std::pair<std::shared_ptr<WriteBuffer>, std::shared_ptr<WriteBuffer>> beginSend();
 
     /// Override to correctly mark that the data send had been started for
     /// zero-copy response (i.e. replicated fetches).
@@ -288,8 +288,8 @@ private:
     Poco::Net::HTTPServerSession & session;
     HTTPServerRequest * request = nullptr;
     ProfileEvents::Event write_event;
-    std::shared_ptr<WriteBufferFromPocoSocket> stream;
-    std::shared_ptr<WriteBufferFromPocoSocket> header_stream;
+    std::shared_ptr<WriteBuffer> stream;
+    std::shared_ptr<WriteBuffer> header_stream;
     mutable bool send_started = false;
 };
 

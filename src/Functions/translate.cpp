@@ -166,7 +166,7 @@ struct TranslateUTF8Impl
             std::optional<UInt32> res_to;
 
             if (map_from_ptr + len_from <= map_from_end)
-                res_from = UTF8::convertUTF8ToCodePoint(map_from_ptr, len_from);
+                res_from = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(map_from_ptr), len_from);
 
             if (!res_from)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be a valid UTF-8 string");
@@ -176,7 +176,7 @@ struct TranslateUTF8Impl
                 size_t len_to = UTF8::seqLength(*map_to_ptr);
 
                 if (map_to_ptr + len_to <= map_to_end)
-                    res_to = UTF8::convertUTF8ToCodePoint(map_to_ptr, len_to);
+                    res_to = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(map_to_ptr), len_to);
 
                 if (!res_to)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be a valid UTF-8 string");
@@ -241,7 +241,7 @@ struct TranslateUTF8Impl
                         continue;
                     }
 
-                    size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], dst, 4);
+                    size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], reinterpret_cast<char *>(dst), 4);
                     assert(0 < dst_len && dst_len <= 4);
 
                     src += 1;
@@ -255,7 +255,7 @@ struct TranslateUTF8Impl
 
                 if (src + src_len <= src_end)
                 {
-                    auto src_code_point = UTF8::convertUTF8ToCodePoint(src, src_len);
+                    auto src_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(src), src_len);
 
                     if (src_code_point)
                     {
@@ -266,7 +266,7 @@ struct TranslateUTF8Impl
                             if (it->getMapped() == max_uint32)
                                 continue;
 
-                            size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), dst, 4);
+                            size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), reinterpret_cast<char *>(dst), 4);
                             assert(0 < dst_len && dst_len <= 4);
 
                             dst += dst_len;
