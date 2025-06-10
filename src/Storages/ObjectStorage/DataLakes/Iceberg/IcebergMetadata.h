@@ -134,8 +134,6 @@ private:
 
     void initializeSchemasFromManifestFile(Iceberg::ManifestFilePtr manifest_file_ptr) const;
 
-    void initializeSchemasFromManifestFile(ManifestFileCacheKeys manifest_list_ptr) const;
-
     Iceberg::ManifestFilePtr getManifestFile(const String & filename, Int64 inherited_sequence_number) const;
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
