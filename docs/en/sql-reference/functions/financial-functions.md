@@ -12,6 +12,12 @@ title: 'Financial Functions'
 
 Calculates the Internal Rate of Return (IRR) for a series of cash flows occurring at regular intervals. IRR is the discount rate at which the Net Present Value (NPV) equals zero.
 
+IRR attempts to solve the following equation:
+
+$$
+\sum_{i=0}^n \frac{cashflow_i}{1 + irr}^i = 0
+$$
+
 **Syntax**
 
 ```sql
@@ -63,6 +69,12 @@ SELECT irr([-100, 60, 60], 0.2)
 ## xirr {#xirr}
 
 Calculates the Extended Internal Rate of Return (XIRR) for a series of cash flows occurring at irregular intervals. XIRR is the discount rate at which the net present value (NPV) of all cash flows equals zero.
+
+XIRR attempts to solve the following equation (example for `ACT_365F`):
+
+$$
+\sum_{i=0}^n \frac{cashflow_i}{(1 + rate)^{(date_i - date_0)/365}} = 0
+$$
 
 **Syntax**
 
@@ -129,6 +141,12 @@ SELECT round(
 
 Calculates the Extended Net Present Value (XNPV) for a series of cash flows occurring at irregular intervals. XNPV considers the specific timing of each cash flow when calculating present value.
 
+XNPV equation for `ACT_365F`:
+
+$$
+XNPV=\sum_{i=1}^n \frac{cashflow_i}{(1 + rate)^{(date_i - date_0)/365}}
+$$
+
 **Syntax**
 
 ```sql
@@ -138,7 +156,7 @@ xnpv(rate, cashflows, dates[, daycount])
 **Arguments**
 
 - `rate` — The discount rate to apply. Type: Float64.
-- `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
+- `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Must contain at least one positive and one negative value. Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
 - `dates` — Array of dates corresponding to each cash flow. Must have the same size as cashflows array. Type: Array of Date or Date32.
 - `daycount` — Optional day count convention. Supported values:
   - 'ACT_365F' (default) — Actual/365 Fixed
@@ -176,6 +194,18 @@ SELECT xnpv(0.1, [-10_000., 5750., 4250., 3250.],
 ## npv {#npv}
 
 Calculates the Net Present Value (NPV) of a series of cash flows assuming equal time intervals between each cash flow.
+
+Default variant:
+
+$$
+\sum_{i=0}^{N-1} \frac{values_i}{(1 + rate)^i}
+$$
+
+Variant with `start_from_zero` set to `False` (Excel style):
+
+$$
+\sum_{i=1}^{N} \frac{values_i}{(1 + rate)^i}
+$$
 
 **Syntax**
 

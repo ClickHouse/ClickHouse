@@ -36,6 +36,10 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 namespace
 {
 
+// To add new day count types:
+// - add to DayCountType enum
+// - add to parseDayCount function
+// - add to yearFraction function and implement new date difference logic if necessary
 enum class DayCountType
 {
     ACT_365F,
@@ -68,6 +72,12 @@ constexpr double yearFraction(D d1, D d2)
         []<bool flag = false>() { static_assert(flag, "Unsupported DayCountType"); }();
 }
 
+enum class IndexMode
+{
+    ZeroBased, // Cashflows are indexed starting from 0
+    OneBased // Cashflows are indexed starting from 1 (Excel style) - option for NPV
+};
+
 // NPV function and its derivative. Used for irr calculation
 template <typename T>
 struct NpvCalculator
@@ -79,6 +89,7 @@ struct NpvCalculator
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must not be empty");
     }
 
+    template <IndexMode index_mode = IndexMode::ZeroBased>
     double calculate(double rate) const
     {
         if (rate == 0)
@@ -86,18 +97,35 @@ struct NpvCalculator
         if (rate <= -1.0)
             return std::numeric_limits<double>::infinity();
 
-        double npv = cashflows[0]; // First cashflow doesn't need discounting
-        double compound = 1.0 + rate;
-
-        // Start from i=1 since we handled i=0 above
-        for (size_t i = 1; i < cashflows.size(); ++i)
+        double npv = 0.0;
+        const double growth_factor = 1.0 + rate;
+        if constexpr (index_mode == IndexMode::ZeroBased)
         {
-            npv += cashflows[i] / compound;
-            compound *= (1.0 + rate);
+            // First cashflow (t=0) is not discounted
+            npv = cashflows[0];
+
+            // Discount subsequent cashflows (t=1, t=2, ...)
+            double discount_factor = growth_factor; // (1+r)^1
+            for (size_t i = 1; i < cashflows.size(); ++i)
+            {
+                npv += cashflows[i] / discount_factor;
+                discount_factor *= growth_factor;
+            }
+        }
+        else
+        { // IndexMode::OneBased
+            // All cashflows are discounted (t=1, t=2, ...)
+            double discount_factor = growth_factor; // Start with (1+r)^1 for t=1
+            for (size_t i = 0; i < cashflows.size(); ++i)
+            {
+                npv += cashflows[i] / discount_factor;
+                discount_factor *= growth_factor;
+            }
         }
         return npv;
     }
 
+    // Used only for IRR calculation, hence just ZeroBased
     double derivative(double rate) const
     {
         if (rate <= -1.0)
@@ -118,22 +146,14 @@ struct NpvCalculator
     std::span<T> cashflows;
 };
 
-// Plain NPV calculation that supports both zero-based and one-based indexing for cashflows.
-template <typename T>
-double npv(double rate, std::span<T> cashflows, bool start_from_zero)
+// NPV function used in the implementation of npv function
+template <IndexMode index_mode, typename T>
+double npv(double rate, std::span<T> cashflows)
 {
-    if (rate == 0)
-        return std::accumulate(cashflows.begin(), cashflows.end(), 0.0);
-    if (rate <= -1.0)
-        return std::numeric_limits<double>::infinity();
-    double npv_value = 0.0;
-    for (std::size_t idx = 0; idx < cashflows.size(); ++idx)
-    {
-        const double i = static_cast<double>(idx) + (start_from_zero ? 0.0 : 1.0);
-        npv_value += cashflows[idx] / std::pow(1.0 + rate, i);
-    }
-    return npv_value;
+    auto calc = NpvCalculator<T>(cashflows);
+    return calc.template calculate<index_mode>(rate);
 }
+
 
 // XNPV function and its derivative. Used for xirr calculation
 template <typename T, typename D, DayCountType day_count>
@@ -316,6 +336,7 @@ bool isXirrDateColumn(const IDataType & type)
     return isArray(type) && isDateOrDate32(checkAndGetDataType<DataTypeArray>(type).getNestedType());
 }
 
+// Similar dispatch is needed in two of the functions below, so we define it here
 template <typename T, typename F>
 void dispatchDate(const T * cashflow_data, const IColumn * date_data, F && f)
 {
@@ -343,7 +364,7 @@ void dispatchCashflowDate(const IColumn * cashflow_data, const IColumn * date_da
     else if (const auto * ci64 = typeid_cast<const ColumnVector<Int64> *>(cashflow_data))
         dispatchDate(ci64, date_data, std::forward<F>(f));
     else
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must contain numeric values");
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must contain Float64/Float32/Int64/Int32/Int16/Int8 values");
 }
 
 class FunctionXirr : public IFunction
@@ -363,8 +384,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto mandatory_args = FunctionArgumentDescriptors{
-            {"cashflow", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn), nullptr, "Array[Number]"},
-            {"date", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isXirrDateColumn), nullptr, "Array[NativeNumber]"},
+            {"cashflow",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
+             nullptr,
+             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
+            {"date", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isXirrDateColumn), nullptr, "Array[Date/Date32]"},
         };
 
         auto optional_args = FunctionArgumentDescriptors{
@@ -478,7 +502,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto mandatory_args = FunctionArgumentDescriptors{
-            {"cashflow", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn), nullptr, "Array[Number]"},
+            {"cashflow",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
+             nullptr,
+             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
         };
 
         auto optional_args = FunctionArgumentDescriptors{
@@ -573,8 +600,11 @@ public:
     {
         auto mandatory_args = FunctionArgumentDescriptors{
             {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "FloatXX"},
-            {"cashflow", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn), nullptr, "Array[Number]"},
-            {"date", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isXirrDateColumn), nullptr, "Array[NativeNumber]"},
+            {"cashflow",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
+             nullptr,
+             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
+            {"date", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isXirrDateColumn), nullptr, "Array[Date|Date32]"},
         };
 
         auto optional_args = FunctionArgumentDescriptors{
@@ -687,7 +717,10 @@ public:
     {
         auto mandatory_args = FunctionArgumentDescriptors{
             {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "FloatXX"},
-            {"cashflow", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn), nullptr, "Array[Number]"},
+            {"cashflow",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
+             nullptr,
+             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
         };
 
         auto optional_args = FunctionArgumentDescriptors{
@@ -721,8 +754,17 @@ public:
 
         const ColumnArray::Offsets & cashflow_offsets = cashflow_array->getOffsets();
 
-        auto process_array = [&](const auto * cashflow_values, const auto & rate_pod)
+        auto process_array = [&]<typename CashFlowCol>(const CashFlowCol * cashflow_values, const auto & rate_pod)
         {
+            using CashFlowType = const typename CashFlowCol::ValueType;
+            auto * npv_fptr = [&]() -> double (*)(double, std::span<CashFlowType>)
+            {
+                if (start_from_zero)
+                    return &npv<IndexMode::ZeroBased, CashFlowType>;
+                else
+                    return &npv<IndexMode::OneBased, CashFlowType>;
+            }();
+
             ColumnArray::Offset previous_offset = 0;
             for (size_t i = 0; i < cashflow_offsets.size(); ++i)
             {
@@ -731,7 +773,7 @@ public:
                 const auto rate = rate_pod[i];
                 auto cashflow_span = std::span(cashflow_values->getData().data() + previous_offset, length);
 
-                result_data[i] = npv(rate, cashflow_span, start_from_zero);
+                result_data[i] = npv_fptr(rate, cashflow_span);
 
                 previous_offset = current_offset;
             }
