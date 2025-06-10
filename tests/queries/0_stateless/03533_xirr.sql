@@ -7,10 +7,16 @@ SELECT xirr(123, [toDate('2020-01-01')]); -- { serverError ILLEGAL_TYPE_OF_ARGUM
 SELECT round(xirr([-10000], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT round(xirr([-10000, NULL, 4250, 3250], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT xirr([-10000], [toDate('2020-01-01')]);
+SELECT 'Zero cashflow entries -> NaN:';
 SELECT xirr([]::Array(Float32), []::Array(Date));
+SELECT 'Just one cashflow entry -> NaN:';
+SELECT xirr([-10000], [toDate('2020-01-01')]);
+SELECT 'Zero cashflow -> NaN:';
 SELECT xirr([-0, 0], [toDate('2020-01-01'), toDate('2020-01-02')]);
-
+SELECT 'Unsorted dates -> NaN:';
+SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate('2025-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6) AS xirr_rate;
+SELECT 'Non-unique dates -> NaN:';
+SELECT xirr([-100, 10], [toDate('2020-01-01'), toDate('2020-01-01')]);
 
 CREATE TABLE IF NOT EXISTS 3533_xirr_test (
     tag String,

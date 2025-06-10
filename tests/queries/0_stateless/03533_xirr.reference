@@ -1,7 +1,14 @@
 0.634297
 0.634297
+Zero cashflow entries -> NaN:
 nan
+Just one cashflow entry -> NaN:
 nan
+Zero cashflow -> NaN:
+nan
+Unsorted dates -> NaN:
+nan
+Non-unique dates -> NaN:
 nan
 a	0.120613
 b	0.131617

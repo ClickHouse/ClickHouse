@@ -47,6 +47,7 @@ struct XirrCalculator
         CANNOT_CONVERGE_DUE_TO_ROUNDING_ERRORS,
         CANNOT_CONVERGE_DUE_TO_INVALID_ARGUMENTS,
         CANNOT_CONVERGE_TOO_MANY_ITERATIONS,
+        INPUT_DATES_NOT_SORTED_UNIQUE,
         OTHER_ERROR
     };
 
@@ -61,6 +62,12 @@ struct XirrCalculator
 
         if (std::all_of(cashflows.begin(), cashflows.end(), [](T cf) { return cf == 0; })) [[unlikely]]
             return std::numeric_limits<double>::quiet_NaN();
+
+        for (size_t i = 1; i < dates.size(); ++i)
+        {
+            if (dates[i] <= dates[i - 1]) [[unlikely]]
+                return std::unexpected(XirrErrorCode::INPUT_DATES_NOT_SORTED_UNIQUE);
+        }
 
         auto npv_function = [&](double rate)
         {
