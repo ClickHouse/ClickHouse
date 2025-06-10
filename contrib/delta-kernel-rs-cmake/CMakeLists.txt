@@ -59,6 +59,7 @@ file(COPY ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/ DESTINATION ${DELTA_
 set(DELTA_KERNEL_TARGET_PATH ${DELTA_KERNEL_RS_BINARY_DIR}/include)
 
 corrosion_set_env_vars(delta_kernel_ffi
+        "CARGO_HOME=${CMAKE_BINARY_DIR}/contrib/corrosion-cmake/"
         "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}"
         "OPENSSL_LIBS=ssl:crypto"
         "OPENSSL_STATIC=1"
