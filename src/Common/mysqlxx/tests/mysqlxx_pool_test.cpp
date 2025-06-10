@@ -26,7 +26,7 @@ mysqlxx::Pool::Entry getWithFailover(mysqlxx::Pool & connections_pool)
         }
         catch (const Poco::Exception & e)
         {
-            if (e.displayText().contains("mysqlxx::Pool is full"))
+            if (e.displayText().find("mysqlxx::Pool is full") != std::string::npos)
             {
                 std::cerr << e.displayText() << std::endl;
             }

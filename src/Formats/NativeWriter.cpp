@@ -11,13 +11,10 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnLazy.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -59,7 +56,7 @@ void NativeWriter::flush()
 }
 
 
-void NativeWriter::writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, const std::optional<FormatSettings> & format_settings, UInt64 offset, UInt64 limit, UInt64 client_revision)
+static void writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, const std::optional<FormatSettings> & format_settings, UInt64 offset, UInt64 limit)
 {
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
@@ -67,19 +64,11 @@ void NativeWriter::writeData(const ISerialization & serialization, const ColumnP
       */
     ColumnPtr full_column = column->convertToFullColumnIfConst()->decompress();
 
-    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(full_column.get()))
-    {
-        const auto & columns = column_lazy->getColumns();
-        full_column = ColumnTuple::create(columns);
-    }
-
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0;
-    settings.native_format = true;
-    settings.format_settings = format_settings ? &*format_settings : nullptr;
-    settings.use_v1_object_and_dynamic_serialization = client_revision < DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION;
+    settings.data_types_binary_encoding = format_settings && format_settings->native.encode_types_in_binary_format;
 
     ISerialization::SerializeBinaryBulkStatePtr state;
     serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);
@@ -163,15 +152,7 @@ size_t NativeWriter::write(const Block & block)
 
         /// Serialization. Dynamic, if client supports it.
         SerializationPtr serialization;
-        bool skip_writing = false;
-        if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(column.column.get()))
-        {
-            if (!column_lazy->getColumns().empty())
-                serialization = column_lazy->getDefaultSerialization();
-            else
-                skip_writing = true;
-        }
-        else if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             auto info = column.type->getSerializationInfo(*column.column);
             bool has_custom = false;
@@ -198,8 +179,8 @@ size_t NativeWriter::write(const Block & block)
         }
 
         /// Data
-        if (!skip_writing && rows)    /// Zero items of data is always represented as zero number of bytes.
-            writeData(*serialization, column.column, ostr, format_settings, 0, 0, client_revision);
+        if (rows)    /// Zero items of data is always represented as zero number of bytes.
+            writeData(*serialization, column.column, ostr, format_settings, 0, 0);
 
         if (index)
         {

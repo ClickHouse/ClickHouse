@@ -2,16 +2,41 @@
 
 #include <Common/checkStackSize.h>
 #include <Core/Settings.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/Context.h>
-#include <Processors/QueryPlan/ConvertingActions.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 
 namespace DB
 {
-namespace Setting
+
+namespace
 {
-    extern const SettingsBool allow_experimental_analyzer;
+
+void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missing_objects)
+{
+    if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
+        return;
+
+    auto mode = has_missing_objects ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
+
+    auto get_converting_dag = [mode](const Block & block_, const Block & header_)
+    {
+        /// Convert header structure to expected.
+        /// Also we ignore constants from result and replace it with constants from header.
+        /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
+        return ActionsDAG::makeConvertingActions(
+            block_.getColumnsWithTypeAndName(),
+            header_.getColumnsWithTypeAndName(),
+            mode,
+            true);
+    };
+
+    auto convert_actions_dag = get_converting_dag(plan.getCurrentDataStream().header, header);
+    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(convert_actions_dag));
+    plan.addStep(std::move(converting));
+}
+
 }
 
 std::unique_ptr<QueryPlan> createLocalPlan(
@@ -21,20 +46,15 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     QueryProcessingStage::Enum processed_stage,
     size_t shard_num,
     size_t shard_count,
-    bool has_missing_objects,
-    bool build_logical_plan,
-    const std::string & default_database)
+    bool has_missing_objects)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
     auto new_context = Context::createCopy(context);
 
-    if (build_logical_plan && !default_database.empty())
-        new_context->setCurrentDatabase(default_database);
-
     /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
-    if (!build_logical_plan && processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
+    if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
         processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
 
     /// Do not apply AST optimizations, because query
@@ -45,9 +65,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         .setShardInfo(static_cast<UInt32>(shard_num), static_cast<UInt32>(shard_count))
         .ignoreASTOptimizations();
 
-    select_query_options.build_logical_plan = build_logical_plan;
-
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef().allow_experimental_analyzer)
     {
         /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
         /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace

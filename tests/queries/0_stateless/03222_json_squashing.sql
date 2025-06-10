@@ -1,6 +1,6 @@
 -- Tags: long
 
-SET enable_json_type = 1;
+set allow_experimental_json_type = 1;
 set max_block_size = 1000;
 
 drop table if exists test;

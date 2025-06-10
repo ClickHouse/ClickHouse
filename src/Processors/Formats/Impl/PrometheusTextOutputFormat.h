@@ -1,7 +1,9 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 
+#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <DataTypes/Serializations/ISerialization.h>

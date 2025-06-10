@@ -5,8 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <Functions/keyvaluepair/impl/StateHandler.h>
-#include <Functions/keyvaluepair/impl/StateHandlerImpl.h>
-#include <absl/container/flat_hash_map.h>
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
 
 namespace DB
 {
@@ -17,36 +16,37 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
 }
 
-namespace extractKV
-{
 /*
  * Handle state transitions and a few states like `FLUSH_PAIR` and `END`.
  * */
 template <typename StateHandler>
-class KeyValuePairExtractor
+class CHKeyValuePairExtractor : public KeyValuePairExtractor
 {
     using State = typename DB::extractKV::StateHandler::State;
     using NextState = DB::extractKV::StateHandler::NextState;
 
 public:
-    using PairWriter = typename StateHandler::PairWriter;
+    explicit CHKeyValuePairExtractor(StateHandler state_handler_, uint64_t max_number_of_pairs_)
+        : state_handler(std::move(state_handler_)), max_number_of_pairs(max_number_of_pairs_)
+    {}
 
-    KeyValuePairExtractor(const Configuration & configuration_, uint64_t max_number_of_pairs_)
-        : state_handler(StateHandler(configuration_))
-        , max_number_of_pairs(max_number_of_pairs_)
+    uint64_t extract(const std::string & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
     {
+        return extract(std::string_view {data}, keys, values);
     }
 
-protected:
-    uint64_t extractImpl(std::string_view data, typename StateHandler::PairWriter & pair_writer)
+    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
     {
         auto state =  State::WAITING_KEY;
+
+        auto key = typename StateHandler::StringWriter(*keys);
+        auto value = typename StateHandler::StringWriter(*values);
 
         uint64_t row_offset = 0;
 
         while (state != State::END)
         {
-            auto next_state = processState(data, state, pair_writer, row_offset);
+            auto next_state = processState(data, state, key, value, row_offset);
 
             if (next_state.position_in_string > data.size() && next_state.state != State::END)
             {
@@ -61,13 +61,14 @@ protected:
         }
 
         // below reset discards invalid keys and values
-        reset(pair_writer);
+        reset(key, value);
 
         return row_offset;
     }
 
 private:
-    NextState processState(std::string_view file, State state, auto & pair_writer, uint64_t & row_offset)
+
+    NextState processState(std::string_view file, State state, auto & key, auto & value, uint64_t & row_offset)
     {
         switch (state)
         {
@@ -77,11 +78,11 @@ private:
             }
             case State::READING_KEY:
             {
-                return state_handler.readKey(file, pair_writer);
+                return state_handler.readKey(file, key);
             }
             case State::READING_QUOTED_KEY:
             {
-                return state_handler.readQuotedKey(file, pair_writer);
+                return state_handler.readQuotedKey(file, key);
             }
             case State::READING_KV_DELIMITER:
             {
@@ -93,15 +94,15 @@ private:
             }
             case State::READING_VALUE:
             {
-                return state_handler.readValue(file, pair_writer);
+                return state_handler.readValue(file, value);
             }
             case State::READING_QUOTED_VALUE:
             {
-                return state_handler.readQuotedValue(file, pair_writer);
+                return state_handler.readQuotedValue(file, value);
             }
             case State::FLUSH_PAIR:
             {
-                return flushPair(file, pair_writer, row_offset);
+                return flushPair(file, key, value, row_offset);
             }
             case State::END:
             {
@@ -110,7 +111,8 @@ private:
         }
     }
 
-    NextState flushPair(const std::string_view & file, auto & pair_writer, uint64_t & row_offset)
+    NextState flushPair(const std::string_view & file, auto & key,
+                        auto & value, uint64_t & row_offset)
     {
         row_offset++;
 
@@ -119,61 +121,20 @@ private:
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Number of pairs produced exceeded the limit of {}", max_number_of_pairs);
         }
 
-        pair_writer.commitKey();
-        pair_writer.commitValue();
+        key.commit();
+        value.commit();
 
         return {0, file.empty() ? State::END : State::WAITING_KEY};
     }
 
-    void reset(auto & pair_writer)
+    void reset(auto & key, auto & value)
     {
-        pair_writer.resetKey();
-        pair_writer.resetValue();
+        key.reset();
+        value.reset();
     }
 
     StateHandler state_handler;
     uint64_t max_number_of_pairs;
-};
-
-}
-
-struct KeyValuePairExtractorNoEscaping : extractKV::KeyValuePairExtractor<extractKV::NoEscapingStateHandler>
-{
-    using StateHandler = extractKV::NoEscapingStateHandler;
-    explicit KeyValuePairExtractorNoEscaping(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
-        : KeyValuePairExtractor(configuration_, max_number_of_pairs_) {}
-
-    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
-    {
-        auto pair_writer = typename StateHandler::PairWriter(*keys, *values);
-        return extractImpl(data, pair_writer);
-    }
-};
-
-struct KeyValuePairExtractorInlineEscaping : extractKV::KeyValuePairExtractor<extractKV::InlineEscapingStateHandler>
-{
-    using StateHandler = extractKV::InlineEscapingStateHandler;
-    explicit KeyValuePairExtractorInlineEscaping(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
-        : KeyValuePairExtractor(configuration_, max_number_of_pairs_) {}
-
-    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
-    {
-        auto pair_writer = typename StateHandler::PairWriter(*keys, *values);
-        return extractImpl(data, pair_writer);
-    }
-};
-
-struct KeyValuePairExtractorReferenceMap : extractKV::KeyValuePairExtractor<extractKV::ReferencesMapStateHandler>
-{
-    using StateHandler = extractKV::ReferencesMapStateHandler;
-    explicit KeyValuePairExtractorReferenceMap(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
-        : KeyValuePairExtractor(configuration_, max_number_of_pairs_) {}
-
-    uint64_t extract(std::string_view data, absl::flat_hash_map<std::string_view, std::string_view> & map)
-    {
-        auto pair_writer = typename StateHandler::PairWriter(map);
-        return extractImpl(data, pair_writer);
-    }
 };
 
 }

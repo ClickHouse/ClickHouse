@@ -18,11 +18,11 @@ TEST(HiliteComparator, ConsumeHilites)
     s += IAST::hilite_function;
     s += "test";
     s += IAST::hilite_keyword;
+    const char * ptr = s.c_str();
+    const char * expected_ptr = strchr(ptr, 't');
     const char * last_hilite = nullptr;
-    auto str_view = std::string_view(s);
-    auto view_it = str_view.begin();
-    consume_hilites(&view_it, &last_hilite);
-    // ASSERT_EQ(expected_ptr, ptr);
+    consume_hilites(ptr, &last_hilite);
+    ASSERT_EQ(expected_ptr, ptr);
     ASSERT_TRUE(last_hilite != nullptr);
     ASSERT_EQ(IAST::hilite_function, last_hilite);
 }

@@ -1,0 +1,38 @@
+---TUMBLE---
+||---WINDOW COLUMN NAME---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(1))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(1))`\nSETTINGS index_granularity = 8192
+||---WINDOW COLUMN ALIAS---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(\'1\'))`\nSETTINGS index_granularity = 8192
+||---IDENTIFIER---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `b` Int32,\n    `windowID(timestamp, toIntervalSecond(\'1\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (b, `windowID(timestamp, toIntervalSecond(\'1\'))`)\nSETTINGS index_granularity = 8192
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'))` UInt32,\n    `b` Int32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (`windowID(timestamp, toIntervalSecond(\'1\'))`, b)\nSETTINGS index_granularity = 8192
+||---FUNCTION---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `plus(a, b)` Int64,\n    `windowID(timestamp, toIntervalSecond(\'1\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (`plus(a, b)`, `windowID(timestamp, toIntervalSecond(\'1\'))`)\nSETTINGS index_granularity = 8192
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'))` UInt32,\n    `plus(a, b)` Int64,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (`windowID(timestamp, toIntervalSecond(\'1\'))`, `plus(a, b)`)\nSETTINGS index_granularity = 8192
+||---TimeZone---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'), \'Asia/Shanghai\')` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(\'1\'), \'Asia/Shanghai\')`\nSETTINGS index_granularity = 8192
+||---DATA COLUMN ALIAS---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `b` Int32,\n    `windowID(timestamp, toIntervalSecond(\'1\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (b, `windowID(timestamp, toIntervalSecond(\'1\'))`)\nSETTINGS index_granularity = 8192
+||---JOIN---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32),\n    `count(mt_2.b)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(\'1\'))`\nSETTINGS index_granularity = 8192
+||---POPULATE JOIN---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32),\n    `count(mt_2.b)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(\'1\'))`\nSETTINGS index_granularity = 8192
+---HOP---
+||---WINDOW COLUMN NAME---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(1), toIntervalSecond(3))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(1), toIntervalSecond(3))`\nSETTINGS index_granularity = 8192
+||---WINDOW COLUMN ALIAS---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))`\nSETTINGS index_granularity = 8192
+||---IDENTIFIER---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `b` Int32,\n    `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (b, `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))`)\nSETTINGS index_granularity = 8192
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))` UInt32,\n    `b` Int32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (`windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))`, b)\nSETTINGS index_granularity = 8192
+||---FUNCTION---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `plus(a, b)` Int64,\n    `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (`plus(a, b)`, `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))`)\nSETTINGS index_granularity = 8192
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))` UInt32,\n    `plus(a, b)` Int64,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (`windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))`, `plus(a, b)`)\nSETTINGS index_granularity = 8192
+||---TimeZone---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(1), toIntervalSecond(3), \'Asia/Shanghai\')` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(1), toIntervalSecond(3), \'Asia/Shanghai\')`\nSETTINGS index_granularity = 8192
+||---DATA COLUMN ALIAS---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `b` Int32,\n    `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (b, `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))`)\nSETTINGS index_granularity = 8192
+||---JOIN---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32),\n    `count(mt_2.b)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))`\nSETTINGS index_granularity = 8192
+||---POPULATE JOIN---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32),\n    `count(mt_2.b)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))`\nSETTINGS index_granularity = 8192

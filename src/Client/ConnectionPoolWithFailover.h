@@ -105,11 +105,6 @@ public:
         Base::updateSharedErrorCounts(shuffled_pools);
     }
 
-    void incrementErrorCount(ConnectionPoolPtr pool)
-    {
-        Base::incrementErrorCount(pool);
-    }
-
     size_t getPoolSize() const { return Base::getPoolSize(); }
 
 private:

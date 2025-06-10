@@ -11,15 +11,9 @@
 #include <Interpreters/Context.h>
 
 #include <Core/Settings.h>
-#include <Common/SipHash.h>
-#include <Common/assert_cast.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-}
 
 TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
     : IQueryTreeNode(children_size)
@@ -35,10 +29,9 @@ TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, Storage
 }
 
 TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
-    : TableNode(
-          storage_,
-          storage_->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]),
-          storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(), context))
+    : TableNode(storage_,
+        storage_->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout),
+        storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(), context))
 {
 }
 
@@ -46,7 +39,7 @@ void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & conte
 {
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
-    storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
 }
 
@@ -85,10 +78,7 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     }
     else
     {
-        // In case of cross-replication we don't know what database is used for the table.
-        // `storage_id.hasDatabase()` can return false only on the initiator node.
-        // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-        auto full_name = storage_id.hasDatabase() ? storage_id.getFullNameNotQuoted() : storage_id.getTableName();
+        auto full_name = storage_id.getFullNameNotQuoted();
         state.update(full_name.size());
         state.update(full_name);
     }

@@ -37,7 +37,7 @@ SELECT * FROM t WHERE id2 = 3 FORMAT Null;
 SELECT sum(id3) FROM t GROUP BY id2 FORMAT Null;
 SELECT min(id) FROM t FORMAT Null;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     --Remove the prefix string which is a mutable database name.

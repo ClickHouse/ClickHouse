@@ -196,6 +196,7 @@ When writing docs, you can use prepared templates. Copy the code of a template a
 Templates:
 
 - [Function](_description_templates/template-function.md)
+- [Setting](_description_templates/template-setting.md)
 - [Server Setting](_description_templates/template-server-setting.md)
 - [Database or Table engine](_description_templates/template-engine.md)
 - [System table](_description_templates/template-system-table.md)
@@ -207,4 +208,4 @@ Templates:
 
 ## How to Build Documentation
 
-You can build your documentation manually by following the instructions in the docs repo [contrib-writing-guide](https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/contrib-writing-guide.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.
+You can build your documentation manually by following the instructions in the docs repo [contrib-writing-guide](https://github.com/ClickHouse/clickhouse-docs/blob/main/contrib-writing-guide.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.
