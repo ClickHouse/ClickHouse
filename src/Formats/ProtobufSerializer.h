@@ -45,6 +45,7 @@ public:
         bool with_length_delimiter,
         bool with_envelope,
         bool flatten_google_wrappers,
+        bool oneof_presence,
         ProtobufReader & reader);
 
     static std::unique_ptr<ProtobufSerializer> create(

@@ -1316,6 +1316,10 @@ Set the quoting style for identifiers in SHOW CREATE query
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
 )", 0) \
+    DECLARE(Bool, input_format_protobuf_oneof_presence, false, R"(
+Add a column of Bool type
+)", 0) \
+
 
 // End of FORMAT_FACTORY_SETTINGS
 

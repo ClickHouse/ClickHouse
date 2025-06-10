@@ -30,6 +30,7 @@ ProtobufListInputFormat::ProtobufListInputFormat(
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
           flatten_google_wrappers_,
+          false,    // oneof_presence
           *reader))
 {
 }
