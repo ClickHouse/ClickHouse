@@ -106,6 +106,7 @@ private:
     Int32 last_metadata_version;
     Int32 format_version;
 
+    mutable bool schema_id_by_data_file_initialized{false};
     mutable std::unordered_map<String, Int32> schema_id_by_data_file;
 
 
@@ -128,6 +129,10 @@ private:
     void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object);
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
+
+    void initializeSchemasFromManifestList(ManifestFileCacheKeys manifest_list_ptr) const;
+
+    void initializeSchemasFromManifestFile(Iceberg::ManifestFilePtr manifest_file_ptr) const;
 
     void initializeSchemasFromManifestFile(ManifestFileCacheKeys manifest_list_ptr) const;
 
