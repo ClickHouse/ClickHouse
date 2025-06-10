@@ -220,7 +220,72 @@ namespace DB
 
     REGISTER_FUNCTION(FromModifiedJulianDay)
     {
-        factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDay, false>>();
-        factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDayOrNull, true>>();
+        FunctionDocumentation::Description description_fromModifiedJulianDay = R"(
+Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number to a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD`. This function supports day number from `-678941` to `2973483` (which represent 0000-01-01 and 9999-12-31 respectively). It raises an exception if the day number is outside of the supported range.
+    )";
+        FunctionDocumentation::Syntax syntax_fromModifiedJulianDay = R"(
+fromModifiedJulianDay(day)
+    )";
+        FunctionDocumentation::Arguments arguments_fromModifiedJulianDay = {
+            {"day", "Modified Julian Day number. [Any integral types](../data-types/int-uint.md)."}
+        };
+        FunctionDocumentation::ReturnedValue returned_value_fromModifiedJulianDay = "Returns date in text form. [`String`](../data-types/string.md).";
+        FunctionDocumentation::Examples examples_fromModifiedJulianDay = {
+            {"Convert Modified Julian Day to date", R"(
+SELECT fromModifiedJulianDay(58849)
+        )",
+            R"(
+┌─fromModifiedJulianDay(58849)─┐
+│ 2020-01-01                   │
+└──────────────────────────────┘
+        )"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDay = {21, 1};
+        FunctionDocumentation::Category category_fromModifiedJulianDay = FunctionDocumentation::Category::DateAndTime;
+        FunctionDocumentation documentation_fromModifiedJulianDay = {
+            description_fromModifiedJulianDay,
+            syntax_fromModifiedJulianDay,
+            arguments_fromModifiedJulianDay,
+            returned_value_fromModifiedJulianDay,
+            examples_fromModifiedJulianDay,
+            introduced_in_fromModifiedJulianDay,
+            category_fromModifiedJulianDay
+        };
+
+        factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDay, false>>(documentation_fromModifiedJulianDay);
+
+        FunctionDocumentation::Description description_fromModifiedJulianDayOrNull = R"(
+Similar to [`fromModifiedJulianDay()`](#frommodifiedjulianday), but instead of raising exceptions it returns `NULL`.
+    )";
+        FunctionDocumentation::Syntax syntax_fromModifiedJulianDayOrNull = R"(
+fromModifiedJulianDayOrNull(day)
+    )";
+        FunctionDocumentation::Arguments arguments_fromModifiedJulianDayOrNull = {
+            {"day", "Modified Julian Day number. [Any integral types](../data-types/int-uint.md)."}
+        };
+        FunctionDocumentation::ReturnedValue returned_value_fromModifiedJulianDayOrNull = "Returns date in text form. [`Nullable(String)`](../data-types/string.md).";
+        FunctionDocumentation::Examples examples_fromModifiedJulianDayOrNull = {
+            {"Convert Modified Julian Day to date with null handling", R"(
+SELECT fromModifiedJulianDayOrNull(58849)
+        )",
+            R"(
+┌─fromModifiedJulianDayOrNull(58849)─┐
+│ 2020-01-01                         │
+└────────────────────────────────────┘
+        )"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDayOrNull = {21, 1};
+        FunctionDocumentation::Category category_fromModifiedJulianDayOrNull = FunctionDocumentation::Category::DateAndTime;
+        FunctionDocumentation documentation_fromModifiedJulianDayOrNull = {
+            description_fromModifiedJulianDayOrNull,
+            syntax_fromModifiedJulianDayOrNull,
+            arguments_fromModifiedJulianDayOrNull,
+            returned_value_fromModifiedJulianDayOrNull,
+            examples_fromModifiedJulianDayOrNull,
+            introduced_in_fromModifiedJulianDayOrNull,
+            category_fromModifiedJulianDayOrNull
+        };
+
+        factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDayOrNull, true>>(documentation_fromModifiedJulianDayOrNull);
     }
 }
