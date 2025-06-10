@@ -472,6 +472,8 @@ def modify_server_settings(
 
         existing_nodes = [f"node{i}" for i in range(0, number_replicas)]
         remote_server_config = ET.SubElement(root, "remote_servers")
+        secure_port = ET.SubElement(root, "tcp_port_secure")
+        secure_port.text = "9440"
 
         # Remove default cluster
         if random.randint(1, 2) == 1:

@@ -72,14 +72,14 @@ class BuzzHouseGenerator(Generator):
                 "query_log_file": "/tmp/mongodb.doc",
                 "database": "test",
                 "hostname": cluster.mongo_host,
-                "port": "27017",
+                "port": 27017,
                 "user": "root",
                 "password": mongo_pass,
             }
         if args.with_redis:
             buzz_config["redis"] = {
                 "hostname": cluster.redis_host,
-                "port": "6379",
+                "port": 6379,
                 "user": "",
                 "password": "clickhouse",
             }
