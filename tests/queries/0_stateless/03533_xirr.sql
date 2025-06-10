@@ -72,10 +72,20 @@ GROUP BY tag
 ORDER BY tag;
 
 SELECT 'IRR';
+SELECT irr(123);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT irr([1,2,NULL]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT irr([]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT [-100, 39, 59, 55, 20] as cf, round(irr(cf), 6) as irr_rate, round(npv(irr_rate, cf), 6) as npv_from_irr;
 SELECT irr([0., 39., 59., 55., 20.]);
 
 SELECT 'XNPV:';
+SELECT xnpv(0.1, 123., [toDate('2020-01-01')]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT xnpv(0.1, [123.], toDate('2020-01-01')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT xnpv(0.1, [-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 'QWERTY'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT xnpv(0.1, [], []); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT xnpv(0.1, [-10], [toDate('2020-01-01')]);
+SELECT xnpv(0.1, [-0., 0.], [toDate('2020-01-01'), toDate('2020-01-02')]);
 SELECT round(xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6);
 SELECT round(xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 'ACT_365_25'), 6);
 
@@ -98,6 +108,10 @@ ORDER BY tag;
 
 
 SELECT 'NPV:';
+SELECT npv(0.1, 123., True); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT npv(0.1, [1.,2.], 2.); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT npv(0.1, [1.,NULL]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT npv(0.1, []); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.]), 6);
 SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], True), 6);
 SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False), 6);
