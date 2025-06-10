@@ -2108,8 +2108,11 @@ absl_cc_library(
   LINKOPTS
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
+    absl::any_invocable
     absl::config
+    absl::core_headers
     absl::log_internal_message
+    absl::log_internal_structured_proto
     absl::strings
 )
 
