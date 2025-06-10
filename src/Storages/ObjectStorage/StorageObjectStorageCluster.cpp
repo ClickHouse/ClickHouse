@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Interpreters/Context.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -14,7 +13,6 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
-#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
 
 namespace DB
@@ -41,7 +39,6 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
         false, // distributed_processing
         context,
         {}, // predicate
-        {},
         metadata.getColumns().getAll(), // virtual_columns
         nullptr, // read_keys
         {} // file_progress_callback
@@ -74,29 +71,16 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration())
+    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
         sample_path = getPathSample(metadata, context_);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        metadata.columns, context_, sample_path, std::nullopt, configuration->isDataLakeConfiguration()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));
     setInMemoryMetadata(metadata);
 }
 
 std::string StorageObjectStorageCluster::getName() const
 {
     return configuration->getEngineName();
-}
-
-std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
-{
-    configuration->update(object_storage, query_context);
-    return configuration->totalRows();
-}
-
-std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
-{
-    configuration->update(object_storage, query_context);
-    return configuration->totalBytes();
 }
 
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
@@ -160,19 +144,24 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ContextPtr & local_context, const size_t number_of_replicas) const
+    const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, {}, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
+        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true);
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
+    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
+    {
+        auto object_info = iterator->next(0);
+        if (!object_info)
+            return "";
 
-    auto callback = std::make_shared<TaskIterator>(
-        [task_distributor](size_t number_of_current_replica) mutable -> String {
-            return task_distributor->getNextTask(number_of_current_replica).value_or("");
-        });
+        auto archive_object_info = std::dynamic_pointer_cast<StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive>(object_info);
+        if (archive_object_info)
+            return archive_object_info->getPathToArchive();
 
+        return object_info->getPath();
+    });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 

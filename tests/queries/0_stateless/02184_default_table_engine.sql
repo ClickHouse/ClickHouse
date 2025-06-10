@@ -1,4 +1,3 @@
--- Tags: memory-engine
 SET default_table_engine = 'None';
 
 CREATE TABLE table_02184 (x UInt8); --{serverError ENGINE_REQUIRED}

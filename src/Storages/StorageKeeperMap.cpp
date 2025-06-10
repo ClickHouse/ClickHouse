@@ -13,10 +13,8 @@
 
 #include <DataTypes/DataTypeString.h>
 
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/Context.h>
 
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
