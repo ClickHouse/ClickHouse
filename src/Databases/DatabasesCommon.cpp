@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 namespace
 {
@@ -70,6 +71,9 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     /// SECONDARY_CREATE should check most of the important things.
     const auto columns_desc
         = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::SECONDARY_CREATE, false);
+
+    if (columns_desc.getInsertable().empty())
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     /// Default expressions are only validated in level CREATE, so let's check them now
     DefaultExpressionsInfo default_expr_info{std::make_shared<ASTExpressionList>()};
