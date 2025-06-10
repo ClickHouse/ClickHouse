@@ -19,6 +19,7 @@
 
 #include <boost/math/tools/roots.hpp>
 
+#include <algorithm>
 #include <expected>
 #include <limits>
 #include <span>
@@ -55,7 +56,10 @@ struct XirrCalculator
         if (cashflows.size() != dates.size()) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size");
 
-        if (cashflows.empty()) [[unlikely]]
+        if (cashflows.size() <= 1) [[unlikely]]
+            return std::numeric_limits<double>::quiet_NaN();
+
+        if (std::all_of(cashflows.begin(), cashflows.end(), [](T cf) { return cf == 0; })) [[unlikely]]
             return std::numeric_limits<double>::quiet_NaN();
 
         auto npv_function = [&](double rate)
@@ -77,14 +81,43 @@ struct XirrCalculator
             return npv;
         };
 
+        auto npv_derivative = [&](double rate)
+        {
+            if (rate <= -1.0)
+                return std::numeric_limits<double>::infinity();
+
+            double derivative = 0.0;
+
+            for (size_t i = 0; i < cashflows.size(); ++i)
+            {
+                double time = (dates[i] - dates[0]) / 365.0;
+                if (time != 0.0)
+                    derivative -= cashflows[i] * time / std::pow(1.0 + rate, time + 1);
+            }
+
+            return derivative;
+        };
+
         try
         {
-            boost::math::tools::eps_tolerance<double> tol(std::numeric_limits<double>::digits - 4);
             boost::uintmax_t max_iter = MAX_ITERATIONS;
 
-            auto result = boost::math::tools::toms748_solve(npv_function, START_LOWER_BOUND, START_UPPER_BOUND, tol, max_iter);
+            double result = boost::math::tools::newton_raphson_iterate(
+                [&](double x) { return std::make_tuple(npv_function(x), npv_derivative(x)); },
+                0.1,
+                START_LOWER_BOUND,
+                START_UPPER_BOUND,
+                std::numeric_limits<double>::digits - 4,
+                max_iter);
 
-            return (result.first + result.second) / 2;
+            if (!std::isnan(result) && result > START_LOWER_BOUND && result < START_UPPER_BOUND)
+                return result;
+
+            max_iter = MAX_ITERATIONS;
+            boost::math::tools::eps_tolerance<double> tol(std::numeric_limits<double>::digits - 4);
+            auto toms_result = boost::math::tools::toms748_solve(npv_function, START_LOWER_BOUND, START_UPPER_BOUND, tol, max_iter);
+
+            return (toms_result.first + toms_result.second) / 2;
         }
         catch (const boost::math::evaluation_error &)
         {
