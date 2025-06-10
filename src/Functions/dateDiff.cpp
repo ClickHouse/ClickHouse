@@ -473,21 +473,154 @@ REGISTER_FUNCTION(DateDiff)
 
 REGISTER_FUNCTION(TimeDiff)
 {
-    factory.registerFunction<FunctionTimeDiff>(FunctionDocumentation{.description=R"(
-Returns the difference between two dates or dates with time values. The difference is calculated in seconds units (see toRelativeSecondNum).
-It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
+    FunctionDocumentation::Description description_date_diff = R"(
+Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
+The difference is calculated using relative units. For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for unit day
+(see [`toRelativeDayNum`](#toRelativeDayNum)), 1 month for unit month (see [`toRelativeMonthNum`](#toRelativeMonthnum)) and 1 year for unit year
+(see [`toRelativeYearNum`](#toRelativeYearNum)).
 
-Example:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT timeDiff(UTCTimestamp(), now());", ""}},
-    .category = FunctionDocumentation::Category::DateAndTime}, FunctionFactory::Case::Insensitive);
+If the unit `week` was specified, then `date_diff` assumes that weeks start on Monday.
+Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
+
+For an alternative to [`date_diff`](#date_diff), see function [`age`](#age).
+    )";
+    FunctionDocumentation::Syntax syntax_date_diff = R"(
+date_diff(unit, startdate, enddate, [timezone])
+    )";
+    FunctionDocumentation::Arguments arguments_date_diff = {
+        {"unit", R"(The type of interval for result.
+
+| Unit | Possible values |
+|------|----------------|
+| nanosecond | `nanosecond`, `nanoseconds`, `ns` |
+| microsecond | `microsecond`, `microseconds`, `us`, `u` |
+| millisecond | `millisecond`, `milliseconds`, `ms` |
+| second | `second`, `seconds`, `ss`, `s` |
+| minute | `minute`, `minutes`, `mi`, `n` |
+| hour | `hour`, `hours`, `hh`, `h` |
+| day | `day`, `days`, `dd`, `d` |
+| week | `week`, `weeks`, `wk`, `ww` |
+| month | `month`, `months`, `mm`, `m` |
+| quarter | `quarter`, `quarters`, `qq`, `q` |
+| year | `year`, `years`, `yyyy`, `yy` |
+)"},
+        {"startdate", "The first time value to subtract (the subtrahend). [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
+        {"enddate", "The second time value to subtract from (the minuend). [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
+        {"timezone", "Optional. Timezone name. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [`String`](../data-types/string.md)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_date_diff = "Returns the difference between `enddate` and `startdate` expressed in `unit`. [`Int64`](../data-types/int-uint.md).";
+    FunctionDocumentation::Examples examples_date_diff = {
+        {"Calculate date difference in hours", R"(
+SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
+        )",
+        R"(
+┌─res─┐
+│  25 │
+└─────┘
+        )"},
+        {"Calculate date difference in different units", R"(
+SELECT
+    toDate('2022-01-01') AS e,
+    toDate('2021-12-29') AS s,
+    dateDiff('day', s, e) AS day_diff,
+    dateDiff('month', s, e) AS month_diff,
+    dateDiff('year', s, e) AS year_diff
+        )",
+        R"(
+┌──────────e─┬──────────s─┬─day_diff─┬─month_diff─┬─year_diff─┐
+│ 2022-01-01 │ 2021-12-29 │        3 │          1 │         1 │
+└────────────┴────────────┴──────────┴────────────┴───────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_date_diff = {23, 4};
+    FunctionDocumentation::Category category_date_diff = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation::Aliases aliases_date_diff = {"dateDiff", "DATE_DIFF", "timestampDiff", "timestamp_diff", "TIMESTAMP_DIFF"};
+    FunctionDocumentation documentation_date_diff = {
+        description_date_diff,
+        syntax_date_diff,
+        arguments_date_diff,
+        returned_value_date_diff,
+        examples_date_diff,
+        introduced_in_date_diff,
+        category_date_diff,
+        aliases_date_diff
+    };
+
+    factory.registerFunction<FunctionTimeDiff>(documentation_date_diff, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Age)
 {
-    factory.registerFunction<FunctionDateDiff<false>>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description_age = R"(
+Returns the unit component of the difference between `startdate` and `enddate`.
+The difference is calculated using a precision of 1 nanosecond.
+
+For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for the day unit,
+0 months for the month unit, and 0 years for the year unit.
+
+For an alternative to age, see function [`date_diff`](#date_diff).
+    )";
+    FunctionDocumentation::Syntax syntax_age = R"(
+age('unit', startdate, enddate, [timezone])
+    )";
+    FunctionDocumentation::Arguments arguments_age = {
+        {"unit", R"(The type of interval for result.
+
+| Unit | Possible values |
+|------|----------------|
+| nanosecond | `nanosecond`, `nanoseconds`, `ns` |
+| microsecond | `microsecond`, `microseconds`, `us`, `u` |
+| millisecond | `millisecond`, `milliseconds`, `ms` |
+| second | `second`, `seconds`, `ss`, `s` |
+| minute | `minute`, `minutes`, `mi`, `n` |
+| hour | `hour`, `hours`, `hh`, `h` |
+| day | `day`, `days`, `dd`, `d` |
+| week | `week`, `weeks`, `wk`, `ww` |
+| month | `month`, `months`, `mm`, `m` |
+| quarter | `quarter`, `quarters`, `qq`, `q` |
+| year | `year`, `years`, `yyyy`, `yy` |
+)"},
+        {"startdate", "The first time value to subtract (the subtrahend). [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
+        {"enddate", "The second time value to subtract from (the minuend). [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
+        {"timezone", "Optional. Timezone name. If specified, it is applied to both startdate and enddate. If not specified, timezones of startdate and enddate are used. If they are not the same, the result is unspecified. [`String`](../data-types/string.md)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_age = "Returns the difference between enddate and startdate expressed in unit. [`Int`](../data-types/int-uint.md).";
+    FunctionDocumentation::Examples examples_age = {
+        {"Calculate age in hours", R"(
+SELECT age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'))
+        )",
+        R"(
+┌─age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'))─┐
+│                                                                                24 │
+└───────────────────────────────────────────────────────────────────────────────────┘
+        )"},
+        {"Calculate age in different units", R"(
+SELECT
+    toDate('2022-01-01') AS e,
+    toDate('2021-12-29') AS s,
+    age('day', s, e) AS day_age,
+    age('month', s, e) AS month_age,
+    age('year', s, e) AS year_age
+        )",
+        R"(
+┌──────────e─┬──────────s─┬─day_age─┬─month_age─┬─year_age─┐
+│ 2022-01-01 │ 2021-12-29 │       3 │         0 │        0 │
+└────────────┴────────────┴─────────┴───────────┴──────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_age = {23, 1};
+    FunctionDocumentation::Category category_age = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_age = {
+        description_age,
+        syntax_age,
+        arguments_age,
+        returned_value_age,
+        examples_age,
+        introduced_in_age,
+        category_age,
+    };
+
+    factory.registerFunction<FunctionDateDiff<false>>(documentation_age, FunctionFactory::Case::Insensitive);
 }
 
 }
