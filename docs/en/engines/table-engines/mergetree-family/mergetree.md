@@ -453,7 +453,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessOrEquals)                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greateroOrEquals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterOrEquals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [empty](/sql-reference/functions/array-functions/#empty)                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [notEmpty](/sql-reference/functions/array-functions/#notEmpty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [has](/sql-reference/functions/array-functions#has)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         |
