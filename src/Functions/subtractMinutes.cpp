@@ -20,7 +20,7 @@ subtractMinutes(datetime, num)
         {"datetime", "Date or date with time to subtract specified number of minutes from. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
         {"num", "Number of minutes to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractMinutes = "Returns `datetime` minus `num` minutes. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_subtractMinutes = "Returns `datetime` minus `num` minutes. [`DateTime`](../data-types/datetime.md)/[`DateTime64(3)`](../data-types/datetime64.md).";
     FunctionDocumentation::Examples examples_subtractMinutes = {
         {"Subtract minutes from different date types", R"(
 WITH
