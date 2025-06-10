@@ -79,8 +79,8 @@ void resolveSchemaAndFormat(
     {
         /// We don't allow special columns.
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
-            configuration->getTypeName());
+                        "Special columns are not supported for {} storage"
+                        "like MATERIALIZED, ALIAS or EPHEMERAL", configuration->getTypeName());
     }
 }
 

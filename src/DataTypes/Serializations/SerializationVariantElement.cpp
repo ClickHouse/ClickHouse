@@ -4,7 +4,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
-#include "Columns/IColumn.h"
 
 namespace DB
 {
@@ -29,7 +28,6 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
     ColumnPtr variant;
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
-    size_t discriminators_size = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -46,13 +44,6 @@ void SerializationVariantElement::enumerateStreams(
     const DB::ISerialization::SubstreamData & data) const
 {
     /// We will need stream for discriminators during deserialization.
-    if (settings.use_specialized_prefixes_substreams)
-    {
-        settings.path.push_back(Substream::VariantDiscriminatorsPrefix);
-        callback(settings.path);
-        settings.path.pop_back();
-    }
-
     settings.path.push_back(Substream::VariantDiscriminators);
     callback(settings.path);
     settings.path.pop_back();
@@ -105,7 +96,6 @@ void SerializationVariantElement::serializeBinaryBulkWithMultipleStreams(const I
 
 void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & result_column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -115,7 +105,6 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::VariantDiscriminators);
 
     DeserializeBinaryBulkStateVariantElement * variant_element_state = nullptr;
-    std::optional<size_t> variant_rows_offset;
     std::optional<size_t> variant_limit;
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
@@ -129,37 +118,22 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
         /// If we started to read a new column, reinitialize discriminators column in deserialization state.
         if (!variant_element_state->discriminators || result_column->empty())
-        {
             variant_element_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
-            variant_element_state->discriminators_size = 0;
-        }
 
         /// Deserialize discriminators according to serialization mode.
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
-        {
-            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(
-                *variant_element_state->discriminators->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
-        }
+            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*variant_element_state->discriminators->assumeMutable(), *discriminators_stream, limit, 0);
         else
-        {
-            auto variant_pair = deserializeCompactDiscriminators(
+            variant_limit = deserializeCompactDiscriminators(
                 variant_element_state->discriminators,
                 variant_discriminator,
-                rows_offset,
                 limit,
                 discriminators_stream,
                 settings.continuous_reading,
                 variant_element_state->discriminators_state,
                 this);
 
-            variant_rows_offset = variant_pair.first;
-            variant_limit = variant_pair.second;
-        }
-
-        if (rows_offset)
-            addToSubstreamsCache(cache, settings.path, IColumn::mutate(variant_element_state->discriminators));
-        else
-            addToSubstreamsCache(cache, settings.path, variant_element_state->discriminators);
+        addToSubstreamsCache(cache, settings.path, variant_element_state->discriminators);
     }
     else
     {
@@ -169,43 +143,13 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
 
-    /// Deserialization state saves the size of discriminators to track rows processed in previous deserialization.
-    /// Whether discriminators are cached or not, this size serves as the starting offset
-    /// for new discriminators.
-    /// Must reset it to 0 when upper layer re-initiates read with an empty column.
-    if (result_column->empty())
-        variant_element_state->discriminators_size = 0;
-    size_t discriminators_offset = variant_element_state->discriminators_size;
-
-    if (!variant_rows_offset)
-    {
-        variant_rows_offset = 0;
-
-        if (rows_offset)
-        {
-            auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators->assumeMutable()).getData();
-
-            for (size_t i = discriminators_offset; i != discriminators_offset + rows_offset; ++i)
-                variant_rows_offset = *variant_rows_offset + (discriminators_data[i] == variant_discriminator);
-        }
-    }
-
-    if (rows_offset)
-    {
-        auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators->assumeMutable()).getData();
-
-        for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
-            discriminators_data[i] = discriminators_data[i + rows_offset];
-        variant_element_state->discriminators->assumeMutable()->popBack(rows_offset);
-    }
-
     /// We could read less than limit discriminators, but we will need actual number of read rows later.
-    size_t num_new_discriminators = variant_element_state->discriminators->size() - variant_element_state->discriminators_size;
-    variant_element_state->discriminators_size = variant_element_state->discriminators->size();
+    size_t num_new_discriminators = variant_element_state->discriminators->size() - result_column->size();
 
     /// Iterate through new discriminators to calculate the limit for our variant
     /// if we didn't do it during discriminators deserialization.
     const auto & discriminators_data = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators).getData();
+    size_t discriminators_offset = variant_element_state->discriminators->size() - num_new_discriminators;
     if (!variant_limit)
     {
         variant_limit = 0;
@@ -213,7 +157,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
             *variant_limit += (discriminators_data[i] == variant_discriminator);
     }
 
-    /// Now we know the rows_offset and limit for our variant and can deserialize it.
+    /// Now we know the limit for our variant and can deserialize it.
 
     /// If result column is Nullable, fill null map and extract nested column.
     MutableColumnPtr mutable_column = result_column->assumeMutable();
@@ -254,8 +198,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     addVariantToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(
-        variant_element_state->variant, *variant_rows_offset, *variant_limit, settings, variant_element_state->variant_element_state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(variant_element_state->variant, *variant_limit, settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
 
     /// If there was nothing to deserialize or nothing was actually deserialized when variant_limit > 0, just insert defaults.
@@ -289,10 +232,9 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
 }
 
-std::pair<size_t, size_t> SerializationVariantElement::deserializeCompactDiscriminators(
+size_t SerializationVariantElement::deserializeCompactDiscriminators(
     DB::ColumnPtr & discriminators_column,
     ColumnVariant::Discriminator variant_discriminator,
-    size_t rows_offset,
     size_t limit,
     DB::ReadBuffer * stream,
     bool continuous_reading,
@@ -307,18 +249,15 @@ std::pair<size_t, size_t> SerializationVariantElement::deserializeCompactDiscrim
     if (!continuous_reading)
         discriminators_state->remaining_rows_in_granule = 0;
 
-    /// Calculate our variant offset and limit during discriminators deserialization.
-    size_t variant_rows_offset = 0;
+    /// Calculate our variant limit during discriminators deserialization.
     size_t variant_limit = 0;
-    limit += rows_offset;
-
     while (limit)
     {
         /// If we read all rows from current granule, start reading the next one.
         if (discriminators_state->remaining_rows_in_granule == 0)
         {
             if (stream->eof())
-                return {variant_rows_offset, variant_limit};
+                return variant_limit;
 
             SerializationVariant::readDiscriminatorsGranuleStart(*discriminators_state, stream);
         }
@@ -328,41 +267,22 @@ std::pair<size_t, size_t> SerializationVariantElement::deserializeCompactDiscrim
         {
             auto & data = discriminators.getData();
             data.resize_fill(data.size() + limit_in_granule, discriminators_state->compact_discr);
-            auto remained_limit_in_granule = limit_in_granule;
-
-            if (rows_offset)
-            {
-                size_t skipped_rows = std::min(rows_offset, limit_in_granule);
-                if (discriminators_state->compact_discr == variant_discriminator)
-                    variant_rows_offset += skipped_rows;
-
-                remained_limit_in_granule -= skipped_rows;
-                rows_offset -= skipped_rows;
-            }
-
-            if (remained_limit_in_granule && discriminators_state->compact_discr == variant_discriminator)
-                variant_limit += remained_limit_in_granule;
+            if (discriminators_state->compact_discr == variant_discriminator)
+                variant_limit += limit_in_granule;
         }
         else
         {
-            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
+            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(discriminators, *stream, limit_in_granule, 0);
             size_t start = discriminators_data.size() - limit_in_granule;
-            size_t skipped_rows = std::min(rows_offset, limit_in_granule);
-
-            for (size_t i = start; i != start + skipped_rows; ++i)
-                variant_rows_offset += (discriminators_data[i] == variant_discriminator);
-
-            for (size_t i = start + skipped_rows; i != discriminators_data.size(); ++i)
+            for (size_t i = start; i != discriminators_data.size(); ++i)
                 variant_limit += (discriminators_data[i] == variant_discriminator);
-
-            rows_offset -= skipped_rows;
         }
 
         discriminators_state->remaining_rows_in_granule -= limit_in_granule;
         limit -= limit_in_granule;
     }
 
-    return {variant_rows_offset, variant_limit};
+    return variant_limit;
 }
 
 void SerializationVariantElement::addVariantToPath(DB::ISerialization::SubstreamPath & path) const

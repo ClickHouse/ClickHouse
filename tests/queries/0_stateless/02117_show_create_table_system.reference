@@ -185,7 +185,6 @@ CREATE TABLE system.dictionaries
     `lifetime_max` UInt64,
     `loading_start_time` DateTime,
     `last_successful_update_time` DateTime,
-    `error_count` UInt64,
     `loading_duration` Float32,
     `last_exception` String,
     `comment` String
@@ -265,8 +264,7 @@ CREATE TABLE system.errors
     `last_error_time` DateTime,
     `last_error_message` String,
     `last_error_trace` Array(UInt64),
-    `remote` UInt8,
-    `query_id` String
+    `remote` UInt8
 )
 ENGINE = SystemErrors
 COMMENT 'Contains a list of all errors which have ever happened including the error code, last time and message with unsymbolized stacktrace.'
@@ -303,7 +301,6 @@ CREATE TABLE system.functions
     `arguments` String,
     `returned_value` String,
     `examples` String,
-    `introduced_in` String,
     `categories` String
 )
 ENGINE = SystemFunctions
@@ -348,7 +345,6 @@ CREATE TABLE system.merge_tree_settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
-    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
@@ -945,7 +941,6 @@ CREATE TABLE system.replicated_merge_tree_settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
-    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
@@ -1022,7 +1017,6 @@ CREATE TABLE system.settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
-    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `default` String,
@@ -1121,9 +1115,6 @@ CREATE TABLE system.tables
     `create_table_query` String,
     `engine_full` String,
     `as_select` String,
-    `parameterized_view_parameters` Array(Tuple(
-        name String,
-        type String)),
     `partition_key` String,
     `sorting_key` String,
     `primary_key` String,
@@ -1136,7 +1127,6 @@ CREATE TABLE system.tables
     `active_parts` Nullable(UInt64),
     `total_marks` Nullable(UInt64),
     `active_on_fly_data_mutations` UInt64,
-    `active_on_fly_alter_mutations` UInt64,
     `active_on_fly_metadata_mutations` UInt64,
     `lifetime_rows` Nullable(UInt64),
     `lifetime_bytes` Nullable(UInt64),
@@ -1170,7 +1160,7 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10, 'scram_sha256_password' = 11)),
+    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10)),
     `auth_params` Array(String),
     `host_ip` Array(String),
     `host_names` Array(String),

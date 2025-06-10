@@ -194,12 +194,6 @@ bool FileSegment::isDownloaded() const
     return download_state == State::DOWNLOADED;
 }
 
-time_t FileSegment::getFinishedDownloadTime() const
-{
-    auto lk = lock();
-    return download_finished_time;
-}
-
 String FileSegment::getCallerId()
 {
     if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
@@ -596,7 +590,6 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
         return;
 
     download_state = State::DOWNLOADED;
-    download_finished_time = timeInSeconds(std::chrono::system_clock::now());
 
     if (cache_writer)
     {
@@ -1059,7 +1052,6 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
         .state = file_segment->download_state,
         .size = file_segment->range().size(),
         .downloaded_size = file_segment->downloaded_size,
-        .download_finished_time = file_segment->download_finished_time,
         .cache_hits = file_segment->hits_count,
         .references = static_cast<uint64_t>(file_segment.use_count()),
         .is_unbound = file_segment->is_unbound,

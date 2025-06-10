@@ -1,46 +1,39 @@
-#include <Storages/ProjectionsDescription.h>
-
-#include <Columns/ColumnConst.h>
-#include <Core/Defines.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/Context.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/StorageInMemoryMetadata.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
+
+#include <Columns/ColumnConst.h>
+#include <Core/Defines.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ISink.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/StorageInMemoryMetadata.h>
 #include <base/range.h>
-#include <Common/iota.h>
-#include <DataTypes/NestedUtils.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_PROJECTION;
     extern const int INCORRECT_QUERY;
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
+    extern const int ILLEGAL_PROJECTION;
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
@@ -76,7 +69,6 @@ ProjectionDescription ProjectionDescription::clone() const
     other.key_size = key_size;
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
-    other.with_parent_part_offset = with_parent_part_offset;
 
     return other;
 }
@@ -93,111 +85,6 @@ ProjectionsDescription ProjectionsDescription::clone() const
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
     return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
-}
-
-namespace
-{
-
-/// Fake storage used to build projection metadata
-class StorageProjectionSource final : public IStorage
-{
-public:
-    explicit StorageProjectionSource(ColumnsDescription columns_description)
-        : IStorage({"_", "_"})
-    {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_description);
-        setInMemoryMetadata(storage_metadata);
-        VirtualColumnsDescription desc;
-        desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "");
-        setVirtuals(std::move(desc));
-    }
-
-    std::string getName() const override { return "ProjectionSource"; }
-
-    bool supportsSubcolumns() const override { return true; }
-
-    bool supportsDynamicSubcolumns() const override { return true; }
-
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo &,
-        ContextPtr /*context*/,
-        QueryProcessingStage::Enum /*processing_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override
-    {
-        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
-    }
-};
-
-/// Provides source data for the projection pipeline
-class ProjectionDataSource : public ISource
-{
-public:
-    explicit ProjectionDataSource(Block block)
-        : ISource(block.cloneEmpty())
-        , chunk(block.getColumns(), block.rows())
-    {
-    }
-
-    String getName() const override { return "ProjectionDataSource"; }
-
-    /// Avoid tracking read progress for projection calculation pipeline.
-    std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
-
-protected:
-    Chunk generate() override { return std::move(chunk); }
-
-private:
-    Chunk chunk;
-};
-
-/// Collects processed data from the projection pipeline into a single chunk,
-/// Enforces that projections cannot increase the number of rows beyond the original input.
-class ProjectionDataSink : public ISink
-{
-public:
-    ProjectionDataSink(Block header, size_t max_rows_allowed_)
-        : ISink(std::move(header))
-        , max_rows_allowed(max_rows_allowed_)
-    {
-    }
-
-    String getName() const override { return "ProjectionDataSink"; }
-
-    Columns detachAccumulatedColumns() { return accumulated_chunk.detachColumns(); }
-
-protected:
-    void consume(Chunk chunk) override
-    {
-        num_rows += chunk.getNumRows();
-        if (num_rows > max_rows_allowed)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection cannot increase the number of rows in a block. It's a bug");
-
-        if (!accumulated_chunk)
-        {
-            accumulated_chunk = std::move(chunk);
-            return;
-        }
-
-        auto mutable_columns = accumulated_chunk.mutateColumns();
-        for (size_t i = 0, size = mutable_columns.size(); i < size; ++i)
-        {
-            const auto source_column = chunk.getColumns()[i];
-            mutable_columns[i]->insertRangeFrom(*source_column, 0, source_column->size());
-        }
-
-        accumulated_chunk.setColumns(std::move(mutable_columns), num_rows);
-    }
-
-private:
-    Chunk accumulated_chunk;
-    size_t num_rows = 0;
-    const size_t max_rows_allowed;
-};
-
 }
 
 ProjectionDescription
@@ -221,12 +108,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
     result.query_ast = query.cloneToASTSelect();
 
-    /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
-    /// `_part_offset` as physical columns, which would cause a conflict. Parent table cannot defines `_part_index` as
-    /// physical column either because it's used to build part offset mapping during merge.
-    bool can_hold_parent_part_offset = !(columns.has("_part_index") || columns.has("_part_offset") || columns.has("_parent_part_offset"));
-
-    StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
+    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
+    StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
         result.query_ast,
         query_context,
@@ -248,9 +131,6 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     const auto & query_select = result.query_ast->as<const ASTSelectQuery &>();
     if (select.hasAggregation())
     {
-        /// Aggregate projections cannot hold parent part offset.
-        can_hold_parent_part_offset = false;
-
         if (query.orderBy())
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
 
@@ -295,40 +175,16 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         metadata.primary_key.definition_ast = nullptr;
     }
 
-    /// Rename parent _part_offset to _parent_part_offset column
-    if (can_hold_parent_part_offset && result.sample_block.has("_part_offset"))
-    {
-        auto new_column = result.sample_block.getByName("_part_offset");
-        new_column.name = "_parent_part_offset";
-        result.sample_block.erase("_part_offset");
-        result.sample_block.insert(std::move(new_column));
-        result.with_parent_part_offset = true;
-    }
-
     auto block = result.sample_block;
     for (const auto & [name, type] : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
         block.insertUnique({nullptr, type, name});
-    NamesAndTypesList metadata_columns;
     for (const auto & column_with_type_name : block)
     {
         if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
-
-        /// Subcolumns can be used in projection only when the original column is used.
-        if (columns.hasSubcolumn(column_with_type_name.name))
-        {
-            if (!block.has(Nested::splitName(column_with_type_name.name).first))
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain individual subcolumns: {}", column_with_type_name.name);
-            /// Also remove this subcolumn from the required columns as we have the original column.
-            std::erase_if(result.required_columns, [&](const String & column_name){ return column_name == column_with_type_name.name; });
-        }
-        else
-        {
-            metadata_columns.emplace_back(column_with_type_name.name, column_with_type_name.type);
-        }
     }
 
-    metadata.setColumns(ColumnsDescription(metadata_columns));
+    metadata.setColumns(ColumnsDescription(block.getNamesAndTypesList()));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
     return result;
 }
@@ -369,7 +225,8 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.name = MINMAX_COUNT_PROJECTION_NAME;
     result.query_ast = select_query->cloneToASTSelect();
 
-    StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
+    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
+    StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
         result.query_ast,
         query_context,
@@ -431,7 +288,7 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
     *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
 
-Block ProjectionDescription::calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
+Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
 {
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
@@ -453,37 +310,10 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
             makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
-    /// Create "_part_offset" column when needed for projection with parent part offsets
-    Block source_block = block;
-    if (with_parent_part_offset)
-    {
-        chassert(sample_block.has("_parent_part_offset"));
-
-        /// Add "_part_offset" column if not present (needed for insertions but not mutations - materialize projections)
-        if (!source_block.has("_part_offset"))
-        {
-            auto uint64 = std::make_shared<DataTypeUInt64>();
-            auto column = uint64->createColumn();
-            auto & offset = assert_cast<ColumnUInt64 &>(*column).getData();
-            offset.resize_exact(block.rows());
-            if (perm_ptr)
-            {
-                for (size_t i = 0; i < block.rows(); ++i)
-                    offset[(*perm_ptr)[i]] = i;
-            }
-            else
-            {
-                iota(offset.data(), offset.size(), UInt64(0));
-            }
-
-            source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
-        }
-    }
-
     auto builder = InterpreterSelectQuery(
                        query_ast_copy ? query_ast_copy : query_ast,
                        mut_context,
-                       Pipe(std::make_shared<ProjectionDataSource>(std::move(source_block))),
+                       Pipe(std::make_shared<SourceFromSingleChunk>(block)),
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState}
@@ -491,30 +321,19 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
                            .ignoreSettingConstraints())
                        .buildQueryPipeline();
     builder.resize(1);
-
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
-    auto sink = std::make_shared<ProjectionDataSink>(builder.getHeader(), block.rows());
+
+    builder.addTransform(std::make_shared<PlanSquashingTransform>(builder.getHeader(), block.rows(), 0));
+    builder.addTransform(std::make_shared<ApplySquashingTransform>(builder.getHeader(), block.rows(), 0));
+
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-    pipeline.complete(sink);
-    CompletedPipelineExecutor executor(pipeline);
-    executor.execute();
-    auto projection_block = sink->getPort().getHeader().cloneWithColumns(sink->detachAccumulatedColumns());
-    chassert(projection_block.rows() > 0);
-
-    /// Rename parent _part_offset to _parent_part_offset column
-    if (with_parent_part_offset)
-    {
-        chassert(projection_block.has("_part_offset"));
-        chassert(!projection_block.has("_parent_part_offset"));
-
-        auto new_column = projection_block.getByName("_part_offset");
-        new_column.name = "_parent_part_offset";
-        projection_block.erase("_part_offset");
-        projection_block.insert(std::move(new_column));
-    }
-
-    return projection_block;
+    PullingPipelineExecutor executor(pipeline);
+    Block ret;
+    executor.pull(ret);
+    if (executor.pull(ret))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection cannot increase the number of rows in a block. It's a bug");
+    return ret;
 }
 
 
@@ -558,11 +377,8 @@ const ProjectionDescription & ProjectionsDescription::get(const String & project
     auto it = map.find(projection_name);
     if (it == map.end())
     {
-        throw Exception(
-            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
-            "There is no projection {} in table{}",
-            projection_name,
-            getHintsMessage(projection_name));
+        throw Exception(ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE, "There is no projection {} in table{}",
+                        projection_name, getHintsMessage(projection_name));
     }
 
     return *(it->second);
@@ -605,11 +421,8 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
         if (if_exists)
             return;
 
-        throw Exception(
-            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
-            "There is no projection {} in table{}",
-            projection_name,
-            getHintsMessage(projection_name));
+        throw Exception(ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE, "There is no projection {} in table{}",
+                        projection_name, getHintsMessage(projection_name));
     }
 
     projections.erase(it->second);

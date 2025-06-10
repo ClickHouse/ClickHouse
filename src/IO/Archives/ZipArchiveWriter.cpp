@@ -1,17 +1,13 @@
 #include <IO/Archives/ZipArchiveWriter.h>
 
 #if USE_MINIZIP
-#include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Common/quoteString.h>
 #include <base/errnoToString.h>
-
-#include <Poco/Logger.h>
-
-#include <boost/algorithm/string/predicate.hpp>
-
 #include <zip.h>
-#include <mz.h>
+#include <boost/algorithm/string/predicate.hpp>
+#include <Common/logger_useful.h>
+#include <Poco/Logger.h>
 
 
 namespace DB
@@ -207,12 +203,12 @@ private:
 
     static long seekFunc(void *, void *, ZPOS64_T, int) // NOLINT(google-runtime-int)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::seek is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::seek() is not implemented");
     }
 
     static unsigned long readFileFunc(void *, void *, void *, unsigned long) // NOLINT(google-runtime-int)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::readFile is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::readFile() is not implemented");
     }
 
     std::unique_ptr<WriteBuffer> write_buffer;
