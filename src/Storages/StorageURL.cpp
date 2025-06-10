@@ -5,22 +5,20 @@
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
-#include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
@@ -35,7 +33,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Common/ProxyConfigurationResolverProvider.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
@@ -112,12 +109,6 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "headers.header.value",
 };
 
-/// Headers in config file will have structure "headers.header.name" and "headers.header.value".
-/// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
-static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
-    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
-    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
-};
 
 bool urlWithGlobs(const String & uri)
 {
@@ -234,13 +225,6 @@ namespace
     StorageURLSource::FailoverOptions getFailoverOptions(const String & uri, size_t max_addresses)
     {
         return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
-    }
-
-    auto getProxyConfiguration(const std::string & protocol_string)
-    {
-        auto protocol = protocol_string == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
-                                             : ProxyConfigurationResolver::Protocol::HTTP;
-        return ProxyConfigurationResolverProvider::get(protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
     }
 }
 
@@ -499,7 +483,8 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
+            (!key_condition || key_condition->alwaysUnknownOrTrue()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         pipeline->reset();
@@ -542,14 +527,11 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         const auto & settings = context_->getSettingsRef();
 
-        auto proxy_config = getProxyConfiguration(request_uri.getScheme());
-
         try
         {
             auto res = BuilderRWBufferFromHTTP(request_uri)
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(http_method)
-                           .withProxy(proxy_config)
                            .withSettings(read_settings)
                            .withTimeouts(timeouts)
                            .withHostFilter(&context_->getRemoteHostFilter())
@@ -615,26 +597,47 @@ std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & ur
 }
 
 StorageURLSink::StorageURLSink(
-    const String & uri,
-    const String & format,
-    const std::optional<FormatSettings> & format_settings,
+    String uri_,
+    String format_,
+    const std::optional<FormatSettings> & format_settings_,
     const Block & sample_block,
-    const ContextPtr & context,
-    const ConnectionTimeouts & timeouts,
-    const CompressionMethod compression_method,
-    const HTTPHeaderEntries & headers,
-    const String & http_method)
+    const ContextPtr & context_,
+    const ConnectionTimeouts & timeouts_,
+    const CompressionMethod & compression_method_,
+    HTTPHeaderEntries headers_,
+    String method)
     : SinkToStorage(sample_block)
+    , uri(std::move(uri_))
+    , format(std::move(format_))
+    , format_settings(format_settings_)
+    , context(context_)
+    , timeouts(timeouts_)
+    , compression_method(compression_method_)
+    , headers(std::move(headers_))
+    , http_method(std::move(method))
 {
-    std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
+}
+
+
+void StorageURLSink::initBuffers()
+{
+    if (write_buf)
+        return;
+
+    std::string content_type = FormatFactory::instance().getContentType(format, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
     auto poco_uri = Poco::URI(uri);
-    auto proxy_config = getProxyConfiguration(poco_uri.getScheme());
 
-    auto write_buffer = std::make_unique<WriteBufferFromHTTP>(
-        HTTPConnectionGroupType::STORAGE, poco_uri, http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
-    );
+    auto write_buffer = BuilderWriteBufferFromHTTP(poco_uri)
+        .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+        .withMethod(http_method)
+        .withContentType(content_type)
+        .withContentEncoding(content_encoding)
+        .withAdditionalHeaders(headers)
+        .withTimeouts(timeouts)
+        .withBufferSize(DBMS_DEFAULT_BUFFER_SIZE)
+        .create();
 
     const auto & settings = context->getSettingsRef();
     write_buf = wrapWriteBufferWithCompressionMethod(
@@ -642,7 +645,7 @@ StorageURLSink::StorageURLSink(
         compression_method,
         static_cast<int>(settings[Setting::output_format_compression_level]),
         static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
-    writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, format_settings);
+    writer = FormatFactory::instance().getOutputFormat(format, *write_buf, getHeader(), context, format_settings);
 }
 
 
@@ -650,6 +653,9 @@ void StorageURLSink::consume(Chunk & chunk)
 {
     if (isCancelled())
         return;
+
+    initBuffers();
+
     writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
 }
 
@@ -1392,8 +1398,6 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
 
     auto uri = Poco::URI(url);
 
-    auto proxy_config = getProxyConfiguration(uri.getScheme());
-
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withSettings(context->getReadSettings())
@@ -1402,7 +1406,6 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
                    .withBufSize(settings[Setting::max_read_buffer_size])
                    .withRedirects(settings[Setting::max_http_get_redirects])
                    .withHeaders(headers)
-                   .withProxy(proxy_config)
                    .create(credentials);
 
     return buf->tryGetLastModificationTime();
@@ -1559,6 +1562,14 @@ size_t StorageURL::evalArgsAndCollectHeaders(
 
 void StorageURL::processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection)
 {
+    /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
+    /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
+    static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys
+    {
+        std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
+        std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
+    };
+
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys, optional_regex_keys);
 
     configuration.url = collection.get<String>("url");

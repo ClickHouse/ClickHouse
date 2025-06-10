@@ -1503,7 +1503,8 @@ Chunk StorageFileSource::generate()
         if (storage->use_table_fd)
             finished_generate = true;
 
-        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
+            (!key_condition || key_condition->alwaysUnknownOrTrue()))
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1842,7 +1843,9 @@ public:
 
     void onFinish() override
     {
-        chassert(!isCancelled());
+        if (isCancelled())
+            return;
+
         finalizeBuffers();
     }
 

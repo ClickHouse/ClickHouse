@@ -1,0 +1,2293 @@
+{
+  "nodes": {
+    "contrib-AMQP-CPP": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1699958501,
+        "narHash": "sha256-XaepRN049VbmI3g/4kWGCRZUmwt8M4mL4P/nFHarEds=",
+        "owner": "ClickHouse",
+        "repo": "AMQP-CPP",
+        "rev": "00f09897ce020a84e38f87dc416af4a19c5da9ae",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "AMQP-CPP",
+        "rev": "00f09897ce020a84e38f87dc416af4a19c5da9ae",
+        "type": "github"
+      }
+    },
+    "contrib-FP16": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1616272098,
+        "narHash": "sha256-m2d9bqZoGWzuUPGkd29MsrdscnJRtuIkLIMp3fMmtRY=",
+        "owner": "Maratyszcza",
+        "repo": "FP16",
+        "rev": "0a92994d729ff76a58f692d3028ca1b64b145d91",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Maratyszcza",
+        "repo": "FP16",
+        "rev": "0a92994d729ff76a58f692d3028ca1b64b145d91",
+        "type": "github"
+      }
+    },
+    "contrib-NuRaft": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1744120480,
+        "narHash": "sha256-mck/5nj5S4aLNv3xPk6nhVdWjq8h3n8TUFkUROx9VXI=",
+        "owner": "ClickHouse",
+        "repo": "NuRaft",
+        "rev": "c01f5cd9e0edb90c4febf49685b962cf0de91833",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "NuRaft",
+        "rev": "c01f5cd9e0edb90c4febf49685b962cf0de91833",
+        "type": "github"
+      }
+    },
+    "contrib-QAT-ZSTD-Plugin": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1694154484,
+        "narHash": "sha256-L0DZVcOs0GvypNNc/IcZhIttlTHpadeOov0rdLedLsI=",
+        "owner": "intel",
+        "repo": "QAT-ZSTD-Plugin",
+        "rev": "e5a134e12d2ea8a5b0f3b83c5b1c325fda4eb0a8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "intel",
+        "repo": "QAT-ZSTD-Plugin",
+        "rev": "e5a134e12d2ea8a5b0f3b83c5b1c325fda4eb0a8",
+        "type": "github"
+      }
+    },
+    "contrib-SHA3IUF": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1647067233,
+        "narHash": "sha256-iR+xTf3fd0+FpvNxIz0NhA0pXBodKPZlPMS8YBKDLDI=",
+        "owner": "brainhub",
+        "repo": "SHA3IUF",
+        "rev": "fc8504750a5c2174a1874094dd05e6a0d8797753",
+        "type": "github"
+      },
+      "original": {
+        "owner": "brainhub",
+        "repo": "SHA3IUF",
+        "rev": "fc8504750a5c2174a1874094dd05e6a0d8797753",
+        "type": "github"
+      }
+    },
+    "contrib-SimSIMD": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1737021372,
+        "narHash": "sha256-983xqEzwPnaOFL4cnDTwd1/SIIoFs9HLNHgwdsOxS6M=",
+        "owner": "ClickHouse",
+        "repo": "SimSIMD",
+        "rev": "bee6bb499ab526007fc5d5289f1d998aa1eb6249",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "SimSIMD",
+        "rev": "bee6bb499ab526007fc5d5289f1d998aa1eb6249",
+        "type": "github"
+      }
+    },
+    "contrib-abseil-cpp": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1718115242,
+        "narHash": "sha256-35X2Yhifgb+vSfj/kiiqcdd/0JPv9z6OnhcB701K3I0=",
+        "owner": "ClickHouse",
+        "repo": "abseil-cpp",
+        "rev": "a3c4dd3e77f28b526efbb0eb394b72e29c633936",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "abseil-cpp",
+        "rev": "a3c4dd3e77f28b526efbb0eb394b72e29c633936",
+        "type": "github"
+      }
+    },
+    "contrib-aklomp-base64": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1673005216,
+        "narHash": "sha256-rJggyY125gjFAMJFa8Ui53cbyk4B/Qat3Y61+MAq70Y=",
+        "owner": "aklomp",
+        "repo": "base64",
+        "rev": "e77bd70bdd860c52c561568cffb251d88bba064c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "aklomp",
+        "repo": "base64",
+        "rev": "e77bd70bdd860c52c561568cffb251d88bba064c",
+        "type": "github"
+      }
+    },
+    "contrib-arrow": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1744920734,
+        "narHash": "sha256-xYjJ22pNpbvnp15qCXPpk66718LYsZyyMl3vV3VjBKc=",
+        "owner": "ClickHouse",
+        "repo": "arrow",
+        "rev": "210f686ab96733180bed04e36098911825d70345",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "arrow",
+        "rev": "210f686ab96733180bed04e36098911825d70345",
+        "type": "github"
+      }
+    },
+    "contrib-avro": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1720181181,
+        "narHash": "sha256-r816j9EkMU3DbVzVFkzyMDbqCN3yP5LTl5S0rZpx800=",
+        "owner": "ClickHouse",
+        "repo": "avro",
+        "rev": "545e7002683cbc2198164d93088ac8e4955b4628",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "avro",
+        "rev": "545e7002683cbc2198164d93088ac8e4955b4628",
+        "type": "github"
+      }
+    },
+    "contrib-aws": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1747342688,
+        "narHash": "sha256-UywFLiDwPPUClZG6pfGTjj1EzLJ6sSy9+U0t9We4imM=",
+        "owner": "ClickHouse",
+        "repo": "aws-sdk-cpp",
+        "rev": "a86b913abc2795ee23941b24dd51e862214ec6b0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "aws-sdk-cpp",
+        "rev": "a86b913abc2795ee23941b24dd51e862214ec6b0",
+        "type": "github"
+      }
+    },
+    "contrib-aws-c-auth": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1701180766,
+        "narHash": "sha256-flKPwpIAZ9c59zkE62NqIjG/Zyiy0//50pUnfejYqFQ=",
+        "owner": "awslabs",
+        "repo": "aws-c-auth",
+        "rev": "baeffa791d9d1cf61460662a6d9ac2186aaf05df",
+        "type": "github"
+      },
+      "original": {
+        "owner": "awslabs",
+        "repo": "aws-c-auth",
+        "rev": "baeffa791d9d1cf61460662a6d9ac2186aaf05df",
+        "type": "github"
+      }
+    },
+    "contrib-aws-c-cal": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1708633389,
+        "narHash": "sha256-tlc8edQVCE1geuBVxy8xON2xNbmZmMUbr04rOhYL2Go=",
+        "owner": "ClickHouse",
+        "repo": "aws-c-cal",
+        "rev": "1586846816e6d7d5ff744a2db943107a3a74a082",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "aws-c-cal",
+        "rev": "1586846816e6d7d5ff744a2db943107a3a74a082",
+        "type": "github"
+      }
+    },
+    "contrib-aws-c-common": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700172990,
+        "narHash": "sha256-xqNqyVtibR8oSMvl5RTU166FIxcbvGjZJOjJ9j6fU78=",
+        "owner": "awslabs",
+        "repo": "aws-c-common",
+        "rev": "80f21b3cac5ac51c6b8a62c7d2a5ef58a75195ee",
+        "type": "github"
+      },
+      "original": {
+        "owner": "awslabs",
+        "repo": "aws-c-common",
+        "rev": "80f21b3cac5ac51c6b8a62c7d2a5ef58a75195ee",
+        "type": "github"
+      }
+    },
+    "contrib-aws-c-compression": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1684182838,
+        "narHash": "sha256-XtmSThfz4Cu7CygYrLNQifDCQ6l/c/0OR0lX+OxCYJM=",
+        "owner": "awslabs",
+        "repo": "aws-c-compression",
+        "rev": "99ec79ee2970f1a045d4ced1501b97ee521f2f85",
+        "type": "github"
+      },
+      "original": {
+        "owner": "awslabs",
+        "repo": "aws-c-compression",
+        "rev": "99ec79ee2970f1a045d4ced1501b97ee521f2f85",
+        "type": "github"
+      }
+    },
+    "contrib-aws-c-event-stream": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1692831342,
+        "narHash": "sha256-uKprdBJn9yHDm2HCBOiuanizCtLi/VKrvUUScNv6OPY=",
+        "owner": "awslabs",
+        "repo": "aws-c-event-stream",
+        "rev": "08f24e384e5be20bcffa42b49213d24dad7881ae",
+        "type": "github"
+      },
+      "original": {
+        "owner": "awslabs",
+        "repo": "aws-c-event-stream",
+        "rev": "08f24e384e5be20bcffa42b49213d24dad7881ae",
+        "type": "github"
+      }
+    },
+    "contrib-aws-c-http": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1698344885,
+        "narHash": "sha256-HrNdePWNw/5tDBeybnUjK3LgftnGQ4CBXPG0URaxIeU=",
+        "owner": "awslabs",
+        "repo": "aws-c-http",
+        "rev": "a082f8a2067e4a31db73f1d4ffd702a8dc0f7089",
+        "type": "github"
+      },
+      "original": {
+        "owner": "awslabs",
+        "repo": "aws-c-http",
+        "rev": "a082f8a2067e4a31db73f1d4ffd702a8dc0f7089",
+        "type": "github"
+      }
+    },
+    "contrib-aws-c-io": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1706039236,
+        "narHash": "sha256-SPsZA9+xkBmcb98f8Sr05xMykKrWbioXjLiIYYoWcew=",
+        "owner": "ClickHouse",
+        "repo": "aws-c-io",
+        "rev": "11ce3c750a1dac7b04069fc5bff89e97e91bad4d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "aws-c-io",
+        "rev": "11ce3c750a1dac7b04069fc5bff89e97e91bad4d",
+        "type": "github"
+      }
+    },
+    "contrib-aws-c-mqtt": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700605632,
+        "narHash": "sha256-hxisqBUARJLtmZniXaZ2th0hqWiKn4XQIy6I0Oz/kUs=",
+        "owner": "awslabs",
+        "repo": "aws-c-mqtt",
+        "rev": "6d36cd3726233cb757468d0ea26f6cd8dad151ec",
+        "type": "github"
+      },
+      "original": {
+        "owner": "awslabs",
+        "repo": "aws-c-mqtt",
+        "rev": "6d36cd3726233cb757468d0ea26f6cd8dad151ec",
+        "type": "github"
+      }
+    },
+    "contrib-aws-c-s3": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1701299495,
+        "narHash": "sha256-+Xc9ZW2duweOoUKWjAsQvHC3gfB117O/0UxGlwFn9m0=",
+        "owner": "awslabs",
+        "repo": "aws-c-s3",
+        "rev": "de36fee8fe7ab02f10987877ae94a805bf440c1f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "awslabs",
+        "repo": "aws-c-s3",
+        "rev": "de36fee8fe7ab02f10987877ae94a805bf440c1f",
+        "type": "github"
+      }
+    },
+    "contrib-aws-c-sdkutils": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1701988425,
+        "narHash": "sha256-Tj+VaT1LH2qrWw9waBl2CwW7EMesaqhDqN1/gT0S4xM=",
+        "owner": "awslabs",
+        "repo": "aws-c-sdkutils",
+        "rev": "fd8c0ba2e233997eaaefe82fb818b8b444b956d3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "awslabs",
+        "repo": "aws-c-sdkutils",
+        "rev": "fd8c0ba2e233997eaaefe82fb818b8b444b956d3",
+        "type": "github"
+      }
+    },
+    "contrib-aws-checksums": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1689358125,
+        "narHash": "sha256-OoEwubEEkLJmlqmQR4/rp4+b1WYJEbcjYDSdXXHleZQ=",
+        "owner": "awslabs",
+        "repo": "aws-checksums",
+        "rev": "321b805559c8e911be5bddba13fcbd222a3e2d3a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "awslabs",
+        "repo": "aws-checksums",
+        "rev": "321b805559c8e911be5bddba13fcbd222a3e2d3a",
+        "type": "github"
+      }
+    },
+    "contrib-aws-crt-cpp": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1719276696,
+        "narHash": "sha256-MReIegD9OhisJsHnym7VNZDfDEkZ/TVLwMIrb46Yyks=",
+        "owner": "ClickHouse",
+        "repo": "aws-crt-cpp",
+        "rev": "e5aa45cacfdcda7719ead38760e7c61076f5745f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "aws-crt-cpp",
+        "rev": "e5aa45cacfdcda7719ead38760e7c61076f5745f",
+        "type": "github"
+      }
+    },
+    "contrib-azure": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1722336160,
+        "narHash": "sha256-IfojUN+ObuLDzexpMKrL7Qcy1EqCXZcGqDsIvt3rOro=",
+        "owner": "ClickHouse",
+        "repo": "azure-sdk-for-cpp",
+        "rev": "67272b7ee0adff6b69921b26eb071ba1a353062c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "azure-sdk-for-cpp",
+        "rev": "67272b7ee0adff6b69921b26eb071ba1a353062c",
+        "type": "github"
+      }
+    },
+    "contrib-boost": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1692980966,
+        "narHash": "sha256-aNGZD4XX4CAGpJ2Pdc1KFjI1SaosBMiLco9LNALl9gg=",
+        "owner": "ClickHouse",
+        "repo": "boost",
+        "rev": "ae94606a70f1e298ce2a5718db858079185c4d9c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "boost",
+        "rev": "ae94606a70f1e298ce2a5718db858079185c4d9c",
+        "type": "github"
+      }
+    },
+    "contrib-brotli": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1611756485,
+        "narHash": "sha256-x0YtYeczsroYyV2wXqNrjKO67wRixao4NNcjLxRyjho=",
+        "owner": "google",
+        "repo": "brotli",
+        "rev": "63be8a99401992075c23e99f7c84de1c653e39e2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "google",
+        "repo": "brotli",
+        "rev": "63be8a99401992075c23e99f7c84de1c653e39e2",
+        "type": "github"
+      }
+    },
+    "contrib-bzip2": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1622490783,
+        "narHash": "sha256-26mKYvrUoDE9dpRpPI2ihXfleebvA26Apzc70u6md0k=",
+        "owner": "ClickHouse",
+        "repo": "bzip2",
+        "rev": "bf905ea2251191ff9911ae7ec0cfc35d41f9f7f6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "bzip2",
+        "rev": "bf905ea2251191ff9911ae7ec0cfc35d41f9f7f6",
+        "type": "github"
+      }
+    },
+    "contrib-c-ares": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1744112538,
+        "narHash": "sha256-MeQ4eqt7QyRD7YVomXR+fwBzraiYe2s2Eozz0sE8Xgo=",
+        "owner": "c-ares",
+        "repo": "c-ares",
+        "rev": "d3a507e920e7af18a5efb7f9f1d8044ed4750013",
+        "type": "github"
+      },
+      "original": {
+        "owner": "c-ares",
+        "repo": "c-ares",
+        "rev": "d3a507e920e7af18a5efb7f9f1d8044ed4750013",
+        "type": "github"
+      }
+    },
+    "contrib-capnproto": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1685560883,
+        "narHash": "sha256-8Caq7bOQUM4NvLnnl/KHwO4Z74jI0fYoRPbIqS5YYZY=",
+        "owner": "ClickHouse",
+        "repo": "capnproto",
+        "rev": "976209a6d18074804f60d18ef99b6a809d27dadf",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "capnproto",
+        "rev": "976209a6d18074804f60d18ef99b6a809d27dadf",
+        "type": "github"
+      }
+    },
+    "contrib-cassandra": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1640170368,
+        "narHash": "sha256-no2UwjjDdf+LGSJIdBcYwTAbZkxCAIfwn07251tSWhU=",
+        "owner": "ClickHouse",
+        "repo": "cpp-driver",
+        "rev": "f4a31e92a25c34c02c7291ff97c7813bc83b0e09",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "cpp-driver",
+        "rev": "f4a31e92a25c34c02c7291ff97c7813bc83b0e09",
+        "type": "github"
+      }
+    },
+    "contrib-cctz": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1744380898,
+        "narHash": "sha256-aBateECysqnwx2l8l7DnknsdmfajJk75vXhCDRgkXdw=",
+        "owner": "ClickHouse",
+        "repo": "cctz",
+        "rev": "6440590af6962a2ed22ef574c2289a54ccf165fb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "cctz",
+        "rev": "6440590af6962a2ed22ef574c2289a54ccf165fb",
+        "type": "github"
+      }
+    },
+    "contrib-chdig": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1748419474,
+        "narHash": "sha256-xhrs4glRCu17Vj/AdqlNDedAodgeFHgkri1l4s7cWVU=",
+        "owner": "azat",
+        "repo": "chdig",
+        "rev": "e5d3cfdb163c6fdb2c9f1359eda8d22d0db38a0e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "azat",
+        "repo": "chdig",
+        "rev": "e5d3cfdb163c6fdb2c9f1359eda8d22d0db38a0e",
+        "type": "github"
+      }
+    },
+    "contrib-cld2": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1717771583,
+        "narHash": "sha256-HG4EO6VCZgSoFb8g2LJasLHt1eevu/4iMAs0IOQyBnw=",
+        "owner": "ClickHouse",
+        "repo": "cld2",
+        "rev": "217ba8b8805b41557faadaa47bb6e99f2242eea3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "cld2",
+        "rev": "217ba8b8805b41557faadaa47bb6e99f2242eea3",
+        "type": "github"
+      }
+    },
+    "contrib-corrosion": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1743262288,
+        "narHash": "sha256-Xm9qOc8L09e9x3p0SUQwPWwMcJ5+5nQmPfxehfDzrNA=",
+        "owner": "corrosion-rs",
+        "repo": "corrosion",
+        "rev": "c4840742d23d1c1a187152e2c5ae65886b9c9007",
+        "type": "github"
+      },
+      "original": {
+        "owner": "corrosion-rs",
+        "repo": "corrosion",
+        "rev": "c4840742d23d1c1a187152e2c5ae65886b9c9007",
+        "type": "github"
+      }
+    },
+    "contrib-cppkafka": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1748190782,
+        "narHash": "sha256-NAqVNSu/2CaUqxzunyDFdtGbXc32lKGVVTtX3/iRFf0=",
+        "owner": "ClickHouse",
+        "repo": "cppkafka",
+        "rev": "114d5be53330390a16c7ee227ef5e3551a9b5f49",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "cppkafka",
+        "rev": "114d5be53330390a16c7ee227ef5e3551a9b5f49",
+        "type": "github"
+      }
+    },
+    "contrib-crc32-s390x": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1482267955,
+        "narHash": "sha256-PH8rYbD74XodnP4B6RqcHBu/uZMoDrJJ20PwoFVr56o=",
+        "owner": "linux-on-ibm-z",
+        "repo": "crc32-s390x",
+        "rev": "30980583bf9ed3fa193abb83a1849705ff457f70",
+        "type": "github"
+      },
+      "original": {
+        "owner": "linux-on-ibm-z",
+        "repo": "crc32-s390x",
+        "rev": "30980583bf9ed3fa193abb83a1849705ff457f70",
+        "type": "github"
+      }
+    },
+    "contrib-crc32-vpmsum": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1585194198,
+        "narHash": "sha256-RM2kkVjgxTK8RTRwYAahOygcc4dY0L7QBSsxe49VuBk=",
+        "owner": "antonblanchard",
+        "repo": "crc32-vpmsum",
+        "rev": "452155439389311fc7d143621eaf56a258e02476",
+        "type": "github"
+      },
+      "original": {
+        "owner": "antonblanchard",
+        "repo": "crc32-vpmsum",
+        "rev": "452155439389311fc7d143621eaf56a258e02476",
+        "type": "github"
+      }
+    },
+    "contrib-croaring": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1697156603,
+        "narHash": "sha256-avlBCC0bRoyAF5Xx3bjwM5twTRUf9Ix7y5x3JBaxsxg=",
+        "owner": "RoaringBitmap",
+        "repo": "CRoaring",
+        "rev": "9b7cc0ff1c41e9457efb6228cfd2c538d0155303",
+        "type": "github"
+      },
+      "original": {
+        "owner": "RoaringBitmap",
+        "repo": "CRoaring",
+        "rev": "9b7cc0ff1c41e9457efb6228cfd2c538d0155303",
+        "type": "github"
+      }
+    },
+    "contrib-curl": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1748410854,
+        "narHash": "sha256-dZV6bDqV+7/nw3Ubhsva8dn4GRVQjy8D95OqNw4RvA8=",
+        "owner": "curl",
+        "repo": "curl",
+        "rev": "4dacb79fcdd9364c1083e06f6a011d797a344f47",
+        "type": "github"
+      },
+      "original": {
+        "owner": "curl",
+        "repo": "curl",
+        "rev": "4dacb79fcdd9364c1083e06f6a011d797a344f47",
+        "type": "github"
+      }
+    },
+    "contrib-cyrus-sasl": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1611934865,
+        "narHash": "sha256-HrDQnagdBRBJeHmEX1GFaUG+Ak1hpgq9Rc2Fpf4UH7k=",
+        "owner": "ClickHouse",
+        "repo": "cyrus-sasl",
+        "rev": "e6466edfd638cc5073debe941c53345b18a09512",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "cyrus-sasl",
+        "rev": "e6466edfd638cc5073debe941c53345b18a09512",
+        "type": "github"
+      }
+    },
+    "contrib-datasketches-cpp": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1715882668,
+        "narHash": "sha256-wjbrc/13ewr0/y5WKTlJpzUPFUQ/EGKZHctcmTd76+k=",
+        "owner": "apache",
+        "repo": "datasketches-cpp",
+        "rev": "76edd74f5db286b672c170a8ded4ce39b3a8800f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "apache",
+        "repo": "datasketches-cpp",
+        "rev": "76edd74f5db286b672c170a8ded4ce39b3a8800f",
+        "type": "github"
+      }
+    },
+    "contrib-delta-kernel-rs": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1747686782,
+        "narHash": "sha256-IDULrJKNM9O9SyQkQr3iYvq4d7jG2monZSWuiMf6RD0=",
+        "owner": "ClickHouse",
+        "repo": "delta-kernel-rs",
+        "rev": "1ee29c80f31547ea3cee2fc453c12b618ef35882",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "delta-kernel-rs",
+        "rev": "1ee29c80f31547ea3cee2fc453c12b618ef35882",
+        "type": "github"
+      }
+    },
+    "contrib-double-conversion": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1684412437,
+        "narHash": "sha256-DkMoHHoHwV4p40IINEqEPzKsCa0LHrJAFw2Yftw7zHo=",
+        "owner": "ClickHouse",
+        "repo": "double-conversion",
+        "rev": "4f7a25d8ced8c7cf6eee6fd09d6788eaa23c9afe",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "double-conversion",
+        "rev": "4f7a25d8ced8c7cf6eee6fd09d6788eaa23c9afe",
+        "type": "github"
+      }
+    },
+    "contrib-dragonbox": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1610915888,
+        "narHash": "sha256-5/+AgbCbAICFIYHMh+NsnJJdaO4D3n+F/mJ1e81HqWc=",
+        "owner": "ClickHouse",
+        "repo": "dragonbox",
+        "rev": "923705af6fd953aa948fc175f6020b15f7359838",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "dragonbox",
+        "rev": "923705af6fd953aa948fc175f6020b15f7359838",
+        "type": "github"
+      }
+    },
+    "contrib-fast_float": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1605062953,
+        "narHash": "sha256-n6jElW0y4VmhxWVy0OpJaNMbhrHCul3uUyoaXwETFS8=",
+        "owner": "fastfloat",
+        "repo": "fast_float",
+        "rev": "7eae925b51fd0f570ccd5c880c12e3e27a23b86f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "fastfloat",
+        "repo": "fast_float",
+        "rev": "7eae925b51fd0f570ccd5c880c12e3e27a23b86f",
+        "type": "github"
+      }
+    },
+    "contrib-fastops": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1634342895,
+        "narHash": "sha256-G6otaxI1hQAUkRMuEX77Io4jBxLlU388dXdbQ3Qxu3g=",
+        "owner": "ClickHouse",
+        "repo": "fastops",
+        "rev": "1460583af7d13c0e980ce46aec8ee9400314669a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "fastops",
+        "rev": "1460583af7d13c0e980ce46aec8ee9400314669a",
+        "type": "github"
+      }
+    },
+    "contrib-flatbuffers": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1685122389,
+        "narHash": "sha256-e+dNPNbCHYDXUS/W+hMqf/37fhVgEGzId6rhP3cToTE=",
+        "owner": "ClickHouse",
+        "repo": "flatbuffers",
+        "rev": "0100f6a5779831fa7a651e4b67ef389a8752bd9b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "flatbuffers",
+        "rev": "0100f6a5779831fa7a651e4b67ef389a8752bd9b",
+        "type": "github"
+      }
+    },
+    "contrib-fmtlib": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1740593668,
+        "narHash": "sha256-sUbxlYi/Aupaox3JjWFqXIjcaQa0LFjclQAOleT+FRA=",
+        "owner": "fmtlib",
+        "repo": "fmt",
+        "rev": "123913715afeb8a437e6388b4473fcc4753e1c9a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "fmtlib",
+        "repo": "fmt",
+        "rev": "123913715afeb8a437e6388b4473fcc4753e1c9a",
+        "type": "github"
+      }
+    },
+    "contrib-google-benchmark": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1668214216,
+        "narHash": "sha256-ohkpSdaKmKz7WAvqvUBTN6c4f4KjDwxzBjCl19sVwLQ=",
+        "owner": "google",
+        "repo": "benchmark",
+        "rev": "2257fa4d6afb8e5a2ccd510a70f38fe7fcdf1edf",
+        "type": "github"
+      },
+      "original": {
+        "owner": "google",
+        "repo": "benchmark",
+        "rev": "2257fa4d6afb8e5a2ccd510a70f38fe7fcdf1edf",
+        "type": "github"
+      }
+    },
+    "contrib-google-cloud-cpp": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1731682093,
+        "narHash": "sha256-hNZDnrCELaJSFFhxRykxgPGEeuuz6+FO10SApBsY7/k=",
+        "owner": "ClickHouse",
+        "repo": "google-cloud-cpp",
+        "rev": "83f30caadb8613fb5c408d8c2fd545291596b53f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "google-cloud-cpp",
+        "rev": "83f30caadb8613fb5c408d8c2fd545291596b53f",
+        "type": "github"
+      }
+    },
+    "contrib-google-protobuf": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700214815,
+        "narHash": "sha256-LyZjXYpA2/66DeMWpVZAL6Bmzb6XeGVt5hsIb+8Uers=",
+        "owner": "ClickHouse",
+        "repo": "google-protobuf",
+        "rev": "0fae801fb4785175a4481aae1c0f721700e7bd99",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "google-protobuf",
+        "rev": "0fae801fb4785175a4481aae1c0f721700e7bd99",
+        "type": "github"
+      }
+    },
+    "contrib-googletest": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1732124253,
+        "narHash": "sha256-ulmZZ2qQePWMnPdYYcYqZSBsKdhKwr5cStTHGhSYK6M=",
+        "owner": "google",
+        "repo": "googletest",
+        "rev": "35d0c365609296fa4730d62057c487e3cfa030ff",
+        "type": "github"
+      },
+      "original": {
+        "owner": "google",
+        "repo": "googletest",
+        "rev": "35d0c365609296fa4730d62057c487e3cfa030ff",
+        "type": "github"
+      }
+    },
+    "contrib-grpc": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1728124339,
+        "narHash": "sha256-qkuiGxGY6CG+PVUrIHV4o1gyb/KyeYh1F7yk3ryDy/4=",
+        "owner": "ClickHouse",
+        "repo": "grpc",
+        "rev": "62e871c36fa93c0af939bd31762845265214fe3d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "grpc",
+        "rev": "62e871c36fa93c0af939bd31762845265214fe3d",
+        "type": "github"
+      }
+    },
+    "contrib-h3": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1624353831,
+        "narHash": "sha256-6JTyunUzs08Eh6Pw4s1uVIeWUqYO9DTISgRVXqxuOEE=",
+        "owner": "ClickHouse",
+        "repo": "h3",
+        "rev": "c7f46cfd71fb60e2fefc90e28abe81657deff735",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "h3",
+        "rev": "c7f46cfd71fb60e2fefc90e28abe81657deff735",
+        "type": "github"
+      }
+    },
+    "contrib-hive-metastore": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1636991148,
+        "narHash": "sha256-ghKXxWwI1NoI+3RbnnfBsKI7zfHvFHB3g2tfx6GXJvU=",
+        "owner": "ClickHouse",
+        "repo": "hive-metastore",
+        "rev": "809a77d435ce218d9b000733f19489c606fc567b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "hive-metastore",
+        "rev": "809a77d435ce218d9b000733f19489c606fc567b",
+        "type": "github"
+      }
+    },
+    "contrib-icu": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1723799628,
+        "narHash": "sha256-ywXGinwIHwfjRJ92tQh0pAZeKoE/W3wdTJiNoZ+G3jM=",
+        "owner": "ClickHouse",
+        "repo": "icu",
+        "rev": "4216173eeeb39c1d4caaa54a68860e800412d273",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "icu",
+        "rev": "4216173eeeb39c1d4caaa54a68860e800412d273",
+        "type": "github"
+      }
+    },
+    "contrib-icudata": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1725652896,
+        "narHash": "sha256-g0XABQKep7a+FVrKDSBv5qoFlckCbcwIpUJfbjnhTXU=",
+        "owner": "ClickHouse",
+        "repo": "icudata",
+        "rev": "cfc05b4c3140ff2be84291b80de8c62b1e42d0da",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "icudata",
+        "rev": "cfc05b4c3140ff2be84291b80de8c62b1e42d0da",
+        "type": "github"
+      }
+    },
+    "contrib-idna": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1695153531,
+        "narHash": "sha256-Ytz+PTXeHNipB75B2r7N9dKIVTf6IpLJrjaw+zfypgI=",
+        "owner": "ada-url",
+        "repo": "idna",
+        "rev": "3c8be01d42b75649f1ac9b697d0ef757eebfe667",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ada-url",
+        "repo": "idna",
+        "rev": "3c8be01d42b75649f1ac9b697d0ef757eebfe667",
+        "type": "github"
+      }
+    },
+    "contrib-idxd-config": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1736355459,
+        "narHash": "sha256-LaHk+65sFTyOmbDTi7368xCYWxMO8SOY2om5s+4KI5M=",
+        "owner": "ClickHouse",
+        "repo": "idxd-config",
+        "rev": "99a72fbfec55746e43254116baa22efb4cba85cc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "idxd-config",
+        "rev": "99a72fbfec55746e43254116baa22efb4cba85cc",
+        "type": "github"
+      }
+    },
+    "contrib-incbin": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1636232473,
+        "narHash": "sha256-9YK1fy+NOJH8glSfiq2sy+Xcqda1SgT6YpxSKjBgFVI=",
+        "owner": "graphitemaster",
+        "repo": "incbin",
+        "rev": "6e576cae5ab5810f25e2631f2e0b80cbe7dc8cbf",
+        "type": "github"
+      },
+      "original": {
+        "owner": "graphitemaster",
+        "repo": "incbin",
+        "rev": "6e576cae5ab5810f25e2631f2e0b80cbe7dc8cbf",
+        "type": "github"
+      }
+    },
+    "contrib-isa-l": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1678840018,
+        "narHash": "sha256-l2o7evvPdPX2yMN7og1X4ocRr7oll7L+GlhUuckKh8s=",
+        "owner": "ClickHouse",
+        "repo": "isa-l",
+        "rev": "9f2b68f05752097f0f16632fc4a9a86950831efd",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "isa-l",
+        "rev": "9f2b68f05752097f0f16632fc4a9a86950831efd",
+        "type": "github"
+      }
+    },
+    "contrib-jemalloc": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1657578616,
+        "narHash": "sha256-n4WagDLRfB8PWosx069n2oI1JSUXNrDCQUPULX4adic=",
+        "owner": "jemalloc",
+        "repo": "jemalloc",
+        "rev": "41a859ef7325569c6c25f92d294d45123bb81355",
+        "type": "github"
+      },
+      "original": {
+        "owner": "jemalloc",
+        "repo": "jemalloc",
+        "rev": "41a859ef7325569c6c25f92d294d45123bb81355",
+        "type": "github"
+      }
+    },
+    "contrib-jwt-cpp": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1718463143,
+        "narHash": "sha256-rml4u9Wvnv/AWH78fkhJbEYRPrkBNyL+yt2x3EfN0F8=",
+        "owner": "Thalhammer",
+        "repo": "jwt-cpp",
+        "rev": "a6927cb8140858c34e05d1a954626b9849fbcdfc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Thalhammer",
+        "repo": "jwt-cpp",
+        "rev": "a6927cb8140858c34e05d1a954626b9849fbcdfc",
+        "type": "github"
+      }
+    },
+    "contrib-krb5": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1725724778,
+        "narHash": "sha256-hjiAKfVzjlm8P0Vgl2U2REMGzLDh2/3fj1mKKX1JHmk=",
+        "owner": "ClickHouse",
+        "repo": "krb5",
+        "rev": "c5b4b994c18db86933255907a97eee5993fd18fe",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "krb5",
+        "rev": "c5b4b994c18db86933255907a97eee5993fd18fe",
+        "type": "github"
+      }
+    },
+    "contrib-lemmagen-c": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1624143624,
+        "narHash": "sha256-YNEFJSD7dhL4h0AzXlesDW0+c+/YfBDiPfWW3QMnfL4=",
+        "owner": "ClickHouse",
+        "repo": "lemmagen-c",
+        "rev": "59537bdcf57bbed17913292cb4502d15657231f1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "lemmagen-c",
+        "rev": "59537bdcf57bbed17913292cb4502d15657231f1",
+        "type": "github"
+      }
+    },
+    "contrib-libarchive": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1743364783,
+        "narHash": "sha256-N1PzkkM6k35GuteKijsJZw5Og0DiM70VihN6qlLqGfU=",
+        "owner": "libarchive",
+        "repo": "libarchive",
+        "rev": "8a7a9cc527fd1d6d8664315d3bed47c4259479cc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "libarchive",
+        "repo": "libarchive",
+        "rev": "8a7a9cc527fd1d6d8664315d3bed47c4259479cc",
+        "type": "github"
+      }
+    },
+    "contrib-libbcrypt": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1481872216,
+        "narHash": "sha256-nMxLPXFWlt7xiXaoA3lN2SUakE0UzWOkEiOO6FGsCM0=",
+        "owner": "rg3",
+        "repo": "libbcrypt",
+        "rev": "8aa32ad94ebe06b76853b0767c910c9fbf7ccef4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rg3",
+        "repo": "libbcrypt",
+        "rev": "8aa32ad94ebe06b76853b0767c910c9fbf7ccef4",
+        "type": "github"
+      }
+    },
+    "contrib-libcpuid": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1732978813,
+        "narHash": "sha256-/28yo1V4/xYMirt2bNTB/l9Xl8NgRmxTitOW21TY8gE=",
+        "owner": "anrieff",
+        "repo": "libcpuid",
+        "rev": "018a05372d1cf2b4b9c18192da6f203521a23460",
+        "type": "github"
+      },
+      "original": {
+        "owner": "anrieff",
+        "repo": "libcpuid",
+        "rev": "018a05372d1cf2b4b9c18192da6f203521a23460",
+        "type": "github"
+      }
+    },
+    "contrib-libdivide": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1722357631,
+        "narHash": "sha256-+XhsIQuvdWYCRurK62YqoMXBcWHGO6imXQQmqHGRJ+Y=",
+        "owner": "ridiculousfish",
+        "repo": "libdivide",
+        "rev": "01526031eb79375dc85e0212c966d2c514a01234",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ridiculousfish",
+        "repo": "libdivide",
+        "rev": "01526031eb79375dc85e0212c966d2c514a01234",
+        "type": "github"
+      }
+    },
+    "contrib-libfiu": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1724851170,
+        "narHash": "sha256-fSwFKidxUHDZCxX+cEXkMlpWH5ffCBiKzYSp6hVnR60=",
+        "owner": "ClickHouse",
+        "repo": "libfiu",
+        "rev": "a1290d8cd3d7b4541d6c976e0a54f572ac03f2a3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "libfiu",
+        "rev": "a1290d8cd3d7b4541d6c976e0a54f572ac03f2a3",
+        "type": "github"
+      }
+    },
+    "contrib-libgsasl": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1736455638,
+        "narHash": "sha256-6OqwzwLhriv7lGPAY+0l5lbXZl+mtCnBeeTlAjPBi6o=",
+        "owner": "ClickHouse",
+        "repo": "libgsasl",
+        "rev": "2d16b4e0d9435bec4546875ef07d36383bb993a5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "libgsasl",
+        "rev": "2d16b4e0d9435bec4546875ef07d36383bb993a5",
+        "type": "github"
+      }
+    },
+    "contrib-libhdfs3": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1736455759,
+        "narHash": "sha256-AX2MzauCtQwtat1avCES2KRfuedvN81ywhHrcjStSF0=",
+        "owner": "ClickHouse",
+        "repo": "libhdfs3",
+        "rev": "d0ae7d2568151feef61d3ec7896803262f0e0f91",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "libhdfs3",
+        "rev": "d0ae7d2568151feef61d3ec7896803262f0e0f91",
+        "type": "github"
+      }
+    },
+    "contrib-libpqxx": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1739585007,
+        "narHash": "sha256-LKXed793Uu1VXr67d6l5qlmS+wBDg1fdGiNd8DYwk+M=",
+        "owner": "ClickHouse",
+        "repo": "libpqxx",
+        "rev": "24a31c3f3a9317131b1326c7b87f42053a5f4489",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "libpqxx",
+        "rev": "24a31c3f3a9317131b1326c7b87f42053a5f4489",
+        "type": "github"
+      }
+    },
+    "contrib-libprotobuf-mutator": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1718496752,
+        "narHash": "sha256-gKPjr4rf04x4MESRxgOVRLuZBT3hMP/G+hOGLRTN7UI=",
+        "owner": "google",
+        "repo": "libprotobuf-mutator",
+        "rev": "b922c8ab9004ef9944982e4f165e2747b13223fa",
+        "type": "github"
+      },
+      "original": {
+        "owner": "google",
+        "repo": "libprotobuf-mutator",
+        "rev": "b922c8ab9004ef9944982e4f165e2747b13223fa",
+        "type": "github"
+      }
+    },
+    "contrib-librdkafka": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1748423078,
+        "narHash": "sha256-NgkwpYBz8fP4BzNDa1Vpj4Y2Axg1BmHFgjb7yaxXhxE=",
+        "owner": "ClickHouse",
+        "repo": "librdkafka",
+        "rev": "73bde76a915cf79d7fd7c49632a86857681d6a4b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "librdkafka",
+        "rev": "73bde76a915cf79d7fd7c49632a86857681d6a4b",
+        "type": "github"
+      }
+    },
+    "contrib-libssh": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1707321317,
+        "narHash": "sha256-VZqniSsrZB7j3GCrZOAw51DaG0SRtWK8OfvTwAC5QGw=",
+        "owner": "ClickHouse",
+        "repo": "libssh",
+        "rev": "ed4011b91873836713576475a98cd132cd834539",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "libssh",
+        "rev": "ed4011b91873836713576475a98cd132cd834539",
+        "type": "github"
+      }
+    },
+    "contrib-libstemmer_c": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1624144121,
+        "narHash": "sha256-rBT09csE5zZZRZ8mEK2zEa9ImZ53VNa7By0guAHeE0w=",
+        "owner": "ClickHouse",
+        "repo": "libstemmer_c",
+        "rev": "c753054304d87daf460057c1a649c482aa094835",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "libstemmer_c",
+        "rev": "c753054304d87daf460057c1a649c482aa094835",
+        "type": "github"
+      }
+    },
+    "contrib-liburing": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1738586556,
+        "narHash": "sha256-zOC53i52YJsH3AQIy4afjTGlX/IvVnW2QnYOppFxKiI=",
+        "owner": "axboe",
+        "repo": "liburing",
+        "rev": "08468cc3830185c75f9e7edefd88aa01e5c2f8ab",
+        "type": "github"
+      },
+      "original": {
+        "owner": "axboe",
+        "repo": "liburing",
+        "rev": "08468cc3830185c75f9e7edefd88aa01e5c2f8ab",
+        "type": "github"
+      }
+    },
+    "contrib-libuv": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1725648755,
+        "narHash": "sha256-cQD0brL3TmAEeGR/xTW7maN0zcRYaHUFUgvzlllg++s=",
+        "owner": "ClickHouse",
+        "repo": "libuv",
+        "rev": "714b58b9849568211ade86b44dd91d37f8a2175e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "libuv",
+        "rev": "714b58b9849568211ade86b44dd91d37f8a2175e",
+        "type": "github"
+      }
+    },
+    "contrib-libxml2": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1681211623,
+        "narHash": "sha256-MsC27L4hMvTubNvcBpP/vg3kS0LlH30GCLJ4gKWREdc=",
+        "owner": "GNOME",
+        "repo": "libxml2",
+        "rev": "223cb03a5d27b1b2393b266a8657443d046139d6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "GNOME",
+        "repo": "libxml2",
+        "rev": "223cb03a5d27b1b2393b266a8657443d046139d6",
+        "type": "github"
+      }
+    },
+    "contrib-llvm-project": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1741291332,
+        "narHash": "sha256-Hp9kvBzNHiAHOjoPCOq/YmotEfPQe+ZnULmk1Brk/YM=",
+        "owner": "ClickHouse",
+        "repo": "llvm-project",
+        "rev": "7e72cd6d7ae4cfabf1cc4a77eb2787ece492bb8b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "llvm-project",
+        "rev": "7e72cd6d7ae4cfabf1cc4a77eb2787ece492bb8b",
+        "type": "github"
+      }
+    },
+    "contrib-lz4": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1721582989,
+        "narHash": "sha256-/dG1n59SKBaEBg72pAWltAtVmJ2cXxlFFhP+klrkTos=",
+        "owner": "lz4",
+        "repo": "lz4",
+        "rev": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lz4",
+        "repo": "lz4",
+        "rev": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
+        "type": "github"
+      }
+    },
+    "contrib-magic_enum": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1732378030,
+        "narHash": "sha256-jm0O5a515NUDAhYhWKNMX83U3k/rMUFio5i7MMkdH4s=",
+        "owner": "Neargye",
+        "repo": "magic_enum",
+        "rev": "1a1824df7ac798177a521eed952720681b0bf482",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Neargye",
+        "repo": "magic_enum",
+        "rev": "1a1824df7ac798177a521eed952720681b0bf482",
+        "type": "github"
+      }
+    },
+    "contrib-mariadb-connector-c": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1719849781,
+        "narHash": "sha256-ZBGrOwNpRWV9UAC9xLlSejNtWb63qDOYS9YmYJElRH8=",
+        "owner": "ClickHouse",
+        "repo": "mariadb-connector-c",
+        "rev": "d0a788c5b9fcaca2368d9233770d3ca91ea79f88",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "mariadb-connector-c",
+        "rev": "d0a788c5b9fcaca2368d9233770d3ca91ea79f88",
+        "type": "github"
+      }
+    },
+    "contrib-miniselect": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1604940523,
+        "narHash": "sha256-IPmps8LgfzuHBzmifLK16i8M0unt3CQFKKB/tw+7QnU=",
+        "owner": "danlark1",
+        "repo": "miniselect",
+        "rev": "be0af6bd0b6eb044d1acc4f754b229972d99903a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "danlark1",
+        "repo": "miniselect",
+        "rev": "be0af6bd0b6eb044d1acc4f754b229972d99903a",
+        "type": "github"
+      }
+    },
+    "contrib-minizip-ng": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1743876422,
+        "narHash": "sha256-iAiw+ihVfcSNl6UdBad7FjT5Zwa+brndg60v7ceCzC8=",
+        "owner": "zlib-ng",
+        "repo": "minizip-ng",
+        "rev": "95ba7abdd24a956bde584db54d1d55e37d511e2f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "zlib-ng",
+        "repo": "minizip-ng",
+        "rev": "95ba7abdd24a956bde584db54d1d55e37d511e2f",
+        "type": "github"
+      }
+    },
+    "contrib-mongo-c-driver": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1726766373,
+        "narHash": "sha256-G1dWCJq0rFDDphgzjqeaHkXIhG1rpXwki+4fxDyAxQg=",
+        "owner": "ClickHouse",
+        "repo": "mongo-c-driver",
+        "rev": "d55410c69183c90d18fd3b3f1d9db3d224fc8d52",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "mongo-c-driver",
+        "rev": "d55410c69183c90d18fd3b3f1d9db3d224fc8d52",
+        "type": "github"
+      }
+    },
+    "contrib-mongo-cxx-driver": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1719324750,
+        "narHash": "sha256-nGLE0vyCe3PaNJf3duXdBfAhTdRvdeQ+OCwcaSDxi5Y=",
+        "owner": "ClickHouse",
+        "repo": "mongo-cxx-driver",
+        "rev": "3166bdb49b717ce1bc30f46cc2b274ab1de7005b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "mongo-cxx-driver",
+        "rev": "3166bdb49b717ce1bc30f46cc2b274ab1de7005b",
+        "type": "github"
+      }
+    },
+    "contrib-morton-nd": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1624645887,
+        "narHash": "sha256-WoHlrSMQURwA67vSCpPl50OZIJrxpcFIlfkfnktaFKE=",
+        "owner": "morton-nd",
+        "repo": "morton-nd",
+        "rev": "3795491a4aa3cdc916c8583094683f0d68df5bc0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "morton-nd",
+        "repo": "morton-nd",
+        "rev": "3795491a4aa3cdc916c8583094683f0d68df5bc0",
+        "type": "github"
+      }
+    },
+    "contrib-msgpack-c": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1583733760,
+        "narHash": "sha256-ZI+6P+hP4agcdo1z4PqabVDtQlXtHIaVTo2IwH3qpY4=",
+        "owner": "msgpack",
+        "repo": "msgpack-c",
+        "rev": "46684265d50b5d1b062d4c5c428ba08462844b1d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "msgpack",
+        "repo": "msgpack-c",
+        "rev": "46684265d50b5d1b062d4c5c428ba08462844b1d",
+        "type": "github"
+      }
+    },
+    "contrib-nats-io": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1744219828,
+        "narHash": "sha256-KvM1P5D/tEYHtvq0qekcls/5wQETOY2I/Bth3SS1f7A=",
+        "owner": "ClickHouse",
+        "repo": "nats.c",
+        "rev": "cf441828d30fdd5de12d9da319e88d2586fdeeba",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "nats.c",
+        "rev": "cf441828d30fdd5de12d9da319e88d2586fdeeba",
+        "type": "github"
+      }
+    },
+    "contrib-nlp-data": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1641827774,
+        "narHash": "sha256-uZprEPR7cbR2+dgfMA6Y4JMmJBpfTKp6fdWvTqKjiyM=",
+        "owner": "ClickHouse",
+        "repo": "nlp-data",
+        "rev": "5591f91f5e748cba8fb9ef81564176feae774853",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "nlp-data",
+        "rev": "5591f91f5e748cba8fb9ef81564176feae774853",
+        "type": "github"
+      }
+    },
+    "contrib-numactl": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1729841723,
+        "narHash": "sha256-BLEBZidaVvzcwUKOH3MCITb9Co3nLFSmPcTODSZYi4c=",
+        "owner": "ClickHouse",
+        "repo": "numactl",
+        "rev": "ff32c618d63ca7ac48cce366c5a04bb3563683a0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "numactl",
+        "rev": "ff32c618d63ca7ac48cce366c5a04bb3563683a0",
+        "type": "github"
+      }
+    },
+    "contrib-openldap": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1692373725,
+        "narHash": "sha256-oQ4P3LEi00ls7unB0yIhHCZifkUDGBKe3PjMuPJbeAw=",
+        "owner": "ClickHouse",
+        "repo": "openldap",
+        "rev": "5671b80e369df2caf5f34e02924316205a43c895",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "openldap",
+        "rev": "5671b80e369df2caf5f34e02924316205a43c895",
+        "type": "github"
+      }
+    },
+    "contrib-openssl": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1725644856,
+        "narHash": "sha256-FAH/Ku6apLt3AJNpvWzHaWfHYsdIYdRPnB7Vu+OlgCM=",
+        "owner": "ClickHouse",
+        "repo": "openssl",
+        "rev": "b3e62c440f390e12e77c80675f883af82ad3d5ed",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "openssl",
+        "rev": "b3e62c440f390e12e77c80675f883af82ad3d5ed",
+        "type": "github"
+      }
+    },
+    "contrib-orc": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1741002580,
+        "narHash": "sha256-wfnbk6ACNADpIKjTePvroy+WlkU3dv/6HhaGvRznzmc=",
+        "owner": "ClickHouse",
+        "repo": "orc",
+        "rev": "c6c189db27fc450b0edb370716550da36f361ed0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "orc",
+        "rev": "c6c189db27fc450b0edb370716550da36f361ed0",
+        "type": "github"
+      }
+    },
+    "contrib-pocketfft": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1720507394,
+        "narHash": "sha256-xsMy6SwD9CcqGcQ4e6Cdmte9WEnP3Q47vYt3u3LZ7EA=",
+        "owner": "mreineck",
+        "repo": "pocketfft",
+        "rev": "f4c1aa8aa9ce79ad39e80f2c9c41b92ead90fda3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mreineck",
+        "repo": "pocketfft",
+        "rev": "f4c1aa8aa9ce79ad39e80f2c9c41b92ead90fda3",
+        "type": "github"
+      }
+    },
+    "contrib-postgres": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1726744478,
+        "narHash": "sha256-x7jtDXH7B+wxg4j/91pPMDtv5ZLpa2og0iizWeUCBF8=",
+        "owner": "ClickHouse",
+        "repo": "postgres",
+        "rev": "c041ed8cbda02eb881de8d7645ca96b6e4b2327d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "postgres",
+        "rev": "c041ed8cbda02eb881de8d7645ca96b6e4b2327d",
+        "type": "github"
+      }
+    },
+    "contrib-qatlib": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700157190,
+        "narHash": "sha256-JzOjPzuU9UhWQzqTYkoYIwkZrsbLsQwZ6xnxQQ5o4A8=",
+        "owner": "intel",
+        "repo": "qatlib",
+        "rev": "abe15d7bfc083117bfbb4baee0b49ffcd1c03c5c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "intel",
+        "repo": "qatlib",
+        "rev": "abe15d7bfc083117bfbb4baee0b49ffcd1c03c5c",
+        "type": "github"
+      }
+    },
+    "contrib-qpl": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1721419158,
+        "narHash": "sha256-aBBVDE4VEvcQUGIiDehxgRNZvjj3yuvaZt0pLCdKhMI=",
+        "owner": "intel",
+        "repo": "qpl",
+        "rev": "c2ced94c53c1ee22191201a59878e9280bc9b9b8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "intel",
+        "repo": "qpl",
+        "rev": "c2ced94c53c1ee22191201a59878e9280bc9b9b8",
+        "type": "github"
+      }
+    },
+    "contrib-rapidjson": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1708681249,
+        "narHash": "sha256-3an6wbyQyYhMpFzft4kxrjGx4nEDv0kz7M2SL2VVk1I=",
+        "owner": "ClickHouse",
+        "repo": "rapidjson",
+        "rev": "800ca2f38fc3b387271d9e1926fcfc9070222104",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "rapidjson",
+        "rev": "800ca2f38fc3b387271d9e1926fcfc9070222104",
+        "type": "github"
+      }
+    },
+    "contrib-re2": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1718893822,
+        "narHash": "sha256-b7L7T0jaeEA/r8tANRTFKbcjDe2yv03t/vflPHeCseE=",
+        "owner": "google",
+        "repo": "re2",
+        "rev": "85dd7ad833a73095ecf3e3baea608ba051bbe2c7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "google",
+        "repo": "re2",
+        "rev": "85dd7ad833a73095ecf3e3baea608ba051bbe2c7",
+        "type": "github"
+      }
+    },
+    "contrib-replxx": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1748103583,
+        "narHash": "sha256-MzaTgVoeJHjaNzUoS/dtt8y12XHldsT0C4AC9mJg3Qg=",
+        "owner": "ClickHouse",
+        "repo": "replxx",
+        "rev": "dea4b7c724a2ec41d078383ccf0ebeedfaebaeea",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "replxx",
+        "rev": "dea4b7c724a2ec41d078383ccf0ebeedfaebaeea",
+        "type": "github"
+      }
+    },
+    "contrib-rocksdb": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1726519569,
+        "narHash": "sha256-rbTtzBxKdbwEXhmNdbUu1Yhm2TDpJ+UW/IgQGfrxDME=",
+        "owner": "ClickHouse",
+        "repo": "rocksdb",
+        "rev": "4d479be3591e7855cecebfb894585e04cd9e4245",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "rocksdb",
+        "rev": "4d479be3591e7855cecebfb894585e04cd9e4245",
+        "type": "github"
+      }
+    },
+    "contrib-rust_vendor": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1749070397,
+        "narHash": "sha256-ylpOUXCpvQ00sD2TEZAB47mO8Erhne03JVWBKXJR2MY=",
+        "owner": "ClickHouse",
+        "repo": "rust_vendor",
+        "rev": "3f5cbcac0698db449b5174236dfd7040a5ca1a4d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "rust_vendor",
+        "rev": "3f5cbcac0698db449b5174236dfd7040a5ca1a4d",
+        "type": "github"
+      }
+    },
+    "contrib-s2geometry": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1720186149,
+        "narHash": "sha256-+9RhFuOZRfAVURhP/hVSYNywbbQRQskGVyLSQ1KFT4k=",
+        "owner": "ClickHouse",
+        "repo": "s2geometry",
+        "rev": "6522a40338d58752c2a4227a3fc2bc4107c73e43",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "s2geometry",
+        "rev": "6522a40338d58752c2a4227a3fc2bc4107c73e43",
+        "type": "github"
+      }
+    },
+    "contrib-simdjson": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1724679453,
+        "narHash": "sha256-UfGt5lKmpqc21Hln4t/4KJfg+3V/hqX3UYgpCvlhkrM=",
+        "owner": "simdjson",
+        "repo": "simdjson",
+        "rev": "e341c8b43861b43de29c48ab65f292d997096953",
+        "type": "github"
+      },
+      "original": {
+        "owner": "simdjson",
+        "repo": "simdjson",
+        "rev": "e341c8b43861b43de29c48ab65f292d997096953",
+        "type": "github"
+      }
+    },
+    "contrib-snappy": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1692609545,
+        "narHash": "sha256-z/11TD2brMryFnUtVrUG0wIJOaVez1518mYdLQf0r2Q=",
+        "owner": "ClickHouse",
+        "repo": "snappy",
+        "rev": "6ebb5b1ab8801ea3fde103c5c29f5ab86df5fe7a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "snappy",
+        "rev": "6ebb5b1ab8801ea3fde103c5c29f5ab86df5fe7a",
+        "type": "github"
+      }
+    },
+    "contrib-sparsehash-c11": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1564664517,
+        "narHash": "sha256-dHO1w8ATvthx71AbXpUZWey3d0ga4reYqTf8FIAzq5U=",
+        "owner": "sparsehash",
+        "repo": "sparsehash-c11",
+        "rev": "cf0bffaa456f23bc4174462a789b90f8b6f5f42f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "sparsehash",
+        "repo": "sparsehash-c11",
+        "rev": "cf0bffaa456f23bc4174462a789b90f8b6f5f42f",
+        "type": "github"
+      }
+    },
+    "contrib-sqids-cpp": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1704491962,
+        "narHash": "sha256-wrXXWOaF+KvTb3E1a2TP5HbIXFbZ5Ni0uhZlWF9LVXc=",
+        "owner": "sqids",
+        "repo": "sqids-cpp",
+        "rev": "a471f53672e98d49223f598528a533b07b085c61",
+        "type": "github"
+      },
+      "original": {
+        "owner": "sqids",
+        "repo": "sqids-cpp",
+        "rev": "a471f53672e98d49223f598528a533b07b085c61",
+        "type": "github"
+      }
+    },
+    "contrib-sqlite-amalgamation": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1680000137,
+        "narHash": "sha256-d14vn2i18FgRb1cZpjmCLKppAzXRwypWxN0gyUzolS4=",
+        "owner": "ClickHouse",
+        "repo": "sqlite-amalgamation",
+        "rev": "20598079891d27ef1a3ad3f66bbfa3f983c25268",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "sqlite-amalgamation",
+        "rev": "20598079891d27ef1a3ad3f66bbfa3f983c25268",
+        "type": "github"
+      }
+    },
+    "contrib-sysroot": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1739329861,
+        "narHash": "sha256-e526t3z3t9hwDwHKDJ4EmoAKG6AoryrQMvsWM9Tt2rQ=",
+        "owner": "ClickHouse",
+        "repo": "sysroot",
+        "rev": "f03e1b77e57e32e0aed60a546d4b57d10f74f171",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "sysroot",
+        "rev": "f03e1b77e57e32e0aed60a546d4b57d10f74f171",
+        "type": "github"
+      }
+    },
+    "contrib-thrift": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1644436001,
+        "narHash": "sha256-8XHyee2k/QBqTqp7MnYzzAZ1+IoQuAYUuM4qPpyoqro=",
+        "owner": "apache",
+        "repo": "thrift",
+        "rev": "2a93df80f27739ccabb5b885cb12a8dc7595ecdf",
+        "type": "github"
+      },
+      "original": {
+        "owner": "apache",
+        "repo": "thrift",
+        "rev": "2a93df80f27739ccabb5b885cb12a8dc7595ecdf",
+        "type": "github"
+      }
+    },
+    "contrib-ulid-c": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1676391223,
+        "narHash": "sha256-1LLvXLbbHq/8Q3doZqD3raB7xwjzEzVAyvYANtZGxpg=",
+        "owner": "ClickHouse",
+        "repo": "ulid-c",
+        "rev": "c433b6783cf918b8f996dacd014cb2b68c7de419",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "ulid-c",
+        "rev": "c433b6783cf918b8f996dacd014cb2b68c7de419",
+        "type": "github"
+      }
+    },
+    "contrib-usearch": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1745228885,
+        "narHash": "sha256-7F6YWUnURQGpiBV9yEiH+3a6ihPYgMcst3RqptBXXfg=",
+        "owner": "ClickHouse",
+        "repo": "usearch",
+        "rev": "07e14f83337b3ad067d2557c88da3501f961b5c6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "usearch",
+        "rev": "07e14f83337b3ad067d2557c88da3501f961b5c6",
+        "type": "github"
+      }
+    },
+    "contrib-vectorscan": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700566480,
+        "narHash": "sha256-wz2oIhau/vjnri3LOyPZSCFAWg694FTLVt7+SZYEsL4=",
+        "owner": "VectorCamp",
+        "repo": "vectorscan",
+        "rev": "d29730e1cb9daaa66bda63426cdce83505d2c809",
+        "type": "github"
+      },
+      "original": {
+        "owner": "VectorCamp",
+        "repo": "vectorscan",
+        "rev": "d29730e1cb9daaa66bda63426cdce83505d2c809",
+        "type": "github"
+      }
+    },
+    "contrib-wordnet-blast": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1624144006,
+        "narHash": "sha256-0hHPOgry5jp8/ElBFEUlDH0pXvLNVoPaPX6Hxbmb1Mw=",
+        "owner": "ClickHouse",
+        "repo": "wordnet-blast",
+        "rev": "1d16ac28036e19fe8da7ba72c16a307fbdf8c87e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "wordnet-blast",
+        "rev": "1d16ac28036e19fe8da7ba72c16a307fbdf8c87e",
+        "type": "github"
+      }
+    },
+    "contrib-wyhash": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1649126229,
+        "narHash": "sha256-LxMZCub/lFjsT9MSLqglwmC7DKeiOX6xgTPGF8+ONo8=",
+        "owner": "wangyi-fudan",
+        "repo": "wyhash",
+        "rev": "991aa3dab624e50b066f7a02ccc9f6935cc740ec",
+        "type": "github"
+      },
+      "original": {
+        "owner": "wangyi-fudan",
+        "repo": "wyhash",
+        "rev": "991aa3dab624e50b066f7a02ccc9f6935cc740ec",
+        "type": "github"
+      }
+    },
+    "contrib-xxHash": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1689933695,
+        "narHash": "sha256-kofPs01jb189LUjYHHt+KxDifZQWl0Hm779711mvWtI=",
+        "owner": "Cyan4973",
+        "repo": "xxHash",
+        "rev": "bbb27a5efb85b92a0486cf361a8635715a53f6ba",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Cyan4973",
+        "repo": "xxHash",
+        "rev": "bbb27a5efb85b92a0486cf361a8635715a53f6ba",
+        "type": "github"
+      }
+    },
+    "contrib-xz": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1584455068,
+        "narHash": "sha256-n0qviQjOg1wvX8SQelLO09M8L33Umyo747B0Zi8GVng=",
+        "owner": "xz-mirror",
+        "repo": "xz",
+        "rev": "869b9d1b4edd6df07f819d360d306251f8147353",
+        "type": "github"
+      },
+      "original": {
+        "owner": "xz-mirror",
+        "repo": "xz",
+        "rev": "869b9d1b4edd6df07f819d360d306251f8147353",
+        "type": "github"
+      }
+    },
+    "contrib-yaml-cpp": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1715360721,
+        "narHash": "sha256-zNO9PCycldA3zRUkfU4IDuUfxOKUeEpdIiY1kYEUv2k=",
+        "owner": "ClickHouse",
+        "repo": "yaml-cpp",
+        "rev": "f91e938341273b5f9d341380ab17bcc3de5daa06",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "yaml-cpp",
+        "rev": "f91e938341273b5f9d341380ab17bcc3de5daa06",
+        "type": "github"
+      }
+    },
+    "contrib-zlib-ng": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1722897168,
+        "narHash": "sha256-5LbRHdQJOMxJgIszhpWuL61uv62oMTvOliR0t+pSq8E=",
+        "owner": "ClickHouse",
+        "repo": "zlib-ng",
+        "rev": "a2fbeffdc30a8b0ce6d54ee31208e2688eac4c9f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ClickHouse",
+        "repo": "zlib-ng",
+        "rev": "a2fbeffdc30a8b0ce6d54ee31208e2688eac4c9f",
+        "type": "github"
+      }
+    },
+    "contrib-zstd": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1744922680,
+        "narHash": "sha256-5c0IWjpBUjUiG/Rgop/IDCbDnHebKQrp/DG2WV7qPTs=",
+        "owner": "facebook",
+        "repo": "zstd",
+        "rev": "437081852c396eeb61edb7d47044d8cad911885e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "facebook",
+        "repo": "zstd",
+        "rev": "437081852c396eeb61edb7d47044d8cad911885e",
+        "type": "github"
+      }
+    },
+    "fenix": {
+      "inputs": {
+        "nixpkgs": "nixpkgs",
+        "rust-analyzer-src": "rust-analyzer-src"
+      },
+      "locked": {
+        "lastModified": 1748673500,
+        "narHash": "sha256-gILKNw2g7eGXt1aVJM0pUdeJQX0z6kXZNoiAJPjXHTo=",
+        "owner": "nix-community",
+        "repo": "fenix",
+        "rev": "4064670e8aeab5353001612efd17b19c7af7fde4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "fenix",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1748460289,
+        "narHash": "sha256-7doLyJBzCllvqX4gszYtmZUToxKvMUrg45EUWaUYmBg=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "96ec055edbe5ee227f28cdbc3f1ddf1df5965102",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1748680264,
+        "narHash": "sha256-Mqcu9Socz7N4EeW9xbGwd8dij1RUMynNRdn2yr3yC5c=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "5d39cf6a5c8dad9848521f3a0d3539edf36ba5cb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "contrib-AMQP-CPP": "contrib-AMQP-CPP",
+        "contrib-FP16": "contrib-FP16",
+        "contrib-NuRaft": "contrib-NuRaft",
+        "contrib-QAT-ZSTD-Plugin": "contrib-QAT-ZSTD-Plugin",
+        "contrib-SHA3IUF": "contrib-SHA3IUF",
+        "contrib-SimSIMD": "contrib-SimSIMD",
+        "contrib-abseil-cpp": "contrib-abseil-cpp",
+        "contrib-aklomp-base64": "contrib-aklomp-base64",
+        "contrib-arrow": "contrib-arrow",
+        "contrib-avro": "contrib-avro",
+        "contrib-aws": "contrib-aws",
+        "contrib-aws-c-auth": "contrib-aws-c-auth",
+        "contrib-aws-c-cal": "contrib-aws-c-cal",
+        "contrib-aws-c-common": "contrib-aws-c-common",
+        "contrib-aws-c-compression": "contrib-aws-c-compression",
+        "contrib-aws-c-event-stream": "contrib-aws-c-event-stream",
+        "contrib-aws-c-http": "contrib-aws-c-http",
+        "contrib-aws-c-io": "contrib-aws-c-io",
+        "contrib-aws-c-mqtt": "contrib-aws-c-mqtt",
+        "contrib-aws-c-s3": "contrib-aws-c-s3",
+        "contrib-aws-c-sdkutils": "contrib-aws-c-sdkutils",
+        "contrib-aws-checksums": "contrib-aws-checksums",
+        "contrib-aws-crt-cpp": "contrib-aws-crt-cpp",
+        "contrib-azure": "contrib-azure",
+        "contrib-boost": "contrib-boost",
+        "contrib-brotli": "contrib-brotli",
+        "contrib-bzip2": "contrib-bzip2",
+        "contrib-c-ares": "contrib-c-ares",
+        "contrib-capnproto": "contrib-capnproto",
+        "contrib-cassandra": "contrib-cassandra",
+        "contrib-cctz": "contrib-cctz",
+        "contrib-chdig": "contrib-chdig",
+        "contrib-cld2": "contrib-cld2",
+        "contrib-corrosion": "contrib-corrosion",
+        "contrib-cppkafka": "contrib-cppkafka",
+        "contrib-crc32-s390x": "contrib-crc32-s390x",
+        "contrib-crc32-vpmsum": "contrib-crc32-vpmsum",
+        "contrib-croaring": "contrib-croaring",
+        "contrib-curl": "contrib-curl",
+        "contrib-cyrus-sasl": "contrib-cyrus-sasl",
+        "contrib-datasketches-cpp": "contrib-datasketches-cpp",
+        "contrib-delta-kernel-rs": "contrib-delta-kernel-rs",
+        "contrib-double-conversion": "contrib-double-conversion",
+        "contrib-dragonbox": "contrib-dragonbox",
+        "contrib-fast_float": "contrib-fast_float",
+        "contrib-fastops": "contrib-fastops",
+        "contrib-flatbuffers": "contrib-flatbuffers",
+        "contrib-fmtlib": "contrib-fmtlib",
+        "contrib-google-benchmark": "contrib-google-benchmark",
+        "contrib-google-cloud-cpp": "contrib-google-cloud-cpp",
+        "contrib-google-protobuf": "contrib-google-protobuf",
+        "contrib-googletest": "contrib-googletest",
+        "contrib-grpc": "contrib-grpc",
+        "contrib-h3": "contrib-h3",
+        "contrib-hive-metastore": "contrib-hive-metastore",
+        "contrib-icu": "contrib-icu",
+        "contrib-icudata": "contrib-icudata",
+        "contrib-idna": "contrib-idna",
+        "contrib-idxd-config": "contrib-idxd-config",
+        "contrib-incbin": "contrib-incbin",
+        "contrib-isa-l": "contrib-isa-l",
+        "contrib-jemalloc": "contrib-jemalloc",
+        "contrib-jwt-cpp": "contrib-jwt-cpp",
+        "contrib-krb5": "contrib-krb5",
+        "contrib-lemmagen-c": "contrib-lemmagen-c",
+        "contrib-libarchive": "contrib-libarchive",
+        "contrib-libbcrypt": "contrib-libbcrypt",
+        "contrib-libcpuid": "contrib-libcpuid",
+        "contrib-libdivide": "contrib-libdivide",
+        "contrib-libfiu": "contrib-libfiu",
+        "contrib-libgsasl": "contrib-libgsasl",
+        "contrib-libhdfs3": "contrib-libhdfs3",
+        "contrib-libpqxx": "contrib-libpqxx",
+        "contrib-libprotobuf-mutator": "contrib-libprotobuf-mutator",
+        "contrib-librdkafka": "contrib-librdkafka",
+        "contrib-libssh": "contrib-libssh",
+        "contrib-libstemmer_c": "contrib-libstemmer_c",
+        "contrib-liburing": "contrib-liburing",
+        "contrib-libuv": "contrib-libuv",
+        "contrib-libxml2": "contrib-libxml2",
+        "contrib-llvm-project": "contrib-llvm-project",
+        "contrib-lz4": "contrib-lz4",
+        "contrib-magic_enum": "contrib-magic_enum",
+        "contrib-mariadb-connector-c": "contrib-mariadb-connector-c",
+        "contrib-miniselect": "contrib-miniselect",
+        "contrib-minizip-ng": "contrib-minizip-ng",
+        "contrib-mongo-c-driver": "contrib-mongo-c-driver",
+        "contrib-mongo-cxx-driver": "contrib-mongo-cxx-driver",
+        "contrib-morton-nd": "contrib-morton-nd",
+        "contrib-msgpack-c": "contrib-msgpack-c",
+        "contrib-nats-io": "contrib-nats-io",
+        "contrib-nlp-data": "contrib-nlp-data",
+        "contrib-numactl": "contrib-numactl",
+        "contrib-openldap": "contrib-openldap",
+        "contrib-openssl": "contrib-openssl",
+        "contrib-orc": "contrib-orc",
+        "contrib-pocketfft": "contrib-pocketfft",
+        "contrib-postgres": "contrib-postgres",
+        "contrib-qatlib": "contrib-qatlib",
+        "contrib-qpl": "contrib-qpl",
+        "contrib-rapidjson": "contrib-rapidjson",
+        "contrib-re2": "contrib-re2",
+        "contrib-replxx": "contrib-replxx",
+        "contrib-rocksdb": "contrib-rocksdb",
+        "contrib-rust_vendor": "contrib-rust_vendor",
+        "contrib-s2geometry": "contrib-s2geometry",
+        "contrib-simdjson": "contrib-simdjson",
+        "contrib-snappy": "contrib-snappy",
+        "contrib-sparsehash-c11": "contrib-sparsehash-c11",
+        "contrib-sqids-cpp": "contrib-sqids-cpp",
+        "contrib-sqlite-amalgamation": "contrib-sqlite-amalgamation",
+        "contrib-sysroot": "contrib-sysroot",
+        "contrib-thrift": "contrib-thrift",
+        "contrib-ulid-c": "contrib-ulid-c",
+        "contrib-usearch": "contrib-usearch",
+        "contrib-vectorscan": "contrib-vectorscan",
+        "contrib-wordnet-blast": "contrib-wordnet-blast",
+        "contrib-wyhash": "contrib-wyhash",
+        "contrib-xxHash": "contrib-xxHash",
+        "contrib-xz": "contrib-xz",
+        "contrib-yaml-cpp": "contrib-yaml-cpp",
+        "contrib-zlib-ng": "contrib-zlib-ng",
+        "contrib-zstd": "contrib-zstd",
+        "fenix": "fenix",
+        "nixpkgs": "nixpkgs_2"
+      }
+    },
+    "rust-analyzer-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1748636115,
+        "narHash": "sha256-SUkOBIqQmdZK2/CHxkVf/v36JDBlFQl2uckz9gbCLVo=",
+        "owner": "rust-lang",
+        "repo": "rust-analyzer",
+        "rev": "987cd076e211a02542d5d82264474bb3325e8e7e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rust-lang",
+        "ref": "nightly",
+        "repo": "rust-analyzer",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

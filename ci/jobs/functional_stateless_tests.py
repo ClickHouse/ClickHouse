@@ -40,7 +40,7 @@ def run_stateless_test(
     nproc = int(Utils.cpu_count() / 2)
     if batch_num and batch_total:
         aux = f"--run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
-    statless_test_command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
+    statless_test_command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --trace \
                 --capture-client-stacktrace --queries /repo/tests/queries --test-runs 1 --hung-check \
                 {'--no-parallel' if no_parallel else ''}  {'--no-sequential' if no_sequiential else ''} \
                 --jobs {nproc} --report-coverage --report-logs-stats {aux} \
