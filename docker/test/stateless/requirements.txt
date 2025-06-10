@@ -37,7 +37,7 @@ pyparsing==2.4.7
 python-dateutil==2.8.1
 pytz==2024.1
 PyYAML==6.0.1
-requests==2.32.3
+requests==2.32.4
 roman==3.3
 rsa==4.8
 s3transfer==0.5.0
