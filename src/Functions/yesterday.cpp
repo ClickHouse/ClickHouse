@@ -80,7 +80,41 @@ public:
 
 REGISTER_FUNCTION(Yesterday)
 {
-    factory.registerFunction<YesterdayOverloadResolver>();
+    FunctionDocumentation::Description description_yesterday = R"(
+Accepts zero arguments and returns yesterday's date at one of the moments of query analysis.
+    )";
+    FunctionDocumentation::Syntax syntax_yesterday = R"(
+yesterday()
+    )";
+    FunctionDocumentation::Arguments arguments_yesterday = {};
+    FunctionDocumentation::ReturnedValue returned_value_yesterday = "Returns yesterday's date. [`Date`](../data-types/date.md).";
+    FunctionDocumentation::Examples examples_yesterday = {
+        {"Get yesterday's date", R"(
+SELECT yesterday();
+SELECT today() - 1;
+        )",
+        R"(
+┌─yesterday()─┐
+│  2025-06-09 │
+└─────────────┘
+┌─minus(today(), 1)─┐
+│        2025-06-09 │
+└───────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_yesterday = {1, 1};
+    FunctionDocumentation::Category category_yesterday = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_yesterday = {
+        description_yesterday,
+        syntax_yesterday,
+        arguments_yesterday,
+        returned_value_yesterday,
+        examples_yesterday,
+        introduced_in_yesterday,
+        category_yesterday
+    };
+
+    factory.registerFunction<YesterdayOverloadResolver>(documentation_yesterday);
 }
 
 }

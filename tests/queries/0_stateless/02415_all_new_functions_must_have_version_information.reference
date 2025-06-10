@@ -125,12 +125,6 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-changeDay
-changeHour
-changeMinute
-changeMonth
-changeSecond
-changeYear
 char
 cityHash64
 coalesce
@@ -484,9 +478,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-now
-now64
-nowInBlock
 nullIf
 nullIn
 nullInIgnoreSet
@@ -714,8 +705,6 @@ tgamma
 throwIf
 tid
 timeDiff
-timeSlot
-timeSlots
 timestamp
 timezone
 timezoneOf
@@ -890,9 +879,6 @@ toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
 toWeek
-toYYYYMM
-toYYYYMMDD
-toYYYYMMDDhhmmss
 toYear
 toYearWeek
 today
@@ -961,5 +947,4 @@ xor
 xxHash32
 xxHash64
 xxh3
-yesterday
 zookeeperSessionUptime

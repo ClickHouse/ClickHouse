@@ -361,9 +361,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-now
-now64
-nowInBlock
 nullIf
 nullIn
 nullInIgnoreSet
@@ -541,8 +538,6 @@ tcpPort
 tgamma
 throwIf
 tid
-timeSlot
-timeSlots
 timezoneOf
 timezoneOffset
 toBool
@@ -707,9 +702,6 @@ toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
 toWeek
-toYYYYMM
-toYYYYMMDD
-toYYYYMMDDhhmmss
 toYear
 toYearWeek
 today
@@ -769,5 +761,4 @@ wyHash64
 xor
 xxHash32
 xxHash64
-yesterday
 zookeeperSessionUptime
