@@ -6,6 +6,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/SwapHelper.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
 #include <base/scope_guard.h>
@@ -699,12 +700,11 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
-                swap(*implementation_buffer);
-                resetWorkingBuffer();
-
-                implementation_buffer = getRemoteReadBuffer(file_segment, read_type);
-
-                swap(*implementation_buffer);
+                {
+                    SwapHelper swap(*this, *implementation_buffer);
+                    resetWorkingBuffer();
+                    implementation_buffer = getRemoteReadBuffer(file_segment, read_type);
+                }
 
                 implementation_buffer->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]
                 implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
@@ -847,7 +847,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
             if (!use_external_buffer)
             {
-                chassert(internal_buffer.size());
+                chassert(!internal_buffer.empty());
                 chassert(internal_buffer.begin());
             }
 
@@ -920,7 +920,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     // We then take it back with another swap() after reading is done.
     // (If we get an exception in between, we'll be left with an invalid internal_buffer. That's ok, as long as
     // the caller doesn't try to use this CachedOnDiskReadBufferFromFile after it threw an exception.)
-    swap(*implementation_buffer);
+    std::optional<SwapHelper> swap;
+    swap.emplace(*this, *implementation_buffer);
 
     LOG_TEST(
         log,
@@ -1084,7 +1085,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                         file_offset_of_buffer_end, read_until_position, size, current_read_range.toString(), file_segments->size(), file_segments->toString(true)));
     }
 
-    swap(*implementation_buffer);
+    swap.reset();
 
     current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, available());
 
