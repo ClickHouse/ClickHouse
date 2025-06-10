@@ -61,3 +61,38 @@ def test_http_delay(started_cluster):
     assert resp.read() == b"42\n"
 
     node.query("drop table t")
+
+def test_http_param(started_cluster):
+    conn = http.client.HTTPConnection(node.ip_address, 8123)
+
+    boundary = "------------------------1234567890abcdef"
+
+    body_parts = []
+    body_parts.append(f'--{boundary}')
+    body_parts.append('Content-Disposition: form-data; name="param_id"')
+    body_parts.append('')
+    body_parts.append('1')
+    body_parts.append(f'--{boundary}--')
+
+    body = '\r\n'.join(body_parts).encode('utf-8')
+
+    headers = {
+        'Content-Type': f'multipart/form-data; boundary={boundary}',
+        'Content-Length': str(len(body)),
+        'Connection': 'keep-alive'
+    }
+
+    query = "select%201%20as%20c%20where%20c%20%3D%20%7Bid%3AUInt8%7D"
+
+    conn.request('POST', f'/?query={query}', body=body, headers=headers)
+    resp = conn.getresponse()
+
+    assert resp.status == 200
+    assert resp.getheader('Connection').lower() == 'keep-alive'
+    result = resp.read()
+    assert result == b"1\n"
+
+    conn.request('GET', '/?query=select%2042')
+    resp = conn.getresponse()
+    assert resp.status == 200
+    assert resp.read() == b"42\n"

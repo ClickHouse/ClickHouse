@@ -618,7 +618,12 @@ void HTTPHandler::processQuery(
         handle_exception_in_output_format,
         query_finish_callback);
 
-    if (request.isStreamBounded())
+    /// Make sure we read all POST data from the socket before reusing the socket for the next request.
+    /// Normally IInputFormat does it, but it's better to not rely on that. And there are corner
+    /// cases with compression end marker and HTTP chunked encoding end marker.
+    /// If `has_external_data` is true, HTMLForm is responsible for reading all data, and
+    /// `in_post_maybe_compressed` is not usable here.
+    if (!has_external_data && request.isStreamBounded())
     {
         String remaining;
         readStringUntilEOF(remaining, *in_post_maybe_compressed);
