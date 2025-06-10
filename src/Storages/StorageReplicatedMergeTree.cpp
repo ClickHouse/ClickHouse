@@ -6871,11 +6871,12 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
     return true;
 }
 
-void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info)
+void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
+    const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach)
 {
     LOG_INFO(log, "Restoring replica metadata");
 
-    if (!initialization_done)
+    if (!is_called_during_attach && !initialization_done)
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
 
     if (!is_readonly)
@@ -6931,9 +6932,12 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(const ZooKeeperRetri
         for (const String& part_name : active_parts_names)
             attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
 
-    LOG_INFO(log, "Attached all partitions, starting table");
-
-    startupImpl(/* from_attach_thread */ false, zookeeper_retries_info);
+    if (!is_called_during_attach)
+    {
+        /// Attach will continue with its own startup call, so we don't need to call it here
+        LOG_INFO(log, "Attached all partitions, starting table");
+        startupImpl(/* from_attach_thread */ false, zookeeper_retries_info);
+    }
 }
 
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
