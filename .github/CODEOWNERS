@@ -1,1 +1,4 @@
+* @ClickHouse/core
 
+# notify @ClickHouse/integrations-ecosystem when a new type is added
+src/Core/TypeId.h @ClickHouse/core @ClickHouse/integrations-ecosystem 
