@@ -3141,7 +3141,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             catch (...)
             {
                 is_cancelled.store(true);
-                runner.waitForAllToFinishAndRethrowFirstError();
+                throw;
             }
             runner.waitForAllToFinishAndRethrowFirstError();
         }

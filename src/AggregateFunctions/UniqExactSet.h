@@ -163,7 +163,7 @@ public:
                 catch (...)
                 {
                     is_cancelled->store(true);
-                    runner.waitForAllToFinishAndRethrowFirstError();
+                    throw;
                 }
                 runner.waitForAllToFinishAndRethrowFirstError();
             }
