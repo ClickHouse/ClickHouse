@@ -352,6 +352,9 @@ void registerOutputFormatPrometheus(FormatFactory & factory)
     {
         return std::make_shared<PrometheusTextOutputFormat>(buf, sample, settings);
     });
+
+    /// https://github.com/prometheus/docs/blob/86386ed25bc8a5309492483ec7d18d0914043162/content/docs/instrumenting/exposition_formats.md
+    factory.setContentType(FORMAT_NAME, "text/plain; version=0.0.4; charset=UTF-8");
 }
 
 }

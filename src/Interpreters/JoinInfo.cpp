@@ -1,6 +1,7 @@
 #include <Interpreters/JoinInfo.h>
 
 #include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -21,7 +22,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsUInt64 max_bytes_in_join;
     extern const SettingsOverflowMode join_overflow_mode;
