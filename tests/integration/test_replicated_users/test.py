@@ -1,5 +1,4 @@
 import inspect
-import time
 from dataclasses import dataclass
 from os import path as p
 
@@ -121,6 +120,20 @@ def test_create_replicated_on_cluster_ignore(started_cluster, entity):
 
     node1.query(f"DROP {entity.keyword} {entity.name} {entity.options}")
 
+    node1.replace_config(
+        "/etc/clickhouse-server/users.d/users.xml",
+        inspect.cleandoc(
+            f"""
+            <clickhouse>
+                <profiles>
+                    <default/>
+                </profiles>
+            </clickhouse>
+            """
+        ),
+    )
+    node1.query("SYSTEM RELOAD CONFIG")
+
 
 @pytest.mark.parametrize(
     "use_on_cluster",
@@ -147,14 +160,29 @@ def test_grant_revoke_replicated(started_cluster, use_on_cluster: bool):
     node1.query("SYSTEM RELOAD CONFIG")
     on_cluster = "ON CLUSTER default" if use_on_cluster else ""
 
-    node1.query(f"CREATE USER theuser {on_cluster}")
+    node1.query(f"CREATE USER theuser2 {on_cluster}")
 
-    assert node1.query(f"GRANT {on_cluster} SELECT ON *.* to theuser") == ""
+    assert node1.query(f"GRANT {on_cluster} SELECT ON *.* to theuser2") == ""
 
-    assert node2.query(f"SHOW GRANTS FOR theuser") == "GRANT SELECT ON *.* TO theuser\n"
+    assert node2.query(f"SHOW GRANTS FOR theuser2") == "GRANT SELECT ON *.* TO theuser2\n"
 
-    assert node1.query(f"REVOKE {on_cluster} SELECT ON *.* from theuser") == ""
-    node1.query(f"DROP USER theuser {on_cluster}")
+    assert node1.query(f"REVOKE {on_cluster} SELECT ON *.* from theuser2") == ""
+    node1.query(f"DROP USER theuser2 {on_cluster}")
+
+    node1.replace_config(
+        "/etc/clickhouse-server/users.d/users.xml",
+        inspect.cleandoc(
+            f"""
+            <clickhouse>
+                <profiles>
+                    <default/>
+                </profiles>
+            </clickhouse>
+            """
+        ),
+    )
+    node1.query("SYSTEM RELOAD CONFIG")
+
 
 
 @pytest.mark.parametrize("entity", entities, ids=get_entity_id)

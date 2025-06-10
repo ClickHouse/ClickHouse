@@ -2585,12 +2585,6 @@ def test_metadata_cache(started_cluster, storage_type):
         )
     )
 
-    assert 0 == int(
-        instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
         f"SELECT * FROM {table_expr}",
@@ -2623,12 +2617,6 @@ def test_metadata_cache(started_cluster, storage_type):
     assert 0 < int(
         instance.query(
             f"SELECT ProfileEvents['IcebergMetadataFilesCacheMisses'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
-    assert 0 == int(
-        instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
 

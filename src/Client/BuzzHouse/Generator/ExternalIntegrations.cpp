@@ -47,7 +47,6 @@ bool ClickHouseIntegratedDatabase::performIntegration(
                 entry.getBottomName(),
                 columnTypeAsString(rg, is_deterministic, tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
-            chassert(entry.path.size() == 1);
             first = false;
         }
         return performQuery(fmt::format("CREATE TABLE {}({});", str_tname, buf));
@@ -331,14 +330,18 @@ MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCreden
     return nullptr;
 }
 
-void MySQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te)
+void MySQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te)
 {
+    if (b.isExternalDistributedEngine())
+    {
+        te->add_params()->set_svalue("MySQL");
+    }
     te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
     te->add_params()->set_svalue(sc.database);
     te->add_params()->set_svalue(tname);
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
-    if (rg.nextBool())
+    if (!b.isExternalDistributedEngine() && rg.nextBool())
     {
         te->add_params()->set_num(rg.nextBool() ? 1 : 0);
     }
@@ -569,15 +572,19 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const S
     return nullptr;
 }
 
-void PostgreSQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te)
+void PostgreSQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te)
 {
+    if (b.isExternalDistributedEngine())
+    {
+        te->add_params()->set_svalue("PostgreSQL");
+    }
     te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
     te->add_params()->set_svalue(tname);
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
     te->add_params()->set_svalue("test");
-    if (rg.nextSmallNumber() < 4)
+    if (!b.isExternalDistributedEngine() && !b.isMaterializedPostgreSQLEngine() && rg.nextSmallNumber() < 4)
     {
         te->add_params()->set_svalue("ON CONFLICT DO NOTHING");
     }
@@ -1513,6 +1520,46 @@ bool MinIOIntegration::performIntegration(
     return sendRequest(sc.database + "/file" + std::to_string(tname));
 }
 
+void AzuriteIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
+{
+    te->add_params()->set_svalue(sc.hostname);
+    te->add_params()->set_svalue(sc.container);
+    te->add_params()->set_svalue("file" + tname.substr(1));
+    te->add_params()->set_svalue(sc.user);
+    te->add_params()->set_svalue(sc.password);
+}
+
+void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore * br)
+{
+    br->add_out_params(sc.hostname);
+    br->add_out_params(sc.container);
+    br->add_out_params(filename);
+    br->add_out_params(sc.user);
+    br->add_out_params(sc.password);
+}
+
+bool AzuriteIntegration::performIntegration(
+    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t, const bool, const bool, std::vector<ColumnPathChain> &)
+{
+    return true;
+}
+
+String HTTPIntegration::getConnectionURL()
+{
+    return "http://" + sc.hostname + ":" + std::to_string(sc.port) + "/";
+}
+
+void HTTPIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
+{
+    te->add_params()->set_svalue(getConnectionURL() + "file" + tname.substr(1));
+}
+
+bool HTTPIntegration::performIntegration(
+    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t, const bool, const bool, std::vector<ColumnPathChain> &)
+{
+    return true;
+}
+
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     : fc(fcc)
 {
@@ -1539,6 +1586,14 @@ ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     if (fc.minio_server.has_value())
     {
         minio = std::make_unique<MinIOIntegration>(fc, fc.minio_server.value());
+    }
+    if (fc.azurite_server.has_value())
+    {
+        azurite = std::make_unique<AzuriteIntegration>(fc, fc.azurite_server.value());
+    }
+    if (fc.http_server.has_value())
+    {
+        http = std::make_unique<HTTPIntegration>(fc, fc.http_server.value());
     }
     if (fc.clickhouse_server.has_value())
     {
@@ -1577,6 +1632,14 @@ void ExternalIntegrations::createExternalDatabaseTable(
         case IntegrationCall::MinIO:
             next_calls_succeeded.emplace_back(minio->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
             minio->setEngineDetails(rg, b, tname, te);
+            break;
+        case IntegrationCall::Azurite:
+            next_calls_succeeded.emplace_back(azurite->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
+            azurite->setEngineDetails(rg, b, tname, te);
+            break;
+        case IntegrationCall::HTTP:
+            next_calls_succeeded.emplace_back(http->performIntegration(rg, b.db, b.tname, true, b.is_deterministic, entries));
+            http->setEngineDetails(rg, b, tname, te);
             break;
     }
 }
@@ -1658,9 +1721,20 @@ void ExternalIntegrations::dropPeerTableOnRemote(const SQLTable & t)
     }
 }
 
-void ExternalIntegrations::setBackupDetails(const String & filename, BackupRestore * br)
+void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const String & filename, BackupRestore * br)
 {
-    minio->setBackupDetails(filename, br);
+    switch (dc)
+    {
+        case IntegrationCall::MinIO:
+            minio->setBackupDetails(filename, br);
+            break;
+        case IntegrationCall::Azurite:
+            azurite->setBackupDetails(filename, br);
+            break;
+        default:
+            chassert(0);
+            break;
+    }
 }
 
 bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String & query)

@@ -2211,6 +2211,16 @@ class ClickHouseCluster:
                 ],
             )
 
+    def move_file_in_container(self, container_id, old_path, new_path):
+        self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "mv {} {}".format(old_path, new_path),
+            ],
+        )
+
     def remove_file_from_container(self, container_id, path):
         self.exec_in_container(
             container_id,
@@ -4413,6 +4423,9 @@ class ClickHouseInstance:
         return self.cluster.copy_file_to_container(
             self.docker_id, local_path, dest_path
         )
+
+    def move_file_in_container(self, old_path, new_path):
+        return self.cluster.move_file_in_container(self.docker_id, old_path, new_path)
 
     def remove_file_from_container(self, path):
         return self.cluster.remove_file_from_container(self.docker_id, path)

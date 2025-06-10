@@ -48,7 +48,6 @@ using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
-using ThreadStatusPtr = ThreadStatus *;
 
 using QueryIsCanceledPredicate = std::function<bool()>;
 
@@ -270,10 +269,8 @@ private:
 
     LoggerPtr log = nullptr;
 
-    bool check_current_thread_on_destruction;
-
 public:
-    explicit ThreadStatus(bool check_current_thread_on_destruction_ = true);
+    explicit ThreadStatus();
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
