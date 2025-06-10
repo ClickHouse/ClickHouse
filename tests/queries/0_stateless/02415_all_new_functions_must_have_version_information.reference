@@ -844,13 +844,6 @@ toRelativeWeekNum
 toRelativeYearNum
 toSecond
 toStartOfDay
-<<<<<<< HEAD
-toStartOfISOYear
-toStartOfInterval
-toStartOfMonth
-toStartOfQuarter
-toStartOfYear
-=======
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
 toStartOfHour
@@ -862,7 +855,6 @@ toStartOfNanosecond
 toStartOfSecond
 toStartOfTenMinutes
 toStartOfWeek
->>>>>>> 83b3f837cc83e092f5ca18305c0fe7628f42c048
 toString
 toStringCutToZero
 toTime
