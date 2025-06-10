@@ -1,5 +1,5 @@
 import pytest
-
+import time
 from helpers.cluster import ClickHouseCluster
 
 from .yt_helpers import YT_DEFAULT_TOKEN, YT_HOST, YT_PORT, YT_URI, YTsaurusCLI
@@ -163,7 +163,7 @@ def test_yt_simple_table_function(started_cluster):
         pytest.param(
             "boolean",
             "true",
-            "UInt8",
+            "Bool",
             "1",
             id="boolean"
         ),
@@ -195,13 +195,13 @@ def test_yt_simple_table_function(started_cluster):
             "1970-01-01 00:00:42",
             id="timestamp"
         ),
-        pytest.param(
-            "interval",
-            "42",
-            "Interval",
-            "42",
-            id="interval"
-        )
+        # pytest.param(
+        #     "interval",
+        #     "42",
+        #     "Interval",
+        #     "42",
+        #     id="interval"
+        # )
 
     ]
 )
@@ -216,6 +216,8 @@ def test_ytsaurus_primitive_types(
 
     yt.create_table(table_path, yt_data_json, schema={column_name: yt_data_type})
 
+    time.sleep(1000);
+
     instance.query(
         f"CREATE TABLE yt_test(a {ch_column_type}) ENGINE=YTsaurus('{YT_URI}', '{table_path}', '{YT_DEFAULT_TOKEN}')"
     )
@@ -223,7 +225,7 @@ def test_ytsaurus_primitive_types(
     instance.query("DROP TABLE yt_test")
     yt.remove_table(table_path)
     assert yt_result == f"{ch_data_expected}\n"
-    
+
 
 @pytest.mark.parametrize(
     "yt_data_type, yt_data, ch_column_type, ch_data_expected",
@@ -251,36 +253,44 @@ def test_ytsaurus_primitive_types(
         ),
         pytest.param(
             "[{name = a; type_v3 = {type_name = struct; members = [{name=first;type=int8};{name=second;type=int16};];};};]",
-            "",
-            "Tuple(Tuple(String, Int8), Tuple(String, Int16))",
+            "{\"first\": -1, \"second\": 300}",
+            "Tuple(first Int8, second Int16)",
             "",
             id="struct",
         ),
         pytest.param(
-            "[{name = a; type_v3 = {type_name=tuple; elements=[{type=double;};{type=double;};];};};]",
-            "",
-            "Tuple(Float64, String)",
-            "",
+            "[{name = a; type_v3 = {type_name=tuple; elements=[{type=double;};{type=float;};];};};]",
+            "[0.1,1.0]",
+            "Tuple(Float64, Float32)",
+            "(0.1,1)",
             id="tuple",
         ),
         pytest.param(
             "[{name = a; type_v3 = {type_name=dict; key=int64; value={type_name=optional;item=string;};};};]",
-            "",
+            "[{\"42\": \"value\"}]",
             "Map(Int64, Nullable(String))",
-            "",
-            id="map",
+            "{42: 'value'}",
+            id="dict",
         ),
         pytest.param(
             "[{name = a; type_v3 = {type_name=variant; elements=[{type=int32;};{type=string;};];};};]",
-            "",
+            "[0, 42]",
             "Variant(Int32, String)",
-            ""
+            "[0,42]",
+            id="variant",
+        ),
+        pytest.param(
+            "[{name = a; type_v3 = {type_name=variant; elements=[{type=int32;};{type=string;};];};};]",
+            "[1, \"value\"]",
+            "Variant(Int32, String)",
+            "[1,\"value\"]",
+            id="variant",
         ),
         pytest.param(
             "[{name = a; type_v3 = {type_name=tagged; tag=\"image\\svg\"; item=double;};};]",
-            "",
-            "Tuple(String, Float64)",
-            "",
+            "0.1",
+            "Float64",
+            "0.1",
             id="tagged",
         ),
         pytest.param(

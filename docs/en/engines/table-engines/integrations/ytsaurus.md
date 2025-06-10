@@ -97,10 +97,10 @@ SELECT * FROM yt_saurus;
 | `datetime64`       | `Int64`                 |
 | `timestamp64`      | `Int64`                 |
 | `interval64`       | `Int64`                 |
-| `date`             | `Date`                  |
+| `date`             | `Date`(Not supported yet)|
 | `datetime`         | `DateTime`              |
 | `timestamp`        | `DateTime64(6)`         |
-| `interval`         | `Interval(MICROSECOND)` |
+| `interval`         | `UInt64`                |
 | `any`              | `String`                |
 | `null`             | `Nothing`               |
 | `void`             | `Nothing`               |
@@ -112,11 +112,11 @@ SELECT * FROM yt_saurus;
 | `decimal`          | `Decimal`            |
 | `optional`         | `Nullable`           |
 | `list`             | `Array`              |
-| `struct`           | `Tuple(Tuple(String, TN))`|
+| `struct`           | -                    |
 | `tuple`            | `Tuple`              |
 | `variant`          | `Variant`            |
-| `dict`             | `Map`                |
-| `tagged`           | `Tuple(String, T)`   |
+| `dict`             | -                    |
+| `tagged`           | `T`                  |
 
 ### Restrictions
 #### Nullable
