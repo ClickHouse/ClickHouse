@@ -74,8 +74,11 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
                 "and no chunked/multipart encoding, it may be impossible to distinguish graceful EOF from abnormal connection loss");
     }
     else
+    {
         /// We have to distinguish empty buffer and nullptr.
         stream = std::make_unique<EmptyReadBuffer>();
+        stream_is_bounded = true;
+    }
 }
 
 bool HTTPServerRequest::checkPeerConnected() const
