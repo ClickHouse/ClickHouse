@@ -71,6 +71,10 @@ FROM (
 GROUP BY tag
 ORDER BY tag;
 
+SELECT 'IRR';
+SELECT [-100, 39, 59, 55, 20] as cf, round(irr(cf), 6) as irr_rate, round(npv(irr_rate, cf), 6) as npv_from_irr;
+SELECT irr([0., 39., 59., 55., 20.]);
+
 SELECT 'XNPV:';
 SELECT round(xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6);
 SELECT round(xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 'ACT_365_25'), 6);

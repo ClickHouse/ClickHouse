@@ -12,7 +12,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/FunctionDocumentation.h>
 
 #include <boost/math/tools/roots.hpp>
@@ -68,6 +68,57 @@ constexpr double yearFraction(D d1, D d2)
         []<bool flag = false>() { static_assert(flag, "Unsupported DayCountType"); }();
 }
 
+// NPV function and its derivative. Used for irr calculation
+template <typename T>
+struct NpvCalculator
+{
+    explicit NpvCalculator(std::span<T> cashflows_)
+        : cashflows(cashflows_)
+    {
+        if (cashflows.empty()) [[unlikely]]
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must not be empty");
+    }
+
+    double calculate(double rate) const
+    {
+        if (rate == 0)
+            return std::accumulate(cashflows.begin(), cashflows.end(), 0.0);
+        if (rate <= -1.0)
+            return std::numeric_limits<double>::infinity();
+
+        double npv = cashflows[0]; // First cashflow doesn't need discounting
+        double compound = 1.0 + rate;
+
+        // Start from i=1 since we handled i=0 above
+        for (size_t i = 1; i < cashflows.size(); ++i)
+        {
+            npv += cashflows[i] / compound;
+            compound *= (1.0 + rate);
+        }
+        return npv;
+    }
+
+    double derivative(double rate) const
+    {
+        if (rate <= -1.0)
+            return std::numeric_limits<double>::quiet_NaN();
+
+        double derivative = 0.0;
+        double compound = 1.0 + rate;
+
+        // Start from i=1 since derivative of first term (i=0) is zero
+        for (size_t i = 1; i < cashflows.size(); ++i)
+        {
+            derivative += -cashflows[i] * i / compound;
+            compound *= (1.0 + rate);
+        }
+        return derivative;
+    }
+
+    std::span<T> cashflows;
+};
+
+// Plain NPV calculation that supports both zero-based and one-based indexing for cashflows.
 template <typename T>
 double npv(double rate, std::span<T> cashflows, bool start_from_zero)
 {
@@ -84,6 +135,7 @@ double npv(double rate, std::span<T> cashflows, bool start_from_zero)
     return npv_value;
 }
 
+// XNPV function and its derivative. Used for xirr calculation
 template <typename T, typename D, DayCountType day_count>
 struct XnpvCalculator
 {
@@ -135,6 +187,7 @@ struct XnpvCalculator
     std::span<D> dates;
 };
 
+// XNPV function used in the implementation of xnpv function
 template <DayCountType day_count, typename T, typename D>
 double xnpv(double rate, std::span<T> cashflows, std::span<D> dates)
 {
@@ -142,85 +195,116 @@ double xnpv(double rate, std::span<T> cashflows, std::span<D> dates)
     return calc.calculate(rate);
 }
 
-struct XirrCalculator
+
+enum class SolverErrorCode
 {
-    static constexpr int MAX_ITERATIONS = 100;
-    static constexpr double START_LOWER_BOUND = -0.999999;
-    static constexpr double START_UPPER_BOUND = 100.0;
-
-    enum class XirrErrorCode
-    {
-        CANNOT_EVALUATE_NPV,
-        CANNOT_CONVERGE_DUE_TO_ROUNDING_ERRORS,
-        CANNOT_CONVERGE_DUE_TO_INVALID_ARGUMENTS,
-        CANNOT_CONVERGE_TOO_MANY_ITERATIONS,
-        INPUT_DATES_NOT_SORTED_UNIQUE,
-        OTHER_ERROR
-    };
-
-    template <DayCountType day_count, typename T, typename D>
-    static std::expected<double, XirrErrorCode> calculateXirr(std::span<T> cashflows, std::span<D> dates, double guess)
-    {
-        if (cashflows.size() != dates.size()) [[unlikely]]
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size");
-
-        if (cashflows.size() <= 1) [[unlikely]]
-            return std::numeric_limits<double>::quiet_NaN();
-
-        if (std::all_of(cashflows.begin(), cashflows.end(), [](T cf) { return cf == 0; })) [[unlikely]]
-            return std::numeric_limits<double>::quiet_NaN();
-
-        for (size_t i = 1; i < dates.size(); ++i)
-        {
-            if (dates[i] <= dates[i - 1]) [[unlikely]]
-                return std::unexpected(XirrErrorCode::INPUT_DATES_NOT_SORTED_UNIQUE);
-        }
-
-        auto npv = XnpvCalculator<T, D, day_count>(cashflows, dates);
-
-        auto npv_function = [&](double rate) { return npv.calculate(rate); };
-        auto npv_derivative = [&](double rate) { return npv.derivative(rate); };
-
-        try
-        {
-            boost::uintmax_t max_iter = MAX_ITERATIONS;
-
-            double result = boost::math::tools::newton_raphson_iterate(
-                [&](double x) { return std::make_tuple(npv_function(x), npv_derivative(x)); },
-                guess,
-                START_LOWER_BOUND,
-                START_UPPER_BOUND,
-                std::numeric_limits<double>::digits - 4,
-                max_iter);
-
-            if (!std::isnan(result) && result > START_LOWER_BOUND && result < START_UPPER_BOUND)
-                return result;
-
-            max_iter = MAX_ITERATIONS;
-            boost::math::tools::eps_tolerance<double> tol(std::numeric_limits<double>::digits - 4);
-            auto toms_result = boost::math::tools::toms748_solve(npv_function, START_LOWER_BOUND, START_UPPER_BOUND, tol, max_iter);
-
-            return (toms_result.first + toms_result.second) / 2;
-        }
-        catch (const boost::math::evaluation_error &)
-        {
-            return std::unexpected(XirrErrorCode::CANNOT_EVALUATE_NPV);
-        }
-        catch (const boost::math::rounding_error &)
-        {
-            return std::unexpected(XirrErrorCode::CANNOT_CONVERGE_DUE_TO_ROUNDING_ERRORS);
-        }
-        catch (const std::domain_error &)
-        {
-            return std::unexpected(XirrErrorCode::CANNOT_CONVERGE_DUE_TO_INVALID_ARGUMENTS);
-        }
-        catch (...)
-        {
-            return std::unexpected(XirrErrorCode::OTHER_ERROR);
-        }
-    }
+    CANNOT_EVALUATE_VALUE,
+    CANNOT_CONVERGE_DUE_TO_ROUNDING_ERRORS,
+    CANNOT_CONVERGE_DUE_TO_INVALID_ARGUMENTS,
+    CANNOT_CONVERGE_TOO_MANY_ITERATIONS,
+    INPUT_DATES_NOT_SORTED_UNIQUE,
+    NO_ROOT_FOUND_IN_BRACKET,
+    OTHER_ERROR
 };
 
+template <typename Function, typename Derivative>
+std::expected<double, SolverErrorCode> solver(Function && fun, Derivative && der, double guess)
+{
+    constexpr int max_iterations = 100;
+    constexpr double start_lower_bound = -0.999999; // Avoid the rate of -1.
+    constexpr double start_upper_bound = 100.0; // Reasonable upper bound for financial applications IRR/XIRR
+    constexpr double tolerance = 1e-6; // Tolerance for the result check
+    try
+    {
+        boost::uintmax_t max_iter = max_iterations;
+
+        double result = boost::math::tools::newton_raphson_iterate(
+            [&fun, &der](double x) { return std::make_tuple(fun(x), der(x)); },
+            guess,
+            start_lower_bound,
+            start_upper_bound,
+            std::numeric_limits<double>::digits - 4,
+            max_iter);
+
+        if (result >= start_lower_bound && result <= start_upper_bound && std::abs(fun(result)) < tolerance)
+            return result;
+
+        // Fallback to TOMS748
+        const double f_lower = fun(start_lower_bound);
+        const double f_upper = fun(start_upper_bound);
+
+        if (f_lower * f_upper >= 0.0)
+            return std::unexpected(SolverErrorCode::NO_ROOT_FOUND_IN_BRACKET);
+
+        max_iter = max_iterations;
+        boost::math::tools::eps_tolerance<double> tol(std::numeric_limits<double>::digits - 4);
+        auto toms_result = boost::math::tools::toms748_solve(fun, start_lower_bound, start_upper_bound, tol, max_iter);
+
+        return toms_result.first;
+    }
+    catch (const boost::math::evaluation_error &)
+    {
+        return std::unexpected(SolverErrorCode::CANNOT_EVALUATE_VALUE);
+    }
+    catch (const boost::math::rounding_error &)
+    {
+        return std::unexpected(SolverErrorCode::CANNOT_CONVERGE_DUE_TO_ROUNDING_ERRORS);
+    }
+    catch (const std::domain_error &)
+    {
+        return std::unexpected(SolverErrorCode::CANNOT_CONVERGE_DUE_TO_INVALID_ARGUMENTS);
+    }
+    catch (...)
+    {
+        return std::unexpected(SolverErrorCode::OTHER_ERROR);
+    }
+}
+
+template <DayCountType day_count, typename T, typename D>
+std::expected<double, SolverErrorCode> calculateXirr(std::span<T> cashflows, std::span<D> dates, double guess)
+{
+    if (cashflows.size() != dates.size()) [[unlikely]]
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size");
+
+    if (cashflows.size() <= 1) [[unlikely]]
+        return std::numeric_limits<double>::quiet_NaN();
+
+    if (std::all_of(cashflows.begin(), cashflows.end(), [](T cf) { return cf == 0; })) [[unlikely]]
+        return std::numeric_limits<double>::quiet_NaN();
+
+    for (size_t i = 1; i < dates.size(); ++i)
+    {
+        if (dates[i] <= dates[i - 1]) [[unlikely]]
+            return std::unexpected(SolverErrorCode::INPUT_DATES_NOT_SORTED_UNIQUE);
+    }
+
+    auto xnpv = XnpvCalculator<T, D, day_count>(cashflows, dates);
+
+    auto xnpv_function = [&](double rate) { return xnpv.calculate(rate); };
+    auto xnpv_derivative = [&](double rate) { return xnpv.derivative(rate); };
+
+    return solver(xnpv_function, xnpv_derivative, guess);
+}
+
+template <typename T>
+std::expected<double, SolverErrorCode> calculateIrr(std::span<T> cashflows, double guess)
+{
+    if (cashflows.size() <= 1) [[unlikely]]
+        return std::numeric_limits<double>::quiet_NaN();
+
+    bool any_positive = std::any_of(cashflows.begin(), cashflows.end(), [](T cf) { return cf > 0; });
+    bool any_negative = std::any_of(cashflows.begin(), cashflows.end(), [](T cf) { return cf < 0; });
+
+    if (!(any_negative && any_positive)) [[unlikely]]
+        return std::numeric_limits<double>::quiet_NaN();
+
+    auto npv = NpvCalculator<T>(cashflows);
+
+    auto npv_function = [&](double rate) { return npv.calculate(rate); };
+    auto npv_derivative = [&](double rate) { return npv.derivative(rate); };
+
+    return solver(npv_function, npv_derivative, guess);
+}
 
 bool isCashFlowColumn(const IDataType & type)
 {
@@ -337,15 +421,14 @@ public:
         {
             using CashFlowType = const typename CashFlowCol::ValueType;
             using DateType = const typename DateTypeCol::ValueType;
-            auto * xirr_fptr
-                = [&]() -> std::expected<double, XirrCalculator::XirrErrorCode> (*)(std::span<CashFlowType>, std::span<DateType>, double)
+            auto * xirr_fptr = [&]() -> std::expected<double, SolverErrorCode> (*)(std::span<CashFlowType>, std::span<DateType>, double)
             {
                 switch (day_count)
                 {
                     case DayCountType::ACT_365F:
-                        return &XirrCalculator::calculateXirr<DayCountType::ACT_365F>;
+                        return &calculateXirr<DayCountType::ACT_365F>;
                     case DayCountType::ACT_365_25:
-                        return &XirrCalculator::calculateXirr<DayCountType::ACT_365_25>;
+                        return &calculateXirr<DayCountType::ACT_365_25>;
                 }
             }();
 
@@ -373,6 +456,100 @@ public:
         const auto * cashflow_data = &cashflow_array->getData();
         const auto * date_data = &date_array->getData();
         dispatchCashflowDate(cashflow_data, date_data, process_arrays);
+
+        return result_col;
+    }
+};
+
+class FunctionIRR : public IFunction
+{
+public:
+    static constexpr auto name = "irr";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIRR>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+
+    bool isDeterministic() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto mandatory_args = FunctionArgumentDescriptors{
+            {"cashflow", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn), nullptr, "Array[Number]"},
+        };
+
+        auto optional_args = FunctionArgumentDescriptors{
+            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "FloatXX"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto cashflow_col = arguments[0].column->convertToFullColumnIfConst();
+        const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
+        if (!cashflow_array)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow argument must be an array");
+        const ColumnArray::Offsets & cashflow_offsets = cashflow_array->getOffsets();
+
+        double guess = 0.1;
+        if (arguments.size() > 1)
+        {
+            if (!isColumnConst(*arguments[1].column))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (guess) must be a constant");
+            guess = arguments[1].column->getFloat64(0);
+        }
+
+        auto result_col = ColumnVector<Float64>::create(input_rows_count);
+        auto & result_data = result_col->getData();
+        auto process_array = [&](const auto * cashflow_values)
+        {
+            ColumnArray::Offset previous_offset = 0;
+            for (size_t i = 0; i < cashflow_offsets.size(); ++i)
+            {
+                const auto current_offset = cashflow_offsets[i];
+                const auto length = current_offset - previous_offset;
+
+                if (length <= 1) [[unlikely]]
+                {
+                    result_data[i] = std::numeric_limits<double>::quiet_NaN();
+                    previous_offset = current_offset;
+                    continue;
+                }
+
+                auto cashflow_span = std::span(cashflow_values->getData().data() + previous_offset, length);
+                auto irr_result = calculateIrr(cashflow_span, guess);
+
+                if (irr_result.has_value())
+                    result_data[i] = irr_result.value();
+                else
+                    result_data[i] = std::numeric_limits<double>::quiet_NaN();
+
+                previous_offset = current_offset;
+            }
+        };
+
+        const auto * cashflow_data = &cashflow_array->getData();
+        if (const auto * cf64 = typeid_cast<const ColumnVector<Float64> *>(cashflow_data))
+            process_array(cf64);
+        else if (const auto * cf32 = typeid_cast<const ColumnVector<Float32> *>(cashflow_data))
+            process_array(cf32);
+        else if (const auto * ci8 = typeid_cast<const ColumnVector<Int8> *>(cashflow_data))
+            process_array(ci8);
+        else if (const auto * ci16 = typeid_cast<const ColumnVector<Int16> *>(cashflow_data))
+            process_array(ci16);
+        else if (const auto * ci32 = typeid_cast<const ColumnVector<Int32> *>(cashflow_data))
+            process_array(ci32);
+        else if (const auto * ci64 = typeid_cast<const ColumnVector<Int64> *>(cashflow_data))
+            process_array(ci64);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must contain numeric values");
 
         return result_col;
     }
@@ -607,6 +784,24 @@ REGISTER_FUNCTION(FunctionXirr)
             {"simple_example", "SELECT xirr([-10000, 5750, 4250,3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')])","0.6342972615260243"},
             {"simple_example_with_guess", "SELECT xirr([-10000, 5750, 4250,3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 0.5)","0.6342972615260243"},
             {"simple_example_daycount", "SELECT round(xirr([100000, -110000], [toDate('2020-01-01'), toDate('2021-01-01')], 0.1, 'ACT_365_25'), 6) AS xirr_365_25;", "0.099785"},
+        },
+        .introduced_in = {25, 6},
+        .category = FunctionDocumentation::Category::Financial,
+    });
+}
+
+REGISTER_FUNCTION(FunctionIRR)
+{
+    factory.registerFunction<FunctionIRR>(FunctionDocumentation{
+        .description = "Calculates the IRR (Internal Rate of Return) for a series of cash flows.",
+        .arguments = {
+            {"cashflow", "An array of cash flows."},
+            {"guess", "An optional guess value for the IRR calculation. Default is 0.1."},
+        },
+        .returned_value = "Returns the IRR value as a Float64. If the calculation cannot be performed, it returns NaN.",
+        .examples = {
+            {"simple_example", "SELECT irr([-100, 39, 59, 55, 20])", "0.2809484212526239"},
+            {"simple_example_with_default", "SELECT irr([-100, 39, 59, 55, 20], 0.1)", "0.2809484212526239"},
         },
         .introduced_in = {25, 6},
         .category = FunctionDocumentation::Category::Financial,

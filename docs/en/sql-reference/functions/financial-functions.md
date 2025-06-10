@@ -8,6 +8,58 @@ title: 'Financial Functions'
 
 # Financial Functions
 
+## irr {#irr}
+
+Calculates the Internal Rate of Return (IRR) for a series of cash flows occurring at regular intervals. IRR is the discount rate at which the Net Present Value (NPV) equals zero.
+
+**Syntax**
+
+```sql
+irr(cashflows[, guess])
+```
+
+**Arguments**
+
+- `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
+- `guess` — Optional initial guess for the internal rate of return. Default: 0.1. Type: Float64.
+
+**Returned value**
+
+- Returns the internal rate of return as a Float64 value.
+- Returns NaN if:
+  - The calculation cannot converge
+  - Input array is empty or has only one element
+  - All cash flows are zero
+  - Other calculation errors occur
+
+**Examples**
+
+Basic usage:
+```sql
+SELECT irr([-100000, 25000, 25000, 25000, 25000, 25000])
+```
+```text
+┌─irr([-100000_00, 25000])─┐
+│      0.07930826116052854 │
+└──────────────────────────┘
+```
+
+With initial guess:
+```sql
+SELECT irr([-100, 60, 60], 0.2)
+```
+```text
+┌─irr([-100, 60, 60], 0.2)─┐
+│       0.1306623862918073 │
+└──────────────────────────┘
+```
+
+**Notes**
+
+- The function uses Newton-Raphson and TOMS748 methods for finding the root.
+- At least one cash flow must be negative and one must be positive for a meaningful IRR calculation.
+
+
 ## xirr {#xirr}
 
 Calculates the Extended Internal Rate of Return (XIRR) for a series of cash flows occurring at irregular intervals. XIRR is the discount rate at which the net present value (NPV) of all cash flows equals zero.
@@ -47,9 +99,10 @@ SELECT xirr(
 );
 ```
 ```text
-┌─xirr()─────────────┐
-│ 0.6342972615260243 │
-└────────────────────┘
+┌─xirr([-10000_1-02-15')])─┐
+│       0.6342972615260243 │
+└──────────────────────────┘
+
 ```
 
 Using different day count convention:
@@ -103,9 +156,9 @@ SELECT xnpv(0.1, [-10_000., 5750., 4250., 3250.],
     [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')])
 ```
 ```text
-┌─xnpv()─────────────┐
-│ 3065.2226681795255 │
-└────────────────────┘
+┌─xnpv(0.1, [-_1-02-15')])─┐
+│        2506.579458169746 │
+└──────────────────────────┘
 ```
 
 Using different day count convention:
@@ -115,9 +168,9 @@ SELECT xnpv(0.1, [-10_000., 5750., 4250., 3250.],
     'ACT_365_25')
 ```
 ```text
-┌─xnpv()─────────────┐
-│ 2507.067268742502  │
-└────────────────────┘
+┌─xnpv(0.1, [-_CT_365_25')─┐
+│        2507.067268742502 │
+└──────────────────────────┘
 ```
 
 ## npv {#npv}
@@ -147,9 +200,9 @@ Basic usage:
 SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.])
 ```
 ```text
-┌─npv()──────────────┐
-│ 3065.2226681795255 │
-└───────────────────┘
+┌─npv(0.08, [-_., 30000.])─┐
+│       3065.2226681795255 │
+└──────────────────────────┘
 ```
 
 With start_from_zero = false (Excel compatibility mode):
@@ -157,9 +210,9 @@ With start_from_zero = false (Excel compatibility mode):
 SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False)
 ```
 ```text
-┌─npv()──────────────┐
-│ 2838.1691372032656 │
-└────────────────────┘
+┌─npv(0.08, [-_30000.], 0)─┐
+│        2838.169137203262 │
+└──────────────────────────┘
 ```
 
 **Notes**
