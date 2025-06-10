@@ -80,8 +80,6 @@ accurateCastOrNull
 acos
 acosh
 addDate
-addInterval
-addTupleOfIntervals
 addressToLine
 addressToLineWithInlines
 addressToSymbol
