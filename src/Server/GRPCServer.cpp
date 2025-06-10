@@ -91,8 +91,8 @@ namespace ErrorCodes
 namespace
 {
     /// Make grpc to pass logging messages to ClickHouse logging system.
-    void initGRPCLogging(const Poco::Util::AbstractConfiguration & )
-    {
+    // void initGRPCLogging(const Poco::Util::AbstractConfiguration &)
+    // {
         // static std::once_flag once_flag;
         // std::call_once(once_flag, [&config]
         // {
@@ -121,7 +121,7 @@ namespace
         //         gpr_set_log_verbosity(GPR_LOG_SEVERITY_INFO);
         //     }
         // });
-    }
+    // }
 
     /// Gets file's contents as a string, throws an exception if failed.
     String readFile(const String & filepath)
@@ -1924,7 +1924,7 @@ GRPCServer::~GRPCServer()
 
 void GRPCServer::start()
 {
-    initGRPCLogging(iserver.config());
+    // initGRPCLogging(iserver.config());
     grpc::ServerBuilder builder;
     builder.AddListeningPort(address_to_listen.toString(), makeCredentials(iserver.config()));
     builder.RegisterService(&grpc_service);
