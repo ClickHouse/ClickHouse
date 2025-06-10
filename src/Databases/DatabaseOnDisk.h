@@ -1,19 +1,16 @@
 #pragma once
 
-#include <Databases/DatabasesCommon.h>
-#include <Disks/IDisk.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
+#include <Databases/DatabasesCommon.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
 {
 
 class Context;
-struct AlterCommand;
-
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
@@ -67,20 +64,11 @@ public:
     time_t getObjectMetadataModificationTime(const String & object_name) const override;
 
     String getDataPath() const override { return data_path; }
-    String getTableDataPath(const String & table_name) const override { return std::filesystem::path(data_path) / escapeForFileName(table_name) / ""; }
+    String getTableDataPath(const String & table_name) const override { return data_path + escapeForFileName(table_name) + "/"; }
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
     String getMetadataPath() const override { return metadata_path; }
 
-    static ASTPtr parseQueryFromMetadata(
-        LoggerPtr logger,
-        ContextPtr context,
-        DiskPtr disk,
-        const String & metadata_file_path,
-        bool throw_on_error = true,
-        bool remove_empty = false);
-
-    static ASTPtr parseQueryFromMetadata(
-        LoggerPtr logger, ContextPtr context, const String & metadata_file_path, const String & query, bool throw_on_error = true);
+    static ASTPtr parseQueryFromMetadata(LoggerPtr log, ContextPtr context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
 
     /// will throw when the table we want to attach already exists (in active / detached / detached permanently form)
     void checkMetadataFilenameAvailability(const String & to_table_name) const override;
@@ -91,8 +79,6 @@ public:
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
-    void alterDatabaseComment(const AlterCommand & alter_command) override;
-
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
@@ -100,14 +86,14 @@ protected:
 
     using IteratingFunction = std::function<void(const String &)>;
 
-    void iterateMetadataFiles(const IteratingFunction & process_metadata_file) const;
+    void iterateMetadataFiles(ContextPtr context, const IteratingFunction & process_metadata_file) const;
 
     ASTPtr getCreateTableQueryImpl(
         const String & table_name,
         ContextPtr context,
         bool throw_on_error) const override;
 
-    virtual ASTPtr getCreateQueryFromMetadata(const String & table_name, bool throw_on_error) const;
+    ASTPtr getCreateQueryFromMetadata(const String & metadata_path, bool throw_on_error) const;
     ASTPtr getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const;
 
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -115,9 +101,6 @@ protected:
 
     virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
     virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}
-
-    void createDirectories();
-    void createDirectoriesUnlocked() TSA_REQUIRES(mutex);
 
     const String metadata_path;
     const String data_path;

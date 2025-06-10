@@ -1,8 +1,5 @@
 -- Tags: no-fasttest, distributed
 
-SET allow_experimental_prql_dialect = 1;
-SET allow_experimental_kusto_dialect = 1;
-
 DROP TABLE IF EXISTS shared_test_table;
 DROP TABLE IF EXISTS distributed_test_table;
 

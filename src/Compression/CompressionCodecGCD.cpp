@@ -211,9 +211,7 @@ void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_si
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
-
-    if (bytes_to_skip != static_cast<UInt8>(source[1]))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
+    chassert(bytes_to_skip == static_cast<UInt8>(source[1]));
 
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 
@@ -258,10 +256,9 @@ UInt8 getGCDBytesSize(const IDataType * column_type)
     size_t max_size = column_type->getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8 || max_size == 16 || max_size == 32)
         return static_cast<UInt8>(max_size);
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Codec GCD is only applicable for data types of size 1, 2, 4, 8, 16, 32 bytes. Given type {}",
-        column_type->getName());
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD is only applicable for data types of size 1, 2, 4, 8, 16, 32 bytes. Given type {}",
+            column_type->getName());
 }
 
 }
@@ -276,7 +273,7 @@ void registerCodecGCD(CompressionCodecFactory & factory)
 
         if (arguments && !arguments->children.empty())
             throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 0 parameters, given {}", arguments->children.size());
-        if (column_type)
+        else if (column_type)
             gcd_bytes_size = getGCDBytesSize(column_type);
 
         return std::make_shared<CompressionCodecGCD>(gcd_bytes_size);

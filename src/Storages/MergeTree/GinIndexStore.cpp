@@ -4,7 +4,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/ICompressionCodec.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -25,7 +24,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_FORMAT_VERSION;
-    extern const int NOT_IMPLEMENTED;
 };
 
 GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit)
@@ -37,9 +35,11 @@ bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
 {
     if (useRoaring())
         return rowid_bitmap.contains(row_id);
-
-    const auto it = std::find(rowid_lst.begin(), rowid_lst.begin() + rowid_lst_length, row_id);
-    return it != rowid_lst.begin() + rowid_lst_length;
+    else
+    {
+        const auto * const it = std::find(rowid_lst.begin(), rowid_lst.begin()+rowid_lst_length, row_id);
+        return it != rowid_lst.begin() + rowid_lst_length;
+    }
 }
 
 void GinIndexPostingsBuilder::add(UInt32 row_id)
@@ -136,39 +136,36 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
 
         return postings_list;
     }
+    else
+    {
+        assert(postings_list_size < MIN_SIZE_FOR_ROARING_ENCODING);
+        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
+        UInt32 row_ids[MIN_SIZE_FOR_ROARING_ENCODING];
 
-    assert(postings_list_size < MIN_SIZE_FOR_ROARING_ENCODING);
-    GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
-    UInt32 row_ids[MIN_SIZE_FOR_ROARING_ENCODING];
-
-    for (auto i = 0; i < postings_list_size; ++i)
-        readVarUInt(row_ids[i], buffer);
-    postings_list->addMany(postings_list_size, row_ids);
-    return postings_list;
+        for (auto i = 0; i < postings_list_size; ++i)
+            readVarUInt(row_ids[i], buffer);
+        postings_list->addMany(postings_list_size, row_ids);
+        return postings_list;
+    }
 }
 
 GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_)
     : name(name_)
     , storage(storage_)
 {
-    if (storage->getType() != MergeTreeDataPartStorageType::Full)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INDEX {} with 'full_text' type supports only full storage", name);
 }
-
 GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_)
     : name(name_)
     , storage(storage_)
     , data_part_storage_builder(data_part_storage_builder_)
     , max_digestion_size(max_digestion_size_)
 {
-    if (storage->getType() != MergeTreeDataPartStorageType::Full)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INDEX {} with 'full_text' type supports only full storage", name);
 }
 
 bool GinIndexStore::exists() const
 {
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    return storage->existsFile(segment_id_file_name);
+    return storage->exists(segment_id_file_name);
 }
 
 UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
@@ -176,10 +173,10 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
     std::lock_guard guard(mutex);
 
     /// When the method is called for the first time, the file doesn't exist yet, need to create it and write segment ID 1.
-    if (!storage->existsFile(file_name))
+    if (!storage->exists(file_name))
     {
         /// Create file
-        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, 8, {});
+        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
 
         /// Write version
         writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
@@ -203,7 +200,7 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
 
     /// Save result + n
     {
-        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, 8, {});
+        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
 
         /// Write version
         writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
@@ -234,7 +231,7 @@ UInt32 GinIndexStore::getNumOfSegments()
         return cached_segment_num;
 
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    if (!storage->existsFile(segment_id_file_name))
+    if (!storage->exists(segment_id_file_name))
         return 0;
 
     UInt32 result = 0;
@@ -275,25 +272,13 @@ void GinIndexStore::finalize()
         postings_file_stream->finalize();
 }
 
-void GinIndexStore::cancel() noexcept
-{
-    if (metadata_file_stream)
-        metadata_file_stream->cancel();
-
-    if (dict_file_stream)
-        dict_file_stream->cancel();
-
-    if (postings_file_stream)
-        postings_file_stream->cancel();
-}
-
 void GinIndexStore::initFileStreams()
 {
     String metadata_file_name = getName() + GIN_SEGMENT_METADATA_FILE_TYPE;
     String dict_file_name = getName() + GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = getName() + GIN_POSTINGS_FILE_TYPE;
 
-    metadata_file_stream = data_part_storage_builder->writeFile(metadata_file_name, 4096, WriteMode::Append, {});
+    metadata_file_stream = data_part_storage_builder->writeFile(metadata_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     dict_file_stream = data_part_storage_builder->writeFile(dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
 }

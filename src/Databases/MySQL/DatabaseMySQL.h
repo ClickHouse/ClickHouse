@@ -5,8 +5,11 @@
 
 #include <mysqlxx/Pool.h>
 
+#include <Core/MultiEnum.h>
+#include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MySQL/MySQLSettings.h>
 #include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/PoolWithFailover.h>
@@ -23,8 +26,7 @@ namespace DB
 {
 
 class Context;
-struct AlterCommand;
-struct MySQLSettings;
+
 enum class MySQLDataTypesSupport : uint8_t;
 
 /** Real-time access to table list and table structure from remote MySQL
@@ -51,8 +53,6 @@ public:
     bool canContainMergeTreeTables() const override { return false; }
 
     bool canContainDistributedTables() const override { return false; }
-
-    bool canContainRocksDBTables() const override { return false; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
 
@@ -85,8 +85,6 @@ public:
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
-
-    void alterDatabaseComment(const AlterCommand & command) override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;

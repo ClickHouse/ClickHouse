@@ -1,8 +1,7 @@
-import datetime
 import os
 import subprocess
-
-from flask import Flask, flash, redirect, request, url_for
+import datetime
+from flask import Flask, flash, request, redirect, url_for
 
 
 def run_command(command, wait=False):

@@ -1,12 +1,12 @@
 import copy
 import logging
+import pytest
 import random
 import timeit
-from itertools import repeat
+
 from math import floor
 from multiprocessing import Pool
-
-import pytest
+from itertools import repeat
 
 from helpers.cluster import ClickHouseCluster
 
@@ -104,7 +104,7 @@ def test_with_merge_tree():
     _insert_queries_sequentially(
         table_name,
         _query_settings,
-        iterations=10,
+        iterations=100,
         max_values_size=1000,
         array_size_range=[10, 50],
     )
@@ -125,7 +125,7 @@ def test_with_merge_tree_multithread():
         table_name,
         _query_settings,
         thread_num=15,
-        tasks=100,
+        tasks=1000,
         max_values_size=1000,
         array_size_range=[10, 15],
     )
@@ -152,12 +152,12 @@ def test_with_replicated_merge_tree():
     _insert_queries_sequentially(
         table_name,
         settings,
-        iterations=10,
+        iterations=100,
         max_values_size=1000,
         array_size_range=[10, 50],
     )
 
-    node.query("DROP TABLE {} SYNC".format(table_name))
+    node.query("DROP TABLE IF EXISTS {}".format(table_name))
 
 
 def test_with_replicated_merge_tree_multithread():
@@ -180,9 +180,193 @@ def test_with_replicated_merge_tree_multithread():
         table_name,
         _query_settings,
         thread_num=15,
-        tasks=100,
+        tasks=1000,
         max_values_size=1000,
         array_size_range=[10, 15],
     )
 
-    node.query("DROP TABLE {} SYNC".format(table_name))
+    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+
+
+# Ensure that the combined duration of inserts with adaptive timeouts is less than
+# the combined duration for fixed timeouts.
+def test_compare_sequential_inserts_durations_for_adaptive_and_fixed_async_timeouts():
+    fixed_tm_table_name = "async_insert_mt_fixed_async_timeout"
+    node.query(
+        "CREATE TABLE {} (a UInt64, b Array(UInt64)) ENGINE=MergeTree() ORDER BY a".format(
+            fixed_tm_table_name
+        )
+    )
+
+    fixed_tm_settings = copy.copy(_query_settings)
+    fixed_tm_settings["async_insert_use_adaptive_busy_timeout"] = 0
+    fixed_tm_settings["async_insert_busy_timeout_ms"] = 200
+
+    fixed_tm_run_duration = timeit.timeit(
+        lambda: _insert_queries_sequentially(
+            fixed_tm_table_name,
+            fixed_tm_settings,
+            iterations=100,
+            max_values_size=1000,
+            array_size_range=[10, 50],
+        ),
+        setup="pass",
+        number=3,
+    )
+
+    node.query("DROP TABLE IF EXISTS {}".format(fixed_tm_table_name))
+
+    logging.debug(
+        "Run duration with fixed asynchronous timeout is {} seconds".format(
+            fixed_tm_run_duration
+        )
+    )
+
+    adaptive_tm_table_name = "async_insert_mt_adaptive_async_timeout"
+    node.query(
+        "CREATE TABLE {} (a UInt64, b Array(UInt64)) ENGINE=MergeTree() ORDER BY a".format(
+            adaptive_tm_table_name
+        )
+    )
+
+    adaptive_tm_settings = copy.copy(_query_settings)
+    adaptive_tm_settings["async_insert_busy_timeout_min_ms"] = 10
+    adaptive_tm_settings["async_insert_busy_timeout_max_ms"] = 1000
+
+    adaptive_tm_run_duration = timeit.timeit(
+        lambda: _insert_queries_sequentially(
+            adaptive_tm_table_name,
+            adaptive_tm_settings,
+            iterations=100,
+            max_values_size=1000,
+            array_size_range=[10, 50],
+        ),
+        setup="pass",
+        number=3,
+    )
+
+    logging.debug(
+        "Run duration with adaptive asynchronous timeout is {} seconds.".format(
+            adaptive_tm_run_duration
+        )
+    )
+
+    node.query("DROP TABLE IF EXISTS {}".format(adaptive_tm_table_name))
+
+    assert adaptive_tm_run_duration <= fixed_tm_run_duration
+
+
+# Ensure that the combined duration of inserts with adaptive timeouts is less than
+# the combined duration for fixed timeouts.
+def test_compare_parallel_inserts_durations_for_adaptive_and_fixed_async_timeouts():
+    fixed_tm_table_name = "async_insert_mt_fixed_async_timeout"
+    node.query(
+        "CREATE TABLE {} (a UInt64, b Array(UInt64)) ENGINE=MergeTree() ORDER BY a".format(
+            fixed_tm_table_name
+        )
+    )
+
+    fixed_tm_settings = copy.copy(_query_settings)
+    fixed_tm_settings["async_insert_use_adaptive_busy_timeout"] = 0
+    fixed_tm_settings["async_insert_busy_timeout_ms"] = 200
+
+    fixed_tm_run_duration = timeit.timeit(
+        lambda: _insert_queries_in_parallel(
+            fixed_tm_table_name,
+            fixed_tm_settings,
+            thread_num=15,
+            tasks=1000,
+            max_values_size=1000,
+            array_size_range=[10, 50],
+        ),
+        setup="pass",
+        number=3,
+    )
+
+    node.query("DROP TABLE IF EXISTS {}".format(fixed_tm_table_name))
+
+    logging.debug(
+        "Run duration with fixed asynchronous timeout is {} seconds".format(
+            fixed_tm_run_duration
+        )
+    )
+
+    adaptive_tm_table_name = "async_insert_mt_adaptive_async_timeout"
+    node.query(
+        "CREATE TABLE {} (a UInt64, b Array(UInt64)) ENGINE=MergeTree() ORDER BY a".format(
+            adaptive_tm_table_name
+        )
+    )
+
+    adaptive_tm_settings = copy.copy(_query_settings)
+    adaptive_tm_settings["async_insert_busy_timeout_min_ms"] = 10
+    adaptive_tm_settings["async_insert_busy_timeout_max_ms"] = 200
+
+    adaptive_tm_run_duration = timeit.timeit(
+        lambda: _insert_queries_in_parallel(
+            adaptive_tm_table_name,
+            adaptive_tm_settings,
+            thread_num=15,
+            tasks=100,
+            max_values_size=1000,
+            array_size_range=[10, 50],
+        ),
+        setup="pass",
+        number=3,
+    )
+
+    logging.debug(
+        "Run duration with adaptive asynchronous timeout is {} seconds.".format(
+            adaptive_tm_run_duration
+        )
+    )
+
+    node.query("DROP TABLE IF EXISTS {}".format(adaptive_tm_table_name))
+
+    assert adaptive_tm_run_duration <= fixed_tm_run_duration
+
+
+# Ensure that the delay converges to a minimum for sequential inserts and wait_for_async_insert=1.
+def test_change_queries_frequency():
+    table_name = "async_insert_mt_change_queries_frequencies"
+
+    create_query = " ".join(
+        (
+            "CREATE TABLE {} (a UInt64, b Array(UInt64))".format(table_name),
+            "ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_frequencies/{}', 'node')".format(
+                table_name
+            ),
+            "ORDER BY a",
+        )
+    )
+
+    node.query(create_query)
+
+    settings = copy.copy(_query_settings)
+    min_ms = 50
+    settings["async_insert_busy_timeout_min_ms"] = min_ms
+    settings["async_insert_busy_timeout_max_ms"] = 2000
+
+    _insert_queries_in_parallel(
+        table_name,
+        settings,
+        thread_num=15,
+        tasks=2000,
+        max_values_size=1000,
+        array_size_range=[10, 15],
+    )
+
+    _insert_queries_sequentially(
+        table_name,
+        settings,
+        iterations=200,
+        max_values_size=1000,
+        array_size_range=[10, 50],
+    )
+
+    select_log_query = "SELECT timeout_milliseconds FROM system.asynchronous_insert_log ORDER BY event_time DESC LIMIT 50"
+    res = node.query(select_log_query)
+    for line in res.splitlines():
+        assert int(line) == min_ms
+
+    node.query("DROP TABLE IF EXISTS {}".format(table_name))

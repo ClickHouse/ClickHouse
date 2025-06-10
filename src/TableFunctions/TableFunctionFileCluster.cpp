@@ -9,14 +9,10 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsString rename_files_after_processing;
-}
 
 StoragePtr TableFunctionFileCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
+    const std::string & table_name, const String & /*compression_method_*/) const
 {
     StoragePtr storage;
 
@@ -32,8 +28,9 @@ StoragePtr TableFunctionFileCluster::getStorage(
             columns,
             ConstraintsDescription{},
             String{},
-            context->getSettingsRef()[Setting::rename_files_after_processing],
-            path_to_archive};
+            context->getSettingsRef().rename_files_after_processing,
+            path_to_archive
+        };
 
         storage = std::make_shared<StorageFile>(filename, context->getUserFilesPath(), true, args);
     }
@@ -57,12 +54,10 @@ StoragePtr TableFunctionFileCluster::getStorage(
 void registerTableFunctionFileCluster(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFileCluster>(
-        {
-            .documentation = {
-                .description = R"(This table function is used for distributed reading of files in cluster nodes filesystems.)",
-                .examples{{"fileCluster", "SELECT * from fileCluster('my_cluster', 'file{1,2}.csv');", ""}},
-                .category = FunctionDocumentation::Category::TableFunction
-            },
+        {.documentation = {
+            .description=R"(This table function is used for distributed reading of files in cluster nodes filesystems.)",
+            .examples{{"fileCluster", "SELECT * from fileCluster('my_cluster', 'file{1,2}.csv');", ""}},
+            .categories{"File"}},
         .allow_readonly = false});
 }
 

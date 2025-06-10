@@ -6,13 +6,13 @@ The default database in the distributed table definition is left empty on purpos
 default database deduction.
 """
 
-from contextlib import contextmanager
-
 import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+
+from contextlib import contextmanager
 
 
 def bootstrap(cluster):
@@ -49,5 +49,4 @@ def start_cluster():
 def test_query():
     with start_cluster() as cluster:
         node1 = cluster.instances["node1"]
-        # For now, serialize_query_plan is disabled, because all the tables must exist on initiator.
-        assert TSV(node1.query("SELECT count() FROM default.test settings serialize_query_plan = 0")) == TSV("20")
+        assert TSV(node1.query("SELECT count() FROM default.test")) == TSV("20")
