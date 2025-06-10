@@ -1,11 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionGroupNumericIndexedVectorData.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <AggregateFunctions/Helpers.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/logger_useful.h>
 
 /// Include this last — see the reason inside
 #include <AggregateFunctions/AggregateFunctionGroupNumericIndexedVector.h>
@@ -59,7 +55,16 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
     WhichDataType first_which(argument_types[0]->getTypeId());
     WhichDataType second_which(argument_types[1]->getTypeId());
 
-    if (parameters.empty() || applyVisitor(FieldVisitorToString(), parameters[0]) == "BSI")
+    String vector_type_str = "BSI";
+    if (!parameters.empty())
+    {
+        String raw_vector_type_str = applyVisitor(FieldVisitorToString(), parameters[0]);
+        if (raw_vector_type_str.size() < 3)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "First parameter of AggregateFunction {} must be 'BSI'", name);
+        vector_type_str = raw_vector_type_str.substr(1, raw_vector_type_str.length() - 2);
+    }
+
+    if (vector_type_str == "BSI")
     {
         UInt32 integer_bit_num;
         UInt32 fraction_bit_num;
@@ -107,7 +112,11 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
                         integer_bit_num = 64;
                         break;
                     default:
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for {} must be one of: Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64.", name);
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Second argument for {} must be one of: Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, "
+                            "Float64.",
+                            name);
                 }
                 fraction_bit_num = 0;
             }
@@ -126,20 +135,22 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
                 name);
 
         /// Supported UInt8/UInt16/UInt32/Int8/Int16/Int32 in BSI vector type.
-        if (first_which.isUInt64() or first_which.isInt64() or first_which.isUInt128() or first_which.isInt128() or first_which.isUInt256()
-            or first_which.isInt256())
+        if (!(first_which.isInt8() or first_which.isInt16() or first_which.isInt32() or first_which.isUInt8() or first_which.isUInt16()
+              or first_which.isUInt32()))
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument type only support UInt8/Int8/UInt16/Int16/UInt32/Int32 in BSI");
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument type only support Int8/Int16/Int32/UInt8/UInt16/UInt32 in BSI");
 
-        if (!second_which.isUInt() && !second_which.isInt() && !second_which.isFloat())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument type must be NativeUInt or NativeInt or Float");
+        if (!(second_which.isNativeInt() || second_which.isNativeUInt() || second_which.isNativeFloat()))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The second argument type must be one of Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64");
 
         res = std::shared_ptr<const IAggregateFunction>(createBSIVectorWithTwoNumericTypesFirst<BSINumericIndexedVector>(
             *argument_types[0], *argument_types[1], argument_types, parameters, integer_bit_num, fraction_bit_num));
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported first parameter of AggregateFunction {}", name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported first parameter {} of AggregateFunction {}", vector_type_str, name);
     }
 
     if (!res)

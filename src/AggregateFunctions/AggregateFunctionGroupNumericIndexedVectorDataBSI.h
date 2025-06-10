@@ -1,24 +1,8 @@
 #pragma once
 
-#include <memory>
-
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/VarInt.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <base/arithmeticOverflow.h>
 #include <base/demangle.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
@@ -255,6 +239,10 @@ public:
         }
     }
 
+    /**
+     * Initialize the BSINumericIndexedVector from another BSINumericIndexedVector and a value.
+     * The result vector's index is the same as source vector rhs and set all indexes to a specific value.
+     */
     void initializeFromVectorAndValue(const BSINumericIndexedVector & rhs, ValueType value)
     {
         initialize(rhs.integer_bit_num, rhs.fraction_bit_num);
@@ -268,6 +256,15 @@ public:
         }
 
         const UInt32 total_bit_num = getTotalBitNum();
+
+        /** This converts a floating-point value into a fixed-point representation, then store it in data_array using bit-sliced index.
+          * - When value is an UInt/Int, fraction_bit_num is usually set to 0. So when integer_bit_num is set to the number of
+          *   storage bits of Int8/Int16/Int32/Int64/UInt8/UInt16/UInt32/UInt64(set integer_bit_num = 8 when value type is UInt8/Int8
+          *   and set integer_bit_num = 64 when value type is UInt64/Int64 etc.), the expression of numericIndexedVector is not
+          *   limited and overflow will not occur.
+          * - When value is a Float32/Float64, fraction_bit_num indicates how many bits are used to represent the decimal, Because the
+          *   maximum value of total_bit_num(integer_bit_num + fraction_bit_num) is 64, overflow may occur.
+          */
         Int64 scaled_value = Int64(value * (1ULL << fraction_bit_num));
         for (size_t i = 0; i < total_bit_num; ++i)
         {
@@ -361,6 +358,10 @@ public:
             {
                 data_array[new_integer_idx] = tmp_data_array[old_integer_idx];
                 ++old_integer_idx;
+            }
+            else if (isValueTypeSigned() and total_bit_num > 0)
+            {
+                data_array[new_integer_idx]->rb_or(*tmp_data_array[total_bit_num - 1]);
             }
             ++new_integer_idx;
         }
@@ -745,7 +746,9 @@ public:
         {
             UInt32 len = std::min(k_batch_size, length - offset);
 
-#if defined(__x86_64__)
+#if defined(__AVX512__)
+            cnt = roaring::internal::bitset_extract_setbits_avx512(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
+#elif defined(__AVX2__)
             cnt = roaring::internal::bitset_extract_setbits_avx2(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
 #else
             cnt = roaring::internal::bitset_extract_setbits(buffer.data() + offset, len, bit_buffer.data(), 0);
@@ -755,7 +758,7 @@ public:
                 UInt64 val = bit_buffer[i];
                 UInt64 row;
                 UInt64 col = val & 0x3f;
-#if defined(__x86_64__)
+#if defined(__BMI2__)
                 ASM_SHIFT_RIGHT(val, shift, row);
 #else
                 row = val >> shift;
@@ -870,7 +873,7 @@ public:
                 {
                     UInt64 tmp_offset;
                     UInt64 p = bit_buffer[i][j];
-#if defined(__x86_64__)
+#if defined(__BMI2__)
                     ASM_SHIFT_RIGHT(p, shift, tmp_offset);
 #else
                     tmp_offset = p >> shift;
@@ -1530,9 +1533,9 @@ public:
     /// original_vector(this)[index] += value.
     void addValue(IndexType index, ValueType value)
     {
-        if (sizeof(IndexType) >= 8)
+        if (sizeof(IndexType) > 4)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IndexType must be 32 bits in BSI format");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IndexType must be at most 32 bits in BSI format");
         }
 
         if (value == 0)
@@ -1544,6 +1547,15 @@ public:
         const UInt32 total_bit_num = getTotalBitNum();
 
         UInt32 ele = static_cast<UInt32>(index);
+
+        /** This converts a floating-point value into a fixed-point representation, then store it in data_array using bit-sliced index.
+          * - When value is an UInt/Int, fraction_bit_num is usually set to 0. So when integer_bit_num is set to the number of
+          *   storage bits of Int8/Int16/Int32/Int64/UInt8/UInt16/UInt32/UInt64(set integer_bit_num = 8 when value type is UInt8/Int8
+          *   and set integer_bit_num = 64 when value type is UInt64/Int64 etc.), the expression of numericIndexedVector is not
+          *   limited and overflow will not occur.
+          * - When value is a Float32/Float64, fraction_bit_num indicates how many bits are used to represent the decimal, Because the
+          *   maximum value of total_bit_num(integer_bit_num + fraction_bit_num) is 64, overflow may occur.
+          */
         Int64 scaled_value = Int64(value * (1L << fraction_bit_num));
 
         UInt8 cin = 0;
@@ -1731,13 +1743,14 @@ public:
                 }
                 else
                 {
-                    values_pod.emplace_back(static_cast<ValueType>(static_cast<Int64>(value) / std::pow(2.0, fraction_bit_num)));
+                    values_pod.emplace_back(
+                        static_cast<ValueType>(static_cast<Int64>(value) / static_cast<Float64>(1ULL << fraction_bit_num)));
                 }
             }
         }
         else
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported value type for getAllValueSum()");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported value type for toIndexValueMap()");
         }
         return index2value.size();
     }

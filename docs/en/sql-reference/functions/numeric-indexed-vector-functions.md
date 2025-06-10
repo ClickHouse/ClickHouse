@@ -8,28 +8,24 @@ title: 'NumericIndexedVector Functions'
 
 # NumericIndexedVector
 
-NumericIndexedVector is an abstract data structure that encapsulates a vector and implements vector aggregating and point-wise operations. There are two underlying storage methods: BSI and RawSum (not yet implemented). For theoretical basis and usage scenarios, refer to the paper [Large-Scale Metric Computation in Online Controlled Experiment Platform](https://arxiv.org/pdf/2405.08411).
+NumericIndexedVector is an abstract data structure that encapsulates a vector and implements vector aggregating and pointwise operations. Bit-Sliced Index is its storage method. For theoretical basis and usage scenarios, refer to the paper [Large-Scale Metric Computation in Online Controlled Experiment Platform](https://arxiv.org/pdf/2405.08411).
 
 ## BSI {#bit-sliced-index}
 
-In the BSI (Bit-Sliced Index) storage method, NumericIndexedVector compresses and stores vectors based on Roaring Bitmap and Bit-Sliced Index. Aggregating operations and point-wise operations are directly on the compressed data, which can significantly improve the efficiency of storage and query.
+In the BSI (Bit-Sliced Index) storage method, the data is stored in [Bit-Sliced Index](https://dl.acm.org/doi/abs/10.1145/253260.253268) and then compressed using [Roaring Bitmap](https://github.com/RoaringBitmap/RoaringBitmap). Aggregating operations and pointwise operations are directly on the compressed data, which can significantly improve the efficiency of storage and query.
 
 A vector contains indices and their corresponding values. The following are some characteristics and constraints of this data structure in BSI storage mode:
 
-- The index type can be one of `UInt8`, `UInt16`, or `UInt32`. **Note:** Considering the performance of 64-bit implementation of Roaring Bitmap, BSI format does not support `UInt64`/`Int64`, but will support it in RawSum.
+- The index type can be one of `UInt8`, `UInt16`, or `UInt32`. **Note:** Considering the performance of 64-bit implementation of Roaring Bitmap, BSI format does not support `UInt64`/`Int64`.
 - The value type can be one of `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, or `Float64`. **Note:** The value type does not automatically expand. For example, if you use `UInt8` as the value type, any sum that exceeds the capacity of `UInt8` will result in an overflow rather than being promoted to a higher type; similarly, operations on integers will yield integer results (e.g., division will not automatically convert to a floating-point result). Therefore, it is important to plan and design the value type ahead of time. In real-world scenarios, floating-point types (`Float32`/`Float64`) are commonly used.
 - Only two vectors with the same index type and value type can perform operations.
 - The underlying storage uses Bit-Sliced Index, with bitmap storing indexes. Roaring Bitmap is used as the specific implementation of bitmap. A best practice is to concentrate the index in several Roaring Bitmap containers as much as possible to maximize compression and query performance.
 - The Bit-Sliced Index mechanism converts value into binary. For floating-point types, the conversion uses fixed-point representation, which may lead to precision loss. The precision can be adjusted by customizing the number of bits used for the fractional part, default is 24 bits, which is sufficient for most scenarios. You can customize the number of integer bits and fractional bits when constructing NumericIndexedVector using aggregate function groupNumericIndexedVector with `-State`.
 - There are three cases for indices: non-zero value, zero value and non-existent. In NumericIndexedVector, only non-zero value and zero value will be stored. In addition, in pointwise operations between two NumericIndexedVectors, the value of non-existent index will be treated as 0. In the division scenario, the result is zero when the divisor is zero.
 
-## RawSum {#raw-sum}
-
-Use two sorted arrays to store index and value respectively; the sorting logic is to sort the index from small to large, and the user must ensure that there is no duplicate index. This storage structure is used to support the scenario where the index type is `UInt64`/`Int64`. The aggregating operations and point-wise operations defined on it are accelerated by vectorized instructions, which have not yet been implemented.
-
 # Create a numericIndexedVector object
 
-There are two ways to create this structure: one is to use the aggregate function `groupNumericIndexedVector` with `-State`, and the other is to build it from a map using `numericIndexedVectorBuild`. The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not.
+There are two ways to create this structure: one is to use the aggregate function `groupNumericIndexedVector` with `-State`. Of course, you can continue to add suffix `-if` to accept an additional condition. The aggregate function will only process the rows that trigger the condition. The other is to build it from a map using `numericIndexedVectorBuild`. The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not.
 
 ## groupNumericIndexedVector {#group-numeric-indexed-vector}
 
@@ -254,7 +250,7 @@ Row 1:
 res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer_bit_num":8,"fraction_bit_num":0,"zero_indexes_info":{"cardinality":"0"},"non_zero_indexes_info":{"total_cardinality":"3","all_value_sum":60,"number_of_bitmaps":"8","bitmap_info":{"cardinality":{"0":"0","1":"2","2":"2","3":"2","4":"2","5":"0","6":"0","7":"0"}}}}
 ```
 
-- `vector_type`: Storage type of the vector, `BSI` or `RawSum`(not yet implemented).
+- `vector_type`: Storage type of the vector, currently only `BSI` is supported.
 - `index_type`: Type of the index.
 - `value_type`: Type of the value.
 

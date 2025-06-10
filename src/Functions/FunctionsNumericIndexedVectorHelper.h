@@ -1,32 +1,6 @@
 #pragma once
 
-#include <cstddef>
-#include <memory>
-
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsExternalDictionaries.h>
-#include <Interpreters/castColumn.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorToString.h>
 
 /// Include this last — see the reason inside

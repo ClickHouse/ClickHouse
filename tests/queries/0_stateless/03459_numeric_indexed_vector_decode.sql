@@ -1,6 +1,5 @@
 -- Tags: no-parallel
 
--- test toVectorCompactArray; toVectorCompactBitset; toVectorCompactBitsetDense
 select 'TEST toVectorCompactArray';
 
 DROP TABLE IF EXISTS uin_value_details;
@@ -81,10 +80,10 @@ CREATE TABLE uin_value_details
 ENGINE = MergeTree()
 ORDER BY ds;
 
-insert into uin_value_details (ds, uin, value) select '2023-12-26', number, number * number from numbers(100000);
-insert into uin_value_details (ds, uin, value) select '2023-12-27', number, number from numbers(100000);
-insert into uin_value_details (ds, uin, value) select '2023-12-28', number * 3, number * 3 * number * 3 from numbers(100000);
-insert into uin_value_details (ds, uin, value) select '2023-12-29', number * 3, number * 3 from numbers(100000);
+insert into uin_value_details (ds, uin, value) select '2023-12-26', number, number * number from numbers(30000);
+insert into uin_value_details (ds, uin, value) select '2023-12-27', number, number from numbers(30000);
+insert into uin_value_details (ds, uin, value) select '2023-12-28', number * 3, number * 3 * number * 3 from numbers(30000);
+insert into uin_value_details (ds, uin, value) select '2023-12-29', number * 3, number * 3 from numbers(30000);
 
 with
 (
@@ -133,7 +132,8 @@ select arrayJoin([
 ]);
 
 
--- test insert empty aggregate function
+select 'test insert empty aggregate function';
+
 DROP TABLE IF EXISTS numeric_indexed_vector;
 CREATE TABLE numeric_indexed_vector
 (
@@ -144,3 +144,8 @@ ENGINE = MergeTree()
 ORDER BY ds;
 
 insert into numeric_indexed_vector (ds) values ('2023-12-26');
+
+DROP TABLE IF EXISTS uin_value_details;
+DROP TABLE IF EXISTS uin_value_details;
+DROP TABLE IF EXISTS uin_value_details;
+DROP TABLE IF EXISTS numeric_indexed_vector;

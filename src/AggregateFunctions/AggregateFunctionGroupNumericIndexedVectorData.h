@@ -1,20 +1,8 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/VarInt.h>
-#include <IO/WriteHelpers.h>
-#include <Common/Exception.h>
+#include <IO/WriteBuffer.h>
+#include <Common/PODArray.h>
 
 /// Include this last — see the reason inside
 #include <AggregateFunctions/AggregateFunctionGroupNumericIndexedVectorDataBSI.h>
