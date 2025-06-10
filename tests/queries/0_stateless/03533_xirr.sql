@@ -1,4 +1,5 @@
 SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6) AS xirr_rate;
+SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 0.5), 6) AS xirr_rate;
 SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate;
 
 SELECT xirr(123, toDate('2020-01-01')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -6,17 +7,19 @@ SELECT xirr([123], toDate('2020-01-01')); -- { serverError ILLEGAL_TYPE_OF_ARGUM
 SELECT xirr(123, [toDate('2020-01-01')]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT round(xirr([-10000], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT round(xirr([-10000, NULL, 4250, 3250], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT xirr([-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 1);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'Zero cashflow entries -> NaN:';
 SELECT xirr([]::Array(Float32), []::Array(Date));
 SELECT 'Just one cashflow entry -> NaN:';
 SELECT xirr([-10000], [toDate('2020-01-01')]);
 SELECT 'Zero cashflow -> NaN:';
-SELECT xirr([-0, 0], [toDate('2020-01-01'), toDate('2020-01-02')]);
+SELECT xirr([-0., 0.], [toDate('2020-01-01'), toDate('2020-01-02')]);
 SELECT 'Unsorted dates -> NaN:';
 SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate('2025-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6) AS xirr_rate;
 SELECT 'Non-unique dates -> NaN:';
 SELECT xirr([-100, 10], [toDate('2020-01-01'), toDate('2020-01-01')]);
+
 
 CREATE TABLE IF NOT EXISTS 3533_xirr_test (
     tag String,
@@ -45,40 +48,20 @@ INSERT INTO 3533_xirr_test VALUES
 
 SELECT
     tag,
-    round(
-        xirr(
-            groupArray(value),
-            groupArray(date)
-        )
-    , 6) AS result
+    round( xirr(groupArray(value), groupArray(date)), 6) AS result_f64_date,
+    round( xirr(groupArray(value), groupArray(date32)), 6) AS result_f64_date32,
+    round( xirr(groupArray(toFloat32(value)), groupArray(date)), 6) AS result_f32_date,
+    round( xirr(groupArray(toFloat32(value)), groupArray(date32)), 6) AS result_f32_date32,
+    round( xirr(groupArray(toInt64(value)), groupArray(date)), 6) AS result_i64_date,
+    round( xirr(groupArray(toInt64(value)), groupArray(date32)), 6) AS result_i64_date32
 FROM (
     SELECT 
         tag,
         date,
-        sum(value) as value
-    FROM 3533_xirr_test
-    GROUP BY tag, date
-    ORDER BY tag, date
-)
-GROUP BY tag
-ORDER BY tag;
-
-SELECT 
-    tag,
-    round(
-        xirr(
-            groupArray(value),
-            groupArray(date32)
-        )
-    , 6) AS result
-FROM (
-    SELECT 
-        tag,
         date32,
-        sum(value) as value
+        value
     FROM 3533_xirr_test
-    GROUP BY tag, date32
-    ORDER BY tag, date32
+    ORDER BY tag, date
 )
 GROUP BY tag
 ORDER BY tag;

@@ -50,7 +50,7 @@ struct XirrCalculator
     };
 
     template <typename T, typename D>
-    static std::expected<double, XirrErrorCode> calculateXirr(std::span<T> cashflows, std::span<D> & dates)
+    static std::expected<double, XirrErrorCode> calculateXirr(std::span<T> cashflows, std::span<D> & dates, double guess)
     {
         if (cashflows.size() != dates.size()) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size");
@@ -109,7 +109,7 @@ struct XirrCalculator
 
             double result = boost::math::tools::newton_raphson_iterate(
                 [&](double x) { return std::make_tuple(npv_function(x), npv_derivative(x)); },
-                0.1,
+                guess,
                 START_LOWER_BOUND,
                 START_UPPER_BOUND,
                 std::numeric_limits<double>::digits - 4,
@@ -162,7 +162,8 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
 
     bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -173,7 +174,12 @@ public:
             {"cashflow", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn), nullptr, "Array[Number]"},
             {"date", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isXirrDateColumn), nullptr, "Array[NativeNumber]"},
         };
-        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        auto optional_args = FunctionArgumentDescriptors{
+            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "FloatXX"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeFloat64>();
     }
@@ -200,6 +206,14 @@ public:
         const auto * cashflow_data = &cashflow_array->getData();
         const auto * date_data = &date_array->getData();
 
+        double guess = 0.1;
+        if (arguments.size() > 2)
+        {
+            if(!isColumnConst(*arguments[2].column))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (guess) must be a constant");
+            guess = arguments[2].column->getFloat64(0);
+        }
+
         auto process_arrays = [&](const auto * cashflow_values, const auto * date_values)
         {
             ColumnArray::Offset previous_offset = 0;
@@ -213,7 +227,7 @@ public:
                 auto cashflow_span = std::span(cashflow_values->getData().data() + previous_offset, length);
                 auto date_span = std::span(date_values->getData().data() + previous_offset, length);
 
-                auto xirr = XirrCalculator::calculateXirr(cashflow_span, date_span);
+                auto xirr = XirrCalculator::calculateXirr(cashflow_span, date_span, guess);
                 if (xirr.has_value()) [[likely]]
                     result_data[i] = xirr.value();
                 else
@@ -237,14 +251,6 @@ public:
                 dispatch_date(cf64, generic_date_data);
             else if (const auto * cf32 = typeid_cast<const ColumnVector<Float32> *>(generic_cashflow_data))
                 dispatch_date(cf32, generic_date_data);
-            else if (const auto * cu8 = typeid_cast<const ColumnVector<UInt8> *>(generic_cashflow_data))
-                dispatch_date(cu8, generic_date_data);
-            else if (const auto * cu16 = typeid_cast<const ColumnVector<UInt16> *>(generic_cashflow_data))
-                dispatch_date(cu16, generic_date_data);
-            else if (const auto * cu32 = typeid_cast<const ColumnVector<UInt32> *>(generic_cashflow_data))
-                dispatch_date(cu32, generic_date_data);
-            else if (const auto * cu64 = typeid_cast<const ColumnVector<UInt64> *>(generic_cashflow_data))
-                dispatch_date(cu64, generic_date_data);
             else if (const auto * ci8 = typeid_cast<const ColumnVector<Int8> *>(generic_cashflow_data))
                 dispatch_date(ci8, generic_date_data);
             else if (const auto * ci16 = typeid_cast<const ColumnVector<Int16> *>(generic_cashflow_data))
@@ -276,6 +282,7 @@ REGISTER_FUNCTION(FunctionXirr)
         .returned_value = "Returns the XIRR value as a Float64. If the calculation cannot be performed, it returns NaN.",
         .examples = {
             {"simple_example", "SELECT xirr([-10000, 5750, 4250,3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')])","0.6342972615260243"},
+            {"simple_example_with_guess", "SELECT xirr([-10000, 5750, 4250,3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 0.5)","0.6342972615260243"},
         },
         .introduced_in = {25, 6},
         .category = FunctionDocumentation::Category::Financial,
