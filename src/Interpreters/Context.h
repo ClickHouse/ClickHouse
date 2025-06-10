@@ -140,6 +140,7 @@ struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
 class S3SettingsByEndpoint;
+class AzureSettingsByEndpoint;
 class IDatabase;
 class DDLWorker;
 class ITableFunction;
@@ -253,6 +254,12 @@ using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 class SessionTracker;
 
 struct ServerSettings;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -539,6 +546,14 @@ protected:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
     mutable std::mutex sample_block_cache_mutex;
+
+    using StorageMetadataCache = std::unordered_map<const IStorage *, StorageMetadataPtr>;
+    mutable StorageMetadataCache storage_metadata_cache;
+    mutable std::mutex storage_metadata_cache_mutex;
+
+    using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
+    mutable StorageSnapshotCache storage_snapshot_cache;
+    mutable std::mutex storage_snapshot_cache_mutex;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -1333,6 +1348,7 @@ public:
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
     const DistributedSettings & getDistributedSettings() const;
     const S3SettingsByEndpoint & getStorageS3Settings() const;
+    const AzureSettingsByEndpoint & getStorageAzureSettings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
@@ -1417,6 +1433,8 @@ public:
     void setGoogleProtosPath(const String & path);
 
     std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
+    std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
+    std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
