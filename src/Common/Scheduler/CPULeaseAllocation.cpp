@@ -54,9 +54,9 @@ namespace ErrorCodes
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
-CPULeaseAllocation::Lease::Lease(CPULeaseAllocationPtr && parent_, size_t thread_num_)
-    : parent(std::move(parent_))
-    , thread_num(thread_num_)
+CPULeaseAllocation::Lease::Lease(CPULeaseAllocationPtr && parent_, size_t slot_id_)
+    : ISlotLease(slot_id_)
+    , parent(std::move(parent_))
 {}
 
 CPULeaseAllocation::Lease::~Lease()
@@ -345,7 +345,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
     if (granted + static_cast<Int64>(enqueued) < 0 || consumed_ns >= requested_ns)
     {
         // Check if preemption is needed
-        size_t thread_num = lease.thread_num;
+        size_t thread_num = lease.slot_id;
         if (thread_num == threads.last_running)
         {
             // Preemption. If we run more thread than we have slots, the last thread should wait for the next slot to be granted.
@@ -462,7 +462,7 @@ void CPULeaseAllocation::release(Lease & lease)
     consume(lock, delta_ns);
 
     // Release the slot
-    downscale(lease.thread_num);
+    downscale(lease.slot_id);
     lease.parent.reset();
 }
 

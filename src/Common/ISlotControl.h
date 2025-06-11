@@ -20,7 +20,7 @@ namespace DB
 //
 // Allocated slots can be in one of the following states:
 //  * granted: allocated, but not yet acquired.
-//  * acquired: a granted slot becomes acquired by using IAcquiredSlot.
+//  * acquired: a granted slot becomes acquired (e.g. by using IAcquiredSlot).
 //
 // Example for CPU (see ConcurrencyControl.h). Every slot represents one CPU in the system.
 // Slot allocation is a request to allocate specific number of CPUs for a specific query.
@@ -28,7 +28,6 @@ namespace DB
 // total number of threads in the system to be limited and the distribution process to be controlled.
 //
 // TODO:
-// - for preemption - ability to return granted slot back and reacquire it later.
 // - for memory allocations - variable size of slots (in bytes).
 
 /// Number of slots
@@ -41,6 +40,12 @@ constexpr SlotCount UnlimitedSlots = std::numeric_limits<SlotCount>::max();
 class IAcquiredSlot : public std::enable_shared_from_this<IAcquiredSlot>, boost::noncopyable
 {
 public:
+    const size_t slot_id; /// Unique identifier of a slot within specific ISlotAllocation.
+
+    explicit IAcquiredSlot(size_t slot_id_)
+        : slot_id(slot_id_)
+    {}
+
     virtual ~IAcquiredSlot() = default;
 };
 
@@ -51,6 +56,10 @@ using AcquiredSlotPtr = std::shared_ptr<IAcquiredSlot>;
 class ISlotLease : public IAcquiredSlot
 {
 public:
+    explicit ISlotLease(size_t slot_id_)
+        : IAcquiredSlot(slot_id_)
+    {}
+
     /// This method is for CPU consumption only.
     /// It should be called from a thread that started using the slot.
     /// Required for obtainting CPU time for the thread, because ctor is called in another thread.
@@ -99,7 +108,8 @@ class GrantedAllocation : public ISlotAllocation
 {
 public:
     explicit GrantedAllocation(SlotCount granted_)
-        : granted(granted_)
+        : total(granted_)
+        , granted(granted_)
     {}
 
     [[nodiscard]] AcquiredSlotPtr tryAcquire() override
@@ -108,7 +118,7 @@ public:
         while (value)
         {
             if (granted.compare_exchange_strong(value, value - 1))
-                return std::make_shared<IAcquiredSlot>();
+                return std::make_shared<IAcquiredSlot>(total - value);
         }
         return {};
     }
@@ -121,6 +131,7 @@ public:
     }
 
 private:
+    const SlotCount total; // thread-safe constant total number of slots
     std::atomic<SlotCount> granted; // allocated, but not yet acquired
 };
 

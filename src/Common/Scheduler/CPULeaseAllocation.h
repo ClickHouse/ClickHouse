@@ -52,7 +52,7 @@ private:
     class Lease final : public ISlotLease
     {
     public:
-        explicit Lease(CPULeaseAllocationPtr && parent_, size_t thread_num_);
+        explicit Lease(CPULeaseAllocationPtr && parent_, size_t slot_id_);
         ~Lease() override;
         void startConsumption() override;
         bool renew() override;
@@ -60,7 +60,6 @@ private:
     private:
         friend class CPULeaseAllocation;
         CPULeaseAllocationPtr parent; // Hold allocation to enforce destruction order
-        const size_t thread_num; // Thread number that acquired the slot
         UInt64 last_report_ns = 0; // Last time when the slot was renewed or started
     };
 

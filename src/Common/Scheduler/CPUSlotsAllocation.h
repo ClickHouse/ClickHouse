@@ -48,7 +48,7 @@ public:
 class AcquiredCPUSlot final : public IAcquiredSlot
 {
 public:
-    explicit AcquiredCPUSlot(SlotAllocationPtr && allocation_, CPUSlotRequest * request_);
+    explicit AcquiredCPUSlot(SlotAllocationPtr && allocation_, CPUSlotRequest * request_, size_t slot_id_);
     ~AcquiredCPUSlot() override;
 
 private:
@@ -101,6 +101,7 @@ private:
     static constexpr SlotCount exception_value = SlotCount(-1);
     std::atomic<SlotCount> noncompeting{0}; // allocated noncompeting slots left to acquire
     std::atomic<SlotCount> granted{0}; // allocated competing slots left to acquire
+    std::atomic<size_t> last_slot_id{0};
     std::atomic<size_t> last_acquire_index{0};
 
     // Field that require sync with the scheduler thread

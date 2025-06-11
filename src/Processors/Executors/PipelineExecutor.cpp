@@ -369,19 +369,33 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
 #endif
 }
 
-// This function properly allocates CPU slots for the thread pool
-// There are a few possible modes of concurrency control.
-// 1) If we have `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)`:
-//    all thread should be allocated through scheduler using the same resource link
-// 2) If we have `CREATE RESOURCE cpu (WORKER THREAD)`:
-//    the first (master) thread uses "free" noncompeting CPU slot, the other threads are allocated through resource scheduler
-// 3) If we have two resources `CREATE RESOURCE master_cpu (MASTER THREAD)` and `CREATE RESOURCE worker_cpu (WORKER THREAD)`:
-//    all thread should be allocated through scheduler using different resource links
-// 4) If we have no cpu-related resources:
-//    the ConcurrencyControl class is used instead of resource scheduler
-// NOTE: With enabled workload CPU scheduling, both links could be empty in case of unknown workload.
-static SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool concurrency_control)
+/// Properly allocate CPU slots or lease for the thread pool
+static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control)
 {
+    // The first thread is called master thread.
+    // It is NOT the thread that handles async tasks.
+    // Master thread is different from other threads due to special role in scheduling:
+    //  1. During query start, master thread spawns worker threads, so starting it fast is important.
+    //  2. It should never be downscaled to avoid query deadlock (0 threads to process tasks), although it can be preempted.
+    //  3. When using ConcurrencyControl, master thread is granted immediately and may not request CPU slot (see 'fair_round_robin').
+    //  4. When using resource scheduler, master thread may use different resource link than worker threads.
+    const auto master_threads = 1uz;
+
+    // Other threads are called worker threads.
+    // They are competing for CPU slots with other queries and may not start or can be preempted and downscaled after they start.
+    // Worker threads are spawned by master thread or other worker threads.
+    const auto worker_threads = num_threads - master_threads;
+
+    // There are a few possible modes of concurrency control.
+    // 1) If we have `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)`:
+    //    all thread should be allocated through scheduler using the same resource link
+    // 2) If we have `CREATE RESOURCE cpu (WORKER THREAD)`:
+    //    master thread uses "free" noncompeting CPU slot, the other threads are allocated through resource scheduler
+    // 3) If we have two resources `CREATE RESOURCE master_cpu (MASTER THREAD)` and `CREATE RESOURCE worker_cpu (WORKER THREAD)`:
+    //    all thread should be allocated through scheduler using different resource links
+    // 4) If we have no cpu-related resources:
+    //    the ConcurrencyControl class is used instead of resource scheduler
+    // NOTE: With enabled workload CPU scheduling, both links could be empty in case of unknown workload.
     if (concurrency_control)
     {
         auto query_context = CurrentThread::getQueryContext();
@@ -417,15 +431,13 @@ static SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool concurrency_c
             }
             else
             {
-                constexpr size_t master_threads = 1uz;
-                return std::make_shared<CPUSlotsAllocation>(master_threads, num_threads - master_threads, master_thread_link, worker_thread_link);
+                return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link);
             }
         }
         else
         {
-            /// Allocate CPU slots from concurrency control
-            constexpr size_t min_threads = 1uz; // Number of threads that should be granted to every query no matter how many threads are already running in other queries
-            return ConcurrencyControl::instance().allocate(min_threads, num_threads);
+            /// Allocate CPU slots from concurrency control with guaranteed master thread slot.
+            return ConcurrencyControl::instance().allocate(master_threads, num_threads);
         }
     }
     else
@@ -441,7 +453,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     is_execution_initialized = true;
     tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
-    cpu_slots = allocateCPUSlots(num_threads, concurrency_control);
+    cpu_slots = allocateCPU(num_threads, concurrency_control);
 
     Queue queue;
     Queue async_queue;
@@ -485,7 +497,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         if (!slot)
             return;
 
-        size_t thread_num = threads.fetch_add(1);
+        size_t thread_num = slot->slot_id;
 
         /// Count of threads in use should be updated for proper finish() condition.
         /// NOTE: this will not decrease `use_threads` below initially granted count
