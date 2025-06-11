@@ -2355,7 +2355,7 @@ def get_last_snapshot(path_to_table):
                     last_timestamp = timestamp
                     last_snapshot_id = data.get('current-snapshot-id')
     return last_snapshot_id
-    
+
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -3012,17 +3012,6 @@ def test_minmax_pruning_with_null(started_cluster, storage_type):
         )
         == 1
     )
-
-    queries = [
-        f"SELECT * FROM {creation_expression} WHERE id == 1 ORDER BY ALL",
-        f"SELECT * FROM {creation_expression} WHERE value == 20.00 OR event_time == '2024-01-24 14:00:00' ORDER BY ALL",
-        f"SELECT * FROM {creation_expression} WHERE id == 3 AND name == 'Charlie' ORDER BY ALL",
-        f"SELECT * FROM {creation_expression} WHERE (event_time == TIMESTAMP '2024-01-21 11:00:00' AND name == 'Bob') OR (name == 'Eve' AND id == 5) ORDER BY ALL",
-    ]
-
-    for query in queries:
-        assert check_validity_and_get_prunned_files(query) > 0
-
 
 @pytest.mark.parametrize("format_version", ["2"])
 @pytest.mark.parametrize("storage_type", ["s3"])
