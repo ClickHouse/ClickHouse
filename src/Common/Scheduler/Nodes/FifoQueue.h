@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SCHEDULER_NODE;
+    extern const int SERVER_OVERLOADED;
 }
 
 /*
