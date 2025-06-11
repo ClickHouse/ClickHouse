@@ -135,11 +135,9 @@ cutQueryString
 cutQueryStringAndFragment
 cutURLParameter
 cutWWW
-dateDiff
 dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
-dateTrunc
 decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
@@ -602,7 +600,6 @@ toIPv6OrDefault
 toIPv6OrNull
 toIPv6OrZero
 toISOWeek
-toISOYear
 toInt128
 toInt128OrDefault
 toInt128OrNull
@@ -706,12 +703,10 @@ toUnixTimestamp64Milli
 toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
-toWeek
 toYYYYMM
 toYYYYMMDD
 toYYYYMMDDhhmmss
 toYear
-toYearWeek
 today
 transactionID
 transactionLatestSnapshot

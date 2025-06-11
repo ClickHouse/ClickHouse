@@ -170,11 +170,9 @@ cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 damerauLevenshteinDistance
-dateDiff
 dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
-dateTrunc
 decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
@@ -292,8 +290,6 @@ formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
-fromDaysSinceYearZero
-fromDaysSinceYearZero32
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
 fromUTCTimestamp
@@ -745,7 +741,6 @@ toDateTimeOrZero
 toDayOfMonth
 toDayOfWeek
 toDayOfYear
-toDaysSinceYearZero
 toDecimal128
 toDecimal128OrDefault
 toDecimal128OrNull
@@ -782,7 +777,6 @@ toIPv6OrDefault
 toIPv6OrNull
 toIPv6OrZero
 toISOWeek
-toISOYear
 toInt128
 toInt128OrDefault
 toInt128OrNull
@@ -889,12 +883,10 @@ toUnixTimestamp64Milli
 toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
-toWeek
 toYYYYMM
 toYYYYMMDD
 toYYYYMMDDhhmmss
 toYear
-toYearWeek
 today
 tokens
 topLevelDomain
