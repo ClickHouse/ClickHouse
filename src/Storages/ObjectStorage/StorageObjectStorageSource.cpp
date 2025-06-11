@@ -597,12 +597,15 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_prefetch;
 
-    /// FIXME: Use async buffer if use_cache,
-    /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
-    const bool use_async_buffer = use_prefetch || use_cache;
-
-    if (use_async_buffer)
-        modified_read_settings.remote_read_buffer_use_external_buffer = true;
+    bool use_async_buffer = false;
+    ReadSettings nested_buffer_read_settings;
+    if (use_prefetch || use_cache)
+    {
+        nested_buffer_read_settings = modified_read_settings.withNestedBuffer();
+        /// FIXME: Use async buffer if use_cache,
+        /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
+        use_async_buffer = true;
+    }
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
     if (use_cache)
@@ -621,9 +624,9 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
             const auto cache_key = FileCacheKey::fromKey(hash.get128());
             auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
 
-            auto read_buffer_creator = [path = object_info.getPath(), object_size, modified_read_settings, object_storage]()
+            auto read_buffer_creator = [path = object_info.getPath(), object_size, nested_buffer_read_settings, object_storage]()
             {
-                return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings);
+                return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings);
             };
 
             modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
@@ -634,11 +637,11 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 cache,
                 FileCache::getCommonUser(),
                 read_buffer_creator,
-                modified_read_settings,
+                use_async_buffer ? nested_buffer_read_settings : read_settings,
                 std::string(CurrentThread::getQueryId()),
                 object_size,
                 /* allow_seeks */true,
-                /* use_external_buffer */true,
+                /* use_external_buffer */use_async_buffer,
                 /* read_until_position */std::nullopt,
                 context_->getFilesystemCacheLog());
 
