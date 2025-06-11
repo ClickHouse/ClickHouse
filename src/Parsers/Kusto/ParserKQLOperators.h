@@ -1,7 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/IKQLParserBase.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 namespace DB
 {
@@ -9,7 +9,7 @@ namespace DB
 class KQLOperators
 {
 public:
-    static bool convert(std::vector<String> & tokens, IParser::Pos & pos);
+    static bool convert(std::vector<String> & tokens, IKQLParser::KQLPos & pos);
 
 protected:
     enum class WildcardsPos : uint8_t
@@ -22,12 +22,12 @@ protected:
 
     static String genHaystackOpExpr(
         std::vector<String> & tokens,
-        IParser::Pos & token_pos,
+        IKQLParser::KQLPos & token_pos,
         String kql_op,
         String ch_op,
         WildcardsPos wildcards_pos,
         WildcardsPos space_pos = WildcardsPos::none);
-    static String genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::Pos & token_pos, String kql_op, String ch_op);
+    static String genHasAnyAllOpExpr(std::vector<String> & tokens, IKQLParser::KQLPos & token_pos, String kql_op, String ch_op);
 };
 
 }

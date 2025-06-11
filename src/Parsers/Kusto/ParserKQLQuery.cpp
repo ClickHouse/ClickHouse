@@ -26,6 +26,7 @@
 
 #include <fmt/format.h>
 
+
 namespace DB
 {
 
@@ -36,17 +37,17 @@ namespace ErrorCodes
 
 bool ParserKQLBase::parseByString(String expr, ASTPtr & node, uint32_t max_depth, uint32_t max_backtracks)
 {
-    Expected expected;
+    KQLExpected expected;
 
-    Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true);
-    IParser::Pos pos(tokens, max_depth, max_backtracks);
+    KQLTokens tokens(expr.data(), expr.data() + expr.size());
+    IKQLParser::KQLPos pos(tokens, max_depth, max_backtracks);
     return parse(pos, node, expected);
 }
 
 bool ParserKQLBase::parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks)
 {
     Expected expected;
-    Tokens token_subquery(query.data(), query.data() + query.size(), 0, true);
+    Tokens token_subquery(query.data(), query.data() + query.size());
     IParser::Pos pos_subquery(token_subquery, max_depth, max_backtracks);
     if (!parser->parse(pos_subquery, select_node, expected))
         return false;
@@ -124,20 +125,20 @@ bool ParserKQLBase::setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bo
 
 String ParserKQLBase::getExprFromToken(const String & text, uint32_t max_depth, uint32_t max_backtracks)
 {
-    Tokens tokens(text.data(), text.data() + text.size(), 0, true);
-    IParser::Pos pos(tokens, max_depth, max_backtracks);
+    KQLTokens tokens(text.data(), text.data() + text.size());
+    IKQLParser::KQLPos pos(tokens, max_depth, max_backtracks);
 
     return getExprFromToken(pos);
 }
 
-String ParserKQLBase::getExprFromPipe(Pos & pos)
+String ParserKQLBase::getExprFromPipe(KQLPos & pos)
 {
     BracketCount bracket_count;
     auto end = pos;
-    while (isValidKQLPos(end) && end->type != TokenType::Semicolon)
+    while (isValidKQLPos(end) && end->type != KQLTokenType::Semicolon)
     {
         bracket_count.count(end);
-        if (end->type == TokenType::PipeMark && bracket_count.isZero())
+        if (end->type == KQLTokenType::PipeMark && bracket_count.isZero())
             break;
 
         ++end;
@@ -147,23 +148,23 @@ String ParserKQLBase::getExprFromPipe(Pos & pos)
     return (pos <= end) ? String(pos->begin, end->end) : "";
 }
 
-String ParserKQLBase::getExprFromToken(Pos & pos)
+String ParserKQLBase::getExprFromToken(KQLPos & pos)
 {
-    std::vector<Pos> comma_pos;
+    std::vector<KQLPos> comma_pos;
     comma_pos.push_back(pos);
 
     size_t paren_count = 0;
-    while (isValidKQLPos(pos) && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::Semicolon)
     {
-        if (pos->type == TokenType::PipeMark && paren_count == 0)
+        if (pos->type == KQLTokenType::PipeMark && paren_count == 0)
             break;
 
-        if (pos->type == TokenType::OpeningRoundBracket)
+        if (pos->type == KQLTokenType::OpeningRoundBracket)
             ++paren_count;
-        if (pos->type == TokenType::ClosingRoundBracket)
+        if (pos->type == KQLTokenType::ClosingRoundBracket)
             --paren_count;
 
-        if (pos->type == TokenType::Comma && paren_count == 0)
+        if (pos->type == KQLTokenType::Comma && paren_count == 0)
         {
             ++pos;
             comma_pos.push_back(pos);
@@ -173,7 +174,7 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
     }
 
     std::vector<String> columns;
-    auto set_columns = [&](Pos & start_pos, Pos & end_pos)
+    auto set_columns = [&](KQLPos & start_pos, KQLPos & end_pos)
     {
         bool has_alias = false;
         auto equal_pos = start_pos;
@@ -216,7 +217,7 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
         {
             if (!KQLOperators::convert(tokens, columms_start_pos))
             {
-                if (columms_start_pos->type == TokenType::BareWord && function_name.empty())
+                if (columms_start_pos->type == KQLTokenType::BareWord && function_name.empty())
                     function_name = String(columms_start_pos->begin, columms_start_pos->end);
 
                 auto expr = IParserKQLFunction::getExpression(columms_start_pos);
@@ -234,7 +235,7 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
             if (start_pos == equal_pos)
             {
                 String new_column_str;
-                if (start_pos->type != TokenType::BareWord)
+                if (start_pos->type != KQLTokenType::BareWord)
                     throw Exception(
                         ErrorCodes::SYNTAX_ERROR, "{} is not a valid alias", std::string_view(start_pos->begin, start_pos->end));
 
@@ -252,7 +253,7 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
                 if (function_name != "array_sort_asc" && function_name != "array_sort_desc")
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "{} is not a valid alias", whole_alias);
 
-                if (start_pos->type != TokenType::OpeningRoundBracket && equal_pos->type != TokenType::ClosingRoundBracket)
+                if (start_pos->type != KQLTokenType::OpeningRoundBracket && equal_pos->type != KQLTokenType::ClosingRoundBracket)
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "{} is not a valid alias for {}", whole_alias, function_name);
 
                 String alias_inside;
@@ -261,7 +262,7 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
                 ++start_pos;
                 while (start_pos < equal_pos)
                 {
-                    if (start_pos->type == TokenType::Comma)
+                    if (start_pos->type == KQLTokenType::Comma)
                     {
                         alias_inside.clear();
                         if (comma_meet)
@@ -270,7 +271,7 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
                     }
                     else
                     {
-                        if (!alias_inside.empty() || start_pos->type != TokenType::BareWord)
+                        if (!alias_inside.empty() || start_pos->type != KQLTokenType::BareWord)
                             throw Exception(ErrorCodes::SYNTAX_ERROR, "{} has invalid alias for {}", whole_alias, function_name);
 
                         alias_inside = String(start_pos->begin, start_pos->end);
@@ -306,7 +307,7 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
     return res;
 }
 
-std::unique_ptr<IParserBase> ParserKQLQuery::getOperator(String & op_name)
+std::unique_ptr<IKQLParserBase> ParserKQLQuery::getOperator(String & op_name)
 {
     if (op_name == "filter" || op_name == "where")
         return std::make_unique<ParserKQLFilter>();
@@ -333,7 +334,7 @@ std::unique_ptr<IParserBase> ParserKQLQuery::getOperator(String & op_name)
     return nullptr;
 }
 
-bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLQuery::parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected)
 {
     struct KQLOperatorDataFlowState
     {
@@ -363,7 +364,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
            {"make-series", {"make-series", true, true, 5}},
            {"mv-expand", {"mv-expand", true, true, 5}}};
 
-    std::vector<std::pair<String, Pos>> operation_pos;
+    std::vector<std::pair<String, KQLPos>> operation_pos;
 
     String table_name(pos->begin, pos->end);
 
@@ -376,14 +377,14 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     uint16_t bracket_count = 0;
 
-    while (isValidKQLPos(pos) && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::Semicolon)
     {
-        if (pos->type == TokenType::OpeningRoundBracket)
+        if (pos->type == KQLTokenType::OpeningRoundBracket)
             ++bracket_count;
-        if (pos->type == TokenType::ClosingRoundBracket)
+        if (pos->type == KQLTokenType::ClosingRoundBracket)
             --bracket_count;
 
-        if (pos->type == TokenType::PipeMark && bracket_count == 0)
+        if (pos->type == KQLTokenType::PipeMark && bracket_count == 0)
         {
             ++pos;
             if (!isValidKQLPos(pos))
@@ -399,7 +400,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (!isValidKQLPos(pos))
                         return false;
 
-                    ParserKeyword s_by(Keyword::BY);
+                    ParserKQLKeyword s_by(Keyword::BY);
                     if (s_by.ignore(pos, expected))
                     {
                         kql_operator = "order by";
@@ -413,7 +414,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (!isValidKQLPos(pos))
                         return false;
 
-                    ParserToken s_dash(TokenType::Minus);
+                    ParserKQLToken s_dash(KQLTokenType::Minus);
                     if (s_dash.ignore(pos, expected))
                     {
                         if (!isValidKQLPos(pos))
@@ -483,7 +484,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto last_pos = operation_pos.back().second;
         auto last_op = operation_pos.back().first;
 
-        auto set_main_query_clause = [&](const String & op, Pos & op_pos)
+        auto set_main_query_clause = [&](const String & op, KQLPos & op_pos)
         {
             auto op_str = ParserKQLBase::getExprFromPipe(op_pos);
             if (op == "project")
@@ -525,8 +526,8 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 --last_pos;
 
             String sub_query = fmt::format("({})", String(operation_pos.front().second->begin, last_pos->end));
-            Tokens token_subquery(sub_query.data(), sub_query.data() + sub_query.size(), 0, true);
-            IParser::Pos pos_subquery(token_subquery, pos.max_depth, pos.max_backtracks);
+            KQLTokens token_subquery(sub_query.data(), sub_query.data() + sub_query.size());
+            IKQLParser::KQLPos pos_subquery(token_subquery, pos.max_depth, pos.max_backtracks);
 
             if (!ParserKQLSubquery().parse(pos_subquery, tables, expected))
                 return false;
@@ -546,8 +547,8 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             auto oprator = getOperator(op_str);
             if (oprator)
             {
-                Tokens token_clause(op_calsue.data(), op_calsue.data() + op_calsue.size(), 0, true);
-                IParser::Pos pos_clause(token_clause, pos.max_depth, pos.max_backtracks);
+                KQLTokens token_clause(op_calsue.data(), op_calsue.data() + op_calsue.size());
+                IKQLParser::KQLPos pos_clause(token_clause, pos.max_depth, pos.max_backtracks);
                 if (!oprator->parse(pos_clause, node, expected))
                     return false;
             }
@@ -579,8 +580,8 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!node->as<ASTSelectQuery>()->select())
     {
         auto expr = String("*");
-        Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true);
-        IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
+        KQLTokens tokens(expr.data(), expr.data() + expr.size());
+        IKQLParser::KQLPos new_pos(tokens, pos.max_depth, pos.max_backtracks);
         if (!std::make_unique<ParserKQLProject>()->parse(new_pos, node, expected))
             return false;
     }
@@ -588,7 +589,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserKQLSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLSubquery::parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected)
 {
     ASTPtr select_node;
 
@@ -613,21 +614,31 @@ bool ParserKQLSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserSimpleCHSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSimpleCHSubquery::parseImpl(KQLPos & pos, ASTPtr & node, [[maybe_unused]]KQLExpected & expected)
 {
     ASTPtr sub_select_node;
     ParserSelectWithUnionQuery select;
 
-    if (pos->type != TokenType::OpeningRoundBracket)
+    if (pos->type != KQLTokenType::OpeningRoundBracket)
         return false;
     ++pos;
 
-    if (!select.parse(pos, sub_select_node, expected))
+    String query;
+    Expected sql_expected;
+    while (pos.isValid() && pos->type != KQLTokenType::Semicolon)
+    {
+        query += " " + String(pos->begin, pos->end);
+        ++pos;
+    }
+    Tokens sql_tokens(query.data(), query.data() + query.size());
+    IParser::Pos sql_pos(sql_tokens, pos.max_depth, pos.max_backtracks);
+
+    if (!select.parse(sql_pos, sub_select_node, sql_expected))
         return false;
 
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-    ++pos;
+   /// if (pos->type != KQLTokenType::ClosingRoundBracket)
+    //    return false;
+    //++pos;
 
     if (parent_select_node && parent_select_node->as<ASTSelectQuery>()->tables())
     {

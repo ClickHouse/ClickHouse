@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/IKQLParserBase.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 
 namespace DB
@@ -31,11 +31,11 @@ protected:
         String limit;
     };
 
-    static bool parseColumnArrayExprs(ColumnArrayExprs & column_array_exprs, Pos & pos, Expected & expected);
-    static bool parserMVExpand(KQLMVExpand & kql_mv_expand, Pos & pos, Expected & expected);
+    static bool parseColumnArrayExprs(ColumnArrayExprs & column_array_exprs, KQLPos & pos, KQLExpected & expected);
+    static bool parserMVExpand(KQLMVExpand & kql_mv_expand, KQLPos & pos, KQLExpected & expected);
     static bool genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks);
 
     const char * getName() const override { return "KQL mv-expand"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected) override;
 };
 }

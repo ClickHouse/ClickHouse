@@ -16,9 +16,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-namespace
-{
-
 enum class KQLOperatorValue
 {
     none,
@@ -131,14 +128,11 @@ void rebuildSubqueryForInOperator(ASTPtr & node, bool useLowerCase)
         selectColumns->children[0] = std::move(funcs);
     }
 }
-
-}
-
-String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::Pos & token_pos, String kql_op, String ch_op)
+String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IKQLParser::KQLPos & token_pos, String kql_op, String ch_op)
 {
     String new_expr;
-    Expected expected;
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    KQLExpected expected;
+    ParserKQLToken s_lparen(KQLTokenType::OpeningRoundBracket);
 
     ++token_pos;
     if (!s_lparen.ignore(token_pos, expected))
@@ -148,16 +142,16 @@ String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::P
 
     String logic_op = (kql_op == "has_all") ? " and " : " or ";
 
-    while (isValidKQLPos(token_pos) && token_pos->type != TokenType::PipeMark && token_pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(token_pos) && token_pos->type != KQLTokenType::PipeMark && token_pos->type != KQLTokenType::Semicolon)
     {
         auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
-        if (token_pos->type == TokenType::Comma)
+        if (token_pos->type == KQLTokenType::Comma)
             new_expr = new_expr + logic_op;
         else
             new_expr = new_expr + ch_op + "(" + haystack + "," + tmp_arg + ")";
 
         ++token_pos;
-        if (token_pos->type == TokenType::ClosingRoundBracket)
+        if (token_pos->type == KQLTokenType::ClosingRoundBracket)
             break;
     }
 
@@ -165,7 +159,7 @@ String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::P
     return new_expr;
 }
 
-String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & ch_op)
+String genEqOpExprCis(std::vector<String> & tokens, IKQLParser::KQLPos & token_pos, const String & ch_op)
 {
     String tmp_arg(token_pos->begin, token_pos->end);
 
@@ -177,7 +171,7 @@ String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, co
     new_expr += ch_op + " ";
     ++token_pos;
 
-    if (token_pos->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier)
+    if (token_pos->type == KQLTokenType::StringLiteral || token_pos->type == KQLTokenType::QuotedIdentifier)
         new_expr += "lower('" + IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "')";
     else
         new_expr += "lower(" + IParserKQLFunction::getExpression(token_pos) + ")";
@@ -186,13 +180,13 @@ String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, co
     return new_expr;
 }
 
-String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & kql_op, const String & ch_op)
+String genInOpExprCis(std::vector<String> & tokens, IKQLParser::KQLPos & token_pos, const String & kql_op, const String & ch_op)
 {
     ParserKQLTableFunction kqlfun_p;
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserKQLToken s_lparen(KQLTokenType::OpeningRoundBracket);
 
     ASTPtr select;
-    Expected expected;
+    KQLExpected expected;
     String new_expr;
 
     ++token_pos;
@@ -217,14 +211,14 @@ String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, co
     --token_pos;
 
     new_expr += ch_op;
-    while (isValidKQLPos(token_pos) && token_pos->type != TokenType::PipeMark && token_pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(token_pos) && token_pos->type != KQLTokenType::PipeMark && token_pos->type != KQLTokenType::Semicolon)
     {
         auto tmp_arg = String(token_pos->begin, token_pos->end);
-        if (token_pos->type != TokenType::Comma && token_pos->type != TokenType::ClosingRoundBracket
-            && token_pos->type != TokenType::OpeningRoundBracket && token_pos->type != TokenType::OpeningSquareBracket
-            && token_pos->type != TokenType::ClosingSquareBracket && tmp_arg != "~" && tmp_arg != "dynamic")
+        if (token_pos->type != KQLTokenType::Comma && token_pos->type != KQLTokenType::ClosingRoundBracket
+            && token_pos->type != KQLTokenType::OpeningRoundBracket && token_pos->type != KQLTokenType::OpeningSquareBracket
+            && token_pos->type != KQLTokenType::ClosingSquareBracket && tmp_arg != "~" && tmp_arg != "dynamic")
         {
-            if (token_pos->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier)
+            if (token_pos->type == KQLTokenType::StringLiteral || token_pos->type == KQLTokenType::QuotedIdentifier)
                 new_expr += "lower('" + IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "')";
             else
                 new_expr += "lower(" + tmp_arg + ")";
@@ -232,20 +226,20 @@ String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, co
         else if (tmp_arg != "~" && tmp_arg != "dynamic" && tmp_arg != "[" && tmp_arg != "]")
             new_expr += tmp_arg;
 
-        if (token_pos->type == TokenType::ClosingRoundBracket)
+        if (token_pos->type == KQLTokenType::ClosingRoundBracket)
             break;
         ++token_pos;
     }
     return new_expr;
 }
 
-std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, const std::string & ch_op)
+std::string genInOpExpr(IKQLParser::KQLPos & token_pos, const std::string & kql_op, const std::string & ch_op)
 {
     ParserKQLTableFunction kqlfun_p;
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserKQLToken s_lparen(KQLTokenType::OpeningRoundBracket);
 
     ASTPtr select;
-    Expected expected;
+    KQLExpected expected;
 
     ++token_pos;
     if (!s_lparen.ignore(token_pos, expected))
@@ -266,7 +260,7 @@ std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, co
 }
 
 String KQLOperators::genHaystackOpExpr(
-    std::vector<String> & tokens, IParser::Pos & token_pos, String kql_op, String ch_op, WildcardsPos wildcards_pos, WildcardsPos space_pos)
+    std::vector<String> & tokens, IKQLParser::KQLPos & token_pos, String kql_op, String ch_op, WildcardsPos wildcards_pos, WildcardsPos space_pos)
 {
     String new_expr;
     String left_wildcards;
@@ -314,10 +308,10 @@ String KQLOperators::genHaystackOpExpr(
 
     ++token_pos;
 
-    if (!tokens.empty() && ((token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier))
+    if (!tokens.empty() && ((token_pos)->type == KQLTokenType::StringLiteral || token_pos->type == KQLTokenType::QuotedIdentifier))
         new_expr = ch_op + "(" + tokens.back() + ", '" + left_wildcards + left_space + String(token_pos->begin + 1, token_pos->end - 1)
             + right_space + right_wildcards + "')";
-    else if (!tokens.empty() && ((token_pos)->type == TokenType::BareWord))
+    else if (!tokens.empty() && ((token_pos)->type == KQLTokenType::BareWord))
     {
         auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
         new_expr = ch_op + "(" + tokens.back() + ", concat('" + left_wildcards + left_space + "', " + tmp_arg + ", '" + right_space
@@ -329,31 +323,38 @@ String KQLOperators::genHaystackOpExpr(
     return new_expr;
 }
 
-bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
+bool KQLOperators::convert(std::vector<String> & tokens, IKQLParser::KQLPos & pos)
 {
     auto begin = pos;
 
-    if (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    if (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
     {
         KQLOperatorValue op_value = KQLOperatorValue::none;
 
         auto token = String(pos->begin, pos->end);
-
+        auto prev_pos = pos;
         String op = token;
-        if (token == "!")
+        if (pos->type == KQLTokenType::ExclamationMark)
         {
             ++pos;
-            if (!isValidKQLPos(pos) || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
+            if (!isValidKQLPos(pos) || pos->type == KQLTokenType::PipeMark || pos->type == KQLTokenType::Semicolon)
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid negative operator");
-            op = "!" + String(pos->begin, pos->end);
+
+            op = String(prev_pos->begin, pos->end);
+            if (KQLOperator.find(op) == KQLOperator.end())
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid negative operator");
         }
         else if (token == "matches")
         {
             ++pos;
-            if (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+            if (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
             {
                 if (String(pos->begin, pos->end) == "regex")
-                    op += " regex";
+                {
+                    op = String(prev_pos->begin, pos->end);
+                    if (KQLOperator.find(op) == KQLOperator.end())
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid matches regex operator");
+                }
                 else
                     --pos;
             }
@@ -364,10 +365,14 @@ bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
         }
 
         ++pos;
-        if (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+        if (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
         {
-            if (String(pos->begin, pos->end) == "~")
-                op += "~";
+            if (pos->type == KQLTokenType::Tilde)
+            {
+                op = String(prev_pos->begin, pos->end);
+                if (KQLOperator.find(op) == KQLOperator.end())
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid ~ operator");
+            }
             else
                 --pos;
         }

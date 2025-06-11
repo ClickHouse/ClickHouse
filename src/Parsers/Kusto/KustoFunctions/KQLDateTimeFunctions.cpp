@@ -1,20 +1,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-#include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/Utilities.h>
-#include <Parsers/ParserSetQuery.h>
 #include "Poco/String.h"
 
 #include <fmt/format.h>
@@ -27,21 +15,21 @@ extern const int SYNTAX_ERROR;
 namespace DB
 {
 
-bool TimeSpan::convertImpl(String & out, IParser::Pos & pos)
+bool TimeSpan::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool Ago::convertImpl(String & out, IParser::Pos & pos)
+bool Ago::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
     ++pos;
-    if (pos->type != TokenType::ClosingRoundBracket)
+    if (pos->type != KQLTokenType::ClosingRoundBracket)
     {
         const auto offset = getConvertedArgument(fn_name, pos);
         out = fmt::format("now64(9,'UTC') - {}", offset);
@@ -51,7 +39,7 @@ bool Ago::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DatetimeAdd::convertImpl(String & out, IParser::Pos & pos)
+bool DatetimeAdd::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -77,7 +65,7 @@ bool DatetimeAdd::convertImpl(String & out, IParser::Pos & pos)
     return true;
 };
 
-bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
+bool DatetimePart::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -93,7 +81,7 @@ bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
         part.erase(part.size() - 1); // erase the last quote
     }
     String date;
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         date = getConvertedArgument(fn_name, pos);
@@ -125,7 +113,7 @@ bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DatetimeDiff::convertImpl(String & out, IParser::Pos & pos)
+bool DatetimeDiff::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -143,12 +131,12 @@ bool DatetimeDiff::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DayOfMonth::convertImpl(String & out, IParser::Pos & pos)
+bool DayOfMonth::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "toDayOfMonth");
 }
 
-bool DayOfWeek::convertImpl(String & out, IParser::Pos & pos)
+bool DayOfWeek::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -160,12 +148,12 @@ bool DayOfWeek::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DayOfYear::convertImpl(String & out, IParser::Pos & pos)
+bool DayOfYear::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "toDayOfYear");
 }
 
-bool EndOfMonth::convertImpl(String & out, IParser::Pos & pos)
+bool EndOfMonth::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -175,7 +163,7 @@ bool EndOfMonth::convertImpl(String & out, IParser::Pos & pos)
     const String datetime_str = getConvertedArgument(fn_name, pos);
     String offset = "0";
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         offset = getConvertedArgument(fn_name, pos);
@@ -191,7 +179,7 @@ bool EndOfMonth::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool EndOfDay::convertImpl(String & out, IParser::Pos & pos)
+bool EndOfDay::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -201,7 +189,7 @@ bool EndOfDay::convertImpl(String & out, IParser::Pos & pos)
     const String datetime_str = getConvertedArgument(fn_name, pos);
     String offset = "0";
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         offset = getConvertedArgument(fn_name, pos);
@@ -212,7 +200,7 @@ bool EndOfDay::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool EndOfWeek::convertImpl(String & out, IParser::Pos & pos)
+bool EndOfWeek::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -222,7 +210,7 @@ bool EndOfWeek::convertImpl(String & out, IParser::Pos & pos)
     const String datetime_str = getConvertedArgument(fn_name, pos);
     String offset = "0";
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         offset = getConvertedArgument(fn_name, pos);
@@ -233,7 +221,7 @@ bool EndOfWeek::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool EndOfYear::convertImpl(String & out, IParser::Pos & pos)
+bool EndOfYear::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -246,7 +234,7 @@ bool EndOfYear::convertImpl(String & out, IParser::Pos & pos)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Number of arguments do not match in function: {}", fn_name);
 
     String offset = "0";
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         offset = getConvertedArgument(fn_name, pos);
@@ -265,7 +253,7 @@ bool EndOfYear::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
+bool FormatDateTime::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -350,7 +338,7 @@ bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
 
     return true;
 }
-bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
+bool FormatTimeSpan::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -494,22 +482,22 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool GetMonth::convertImpl(String & out, IParser::Pos & pos)
+bool GetMonth::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "toMonth");
 }
 
-bool GetYear::convertImpl(String & out, IParser::Pos & pos)
+bool GetYear::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "toYear");
 }
 
-bool HoursOfDay::convertImpl(String & out, IParser::Pos & pos)
+bool HoursOfDay::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "toHour");
 }
 
-bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
+bool MakeTimeSpan::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
 
@@ -524,11 +512,11 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     String second;
     int arg_count = 0;
     std::vector<String> args;
-    while (isValidKQLPos(pos) && pos->type != TokenType::ClosingRoundBracket)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::ClosingRoundBracket)
     {
         String arg = getConvertedArgument(fn_name, pos);
         args.insert(args.begin(), arg);
-        if (pos->type == TokenType::Comma)
+        if (pos->type == KQLTokenType::Comma)
             ++pos;
         ++arg_count;
     }
@@ -580,7 +568,7 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool MakeDateTime::convertImpl(String & out, IParser::Pos & pos)
+bool MakeDateTime::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
 
@@ -591,10 +579,10 @@ bool MakeDateTime::convertImpl(String & out, IParser::Pos & pos)
     String arguments;
     int arg_count = 0;
 
-    while (isValidKQLPos(pos) && pos->type != TokenType::ClosingRoundBracket)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::ClosingRoundBracket)
     {
         String arg = getConvertedArgument(fn_name, pos);
-        if (pos->type == TokenType::Comma)
+        if (pos->type == KQLTokenType::Comma)
             ++pos;
         arguments = arguments + arg + ",";
         ++arg_count;
@@ -615,14 +603,14 @@ bool MakeDateTime::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Now::convertImpl(String & out, IParser::Pos & pos)
+bool Now::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
     ++pos;
-    if (pos->type != TokenType::ClosingRoundBracket)
+    if (pos->type != KQLTokenType::ClosingRoundBracket)
     {
         const auto offset = getConvertedArgument(fn_name, pos);
         out = fmt::format("now64(9,'UTC') + {}", offset);
@@ -632,7 +620,7 @@ bool Now::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool StartOfDay::convertImpl(String & out, IParser::Pos & pos)
+bool StartOfDay::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
 
@@ -643,7 +631,7 @@ bool StartOfDay::convertImpl(String & out, IParser::Pos & pos)
     const String datetime_str = getConvertedArgument(fn_name, pos);
     String offset = "0";
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         offset = getConvertedArgument(fn_name, pos);
@@ -652,7 +640,7 @@ bool StartOfDay::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool StartOfMonth::convertImpl(String & out, IParser::Pos & pos)
+bool StartOfMonth::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -662,7 +650,7 @@ bool StartOfMonth::convertImpl(String & out, IParser::Pos & pos)
     const String datetime_str = getConvertedArgument(fn_name, pos);
     String offset = "0";
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         offset = getConvertedArgument(fn_name, pos);
@@ -672,7 +660,7 @@ bool StartOfMonth::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool StartOfWeek::convertImpl(String & out, IParser::Pos & pos)
+bool StartOfWeek::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -682,7 +670,7 @@ bool StartOfWeek::convertImpl(String & out, IParser::Pos & pos)
     const String datetime_str = getConvertedArgument(fn_name, pos);
     String offset = "0";
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         offset = getConvertedArgument(fn_name, pos);
@@ -692,7 +680,7 @@ bool StartOfWeek::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool StartOfYear::convertImpl(String & out, IParser::Pos & pos)
+bool StartOfYear::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -702,7 +690,7 @@ bool StartOfYear::convertImpl(String & out, IParser::Pos & pos)
     const String datetime_str = getConvertedArgument(fn_name, pos);
     String offset = "0";
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         offset = getConvertedArgument(fn_name, pos);
@@ -712,7 +700,7 @@ bool StartOfYear::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool UnixTimeMicrosecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
+bool UnixTimeMicrosecondsToDateTime::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -725,7 +713,7 @@ bool UnixTimeMicrosecondsToDateTime::convertImpl(String & out, IParser::Pos & po
     return true;
 }
 
-bool UnixTimeMillisecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
+bool UnixTimeMillisecondsToDateTime::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -738,7 +726,7 @@ bool UnixTimeMillisecondsToDateTime::convertImpl(String & out, IParser::Pos & po
     return true;
 }
 
-bool UnixTimeNanosecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
+bool UnixTimeNanosecondsToDateTime::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -751,14 +739,14 @@ bool UnixTimeNanosecondsToDateTime::convertImpl(String & out, IParser::Pos & pos
     return true;
 }
 
-bool UnixTimeSecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
+bool UnixTimeSecondsToDateTime::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
     ++pos;
-    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+    if (pos->type == KQLTokenType::QuotedIdentifier || pos->type == KQLTokenType::StringLiteral)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} accepts only long, int and double type of arguments", fn_name);
 
     String expression = getConvertedArgument(fn_name, pos);
@@ -772,7 +760,7 @@ bool UnixTimeSecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool WeekOfYear::convertImpl(String & out, IParser::Pos & pos)
+bool WeekOfYear::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -783,7 +771,7 @@ bool WeekOfYear::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool MonthOfYear::convertImpl(String & out, IParser::Pos & pos)
+bool MonthOfYear::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "toMonth");
 }

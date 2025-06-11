@@ -11,11 +11,11 @@ namespace DB
   * Used in syntax error message.
   */
 
-class IParser;
+class IKQLParser;
 
 /// Parse query or set 'out_error_message'.
 ASTPtr tryParseKQLQuery(
-    IParser & parser,
+    IKQLParser & parser,
     const char * & _out_query_end, // query start as input parameter, query end as output
     const char * end,
     std::string & out_error_message,
@@ -30,7 +30,7 @@ ASTPtr tryParseKQLQuery(
 
 /// Parse query or throw an exception with error message.
 ASTPtr parseKQLQueryAndMovePosition(
-    IParser & parser,
+    IKQLParser & parser,
     const char * & pos,                /// Moved to end of parsed fragment.
     const char * end,
     const std::string & description,
@@ -40,7 +40,7 @@ ASTPtr parseKQLQueryAndMovePosition(
     size_t max_parser_backtracks);
 
 ASTPtr parseKQLQuery(
-    IParser & parser,
+    IKQLParser & parser,
     const char * begin,
     const char * end,
     const std::string & description,
@@ -49,7 +49,7 @@ ASTPtr parseKQLQuery(
     size_t max_parser_backtracks);
 
 ASTPtr parseKQLQuery(
-    IParser & parser,
+    IKQLParser & parser,
     const std::string & query,
     const std::string & query_description,
     size_t max_query_size,
@@ -57,7 +57,7 @@ ASTPtr parseKQLQuery(
     size_t max_parser_backtracks);
 
 ASTPtr parseKQLQuery(
-    IParser & parser,
+    IKQLParser & parser,
     const std::string & query,
     size_t max_query_size,
     size_t max_parser_depth,

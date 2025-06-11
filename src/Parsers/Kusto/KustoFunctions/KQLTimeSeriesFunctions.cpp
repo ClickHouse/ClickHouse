@@ -1,126 +1,87 @@
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-#include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/ParserSetQuery.h>
 
 namespace DB
 {
 
-bool SeriesFir::convertImpl(String & out, IParser::Pos & pos)
+namespace ErrorCodes
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    extern const int NOT_IMPLEMENTED;
 }
 
-bool SeriesIir::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesFir::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesFitLine::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesIir::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());}
+
+bool SeriesFitLine::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesFitLineDynamic::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesFitLineDynamic::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesFit2lines::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesFit2lines::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesFit2linesDynamic::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesFit2linesDynamic::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesOutliers::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesOutliers::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesPeriodsDetect::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesPeriodsDetect::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesPeriodsValidate::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesPeriodsValidate::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesStatsDynamic::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesStatsDynamic::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesStats::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesStats::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesFillBackward::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesFillBackward::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesFillConst::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesFillConst::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesFillForward::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesFillForward::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool SeriesFillLinear::convertImpl(String & out, IParser::Pos & pos)
+bool SeriesFillLinear::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
 }

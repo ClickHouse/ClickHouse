@@ -14,7 +14,7 @@
 namespace DB
 {
 
-bool ParserKQLMakeSeries ::parseAggregationColumns(AggregationColumns & aggregation_columns, Pos & pos)
+bool ParserKQLMakeSeries ::parseAggregationColumns(AggregationColumns & aggregation_columns, KQLPos & pos)
 {
     std::unordered_set<String> allowed_aggregation(
         {"avg",
@@ -34,14 +34,14 @@ bool ParserKQLMakeSeries ::parseAggregationColumns(AggregationColumns & aggregat
          "sumif",
          "variance"});
 
-    Expected expected;
-    ParserKeyword s_default(Keyword::DEFAULT);
-    ParserToken equals(TokenType::Equals);
-    ParserToken open_bracket(TokenType::OpeningRoundBracket);
-    ParserToken close_bracket(TokenType::ClosingRoundBracket);
-    ParserToken comma(TokenType::Comma);
+    KQLExpected expected;
+    ParserKQLKeyword s_default(Keyword::DEFAULT);
+    ParserKQLToken equals(KQLTokenType::Equals);
+    ParserKQLToken open_bracket(KQLTokenType::OpeningRoundBracket);
+    ParserKQLToken close_bracket(KQLTokenType::ClosingRoundBracket);
+    ParserKQLToken comma(KQLTokenType::Comma);
 
-    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
     {
         String alias;
         String aggregation_fun;
@@ -90,7 +90,7 @@ bool ParserKQLMakeSeries ::parseAggregationColumns(AggregationColumns & aggregat
     return true;
 }
 
-bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step, Pos & pos)
+bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step, KQLPos & pos)
 {
     auto begin = pos;
     auto from_pos = begin;
@@ -98,7 +98,7 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
     auto step_pos = begin;
     auto end_pos = begin;
 
-    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
     {
         if (String(pos->begin, pos->end) == "from")
             from_pos = pos;
@@ -176,10 +176,10 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 
     auto date_type_cast = [&](String & src)
     {
-        Tokens tokens(src.data(), src.data() + src.size(), 0, true);
+        Tokens tokens(src.data(), src.data() + src.size());
         IParser::Pos pos(tokens, max_depth, max_backtracks);
         String res;
-        while (isValidKQLPos(pos))
+        while (pos.isValid())
         {
             String tmp = String(pos->begin, pos->end);
             if (tmp == "parseDateTime64BestEffortOrNull")
@@ -205,9 +205,9 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     auto get_group_expression_alias = [&]
     {
         std::vector<String> group_expression_tokens;
-        Tokens tokens(group_expression.data(), group_expression.data() + group_expression.size(), 0, true);
+        Tokens tokens(group_expression.data(), group_expression.data() + group_expression.size());
         IParser::Pos pos(tokens, max_depth, max_backtracks);
-        while (isValidKQLPos(pos))
+        while (pos.isValid())
         {
             if (String(pos->begin, pos->end) == "AS")
             {
@@ -367,14 +367,14 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     return true;
 }
 
-bool ParserKQLMakeSeries ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLMakeSeries ::parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected)
 {
     auto begin = pos;
-    ParserKeyword s_on(Keyword::ON);
-    ParserKeyword s_by(Keyword::BY);
+    ParserKQLKeyword s_on(Keyword::ON);
+    ParserKQLKeyword s_by(Keyword::BY);
 
-    ParserToken equals(TokenType::Equals);
-    ParserToken comma(TokenType::Comma);
+    ParserKQLToken equals(KQLTokenType::Equals);
+    ParserKQLToken comma(KQLTokenType::Comma);
 
     ASTPtr select_expression_list;
 
@@ -386,8 +386,6 @@ bool ParserKQLMakeSeries ::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     auto & group_expression = kql_make_series.group_expression;
 
     ParserKQLDateTypeTimespan time_span;
-
-    //const auto make_series_parameters = getMakeSeriesParameters(pos);
 
     if (!parseAggregationColumns(aggregation_columns, pos))
         return false;
@@ -419,10 +417,11 @@ bool ParserKQLMakeSeries ::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     makeSeries(kql_make_series, node, pos.max_depth, pos.max_backtracks);
 
-    Tokens token_main_query(kql_make_series.main_query.data(), kql_make_series.main_query.data() + kql_make_series.main_query.size(), 0, true);
+    Tokens token_main_query(kql_make_series.main_query.data(), kql_make_series.main_query.data() + kql_make_series.main_query.size());
     IParser::Pos pos_main_query(token_main_query, pos.max_depth, pos.max_backtracks);
 
-    if (!ParserNotEmptyExpressionList(true).parse(pos_main_query, select_expression_list, expected))
+    Expected sql_expected;
+    if (!ParserNotEmptyExpressionList(true).parse(pos_main_query, select_expression_list, sql_expected))
         return false;
     node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
 
