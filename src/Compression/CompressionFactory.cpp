@@ -115,7 +115,7 @@ CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
     return family_code_and_creator->second({}, nullptr);
 }
 
-void CompressionCodecFactory::getMutableColumns(MutableColumns & res_columns) const
+void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns) const
 {
     std::for_each(
         family_name_with_codec.begin(),
@@ -126,14 +126,13 @@ void CompressionCodecFactory::getMutableColumns(MutableColumns & res_columns) co
             CompressionCodecPtr tmp = it.second({}, nullptr);
 
             res_columns[0]->insert(name);
-            res_columns[1]->insert(tmp->getMethodByte());
-            res_columns[2]->insert(tmp->isCompression());
-            res_columns[3]->insert(tmp->isGenericCompression());
-            res_columns[4]->insert(tmp->isEncryption());
-            res_columns[5]->insert(tmp->isFloatingPointTimeSeriesCodec());
-            res_columns[6]->insert(tmp->isDeltaCompression());
-            res_columns[7]->insert(tmp->isExperimental());
-            res_columns[8]->insert(tmp->getNotes());
+            res_columns[1]->insert(tmp->isCompression());
+            res_columns[2]->insert(tmp->isGenericCompression());
+            res_columns[3]->insert(tmp->isEncryption());
+            res_columns[4]->insert(tmp->isFloatingPointTimeSeriesCodec());
+            res_columns[5]->insert(tmp->isDeltaCompression());
+            res_columns[6]->insert(tmp->isExperimental());
+            res_columns[7]->insert(tmp->getNotes());
         }
     );
 }
