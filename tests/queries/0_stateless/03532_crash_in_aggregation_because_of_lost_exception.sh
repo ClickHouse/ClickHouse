@@ -14,7 +14,7 @@ insert into t1 select number from numbers_mt(1e6);
 optimize table t1 final;
 """
 
-for _ in {1..50}; do
+for _ in {1..150}; do
   $CLICKHOUSE_CLIENT -q """
     SELECT count()
     FROM
