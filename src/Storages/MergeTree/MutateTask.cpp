@@ -809,11 +809,11 @@ void analyzeMetadataCommandsForSomeColumnsMode(MutationContext & ctx, const Alte
             ctx.for_file_renames.push_back(command);
             dropColumn(ctx, command.column_name);
         }
-        else if (command.type == MutationCommand::Type::RENAME_COLUMN)
-        {
-            ctx.for_file_renames.push_back(command);
-            renameColumn(ctx, command.column_name, command.rename_to);
-        }
+        // else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+        // {
+        //     ctx.for_file_renames.push_back(command);
+        //     renameColumn(ctx, command.column_name, command.rename_to);
+        // }
     }
 
     /// We don't add renames from commands, instead we take them from rename_map.
@@ -2411,6 +2411,15 @@ bool MutateTask::prepare()
 
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
+
+        if (ctx->execution_mode == MutationContext::Mode::AllColumns)
+        {
+            ctx->new_part_columns = {};
+            ctx->new_serialization_infos = {};
+
+            for (const auto & column : ctx->updated_header)
+                MutationHelpers::addColumn(*ctx, column.name, column.type);
+        }
 
         ctx->progress_callback = MergeProgressCallback(
             (*ctx->mutate_entry)->ptr(),
