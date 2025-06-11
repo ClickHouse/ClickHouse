@@ -295,7 +295,7 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
                 return ReturnType(false);
         }
 
-        result = static_cast<ToNativeType>(out);
+        result = static_cast<ToNativeType>(std::lround(out));
         return ReturnType(true);
     }
     else
