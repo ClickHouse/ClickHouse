@@ -473,7 +473,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     if (previous_snapshot_id != relevant_snapshot_id)
     {
         cached_unprunned_files_for_last_processed_snapshot = std::nullopt;
-        schema_id_by_data_file_initialized = false;
+        schema_id_by_data_file_initialized.store(false);
         return true;
     }
     return previous_snapshot_schema_id != relevant_snapshot_schema_id;
@@ -593,12 +593,13 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
 
 std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String data_path) const
 {
+    if (!schema_id_by_data_file_initialized.load())
     {
         std::lock_guard lock(schema_id_by_data_file_mutex);
-        if (!schema_id_by_data_file_initialized)
+        if (!schema_id_by_data_file_initialized.load())
         {
             initializeSchemasFromManifestList(relevant_snapshot->manifest_list_entries);
-            schema_id_by_data_file_initialized = true;
+            schema_id_by_data_file_initialized.store(true);
         }
     }
     auto schema_id_it = schema_id_by_data_file.find(data_path);

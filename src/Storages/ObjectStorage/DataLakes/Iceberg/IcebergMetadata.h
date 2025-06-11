@@ -106,7 +106,7 @@ private:
     Int32 last_metadata_version;
     Int32 format_version;
 
-    mutable bool schema_id_by_data_file_initialized{false};
+    mutable std::atomic<bool> schema_id_by_data_file_initialized{false};
     mutable std::unordered_map<String, Int32> schema_id_by_data_file;
     mutable std::mutex schema_id_by_data_file_mutex;
 
