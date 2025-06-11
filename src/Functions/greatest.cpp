@@ -65,7 +65,50 @@ using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
 REGISTER_FUNCTION(Greatest)
 {
-    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Greatest, FunctionGreatest>>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the greatest value among the arguments.
+
+- For arrays, returns the lexicographically greatest array.
+- For DateTime types, the result type is promoted to the largest type (e.g., DateTime64 if mixed with DateTime32).
+    )";
+    FunctionDocumentation::Syntax syntax = "greatest(x1[, x2, ..., xN])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x1[, x2, ..., xN]", "One or multiple values to compare. All arguments must be of comparable types."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "The greatest value among the arguments, promoted to the largest compatible type.";
+    FunctionDocumentation::Examples examples = {
+        {"Numeric types", R"(
+SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
+-- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+    )",
+    R"(
+┌─result─┬─type────┐
+│      3 │ Float64 │
+└────────┴─────────┘
+    )"},
+        {"Arrays", R"(
+SELECT greatest(['hello'], ['there'], ['world']);
+    )",
+    R"(
+┌─greatest(['hello'], ['there'], ['world'])─┐
+│ ['world']                                 │
+└───────────────────────────────────────────┘
+    )"},
+        {"DateTime types", R"(
+SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
+-- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+    )",
+    R"(
+┌─greatest(toD⋯(now(), 3))─┐
+│  2025-05-28 15:50:53.000 │
+└──────────────────────────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Greatest, FunctionGreatest>>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

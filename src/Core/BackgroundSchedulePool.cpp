@@ -64,9 +64,6 @@ void BackgroundSchedulePoolTaskInfo::deactivate()
     deactivated = true;
     scheduled = false;
 
-    /// Since TaskInfo holds a direct reference to its pool (not a pointer),
-    /// and the pool guarantees it will deactivate all tasks before destruction completes,
-    /// it is safe to assume `pool` is always valid (non-dangling) in this method.
     if (delayed)
         pool.cancelDelayedTask(*this, lock_schedule);
 }
@@ -232,20 +229,6 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
             std::lock_guard lock_delayed_tasks(delayed_tasks_mutex);
 
             shutdown = true;
-
-            // Deactivate all tasks in immediate queue
-            for (auto & task_ptr : tasks)
-            {
-                if (task_ptr)
-                    task_ptr->deactivate();
-            }
-
-            // Deactivate all delayed tasks
-            for (auto & delayed : delayed_tasks)
-            {
-                if (delayed.second)
-                    delayed.second->deactivate();
-            }
         }
 
         tasks_cond_var.notify_all();

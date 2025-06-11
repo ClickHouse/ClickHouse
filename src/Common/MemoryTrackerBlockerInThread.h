@@ -10,7 +10,14 @@ class PageCache;
 class TraceCollector;
 }
 
-/// To be able to temporarily stop memory tracking from current thread.
+/// Temporarily stop memory tracking for the current thread.
+///
+/// Note, that this is more powerful way for blocking memory tracker,
+/// use this if you need to avoid accounting some memory for the user queries
+/// (i.e. the query initialize some cache)
+///
+/// In other cases (i.e. you need to just ignore MEMORY_LIMIT_EXCEEDED error)
+/// prefer LockMemoryExceptionInThread.
 struct MemoryTrackerBlockerInThread
 {
 private:
