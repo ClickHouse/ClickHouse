@@ -128,17 +128,25 @@ class Validator:
                 if Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB == False:
                     cls.evaluate_check_simple(
                         Settings.DOCKER_BUILD_ARM_RUNS_ON
-                        and Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON
+                        and Settings.DOCKER_MERGE_RUNS_ON
+                        and Settings.DOCKER_BUILD_AMD_RUNS_ON
                         and Settings.DOCKER_BUILD_ARM_RUNS_ON
-                        != Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
-                        f"Settings: DOCKER_BUILD_AND_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON must be provided and be different CPU architecture machines",
+                        != Settings.DOCKER_BUILD_AMD_RUNS_ON,
+                        f"Settings: DOCKER_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON, DOCKER_BUILD_AMD_RUNS_ON must be provided and be different CPU architecture machines",
                     )
                 else:
                     cls.evaluate_check(
-                        Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
+                        Settings.DOCKER_MERGE_RUNS_ON,
                         f"DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
                         workflow_name=workflow.name,
                     )
+
+            if workflow.set_latest_for_docker_merged_manifest:
+                cls.evaluate_check(
+                    workflow.enable_dockers_manifest_merge,
+                    f".set_latest_for_docker_merged_manifest workflow setting is applicable with .enable_dockers_manifest_merge=True",
+                    workflow_name=workflow.name,
+                )
 
             if workflow.enable_report:
                 assert (

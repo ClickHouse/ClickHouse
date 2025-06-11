@@ -169,7 +169,7 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
 endif ()
 
-if (USE_CHDIG)
+if (ENABLE_CHDIG)
     message(STATUS "Adding chdig to clickhouse-bundle")
     list(APPEND CLICKHOUSE_BUNDLE chdig)
     # NOTE: we need to do this here, since contrib has EXCLUDE_FROM_ALL
