@@ -118,7 +118,7 @@ void HTTPServerConnection::run()
                         {
                             /// server decided to close connection
                             /// usually it is related to the cases:
-                            /// - the request or respond stream is not bounded or
+                            /// - the request or response stream is not bounded or
                             /// - not all data is read from them
                             ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsReset);
                         }
