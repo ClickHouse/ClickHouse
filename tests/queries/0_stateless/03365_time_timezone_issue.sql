@@ -8,6 +8,6 @@ CREATE TEMPORARY TABLE test (
 
 SET session_timezone='Europe/Amsterdam';
 
-INSERT INTO test VALUES ('10:10:10', '10:10:10.111', '1970-01-01 10:10:10.111');
+INSERT INTO test VALUES (36610, 36610.113, 33010.113);
 
 SELECT t1, t2, t3 FROM test;
