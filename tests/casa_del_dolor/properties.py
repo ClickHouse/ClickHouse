@@ -449,6 +449,45 @@ def add_single_disk(
     return (prev_disk, final_type)
 
 
+def add_ssl_settings(next_ssl: ET.Element):
+    certificate_xml = ET.SubElement(next_ssl, "certificateFile")
+    private_key_xml = ET.SubElement(next_ssl, "privateKeyFile")
+    if random.randint(1, 2) == 1:
+        certificate_xml.text = "/etc/clickhouse-server/config.d/server.crt"
+        private_key_xml.text = "/etc/clickhouse-server/config.d/server.key"
+    else:
+        certificate_xml.text = "/etc/clickhouse-server/config.d/server-cert.pem"
+        private_key_xml.text = "/etc/clickhouse-server/config.d/server-key.pem"
+        ca_config_xml = ET.SubElement(next_ssl, "caConfig")
+        ca_config_xml.text = "/etc/clickhouse-server/config.d/ca-cert.pem"
+    if random.randint(1, 2) == 1:
+        dh_params_xml = ET.SubElement(next_ssl, "dhParamsFile")
+        dh_params_xml.text = "/etc/clickhouse-server/config.d/dhparam.pem"
+
+    if random.randint(1, 2) == 1:
+        verification_xml = ET.SubElement(next_ssl, "verificationMode")
+        verification_xml.text = random.choice(["none", "relaxed", "strict"])
+    if random.randint(1, 2) == 1:
+        load_ca_xml = ET.SubElement(next_ssl, "loadDefaultCAFile")
+        load_ca_xml.text = random.choice(["true", "false"])
+    if random.randint(1, 2) == 1:
+        cache_sessions_xml = ET.SubElement(next_ssl, "cacheSessions")
+        cache_sessions_xml.text = random.choice(["true", "false"])
+    if random.randint(1, 2) == 1:
+        prefer_server_ciphers_xml = ET.SubElement(next_ssl, "preferServerCiphers")
+        prefer_server_ciphers_xml.text = random.choice(["true", "false"])
+    if random.randint(1, 2) == 1:
+        SSL_PROTOCOLS = ["sslv2", "sslv3", "tlsv1", "tlsv1_1", "tlsv1_2"]
+        disabled_list_str = ""
+        shuffled_protocols = list(SSL_PROTOCOLS)  # Do copy
+        random.shuffle(shuffled_protocols)
+        for i in range(0, random.randint(1, len(shuffled_protocols))):
+            disabled_list_str += "" if i == 0 else ","
+            disabled_list_str += shuffled_protocols[i]
+        disabled_protocols_xml = ET.SubElement(next_ssl, "disableProtocols")
+        disabled_protocols_xml.text = disabled_list_str
+
+
 def modify_server_settings(
     args,
     cluster: ClickHouseCluster,
@@ -463,6 +502,29 @@ def modify_server_settings(
     if root.tag != "clickhouse":
         raise Exception("<clickhouse> element not found")
 
+    if root.find("tcp_port_secure") is None:
+        modified = True
+        secure_port_xml = ET.SubElement(root, "tcp_port_secure")
+        secure_port_xml.text = "9440"
+    if root.find("https_port") is None:
+        modified = True
+        secure_port_xml = ET.SubElement(root, "https_port")
+        secure_port_xml.text = "8443"
+    if root.find("openSSL") is None:
+        modified = True
+        openssl_xml = ET.SubElement(root, "openSSL")
+        server_xml = ET.SubElement(openssl_xml, "server")
+        add_ssl_settings(server_xml)
+
+        client_xml = ET.SubElement(openssl_xml, "client")
+        add_ssl_settings(client_xml)
+        if random.randint(1, 2) == 1:
+            invalid_handler_xml = ET.SubElement(client_xml, "invalidCertificateHandler")
+            name_xml = ET.SubElement(invalid_handler_xml, "name")
+            name_xml.text = random.choice(
+                ["AcceptCertificateHandler", "RejectCertificateHandler"]
+            )
+
     # Add remote server configurations
     if (
         root.find("remote_servers") is None
@@ -472,8 +534,6 @@ def modify_server_settings(
 
         existing_nodes = [f"node{i}" for i in range(0, number_replicas)]
         remote_server_config = ET.SubElement(root, "remote_servers")
-        secure_port = ET.SubElement(root, "tcp_port_secure")
-        secure_port.text = "9440"
 
         # Remove default cluster
         if random.randint(1, 2) == 1:

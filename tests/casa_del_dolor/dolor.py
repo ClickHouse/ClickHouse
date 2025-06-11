@@ -262,6 +262,16 @@ if server_settings is not None:
         args, cluster, len(args.replica_values), is_private_binary, server_settings
     )
 
+dolor_main_configs = [
+    "../config/server.crt",
+    "../config/server.key",
+    "../config/server-cert.pem",
+    "../config/server-key.pem",
+    "../config/ca-cert.pem",
+    "../config/dhparam.pem",
+]
+if server_settings is not None:
+    dolor_main_configs.append(server_settings)
 
 servers = []
 for i in range(0, len(args.replica_values)):
@@ -281,7 +291,7 @@ for i in range(0, len(args.replica_values)):
             with_redis=args.with_redis,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             storage_opt=None if args.storage_limit == "" else args.storage_limit,
-            main_configs=[server_settings] if server_settings is not None else [],
+            main_configs=dolor_main_configs,
             user_configs=[args.user_config] if args.user_config is not None else [],
             macros={"replica": args.replica_values[i], "shard": args.shard_values[i]},
         )
