@@ -114,6 +114,7 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         /// Convert start, end, step and staleness parameters to the scale of the timestamp column
         auto timestamp_decimal = std::dynamic_pointer_cast<const DataTypeDateTime64>(timestamp_type);
         auto target_scale_multiplier = timestamp_decimal->getScaleMultiplier();
+        auto target_scale = timestamp_decimal->getScale();
 
         DateTime64 start_timestamp = normalizeParameter(name, "start", start_timestamp_param, target_scale_multiplier);
         DateTime64 end_timestamp = normalizeParameter(name, "end", end_timestamp_param, target_scale_multiplier);
@@ -121,7 +122,7 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         DateTime64 window = normalizeParameter(name, "window", window_param, target_scale_multiplier);
 
         res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate>>>
-            (argument_types, start_timestamp, end_timestamp, step, window, target_scale_multiplier);
+            (argument_types, start_timestamp, end_timestamp, step, window, target_scale);
     }
     else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
     {
@@ -131,7 +132,7 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         Int64 window = extractIntParamater(name, "window", window_param);
 
         res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, 1);
+                (argument_types, start_timestamp, end_timestamp, step, window, 0);
     }
 
     if (!res)
