@@ -172,6 +172,7 @@ class Shell:
             stderr=subprocess.PIPE,
             text=True,
             executable="/bin/bash",
+            errors="ignore",
         )
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
@@ -182,7 +183,7 @@ class Shell:
         return res.stdout.strip()
 
     @classmethod
-    def get_res_stdout_stderr(cls, command, verbose=True):
+    def get_res_stdout_stderr(cls, command, verbose=True, strip=True):
         if verbose:
             print(f"Run command [{command}]")
         res = subprocess.run(
@@ -191,8 +192,12 @@ class Shell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            errors="ignore",
         )
-        return res.returncode, res.stdout.strip(), res.stderr.strip()
+        if strip:
+            return res.returncode, res.stdout.strip(), res.stderr.strip()
+        else:
+            return res.returncode, res.stdout, res.stderr
 
     @classmethod
     def check(

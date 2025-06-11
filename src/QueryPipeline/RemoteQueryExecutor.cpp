@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool push_external_roles_in_interserver_queries;
+    extern const SettingsMilliseconds parallel_replicas_connect_timeout_ms;
 }
 
 namespace ErrorCodes
@@ -99,8 +100,10 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 {
     create_connections = [this, pool, throttler, extension_, connection_pool_with_failover_](AsyncCallback)
     {
-        const Settings & current_settings = context->getSettingsRef();
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+        const Settings & settings = context->getSettingsRef();
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings)
+                            .withUnsecureConnectionTimeout(settings[Setting::parallel_replicas_connect_timeout_ms])
+                            .withSecureConnectionTimeout(settings[Setting::parallel_replicas_connect_timeout_ms]);
 
         ConnectionPoolWithFailover::TryResult result;
         std::string fail_message;
@@ -108,13 +111,13 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         {
             auto table_name = main_table.getQualifiedName();
 
-            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, &table_name);
-            connection_establisher.run(result, fail_message, /*force_connected=*/ true);
+            ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, &table_name);
+            connection_establisher.run(result, fail_message, /*force_connected=*/true);
         }
         else
         {
-            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, nullptr);
-            connection_establisher.run(result, fail_message, /*force_connected=*/ true);
+            ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, nullptr);
+            connection_establisher.run(result, fail_message, /*force_connected=*/true);
         }
 
         std::vector<IConnectionPool::Entry> connection_entries;
@@ -418,7 +421,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     // Collect all roles granted on this node and pass those to the remote node
     std::vector<String> local_granted_roles;
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries] && !modified_client_info.initial_user.empty())
+    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
     {
         auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
         boost::container::flat_set<String> granted_roles;

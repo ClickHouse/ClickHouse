@@ -16,6 +16,7 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -407,6 +408,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.mode = MergeTreeData::MergingParams::Aggregating;
     else if (name_part == "Replacing")
         merging_params.mode = MergeTreeData::MergingParams::Replacing;
+    else if (name_part == "Coalescing")
+        merging_params.mode = MergeTreeData::MergingParams::Coalescing;
     else if (name_part == "Graphite")
         merging_params.mode = MergeTreeData::MergingParams::Graphite;
     else if (name_part == "VersionedCollapsing")
@@ -469,6 +472,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             add_optional_param("is_deleted column");
             add_optional_param("version");
             break;
+        case MergeTreeData::MergingParams::Coalescing:
+            add_optional_param("list of columns to sum");
+            break;
         case MergeTreeData::MergingParams::Collapsing:
             add_mandatory_param("sign column");
             break;
@@ -483,7 +489,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     ASTs & engine_args = args.engine_args;
-    auto context = args.getContext();
+    /// Some internals may creates InterpreterSelectQuery, and it is prohibited with global context, so let's make a copy.
+    /// Note, that we should not use args.local_context, since it may tune some settings, i.e. max_ast_depth, and on restart this table may not be attached anymore.
+    auto context = Context::createCopy(args.getContext());
     size_t arg_num = 0;
     size_t arg_cnt = engine_args.size();
 
@@ -569,7 +577,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             --arg_cnt;
         }
     }
-    else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
+    else if (merging_params.mode == MergeTreeData::MergingParams::Summing || merging_params.mode == MergeTreeData::MergingParams::Coalescing)
     {
         /// If the last element is not index_granularity or replica_name (a literal), then this is a list of summable columns.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
@@ -640,7 +648,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// value in partition_key structure. MergeTree checks this case and use
         /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, context);
-// tostartOfInterval disabling for primary key
+
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
@@ -924,6 +932,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("MergeTree", create, features);
     factory.registerStorage("CollapsingMergeTree", create, features);
     factory.registerStorage("ReplacingMergeTree", create, features);
+    factory.registerStorage("CoalescingMergeTree", create, features);
     factory.registerStorage("AggregatingMergeTree", create, features);
     factory.registerStorage("SummingMergeTree", create, features);
     factory.registerStorage("GraphiteMergeTree", create, features);
@@ -938,6 +947,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedReplacingMergeTree", create, features);
     factory.registerStorage("ReplicatedAggregatingMergeTree", create, features);
     factory.registerStorage("ReplicatedSummingMergeTree", create, features);
+    factory.registerStorage("ReplicatedCoalescingMergeTree", create, features);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create, features);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, features);
 }

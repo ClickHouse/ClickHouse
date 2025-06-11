@@ -50,7 +50,11 @@ IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & qu
 
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
-    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(context->getSettingsRef()[Setting::max_threads])
+    : IInterpreter(context_)
+    , query_ptr(query_ptr_)
+    , context(context_)
+    , options(options_)
+    , max_streams(context->getSettingsRef()[Setting::max_threads])
 {
     /// FIXME All code here will work with the old analyzer, however for views over Distributed tables
     /// it's possible that new analyzer will be enabled in ::getQueryProcessingStage method

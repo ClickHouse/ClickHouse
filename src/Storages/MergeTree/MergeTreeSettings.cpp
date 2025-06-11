@@ -1594,6 +1594,10 @@ namespace ErrorCodes
     When enabled, allows summing columns in a SummingMergeTree table to be used in
     the partition or sorting key.
     )", 0) \
+    DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
+    When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
+    the partition or sorting key.
+    )", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, R"(
@@ -1633,6 +1637,13 @@ namespace ErrorCodes
     - [ignore_cold_parts_seconds](/operations/settings/settings#ignore_cold_parts_seconds)
     - [prefer_warmed_unmerged_parts_seconds](/operations/settings/settings#prefer_warmed_unmerged_parts_seconds)
     - [cache_warmer_threads](/operations/settings/settings#cache_warmer_threads)
+    )", 0) \
+    DECLARE(String, cache_populated_by_fetch_filename_regexp, "", R"(
+    :::note
+    This setting applies only to ClickHouse Cloud.
+    :::
+
+    If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
     )", 0) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, R"(
     Allow experimental CLEANUP merges for ReplacingMergeTree with `is_deleted`
@@ -1697,28 +1708,28 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
     Number of merge entries that coordinator should prepare and distribute across workers
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
     How often merge coordinator should sync with zookeeper to take fresh metadata
     )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
     Number of merges that coordinator can request from MergerMutator at once
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
     Time between runs of merge coordinator election thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
     Minimum time between runs of merge coordinator thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
     Maximum time between runs of merge coordinator thread
     )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_factor, 2, R"(
     Time changing factor for delay of coordinator thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
     Timeout that merge worker thread will use if it is needed to update it's state after immediate action
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
     Time between runs of merge worker thread
     )", EXPERIMENTAL) \
     \

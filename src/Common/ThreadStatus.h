@@ -48,7 +48,6 @@ using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
-using ThreadStatusPtr = ThreadStatus *;
 
 using QueryIsCanceledPredicate = std::function<bool()>;
 
@@ -237,7 +236,7 @@ private:
 
     bool performance_counters_finalized = false;
 
-    String query_id_from_query_context;
+    String query_id;
 
     struct TimePoint
     {
@@ -270,14 +269,14 @@ private:
 
     LoggerPtr log = nullptr;
 
-    bool check_current_thread_on_destruction;
-
 public:
-    explicit ThreadStatus(bool check_current_thread_on_destruction_ = true);
+    explicit ThreadStatus();
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
 
+    void setQueryId(std::string && new_query_id) noexcept;
+    void clearQueryId() noexcept;
     const String & getQueryId() const;
 
     ContextPtr getQueryContext() const;

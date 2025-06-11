@@ -387,6 +387,19 @@ ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(std::string_view path)
     return it_ptr->second;
 }
 
+void ColumnObject::addNewDynamicPath(std::string_view path, MutableColumnPtr column)
+{
+    if (dynamic_paths.size() == max_dynamic_paths)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add new dynamic path as the limit ({}) on dynamic paths is reached", max_dynamic_paths);
+
+    if (!empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting specific column for dynamic path is allowed only for empty object column");
+
+    auto it = dynamic_paths.emplace(path, std::move(column)).first;
+    dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
+    sorted_dynamic_paths.insert(it->first);
+}
+
 void ColumnObject::addNewDynamicPath(std::string_view path)
 {
     if (!tryToAddNewDynamicPath(path))

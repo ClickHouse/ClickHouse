@@ -54,7 +54,7 @@ CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE gin(tokenizer = 'default|ngram|no_op' [, ngram_size = N] [, max_rows_per_postings_list = M]) GRANULARITY 1
+    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|no_op' [, ngram_size = N] [, max_rows_per_postings_list = M]) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY key
@@ -81,7 +81,7 @@ Being a type of skipping index, full-text indexes can be dropped or added to a c
 
 ```sql
 ALTER TABLE tab DROP INDEX inv_idx;
-ALTER TABLE tab ADD INDEX inv_idx(s) TYPE gin(tokenizer = 'default');
+ALTER TABLE tab ADD INDEX inv_idx(s) TYPE text(tokenizer = 'default');
 ```
 
 To use the index, no special functions or syntax are required. Typical string search predicates automatically leverage the index. As
@@ -179,7 +179,7 @@ We will use `ALTER TABLE` and add an full-text index on the lowercase of the `co
 
 ```sql
 ALTER TABLE hackernews
-     ADD INDEX comment_lowercase(lower(comment)) TYPE gin;
+     ADD INDEX comment_lowercase(lower(comment)) TYPE text;
 
 ALTER TABLE hackernews MATERIALIZE INDEX comment_lowercase;
 ```
