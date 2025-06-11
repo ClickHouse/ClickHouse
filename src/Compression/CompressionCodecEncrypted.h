@@ -111,7 +111,7 @@ public:
     bool isGenericCompression() const override { return false; }
     bool isEncryption() const override { return true; }
 
-    std::string getNotes() const override
+    std::string getDescription() const override
     {
         return "Encrypts and decrypts blocks with AES-128 in GCM-SIV mode (RFC-8452).";
     }

@@ -127,7 +127,8 @@ public:
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
-    virtual std::string getNotes() const = 0;
+    // Returns a string with a high level codec description.
+    virtual std::string getDescription() const = 0;
 
 protected:
     /// This is used for fuzz testing

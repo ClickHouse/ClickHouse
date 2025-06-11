@@ -138,7 +138,7 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isDeltaCompression() const override { return true; }
-    std::string getNotes() const override
+    std::string getDescription() const override
     {
         return "Stores difference between neighboring delta values; suitable for time series data.";
     }

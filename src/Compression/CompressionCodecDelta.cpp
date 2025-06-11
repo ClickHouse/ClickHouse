@@ -29,9 +29,9 @@ protected:
     bool isGenericCompression() const override { return false; }
     bool isDeltaCompression() const override { return true; }
 
-    std::string getNotes() const override
+    std::string getDescription() const override
     {
-        return "Preprocessor (should be followed by some compression codec). Stores difference between neighboring values; good for monotonically increasing data.";
+        return "Preprocessor (should be followed by some compression codec). Stores difference between neighboring values; good for monotonically increasing or decreasing data.";
     }
 
 

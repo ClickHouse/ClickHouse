@@ -29,7 +29,7 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
 
-    std::string getNotes() const override
+    std::string getDescription() const override
     {
         return "Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 3.";
     }

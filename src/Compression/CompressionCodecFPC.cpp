@@ -40,7 +40,7 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
-    std::string getNotes() const override
+    std::string getDescription() const override
     {
         return "High Throughput Compression of Double-Precision Floating-Point Data.";
     }

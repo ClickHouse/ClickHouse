@@ -28,7 +28,7 @@ protected:
     bool isCompression() const override;
     bool isGenericCompression() const override { return false; }
 
-    std::string getNotes() const override
+    std::string getDescription() const override
     {
         return "Apply multiple codecs consecutively defined by user.";
     }

@@ -35,7 +35,7 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
-    std::string getNotes() const override
+    std::string getDescription() const override
     {
         return "Extremely fast; good compression; balanced speed and efficiency.";
     }
@@ -56,7 +56,7 @@ public:
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
-    std::string getNotes() const override
+    std::string getDescription() const override
     {
         return "LZ4 High Compression algorithm with configurable level; slower but better compression than LZ4, but decompression is still fast.";
     }

@@ -14,14 +14,15 @@ ColumnsDescription StorageSystemCodecs::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        { "name",                     std::make_shared<DataTypeString>(), "Codec name."},
-        { "is_compression",               std::make_shared<DataTypeUInt8>(), "The codec is a compression."},
-        { "is_generic_compression",       std::make_shared<DataTypeUInt8>(), "The codec is a generic compression."},
-        { "is_encryption",                std::make_shared<DataTypeUInt8>(), "The codec encrypts."},
-        { "is_timeseries_codec", std::make_shared<DataTypeUInt8>(), "The codec is for floating point timeseries codec."},
-        { "is_delta_compression",         std::make_shared<DataTypeUInt8>(), "The codec is for delta compression."},
-        { "is_experimental",              std::make_shared<DataTypeUInt8>(), "The codec is experimental."},
-        { "description",              std::make_shared<DataTypeString>(), "A high-level description of the codec."},
+        { "name",                   std::make_shared<DataTypeString>(), "Codec name."},
+        { "method_byte",            std::make_shared<DataTypeUInt8>(), "Byte which indicates codec in compressed file."},
+        { "is_compression",         std::make_shared<DataTypeUInt8>(), "The codec is a compression."},
+        { "is_generic_compression", std::make_shared<DataTypeUInt8>(), "The codec is a generic compression."},
+        { "is_encryption",          std::make_shared<DataTypeUInt8>(), "The codec encrypts."},
+        { "is_timeseries_codec",    std::make_shared<DataTypeUInt8>(), "The codec is for floating point timeseries codec."},
+        { "is_delta_compression",   std::make_shared<DataTypeUInt8>(), "The codec is for delta compression."},
+        { "is_experimental",        std::make_shared<DataTypeUInt8>(), "The codec is experimental."},
+        { "description",            std::make_shared<DataTypeString>(), "A high-level description of the codec."},
     };
 }
 

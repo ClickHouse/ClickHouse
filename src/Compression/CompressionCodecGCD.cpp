@@ -31,7 +31,7 @@ protected:
 
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
-    std::string getNotes() const override
+    std::string getDescription() const override
     {
         return "Preprocessor. Greatest common divisor compression; divides values by a common divisor; effective for divisible integer sequences.";
     }

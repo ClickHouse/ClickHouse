@@ -53,7 +53,7 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
-    std::string getNotes() const override
+    std::string getDescription() const override
     {
         return "Preprocessor. Crops unused high bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types.";
     }

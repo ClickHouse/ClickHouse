@@ -110,7 +110,7 @@ protected:
     bool isGenericCompression() const override { return true; }
     bool isDeflateQpl() const override { return true; }
 
-    std::string getNotes() const override
+    std::string getDescription() const override
     {
         return "Requires hardware support for Intel’s QuickAssist Technology for DEFLATE compression; enhanced performance for specific hardware.";
     }
