@@ -637,6 +637,35 @@ static void analyzeTTLCommands(MutationContext & ctx)
     }
 }
 
+static void addColumn(MutationContext & ctx, const String & column_name, const DataTypePtr & type)
+{
+    if (ctx.new_part_columns.has(column_name))
+        return;
+
+    ctx.new_part_columns.add(ColumnDescription(column_name, type));
+
+    if (!type->supportsSparseSerialization())
+        return;
+
+    SerializationInfo::Settings settings
+    {
+        .ratio_of_defaults_for_sparse = (*ctx.data->getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        .choose_kind = false
+    };
+
+    if (settings.isAlwaysDefault())
+        return;
+
+    auto new_info = type->createSerializationInfo(settings);
+    ctx.new_serialization_infos.emplace(column_name, std::move(new_info));
+}
+
+static void dropColumn(MutationContext & ctx, const String & column_name)
+{
+    ctx.new_part_columns.remove(column_name);
+    ctx.new_serialization_infos.erase(column_name);
+}
+
 MutatedData analyzeDataCommands(MutationContext & ctx)
 {
     const auto & table_columns = ctx.metadata_snapshot->getColumns();
@@ -647,12 +676,15 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
         {
             /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
             /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
-            auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
+            auto column_ordinary = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::Ordinary, command.column_name);
 
             if (!column_ordinary || !ctx.source_part->tryGetColumn(command.column_name) || !ctx.source_part->hasColumnFiles(*column_ordinary))
             {
                 ctx.for_interpreter.push_back(command);
                 ctx.mutated_data.updated_columns.insert(command.column_name);
+
+                auto type = table_columns.getColumn(GetColumnsOptions::AllPhysical, command.column_name).type;
+                addColumn(ctx, command.column_name, type);
             }
         }
         else if (command.type == MutationCommand::DELETE || command.type == MutationCommand::APPLY_DELETED_MASK)
@@ -675,6 +707,11 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
             }
         }
     }
+
+    if (ctx.mutated_data.has_lightweight_delete)
+        addColumn(ctx, RowExistsColumn::name, std::make_shared<DataTypeUInt8>());
+    else if (ctx.mutated_data.affects_all_columns && ctx.new_part_columns.has(RowExistsColumn::name))
+        dropColumn(ctx, RowExistsColumn::name);
 
     return ctx.mutated_data;
 }
@@ -735,8 +772,6 @@ static void modifyColumn(MutationContext & ctx, const String & column_name, cons
 
 static void renameColumn(MutationContext & ctx, const String & rename_from, const String & rename_to)
 {
-    LOG_DEBUG(getLogger("KEK"), "rename {} to {}", rename_from, rename_to);
-
     ctx.new_part_columns.rename(rename_from, rename_to);
 
     auto it = ctx.new_serialization_infos.find(rename_from);
@@ -748,17 +783,8 @@ static void renameColumn(MutationContext & ctx, const String & rename_from, cons
     ctx.new_serialization_infos.emplace(rename_to, std::move(new_info));
 }
 
-static void dropColumn(MutationContext & ctx, const String & column_name)
-{
-    ctx.new_part_columns.remove(column_name);
-    ctx.new_serialization_infos.erase(column_name);
-}
-
 void analyzeMetadataCommandsForSomeColumnsMode(MutationContext & ctx, const AlterConversionsPtr & alter_conversions)
 {
-    ctx.new_part_columns = ctx.source_part->getColumnsDescription();
-    ctx.new_serialization_infos = ctx.source_part->getSerializationInfos();
-
     for (const auto & command : ctx.commands_for_part)
     {
         /// If we don't have this column in source part, we don't need to materialize it.
@@ -804,6 +830,8 @@ static void analyzeCommandsForSomeColumnsMode(MutationContext & ctx, const Alter
     ctx.execution_mode = MutationContext::Mode::SomeColumns;
     ctx.mutated_data = MutatedData(ctx.data->getSettings());
     ctx.files_to_rename = FilesToRename(ctx.source_part->checksums.getAllFiles());
+    ctx.new_part_columns = ctx.source_part->getColumnsDescription();
+    ctx.new_serialization_infos = ctx.source_part->getSerializationInfos();
 
     analyzeDataCommands(ctx);
     analyzeTTLCommands(ctx);
@@ -822,6 +850,8 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     ctx.execution_mode = MutationContext::Mode::AllColumns;
     ctx.mutated_data = MutatedData(ctx.data->getSettings());
     ctx.files_to_rename = FilesToRename(ctx.source_part->checksums.getAllFiles());
+    ctx.new_part_columns = ctx.source_part->getColumnsDescription();
+    ctx.new_serialization_infos = ctx.source_part->getSerializationInfos();
 
     analyzeDataCommands(ctx);
     analyzeTTLCommands(ctx);
@@ -829,9 +859,6 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     analyzeSkipIndicesCommands(ctx);
     analyzeStatisticsCommands(ctx);
     addColumnsRequiredForDependencies(ctx);
-
-    ctx.new_part_columns = ctx.source_part->getColumnsDescription();
-    ctx.new_serialization_infos = ctx.source_part->getSerializationInfos();
 
     NameSet dropped_columns;
     bool need_mutate_columns = ctx.mutated_data.isAnyColumnMutated();
@@ -885,15 +912,6 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
             {
                 .type = MutationCommand::Type::READ_COLUMN,
                 .column_name = rename_to,
-            });
-
-            /// Not needed for compact parts (not executed), added here only to produce correct
-            /// set of columns for new part and their serializations
-            ctx.for_file_renames.push_back(
-            {
-                .type = MutationCommand::Type::RENAME_COLUMN,
-                .column_name = rename_from,
-                .rename_to = rename_to
             });
 
             renameColumn(ctx, rename_from, rename_to);
@@ -2044,7 +2062,7 @@ private:
 
         for (const auto & [rename_from, rename_to] : files_to_rename_map)
         {
-            if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
+            if (rename_to.empty())
             {
                 ctx->new_data_part->checksums.files.erase(rename_from);
             }
