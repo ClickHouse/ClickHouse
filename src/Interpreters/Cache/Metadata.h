@@ -77,7 +77,7 @@ struct FileSegmentMetadata : private boost::noncopyable
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
 
         const auto & entry = iterator->getEntry();
-        chassert(size() == entry->size);
+        chassert(size() == entry->getSize());
         entry->resetEvictingFlag();
     }
 
