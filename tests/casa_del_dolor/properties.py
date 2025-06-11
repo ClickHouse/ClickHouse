@@ -45,21 +45,21 @@ possible_properties = {
         1, multiprocessing.cpu_count()
     ),
     "background_distributed_schedule_pool_size": lambda: random.randint(
-        0, multiprocessing.cpu_count()
+        1, multiprocessing.cpu_count()
     ),
     "background_fetches_pool_size": lambda: random.randint(
-        0, multiprocessing.cpu_count()
+        1, multiprocessing.cpu_count()
     ),
     "background_merges_mutations_scheduling_policy": lambda: random.choice(
         ["round_robin", "shortest_task_first"]
     ),
     "background_message_broker_schedule_pool_size": lambda: random.randint(
-        0, multiprocessing.cpu_count()
+        1, multiprocessing.cpu_count()
     ),
     "background_move_pool_size": lambda: random.randint(1, multiprocessing.cpu_count()),
     # "background_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()), has to be in a certain range
     "background_schedule_pool_size": lambda: random.randint(
-        0, multiprocessing.cpu_count()
+        1, multiprocessing.cpu_count()
     ),
     "backup_threads": lambda: random.randint(1, multiprocessing.cpu_count()),
     "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -276,6 +276,7 @@ def add_single_cluster(
         1 if random.randint(1, 4) == 1 else random.randint(1, len(existing_nodes))
     )
     next_shard_xml = None
+    single_shard = random.randint(1, 100) <= 20
 
     input_nodes = list(existing_nodes)  # Do deep copy
     random.shuffle(input_nodes)
@@ -283,9 +284,13 @@ def add_single_cluster(
     if random.randint(1, 100) <= 30:
         secret_xml = ET.SubElement(next_cluster, "secret")
         secret_xml.text = f"{i % 10}23457"
+    # Add allow_distributed_ddl_queries
+    if random.randint(1, 100) <= 16:
+        allow_ddl_xml = ET.SubElement(next_cluster, "allow_distributed_ddl_queries")
+        allow_ddl_xml.text = "false" if random.randint(1, 4) <= 3 else "true"
 
     for j in range(0, number_elements):
-        if next_shard_xml is None or random.randint(1, 3) == 1:
+        if next_shard_xml is None or (not single_shard and random.randint(1, 3) == 1):
             next_shard_xml = ET.SubElement(next_cluster, "shard")
             # Add internal replication
             if random.randint(1, 100) <= 40:
