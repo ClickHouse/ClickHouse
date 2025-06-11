@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# - no-parallel - to avoid failures for flaky check
+
 # Check that all queries from system.dashboards are correct
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
