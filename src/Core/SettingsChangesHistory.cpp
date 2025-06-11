@@ -81,6 +81,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_skip_indexes_if_final", 0, 1, "Change in default value of setting"},
             {"use_skip_indexes_if_final_exact_mode", 0, 1, "Change in default value of setting"},
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
+            {"skip_unavailable_shards_mode", "unavailable", "unavailable", "If set to `unavailable`, connection-related exceptions are ignored, whereas `unavailable_or_exception` ignores all exceptions from remote instances."},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -124,7 +125,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_url_encoding", true, false, "Changed existing setting's default value"},
             {"s3_slow_all_threads_after_network_error", false, true, "New setting"},
             /// Release closed. Please use 25.6
-            {"skip_unavailable_shards_mode", "unavailable_or_exception", "unavailable", "If set to `unavailable`, connection-related exceptions are ignored, whereas `unavailable_or_exception` ignores all exceptions from remote instances."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
