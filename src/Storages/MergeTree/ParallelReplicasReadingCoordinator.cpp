@@ -106,6 +106,8 @@ struct Part
     // and modify through iterator
     mutable std::set<size_t> replicas;
 
+    UInt64 part_info_hash = 0;
+
     bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
 };
 }
@@ -222,8 +224,11 @@ public:
     explicit DefaultCoordinator(size_t replicas_count_)
         : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_)
         , replica_status(replicas_count_)
-        , distribution_by_hash_queue(replicas_count_)
+        , bigger_parts_first(part_info_map)
     {
+        distribution_by_hash_queue.reserve(replicas_count_);
+        for (size_t i = 0; i < replicas_count_; ++i)
+            distribution_by_hash_queue.emplace_back(bigger_parts_first);
     }
 
     ~DefaultCoordinator() override;
@@ -281,12 +286,34 @@ private:
 
     std::unordered_map<std::string, std::unordered_set<size_t>> part_visibility; /// part_name -> set of replicas announced that part
 
+    /// To reduce memory usage, store a mapping of hash to MergeTreePartInfo in a map, while only keeping hash values in the queue.
+    std::unordered_map<UInt64, std::shared_ptr<MergeTreePartInfo>> part_info_map;
+    struct RangesInPartDesc
+    {
+        UInt64 part_info_hash;
+        MarkRanges ranges{};
+    };
+
     /// We order parts from biggest (= oldest) to newest and steal from newest. Because we assume
     /// that they're gonna be merged soon anyway and for them we should already expect worse cache hit.
     struct BiggerPartsFirst
     {
-        bool operator()(const auto & lhs, const auto & rhs) const { return lhs.info.getBlocksCount() > rhs.info.getBlocksCount(); }
+        const std::unordered_map<UInt64, std::shared_ptr<MergeTreePartInfo>> & part_info_map;
+
+        explicit BiggerPartsFirst(const std::unordered_map<UInt64, std::shared_ptr<MergeTreePartInfo>> & map)
+            : part_info_map(map)
+        {
+        }
+
+        bool operator()(const auto & lhs, const auto & rhs) const
+        {
+            auto left_info = *part_info_map.at(lhs.part_info_hash);
+            auto right_info = *part_info_map.at(rhs.part_info_hash);
+            return left_info.getBlocksCount() > right_info.getBlocksCount();
+        }
     };
+
+    BiggerPartsFirst bigger_parts_first;
 
     /// We don't precalculate the whole assignment for each node at the start.
     /// When replica asks coordinator for a new portion of data to read, it traverses `all_parts_to_read` to find ranges relevant to this replica (by consistent hash).
@@ -294,11 +321,11 @@ private:
     /// observed along the way to what node they belong to.
     /// Ranges in this queue might belong to a part that the given replica cannot read from - the corresponding check happens later.
     /// TODO: consider making it bounded in size
-    std::vector<std::multiset<RangesInDataPartDescription, BiggerPartsFirst>> distribution_by_hash_queue;
+    std::vector<std::multiset<RangesInPartDesc, BiggerPartsFirst>> distribution_by_hash_queue;
 
     /// For some ranges their owner and stealer (by consistent hash) cannot read from the given part at all. So this range have to be stolen anyway.
     /// TODO: consider making it bounded in size
-    RangesInDataPartsDescription ranges_for_stealing_queue;
+    std::deque<RangesInPartDesc> ranges_for_stealing_queue;
 
     /// We take only first replica's set of parts as the whole working set for this query.
     /// For other replicas we'll just discard parts that they know, but that weren't present in the first request we received.
@@ -353,8 +380,8 @@ private:
         RangesInDataPartsDescription & description);
 
     bool possiblyCanReadPart(size_t replica, const MergeTreePartInfo & info) const;
-    void enqueueSegment(const MergeTreePartInfo & info, const MarkRange & segment, size_t owner);
-    void enqueueToStealerOrStealingQueue(const MergeTreePartInfo & info, const MarkRange & segment);
+    void enqueueSegment(UInt64 part_info_hash, const MarkRange & segment, size_t owner);
+    void enqueueToStealerOrStealingQueue(UInt64 part_info_hash, const MarkRange & segment);
 };
 
 
@@ -394,12 +421,22 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
 
             known_parts.emplace(Part{.description = part, .replicas = {}});
-            all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+
+            /// Generate unique hash for each part info
+            UInt64 hash = sipHash64(part.info.getPartNameV1());
+            auto salt = 0;
+            while (part_info_map.contains(hash))
+                hash = sipHash64(part.info.getPartNameV1() + std::to_string(salt++));
+
+            part_info_map[hash] = std::make_shared<MergeTreePartInfo>(part.info);
+            all_parts_to_read.push_back(
+                Part{.description = std::move(part), .replicas = {announcement.replica_num}, .part_info_hash = hash});
         }
     }
 
     std::ranges::sort(
-        all_parts_to_read, [](const Part & lhs, const Part & rhs) { return BiggerPartsFirst()(lhs.description, rhs.description); });
+        all_parts_to_read,
+        [&](const Part & lhs, const Part & rhs) { return BiggerPartsFirst(part_info_map)(lhs, rhs); });
     state_initialized = true;
     source_replica_for_parts_snapshot = announcement.replica_num;
 
@@ -424,7 +461,7 @@ void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
             continue;
 
         chassert(segment.ranges.size() == 1);
-        enqueueToStealerOrStealingQueue(segment.info, segment.ranges.front());
+        enqueueToStealerOrStealingQueue(segment.part_info_hash, segment.ranges.front());
     }
     distribution_by_hash_queue[replica_number].clear();
 }
@@ -474,10 +511,10 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
     /// Sift the queue to move out all invisible segments
     for (auto segment_it = distribution_by_hash_queue[replica_num].begin(); segment_it != distribution_by_hash_queue[replica_num].end();)
     {
-        if (!part_visibility[segment_it->info.getPartNameV1()].contains(replica_num))
+        if (!part_visibility[part_info_map.at(segment_it->part_info_hash)->getPartNameV1()].contains(replica_num))
         {
             chassert(segment_it->ranges.size() == 1);
-            enqueueToStealerOrStealingQueue(segment_it->info, segment_it->ranges.front());
+            enqueueToStealerOrStealingQueue(segment_it->part_info_hash, segment_it->ranges.front());
             segment_it = distribution_by_hash_queue[replica_num].erase(segment_it);
         }
         else
@@ -499,20 +536,21 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
 
     while (!distribution_queue.empty() && current_marks_amount < min_number_of_marks)
     {
-        if (result.ranges.empty() || distribution_queue.begin()->info != result.info)
+        const auto & part_info = part_info_map.at(distribution_queue.begin()->part_info_hash);
+        if (result.ranges.empty() || *part_info != result.info)
         {
             if (!result.ranges.empty())
                 /// We're switching to a different part, so have to save currently accumulated ranges
                 description.push_back(result);
-            result = {.info = distribution_queue.begin()->info};
+            result = {.info = *part_info};
         }
 
         /// NOTE: this works because ranges are not considered by the comparator
-        auto & part_ranges = const_cast<RangesInDataPartDescription &>(*distribution_queue.begin());
+        auto & part_ranges = const_cast<RangesInPartDesc &>(*distribution_queue.begin());
         chassert(part_ranges.ranges.size() == 1);
         auto & range = part_ranges.ranges.front();
 
-        if (replica_can_read_part(replica_num, part_ranges.info))
+        if (replica_can_read_part(replica_num, *part_info_map.at(part_ranges.part_info_hash)))
         {
             if (auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result); taken == range.getNumberOfMarks())
                 distribution_queue.erase(distribution_queue.begin());
@@ -526,7 +564,7 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
         {
             /// It might be that `replica_num` is the stealer by hash itself - no problem,
             /// we'll just have a redundant hash computation inside this function
-            enqueueToStealerOrStealingQueue(part_ranges.info, range);
+            enqueueToStealerOrStealingQueue(part_ranges.part_info_hash, range);
             distribution_queue.erase(distribution_queue.begin());
         }
     }
@@ -593,26 +631,27 @@ void DefaultCoordinator::tryToStealFromQueue(
     auto it = queue.rbegin();
     while (it != queue.rend() && current_marks_amount < min_number_of_marks)
     {
-        auto & part_ranges = const_cast<RangesInDataPartDescription &>(*it);
+        auto & part_ranges = const_cast<RangesInPartDesc &>(*it);
         chassert(part_ranges.ranges.size() == 1);
+        const auto & part_info = part_info_map.at(part_ranges.part_info_hash);
         auto & range = part_ranges.ranges.front();
 
-        if (result.ranges.empty() || part_ranges.info != result.info)
+        if (result.ranges.empty() || *part_info != result.info)
         {
             if (!result.ranges.empty())
                 /// We're switching to a different part, so have to save currently accumulated ranges
                 description.push_back(result);
-            result = {.info = part_ranges.info};
+            result = {.info = *part_info};
         }
 
-        if (replica_can_read_part(replica_num, part_ranges.info))
+        if (replica_can_read_part(replica_num, *part_info))
         {
             bool can_take = false;
             if (scan_mode == ScanMode::TakeWhatsMineForStealing)
             {
                 chassert(owner >= 0);
                 const size_t segment_begin = roundDownToMultiple(range.begin, mark_segment_size);
-                can_take = computeConsistentHash(part_ranges.info.getPartNameV1(), segment_begin, scan_mode) == replica_num;
+                can_take = computeConsistentHash(part_info->getPartNameV1(), segment_begin, scan_mode) == replica_num;
             }
             else
             {
@@ -693,7 +732,7 @@ void DefaultCoordinator::processPartsFurther(
                 else
                 {
                     chassert(scan_mode == ScanMode::TakeWhatsMineByHash);
-                    enqueueSegment(part_info, cur_segment, owner);
+                    enqueueSegment(part.part_info_hash, cur_segment, owner);
                     range.begin += cur_segment.getNumberOfMarks();
                     if (range.getNumberOfMarks() == 0)
                     {
@@ -736,32 +775,35 @@ bool DefaultCoordinator::possiblyCanReadPart(size_t replica, const MergeTreePart
         && (!replica_status[replica].is_announcement_received || part_visibility.at(info.getPartNameV1()).contains(replica));
 }
 
-void DefaultCoordinator::enqueueSegment(const MergeTreePartInfo & info, const MarkRange & segment, size_t owner)
+void DefaultCoordinator::enqueueSegment(UInt64 part_info_hash, const MarkRange & segment, size_t owner)
 {
-    if (possiblyCanReadPart(owner, info))
+    const auto & info = part_info_map.at(part_info_hash);
+    if (possiblyCanReadPart(owner, *info))
     {
-        /// TODO: optimize me (maybe we can store something lighter than RangesInDataPartDescription)
-        distribution_by_hash_queue[owner].insert(RangesInDataPartDescription{.info = info, .ranges = {segment}});
-        LOG_TEST(log, "Segment {} of {} is added to its owner's ({}) queue", segment, info.getPartNameV1(), owner);
+        distribution_by_hash_queue[owner].insert(RangesInPartDesc{.part_info_hash = part_info_hash, .ranges = {segment}});
+        LOG_TEST(log, "Segment {} of {} is added to its owner's ({}) queue", segment, info->getPartNameV1(), owner);
     }
     else
-        enqueueToStealerOrStealingQueue(info, segment);
+        enqueueToStealerOrStealingQueue(part_info_hash, segment);
 }
 
-void DefaultCoordinator::enqueueToStealerOrStealingQueue(const MergeTreePartInfo & info, const MarkRange & segment)
+void DefaultCoordinator::enqueueToStealerOrStealingQueue(UInt64 part_info_hash, const MarkRange & segment)
 {
-    auto && range = RangesInDataPartDescription{.info = info, .ranges = {segment}};
+    auto && range = RangesInPartDesc{.part_info_hash = part_info_hash, .ranges = {segment}};
+    const auto & info = part_info_map.at(part_info_hash);
     const auto stealer_by_hash = computeConsistentHash(
-        info.getPartNameV1(), roundDownToMultiple(segment.begin, mark_segment_size), ScanMode::TakeWhatsMineForStealing);
-    if (possiblyCanReadPart(stealer_by_hash, info))
+        info->getPartNameV1(),
+        roundDownToMultiple(segment.begin, mark_segment_size),
+        ScanMode::TakeWhatsMineForStealing);
+    if (possiblyCanReadPart(stealer_by_hash, *info))
     {
         distribution_by_hash_queue[stealer_by_hash].insert(std::move(range));
-        LOG_TEST(log, "Segment {} of {} is added to its stealer's ({}) queue", segment, info.getPartNameV1(), stealer_by_hash);
+        LOG_TEST(log, "Segment {} of {} is added to its stealer's ({}) queue", segment, info->getPartNameV1(), stealer_by_hash);
     }
     else
     {
         ranges_for_stealing_queue.push_back(std::move(range));
-        LOG_TEST(log, "Segment {} of {} is added to stealing queue", segment, info.getPartNameV1());
+        LOG_TEST(log, "Segment {} of {} is added to stealing queue", segment, info->getPartNameV1());
     }
 }
 
