@@ -150,19 +150,25 @@ StorageObjectStorage::StorageObjectStorage(
     {
         if (do_lazy_init)
             do_init();
-        try
+        if (!configuration->isDataLakeConfiguration())
         {
-            sample_path = getPathSample(context);
-        }
-        catch (...)
-        {
-            LOG_WARNING(
-                log, "Failed to list object storage, cannot use hive partitioning. "
-                "Error: {}", getCurrentExceptionMessage(true));
+            try
+            {
+                sample_path = getPathSample(context);
+            }
+            catch (...)
+            {
+                LOG_WARNING(
+                    log,
+                    "Failed to list object storage, cannot use hive partitioning. "
+                    "Error: {}",
+                    getCurrentExceptionMessage(true));
+            }
         }
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns, context, sample_path, format_settings, configuration->isDataLakeConfiguration()));
     setInMemoryMetadata(metadata);
 }
 
