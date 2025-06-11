@@ -10,11 +10,12 @@
 #include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Core/Settings.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -165,7 +166,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
 
         /// Common subexpression elimination. Rewrite rules.
-        QueryNormalizer::Data normalizer_data(aliases, {}, true, context_->getSettingsRef(), true, false);
+        QueryNormalizer::Data normalizer_data(aliases, {}, true, QueryNormalizer::ExtractedSettings(context_->getSettingsRef()), true, false);
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 

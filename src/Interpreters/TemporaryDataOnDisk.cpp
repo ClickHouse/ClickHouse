@@ -149,21 +149,23 @@ public:
     }
 
     ~TemporaryFileOnLocalDisk() override
-    try
     {
-        if (disk->existsFile(path_to_file))
+        try
         {
-            LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
-            disk->removeRecursive(path_to_file);
+            if (disk->existsFile(path_to_file))
+            {
+                LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
+                disk->removeRecursive(path_to_file);
+            }
+            else
+            {
+                LOG_WARNING(getLogger("TemporaryFileOnLocalDisk"), "Temporary path '{}' does not exist in '{}' on disk {}", path_to_file, disk->getPath(), disk->getName());
+            }
         }
-        else
+        catch (...)
         {
-            LOG_WARNING(getLogger("TemporaryFileOnLocalDisk"), "Temporary path '{}' does not exist in '{}' on disk {}", path_to_file, disk->getPath(), disk->getName());
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
 private:

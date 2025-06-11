@@ -2,6 +2,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Core/Settings.h>
 #include <Formats/NativeReader.h>
 #include <Poco/Logger.h>
 

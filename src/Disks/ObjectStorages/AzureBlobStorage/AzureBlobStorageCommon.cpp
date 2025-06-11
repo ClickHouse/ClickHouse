@@ -2,16 +2,23 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
+#include <azure/storage/blobs/blob_options.hpp>
+#include <azure/storage/blobs/blob_responses.hpp>
+#include <azure/storage/blobs/rest_client.hpp>
+#include <azure/core/credentials/credentials.hpp>
+
+#endif
+
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Core/Settings.h>
-#include <azure/identity/managed_identity_credential.hpp>
-#include <azure/identity/workload_identity_credential.hpp>
-#include <azure/storage/blobs/blob_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
+#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
@@ -53,6 +60,8 @@ namespace ErrorCodes
 
 namespace AzureBlobStorage
 {
+
+#if USE_AZURE_BLOB_STORAGE
 
 static void validateStorageAccountUrl(const String & storage_account_url)
 {
@@ -403,6 +412,8 @@ BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_di
     return client_options;
 }
 
+#endif
+
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
 {
     auto settings = std::make_unique<RequestSettings>();
@@ -428,17 +439,23 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     return settings;
 }
 
-std::unique_ptr<RequestSettings> getRequestSettingsForBackup(const Settings & query_settings, bool use_native_copy)
+std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool use_native_copy)
 {
-    auto settings = getRequestSettings(query_settings);
-    settings->use_native_copy = use_native_copy;
+    auto settings = getRequestSettings(context->getSettingsRef());
+
+    auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
+    if (endpoint_settings)
+        settings->use_native_copy = endpoint_settings->use_native_copy;
+
+    if (!use_native_copy)
+        settings->use_native_copy = false;
+
     return settings;
 }
 
-std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & settings_ref)
 {
     auto settings = std::make_unique<RequestSettings>();
-    const auto & settings_ref = context->getSettingsRef();
 
     settings->min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024);
     settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
@@ -464,6 +481,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
 
     settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
 
+
+#if USE_AZURE_BLOB_STORAGE
     if (config.has(config_prefix + ".curl_ip_resolve"))
     {
         using CurlOptions = Azure::Core::Http::CurlTransportOptions;
@@ -476,12 +495,76 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for option 'curl_ip_resolve': {}. Expected one of 'ipv4' or 'ipv6'", value);
     }
+#endif
 
     return settings;
 }
 
 }
 
+
+void AzureSettingsByEndpoint::loadFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const DB::Settings & settings)
+{
+    std::lock_guard lock(mutex);
+    azure_settings.clear();
+    if (!config.has(config_prefix))
+        return;
+
+
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(config_prefix, config_keys);
+
+    for (const String & key : config_keys)
+    {
+        const auto key_path = config_prefix + "." + key;
+        String endpoint_path = key_path + ".connection_string";
+
+        if (!config.has(endpoint_path))
+        {
+            endpoint_path = key_path + ".storage_account_url";
+
+            if (!config.has(endpoint_path))
+            {
+                endpoint_path = key_path + ".endpoint";
+
+                if (!config.has(endpoint_path))
+                {
+                    /// Error, shouldn't hit this todo:: throw error
+                    continue;
+                }
+            }
+        }
+
+        auto request_settings = AzureBlobStorage::getRequestSettings(config, key_path, settings);
+
+        azure_settings.emplace(
+                config.getString(endpoint_path),
+                std::move(*request_settings));
+
+    }
 }
 
-#endif
+std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSettings(
+    const String & endpoint) const
+{
+    std::lock_guard lock(mutex);
+    auto next_prefix_setting = azure_settings.upper_bound(endpoint);
+
+    /// Linear time algorithm may be replaced with logarithmic with prefix tree map.
+    for (auto possible_prefix_setting = next_prefix_setting; possible_prefix_setting != azure_settings.begin();)
+    {
+        std::advance(possible_prefix_setting, -1);
+        const auto & [endpoint_prefix, settings] = *possible_prefix_setting;
+        if (endpoint.starts_with(endpoint_prefix))
+            return possible_prefix_setting->second;
+    }
+
+    return {};
+}
+
+}
+
+

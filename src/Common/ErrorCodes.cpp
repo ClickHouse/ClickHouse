@@ -671,7 +671,7 @@ namespace ErrorCodes
 
     std::string_view getName(ErrorCode error_code)
     {
-        if (error_code < 0 || error_code >= END)
+        if (error_code < 0 || error_code > END)
             return std::string_view();
         return error_codes_names.names[error_code];
     }

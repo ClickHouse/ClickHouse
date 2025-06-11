@@ -1,4 +1,3 @@
-#include <Interpreters/ProcessorsProfileLog.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <Columns/ColumnNullable.h>
@@ -21,16 +20,18 @@
 #include <Functions/exists.h>
 #include <Functions/grouping.h>
 
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Formats/FormatFactory.h>
+
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 
-#include <Interpreters/misc.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
@@ -65,6 +66,7 @@
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/RecursiveCTE.h>
 
+#include <Analyzer/Resolve/CorrelatedColumnsCollector.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
@@ -73,9 +75,9 @@
 #include <Analyzer/Resolve/TableFunctionsWithClusterAlternativesVisitor.h>
 #include <Analyzer/Resolve/TypoCorrection.h>
 
-#include <Planner/PlannerActionsVisitor.h>
-
 #include <Core/Settings.h>
+
+#include <ranges>
 
 namespace ProfileEvents
 {
@@ -165,7 +167,7 @@ QueryAnalyzer::~QueryAnalyzer() = default;
 
 void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
 {
-    IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
+    IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
 
     if (!scope.context)
         scope.context = context;
@@ -235,7 +237,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
 {
-    IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
+    IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
 
     if (!scope.context)
         scope.context = context;
@@ -294,6 +296,12 @@ std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const Quer
     if (join_node.getRightTableExpression().get() == column_src)
         return JoinTableSide::Right;
     return {};
+}
+
+IdentifierResolveScope & QueryAnalyzer::createIdentifierResolveScope(const QueryTreeNodePtr & scope_node, IdentifierResolveScope * parent_scope)
+{
+    auto [it, _] = node_to_scope_map.emplace(scope_node, IdentifierResolveScope{scope_node, parent_scope});
+    return it->second;
 }
 
 ProjectionName QueryAnalyzer::calculateFunctionProjectionName(const QueryTreeNodePtr & function_node, const ProjectionNames & parameters_projection_names,
@@ -984,7 +992,9 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
     if (!function)
         return {false, 0};
 
-    if (function->isAggregateFunction() || function->isWindowFunction())
+    // We don't need to have GROUPING under GROUP BY ALL, so we treat GROUPING
+    // as an aggregate function for GROUP BY ALL expansion
+    if (function->isAggregateFunction() || function->isWindowFunction() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
         return {true, 0};
 
     UInt64 pushed_children = 0;
@@ -1385,31 +1395,16 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     if (identifier_lookup.isFunctionLookup())
         return resolve_result;
 
-    QueryTreeNodes nodes_to_process = { resolved_identifier };
-    while (!nodes_to_process.empty())
+    CorrelatedColumnsCollector correlated_columns_collector{resolved_identifier, identifier_resolve_context.scope_to_resolve_alias_expression, node_to_scope_map};
+    if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
     {
-        auto current = nodes_to_process.back();
-        nodes_to_process.pop_back();
-        if (current->getNodeType() == QueryTreeNodeType::COLUMN)
-        {
-            auto is_correlated_column = checkCorrelatedColumn(&scope, current);
-            if (is_correlated_column && !scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
-            {
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Resolved identifier '{}' in parent scope to expression '{}' with correlated column '{}'"
-                    " (Enable 'allow_experimental_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
-                    identifier_lookup.identifier.getFullName(),
-                    resolved_identifier->formatASTForErrorMessage(),
-                    current->as<ColumnNode>()->getColumnName(),
-                    scope.scope_node->formatASTForErrorMessage());
-            }
-        }
-
-        for (const auto & child : current->getChildren())
-        {
-            if (child)
-                nodes_to_process.push_back(child);
-        }
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Resolved identifier '{}' in parent scope to expression '{}' with correlated columns '{}'"
+            " (Enable 'allow_experimental_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
+            identifier_lookup.identifier.getFullName(),
+            resolved_identifier->formatASTForErrorMessage(),
+            fmt::join(correlated_columns_collector.get() | std::views::transform([](const auto & e) { return e->template as<ColumnNode>()->getColumnName(); }), "', '"),
+            scope.scope_node->formatASTForErrorMessage());
     }
 
     return resolve_result;
@@ -1794,7 +1789,8 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     const auto & join_tree = nearest_query_scope_query_node->getJoinTree();
 
     const auto * join_node = join_tree->as<JoinNode>();
-    if (join_node && join_node->isUsingJoinExpression())
+    bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(join_node);
+    if (!join_node_in_resolve_process && join_node && join_node->isUsingJoinExpression())
     {
         const auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
         const auto & join_using_nodes = join_using_list.getNodes();
@@ -2329,7 +2325,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
                 {
                     auto lambda_expression_to_resolve = expression_node->clone();
-                    IdentifierResolveScope lambda_scope(expression_node, &scope /*parent_scope*/);
+                    auto & lambda_scope = createIdentifierResolveScope(lambda_expression_to_resolve, /*parent_scope=*/&scope);
                     node_projection_names = resolveLambda(expression_node, lambda_expression_to_resolve, {node}, lambda_scope);
                     auto & lambda_expression_to_resolve_typed = lambda_expression_to_resolve->as<LambdaNode &>();
                     node = lambda_expression_to_resolve_typed.getExpression();
@@ -2539,6 +2535,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         if (identifier_node)
         {
             node = parent_window_node->clone();
+            node->removeAlias();
             result_projection_name = parent_window_name;
         }
         else
@@ -3122,7 +3119,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto first_argument_type = in_first_argument->getNodeType();
         if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
         {
-            IdentifierResolveScope subquery_scope(in_first_argument, &scope /*parent_scope*/);
+            IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(in_first_argument, &scope /*parent_scope*/);
             subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
@@ -3255,7 +3252,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
-            IdentifierResolveScope lambda_scope(lambda_expression_clone, &scope /*parent_scope*/);
+            IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
@@ -3510,7 +3507,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             QueryTreeNodes lambda_arguments;
             lambda_arguments.reserve(lambda_arguments_size);
 
-            IdentifierResolveScope lambda_scope(lambda_to_resolve, &scope /*parent_scope*/);
+            IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_to_resolve, &scope /*parent_scope*/);
             for (size_t i = 0; i < lambda_arguments_size; ++i)
             {
                 const auto & argument_type = function_data_type_argument_types[i];
@@ -3737,7 +3734,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         auto node_type = node->getNodeType();
         if (!allow_table_expression && (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION))
         {
-            IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
+            IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(node, &scope /*parent_scope*/);
             subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
             evaluateScalarSubqueryIfNeeded(node, subquery_scope);
@@ -3812,7 +3809,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         else
                             union_node->setIsCTE(false);
 
-                        IdentifierResolveScope subquery_scope(resolved_identifier_node, &scope /*parent_scope*/);
+                        IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(resolved_identifier_node, &scope /*parent_scope*/);
                         subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
                         /// CTE is being resolved, it's required to forbid to resolve to it again
@@ -3949,7 +3946,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             [[fallthrough]];
         case QueryTreeNodeType::UNION:
         {
-            IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
+            IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(node, &scope /*parent_scope*/);
             subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
             std::string projection_name = "_subquery_" + std::to_string(subquery_counter);
@@ -4378,7 +4375,7 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
         bool is_column_constant = interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
 
         auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
-        IdentifierResolveScope interpolate_scope(interpolation_to_resolve, &scope /*parent_scope*/);
+        IdentifierResolveScope & interpolate_scope = createIdentifierResolveScope(interpolation_to_resolve, &scope /*parent_scope*/);
 
         auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node);
         if (is_column_constant)
@@ -4683,7 +4680,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
               */
             alias_column_to_resolve = column_name_to_column_node[alias_column_to_resolve_name];
 
-            IdentifierResolveScope alias_column_resolve_scope(alias_column_to_resolve, nullptr /*parent_scope*/);
+            IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
             alias_column_resolve_scope.column_name_to_column_node = std::move(column_name_to_column_node);
             alias_column_resolve_scope.context = scope.context;
 
@@ -5356,7 +5353,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         left_subquery->getProjection().getNodes().push_back(projection_node->clone());
                         left_subquery->getJoinTree() = left_table_expression;
 
-                        IdentifierResolveScope left_subquery_scope(left_subquery, nullptr /*parent_scope*/);
+                        IdentifierResolveScope & left_subquery_scope = createIdentifierResolveScope(left_subquery, nullptr /*parent_scope*/);
                         resolveQuery(left_subquery, left_subquery_scope);
 
                         const auto & resolved_nodes = left_subquery->getProjection().getNodes();
@@ -5983,7 +5980,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         auto & non_recursive_query_mutable_context = non_recursive_query_is_query_node ? non_recursive_query->as<QueryNode &>().getMutableContext()
             :  non_recursive_query->as<UnionNode &>().getMutableContext();
 
-        IdentifierResolveScope non_recursive_subquery_scope(non_recursive_query, &scope /*parent_scope*/);
+        IdentifierResolveScope & non_recursive_subquery_scope = createIdentifierResolveScope(non_recursive_query, &scope /*parent_scope*/);
         non_recursive_subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
         if (non_recursive_query_is_query_node)
@@ -6014,7 +6011,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
     {
         auto & query_node = queries_nodes[i];
 
-        IdentifierResolveScope subquery_scope(query_node, &scope /*parent_scope*/);
+        IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(query_node, &scope /*parent_scope*/);
 
         if (recursive_cte_table_node)
             subquery_scope.expression_argument_name_to_node[union_node_typed.getCTEName()] = recursive_cte_table_node;

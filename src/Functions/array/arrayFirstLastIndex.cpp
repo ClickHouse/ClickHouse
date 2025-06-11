@@ -163,7 +163,7 @@ Returns the index of the last element in the source array for which `func(x[, y1
     FunctionDocumentation::Category category_last = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_last = {description_last, syntax_last, arguments_last, returned_value_last, examples_last, introduced_in_last, category_last};
 
-    factory.registerFunction<FunctionArrayLastIndex>();
+    factory.registerFunction<FunctionArrayLastIndex>(documentation_last);
 }
 
 }

@@ -47,6 +47,14 @@ public:
     X509Certificate peerCertificate() const;
 #endif
 
+    bool canKeepAlive() const
+    {
+        if (stream && stream_is_bounded)
+            return stream->eof();
+
+        return false;
+    }
+
 private:
     /// Limits for basic sanity checks when reading a header
     enum Limits
@@ -65,6 +73,7 @@ private:
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;
 
+    bool stream_is_bounded = false;
     bool secure;
 
     void readRequest(ReadBuffer & in);
