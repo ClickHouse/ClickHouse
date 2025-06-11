@@ -912,7 +912,8 @@ std::optional<size_t> IcebergMetadata::totalBytes() const
 ObjectIterator IcebergMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
-    size_t /* list_batch_size */, ContextPtr local_context) const
+    size_t /* list_batch_size */,
+    ContextPtr local_context) const
 {
     return createKeysIterator(getDataFiles(filter_dag, local_context), object_storage, callback);
 }
