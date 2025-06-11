@@ -29,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_SCHEDULER_NODE;
-    extern const int SERVER_OVERLOADED;
 }
 
 class ISchedulerNode;
