@@ -61,7 +61,8 @@ protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
-        size_t list_batch_size, ContextPtr context) const override;
+        size_t list_batch_size,
+        ContextPtr context) const override;
 
 private:
     mutable Strings data_files;
