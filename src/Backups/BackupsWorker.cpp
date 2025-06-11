@@ -407,7 +407,7 @@ struct BackupsWorker::BackupStarter
             UInt64 queryMaxSpeed = query_context->getBackupsThrottler()->getMaxSpeed();
             // Note: With S3 checksum enabled, each file is read twice — once for checksum, once for upload.
             // This effectively halves the usable bandwidth relative to max_backup_bandwidth.
-            LOG_INFO(
+            LOG_WARNING(
                 log,
                 "S3 checksum is enabled (s3_disable_checksum = 0): each file will be read twice — once for checksum and once for upload. "
                 "This effectively reduces the usable bandwidth to about half of max_backup_bandwidth (currently: {}). "
