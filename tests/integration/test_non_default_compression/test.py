@@ -2,6 +2,7 @@ import random
 import string
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster, is_arm
 
 cluster = ClickHouseCluster(__file__)
@@ -117,6 +118,7 @@ def test_preconfigured_default_codec(start_cluster):
             )
             == "10003\n"
         )
+        node.query("DROP TABLE compression_codec_multiple_with_key;")
 
 
 def test_preconfigured_custom_codec(start_cluster):
@@ -190,6 +192,8 @@ def test_preconfigured_custom_codec(start_cluster):
         == "11\n"
     )
 
+    node3.query("DROP TABLE compression_codec_multiple_with_key;")
+
 
 def test_uncompressed_cache_custom_codec(start_cluster):
     node4.query(
@@ -227,6 +231,8 @@ def test_uncompressed_cache_custom_codec(start_cluster):
         == "10000\n"
     )
 
+    node4.query("DROP TABLE compression_codec_multiple_with_key;")
+
 
 def test_uncompressed_cache_plus_zstd_codec(start_cluster):
     node5.query(
@@ -252,6 +258,8 @@ def test_uncompressed_cache_plus_zstd_codec(start_cluster):
         )
         == "10000\n"
     )
+
+    node5.query("DROP TABLE compression_codec_multiple_with_key;")
 
 
 def test_preconfigured_deflateqpl_codec(start_cluster):
@@ -312,3 +320,5 @@ def test_preconfigured_deflateqpl_codec(start_cluster):
         )
         == "10003\n"
     )
+
+    node6.query("DROP TABLE compression_codec_multiple_with_key;")

@@ -1,5 +1,8 @@
-#include <Interpreters/getColumnFromBlock.h>
+#include <Columns/IColumn.h>
+#include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/getColumnFromBlock.h>
 
 namespace DB
 {
@@ -42,8 +45,8 @@ ColumnPtr tryGetSubcolumnFromBlock(const Block & block, const DataTypePtr & requ
     /// extract the subcolumn, because the data of dynamic subcolumn can change after cast.
     if ((elem->type->hasDynamicSubcolumns() || requested_column_type->hasDynamicSubcolumns()) && !elem->type->equals(*requested_column_type))
     {
-        auto casted_column = castColumn({elem->column, elem->type, ""}, requested_column_type);
-        auto elem_column = requested_column_type->tryGetSubcolumn(subcolumn_name, casted_column);
+        auto cast_column = castColumn({elem->column, elem->type, ""}, requested_column_type);
+        auto elem_column = requested_column_type->tryGetSubcolumn(subcolumn_name, cast_column);
         auto elem_type = requested_column_type->tryGetSubcolumnType(subcolumn_name);
 
         if (!elem_type || !elem_column)
@@ -52,7 +55,7 @@ ColumnPtr tryGetSubcolumnFromBlock(const Block & block, const DataTypePtr & requ
         return elem_column;
     }
 
-    auto elem_column = elem->type->tryGetSubcolumn(subcolumn_name, elem->column);
+    auto elem_column = elem->type->tryGetSubcolumn(subcolumn_name, elem->column->decompress());
     auto elem_type = elem->type->tryGetSubcolumnType(subcolumn_name);
 
     if (!elem_type || !elem_column)

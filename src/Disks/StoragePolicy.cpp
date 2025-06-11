@@ -4,12 +4,15 @@
 #include "createVolume.h"
 
 #include <Interpreters/Context.h>
+#include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
+#include <Disks/VolumeJBOD.h>
 
 #include <algorithm>
+#include <ranges>
 #include <set>
 
 
@@ -109,7 +112,7 @@ StoragePolicy::StoragePolicy(
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        toString(move_factor), backQuote(name));
+                        move_factor, backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -128,7 +131,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        toString(move_factor), backQuote(name));
+                        move_factor, backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -327,8 +330,7 @@ VolumePtr StoragePolicy::getVolume(size_t index) const
 {
     if (index < volume_index_by_volume_name.size())
         return volumes[index];
-    else
-        throw Exception(ErrorCodes::UNKNOWN_VOLUME, "No volume with index {} in storage policy {}", std::to_string(index), backQuote(name));
+    throw Exception(ErrorCodes::UNKNOWN_VOLUME, "No volume with index {} in storage policy {}", std::to_string(index), backQuote(name));
 }
 
 
@@ -343,24 +345,45 @@ VolumePtr StoragePolicy::tryGetVolumeByName(const String & volume_name) const
 
 void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const
 {
-    std::unordered_set<String> new_volume_names;
-    for (const auto & volume : new_storage_policy->getVolumes())
-        new_volume_names.insert(volume->getName());
+    /// Do not check volumes for temporary policy because their names are automatically generated
+    bool skip_volume_check = this->getName().starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX)
+        || new_storage_policy->getName().starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX);
 
-    for (const auto & volume : getVolumes())
+    if (!skip_volume_check)
     {
-        if (!new_volume_names.contains(volume->getName()))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "New storage policy {} shall contain volumes of the old storage policy {}",
-                backQuote(new_storage_policy->getName()),
-                backQuote(name));
+        std::unordered_set<String> new_volume_names;
+        for (const auto & volume : new_storage_policy->getVolumes())
+            new_volume_names.insert(volume->getName());
 
+        for (const auto & volume : getVolumes())
+        {
+            if (!new_volume_names.contains(volume->getName()))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "New storage policy {} shall contain volumes of the old storage policy {}",
+                    backQuote(new_storage_policy->getName()),
+                    backQuote(name));
+
+            std::unordered_set<String> new_disk_names;
+            for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->getDisks())
+                new_disk_names.insert(disk->getName());
+
+            for (const auto & disk : volume->getDisks())
+                if (!new_disk_names.contains(disk->getName()))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "New storage policy {} shall contain disks of the old storage policy {}",
+                        backQuote(new_storage_policy->getName()),
+                        backQuote(name));
+        }
+    }
+    else
+    {
         std::unordered_set<String> new_disk_names;
-        for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->getDisks())
+        for (const auto & disk : new_storage_policy->getDisks())
             new_disk_names.insert(disk->getName());
 
-        for (const auto & disk : volume->getDisks())
+        for (const auto & disk : this->getDisks())
             if (!new_disk_names.contains(disk->getName()))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -370,6 +393,22 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
     }
 }
 
+bool StoragePolicy::isCompatibleForPartitionOps(const StoragePolicyPtr & other) const
+{
+    if (getName() == other->getName())
+        return true;
+
+    constexpr auto is_compatible = [](const auto & disk) -> bool
+    {
+        if (disk->isPlain())
+            return true;
+        if (auto delegate = disk->getDelegateDiskIfExists())
+            return delegate->isPlain();
+        return false;
+    };
+
+    return std::ranges::all_of(getDisks(), is_compatible) && std::ranges::all_of(other->getDisks(), is_compatible);
+}
 
 std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & disk_name) const
 {

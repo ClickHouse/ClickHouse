@@ -1,15 +1,18 @@
-1
-{"meta": [{"name":"value", "type":"UInt8"}, {"name":"name", "type":"String"}]}
-{"data":[1, "a"]}
-{"data":[2, "b"]}
-{"data":[3, "c"]}
-{"statistics": {"rows":3, "elapsed":ELAPSED, "rows_read":3, "bytes_read":33}}
-2
-{"meta": [{"name":"name", "type":"String"}, {"name":"c", "type":"UInt64"}]}
-{"data":["a", "1"]}
-{"data":["b", "1"]}
-{"data":["c", "1"]}
-{"totals": ["", "3"]}
-{"statistics": {"rows":3, "elapsed":ELAPSED, "rows_read":3, "bytes_read":30}}
-3
-Value passed to 'throwIf' function is non-zero:
+Check JSONCompactEachRowWithProgress
+{"meta":[{"name":"value","type":"UInt8"},{"name":"name","type":"String"},{"name":"arr","type":"Array(UInt64)"}]}
+{"row":[1, "a", []]}
+{"row":[2, "b", ["123"]]}
+{"row":[3, "c", ["456","789"]]}
+Check JSONCompactStringsEachRowWithProgress
+{"meta":[{"name":"value","type":"UInt8"},{"name":"name","type":"String"},{"name":"arr","type":"Array(UInt64)"}]}
+{"row":["1", "a", "[]"]}
+{"row":["2", "b", "[123]"]}
+{"row":["3", "c", "[456,789]"]}
+Check totals
+{"meta":[{"name":"name","type":"String"},{"name":"c","type":"UInt64"}]}
+{"row":["a", "1"]}
+{"row":["b", "1"]}
+{"row":["c", "1"]}
+{"totals":["", "3"]}
+Check exceptions
+{"exception":"Code: 395"}

@@ -204,7 +204,7 @@ bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
 
     Entry & entry = it->second;
     auto old_entity = entry.entity;
-    auto new_entity = update_func(old_entity);
+    auto new_entity = update_func(old_entity, id);
 
     if (!new_entity->isTypeOf(old_entity->getType()))
         throwBadCast(id, new_entity->getType(), new_entity->getName(), old_entity->getType());

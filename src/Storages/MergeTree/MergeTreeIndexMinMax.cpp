@@ -1,13 +1,13 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/ASTFunction.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Common/quoteString.h>
 
-#include <Poco/Logger.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Columns/ColumnNullable.h>
+
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -22,7 +22,8 @@ namespace ErrorCodes
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-{}
+{
+}
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     const String & index_name_,
@@ -30,7 +31,9 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     std::vector<Range> && hyperrectangle_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-    , hyperrectangle(std::move(hyperrectangle_)) {}
+    , hyperrectangle(std::move(hyperrectangle_))
+{
+}
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
@@ -112,7 +115,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-{}
+{
+}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
 {
@@ -145,9 +149,9 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
         else
         {
             hyperrectangle[i].left
-                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].left, field_min) ? hyperrectangle[i].left : field_min;
+                = accurateLess(hyperrectangle[i].left, field_min) ? hyperrectangle[i].left : field_min;
             hyperrectangle[i].right
-                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].right, field_max) ? field_max : hyperrectangle[i].right;
+                = accurateLess(hyperrectangle[i].right, field_max) ? field_max : hyperrectangle[i].right;
         }
     }
 
@@ -157,32 +161,39 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 namespace
 {
 
-KeyCondition buildCondition(const IndexDescription & index, const ActionsDAG * filter_actions_dag, ContextPtr context)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
-    return KeyCondition{filter_actions_dag, context, index.column_names, index.expression};
+    return KeyCondition{filter_dag, context, index.column_names, index.expression};
 }
 
 }
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const IndexDescription & index, const ActionsDAG * filter_actions_dag, ContextPtr context)
+    const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
     : index_data_types(index.data_types)
-    , condition(buildCondition(index, filter_actions_dag, context))
+    , condition(buildCondition(index, filter_dag, context))
 {
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {
-    return condition.alwaysUnknownOrTrue();
+    return rpnEvaluatesAlwaysUnknownOrTrue(
+        condition.getRPN(),
+        {KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE,
+         KeyCondition::RPNElement::FUNCTION_IN_RANGE,
+         KeyCondition::RPNElement::FUNCTION_IN_SET,
+         KeyCondition::RPNElement::FUNCTION_NOT_IN_SET,
+         KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE,
+         KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON,
+         KeyCondition::RPNElement::FUNCTION_IS_NULL,
+         KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL,
+         KeyCondition::RPNElement::ALWAYS_FALSE});
 }
 
 bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    std::shared_ptr<MergeTreeIndexGranuleMinMax> granule
-        = std::dynamic_pointer_cast<MergeTreeIndexGranuleMinMax>(idx_granule);
-    if (!granule)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Minmax index condition got a granule with the wrong type.");
-    return condition.checkInHyperrectangle(granule->hyperrectangle, index_data_types).can_be_true;
+    const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
+    return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types).can_be_true;
 }
 
 
@@ -198,16 +209,17 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const Me
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
-    const ActionsDAG * filter_actions_dag, ContextPtr context) const
+    const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_actions_dag, context);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
 {
-    if (data_part_storage.exists(relative_path_prefix + ".idx2"))
+    if (data_part_storage.existsFile(relative_path_prefix + ".idx2"))
         return {2, ".idx2"};
-    else if (data_part_storage.exists(relative_path_prefix + ".idx"))
+    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
         return {1, ".idx"};
     return {0 /* unknown */, ""};
 }
@@ -229,6 +241,14 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Data type of argument for minmax index must be comparable, got {} type for column {} instead",
+                column.type->getName(), column.name);
+        }
+
+        if (isDynamic(column.type) || isVariant(column.type))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{} data type of column {} is not allowed in minmax index because the column of that type can contain values with different data "
+                "types. Consider using typed subcolumns or cast column to a specific data type",
                 column.type->getName(), column.name);
         }
     }

@@ -1,5 +1,7 @@
-import pytest
 import uuid
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -64,9 +66,9 @@ def test_ignore_obsolete_grant_on_database():
             "bash",
             "-c",
             f"""
-        cat > /var/lib/clickhouse/access/{user_id}.sql << EOF
-ATTACH USER \`{user_id}\`;
-ATTACH GRANT CREATE FUNCTION, SELECT ON mydb.* TO \`{user_id}\`;
+        cat > /var/lib/clickhouse/access/{user_id}.sql << 'EOF'
+ATTACH USER `{user_id}`;
+ATTACH GRANT CREATE FUNCTION, SELECT ON mydb.* TO `{user_id}`;
 EOF""",
         ]
     )

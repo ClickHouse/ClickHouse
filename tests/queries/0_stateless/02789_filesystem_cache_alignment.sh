@@ -14,7 +14,6 @@ SETTINGS disk = disk(type = cache,
                      max_size = '1Gi',
                      max_file_segment_size = '40Mi',
                      boundary_alignment = '20Mi',
-                     background_download_threads = 2,
                      path = '$CLICKHOUSE_TEST_UNIQUE_NAME',
                      disk = 's3_disk');
 
@@ -24,9 +23,10 @@ INSERT INTO test SELECT number, randomString(100) FROM numbers(1000000);
 QUERY_ID=$RANDOM
 $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -m -q "
 SET enable_filesystem_cache_log = 1;
+SET read_through_distributed_cache=0;
 SYSTEM DROP FILESYSTEM CACHE;
 SELECT * FROM test WHERE NOT ignore() LIMIT 1 FORMAT Null;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS filesystem_cache_log;
 "
 
 query="

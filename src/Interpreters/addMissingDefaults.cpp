@@ -46,7 +46,7 @@ ActionsDAG addMissingDefaults(
 
     FunctionOverloadResolverPtr func_builder_replicate = FunctionFactory::instance().get("replicate", context);
 
-    /// We take given columns from input block and missed columns without default value
+    /// We take given columns from the input block and missed columns without default value
     /// (default and materialized will be computed later).
     for (const auto & column : required_columns)
     {
@@ -85,7 +85,7 @@ ActionsDAG addMissingDefaults(
 
     /// Removes unused columns and reorders result.
     actions.removeUnusedActions(required_columns.getNames(), false);
-    actions.addMaterializingOutputActions();
+    actions.addMaterializingOutputActions(/*materialize_sparse=*/ false);
 
     return actions;
 }

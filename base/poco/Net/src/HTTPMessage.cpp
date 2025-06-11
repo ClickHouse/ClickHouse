@@ -203,7 +203,7 @@ int parseFromHeaderValues(const std::string_view header_value, const std::string
         return -1;
 
     int value = 0;
-    auto [ptr, ec] = std::from_chars(timeout_value_substr.begin(), timeout_value_substr.end(), value);
+    auto [ptr, ec] = std::from_chars(timeout_value_substr.data(), timeout_value_substr.data() + timeout_value_substr.size(), value);
 
     if (ec == std::errc())
         return value;

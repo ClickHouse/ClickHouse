@@ -64,6 +64,7 @@ static constexpr std::string_view tables = R"(
         `table_type` String,
         `table_rows` Nullable(UInt64),
         `data_length` Nullable(UInt64),
+        `index_length` Nullable(UInt64),
         `table_collation` Nullable(String),
         `table_comment` Nullable(String),
         `TABLE_CATALOG` String,
@@ -88,6 +89,9 @@ static constexpr std::string_view tables = R"(
                 )            AS table_type,
         total_rows AS table_rows,
         total_bytes AS data_length,
+        sum(p.primary_key_size + p.marks_bytes
+            + p.secondary_indices_compressed_bytes + p.secondary_indices_marks_bytes
+        ) AS index_length,
         'utf8mb4_0900_ai_ci' AS table_collation,
         comment              AS table_comment,
         table_catalog        AS TABLE_CATALOG,
@@ -98,7 +102,17 @@ static constexpr std::string_view tables = R"(
         data_length          AS DATA_LENGTH,
         table_collation      AS TABLE_COLLATION,
         table_comment        AS TABLE_COMMENT
-    FROM system.tables
+    FROM system.tables t
+    LEFT JOIN system.parts p ON (t.database = p.database AND t.name = p.table)
+    GROUP BY
+        t.database,
+        t.name,
+        t.is_temporary,
+        t.engine,
+        t.has_own_data,
+        t.total_rows,
+        t.total_bytes,
+        t.comment
 )";
 
 static constexpr std::string_view views = R"(
@@ -460,6 +474,49 @@ static constexpr std::string_view statistics = R"(
     WHERE false; -- make sure this view is always empty
 )";
 
+/// MySQL-specific
+static constexpr std::string_view engines = R"(
+    ATTACH VIEW engines
+    (
+        engine String,
+        support String,
+        ENGINE String,
+        SUPPORT String
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
+        name AS engine,
+        engine = getSetting('default_table_engine') ? 'DEFAULT' : 'YES' AS support,
+        engine AS ENGINE,
+        support AS SUPPORT
+    FROM system.table_engines
+)";
+
+static constexpr std::string_view character_sets = R"(
+    ATTACH VIEW character_sets
+    (
+        character_set_name String,
+        CHARACTER_SET_NAME String
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
+        arrayJoin(['utf8', 'utf8mb4', 'ascii', 'binary']) AS character_set_name,
+        character_set_name AS CHARACTER_SET_NAME
+)";
+
+static constexpr std::string_view collations = R"(
+    ATTACH VIEW collations
+    (
+        collation_name String,
+        COLLATION_NAME String
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
+        name AS collation_name,
+        collation_name AS COLLATION_NAME
+    FROM system.collations
+)";
+
 /// View structures are taken from http://www.contrib.andrew.cmu.edu/~shadow/sql/sql1992.txt
 
 static void createInformationSchemaView(ContextMutablePtr context, IDatabase & database, const String & view_name, std::string_view query)
@@ -512,6 +569,9 @@ void attachInformationSchema(ContextMutablePtr context, IDatabase & information_
     createInformationSchemaView(context, information_schema_database, "key_column_usage", key_column_usage);
     createInformationSchemaView(context, information_schema_database, "referential_constraints", referential_constraints);
     createInformationSchemaView(context, information_schema_database, "statistics", statistics);
+    createInformationSchemaView(context, information_schema_database, "engines", engines);
+    createInformationSchemaView(context, information_schema_database, "character_sets", character_sets);
+    createInformationSchemaView(context, information_schema_database, "collations", collations);
 }
 
 }

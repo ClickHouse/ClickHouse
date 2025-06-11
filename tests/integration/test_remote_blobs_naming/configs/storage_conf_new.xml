@@ -11,20 +11,20 @@
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/old-style-prefix/with-several-section/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </s3>
             <s3_plain>
                 <type>s3_plain</type>
                 <endpoint>http://minio1:9001/root/data/s3_pain_key_prefix</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_allow_native_copy>true</s3_allow_native_copy>
             </s3_plain>
             <s3_template_key>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <key_compatibility_prefix>old-style-prefix/with-several-section</key_compatibility_prefix>
                 <key_template>[a-z]{3}-first-random-part/new-style-prefix/constant-part/[a-z]{3}/[a-z]{29}</key_template>
             </s3_template_key>

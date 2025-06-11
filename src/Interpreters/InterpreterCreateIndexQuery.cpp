@@ -53,11 +53,9 @@ BlockIO InterpreterCreateIndexQuery::execute()
             throw Exception(ErrorCodes::INCORRECT_QUERY, "CREATE INDEX without TYPE is forbidden."
                 " SET allow_create_index_without_type=1 to ignore this statements");
         }
-        else
-        {
-            // Nothing to do
-            return {};
-        }
+
+        // Nothing to do
+        return {};
     }
 
     AccessRightsElements required_access;
@@ -79,7 +77,7 @@ BlockIO InterpreterCreateIndexQuery::execute()
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, current_context);
+        return database->tryEnqueueReplicatedDDL(query_ptr, current_context, {});
     }
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, current_context);

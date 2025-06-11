@@ -90,7 +90,10 @@ public:
         const String & query_id,
         UInt64 stage,
         ClientInfo & client_info,
-        bool with_pending_data) override;
+        bool with_pending_data,
+        const std::vector<String> & external_roles) override;
+
+    void sendQueryPlan(const QueryPlan & query_plan) override;
 
     void sendReadTaskResponse(const String &) override
     {
@@ -105,6 +108,8 @@ public:
     Packet receivePacket() override;
 
     Packet receivePacketUnlocked(AsyncCallback async_callback) override;
+
+    UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) override;
 
     void disconnect() override;
 

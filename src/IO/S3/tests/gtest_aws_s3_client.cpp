@@ -30,6 +30,12 @@
 
 #include "TestPocoHTTPServer.h"
 
+namespace DB::S3RequestSetting
+{
+    extern const S3RequestSettingsUInt64 max_single_read_retries;
+    extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+}
+
 /*
  * When all tests are executed together, `Context::getGlobalContextInstance()` is not null. Global context is used by
  * ProxyResolvers to get proxy configuration (used by S3 clients). If global context does not have a valid ConfigRef, it relies on
@@ -69,8 +75,8 @@ void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::U
     UInt64 max_single_read_retries = 1;
 
     DB::ReadSettings read_settings;
-    DB::S3::RequestSettings request_settings;
-    request_settings.max_single_read_retries = max_single_read_retries;
+    DB::S3::S3RequestSettings request_settings;
+    request_settings[DB::S3RequestSetting::max_single_read_retries] = max_single_read_retries;
     DB::ReadBufferFromS3 read_buffer(
         client,
         uri.bucket,
@@ -88,8 +94,8 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
 {
     UInt64 max_unexpected_write_error_retries = 1;
 
-    DB::S3::RequestSettings request_settings;
-    request_settings.max_unexpected_write_error_retries = max_unexpected_write_error_retries;
+    DB::S3::S3RequestSettings request_settings;
+    request_settings[DB::S3RequestSetting::max_unexpected_write_error_retries] = max_unexpected_write_error_retries;
     DB::WriteBufferFromS3 write_buffer(
         client,
         uri.bucket,
@@ -118,16 +124,19 @@ void testServerSideEncryption(
     DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
+    bool s3_slow_all_threads_after_network_error = true;
     DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
     String region = "us-east-1";
     bool enable_s3_requests_logging = false;
+
     DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
         region,
         remote_host_filter,
         s3_max_redirects,
         s3_retry_attempts,
+        s3_slow_all_threads_after_network_error,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* get_request_throttler = */ {},

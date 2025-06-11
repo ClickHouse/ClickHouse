@@ -5,7 +5,7 @@
                 <type>s3</type>
                 <endpoint>https://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </s3>
         </disks>
         <policies>
@@ -23,7 +23,7 @@
         <s3>
             <url>https://minio1:9001/root/data/</url>
             <access_key_id>minio</access_key_id>
-            <secret_access_key>minio123</secret_access_key>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
         </s3>
     </named_collections>
 

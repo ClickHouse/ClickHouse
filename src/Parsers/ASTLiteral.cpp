@@ -1,6 +1,9 @@
+
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
+#include <Common/quoteString.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -73,12 +76,13 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     /// Special case for very large arrays and tuples. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing)
-        || (type == Field::Types::Tuple && value.safeGet<const Tuple &>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing)
+        || (type == Field::Types::Tuple && value.safeGet<Tuple>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low, high;
+        UInt64 low;
+        UInt64 high;
         hash.get128(low, high);
 
         writeCString(type == Field::Types::Array ? "__array_" : "__tuple_", ostr);
@@ -110,11 +114,12 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     /// Special case for very large arrays. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low, high;
+        UInt64 low;
+        UInt64 high;
         hash.get128(low, high);
 
         writeCString("__array_", ostr);
@@ -148,12 +153,58 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
     return wb.str();
 }
 
-void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
-        settings.ostr << applyVisitor(FieldVisitorToString(), value);
+    if (custom_type && isBool(custom_type) && isInt64OrUInt64FieldType(value.getType()))
+        ostr << applyVisitor(FieldVisitorToString(), Field(value.safeGet<UInt64>() != 0));
+    else if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
+        ostr << applyVisitor(FieldVisitorToString(), value);
     else
-        settings.ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+        ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+}
+
+
+bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, WriteBuffer & ostr, const char * metacharacters)
+{
+    if (const auto * literal = node->as<ASTLiteral>())
+    {
+        if (literal->value.getType() == Field::Types::String)
+        {
+            auto string = applyVisitor(FieldVisitorToString(), literal->value);
+            highlightStringWithMetacharacters(string, ostr, metacharacters);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void highlightStringWithMetacharacters(const String & string, WriteBuffer & ostr, const char * metacharacters)
+{
+    unsigned escaping = 0;
+    for (auto c : string)
+    {
+        if (c == '\\')
+        {
+            ostr << c;
+            if (escaping == 2)
+                escaping = 0;
+            ++escaping;
+        }
+        else if (nullptr != strchr(metacharacters, c))
+        {
+            if (escaping == 2)      /// Properly escaped metacharacter
+                ostr << c;
+            else                    /// Unescaped metacharacter
+                ostr << "\033[1;35m" << c << "\033[0m";
+            escaping = 0;
+        }
+        else
+        {
+            ostr << c;
+            escaping = 0;
+        }
+    }
 }
 
 }

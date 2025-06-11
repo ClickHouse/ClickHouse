@@ -43,16 +43,17 @@ UInt64 Throttler::add(size_t amount)
     // Values obtained under lock to be checked after release
     size_t count_value = 0;
     double tokens_value = 0.0;
-    addImpl(amount, count_value, tokens_value);
+    size_t max_speed_value = 0;
+    addImpl(amount, count_value, tokens_value, max_speed_value);
 
     if (limit && count_value > limit)
         throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
 
     /// Wait unless there is positive amount of tokens - throttling
     Int64 sleep_time_ns = 0;
-    if (max_speed && tokens_value < 0)
+    if (max_speed_value && tokens_value < 0)
     {
-        sleep_time_ns = static_cast<Int64>(-tokens_value / max_speed * NS);
+        sleep_time_ns = static_cast<Int64>(-tokens_value / max_speed_value * NS);
         accumulated_sleep += sleep_time_ns;
         sleepForNanoseconds(sleep_time_ns);
         accumulated_sleep -= sleep_time_ns;
@@ -67,10 +68,17 @@ UInt64 Throttler::add(size_t amount)
 
 void Throttler::addImpl(size_t amount, size_t & count_value, double & tokens_value)
 {
+    size_t max_speed_value = 0;
+    addImpl(amount, count_value, tokens_value, max_speed_value);
+}
+
+void Throttler::addImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value)
+{
     std::lock_guard lock(mutex);
     auto now = clock_gettime_ns_adjusted(prev_ns);
     if (max_speed)
     {
+        max_speed_value = max_speed;
         double delta_seconds = prev_ns ? static_cast<double>(now - prev_ns) / NS : 0;
         tokens = std::min<double>(tokens + max_speed * delta_seconds - amount, max_burst);
     }
@@ -109,6 +117,26 @@ Int64 Throttler::getAvailable()
     addImpl(0, count_value, tokens_value);
 
     return static_cast<Int64>(tokens_value);
+}
+
+UInt64 Throttler::getMaxSpeed()
+{
+    std::lock_guard lock(mutex);
+    return max_speed;
+}
+
+UInt64 Throttler::getMaxBurst()
+{
+    std::lock_guard lock(mutex);
+    return max_burst;
+}
+
+void Throttler::setMaxSpeed(size_t max_speed_)
+{
+    std::lock_guard lock(mutex);
+
+    max_speed = max_speed_;
+    max_burst = max_speed_ * default_burst_seconds;
 }
 
 }

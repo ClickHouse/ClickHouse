@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -37,7 +38,8 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     const ContextPtr & context)
 {
     chassert(replicas_count > 1);
-    if (filter.filter_type == ParallelReplicasCustomKeyFilterType::DEFAULT)
+    chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING || filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
+    if (filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING)
     {
         // first we do modulo with replica count
         auto modulo_function = makeASTFunction("positiveModulo", custom_key_ast, std::make_shared<ASTLiteral>(replicas_count));
@@ -48,7 +50,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
         return equals_function;
     }
 
-    chassert(filter.filter_type == ParallelReplicasCustomKeyFilterType::RANGE);
+    chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
 
     KeyDescription custom_key_description
         = KeyDescription::getKeyFromAST(custom_key_ast, columns, context);
@@ -69,7 +71,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt64) max value",
-                    range_upper);
+                    rational_cast<double>(range_upper));
         }
         else if (typeid_cast<const DataTypeUInt32 *>(custom_key_column_type.get()))
         {
@@ -79,7 +81,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt32) max value",
-                    range_upper);
+                    rational_cast<double>(range_upper));
         }
         else if (typeid_cast<const DataTypeUInt16 *>(custom_key_column_type.get()))
         {
@@ -89,7 +91,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt16) max value",
-                    range_upper);
+                    rational_cast<double>(range_upper));
         }
         else if (typeid_cast<const DataTypeUInt8 *>(custom_key_column_type.get()))
         {
@@ -99,7 +101,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt8) max value",
-                    range_upper);
+                    rational_cast<double>(range_upper));
         }
     }
 
@@ -113,8 +115,8 @@ ASTPtr getCustomKeyFilterForParallelReplica(
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
             "Invalid custom key filter range: Range upper bound {} must be larger than range lower bound {}",
-            range_lower,
-            range_upper);
+            rational_cast<double>(range_lower),
+            rational_cast<double>(range_upper));
 
     RelativeSize size_of_universum = range_upper - range_lower;
 

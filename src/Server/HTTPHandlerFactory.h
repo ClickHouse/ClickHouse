@@ -52,7 +52,7 @@ public:
         {
             if (filter_type == "handler")
                 continue;
-            else if (filter_type == "url")
+            if (filter_type == "url")
                 addFilter(urlFilter(config, prefix + ".url"));
             else if (filter_type == "empty_query_string")
                 addFilter(emptyQueryStringFilter());
@@ -90,7 +90,7 @@ public:
     {
         addFilter([](const auto & request)
         {
-            return (request.getURI().find('?') != std::string::npos
+            return (request.getURI().contains('?')
                 && (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD))
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS
@@ -110,19 +110,23 @@ private:
 
 HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 /// @param server - used in handlers to check IServer::isCancelled()
 /// @param config - not the same as server.config(), since it can be newer

@@ -359,10 +359,11 @@ namespace
     }
 }
 
-    FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
-    {
-        return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types].value);
-    }
+
+FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
+{
+    return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types].value);
+}
 
 DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes & arguments) const
 {
@@ -415,9 +416,10 @@ ColumnPtr FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndN
     auto col_res = ColumnString::create();
     auto & string_column = assert_cast<ColumnString &>(*col_res);
     auto & chars = string_column.getChars();
-    WriteBufferFromVector buf(chars);
-    writeRandomStructure(rng, number_of_columns, buf, allow_suspicious_lc_types);
-    buf.finalize();
+    {
+        auto buf = WriteBufferFromVector<ColumnString::Chars>(chars);
+        writeRandomStructure(rng, number_of_columns, buf, allow_suspicious_lc_types);
+    }
     chars.push_back(0);
     string_column.getOffsets().push_back(chars.size());
     return ColumnConst::create(std::move(col_res), input_rows_count);
@@ -448,7 +450,7 @@ The function returns a value of type String.
                 {"with specified number of columns", "SELECT generateRandomStructure(3)", "c1 String, c2 Array(Int32), c3 LowCardinality(String)"},
                 {"with specified seed", "SELECT generateRandomStructure(1, 42)", "c1 UInt128"},
             },
-            .categories{"Random"}
+            .category = FunctionDocumentation::Category::RandomNumber
         });
 }
 

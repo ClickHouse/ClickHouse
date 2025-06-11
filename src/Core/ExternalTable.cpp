@@ -97,7 +97,7 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
                     /*one_line=*/true,
                     /*show_secrets=*/true,
                     /*print_pretty_type_names=*/false,
-                    /*always_quote_identifiers=*/false,
+                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
                     /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: expected column definition, got {}", child->formatForErrorMessage());
@@ -122,7 +122,7 @@ void BaseExternalTable::parseStructureFromTypesField(const std::string & argumen
                 /*one_line=*/true,
                 /*show_secrets=*/true,
                 /*print_pretty_type_names=*/false,
-                /*always_quote_identifiers=*/false,
+                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
                 /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
 }
 
@@ -189,11 +189,11 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     if (settings[Setting::http_max_multipart_form_data_size])
         read_buffer = std::make_unique<LimitReadBuffer>(
             stream,
-            settings[Setting::http_max_multipart_form_data_size],
-            /* trow_exception */ true,
-            /* exact_limit */ std::optional<size_t>(),
-            "the maximum size of multipart/form-data. "
-            "This limit can be tuned by 'http_max_multipart_form_data_size' setting");
+            LimitReadBuffer::Settings{
+                .read_no_more = settings[Setting::http_max_multipart_form_data_size],
+                .expect_eof = true,
+                .excetion_hint = "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting",
+            });
     else
         read_buffer = wrapReadBufferReference(stream);
 

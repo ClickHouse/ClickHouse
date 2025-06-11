@@ -1,10 +1,12 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
+
+#include <Core/Block.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Common/formatReadable.h>
 #include <Columns/ColumnSparse.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Port.h>
 
 namespace ProfileEvents
 {
@@ -19,6 +21,13 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int EMPTY_DATA_PASSED;
     extern const int RECEIVED_EMPTY_DATA;
+}
+
+void ColumnGathererStream::Source::update(ColumnPtr column_)
+{
+    column = std::move(column_);
+    size = column->size();
+    pos = 0;
 }
 
 ColumnGathererStream::ColumnGathererStream(

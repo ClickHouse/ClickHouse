@@ -71,7 +71,7 @@ namespace DB
                     loop_table_name = id_name;
                 }
             }
-            else if (const auto * func = args[0]->as<ASTFunction>())
+            else if (const auto * /*func*/ _ = args[0]->as<ASTFunction>())
             {
                 inner_table_function_ast = args[0];
             }
@@ -127,7 +127,8 @@ namespace DB
                     context,
                     table_name,
                     std::move(cached_columns),
-                    is_insert_query);
+                    /*use_global_context=*/false,
+                    /*is_insert_query=*/is_insert_query);
         }
         auto res = std::make_shared<StorageLoop>(
                 StorageID(getDatabaseName(), table_name),
@@ -148,7 +149,8 @@ namespace DB
                                                                                               "0"
                                                                                               "1"
                                                                                               "2"
-                                                                                              "0"}}
+                                                                                              "0"}},
+                 .category = FunctionDocumentation::Category::TableFunction
                         }});
     }
 

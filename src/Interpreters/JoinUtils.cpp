@@ -17,7 +17,10 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
 
+#include <Core/BlockNameMap.h>
+
 #include <base/FnTraits.h>
+#include <ranges>
 
 namespace DB
 {
@@ -157,7 +160,7 @@ static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
         {
             return col;
         }
-        else if (col_lc.nestedCanBeInsideNullable())
+        if (col_lc.nestedCanBeInsideNullable())
         {
             return col_lc.cloneNullable();
         }
@@ -169,7 +172,7 @@ static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
         {
             return makeNullable(col);
         }
-        else if (nested->lowCardinality())
+        if (nested->lowCardinality())
         {
             ColumnPtr nested_nullable = tryConvertColumnToNullable(nested);
             if (nested_nullable)
@@ -510,8 +513,7 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
             res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
         return JoinMask(std::move(res));
     }
-    else
-        return JoinMask(std::move(join_condition_col));
+    return JoinMask(std::move(join_condition_col));
 }
 
 
@@ -692,7 +694,7 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
 
     /// `saved_block_sample` may contains non unique column names, get any of them
     /// (e.g. in case of `... JOIN (SELECT a, a, b FROM table) as t2`)
-    for (const auto & [right_name, right_pos] : saved_block_sample.getNamesToIndexesMap())
+    for (const auto & [right_name, right_pos] : getNamesToIndexesMap(saved_block_sample))
     {
         String column_name(right_name);
         if (table_join.getStorageJoin())
@@ -716,9 +718,9 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Error in columns mapping in JOIN: assertion failed {} + {} + {} != {}; "
-            "Result block [{}], Saved block [{}]",
+            "left_columns_count = {}, result_sample_block.columns = [{}], saved_block_sample.columns = [{}]",
             column_indices_left.size(), column_indices_right.size(), same_result_keys.size(), result_sample_block.columns(),
-            result_sample_block.dumpNames(), saved_block_sample.dumpNames());
+            left_columns_count, result_sample_block.dumpNames(), saved_block_sample.dumpNames());
     }
 }
 

@@ -47,24 +47,27 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
     : DatabaseOnDisk(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)
 {
+    createDirectories();
 }
 
 
 void DatabaseLazy::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/)
 {
-    iterateMetadataFiles([this, &local_context](const String & file_name)
-    {
-        const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
-
-        fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
-        if (fs::exists(detached_permanently_flag))
+    auto db_disk = getDisk();
+    iterateMetadataFiles(
+        [this, &local_context, db_disk](const String & file_name)
         {
-            LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
-            return;
-        }
+            const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
 
-        attachTable(local_context, table_name, nullptr, {});
-    });
+            fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
+            if (db_disk->existsFile(detached_permanently_flag))
+            {
+                LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
+                return;
+            }
+
+            attachTable(local_context, table_name, nullptr, {});
+        });
 }
 
 
@@ -263,13 +266,13 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
     LOG_DEBUG(log, "Load table {} to cache.", backQuote(table_name));
 
     const String table_metadata_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + ".sql");
-
+    auto db_disk = getDisk();
     try
     {
         StoragePtr table;
         auto context_copy = Context::createCopy(context); /// some tables can change context, but not LogTables
 
-        auto ast = parseQueryFromMetadata(log, getContext(), table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
+        auto ast = parseQueryFromMetadata(log, getContext(), db_disk, table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/ false);
         if (ast)
         {
             const auto & ast_create = ast->as<const ASTCreateQuery &>();
@@ -324,7 +327,7 @@ try
 
         if (!it->second.table || isSharedPtrUnique(it->second.table))
         {
-            LOG_DEBUG(log, "Drop table {} from cache.", backQuote(it->first));
+            LOG_DEBUG(log, "Removing table {} from cache.", backQuote(it->first));
             it->second.table.reset();
             expired_tables.erase(it->second.expiration_iterator);
             it->second.expiration_iterator = cache_expiration_queue.end();

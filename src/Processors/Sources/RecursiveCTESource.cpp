@@ -8,10 +8,12 @@
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
+#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -171,7 +173,7 @@ private:
                 ErrorCodes::TOO_DEEP_RECURSION,
                 "Maximum recursive CTE evaluation depth ({}) exceeded, during evaluation of {}. Consider raising "
                 "max_recursive_cte_evaluation_depth setting.",
-                recursive_subquery_settings[Setting::max_recursive_cte_evaluation_depth],
+                recursive_subquery_settings[Setting::max_recursive_cte_evaluation_depth].value,
                 recursive_cte_union_node->formatASTForErrorMessage());
 
         auto & query_to_execute = recursive_step > 0 ? recursive_query : non_recursive_query;

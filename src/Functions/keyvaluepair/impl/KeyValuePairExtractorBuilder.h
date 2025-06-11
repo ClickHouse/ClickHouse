@@ -1,7 +1,9 @@
 #pragma once
 
-#include <memory>
 #include <vector>
+#include <Functions/keyvaluepair/impl/CHKeyValuePairExtractor.h>
+#include <Functions/keyvaluepair/impl/Configuration.h>
+#include <Functions/keyvaluepair/impl/StateHandlerImpl.h>
 
 namespace DB
 {
@@ -18,22 +20,34 @@ public:
 
     KeyValuePairExtractorBuilder & withQuotingCharacter(char quoting_character_);
 
-    KeyValuePairExtractorBuilder & withEscaping();
-
     KeyValuePairExtractorBuilder & withMaxNumberOfPairs(uint64_t max_number_of_pairs_);
 
-    std::shared_ptr<KeyValuePairExtractor> build() const;
+    auto buildWithoutEscaping() const
+    {
+        auto configuration = extractKV::ConfigurationFactory::createWithoutEscaping(key_value_delimiter, quoting_character, item_delimiters);
+
+        return KeyValuePairExtractorNoEscaping(configuration, max_number_of_pairs);
+    }
+
+    auto buildWithEscaping() const
+    {
+        auto configuration = extractKV::ConfigurationFactory::createWithEscaping(key_value_delimiter, quoting_character, item_delimiters);
+
+        return KeyValuePairExtractorInlineEscaping(configuration, max_number_of_pairs);
+    }
+
+    auto buildWithReferenceMap() const
+    {
+        auto configuration = extractKV::ConfigurationFactory::createWithoutEscaping(key_value_delimiter, quoting_character, item_delimiters);
+
+        return KeyValuePairExtractorReferenceMap(configuration, max_number_of_pairs);
+    }
 
 private:
-    bool with_escaping = false;
     char key_value_delimiter = ':';
     char quoting_character = '"';
     std::vector<char> item_delimiters = {' ', ',', ';'};
     uint64_t max_number_of_pairs = std::numeric_limits<uint64_t>::max();
-
-    std::shared_ptr<KeyValuePairExtractor> buildWithEscaping() const;
-
-    std::shared_ptr<KeyValuePairExtractor> buildWithoutEscaping() const;
 };
 
 }

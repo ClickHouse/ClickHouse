@@ -3,8 +3,14 @@
 #include "config.h"
 #if USE_PROMETHEUS_PROTOBUFS
 
+#include <algorithm>
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -18,17 +24,25 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
 {
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsMap tags_to_columns;
+    extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
+}
 
 namespace ErrorCodes
 {
@@ -65,9 +79,11 @@ namespace
                 {
                     if (label_name == previous_label_name)
                         throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS, "Found duplicate label {}", label_name);
-                    else
-                        throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS, "Label names are not sorted in lexicographical order ({} > {})",
-                                        previous_label_name, label_name);
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
+                        "Label names are not sorted in lexicographical order ({} > {})",
+                        previous_label_name,
+                        label_name);
                 }
             }
         }
@@ -121,7 +137,7 @@ namespace
             ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
-            ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
+            ExpressionActionsSettings(context, CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -158,10 +174,9 @@ namespace
     {
         if (scale == 3)
             return timestamp_ms;
-        else if (scale > 3)
+        if (scale > 3)
             return timestamp_ms * DecimalUtils::scaleMultiplier<DateTime64>(scale - 3);
-        else
-            return timestamp_ms / DecimalUtils::scaleMultiplier<DateTime64>(3 - scale);
+        return timestamp_ms / DecimalUtils::scaleMultiplier<DateTime64>(3 - scale);
     }
 
     /// Finds min time and max time in a time series.
@@ -173,10 +188,8 @@ namespace
         for (const auto & sample : samples)
         {
             Int64 timestamp = sample.timestamp();
-            if (timestamp < min_time)
-                min_time = timestamp;
-            if (timestamp > max_time)
-                max_time = timestamp;
+            min_time = std::min(timestamp, min_time);
+            max_time = std::max(timestamp, max_time);
         }
         return {min_time, max_time};
     }
@@ -211,7 +224,8 @@ namespace
         };
 
         /// We're going to prepare two blocks - one for the "data" table, and one for the "tags" table.
-        Block data_block, tags_block;
+        Block data_block;
+        Block tags_block;
 
         auto make_column_for_data_block = [&](const ColumnDescription & column_description) -> IColumn &
         {
@@ -260,10 +274,10 @@ namespace
 
         /// Columns corresponding to specific tags specified in the "tags_to_columns" setting.
         std::unordered_map<String, IColumn *> columns_by_tag_name;
-        const Map & tags_to_columns = time_series_settings.tags_to_columns;
+        const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
-            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
             const auto & tag_name = tuple.at(0).safeGet<String>();
             const auto & column_name = tuple.at(1).safeGet<String>();
             const auto & column_description = get_column_description(column_name);
@@ -285,7 +299,7 @@ namespace
         IColumn * all_tags_names = nullptr;
         IColumn * all_tags_values = nullptr;
         IColumn::Offsets * all_tags_offsets = nullptr;
-        if (time_series_settings.use_all_tags_column_to_generate_id)
+        if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
         {
             const auto & all_tags_description = get_column_description(TimeSeriesColumnNames::AllTags);
             validator.validateColumnForTagsMap(all_tags_description);
@@ -300,7 +314,7 @@ namespace
         IColumn * max_time_column = nullptr;
         UInt32 min_time_scale = 0;
         UInt32 max_time_scale = 0;
-        if (time_series_settings.store_min_time_and_max_time)
+        if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
         {
             const auto & min_time_description = get_column_description(TimeSeriesColumnNames::MinTime);
             const auto & max_time_description = get_column_description(TimeSeriesColumnNames::MaxTime);
@@ -335,7 +349,7 @@ namespace
                 }
                 else
                 {
-                    if (time_series_settings.use_all_tags_column_to_generate_id)
+                    if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
                     {
                         all_tags_names->insertData(tag_name.data(), tag_name.length());
                         all_tags_values->insertData(tag_value.data(), tag_value.length());
@@ -358,10 +372,10 @@ namespace
 
             tags_offsets.push_back(tags_names.size());
 
-            if (time_series_settings.use_all_tags_column_to_generate_id)
+            if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
                 all_tags_offsets->push_back(all_tags_names->size());
 
-            if (time_series_settings.store_min_time_and_max_time)
+            if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
             {
                 auto [min_time, max_time] = findMinTimeAndMaxTime(element.samples());
                 min_time_column->insert(scaleTimestamp(min_time, min_time_scale));
@@ -530,7 +544,7 @@ namespace
                 ContextMutablePtr insert_context = Context::createCopy(context);
                 insert_context->setCurrentQueryId(context->getCurrentQueryId() + ":" + String{toString(table_kind)});
 
-                LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), queryToString(insert_query));
+                LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), insert_query->formatForLogging());
 
                 InterpreterInsertQuery interpreter(
                     insert_query,
@@ -570,9 +584,9 @@ void PrometheusRemoteWriteProtocol::writeTimeSeries(const google::protobuf::Repe
               time_series_storage_id.getNameForLogs(), time_series.size());
 
     auto time_series_storage_metadata = time_series_storage->getInMemoryMetadataPtr();
-    auto time_series_settings = time_series_storage->getStorageSettingsPtr();
+    const auto & time_series_settings = time_series_storage->getStorageSettings();
 
-    auto blocks = toBlocks(time_series, getContext(), time_series_storage_id, *time_series_storage_metadata, *time_series_settings);
+    auto blocks = toBlocks(time_series, getContext(), time_series_storage_id, *time_series_storage_metadata, time_series_settings);
     insertToTargetTables(std::move(blocks), *time_series_storage, getContext(), log.get());
 
     LOG_TRACE(log, "{}: {} time series written",
@@ -587,9 +601,9 @@ void PrometheusRemoteWriteProtocol::writeMetricsMetadata(const google::protobuf:
               time_series_storage_id.getNameForLogs(), metrics_metadata.size());
 
     auto time_series_storage_metadata = time_series_storage->getInMemoryMetadataPtr();
-    auto time_series_settings = time_series_storage->getStorageSettingsPtr();
+    const auto & time_series_settings = time_series_storage->getStorageSettings();
 
-    auto blocks = toBlocks(metrics_metadata, time_series_storage_id, *time_series_storage_metadata, *time_series_settings);
+    auto blocks = toBlocks(metrics_metadata, time_series_storage_id, *time_series_storage_metadata, time_series_settings);
     insertToTargetTables(std::move(blocks), *time_series_storage, getContext(), log.get());
 
     LOG_TRACE(log, "{}: {} metrics metadata written",

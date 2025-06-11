@@ -18,6 +18,7 @@ class StorageLocalConfiguration : public StorageObjectStorage::Configuration
 public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
+    static constexpr auto type = ObjectStorageType::Local;
     static constexpr auto type_name = "local";
     /// All possible signatures for Local engine with structure argument (for example for local table function).
     static constexpr auto max_number_of_arguments_with_structure = 4;
@@ -37,6 +38,7 @@ public:
     StorageLocalConfiguration() = default;
     StorageLocalConfiguration(const StorageLocalConfiguration & other) = default;
 
+    ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return "Local"; }
 
@@ -53,11 +55,12 @@ public:
     String getDataSourceDescription() const override { return ""; }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    ConfigurationPtr clone() override { return std::make_shared<StorageLocalConfiguration>(*this); }
+    ObjectStoragePtr createObjectStorage(ContextPtr, bool readonly) override
+    {
+        return std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("/", readonly));
+    }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr, bool) override { return std::make_shared<LocalObjectStorage>("/"); }
-
-    void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr) override { }
+    void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;

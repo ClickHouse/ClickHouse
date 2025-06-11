@@ -8,7 +8,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
 
-#include <numeric>
+#include <algorithm>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -138,7 +138,8 @@ void parseUTF8String(const char * __restrict data, size_t size, std::function<vo
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(data, end - data));
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", std::string_view(data, end - data));
             }
         }
     }
@@ -284,7 +285,7 @@ struct ByteEditDistanceImpl
                     if (*(needle + pos_needle) != *(haystack + pos_haystack))
                         substitution += 1;
                 }
-                distances1[pos_haystack + 1] = std::min(deletion, std::min(substitution, insertion));
+                distances1[pos_haystack + 1] = std::min({deletion, substitution, insertion});
             }
             distances0.swap(distances1);
         }
@@ -343,10 +344,11 @@ struct ByteDamerauLevenshteinDistanceImpl
             for (size_t j = 1; j <= needle_size; ++j)
             {
                 int cost = (haystack[i - 1] == needle[j - 1]) ? 0 : 1;
-                starts[i][j] = std::min(starts[i - 1][j] + 1,                  /// deletion
-                                        std::min(starts[i][j - 1] + 1,         /// insertion
-                                                 starts[i - 1][j - 1] + cost)  /// substitution
-                               );
+                starts[i][j] = std::min(
+                    {starts[i - 1][j] + 1, /// deletion
+                     starts[i][j - 1] + 1, /// insertion
+                     starts[i - 1][j - 1] + cost} /// substitution
+                );
                 if (i > 1 && j > 1 && haystack[i - 1] == needle[j - 2] && haystack[i - 2] == needle[j - 1])
                     starts[i][j] = std::min(starts[i][j], starts[i - 2][j - 2] + 1); /// transposition
             }
@@ -456,7 +458,7 @@ struct ByteJaroWinklerSimilarityImpl
 
         if (jaro_winkler_similarity > boost_threshold)
         {
-            const int common_length = std::min(max_prefix_length, std::min(s1len, s2len));
+            const int common_length = std::min({max_prefix_length, s1len, s2len});
             int common_prefix = 0;
             while (common_prefix < common_length && haystack[common_prefix] == needle[common_prefix])
                 common_prefix++;
@@ -516,30 +518,32 @@ using FunctionJaroWinklerSimilarity = FunctionsStringSimilarity<FunctionStringDi
 
 REGISTER_FUNCTION(StringDistance)
 {
+    constexpr auto category_string = FunctionDocumentation::Category::String;
+
     factory.registerFunction<FunctionByteHammingDistance>(
-        FunctionDocumentation{.description = R"(Calculates Hamming distance between two byte-strings.)"});
+        FunctionDocumentation{.description = R"(Calculates Hamming distance between two byte-strings.)", .category = category_string});
     factory.registerAlias("mismatches", NameByteHammingDistance::name);
 
     factory.registerFunction<FunctionEditDistance>(
-        FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
+        FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)", .category = category_string});
     factory.registerAlias("levenshteinDistance", NameEditDistance::name);
 
     factory.registerFunction<FunctionEditDistanceUTF8>(
-        FunctionDocumentation{.description = R"(Calculates the edit distance between two UTF8 strings.)"});
+        FunctionDocumentation{.description = R"(Calculates the edit distance between two UTF8 strings.)", .category = category_string});
     factory.registerAlias("levenshteinDistanceUTF8", NameEditDistanceUTF8::name);
 
     factory.registerFunction<FunctionDamerauLevenshteinDistance>(
-        FunctionDocumentation{.description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)"});
+        FunctionDocumentation{.description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)", .category = category_string});
 
     factory.registerFunction<FunctionStringJaccardIndex>(
-        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two byte strings.)"});
+        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two byte strings.)", .category = category_string});
     factory.registerFunction<FunctionStringJaccardIndexUTF8>(
-        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two UTF8 strings.)"});
+        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two UTF8 strings.)", .category = category_string});
 
     factory.registerFunction<FunctionJaroSimilarity>(
-        FunctionDocumentation{.description = R"(Calculates the Jaro similarity between two byte-string.)"});
+        FunctionDocumentation{.description = R"(Calculates the Jaro similarity between two byte-string.)", .category = category_string});
 
     factory.registerFunction<FunctionJaroWinklerSimilarity>(
-        FunctionDocumentation{.description = R"(Calculates the Jaro-Winkler similarity between two byte-string.)"});
+        FunctionDocumentation{.description = R"(Calculates the Jaro-Winkler similarity between two byte-string.)", .category = category_string});
 }
 }

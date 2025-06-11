@@ -28,7 +28,7 @@ using Storages = std::vector<StoragePtr>;
 MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
     : IAccessStorage(storage_name_)
     , nested_storages(std::make_shared<Storages>())
-    , ids_cache(512 /* cache size */)
+    , ids_cache(CurrentMetrics::end(), CurrentMetrics::end(), 512 /* cache size */)
 {
 }
 
@@ -416,7 +416,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
     {
         if (auto old_entity = storage_for_updating->tryRead(id))
         {
-            auto new_entity = update_func(old_entity);
+            auto new_entity = update_func(old_entity, id);
             if (new_entity->getName() != old_entity->getName())
             {
                 for (const auto & storage : *storages)
@@ -440,6 +440,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 std::optional<AuthResult>
 MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address,
                                         const ExternalAuthenticators & external_authenticators,
+                                        const ClientInfo & client_info,
                                         bool throw_if_user_not_exists,
                                         bool allow_no_password, bool allow_plaintext_password) const
 {
@@ -448,7 +449,7 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
     {
         const auto & storage = (*storages)[i];
         bool is_last_storage = (i == storages->size() - 1);
-        auto auth_result = storage->authenticate(credentials, address, external_authenticators,
+        auto auth_result = storage->authenticate(credentials, address, external_authenticators, client_info,
                                         (throw_if_user_not_exists && is_last_storage),
                                         allow_no_password, allow_plaintext_password);
         if (auth_result)
@@ -508,7 +509,7 @@ void MultipleAccessStorage::backup(BackupEntriesCollector & backup_entries_colle
         throwBackupNotAllowed();
 }
 
-void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
+void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
     auto storages = getStoragesInternal();
 
@@ -516,7 +517,7 @@ void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     {
         if (storage->isRestoreAllowed())
         {
-            storage->restoreFromBackup(restorer);
+            storage->restoreFromBackup(restorer, data_path_in_backup);
             return;
         }
     }

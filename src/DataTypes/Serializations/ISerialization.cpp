@@ -42,10 +42,9 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 {
     if (str == "Default")
         return Kind::DEFAULT;
-    else if (str == "Sparse")
+    if (str == "Sparse")
         return Kind::SPARSE;
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 
 const std::set<SubstreamType> ISerialization::Substream::named_types
@@ -110,7 +109,7 @@ void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, 
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be serialized with multiple streams", column.getName());
 }
 
-void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, double) const
+void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, size_t, double) const
 {
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be deserialized with multiple streams", column.getName());
 }
@@ -130,6 +129,7 @@ void ISerialization::serializeBinaryBulkWithMultipleStreams(
 
 void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & /* state */,
@@ -145,7 +145,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         auto mutable_column = column->assumeMutable();
-        deserializeBinaryBulk(*mutable_column, *stream, limit, settings.avg_value_size_hint);
+        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, settings.avg_value_size_hint);
         column = std::move(mutable_column);
         addToSubstreamsCache(cache, settings.path, column);
     }
@@ -162,7 +162,7 @@ String getNameForSubstreamPath(
     String stream_name,
     SubstreamIterator begin,
     SubstreamIterator end,
-    bool escape_tuple_delimiter)
+    bool escape_for_file_name)
 {
     using Substream = ISerialization::Substream;
 
@@ -177,6 +177,8 @@ String getNameForSubstreamPath(
             ++array_level;
         else if (it->type == Substream::DictionaryKeys)
             stream_name += ".dict";
+        else if (it->type == Substream::DictionaryKeysPrefix)
+            stream_name += ".dict_prefix";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
         else if (Substream::named_types.contains(it->type))
@@ -187,13 +189,15 @@ String getNameForSubstreamPath(
             /// Because nested data may be represented not by Array of Tuple,
             /// but by separate Array columns with names in a form of a.b,
             /// and name is encoded as a whole.
-            if (it->type == Substream::TupleElement && escape_tuple_delimiter)
+            if (it->type == Substream::TupleElement && escape_for_file_name)
                 stream_name += escapeForFileName(substream_name);
             else
                 stream_name += substream_name;
         }
         else if (it->type == Substream::VariantDiscriminators)
             stream_name += ".variant_discr";
+        else if (it->type == Substream::VariantDiscriminatorsPrefix)
+            stream_name += ".variant_discr_prefix";
         else if (it->type == Substream::VariantOffsets)
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
@@ -207,7 +211,7 @@ String getNameForSubstreamPath(
         else if (it->type == SubstreamType::ObjectSharedData)
             stream_name += ".object_shared_data";
         else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
-            stream_name += "." + it->object_path_name;
+            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->object_path_name) : it->object_path_name);
     }
 
     return stream_name;
@@ -435,6 +439,43 @@ bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath 
     return false;
 }
 
+bool ISerialization::isLowCardinalityDictionarySubcolumn(const DB::ISerialization::SubstreamPath & path)
+{
+    if (path.empty())
+        return false;
+
+    return path[path.size() - 1].type == SubstreamType::DictionaryKeys;
+}
+
+bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerialization::SubstreamPath & path)
+{
+    if (path.empty())
+        return false;
+
+    return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
+}
+
+bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_substreams)
+{
+    if (path.empty())
+        return false;
+
+    switch (path[path.size() - 1].type)
+    {
+        case SubstreamType::DynamicStructure: [[fallthrough]];
+        case SubstreamType::ObjectStructure: [[fallthrough]];
+        case SubstreamType::DeprecatedObjectStructure: [[fallthrough]];
+        case SubstreamType::DictionaryKeysPrefix: [[fallthrough]];
+        case SubstreamType::VariantDiscriminatorsPrefix:
+            return true;
+        case SubstreamType::DictionaryKeys: [[fallthrough]];
+        case SubstreamType::VariantDiscriminators:
+            return !use_specialized_prefixes_substreams;
+        default:
+            return false;
+    }
+}
+
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
     assert(prefix_len <= path.size());
@@ -448,8 +489,8 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
         const auto & creator = path[i].creator;
         if (creator)
         {
+            res.serialization = res.serialization ? creator->create(res.serialization, res.type) : res.serialization;
             res.type = res.type ? creator->create(res.type) : res.type;
-            res.serialization = res.serialization ? creator->create(res.serialization) : res.serialization;
             res.column = res.column ? creator->create(res.column) : res.column;
         }
     }

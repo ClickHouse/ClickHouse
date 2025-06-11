@@ -1,7 +1,7 @@
 #!/usr/bin/env -S ${HOME}/clickhouse-client --queries-file
 
 DROP TABLE IF EXISTS tab;
-CREATE TABLE tab ( `k` Nullable(UInt32), `k1` Nullable(UInt32), `k2` Nullable(UInt32), `v` String ) ENGINE = Memory;
+CREATE TABLE tab ( `k` Nullable(UInt32), `k1` Nullable(UInt32), `k2` Nullable(UInt32), `v` String ) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab VALUES (1, 1, 1, 'a'), (2, 2, 2, 'b');
 
 DROP TABLE IF EXISTS mem;
@@ -20,7 +20,7 @@ DROP TABLE IF EXISTS mem4;
 CREATE TABLE mem4 ( `k1` UInt64, `k2` UInt64, `v` String ) ENGINE = Join(ALL, FULL, k1, k2);
 INSERT INTO mem4 VALUES (1, 1, 'A'), (2, 2, 'B'), (3, 3, 'B');
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT '-----';
 

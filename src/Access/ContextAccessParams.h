@@ -6,6 +6,11 @@
 #include <vector>
 
 
+namespace Poco::Net
+{
+    class IPAddress;
+}
+
 namespace DB
 {
 struct Settings;
@@ -19,6 +24,7 @@ public:
         bool full_access_,
         bool use_default_roles_,
         const std::shared_ptr<const std::vector<UUID>> & current_roles_,
+        const std::shared_ptr<const std::vector<UUID>> & external_roles_,
         const Settings & settings_,
         const String & current_database_,
         const ClientInfo & client_info_);
@@ -31,6 +37,7 @@ public:
 
     const bool use_default_roles;
     const std::shared_ptr<const std::vector<UUID>> current_roles;
+    const std::shared_ptr<const std::vector<UUID>> external_roles;
 
     const UInt64 readonly;
     const bool allow_ddl;
@@ -40,7 +47,7 @@ public:
 
     const ClientInfo::Interface interface;
     const ClientInfo::HTTPMethod http_method;
-    const Poco::Net::IPAddress address;
+    const std::shared_ptr<Poco::Net::IPAddress> address;
 
     /// The last entry from comma separated list of X-Forwarded-For addresses.
     /// Only the last proxy can be trusted (if any).

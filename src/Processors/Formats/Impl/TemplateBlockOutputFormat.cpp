@@ -1,8 +1,10 @@
 #include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Columns/IColumn.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -74,26 +76,25 @@ TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResu
 {
     if (part == "data")
         return ResultsetPart::Data;
-    else if (part == "totals")
+    if (part == "totals")
         return ResultsetPart::Totals;
-    else if (part == "min")
+    if (part == "min")
         return ResultsetPart::ExtremesMin;
-    else if (part == "max")
+    if (part == "max")
         return ResultsetPart::ExtremesMax;
-    else if (part == "rows")
+    if (part == "rows")
         return ResultsetPart::Rows;
-    else if (part == "rows_before_limit")
+    if (part == "rows_before_limit")
         return ResultsetPart::RowsBeforeLimit;
-    else if (part == "time")
+    if (part == "time")
         return ResultsetPart::TimeElapsed;
-    else if (part == "rows_read")
+    if (part == "rows_read")
         return ResultsetPart::RowsRead;
-    else if (part == "bytes_read")
+    if (part == "bytes_read")
         return ResultsetPart::BytesRead;
-    else if (part == "rows_before_aggregation")
+    if (part == "rows_before_aggregation")
         return ResultsetPart::RowsBeforeAggregation;
-    else
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown output part {}", part);
+    throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown output part {}", part);
 }
 
 void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)

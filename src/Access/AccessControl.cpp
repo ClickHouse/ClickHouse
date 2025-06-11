@@ -21,13 +21,15 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <base/defines.h>
+#include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>
+
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <filesystem>
 #include <mutex>
+
 
 namespace DB
 {
@@ -36,6 +38,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
+    extern const int REQUIRED_PASSWORD;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
 }
@@ -132,8 +135,8 @@ public:
                             "' registered for user-defined settings",
                             String{setting_name}, boost::algorithm::join(registered_prefixes, "' or '"));
         }
-        else
-            BaseSettingsHelpers::throwSettingNotFound(setting_name);
+
+        throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{setting_name});
     }
 
 private:
@@ -280,7 +283,7 @@ void AccessControl::shutdown()
 }
 
 
-void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
+void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                                         const zkutil::GetZooKeeper & get_zookeeper_function_)
 {
     if (config_.has("custom_settings_prefixes"))
@@ -302,6 +305,9 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
+
+    /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
+    setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
@@ -576,20 +582,20 @@ AccessChangesNotifier & AccessControl::getChangesNotifier()
 }
 
 
-AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const
+AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ClientInfo & client_info) const
 {
     // NOTE: In the case where the user has never been logged in using LDAP,
     // Then user_id is not generated, and the authentication quota will always be nullptr.
-    auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, forwarded_address);
+    auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, client_info.getLastForwardedForHost());
     if (authentication_quota)
     {
         /// Reserve a single try from the quota to check whether we have another authentication try.
         /// This is required for correct behavior in this situation:
         /// User has 1 login failures quota.
         /// * At the first login with an invalid password: Increase the quota counter. 1 (used) > 1 (max) is false.
-        ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
+        ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
         /// * In case of the second try: increase quota counter, 2 (used) > 1 (max), then throw QUOTA_EXCEED
-        ///   and don't let the user authenticate.
+        ///   and don't let the user authenticate.
         ///
         /// The authentication failures counter will be reset after successful authentication.
         authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1);
@@ -597,8 +603,8 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
 
     try
     {
-        const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
-                                                                     allow_plaintext_password);
+        const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, client_info,
+                                                                     allow_no_password, allow_plaintext_password);
         if (authentication_quota)
             authentication_quota->reset(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
 
@@ -606,7 +612,9 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
+        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed", LogsLevel::information);
+
+        int error_code = ErrorCodes::AUTHENTICATION_FAILED;
 
         WriteBufferFromOwnString message;
         message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
@@ -614,24 +622,35 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         /// Better exception message for usability.
         /// It is typical when users install ClickHouse, type some password and instantly forget it.
         if (credentials.getUserName().empty() || credentials.getUserName() == "default")
-            message << "\n\n"
-                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file.\n"
-                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml\n"
-                << "and deleting this file will reset the password.\n"
-                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
+        {
+            if (credentials.allowInteractiveBasicAuthenticationInTheBrowser())
+                error_code = ErrorCodes::REQUIRED_PASSWORD;
 
-        /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
-        /// only the log will show the exact reason.
+            message << R"(
+
+If you use ClickHouse Cloud, the password can be reset at https://clickhouse.cloud/
+on the settings page for the corresponding service.
+
+If you have installed ClickHouse and forgot password you can reset it in the configuration file.
+The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml
+and deleting this file will reset the password.
+See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.
+
+)";
+        }
+
+        /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons.
+        /// Only the log ((*), above) will show the exact reason. Note that (*) logs at information level instead of the default error level as
+        /// authentication failures are not an unusual event.
         throw Exception(PreformattedMessage{message.str(),
-                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}",
-                                            std::vector<std::string>{credentials.getUserName()}},
-                        ErrorCodes::AUTHENTICATION_FAILED);
+            "{}: Authentication failed: password is incorrect, or there is no user with such name",
+            std::vector<std::string>{credentials.getUserName()}}, error_code);
     }
 }
 
-void AccessControl::restoreFromBackup(RestorerFromBackup & restorer)
+void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
-    MultipleAccessStorage::restoreFromBackup(restorer);
+    MultipleAccessStorage::restoreFromBackup(restorer, data_path_in_backup);
     changes_notifier->sendNotifications();
 }
 
@@ -755,6 +774,15 @@ int AccessControl::getBcryptWorkfactor() const
     return bcrypt_workfactor;
 }
 
+void AccessControl::setEnableUserNameAccessType(bool enable_user_name_access_type_)
+{
+    enable_user_name_access_type = enable_user_name_access_type_;
+}
+
+bool AccessControl::isEnabledUserNameAccessType() const
+{
+    return enable_user_name_access_type;
+}
 
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const
 {
@@ -798,7 +826,7 @@ std::shared_ptr<const EnabledQuota> AccessControl::getEnabledQuota(
     const UUID & user_id,
     const String & user_name,
     const boost::container::flat_set<UUID> & enabled_roles,
-    const Poco::Net::IPAddress & address,
+    const std::shared_ptr<Poco::Net::IPAddress> & address,
     const String & forwarded_address,
     const String & custom_quota_key) const
 {
@@ -823,13 +851,12 @@ std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
         return quota_cache->getEnabledQuota(*user_id,
                                             user->getName(),
                                             roles_info->enabled_roles,
-                                            address,
+                                            std::make_shared<Poco::Net::IPAddress>(address),
                                             forwarded_address,
                                             quota_key,
                                             throw_if_client_key_empty);
     }
-    else
-        return nullptr;
+    return nullptr;
 }
 
 
@@ -868,4 +895,34 @@ const ExternalAuthenticators & AccessControl::getExternalAuthenticators() const
     return *external_authenticators;
 }
 
+
+void AccessControl::allowAllSettings()
+{
+    custom_settings_prefixes->registerPrefixes({""});
+}
+
+void AccessControl::setAllowTierSettings(UInt32 value)
+{
+    allow_experimental_tier_settings = value == 0;
+    allow_beta_tier_settings = value <= 1;
+}
+
+UInt32 AccessControl::getAllowTierSettings() const
+{
+    if (allow_experimental_tier_settings)
+        return 0;
+    if (allow_beta_tier_settings)
+        return 1;
+    return 2;
+}
+
+bool AccessControl::getAllowExperimentalTierSettings() const
+{
+    return allow_experimental_tier_settings;
+}
+
+bool AccessControl::getAllowBetaTierSettings() const
+{
+    return allow_beta_tier_settings;
+}
 }

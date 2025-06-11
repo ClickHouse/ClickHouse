@@ -41,18 +41,11 @@ set(QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS "-fno-exceptions;-fno-rtti")
 function(modify_standard_language_flag)
     # Declaring function parameters
     set(OPTIONS "")
-    set(ONE_VALUE_ARGS
-        LANGUAGE_NAME
-        FLAG_NAME
-        NEW_FLAG_VALUE)
+    set(ONE_VALUE_ARGS LANGUAGE_NAME FLAG_NAME NEW_FLAG_VALUE)
     set(MULTI_VALUE_ARGS "")
 
     # Parsing function parameters
-    cmake_parse_arguments(MODIFY
-                          "${OPTIONS}"
-                          "${ONE_VALUE_ARGS}"
-                          "${MULTI_VALUE_ARGS}"
-                          ${ARGN})
+    cmake_parse_arguments(MODIFY "${OPTIONS}" "${ONE_VALUE_ARGS}" "${MULTI_VALUE_ARGS}" ${ARGN})
 
     # Variables
     set(FLAG_REGULAR_EXPRESSION "${MODIFY_FLAG_NAME}.*[ ]*")
@@ -69,19 +62,12 @@ function(modify_standard_language_flag)
 endfunction()
 
 function(get_function_name_with_default_bit_width in_function_name bit_width out_function_name)
-
     if(in_function_name MATCHES ".*_i")
-
         string(REPLACE "_i" "" in_function_name ${in_function_name})
-
         set(${out_function_name} "${in_function_name}_${bit_width}_i" PARENT_SCOPE)
-
     else()
-
         set(${out_function_name} "${in_function_name}_${bit_width}" PARENT_SCOPE)
-
     endif()
-
 endfunction()
 
 macro(get_list_of_supported_optimizations PLATFORMS_LIST)
@@ -449,79 +435,77 @@ endfunction()
 
 enable_language(ASM_NASM)
 
-set(ISAL_C_SRC ${QPL_SRC_DIR}/isal/igzip/adler32_base.c
-               ${QPL_SRC_DIR}/isal/igzip/huff_codes.c
-               ${QPL_SRC_DIR}/isal/igzip/hufftables_c.c
-               ${QPL_SRC_DIR}/isal/igzip/igzip.c
-               ${QPL_SRC_DIR}/isal/igzip/igzip_base.c
-               ${QPL_SRC_DIR}/isal/igzip/flatten_ll.c
-               ${QPL_SRC_DIR}/isal/igzip/encode_df.c
-               ${QPL_SRC_DIR}/isal/igzip/igzip_icf_base.c
-               ${QPL_SRC_DIR}/isal/igzip/igzip_inflate.c
-               ${QPL_SRC_DIR}/isal/igzip/igzip_icf_body.c
-               ${QPL_SRC_DIR}/isal/crc/crc_base.c
-               ${QPL_SRC_DIR}/isal/crc/crc64_base.c)
+set(ISAL_C_SRC
+    ${QPL_SRC_DIR}/isal/igzip/adler32_base.c
+    ${QPL_SRC_DIR}/isal/igzip/huff_codes.c
+    ${QPL_SRC_DIR}/isal/igzip/hufftables_c.c
+    ${QPL_SRC_DIR}/isal/igzip/igzip.c
+    ${QPL_SRC_DIR}/isal/igzip/igzip_base.c
+    ${QPL_SRC_DIR}/isal/igzip/flatten_ll.c
+    ${QPL_SRC_DIR}/isal/igzip/encode_df.c
+    ${QPL_SRC_DIR}/isal/igzip/igzip_icf_base.c
+    ${QPL_SRC_DIR}/isal/igzip/igzip_inflate.c
+    ${QPL_SRC_DIR}/isal/igzip/igzip_icf_body.c
+    ${QPL_SRC_DIR}/isal/crc/crc_base.c
+    ${QPL_SRC_DIR}/isal/crc/crc64_base.c)
 
-set(ISAL_ASM_SRC ${QPL_SRC_DIR}/isal/igzip/igzip_body.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_gen_icf_map_lh1_04.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_gen_icf_map_lh1_06.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_decode_block_stateless_04.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_finish.asm
-                 ${QPL_SRC_DIR}/isal/igzip/encode_df_04.asm
-                 ${QPL_SRC_DIR}/isal/igzip/encode_df_06.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_decode_block_stateless_01.asm
-                 ${QPL_SRC_DIR}/isal/igzip/proc_heap.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_icf_body_h1_gr_bt.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_icf_finish.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_inflate_multibinary.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_update_histogram_01.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_update_histogram_04.asm
-                 ${QPL_SRC_DIR}/isal/igzip/rfc1951_lookup.asm
-                 ${QPL_SRC_DIR}/isal/igzip/adler32_sse.asm
-                 ${QPL_SRC_DIR}/isal/igzip/adler32_avx2_4.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_deflate_hash.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_set_long_icf_fg_04.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_set_long_icf_fg_06.asm
-                 ${QPL_SRC_DIR}/isal/igzip/igzip_multibinary.asm
-                 ${QPL_SRC_DIR}/isal/crc/crc_multibinary.asm
-                 ${QPL_SRC_DIR}/isal/crc/crc32_gzip_refl_by8.asm
-                 ${QPL_SRC_DIR}/isal/crc/crc32_gzip_refl_by8_02.asm
-                 ${QPL_SRC_DIR}/isal/crc/crc32_gzip_refl_by16_10.asm
-                 ${QPL_SRC_DIR}/isal/crc/crc32_ieee_01.asm
-                 ${QPL_SRC_DIR}/isal/crc/crc32_ieee_02.asm
-                 ${QPL_SRC_DIR}/isal/crc/crc32_ieee_by4.asm
-                 ${QPL_SRC_DIR}/isal/crc/crc32_ieee_by16_10.asm
-                 ${QPL_SRC_DIR}/isal/crc/crc32_iscsi_00.asm
-                 ${QPL_SRC_DIR}/isal/crc/crc32_iscsi_01.asm
-                 ${QPL_SRC_DIR}/isal/crc/crc32_iscsi_by16_10.asm)
+set(ISAL_ASM_SRC
+    ${QPL_SRC_DIR}/isal/igzip/igzip_body.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_gen_icf_map_lh1_04.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_gen_icf_map_lh1_06.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_decode_block_stateless_04.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_finish.asm
+    ${QPL_SRC_DIR}/isal/igzip/encode_df_04.asm
+    ${QPL_SRC_DIR}/isal/igzip/encode_df_06.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_decode_block_stateless_01.asm
+    ${QPL_SRC_DIR}/isal/igzip/proc_heap.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_icf_body_h1_gr_bt.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_icf_finish.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_inflate_multibinary.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_update_histogram_01.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_update_histogram_04.asm
+    ${QPL_SRC_DIR}/isal/igzip/rfc1951_lookup.asm
+    ${QPL_SRC_DIR}/isal/igzip/adler32_sse.asm
+    ${QPL_SRC_DIR}/isal/igzip/adler32_avx2_4.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_deflate_hash.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_set_long_icf_fg_04.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_set_long_icf_fg_06.asm
+    ${QPL_SRC_DIR}/isal/igzip/igzip_multibinary.asm
+    ${QPL_SRC_DIR}/isal/crc/crc_multibinary.asm
+    ${QPL_SRC_DIR}/isal/crc/crc32_gzip_refl_by8.asm
+    ${QPL_SRC_DIR}/isal/crc/crc32_gzip_refl_by8_02.asm
+    ${QPL_SRC_DIR}/isal/crc/crc32_gzip_refl_by16_10.asm
+    ${QPL_SRC_DIR}/isal/crc/crc32_ieee_01.asm
+    ${QPL_SRC_DIR}/isal/crc/crc32_ieee_02.asm
+    ${QPL_SRC_DIR}/isal/crc/crc32_ieee_by4.asm
+    ${QPL_SRC_DIR}/isal/crc/crc32_ieee_by16_10.asm
+    ${QPL_SRC_DIR}/isal/crc/crc32_iscsi_00.asm
+    ${QPL_SRC_DIR}/isal/crc/crc32_iscsi_01.asm
+    ${QPL_SRC_DIR}/isal/crc/crc32_iscsi_by16_10.asm)
 
 # Adding ISA-L library target
 add_library(isal OBJECT ${ISAL_C_SRC})
 add_library(isal_asm OBJECT ${ISAL_ASM_SRC})
 
-set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS
-             $<TARGET_OBJECTS:isal>)
+set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS $<TARGET_OBJECTS:isal>)
 
-set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS
-             $<TARGET_OBJECTS:isal_asm>)
+set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS $<TARGET_OBJECTS:isal_asm>)
 
 # Setting external and internal interfaces for ISA-L library
 target_include_directories(isal
-                        PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/isal/include>
-                        PUBLIC ${QPL_SRC_DIR}/isal/igzip)
+    PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/isal/include>
+    PUBLIC ${QPL_SRC_DIR}/isal/igzip)
 
-set_target_properties(isal PROPERTIES
-                        CXX_STANDARD 11
-                        C_STANDARD 99)
+set_target_properties(isal PROPERTIES CXX_STANDARD 11 C_STANDARD 99)
 
 # AS_FEATURE_LEVEL=10 means "Check SIMD capabilities of the target system at runtime and use up to AVX512 if available".
 # HAVE_KNOWS_AVX512 means rely on AVX512 being available on the target system.
 target_compile_options(isal_asm PRIVATE "-I${QPL_SRC_DIR}/isal/include/"
-                       PRIVATE "-I${QPL_SRC_DIR}/isal/igzip/"
-                       PRIVATE "-I${QPL_SRC_DIR}/isal/crc/"
-                       PRIVATE "-DHAVE_AS_KNOWS_AVX512"
-                       PRIVATE "-DAS_FEATURE_LEVEL=10"
-                       PRIVATE "-DQPL_LIB")
+    PRIVATE "-I${QPL_SRC_DIR}/isal/igzip/"
+    PRIVATE "-I${QPL_SRC_DIR}/isal/crc/"
+    PRIVATE "-DHAVE_AS_KNOWS_AVX512"
+    PRIVATE "-DAS_FEATURE_LEVEL=10"
+    PRIVATE "-DQPL_LIB")
 
 # Here must remove "-fno-sanitize=undefined" from COMPILE_OPTIONS.
 # Otherwise nasm compiler would fail to proceed due to unrecognition of "-fno-sanitize=undefined"
@@ -531,9 +515,7 @@ if (SANITIZE STREQUAL "undefined")
     set_property(TARGET isal_asm PROPERTY COMPILE_OPTIONS ${target_options})
 endif()
 
-target_compile_definitions(isal PUBLIC
-                           QPL_LIB
-                           NDEBUG)
+target_compile_definitions(isal PUBLIC QPL_LIB NDEBUG)
 
 # [SUBDIR]core-sw
 # Create set of libraries corresponding to supported platforms for SW fallback which are implemented by AVX512 and non-AVX512 instructions respectively.
@@ -556,8 +538,7 @@ foreach(PLATFORM_ID IN LISTS PLATFORMS_LIST)
     # Create library
     add_library(qplcore_${PLATFORM_ID} OBJECT ${SOURCES})
 
-    set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS
-                $<TARGET_OBJECTS:qplcore_${PLATFORM_ID}>)
+    set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS $<TARGET_OBJECTS:qplcore_${PLATFORM_ID}>)
 
     target_include_directories(qplcore_${PLATFORM_ID}
                                 PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-sw>
@@ -584,11 +565,9 @@ file(GLOB SW_DISPATCHER_SOURCES ${QPL_SRC_DIR}/core-sw/dispatcher/*.cpp)
 
 add_library(qplcore_sw_dispatcher OBJECT ${SW_DISPATCHER_SOURCES})
 
-set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS
-             $<TARGET_OBJECTS:qplcore_sw_dispatcher>)
+set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS $<TARGET_OBJECTS:qplcore_sw_dispatcher>)
 
-target_include_directories(qplcore_sw_dispatcher
-                          PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-sw/dispatcher>)
+target_include_directories(qplcore_sw_dispatcher PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-sw/dispatcher>)
 
 # Generate kernel wrappers
 generate_unpack_kernel_arrays(${QPL_BINARY_DIR} "${PLATFORMS_LIST}")
@@ -605,8 +584,7 @@ foreach(PLATFORM_ID IN LISTS PLATFORMS_LIST)
         set_source_files_properties(${GENERATED_${PLATFORM_ID}_TABLES_SRC} PROPERTIES COMPILE_DEFINITIONS PLATFORM=0)
     endif()
 
-    target_include_directories(qplcore_sw_dispatcher
-                                PUBLIC $<TARGET_PROPERTY:qplcore_${PLATFORM_ID},INTERFACE_INCLUDE_DIRECTORIES>)
+    target_include_directories(qplcore_sw_dispatcher PUBLIC $<TARGET_PROPERTY:qplcore_${PLATFORM_ID},INTERFACE_INCLUDE_DIRECTORIES>)
 endforeach()
 
 set_target_properties(qplcore_sw_dispatcher PROPERTIES CXX_STANDARD 17)
@@ -614,110 +592,106 @@ set_target_properties(qplcore_sw_dispatcher PROPERTIES CXX_STANDARD 17)
 # w/a for build compatibility with ISAL codebase
 target_compile_definitions(qplcore_sw_dispatcher PUBLIC -DQPL_LIB)
 
-target_compile_options(qplcore_sw_dispatcher
-        PRIVATE ${QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS})
+target_compile_options(qplcore_sw_dispatcher PRIVATE ${QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS})
 
 # [SUBDIR]core-iaa
-file(GLOB HW_PATH_SRC ${QPL_SRC_DIR}/core-iaa/sources/aecs/*.c
-                      ${QPL_SRC_DIR}/core-iaa/sources/driver_loader/*.c
-                      ${QPL_SRC_DIR}/core-iaa/sources/descriptors/*.c
-                      ${QPL_SRC_DIR}/core-iaa/sources/*.c)
+file(GLOB HW_PATH_SRC
+    ${QPL_SRC_DIR}/core-iaa/sources/aecs/*.c
+    ${QPL_SRC_DIR}/core-iaa/sources/driver_loader/*.c
+    ${QPL_SRC_DIR}/core-iaa/sources/descriptors/*.c
+    ${QPL_SRC_DIR}/core-iaa/sources/*.c)
 
 # Create library
 add_library(core_iaa OBJECT ${HW_PATH_SRC})
 
-set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS
-             $<TARGET_OBJECTS:core_iaa>)
+set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS $<TARGET_OBJECTS:core_iaa>)
 
 target_include_directories(core_iaa
-        PRIVATE ${UUID_DIR}
-        PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-iaa/include>
-        PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-iaa/sources/include>
-        PRIVATE $<BUILD_INTERFACE:${QPL_PROJECT_DIR}/include> # status.h in own_checkers.h
-        PRIVATE $<TARGET_PROPERTY:qpl_c_api,INTERFACE_INCLUDE_DIRECTORIES> # for own_checkers.h
-        PRIVATE $<TARGET_PROPERTY:qplcore_sw_dispatcher,INTERFACE_INCLUDE_DIRECTORIES>)
+    PRIVATE ${UUID_DIR}
+    PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-iaa/include>
+    PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-iaa/sources/include>
+    PRIVATE $<BUILD_INTERFACE:${QPL_PROJECT_DIR}/include> # status.h in own_checkers.h
+    PRIVATE $<TARGET_PROPERTY:qpl_c_api,INTERFACE_INCLUDE_DIRECTORIES> # for own_checkers.h
+    PRIVATE $<TARGET_PROPERTY:qplcore_sw_dispatcher,INTERFACE_INCLUDE_DIRECTORIES>)
 
 target_compile_features(core_iaa PRIVATE c_std_11)
 
 target_compile_definitions(core_iaa PRIVATE QPL_BADARG_CHECK
-        PRIVATE $<$<BOOL:${LOG_HW_INIT}>:LOG_HW_INIT>
-        PRIVATE $<$<BOOL:${DYNAMIC_LOADING_LIBACCEL_CONFIG}>:DYNAMIC_LOADING_LIBACCEL_CONFIG>)
+    PRIVATE $<$<BOOL:${LOG_HW_INIT}>:LOG_HW_INIT>
+    PRIVATE $<$<BOOL:${DYNAMIC_LOADING_LIBACCEL_CONFIG}>:DYNAMIC_LOADING_LIBACCEL_CONFIG>)
 
 # [SUBDIR]middle-layer
 file(GLOB MIDDLE_LAYER_SRC
-        ${QPL_SRC_DIR}/middle-layer/accelerator/*.cpp
-	    ${QPL_SRC_DIR}/middle-layer/analytics/*.cpp
-        ${QPL_SRC_DIR}/middle-layer/common/*.cpp
-        ${QPL_SRC_DIR}/middle-layer/compression/*.cpp
-        ${QPL_SRC_DIR}/middle-layer/compression/*/*.cpp
-        ${QPL_SRC_DIR}/middle-layer/compression/*/*/*.cpp
-        ${QPL_SRC_DIR}/middle-layer/dispatcher/*.cpp
-        ${QPL_SRC_DIR}/middle-layer/other/*.cpp
-        ${QPL_SRC_DIR}/middle-layer/util/*.cpp)
+    ${QPL_SRC_DIR}/middle-layer/accelerator/*.cpp
+    ${QPL_SRC_DIR}/middle-layer/analytics/*.cpp
+    ${QPL_SRC_DIR}/middle-layer/common/*.cpp
+    ${QPL_SRC_DIR}/middle-layer/compression/*.cpp
+    ${QPL_SRC_DIR}/middle-layer/compression/*/*.cpp
+    ${QPL_SRC_DIR}/middle-layer/compression/*/*/*.cpp
+    ${QPL_SRC_DIR}/middle-layer/dispatcher/*.cpp
+    ${QPL_SRC_DIR}/middle-layer/other/*.cpp
+    ${QPL_SRC_DIR}/middle-layer/util/*.cpp)
 
 add_library(middle_layer_lib OBJECT
-        ${MIDDLE_LAYER_SRC})
+    ${MIDDLE_LAYER_SRC})
 
 set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS
-        $<TARGET_OBJECTS:middle_layer_lib>)
+    $<TARGET_OBJECTS:middle_layer_lib>)
 
 target_compile_options(middle_layer_lib
-        PRIVATE $<$<C_COMPILER_ID:GNU,Clang>:$<$<CONFIG:Release>:-O3;-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=2>>
-        PRIVATE ${QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS})
+    PRIVATE $<$<C_COMPILER_ID:GNU,Clang>:$<$<CONFIG:Release>:-O3;-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=2>>
+    PRIVATE ${QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS})
 
 target_compile_definitions(middle_layer_lib
-        PUBLIC QPL_VERSION="${QPL_VERSION}"
-        PUBLIC $<$<BOOL:${LOG_HW_INIT}>:LOG_HW_INIT>
-        PUBLIC $<$<BOOL:${EFFICIENT_WAIT}>:QPL_EFFICIENT_WAIT>
-        PUBLIC QPL_BADARG_CHECK
-        PUBLIC $<$<BOOL:${DYNAMIC_LOADING_LIBACCEL_CONFIG}>:DYNAMIC_LOADING_LIBACCEL_CONFIG>)
+    PUBLIC QPL_VERSION="${QPL_VERSION}"
+    PUBLIC $<$<BOOL:${LOG_HW_INIT}>:LOG_HW_INIT>
+    PUBLIC $<$<BOOL:${EFFICIENT_WAIT}>:QPL_EFFICIENT_WAIT>
+    PUBLIC QPL_BADARG_CHECK
+    PUBLIC $<$<BOOL:${DYNAMIC_LOADING_LIBACCEL_CONFIG}>:DYNAMIC_LOADING_LIBACCEL_CONFIG>)
 
 set_target_properties(middle_layer_lib PROPERTIES CXX_STANDARD 17)
 
 target_include_directories(middle_layer_lib
-        PRIVATE ${UUID_DIR}
-        PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/middle-layer>
-        PUBLIC $<TARGET_PROPERTY:_qpl,INTERFACE_INCLUDE_DIRECTORIES>
-        PRIVATE $<TARGET_PROPERTY:qpl_c_api,INTERFACE_INCLUDE_DIRECTORIES>
-        PUBLIC $<TARGET_PROPERTY:qplcore_sw_dispatcher,INTERFACE_INCLUDE_DIRECTORIES>
-        PUBLIC $<TARGET_PROPERTY:isal,INTERFACE_INCLUDE_DIRECTORIES>
-        PUBLIC $<TARGET_PROPERTY:core_iaa,INTERFACE_INCLUDE_DIRECTORIES>)
+    PRIVATE ${UUID_DIR}
+    PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/middle-layer>
+    PUBLIC $<TARGET_PROPERTY:_qpl,INTERFACE_INCLUDE_DIRECTORIES>
+    PRIVATE $<TARGET_PROPERTY:qpl_c_api,INTERFACE_INCLUDE_DIRECTORIES>
+    PUBLIC $<TARGET_PROPERTY:qplcore_sw_dispatcher,INTERFACE_INCLUDE_DIRECTORIES>
+    PUBLIC $<TARGET_PROPERTY:isal,INTERFACE_INCLUDE_DIRECTORIES>
+    PUBLIC $<TARGET_PROPERTY:core_iaa,INTERFACE_INCLUDE_DIRECTORIES>)
 
 target_compile_definitions(middle_layer_lib PUBLIC -DQPL_LIB)
 
 # [SUBDIR]c_api
 file(GLOB QPL_C_API_SRC
-        ${QPL_SRC_DIR}/c_api/compression_operations/*.c
-        ${QPL_SRC_DIR}/c_api/compression_operations/*.cpp
-	    ${QPL_SRC_DIR}/c_api/filter_operations/*.cpp
-	    ${QPL_SRC_DIR}/c_api/legacy_hw_path/*.c
-	    ${QPL_SRC_DIR}/c_api/legacy_hw_path/*.cpp
-	    ${QPL_SRC_DIR}/c_api/other_operations/*.cpp
-	    ${QPL_SRC_DIR}/c_api/serialization/*.cpp
-	    ${QPL_SRC_DIR}/c_api/*.cpp)
+    ${QPL_SRC_DIR}/c_api/compression_operations/*.c
+    ${QPL_SRC_DIR}/c_api/compression_operations/*.cpp
+    ${QPL_SRC_DIR}/c_api/filter_operations/*.cpp
+    ${QPL_SRC_DIR}/c_api/legacy_hw_path/*.c
+    ${QPL_SRC_DIR}/c_api/legacy_hw_path/*.cpp
+    ${QPL_SRC_DIR}/c_api/other_operations/*.cpp
+    ${QPL_SRC_DIR}/c_api/serialization/*.cpp
+    ${QPL_SRC_DIR}/c_api/*.cpp)
 
 add_library(qpl_c_api OBJECT ${QPL_C_API_SRC})
 
 target_include_directories(qpl_c_api
-	    PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/c_api/>
-        PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/include/> $<INSTALL_INTERFACE:include>
-        PRIVATE $<TARGET_PROPERTY:middle_layer_lib,INTERFACE_INCLUDE_DIRECTORIES>)
+    PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/c_api/>
+    PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/include/> $<INSTALL_INTERFACE:include>
+    PRIVATE $<TARGET_PROPERTY:middle_layer_lib,INTERFACE_INCLUDE_DIRECTORIES>)
 
-set_target_properties(qpl_c_api PROPERTIES
-	$<$<C_COMPILER_ID:GNU,Clang>:C_STANDARD 17
-	CXX_STANDARD 17)
+set_target_properties(qpl_c_api PROPERTIES $<$<C_COMPILER_ID:GNU,Clang>:C_STANDARD 17 CXX_STANDARD 17)
 
 target_compile_options(qpl_c_api
-        PRIVATE $<$<C_COMPILER_ID:GNU,Clang>:$<$<CONFIG:Release>:-O3;-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=2>>
-	    PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:${QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS}>)
+    PRIVATE $<$<C_COMPILER_ID:GNU,Clang>:$<$<CONFIG:Release>:-O3;-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=2>>
+    PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:${QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS}>)
 
 target_compile_definitions(qpl_c_api
-        PUBLIC -DQPL_BADARG_CHECK # own_checkers.h
-        PUBLIC -DQPL_LIB          # needed for middle_layer_lib
-        PUBLIC $<$<BOOL:${LOG_HW_INIT}>:LOG_HW_INIT>) # needed for middle_layer_lib
+    PUBLIC -DQPL_BADARG_CHECK # own_checkers.h
+    PUBLIC -DQPL_LIB          # needed for middle_layer_lib
+    PUBLIC $<$<BOOL:${LOG_HW_INIT}>:LOG_HW_INIT>) # needed for middle_layer_lib
 
-set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS
-        $<TARGET_OBJECTS:qpl_c_api>)
+set_property(GLOBAL APPEND PROPERTY QPL_LIB_DEPS $<TARGET_OBJECTS:qpl_c_api>)
 
 # Final _qpl target
 
@@ -725,14 +699,10 @@ get_property(LIB_DEPS GLOBAL PROPERTY QPL_LIB_DEPS)
 
 add_library(_qpl STATIC ${LIB_DEPS})
 
-target_include_directories(_qpl
-        PUBLIC $<BUILD_INTERFACE:${QPL_PROJECT_DIR}/include/> $<INSTALL_INTERFACE:include>)
+target_include_directories(_qpl PUBLIC $<BUILD_INTERFACE:${QPL_PROJECT_DIR}/include/> $<INSTALL_INTERFACE:include>)
 
-target_link_libraries(_qpl
-        PRIVATE ch_contrib::accel-config)
+target_link_libraries(_qpl PRIVATE ch_contrib::accel-config)
 
-target_include_directories(_qpl SYSTEM BEFORE
-        PUBLIC "${QPL_PROJECT_DIR}/include"
-        PUBLIC ${UUID_DIR})
+target_include_directories(_qpl SYSTEM BEFORE PUBLIC "${QPL_PROJECT_DIR}/include" PUBLIC ${UUID_DIR})
 
 add_library (ch_contrib::qpl ALIAS _qpl)

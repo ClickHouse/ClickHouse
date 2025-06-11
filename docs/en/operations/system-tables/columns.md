@@ -1,9 +1,11 @@
 ---
-slug: /en/operations/system-tables/columns
+description: 'System table containing information about columns in all tables'
+keywords: ['system table', 'columns']
+slug: /operations/system-tables/columns
+title: 'system.columns'
 ---
-# columns
 
-Contains information about columns in all the tables.
+Contains information about columns in all tables.
 
 You can use this table to get information similar to the [DESCRIBE TABLE](../../sql-reference/statements/describe-table.md) query, but for multiple tables at once.
 

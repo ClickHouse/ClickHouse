@@ -9,6 +9,7 @@
 
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -37,7 +38,7 @@ namespace ErrorCodes
 }
 
 static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db", "database", "table", "schema",
+    "host", "port", "user", "password", "db", "database", "table", "schema", "background_reconnect",
     "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority"};
 
 #if USE_LIBPQXX
@@ -161,11 +162,9 @@ std::string PostgreSQLDictionarySource::getUpdateFieldAndDate()
         update_time = std::chrono::system_clock::now();
         return query_builder.composeUpdateQuery(configuration.update_field, str_time);
     }
-    else
-    {
-        update_time = std::chrono::system_clock::now();
-        return query_builder.composeLoadAllQuery();
-    }
+
+    update_time = std::chrono::system_clock::now();
+    return query_builder.composeLoadAllQuery();
 }
 
 
@@ -204,7 +203,8 @@ static void validateConfigKeys(
 
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                 const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -218,6 +218,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
         std::optional<PostgreSQLDictionarySource::Configuration> dictionary_configuration;
         postgres::PoolWithFailover::ReplicasConfigurationByPriority replicas_by_priority;
+
+        bool bg_reconnect = false;
 
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, context) : nullptr;
         if (named_collection)
@@ -243,6 +245,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 .update_field = named_collection->getOrDefault<String>("update_field", ""),
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
             });
+
+            bg_reconnect = named_collection->getOrDefault<bool>("background_reconnect", false);
 
             replicas_by_priority[0].emplace_back(common_configuration);
         }
@@ -271,6 +275,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 .update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1)
             });
 
+            bg_reconnect = config.getBool(fmt::format("{}.background_reconnect", settings_config_prefix), false);
 
             if (config.has(settings_config_prefix + ".replica"))
             {
@@ -321,7 +326,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             settings[Setting::postgresql_connection_pool_wait_timeout],
             settings[Setting::postgresql_connection_pool_retries],
             settings[Setting::postgresql_connection_pool_auto_close_connection],
-            settings[Setting::postgresql_connection_attempt_timeout]);
+            settings[Setting::postgresql_connection_attempt_timeout],
+            bg_reconnect);
 
 
         return std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration.value(), pool, sample_block);

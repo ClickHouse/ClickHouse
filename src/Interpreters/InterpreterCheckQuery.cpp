@@ -1,8 +1,8 @@
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
-#include <algorithm>
 #include <memory>
+#include <thread>
 
 #include <Access/Common/AccessFlags.h>
 
@@ -12,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
 
 #include <Core/Settings.h>
 
@@ -23,16 +24,17 @@
 #include <Interpreters/ProcessList.h>
 
 #include <Parsers/ASTCheckQuery.h>
-#include <Parsers/ASTSetQuery.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Processors/IInflatingTransform.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <QueryPipeline/Pipe.h>
+
 #include <Storages/IStorage.h>
+
 
 namespace DB
 {
@@ -108,7 +110,7 @@ public:
         , check_data_tasks(table->getCheckTaskList(partition_or_part, context))
     {
         chassert(context);
-        context->checkAccess(AccessType::SHOW_TABLES, table_id);
+        context->checkAccess(AccessType::CHECK, table_id);
     }
 
     TableCheckTask(StoragePtr table_, ContextPtr context)
@@ -116,7 +118,7 @@ public:
         , check_data_tasks(table->getCheckTaskList({}, context))
     {
         chassert(context);
-        context->checkAccess(AccessType::SHOW_TABLES, table_->getStorageID());
+        context->checkAccess(AccessType::CHECK, table_->getStorageID());
     }
 
     TableCheckTask(const TableCheckTask & other)
@@ -136,10 +138,19 @@ public:
             std::this_thread::sleep_for(sleep_time);
         });
 
-        IStorage::DataValidationTasksPtr tmp = check_data_tasks;
-        auto result = table->checkDataNext(tmp);
-        is_finished = !result.has_value();
-        return result;
+        try
+        {
+            IStorage::DataValidationTasksPtr tmp = check_data_tasks;
+            auto result = table->checkDataNext(tmp);
+            is_finished = !result.has_value();
+            return result;
+        }
+        catch (const Exception & e)
+        {
+            is_finished = true;
+            CheckResult result{"", false, e.displayText()};
+            return result;
+        }
     }
 
     bool isFinished() const { return is_finished || !table || !check_data_tasks; }
@@ -262,10 +273,8 @@ private:
                 LOG_DEBUG(log, "Checking '{}' database", database_name);
                 return current_database;
             }
-            else
-            {
-                LOG_DEBUG(log, "Skipping database '{}' because it was dropped", database_name);
-            }
+
+            LOG_DEBUG(log, "Skipping database '{}' because it was dropped", database_name);
         }
         return {};
     }
@@ -345,7 +354,7 @@ public:
         if (result_value == 0)
             return;
 
-        auto columns = chunk.getColumns();
+        const auto & columns = chunk.getColumns();
         if ((columns.size() != 3 && columns.size() != 5) || column_position_to_check >= columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns: {}, position {}", columns.size(), column_position_to_check);
 

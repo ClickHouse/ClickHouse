@@ -115,8 +115,11 @@ struct ArraySourcePairSelector
     static void selectSource(bool is_second_const, bool is_second_nullable, SecondSource && second,
                              bool is_first_const, bool is_first_nullable, FirstSource && first, Args && ... args)
     {
-        Base::selectSourcePair(is_first_const, is_first_nullable, first,
-                               is_second_const, is_second_nullable, second, args ...);
+        if constexpr (std::is_same_v<FirstSource, SecondSource>)
+        {
+            Base::selectSourcePair(is_first_const, is_first_nullable, first,
+                                   is_second_const, is_second_nullable, second, args ...);
+        }
     }
 };
 

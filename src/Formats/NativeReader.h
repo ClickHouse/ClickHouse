@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Formats/FormatSettings.h>
 #include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
+#include <Core/BlockMissingValues.h>
 
 namespace DB
 {
@@ -41,6 +43,8 @@ public:
     void resetParser();
 
     Block read();
+
+    static void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const std::optional<FormatSettings> & format_settings, size_t rows, double avg_value_size_hint);
 
 private:
     ReadBuffer & istr;

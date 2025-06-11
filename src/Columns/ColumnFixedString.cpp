@@ -9,7 +9,7 @@
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
@@ -59,7 +59,7 @@ bool ColumnFixedString::isDefaultAt(size_t index) const
 
 void ColumnFixedString::insert(const Field & x)
 {
-    const String & s = x.safeGet<const String &>();
+    const String & s = x.safeGet<String>();
     insertData(s.data(), s.size());
 }
 
@@ -67,7 +67,7 @@ bool ColumnFixedString::tryInsert(const Field & x)
 {
     if (x.getType() != Field::Types::Which::String)
         return false;
-    const String & s = x.safeGet<const String &>();
+    const String & s = x.safeGet<String>();
     if (s.size() > n)
         return false;
     insertData(s.data(), s.size());
@@ -419,7 +419,7 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-ColumnPtr ColumnFixedString::compress() const
+ColumnPtr ColumnFixedString::compress(bool force_compression) const
 {
     size_t source_size = chars.size();
 
@@ -427,7 +427,7 @@ ColumnPtr ColumnFixedString::compress() const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(chars.data(), source_size, false);
+    auto compressed = ColumnCompressed::compressBuffer(chars.data(), source_size, force_compression);
 
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());

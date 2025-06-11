@@ -54,7 +54,8 @@ public:
         IColumn::Offsets & out_offsets_2 = col_res_inner_offsets->getData();
         IColumn::Offsets & out_offsets_1 = col_res_outer_offsets->getData();
 
-        size_t pos1 = 0, pos2 = 0;
+        size_t pos1 = 0;
+        size_t pos2 = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const Int64 shingle_length = col_length->getInt(row);
@@ -86,16 +87,19 @@ public:
 
 REGISTER_FUNCTION(ArrayShingles)
 {
-    factory.registerFunction<FunctionArrayShingles>(
-        FunctionDocumentation{
-            .description = R"(
-Generates an array of "shingles", i.e. consecutive sub-arrays with specified length of the input array.
-)",
-            .examples{
-                {"example 1", "SELECT arrayShingles([1,2,3,4,5], 3)", "[[1,2,3],[2,3,4],[3,4,5]]"}
-            },
-            .categories = {"Array"},
-        });
+    FunctionDocumentation::Description description = "Generates an array of ""shingles"" (similar to ngrams for strings), i.e. consecutive sub-arrays with a specified length of the input array.";
+    FunctionDocumentation::Syntax syntax = "arrayShingles(arr, l)";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr", "Array for which to generate an array of shingles. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"l", "The length of each shingle. [`(U)Int*`](/sql-reference/data-types/int-uint)"},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "An array of generated shingles. [`Array(T)`](/sql-reference/data-types/array)";
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayShingles([1,2,3,4], 3) as res;", "[[1,2,3],[2,3,4]]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayShingles>(documentation);
 }
 
 }

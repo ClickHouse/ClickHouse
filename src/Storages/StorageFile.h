@@ -4,8 +4,10 @@
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
+#include <Formats/FormatSettings.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/SourceWithKeyCondition.h>
+#include <Interpreters/ActionsDAG.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -138,6 +140,8 @@ public:
         size_t & total_bytes_to_read);
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+
+    void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
 protected:
     friend class StorageFileSource;
@@ -296,6 +300,7 @@ private:
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
+    SerializationInfoByName serialization_hints;
 
     UInt64 max_block_size;
 

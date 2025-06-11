@@ -4,9 +4,7 @@
 
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Formats/MarkInCompressedFile.h>
 
 
@@ -44,12 +42,7 @@ public:
     MarkCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
     /// Calculate key from path to file and offset.
-    static UInt128 hash(const String & path_to_file)
-    {
-        SipHash hash;
-        hash.update(path_to_file.data(), path_to_file.size() + 1);
-        return hash.get128();
-    }
+    static UInt128 hash(const String & path_to_file);
 
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)

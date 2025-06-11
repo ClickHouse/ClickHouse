@@ -1,0 +1,76 @@
+name: Bug report
+description: Wrong behavior (visible to users) in the official ClickHouse release.
+labels: ["potential bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > Please make sure that the version you're using is still supported (you can find the list [here](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#scope-and-supported-versions)).
+        > You have to provide the following information whenever possible.
+  - type: textarea
+    attributes:
+      label: Company or project name
+      description: Put your company name or project description here.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Describe what's wrong
+      description: |
+        * A clear and concise description of what works not as it is supposed to.
+        * A link to reproducer in [https://fiddle.clickhouse.com/](https://fiddle.clickhouse.com/).
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Does it reproduce on the most recent release?
+      description: |
+        [The list of releases](https://github.com/ClickHouse/ClickHouse/blob/master/utils/list-versions/version_date.tsv)
+      options:
+        - 'Yes'
+        - 'No'
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        -----
+        > Change "enabled" to true in "send_crash_reports" section in `config.xml`:
+        ```xml
+        <send_crash_reports>
+            <!-- Changing <enabled> to true allows sending crash reports to -->
+            <!-- the ClickHouse core developers team. -->
+            <enabled>true</enabled>
+        </send_crash_reports>
+        ```
+        -----
+  - type: textarea
+    attributes:
+      label: How to reproduce
+      description: |
+        * Which ClickHouse server version to use
+        * Which interface to use, if matters
+        * Non-default settings, if any
+        * `CREATE TABLE` statements for all tables involved
+        * Sample data for all these tables, use [clickhouse-obfuscator](https://github.com/ClickHouse/ClickHouse/blob/c81bec37a58757be1e2b1ac6f20a62b3f14a31f1/programs/obfuscator/Obfuscator.cpp#L55-L95) if necessary
+        * Queries to run that lead to unexpected result
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Error message and/or stacktrace
+      description: If applicable, add screenshots to help explain your problem.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Additional context
+      description: Add any other context about the problem here.
+    validations:
+      required: false

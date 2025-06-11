@@ -1,23 +1,23 @@
+import json
+import logging
 import os.path as p
 import random
+import socket
+import subprocess
 import threading
 import time
-import pytest
-import logging
 
-from helpers.cluster import ClickHouseCluster, is_arm
-from helpers.test_tools import TSV
-from helpers.client import QueryRuntimeException
-from helpers.network import PartitionManager
-
-import json
-import subprocess
 import kafka.errors
-from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
+import pytest
+from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
 from kafka.admin import NewTopic
-from kafka.protocol.admin import DescribeGroupsResponse_v1, DescribeGroupsRequest_v1
+from kafka.protocol.admin import DescribeGroupsRequest_v1, DescribeGroupsResponse_v1
 from kafka.protocol.group import MemberAssignment
-import socket
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.network import PartitionManager
+from helpers.test_tools import TSV
 
 if is_arm():
     # skip due to no arm support for clickhouse/kerberos-kdc docker image
@@ -240,7 +240,7 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
     expected = ""
 
     assert TSV(result) == TSV(expected)
-    assert instance.contains_in_log("StorageKafka (kafka_no_kdc): Nothing to commit")
+    assert instance.contains_in_log("StorageKafka (test\.kafka_no_kdc): Nothing to commit")
     assert instance.contains_in_log("Ticket expired")
     assert instance.contains_in_log("KerberosInit failure:")
 

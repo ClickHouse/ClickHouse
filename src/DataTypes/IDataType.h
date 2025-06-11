@@ -1,15 +1,21 @@
 #pragma once
 
-#include <memory>
-#include <boost/noncopyable.hpp>
 #include <Core/Names.h>
 #include <Core/TypeId.h>
 #include <Common/COW.h>
-#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/Serializations/ISerialization.h>
+
+#include <memory>
+
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
+
+struct DataTypeCustomDesc;
+using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
+class IDataTypeCustomName;
+using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
 
 namespace ErrorCodes
 {
@@ -62,7 +68,7 @@ struct SerializationInfoSettings;
 class IDataType : private boost::noncopyable, public std::enable_shared_from_this<IDataType>
 {
 public:
-    IDataType() = default;
+    IDataType();
     virtual ~IDataType();
 
     /// Compile time flag. If false, then if C++ types are the same, then SQL types are also the same.
@@ -72,23 +78,20 @@ public:
     /// static constexpr bool is_parametric = false;
 
     /// Name of data type (examples: UInt64, Array(String)).
-    String getName() const
-    {
-        if (custom_name)
-            return custom_name->getName();
-        else
-            return doGetName();
-    }
+    String getName() const;
 
-    String getPrettyName(size_t indent = 0) const
-    {
-        if (custom_name)
-            return custom_name->getName();
-        else
-            return doGetPrettyName(indent);
-    }
+    String getPrettyName(size_t indent = 0) const;
 
     DataTypePtr getPtr() const { return shared_from_this(); }
+
+    /// Returns the normalized form of the current type, currently handling the
+    /// conversion of named tuples to unnamed tuples.
+    ///
+    /// This is useful for converting aggregate states into a normalized form with
+    /// normalized argument types. E.g, `AggregateFunction(uniq, Tuple(a int, b int))`
+    /// should be convertible to `AggregateFunction(uniq, Tuple(int, int))`, as both
+    /// have same memory layouts for state representation and the same serialization.
+    virtual DataTypePtr getNormalizedType() const { return shared_from_this(); }
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
@@ -229,6 +232,9 @@ public:
       */
     virtual bool isComparable() const { return false; }
 
+    /// Is it possible to compare for equal?
+    virtual bool isComparableForEquality() const { return isComparable(); }
+
     /** Does it make sense to use this type with COLLATE modifier in ORDER BY.
       * Example: String, but not FixedString.
       */
@@ -332,14 +338,14 @@ protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
 
-    /// Customize this DataType
-    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
-
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable SerializationPtr custom_serialization;
 
 public:
+    /// Customize this DataType
+    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
+
     bool hasCustomName() const { return static_cast<bool>(custom_name.get()); }
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
@@ -356,7 +362,7 @@ protected:
         bool throw_if_null) const
     {
         if (throw_if_null)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData() is not implemented for type {}", getName());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData is not implemented for type {}", getName());
         return nullptr;
     }
 };
@@ -401,11 +407,13 @@ struct WhichDataType
     constexpr bool isDecimal256() const { return idx == TypeIndex::Decimal256; }
     constexpr bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128() || isDecimal256(); }
 
+    constexpr bool isBFloat16() const { return idx == TypeIndex::BFloat16; }
     constexpr bool isFloat32() const { return idx == TypeIndex::Float32; }
     constexpr bool isFloat64() const { return idx == TypeIndex::Float64; }
-    constexpr bool isFloat() const { return isFloat32() || isFloat64(); }
+    constexpr bool isNativeFloat() const { return isFloat32() || isFloat64(); }
+    constexpr bool isFloat() const { return isNativeFloat() || isBFloat16(); }
 
-    constexpr bool isNativeNumber() const { return isNativeInteger() || isFloat(); }
+    constexpr bool isNativeNumber() const { return isNativeInteger() || isNativeFloat(); }
     constexpr bool isNumber() const { return isInteger() || isFloat() || isDecimal(); }
 
     constexpr bool isEnum8() const { return idx == TypeIndex::Enum8; }
@@ -459,7 +467,9 @@ struct WhichDataType
 bool isUInt8(TYPE data_type); \
 bool isUInt16(TYPE data_type); \
 bool isUInt32(TYPE data_type); \
-bool isUInt64(TYPE data_type); \
+bool isUInt64(TYPE data_type);\
+bool isUInt128(TYPE data_type);\
+bool isUInt256(TYPE data_type); \
 bool isNativeUInt(TYPE data_type); \
 bool isUInt(TYPE data_type); \
 \
@@ -467,6 +477,8 @@ bool isInt8(TYPE data_type); \
 bool isInt16(TYPE data_type); \
 bool isInt32(TYPE data_type); \
 bool isInt64(TYPE data_type); \
+bool isInt128(TYPE data_type); \
+bool isInt256(TYPE data_type); \
 bool isNativeInt(TYPE data_type); \
 bool isInt(TYPE data_type); \
 \
@@ -610,6 +622,7 @@ template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = tr
     M(Int64) \
     M(Int128) \
     M(Int256) \
+    M(BFloat16) \
     M(Float32) \
     M(Float64)
 }

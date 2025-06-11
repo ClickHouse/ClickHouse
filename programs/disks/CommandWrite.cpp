@@ -1,10 +1,12 @@
 #include <Interpreters/Context.h>
 #include "ICommand.h"
 
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Common/TerminalSize.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -12,7 +14,7 @@ namespace DB
 class CommandWrite final : public ICommand
 {
 public:
-    CommandWrite()
+    CommandWrite() : ICommand("CommandWrite")
     {
         command_name = "write";
         description = "Write a file from `path-from` to `path-to`";
@@ -33,16 +35,17 @@ public:
         auto in = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
         {
             if (!path_from.has_value())
-            {
                 return std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
-            }
-            else
-            {
-                String relative_path_from = disk.getRelativeFromRoot(path_from.value());
-                return disk.getDisk()->readFile(relative_path_from);
-            }
+
+            String relative_path_from = disk.getRelativeFromRoot(path_from.value());
+            auto res = disk.getDisk()->readFileIfExists(relative_path_from, getReadSettings());
+            if (res)
+                return res;
+            /// For backward compatibility.
+            return std::make_unique<ReadBufferFromEmptyFile>();
         }();
 
+        LOG_INFO(log, "Writing file from '{}' to '{}' at disk '{}'", path_from.value_or("stdin"), path_to, disk.getDisk()->getName());
         auto out = disk.getDisk()->writeFile(path_to);
         copyData(*in, *out);
         out->finalize();

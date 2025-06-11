@@ -11,7 +11,7 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
 {
     const auto & frame = stack.back();
 
-    auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get());
+    auto * source_step_with_filter = dynamic_cast<SourceStepWithFilterBase *>(frame.node->step.get());
     if (!source_step_with_filter)
         return;
 

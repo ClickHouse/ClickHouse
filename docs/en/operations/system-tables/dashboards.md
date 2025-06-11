@@ -1,9 +1,12 @@
 ---
-slug: /en/operations/system-tables/dashboards
+description: 'Contains queries used by `/dashboard` page accessible though the HTTP
+  interface. useful for monitoring and troubleshooting.'
+keywords: ['system table', 'dashboards', 'monitoring', 'troubleshooting']
+slug: /operations/system-tables/dashboards
+title: 'system.dashboards'
 ---
-# dashboards
 
-Contains queries used by `/dashboard` page accessible though [HTTP interface](/docs/en/interfaces/http.md).
+Contains queries used by `/dashboard` page accessible though [HTTP interface](/interfaces/http.md).
 This table can be useful for monitoring and troubleshooting. The table contains a row for every chart in a dashboard.
 
 :::note
@@ -13,13 +16,13 @@ This can be useful to create custom dashboards.
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.dashboards
 WHERE title ILIKE '%CPU%'
 ```
 
-``` text
+```text
 Row 1:
 ──────
 dashboard: overview

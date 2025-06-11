@@ -3,7 +3,7 @@ SET log_query_threads=0;
 
 -- SETUP TABLES
 CREATE TABLE table_a (a String, b Int64) ENGINE = MergeTree ORDER BY b;
-CREATE TABLE table_b (a Float64,  b Int64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE table_b (a Float64, count Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE table_c (a Float64) ENGINE = MergeTree ORDER BY a;
 
 CREATE TABLE table_d (a Float64, count Int64) ENGINE MergeTree ORDER BY a;
@@ -27,7 +27,7 @@ INSERT INTO table_a SELECT '111', * FROM numbers(100);
 -- INSERT 2
 INSERT INTO table_d SELECT 0.5, * FROM numbers(50);
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, query_views_log;
 
 
 -- CHECK LOGS OF INSERT 1

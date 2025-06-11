@@ -86,6 +86,16 @@ public:
             if (second_argument_is_date && ((datepart_kind == IntervalKind::Kind::Hour)
                 || (datepart_kind == IntervalKind::Kind::Minute) || (datepart_kind == IntervalKind::Kind::Second)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for function {}", arguments[1].type->getName(), getName());
+
+            /// If we have a DateTime64 or Date32 as an input, it can be negative.
+            /// In this case, we should provide the corresponding return type, which supports negative values.
+            if (isDateTime64(arguments[1].type) || isDate32(arguments[1].type))
+            {
+                if (result_type == ResultType::Date)
+                    result_type = Date32;
+                else if (result_type == ResultType::DateTime)
+                    result_type = DateTime64;
+            }
         };
 
         auto check_timezone_argument = [&] {
@@ -123,19 +133,17 @@ public:
             return std::make_shared<DataTypeDate>();
         if (result_type == ResultType::Date32)
             return std::make_shared<DataTypeDate32>();
-        else if (result_type == ResultType::DateTime)
+        if (result_type == ResultType::DateTime)
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
-        else
-        {
-            size_t scale;
-            if (datepart_kind == IntervalKind::Kind::Millisecond)
-                scale = 3;
-            else if (datepart_kind == IntervalKind::Kind::Microsecond)
-                scale = 6;
-            else if (datepart_kind == IntervalKind::Kind::Nanosecond)
-                scale = 9;
-            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
-        }
+
+        size_t scale = 0;
+        if (datepart_kind == IntervalKind::Kind::Millisecond)
+            scale = 3;
+        else if (datepart_kind == IntervalKind::Kind::Microsecond)
+            scale = 6;
+        else if (datepart_kind == IntervalKind::Kind::Nanosecond)
+            scale = 9;
+        return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -153,10 +161,10 @@ public:
         auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context);
 
         if (arguments.size() == 2)
-            return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
+            return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
 
         temp_columns[2] = arguments[2];
-        return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
+        return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     bool hasInformationAboutMonotonicity() const override

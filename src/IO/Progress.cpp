@@ -22,6 +22,20 @@ namespace
     }
 }
 
+
+bool Progress::empty() const
+{
+    return read_rows == 0
+        && read_bytes == 0
+        && written_rows == 0
+        && written_bytes == 0
+        && total_rows_to_read == 0
+        && result_rows == 0
+        && result_bytes == 0;
+    /// We deliberately don't include "elapsed_ns" as a volatile value.
+}
+
+
 void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
 {
     readVarUInt(read_rows, in);
@@ -74,26 +88,30 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     /// Numbers are written in double quotes (as strings) to avoid loss of precision
     ///  of 64-bit integers after interpretation by JavaScript.
 
+    bool has_value = false;
+
+    auto write = [&](const char * name, UInt64 value)
+    {
+        if (!value)
+            return;
+        if (has_value)
+            writeChar(',', out);
+        writeCString(name, out);
+        writeCString(":\"", out);
+        writeIntText(value, out);
+        writeChar('"', out);
+        has_value = true;
+    };
+
     writeCString("{", out);
-    writeCString("\"read_rows\":\"", out);
-    writeText(read_rows, out);
-    writeCString("\",\"read_bytes\":\"", out);
-    writeText(read_bytes, out);
-    writeCString("\",\"written_rows\":\"", out);
-    writeText(written_rows, out);
-    writeCString("\",\"written_bytes\":\"", out);
-    writeText(written_bytes, out);
-    writeCString("\",\"total_rows_to_read\":\"", out);
-    writeText(total_rows_to_read, out);
-    writeCString("\",\"result_rows\":\"", out);
-    writeText(result_rows, out);
-    writeCString("\",\"result_bytes\":\"", out);
-    writeText(result_bytes, out);
-    writeCString("\",\"elapsed_ns\":\"", out);
-    writeText(elapsed_ns, out);
-    writeCString("\",\"real_time_microseconds\":\"", out);
-    writeText(real_time_microseconds, out);
-    writeCString("\"", out);
+    write("\"read_rows\"", read_rows);
+    write("\"read_bytes\"", read_bytes);
+    write("\"written_rows\"", written_rows);
+    write("\"written_bytes\"", written_bytes);
+    write("\"total_rows_to_read\"", total_rows_to_read);
+    write("\"result_rows\"", result_rows);
+    write("\"result_bytes\"", result_bytes);
+    write("\"elapsed_ns\"", elapsed_ns);
     writeCString("}", out);
 }
 
@@ -112,7 +130,6 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
     result_bytes += rhs.result_bytes;
 
     elapsed_ns += rhs.elapsed_ns;
-    real_time_microseconds += rhs.real_time_microseconds;
 
     return rhs.read_rows || rhs.written_rows;
 }
@@ -132,7 +149,6 @@ void Progress::reset()
     result_bytes = 0;
 
     elapsed_ns = 0;
-    real_time_microseconds = 0;
 }
 
 ProgressValues Progress::getValues() const
@@ -152,7 +168,6 @@ ProgressValues Progress::getValues() const
     res.result_bytes = result_bytes.load(std::memory_order_relaxed);
 
     res.elapsed_ns = elapsed_ns.load(std::memory_order_relaxed);
-    res.real_time_microseconds = real_time_microseconds.load(std::memory_order_relaxed);
 
     return res;
 }
@@ -174,7 +189,6 @@ ProgressValues Progress::fetchValuesAndResetPiecewiseAtomically()
     res.result_bytes = result_bytes.fetch_and(0);
 
     res.elapsed_ns = elapsed_ns.fetch_and(0);
-    res.real_time_microseconds = real_time_microseconds.fetch_and(0);
 
     return res;
 }
@@ -196,7 +210,6 @@ Progress Progress::fetchAndResetPiecewiseAtomically()
     res.result_bytes = result_bytes.fetch_and(0);
 
     res.elapsed_ns = elapsed_ns.fetch_and(0);
-    res.real_time_microseconds = real_time_microseconds.fetch_and(0);
 
     return res;
 }
@@ -216,7 +229,6 @@ Progress & Progress::operator=(Progress && other) noexcept
     result_bytes = other.result_bytes.load(std::memory_order_relaxed);
 
     elapsed_ns = other.elapsed_ns.load(std::memory_order_relaxed);
-    real_time_microseconds = other.real_time_microseconds.load(std::memory_order_relaxed);
 
     return *this;
 }
@@ -250,11 +262,6 @@ void Progress::writeJSON(WriteBuffer & out) const
 void Progress::incrementElapsedNs(UInt64 elapsed_ns_)
 {
     elapsed_ns.fetch_add(elapsed_ns_, std::memory_order_relaxed);
-}
-
-void Progress::incrementRealTimeMicroseconds(UInt64 microseconds)
-{
-    real_time_microseconds.fetch_add(microseconds, std::memory_order_relaxed);
 }
 
 }

@@ -2,6 +2,7 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 
+#include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -22,14 +23,14 @@ namespace DB
 
     void registerDictionarySourceRedis(DictionarySourceFactory & factory)
     {
-        auto create_table_source = [=](const DictionaryStructure & dict_struct,
+        auto create_table_source = [=](const String & /*name*/,
+                                    const DictionaryStructure & dict_struct,
                                     const Poco::Util::AbstractConfiguration & config,
                                     const String & config_prefix,
                                     Block & sample_block,
                                     ContextPtr global_context,
                                     const std::string & /* default_database */,
                                     bool /* created_from_ddl */) -> DictionarySourcePtr {
-
             auto redis_config_prefix = config_prefix + ".redis";
 
             auto host = config.getString(redis_config_prefix + ".host");
@@ -160,7 +161,7 @@ namespace DB
                 if (isInteger(type))
                     key << DB::toString(key_columns[i]->get64(row));
                 else if (isString(type))
-                    key << (*key_columns[i])[row].safeGet<const String &>();
+                    key << (*key_columns[i])[row].safeGet<String>();
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
             }

@@ -2,7 +2,6 @@
 
 #include <limits>
 #include <algorithm>
-#include <climits>
 #include <base/types.h>
 #include <base/sort.h>
 #include <IO/ReadBuffer.h>
@@ -10,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <IO/Operators_pcg_random.h>
 #include <Common/PODArray.h>
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
@@ -53,6 +52,7 @@ struct NanLikeValueConstructor
         return std::numeric_limits<ResultType>::quiet_NaN();
     }
 };
+
 template <typename ResultType>
 struct NanLikeValueConstructor<ResultType, false>
 {
@@ -161,6 +161,13 @@ public:
     {
         if (sample_count != b.sample_count)
             throw Poco::Exception("Cannot merge ReservoirSampler's with different sample_count");
+
+        // There will be an aliasing issue if we merge the same object with itself. I.e. we will insert from `b.samples` into `a.samples`,
+        // but both refer to the same array. It might happen in case of multiplying an aggregate function state by a numeric constant.
+        // ATST, it seems that self-merging cannot improve accuracy, so there is no point to do it anyway.
+        if (this == &b)
+            return;
+
         sorted = false;
 
         if (b.total_values <= sample_count)
@@ -252,16 +259,14 @@ private:
     pcg32_fast rng;
     bool sorted = false;
 
-
     UInt64 genRandom(UInt64 limit)
     {
         chassert(limit > 0);
 
         /// With a large number of values, we will generate random numbers several times slower.
         if (limit <= static_cast<UInt64>(pcg32_fast::max()))
-            return rng() % limit;
-        else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
+            return rng() % limit;  /// NOLINT(clang-analyzer-core.DivideZero)
+        return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
     }
 
     void sortIfNeeded()
@@ -277,7 +282,6 @@ private:
     {
         if (OnEmpty == ReservoirSamplerOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSampler");
-        else
-            return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
+        return NanLikeValueConstructor<ResultType, is_floating_point<ResultType>>::getValue();
     }
 };

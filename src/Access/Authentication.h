@@ -2,6 +2,7 @@
 
 #include <Access/AuthenticationData.h>
 #include <Common/Exception.h>
+#include <Interpreters/ClientInfo.h>
 #include <base/types.h>
 
 
@@ -26,6 +27,7 @@ struct Authentication
         const Credentials & credentials,
         const AuthenticationData & authentication_method,
         const ExternalAuthenticators & external_authenticators,
+        const ClientInfo & client_info,
         SettingsChanges & settings);
 
     // A signaling class used to communicate requirements for credentials.

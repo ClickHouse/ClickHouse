@@ -57,7 +57,8 @@ namespace DB
                 if (unlikely(begin > end))
                 {
                     const FormatSettings default_format{};
-                    WriteBufferFromOwnString buf_begin, buf_end;
+                    WriteBufferFromOwnString buf_begin;
+                    WriteBufferFromOwnString buf_end;
                     begin_serializaion->serializeTextQuoted(*(arguments[0].column), i, buf_begin, default_format);
                     end_serialization->serializeTextQuoted(*(arguments[1].column), i, buf_end, default_format);
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect order of events: {} > {}", buf_begin.str(), buf_end.str());

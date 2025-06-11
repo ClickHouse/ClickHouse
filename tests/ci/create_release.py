@@ -1,28 +1,132 @@
+#!/usr/bin/env python
+
+"""
+Prepare release machine:
+
+### INSTALL PACKAGES
+sudo apt update
+sudo apt install --yes --no-install-recommends python3-dev python3-pip gh unzip
+sudo apt install --yes python3-boto3
+sudo apt install --yes python3-github
+sudo apt install --yes python3-unidiff
+sudo apt install --yes python3-tqdm # cloud changelog
+sudo apt install --yes python3-thefuzz # cloud changelog
+sudo apt install --yes s3fs
+
+### INSTALL AWS CLI
+cd /tmp
+curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+rm -rf aws*
+cd -
+
+### INSTALL GH ACTIONS RUNNER:
+# Create a folder
+RUNNER_VERSION=2.317.0
+cd ~
+mkdir actions-runner && cd actions-runner
+# Download the latest runner package
+runner_arch() {
+  case $(uname -m) in
+    x86_64 )
+      echo x64;;
+    aarch64 )
+      echo arm64;;
+  esac
+}
+curl -O -L https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
+# Extract the installer
+tar xzf ./actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
+rm ./actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
+
+### Install reprepro:
+cd ~
+sudo apt install dpkg-dev libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper
+git clone https://salsa.debian.org/debian/reprepro.git
+cd reprepro
+dpkg-buildpackage -b --no-sign && sudo dpkg -i ../reprepro_$(dpkg-parsechangelog --show-field Version)_$(dpkg-architecture -q DEB_HOST_ARCH).deb
+
+### Install createrepo-c:
+sudo apt install createrepo-c
+createrepo_c --version
+#Version: 0.17.3 (Features: DeltaRPM LegacyWeakdeps )
+
+### Import gpg sign key
+gpg --import key.pgp
+gpg --list-secret-keys
+
+### Install docker
+sudo su; cd ~
+
+deb_arch() {
+  case $(uname -m) in
+    x86_64 )
+      echo amd64;;
+    aarch64 )
+      echo arm64;;
+  esac
+}
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+echo "deb [arch=$(deb_arch) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt-get update
+sudo apt-get install --yes --no-install-recommends docker-ce docker-buildx-plugin docker-ce-cli containerd.io
+
+sudo usermod -aG docker ubuntu
+
+# enable ipv6 in containers (fixed-cidr-v6 is some random network mask)
+cat <<EOT > /etc/docker/daemon.json
+{
+  "ipv6": true,
+  "fixed-cidr-v6": "2001:db8:1::/64",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-file": "5",
+    "max-size": "1000m"
+  },
+  "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
+  "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
+}
+EOT
+
+# if docker build does not work:
+    sudo systemctl restart docker
+    docker buildx rm mybuilder
+    docker buildx create --name mybuilder --driver docker-container --use
+    docker buildx inspect mybuilder --bootstrap
+
+### Install tailscale
+
+### Configure GH runner
+"""
+
 import argparse
 import dataclasses
 import json
 import os
-
 from contextlib import contextmanager
 from copy import copy
 from pathlib import Path
 from typing import Iterator, List
 
-from git_helper import Git, GIT_PREFIX
-from ssh import SSHAgent
-from s3_helper import S3Helper
-from ci_utils import Shell, GH
 from ci_buddy import CIBuddy
+from ci_config import CI
+from ci_utils import GH, Shell
+from git_helper import GIT_PREFIX, Git
+from s3_helper import S3Helper
+from ssh import SSHAgent
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
+    VersionType,
     get_abs_path,
     get_version_from_repo,
     update_cmake_version,
     update_contributors,
-    VersionType,
 )
-from ci_config import CI
 
 CMAKE_PATH = get_abs_path(FILE_WITH_VERSION_PATH)
 CONTRIBUTORS_PATH = get_abs_path(GENERATED_CONTRIBUTORS)
@@ -256,11 +360,13 @@ class ReleaseInfo:
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
         tag_message = f"Release {self.release_tag}"
-        Shell.check(
+        res = Shell.check(
             f"{GIT_PREFIX} tag -a -m '{tag_message}' {self.release_tag} {self.commit_sha}",
-            strict=True,
             verbose=True,
         )
+        if not res:
+            # rerun case - ignore existing tag (only for local repo)
+            print(f"WARNING: Tag [{self.release_tag}] already exists locally - ignore")
         cmd_push_tag = f"{GIT_PREFIX} push origin {self.release_tag}:{self.release_tag}"
         Shell.check(cmd_push_tag, dry_run=dry_run, strict=True, verbose=True)
 
@@ -322,7 +428,11 @@ class ReleaseInfo:
             version.with_description(version.get_stable_release_type())
 
         with checkout(self.release_branch):
-            update_cmake_version(version)
+            # For a new release branch (not a patch release), only the release description
+            # (e.g. "testing" → "stable", "lts") should be updated.
+            # The commit SHA must remain fixed at the point where the release started,
+            # so that version tweak is calculated correctly from that SHA.
+            update_cmake_version(version, preserve_sha=self.release_type == "new")
             update_contributors(raise_error=True)
             cmd_commit_version_upd = f"{GIT_PREFIX} commit '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}' -m 'Update autogenerated version to {self.version} and contributors'"
             cmd_push_branch = f"{GIT_PREFIX} push"
@@ -353,11 +463,20 @@ class ReleaseInfo:
                 with checkout_new(branch_upd_version_contributors):
                     update_cmake_version(version)
                     update_contributors(raise_error=True)
-                    cmd_commit_version_upd = f"{GIT_PREFIX} commit '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}' -m 'Update autogenerated version to {self.version} and contributors'"
+                    cmd_commit_version_upd = (
+                        f"{GIT_PREFIX} commit '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}' "
+                        f"-m 'Update autogenerated version to {self.version} and contributors'"
+                    )
                     cmd_push_branch = f"{GIT_PREFIX} push --set-upstream origin {branch_upd_version_contributors}"
                     actor = os.getenv("GITHUB_ACTOR", "") or "me"
-                    body = f"Automatic version bump after release {self.release_tag}\n### Changelog category (leave one):\n- Not for changelog (changelog entry is not required)\n"
-                    cmd_create_pr = f"gh pr create --repo {CI.Envs.GITHUB_REPOSITORY} --title 'Update version after release' --head {branch_upd_version_contributors} --base master --body \"{body}\" --assignee {actor}"
+                    body = (
+                        f"Automatic version bump after release {self.release_tag}\n"
+                        "### Changelog category (leave one):\n- Not for changelog (changelog entry is not required)\n"
+                    )
+                    cmd_create_pr = (
+                        f"gh pr create --repo {CI.Envs.GITHUB_REPOSITORY} --title 'Update version after release' "
+                        f'--head {branch_upd_version_contributors} --base master --body "{body}" --assignee {actor}'
+                    )
                     Shell.check(
                         cmd_commit_version_upd,
                         strict=True,
@@ -448,7 +567,7 @@ class ReleaseInfo:
         else:
             print("Dry-run, would run commands:")
             print("\n  * ".join(cmds))
-            self.release_url = f"dry-run"
+            self.release_url = "dry-run"
         self.dump()
 
     def merge_prs(self, dry_run: bool) -> None:
@@ -459,7 +578,7 @@ class ReleaseInfo:
             if dry_run:
                 changelog_pr_num = 23456
             else:
-                changelog_pr_num = int(self.changelog_pr.split("/")[-1])
+                changelog_pr_num = int(self.changelog_pr.rsplit("/", 1)[-1])
             res = Shell.check(
                 f"gh pr merge {changelog_pr_num} --repo {repo} --merge --auto",
                 verbose=True,
@@ -476,7 +595,7 @@ class ReleaseInfo:
             if dry_run:
                 version_bump_pr = 23456
             else:
-                version_bump_pr = int(self.version_bump_pr.split("/")[-1])
+                version_bump_pr = int(self.version_bump_pr.rsplit("/", 1)[-1])
             res = res and Shell.check(
                 f"gh pr merge {version_bump_pr} --repo {repo} --merge --auto",
                 verbose=True,
@@ -505,37 +624,35 @@ class PackageDownloader:
         "clickhouse-server",
     )
 
-    EXTRA_PACKAGES = (
-        "clickhouse-library-bridge",
-        "clickhouse-odbc-bridge",
-    )
-    PACKAGE_TYPES = (CI.BuildNames.PACKAGE_RELEASE, CI.BuildNames.PACKAGE_AARCH64)
+    PACKAGE_ARCHS = ("amd", "arm")
     MACOS_PACKAGE_TO_BIN_SUFFIX = {
-        CI.BuildNames.BINARY_DARWIN: "macos",
-        CI.BuildNames.BINARY_DARWIN_AARCH64: "macos-aarch64",
+        "amd": "macos",
+        "arm": "macos-aarch64",
     }
     LOCAL_DIR = "/tmp/packages"
 
     @classmethod
     def _get_arch_suffix(cls, package_arch, repo_type):
-        if package_arch == CI.BuildNames.PACKAGE_RELEASE:
+        if package_arch == "amd":
             return (
                 "amd64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "x86_64"
             )
-        elif package_arch == CI.BuildNames.PACKAGE_AARCH64:
+        if package_arch == "arm":
             return (
                 "arm64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "aarch64"
             )
-        else:
-            assert False, "BUG"
+        assert False, "BUG"
 
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
-        major, minor = map(int, release.split("."))
         self.package_names = list(self.PACKAGES)
-        if major > 24 or (major == 24 and minor > 3):
-            self.package_names += list(self.EXTRA_PACKAGES)
         self.release = release
+        major_version = int(release.split(".")[0])
+        minor_version = int(release.split(".")[1])
+        self.is_new_ci = (
+            major_version >= 25 and minor_version >= 3
+        ) or major_version > 25
+        self.s3_release_prefix = f"REFs/{release}" if self.is_new_ci else release
         self.commit_sha = commit_sha
         self.version = version
         self.s3 = S3Helper()
@@ -544,26 +661,47 @@ class PackageDownloader:
         self.tgz_package_files = []
         # just binaries for macos
         self.macos_package_files = ["clickhouse-macos", "clickhouse-macos-aarch64"]
-        self.file_to_type = {}
+        self.file_to_job_name = {}
+        self.macos_binary_to_job_name = {}
 
         Shell.check(f"mkdir -p {self.LOCAL_DIR}")
 
-        for package_type in self.PACKAGE_TYPES:
+        for package_arch in self.PACKAGE_ARCHS:
+            if not self.is_new_ci:
+                if package_arch == "amd":
+                    job_name = "package_release"
+                    job_name_darwin = "binary_darwin"
+                else:
+                    job_name = "package_aarch64"
+                    job_name_darwin = "binary_darwin_aarch64"
+            else:
+                if package_arch == "amd":
+                    job_name = "build_amd_release"
+                    job_name_darwin = "build_amd_darwin"
+                else:
+                    job_name = "build_arm_release"
+                    job_name_darwin = "build_arm_darwin"
             for package in self.package_names:
-                deb_package_file_name = f"{package}_{self.version}_{self._get_arch_suffix(package_type, RepoTypes.DEBIAN)}.deb"
+                deb_package_file_name = f"{package}_{self.version}_{self._get_arch_suffix(package_arch, RepoTypes.DEBIAN)}.deb"
                 self.deb_package_files.append(deb_package_file_name)
-                self.file_to_type[deb_package_file_name] = package_type
+                self.file_to_job_name[deb_package_file_name] = job_name
 
-                rpm_package_file_name = f"{package}-{self.version}.{self._get_arch_suffix(package_type, RepoTypes.RPM)}.rpm"
+                rpm_package_file_name = f"{package}-{self.version}.{self._get_arch_suffix(package_arch, RepoTypes.RPM)}.rpm"
                 self.rpm_package_files.append(rpm_package_file_name)
-                self.file_to_type[rpm_package_file_name] = package_type
+                self.file_to_job_name[rpm_package_file_name] = job_name
 
-                tgz_package_file_name = f"{package}-{self.version}-{self._get_arch_suffix(package_type, RepoTypes.TGZ)}.tgz"
+                tgz_package_file_name = f"{package}-{self.version}-{self._get_arch_suffix(package_arch, RepoTypes.TGZ)}.tgz"
                 self.tgz_package_files.append(tgz_package_file_name)
-                self.file_to_type[tgz_package_file_name] = package_type
+                self.file_to_job_name[tgz_package_file_name] = job_name
                 tgz_package_file_name += ".sha512"
                 self.tgz_package_files.append(tgz_package_file_name)
-                self.file_to_type[tgz_package_file_name] = package_type
+                self.file_to_job_name[tgz_package_file_name] = job_name
+
+                destination_binary_name = (
+                    f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}"
+                )
+                assert destination_binary_name in self.macos_package_files
+                self.macos_binary_to_job_name[destination_binary_name] = job_name_darwin
 
     def get_deb_packages_files(self):
         return self.deb_package_files
@@ -603,9 +741,9 @@ class PackageDownloader:
             print(f"Downloading: [{package_file}]")
             s3_path = "/".join(
                 [
-                    self.release,
+                    self.s3_release_prefix,
                     self.commit_sha,
-                    self.file_to_type[package_file],
+                    self.file_to_job_name[package_file],
                     package_file,
                 ]
             )
@@ -615,25 +753,20 @@ class PackageDownloader:
                 local_file_path="/".join([self.LOCAL_DIR, package_file]),
             )
 
-        for macos_package, bin_suffix in self.MACOS_PACKAGE_TO_BIN_SUFFIX.items():
-            binary_name = "clickhouse"
-            destination_binary_name = f"{binary_name}-{bin_suffix}"
-            assert destination_binary_name in self.macos_package_files
-            print(
-                f"Downloading: [{macos_package}] binary to [{destination_binary_name}]"
-            )
+        for macos_binary, job_name in self.macos_binary_to_job_name.items():
+            print(f"Downloading: [{job_name}] binary to [{macos_binary}]")
             s3_path = "/".join(
                 [
-                    self.release,
+                    self.s3_release_prefix,
                     self.commit_sha,
-                    macos_package,
-                    binary_name,
+                    job_name,
+                    "clickhouse",
                 ]
             )
             self.s3.download_file(
                 bucket=CI.Envs.S3_BUILDS_BUCKET,
                 s3_path=s3_path,
-                local_file_path="/".join([self.LOCAL_DIR, destination_binary_name]),
+                local_file_path="/".join([self.LOCAL_DIR, macos_binary]),
             )
 
     def local_deb_packages_ready(self) -> bool:
@@ -899,106 +1032,3 @@ if __name__ == "__main__":
     # tear down ssh
     if _ssh_agent and _key_pub:
         _ssh_agent.remove(_key_pub)
-
-
-"""
-Prepare release machine:
-
-### INSTALL PACKAGES
-sudo apt update
-sudo apt install --yes --no-install-recommends python3-dev python3-pip gh unzip
-sudo apt install --yes python3-boto3
-sudo apt install --yes python3-github
-sudo apt install --yes python3-unidiff
-sudo apt install --yes python3-tqdm # cloud changelog
-sudo apt install --yes python3-thefuzz # cloud changelog
-sudo apt install --yes s3fs
-
-### INSTALL AWS CLI
-cd /tmp
-curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-sudo ./aws/install
-rm -rf aws*
-cd -
-
-### INSTALL GH ACTIONS RUNNER:
-# Create a folder
-RUNNER_VERSION=2.317.0
-cd ~
-mkdir actions-runner && cd actions-runner
-# Download the latest runner package
-runner_arch() {
-  case $(uname -m) in
-    x86_64 )
-      echo x64;;
-    aarch64 )
-      echo arm64;;
-  esac
-}
-curl -O -L https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
-# Extract the installer
-tar xzf ./actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
-rm ./actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
-
-### Install reprepro:
-cd ~
-sudo apt install dpkg-dev libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper
-git clone https://salsa.debian.org/debian/reprepro.git
-cd reprepro
-dpkg-buildpackage -b --no-sign && sudo dpkg -i ../reprepro_$(dpkg-parsechangelog --show-field Version)_$(dpkg-architecture -q DEB_HOST_ARCH).deb
-
-### Install createrepo-c:
-sudo apt install createrepo-c
-createrepo_c --version
-#Version: 0.17.3 (Features: DeltaRPM LegacyWeakdeps )
-
-### Import gpg sign key
-gpg --import key.pgp
-gpg --list-secret-keys
-
-### Install docker
-sudo su; cd ~
-
-deb_arch() {
-  case $(uname -m) in
-    x86_64 )
-      echo amd64;;
-    aarch64 )
-      echo arm64;;
-  esac
-}
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-
-echo "deb [arch=$(deb_arch) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-sudo apt-get update
-sudo apt-get install --yes --no-install-recommends docker-ce docker-buildx-plugin docker-ce-cli containerd.io
-
-sudo usermod -aG docker ubuntu
-
-# enable ipv6 in containers (fixed-cidr-v6 is some random network mask)
-cat <<EOT > /etc/docker/daemon.json
-{
-  "ipv6": true,
-  "fixed-cidr-v6": "2001:db8:1::/64",
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-file": "5",
-    "max-size": "1000m"
-  },
-  "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
-  "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
-}
-EOT
-
-# if docker build does not work:
-    sudo systemctl restart docker
-    docker buildx rm mybuilder
-    docker buildx create --name mybuilder --driver docker-container --use
-    docker buildx inspect mybuilder --bootstrap
-
-### Install tailscale
-
-### Configure GH runner
-"""

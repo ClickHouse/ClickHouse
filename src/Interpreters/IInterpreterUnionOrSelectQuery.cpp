@@ -1,7 +1,9 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -12,12 +14,14 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Common/Logger.h>
 
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsString additional_result_filter;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
@@ -39,6 +43,11 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
 }
 
+IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
+    : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
+{
+}
+
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
     : query_ptr(query_ptr_), context(context_), options(options_), max_streams(context->getSettingsRef()[Setting::max_threads])
@@ -47,7 +56,13 @@ IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     /// it's possible that new analyzer will be enabled in ::getQueryProcessingStage method
     /// of the underlying storage when all other parts of infrastructure are not ready for it
     /// (built with old analyzer).
-    context->setSetting("allow_experimental_analyzer", false);
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        LOG_TRACE(getLogger("IInterpreterUnionOrSelectQuery"),
+            "The new analyzer is enabled, but the old interpreter is used. It can be a bug, please report it. Will disable 'allow_experimental_analyzer' setting (for query: {})",
+            query_ptr->formatForLogging());
+        context->setSetting("allow_experimental_analyzer", false);
+    }
 
     if (options.shard_num)
         context->addSpecialScalar(
@@ -68,8 +83,7 @@ QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline(QueryPlan & query_plan)
 {
     buildQueryPlan(query_plan);
-    return std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
+    return std::move(*query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context)));
 }
 
 static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
@@ -174,10 +188,10 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
     if (!ast)
         return;
 
-    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentDataStream().header);
+    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentHeader());
     std::string filter_name = dag.getOutputs().back()->result_name;
     auto filter_step = std::make_unique<FilterStep>(
-        plan.getCurrentDataStream(), std::move(dag), std::move(filter_name), true);
+        plan.getCurrentHeader(), std::move(dag), std::move(filter_name), true);
     filter_step->setStepDescription("Additional result filter");
     plan.addStep(std::move(filter_step));
 }

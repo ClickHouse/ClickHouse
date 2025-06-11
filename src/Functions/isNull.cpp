@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
@@ -101,12 +102,10 @@ public:
             /// Merely return the embedded null map.
             return nullable->getNullMapColumnPtr();
         }
-        else
-        {
-            /// Since no element is nullable, return a zero-constant column representing
-            /// a zero-filled null map.
-            return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
-        }
+
+        /// Since no element is nullable, return a zero-constant column representing
+        /// a zero-filled null map.
+        return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
     }
 
 private:

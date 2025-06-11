@@ -1,19 +1,20 @@
 (Expression)
 ExpressionTransform
   (Sorting)
-  MergingSortedTransform 2 → 1
-    MergeSortingTransform × 2
-      LimitsCheckingTransform × 2
-        PartialSortingTransform × 2
+  MergingSortedTransform 8 → 1
+    MergeSortingTransform × 8
+      LimitsCheckingTransform × 8
+        PartialSortingTransform × 8
           (Expression)
-          ExpressionTransform × 2
+          ExpressionTransform × 8
             (Aggregating)
-            ExpressionTransform × 2
-              AggregatingTransform × 2
-                Copy 1 → 2
-                  (Expression)
-                  ExpressionTransform
-                    (ReadFromMemoryStorage)
+            Resize 2 → 8
+              ExpressionTransform × 2
+                AggregatingTransform × 2
+                  Copy 1 → 2
+                    (Expression)
+                    ExpressionTransform
+                      (ReadFromMemoryStorage)
 1	0	1	4500
 1	0	3	4700
 1	0	5	4900
@@ -91,21 +92,22 @@ ORDER BY
 (Expression)
 ExpressionTransform
   (Sorting)
-  MergingSortedTransform 2 → 1
-    MergeSortingTransform × 2
-      LimitsCheckingTransform × 2
-        PartialSortingTransform × 2
+  MergingSortedTransform 3 → 1
+    MergeSortingTransform × 3
+      LimitsCheckingTransform × 3
+        PartialSortingTransform × 3
           (Expression)
-          ExpressionTransform × 2
+          ExpressionTransform × 3
             (Aggregating)
-            ExpressionTransform × 2
-              Resize × 2 3 → 1
-                AggregatingTransform × 6
-                  Copy × 3 1 → 2
-                    (Expression)
-                    ExpressionTransform × 3
-                      (ReadFromSystemNumbers)
-                      NumbersRange × 3 0 → 1
+            Resize 2 → 3
+              ExpressionTransform × 2
+                Resize × 2 3 → 1
+                  AggregatingTransform × 6
+                    Copy × 3 1 → 2
+                      (Expression)
+                      ExpressionTransform × 3
+                        (ReadFromSystemNumbers)
+                        NumbersRange × 3 0 → 1
 4999500000	10000
 4999510000	10000
 4999520000	10000

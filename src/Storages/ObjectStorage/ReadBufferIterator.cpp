@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -23,7 +24,7 @@ namespace ErrorCodes
 ReadBufferIterator::ReadBufferIterator(
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
-    const FileIterator & file_iterator_,
+    const ObjectIterator & file_iterator_,
     const std::optional<FormatSettings> & format_settings_,
     SchemaCache & schema_cache_,
     ObjectInfos & read_keys_,
@@ -142,8 +143,7 @@ String ReadBufferIterator::getLastFilePath() const
 {
     if (current_object_info)
         return current_object_info->getPath();
-    else
-        return "";
+    return "";
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
@@ -151,7 +151,7 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto context = getContext();
 
     const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
-    auto impl = object_storage->readObject(StoredObject(path), context->getReadSettings());
+    auto impl = StorageObjectStorageSource::createReadBuffer(*current_object_info, object_storage, context, getLogger("ReadBufferIterator"));
 
     const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
     const auto zstd_window = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
@@ -219,7 +219,6 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
 
         const auto filename = current_object_info->getFileName();
-        chassert(!filename.empty());
 
         /// file iterator could get new keys after new iteration
         if (read_keys.size() > prev_read_keys_size)
@@ -277,11 +276,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         else
         {
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
-            read_buf = object_storage->readObject(
-                StoredObject(current_object_info->getPath()),
-                getContext()->getReadSettings(),
-                {},
-                current_object_info->metadata->size_bytes);
+            read_buf = StorageObjectStorageSource::createReadBuffer(*current_object_info, object_storage, getContext(), getLogger("ReadBufferIterator"));
         }
 
         if (!query_settings.skip_empty_files || !read_buf->eof())

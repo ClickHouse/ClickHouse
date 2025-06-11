@@ -8,9 +8,11 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <Common/MemorySpillScheduler.h>
 
 #include <boost/noncopyable.hpp>
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -46,7 +48,6 @@ using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
-using ThreadStatusPtr = ThreadStatus *;
 
 using QueryIsCanceledPredicate = std::function<bool()>;
 
@@ -67,6 +68,7 @@ public:
     ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
     explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+    explicit ThreadGroup(ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -77,6 +79,7 @@ public:
 
     const FatalErrorCallback fatal_error_callback;
 
+    MemorySpillScheduler::Ptr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -89,6 +92,11 @@ public:
 
         String query_for_logs;
         UInt64 normalized_query_hash = 0;
+
+        // Since processors might be added on the fly within expand() function we use atomic_size_t.
+        // These two fields are used for EXPLAIN PLAN / PIPELINE.
+        std::shared_ptr<std::atomic_size_t> plan_step_index = std::make_shared<std::atomic_size_t>(0);
+        std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
     };
@@ -110,11 +118,14 @@ public:
 
     static ThreadGroupPtr createForBackgroundProcess(ContextPtr storage_context);
 
+    static ThreadGroupPtr createForMaterializedView();
+
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
+    UInt64 getThreadsTotalElapsedMs() const;
 
     void linkThread(UInt64 thread_id);
-    void unlinkThread();
+    void unlinkThread(UInt64 elapsed_thread_counter_ms);
 
 private:
     mutable std::mutex mutex;
@@ -130,20 +141,36 @@ private:
 
     /// Peak threads count in the group
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
+
+    UInt64 elapsed_total_threads_counter_ms TSA_GUARDED_BY(mutex) = 0;
 };
 
 /**
- * Since merge is executed with multiple threads, this class
- * switches the parent MemoryTracker as part of the thread group to account all the memory used.
+ * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
+ *
+ * Typically used for inheriting thread group when scheduling tasks on a thread pool:
+ *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
+ *       {
+ *           ThreadGroupSwitcher switcher(thread_group, "MyThread");
+ *           ...
+ *       });
  */
 class ThreadGroupSwitcher : private boost::noncopyable
 {
 public:
-    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group);
+    /// If thread_group_ is nullptr or equal to current thread group, does nothing.
+    /// allow_existing_group:
+    ///  * If false, asserts that the thread is not already attached to a different group.
+    ///    Use this when running a task in a thread pool.
+    ///  * If true, remembers the current group and restores it in destructor.
+    /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
+    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher();
 
 private:
+    ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
+    ThreadGroupPtr thread_group;
 };
 
 
@@ -209,7 +236,7 @@ private:
 
     bool performance_counters_finalized = false;
 
-    String query_id_from_query_context;
+    String query_id;
 
     struct TimePoint
     {
@@ -218,10 +245,13 @@ private:
         UInt64 microseconds() const;
         UInt64 seconds() const;
 
+        UInt64 elapsedMilliseconds() const;
+        UInt64 elapsedMilliseconds(const TimePoint & current) const;
+
         std::chrono::time_point<std::chrono::system_clock> point;
     };
 
-    TimePoint query_start_time{};
+    TimePoint thread_attach_time{};
 
     // CPU and Real time query profilers
     std::unique_ptr<QueryProfilerReal> query_profiler_real;
@@ -233,43 +263,24 @@ private:
     Stopwatch stopwatch{CLOCK_MONOTONIC_COARSE};
     UInt64 last_performance_counters_update_time = 0;
 
-    /// See setInternalThread()
-    bool internal_thread = false;
-
     /// This is helpful for cut linking dependencies for clickhouse_common_io
     using Deleter = std::function<void()>;
     Deleter deleter;
 
     LoggerPtr log = nullptr;
 
-    bool check_current_thread_on_destruction;
-
 public:
-    explicit ThreadStatus(bool check_current_thread_on_destruction_ = true);
+    explicit ThreadStatus();
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
 
+    void setQueryId(std::string && new_query_id) noexcept;
+    void clearQueryId() noexcept;
     const String & getQueryId() const;
 
     ContextPtr getQueryContext() const;
     ContextPtr getGlobalContext() const;
-
-    /// "Internal" ThreadStatus is used for materialized views for separate
-    /// tracking into system.query_views_log
-    ///
-    /// You can have multiple internal threads, but only one non-internal with
-    /// the same thread_id.
-    ///
-    /// "Internal" thread:
-    /// - cannot have query profiler
-    ///   since the running (main query) thread should already have one
-    /// - should not try to obtain latest counter on detach
-    ///   because detaching of such threads will be done from a different
-    ///   thread_id, and some counters are not available (i.e. getrusage()),
-    ///   but anyway they are accounted correctly in the main ThreadStatus of a
-    ///   query.
-    void setInternalThread();
 
     /// Attaches slave thread to existing thread group
     void attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached = true);
@@ -312,6 +323,9 @@ public:
     void flushUntrackedMemory();
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
+
+    size_t getNextPlanStepIndex() const;
+    size_t getNextPipelineProcessorIndex() const;
 
 private:
     void applyGlobalSettings();

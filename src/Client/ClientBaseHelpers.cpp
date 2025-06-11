@@ -1,16 +1,28 @@
 #include "ClientBaseHelpers.h"
 
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-
-#include <iostream>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <base/find_symbols.h>
+#include <Poco/String.h>
+#include <string_view>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool implicit_select;
+}
 
 /// Should we celebrate a bit?
 bool isNewYearMode()
@@ -88,14 +100,33 @@ bool isChineseNewYearMode(const String & local_tz)
         /// Let's celebrate until Lantern Festival
         if (d <= days && d + 25 >= days)
             return true;
-        else if (d > days)
+        if (d > days)
             return false;
     }
     return false;
 }
 
+std::string getChineseZodiac()
+{
+    time_t current_time = time(nullptr);
+    int year = DateLUT::instance().toYear(current_time);
+
+    // Traditional Chinese Zodiac
+    static constexpr const char * zodiacs[12] = {
+        "鼠", "牛", "虎", "兔", "龙", "蛇",
+        "马", "羊", "猴", "鸡", "狗", "猪"
+    };
+
+    //2020 is Rat
+    int offset = (year - 2020) % 12;
+    if (offset < 0)
+        offset += 12;
+
+    return zodiacs[offset];
+}
+
 #if USE_REPLXX
-void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors)
+void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context)
 {
     using namespace replxx;
 
@@ -133,15 +164,27 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     /// We don't do highlighting for foreign dialects, such as PRQL and Kusto.
     /// Only normal ClickHouse SQL queries are highlighted.
 
-    /// Currently we highlight only the first query in the multi-query mode.
-
-    ParserQuery parser(end);
+    ParserQuery parser(end, false, context.getSettingsRef()[Setting::implicit_select]);
     ASTPtr ast;
     bool parse_res = false;
 
     try
     {
-        parse_res = parser.parse(token_iterator, ast, expected);
+        while (!token_iterator->isEnd())
+        {
+            parse_res = parser.parse(token_iterator, ast, expected);
+            if (!parse_res)
+                break;
+
+            if (!token_iterator->isEnd() && token_iterator->type != TokenType::Semicolon)
+            {
+                parse_res = false;
+                break;
+            }
+
+            while (token_iterator->type == TokenType::Semicolon)
+                ++token_iterator;
+        }
     }
     catch (...)
     {
@@ -175,7 +218,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     /// Highlight the last error in red. If the parser failed or the lexer found an invalid token,
     /// or if it didn't parse all the data (except, the data for INSERT query, which is legitimately unparsed)
-    if ((!parse_res || last_token.isError() || (!token_iterator->isEnd() && token_iterator->type != TokenType::Semicolon))
+    if ((!parse_res || last_token.isError())
         && !(insert_data && expected.max_parsed_pos >= insert_data)
         && expected.max_parsed_pos >= prev)
     {
@@ -199,5 +242,111 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 }
 #endif
+
+void skipSpacesAndComments(const char*& pos, const char* end, std::function<void(std::string_view)> comment_callback)
+{
+    do
+    {
+        /// skip spaces to avoid throw exception after last query
+        while (pos != end && std::isspace(*pos))
+            ++pos;
+
+        const char * comment_begin = pos;
+        /// for skip comment after the last query and to not throw exception
+        if (end - pos > 2 && *pos == '-' && *(pos + 1) == '-')
+        {
+            pos += 2;
+            /// skip until the end of the line
+            while (pos != end && *pos != '\n')
+                ++pos;
+            if (comment_callback)
+                comment_callback(std::string_view(comment_begin, pos - comment_begin));
+        }
+        /// need to parse next sql
+        else
+            break;
+    } while (pos != end);
+}
+
+String formatQuery(String query)
+{
+    const unsigned max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
+    const unsigned max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
+
+    ParserQuery parser(query.data() + query.size(), /*allow_settings_after_format_in_insert_=*/ false, /*implicit_select_=*/ false);
+
+    String res;
+    res.reserve(query.size());
+
+    auto comments_callback = [&](std::string_view comment)
+    {
+        res += comment;
+        res += '\n';
+    };
+
+    const char * begin = query.data();
+    const char * pos = begin;
+    const char * end = begin + query.size();
+
+    skipSpacesAndComments(pos, end, comments_callback);
+
+    size_t queries = 0;
+    while (pos < end)
+    {
+        const char * query_start = pos;
+        const ASTPtr ast = parseQueryAndMovePosition(parser, pos, end, "query in editor", /*allow_multi_statements=*/ true, /*max_query_size=*/ 0, max_parser_depth, max_parser_backtracks);
+
+        std::string_view insert_query_payload;
+        if (auto * insert_ast = ast->as<ASTInsertQuery>(); insert_ast && insert_ast->data)
+        {
+            if (Poco::toLower(insert_ast->format) == "values")
+            {
+                /// Reset format to default to have `INSERT INTO table VALUES` instead of `INSERT INTO table VALUES FORMAT Values`
+                insert_ast->format.clear();
+
+                /// We assume that data ends with a newline character (same as in other places)
+                const char * this_query_end = find_first_symbols<'\n'>(insert_ast->data, end);
+                insert_ast->end = this_query_end;
+                pos = this_query_end;
+
+                /// Remove semicolon from the INSERT query payload, since it will be added explicitly below
+                if (*insert_ast->end == '\n')
+                {
+                    while (insert_ast->end > insert_ast->data && std::isspace(*insert_ast->end))
+                        --insert_ast->end;
+                }
+            }
+            else
+                pos = insert_ast->end;
+
+            /// No need to use getReadBufferFromASTInsertQuery() here, since it does extra things that we do not need here (i.e. handle INFILE)
+            insert_query_payload = std::string_view(insert_ast->data, insert_ast->end);
+        }
+
+        bool multiline_query = std::string_view(query_start, pos).contains('\n');
+        if (multiline_query)
+            res += ast->formatWithSecretsMultiLine();
+        else
+            res += ast->formatWithSecretsOneLine();
+
+        if (!insert_query_payload.empty())
+        {
+            res += ' ';
+            res += insert_query_payload;
+        }
+
+        bool need_query_delimiter = pos != end || queries > 0;
+        if (need_query_delimiter)
+        {
+            res += ';';
+            res += '\n';
+        }
+
+        ++queries;
+        skipSpacesAndComments(pos, end, comments_callback);
+    }
+
+    return res;
+}
 
 }

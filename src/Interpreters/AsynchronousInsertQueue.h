@@ -1,14 +1,12 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
-#include <Poco/Logger.h>
-#include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool.h>
+#include <Interpreters/AsynchronousInsertQueueDataKind.h>
 
 #include <future>
 #include <shared_mutex>
@@ -16,6 +14,8 @@
 
 namespace DB
 {
+
+struct Settings;
 
 /// A queue, that stores data for insert queries and periodically flushes it to tables.
 /// The data is grouped by table, format and settings of insert query.
@@ -49,19 +49,13 @@ public:
         Block insert_block{};
     };
 
-    enum class DataKind : uint8_t
-    {
-        Parsed = 0,
-        Preprocessed = 1,
-    };
-
     static void validateSettings(const Settings & settings, LoggerPtr log);
 
     /// Force flush the whole queue.
     void flushAll();
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
-    PushResult pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context);
+    PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
 
     /// This method should be called manually because it's not flushed automatically in dtor
@@ -77,9 +71,9 @@ private:
         String query_str;
         std::optional<UUID> user_id;
         std::vector<UUID> current_roles;
-        Settings settings;
+        std::unique_ptr<Settings> settings;
 
-        DataKind data_kind;
+        AsynchronousInsertQueueDataKind data_kind;
         UInt128 hash;
 
         InsertQuery(
@@ -87,9 +81,9 @@ private:
             const std::optional<UUID> & user_id_,
             const std::vector<UUID> & current_roles_,
             const Settings & settings_,
-            DataKind data_kind_);
+            AsynchronousInsertQueueDataKind data_kind_);
 
-        InsertQuery(const InsertQuery & other) { *this = other; }
+        InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
 
@@ -114,12 +108,11 @@ private:
             }, *this);
         }
 
-        DataKind getDataKind() const
+        AsynchronousInsertQueueDataKind getDataKind() const
         {
             if (std::holds_alternative<Block>(*this))
-                return DataKind::Preprocessed;
-            else
-                return DataKind::Parsed;
+                return AsynchronousInsertQueueDataKind::Preprocessed;
+            return AsynchronousInsertQueueDataKind::Parsed;
         }
 
         bool empty() const
@@ -262,7 +255,7 @@ private:
 
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
-    PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context);
+    PushResult pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context);
 
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,

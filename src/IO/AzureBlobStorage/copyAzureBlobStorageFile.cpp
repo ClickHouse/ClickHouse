@@ -8,10 +8,17 @@
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>
-#include <IO/SharedThreadPools.h>
+
+
+#include <azure/core/credentials/credentials.hpp>
+#include <azure/storage/common/storage_credential.hpp>
+#include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
 
 namespace ProfileEvents
 {
@@ -42,7 +49,7 @@ namespace
     public:
         UploadHelper(
             const CreateReadBuffer & create_read_buffer_,
-            std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client_,
+            std::shared_ptr<const AzureBlobStorage::ContainerClient> client_,
             size_t offset_,
             size_t total_size_,
             const String & dest_container_for_logging_,
@@ -60,6 +67,7 @@ namespace
             , schedule(schedule_)
             , log(log_)
             , max_single_part_upload_size(settings_->max_single_part_upload_size)
+            , normal_part_size(0)
         {
         }
 
@@ -67,7 +75,7 @@ namespace
 
     protected:
         std::function<std::unique_ptr<SeekableReadBuffer>()> create_read_buffer;
-        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
+        std::shared_ptr<const AzureBlobStorage::ContainerClient> client;
         size_t offset;
         size_t total_size;
         const String & dest_container_for_logging;
@@ -106,9 +114,9 @@ namespace
 
             if (!max_part_number)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_blocks_in_multipart_upload must not be 0");
-            else if (!min_upload_part_size)
+            if (!min_upload_part_size)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "min_upload_part_size must not be 0");
-            else if (max_upload_part_size < min_upload_part_size)
+            if (max_upload_part_size < min_upload_part_size)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be less than min_upload_part_size");
 
             size_t part_size = min_upload_part_size;
@@ -159,7 +167,7 @@ namespace
         {
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
             ProfileEvents::increment(ProfileEvents::AzureCommitBlockList);
-            if (client->GetClickhouseOptions().IsClientForDisk)
+            if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
             block_blob_client.CommitBlockList(block_ids);
@@ -271,7 +279,7 @@ namespace
         void processUploadPartRequest(UploadPartTask & task)
         {
             ProfileEvents::increment(ProfileEvents::AzureStageBlock);
-            if (client->GetClickhouseOptions().IsClientForDisk)
+            if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
 
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
@@ -281,10 +289,12 @@ namespace
             size_t size_to_stage = task.part_size;
 
             PODArray<char> memory;
-            memory.resize(size_to_stage);
-            WriteBufferFromVector<PODArray<char>> wb(memory);
+            {
+                memory.resize(size_to_stage);
+                WriteBufferFromVector<PODArray<char>> wb(memory);
+                copyData(*read_buffer, wb, size_to_stage);
+            }
 
-            copyData(*read_buffer, wb, size_to_stage);
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), size_to_stage);
 
             const auto & block_id = task.block_ids.emplace_back(getRandomASCIIString(64));
@@ -320,7 +330,7 @@ void copyDataToAzureBlobStorageFile(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> dest_client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
@@ -333,8 +343,8 @@ void copyDataToAzureBlobStorageFile(
 
 
 void copyAzureBlobStorageFile(
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> src_client,
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> dest_client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
     const String & src_blob,
     size_t offset,
@@ -343,19 +353,21 @@ void copyAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
     const ReadSettings & read_settings,
+    bool same_credentials,
     ThreadPoolCallbackRunnerUnsafe<void> schedule)
 {
     auto log = getLogger("copyAzureBlobStorageFile");
 
-    if (settings->use_native_copy)
+    if (settings->use_native_copy && same_credentials)
     {
-        LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_container_for_logging, src_blob);
+        LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_blob, src_container_for_logging);
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
-        if (dest_client->GetClickhouseOptions().IsClientForDisk)
+        if (dest_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
         auto block_blob_client_src = src_client->GetBlockBlobClient(src_blob);
         auto block_blob_client_dest = dest_client->GetBlockBlobClient(dest_blob);
+
         auto source_uri = block_blob_client_src.GetUrl();
 
         if (size < settings->max_single_part_copy_size)
@@ -383,14 +395,18 @@ void copyAzureBlobStorageFile(
                 if (copy_status.HasValue())
                     throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
                                     src_blob, dest_blob, copy_status.Value().ToString(), copy_status_description.Value(), operation.IsDone());
-                else
-                    throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} didn't complete with success status (operation is done {})", src_blob, dest_blob, operation.IsDone());
+                throw Exception(
+                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                    "Copy from {} to {} didn't complete with success status (operation is done {})",
+                    src_blob,
+                    dest_blob,
+                    operation.IsDone());
             }
         }
     }
     else
     {
-        LOG_TRACE(log, "Reading from Container: {}, Blob: {}", src_container_for_logging, src_blob);
+        LOG_TRACE(log, "Copying Blob: {} from Container: {} native copy is disabled {}", src_blob, src_container_for_logging, same_credentials ? "" : " because of different credentials");
         auto create_read_buffer = [&]
         {
             return std::make_unique<ReadBufferFromAzureBlobStorage>(

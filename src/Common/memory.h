@@ -17,12 +17,28 @@
 #    include <cstdlib>
 #endif
 
+#if defined(OS_LINUX)
+#    include <malloc.h>
+#elif defined(OS_DARWIN)
+#    include <malloc/malloc.h>
+#endif
+
 namespace ProfileEvents
 {
     extern const Event GWPAsanAllocateSuccess;
     extern const Event GWPAsanAllocateFailed;
     extern const Event GWPAsanFree;
 }
+
+/// Guard pages interface.
+///
+/// Uses MADV_GUARD_INSTALL/MADV_GUARD_REMOVE (since Linux 6.13+) which does
+/// not splits VMA (unlike mprotect()), or fallback to mprotect()
+///
+/// Uses MADV_GUARD_INSTALL if available, or mprotect() if not
+void memoryGuardInstall(void *addr, size_t len);
+/// Uses MADV_GUARD_REMOVE if available, or mprotect() if not
+void memoryGuardRemove(void *addr, size_t len);
 
 namespace Memory
 {
@@ -46,10 +62,8 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
                 ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
                 return ptr;
             }
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
-            }
+
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
         }
         else
         {
@@ -58,11 +72,8 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
                 ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
                 return ptr;
             }
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
-            }
 
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
         }
     }
 #endif
@@ -90,10 +101,8 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
             return ptr;
         }
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
-        }
+
+        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
     }
 #endif
     return malloc(size);
@@ -109,10 +118,8 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
             return ptr;
         }
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
-        }
+
+        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
     }
 #endif
     return aligned_alloc(static_cast<size_t>(align), size);
@@ -172,12 +179,6 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unuse
     free(ptr);
 }
 
-#endif
-
-#if defined(OS_LINUX)
-#    include <malloc.h>
-#elif defined(OS_DARWIN)
-#    include <malloc/malloc.h>
 #endif
 
 template <std::same_as<std::align_val_t>... TAlign>

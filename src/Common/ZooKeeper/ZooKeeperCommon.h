@@ -1,18 +1,19 @@
 #pragma once
 
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Interpreters/ZooKeeperLog.h>
 
-#include <boost/noncopyable.hpp>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <vector>
 #include <memory>
 #include <cstdint>
 #include <optional>
 #include <functional>
 
+namespace DB
+{
+class ReadBuffer;
+class WriteBuffer;
+}
 
 namespace Coordination
 {
@@ -28,7 +29,7 @@ struct ZooKeeperResponse : virtual Response
     virtual void readImpl(ReadBuffer &) = 0;
     virtual void writeImpl(WriteBuffer &) const = 0;
     virtual size_t sizeImpl() const = 0;
-    virtual void write(WriteBuffer & out) const;
+    virtual void write(WriteBuffer & out, bool use_xid_64) const;
     virtual OpNum getOpNum() const = 0;
     virtual void fillLogElements(LogElements & elems, size_t idx) const;
     virtual int32_t tryGetOpNum() const { return static_cast<int32_t>(getOpNum()); }
@@ -56,7 +57,7 @@ struct ZooKeeperRequest : virtual Request
     virtual OpNum getOpNum() const = 0;
 
     /// Writes length, xid, op_num, then the rest.
-    void write(WriteBuffer & out) const;
+    void write(WriteBuffer & out, bool use_xid_64) const;
     std::string toString(bool short_format = false) const;
 
     virtual void writeImpl(WriteBuffer &) const = 0;
@@ -155,13 +156,9 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
 
-    void write(WriteBuffer & out) const override;
+    void write(WriteBuffer & out, bool use_xid_64) const override;
 
-    OpNum getOpNum() const override
-    {
-        chassert(false);
-        throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "OpNum for watch response doesn't exist");
-    }
+    OpNum getOpNum() const override;
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
     int32_t tryGetOpNum() const override { return 0; }
@@ -212,10 +209,7 @@ struct ZooKeeperCloseRequest final : ZooKeeperRequest
 
 struct ZooKeeperCloseResponse final : ZooKeeperResponse
 {
-    void readImpl(ReadBuffer &) override
-    {
-        throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "Received response for close request");
-    }
+    void readImpl(ReadBuffer &) override;
 
     void writeImpl(WriteBuffer &) const override {}
     size_t sizeImpl() const override { return 0; }
@@ -570,6 +564,9 @@ struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeepe
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
+
+    using RequestValidator = std::function<void(const ZooKeeperRequest &)>;
+    void readImpl(ReadBuffer & in, RequestValidator request_validator);
     std::string toStringImpl(bool short_format) const override;
 
     ZooKeeperResponsePtr makeResponse() const override;

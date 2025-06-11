@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -103,6 +102,7 @@ private:
         NameSet array_joined_names;
         bool move_all_conditions_to_prewhere = false;
         bool move_primary_key_columns_to_end_of_prewhere = false;
+        bool allow_reorder_prewhere_conditions = false;
         bool is_final = false;
         bool use_statistics = false;
     };

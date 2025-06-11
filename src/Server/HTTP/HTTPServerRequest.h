@@ -9,11 +9,10 @@
 
 #include <Poco/Net/HTTPServerSession.h>
 
-namespace Poco::Net { class X509Certificate; }
-
 namespace DB
 {
 
+class X509Certificate;
 class HTTPServerResponse;
 class ReadBufferFromPocoSocket;
 
@@ -45,7 +44,7 @@ public:
 
 #if USE_SSL
     bool havePeerCertificate() const;
-    Poco::Net::X509Certificate peerCertificate() const;
+    X509Certificate peerCertificate() const;
 #endif
 
 private:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB

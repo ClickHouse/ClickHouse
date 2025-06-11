@@ -32,7 +32,7 @@ namespace ErrorCodes
 
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const String & s = field.safeGet<const String &>();
+    const String & s = field.safeGet<String>();
     if (settings.binary.max_binary_string_size && s.size() > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
@@ -59,7 +59,7 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
             settings.binary.max_binary_string_size);
 
     field = String();
-    String & s = field.safeGet<String &>();
+    String & s = field.safeGet<String>();
     s.resize(size);
     istr.readStrict(s.data(), size);
 }
@@ -211,8 +211,15 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 }
 
 
-void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const
 {
+    for (size_t i = 0; i < rows_offset; ++i)
+    {
+        UInt64 size;
+        readVarUInt(size, istr);
+        istr.ignore(size);
+    }
+
     ColumnString & column_string = typeid_cast<ColumnString &>(column);
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();

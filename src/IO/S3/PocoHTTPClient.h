@@ -7,6 +7,7 @@
 
 #if USE_AWS_S3
 
+#include <Common/LatencyBuckets.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/ProxyConfiguration.h>
@@ -46,6 +47,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
     unsigned int s3_retry_attempts;
+    bool s3_slow_all_threads_after_network_error;
     bool enable_s3_requests_logging;
     bool for_disk_s3;
     ThrottlerPtr get_request_throttler;
@@ -56,6 +58,10 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     bool s3_use_adaptive_timeouts = true;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
+
+    UInt64 http_max_fields = 1000000;
+    UInt64 http_max_field_name_size = 128 * 1024;
+    UInt64 http_max_field_value_size = 128 * 1024;
 
     std::function<void(const ProxyConfiguration &)> error_report;
 
@@ -68,6 +74,7 @@ private:
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
         unsigned int s3_retry_attempts,
+        bool s3_slow_all_threads_after_network_error_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         bool s3_use_adaptive_timeouts_,
@@ -151,6 +158,16 @@ private:
         EnumSize,
     };
 
+    enum class S3LatencyType : uint8_t
+    {
+        FirstByteAttempt1,
+        FirstByteAttempt2,
+        FirstByteAttemptN,
+        Connect,
+
+        EnumSize,
+    };
+
     enum class S3MetricKind : uint8_t
     {
         Read,
@@ -167,9 +184,12 @@ private:
 
     ConnectionTimeouts getTimeouts(const String & method, bool first_attempt, bool first_byte) const;
 
+    static S3LatencyType getFirstByteLatencyType(const String & sdk_attempt, const String & ch_attempt);
+
 protected:
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
+    void addLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, LatencyBuckets::Count amount = 1) const;
 
     std::function<ProxyConfiguration()> per_request_configuration;
     std::function<void(const ProxyConfiguration &)> error_report;
@@ -177,6 +197,9 @@ protected:
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects = 0;
     bool s3_use_adaptive_timeouts = true;
+    const UInt64 http_max_fields = 1000000;
+    const UInt64 http_max_field_name_size = 128 * 1024;
+    const UInt64 http_max_field_value_size = 128 * 1024;
     bool enable_s3_requests_logging = false;
     bool for_disk_s3 = false;
 

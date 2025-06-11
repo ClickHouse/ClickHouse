@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/IPAddress.h>
@@ -19,6 +20,14 @@
 namespace ProfileEvents
 {
     extern const Event DNSError;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric DNSHostsCacheBytes;
+    extern const Metric DNSHostsCacheSize;
+    extern const Metric DNSAddressesCacheBytes;
+    extern const Metric DNSAddressesCacheSize;
 }
 
 namespace std
@@ -147,10 +156,8 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
     if (address.family() == Poco::Net::IPAddress::Family::IPv4)
     {
         return ptr_resolver->resolve(address.toString());
-    } else
-    {
-        return ptr_resolver->resolve_v6(address.toString());
     }
+    return ptr_resolver->resolve_v6(address.toString());
 }
 
 std::unordered_set<String> reverseResolveWithCache(
@@ -172,8 +179,8 @@ struct DNSResolver::Impl
     using HostWithConsecutiveFailures = std::unordered_map<String, UInt32>;
     using AddressWithConsecutiveFailures = std::unordered_map<Poco::Net::IPAddress, UInt32>;
 
-    CacheBase<std::string, DNSResolver::CacheEntry> cache_host{1024};
-    CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{1024};
+    CacheBase<std::string, DNSResolver::CacheEntry> cache_host{CurrentMetrics::DNSHostsCacheBytes, CurrentMetrics::DNSHostsCacheSize, 1024};
+    CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{CurrentMetrics::DNSAddressesCacheBytes, CurrentMetrics::DNSAddressesCacheSize, 1024};
 
     std::mutex drop_mutex;
     std::mutex update_mutex;
@@ -379,7 +386,7 @@ String DNSResolver::getHostName()
     return *impl->host_name;
 }
 
-static const String & cacheElemToString(const String & str) { return str; }
+static String cacheElemToString(String str) { return str; }
 static String cacheElemToString(const Poco::Net::IPAddress & addr) { return addr.toString(); }
 
 template <typename UpdateF, typename ElemsT>

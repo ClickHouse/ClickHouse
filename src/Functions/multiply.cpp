@@ -18,8 +18,8 @@ struct MultiplyImpl
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
         {
-            using CastA = std::conditional_t<std::is_floating_point_v<B>, B, A>;
-            using CastB = std::conditional_t<std::is_floating_point_v<A>, A, B>;
+            using CastA = std::conditional_t<is_floating_point<B>, B, A>;
+            using CastB = std::conditional_t<is_floating_point<A>, A, B>;
 
             return static_cast<Result>(static_cast<CastA>(a)) * static_cast<Result>(static_cast<CastB>(b));
         }
@@ -55,7 +55,18 @@ using FunctionMultiply = BinaryArithmeticOverloadResolver<MultiplyImpl, NameMult
 
 REGISTER_FUNCTION(Multiply)
 {
-    factory.registerFunction<FunctionMultiply>();
+    FunctionDocumentation::Description description = "Calculates the product of two values `x` and `y`.";
+    FunctionDocumentation::Syntax syntax = "multiply(x, y)";
+    FunctionDocumentation::Argument argument1 = {"x", "factor"};
+    FunctionDocumentation::Argument argument2 = {"y", "factor"};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = "The product of x and y";
+    FunctionDocumentation::Examples examples = {{"Multiplying two numbers", "SELECT multiply(5,5)", "25"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+
+    factory.registerFunction<FunctionMultiply>(documentation);
 }
 
 }

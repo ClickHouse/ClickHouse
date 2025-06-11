@@ -13,9 +13,7 @@
 
 #include "config.h"
 
-#if USE_MULTITARGET_CODE
-#    include <immintrin.h>
-#endif
+class SipHash;
 
 namespace DB
 {
@@ -24,7 +22,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
 
 /** A template for columns that use a simple array to store.
  */
@@ -52,6 +49,7 @@ private:
     explicit ColumnVector(const size_t n) : data(n) {}
     ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
+    ColumnVector(Container::const_iterator begin, Container::const_iterator end) : data(begin, end) { }
 
     /// Sugar constructor.
     ColumnVector(std::initializer_list<T> il) : data{il} {}
@@ -207,6 +205,8 @@ public:
         res = (*this)[n];
     }
 
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+
     UInt64 get64(size_t n) const override;
 
     Float64 getFloat64(size_t n) const override;
@@ -289,7 +289,7 @@ public:
 
     ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
@@ -319,151 +319,6 @@ protected:
     Container data;
 };
 
-DECLARE_DEFAULT_CODE(
-template <typename Container, typename Type>
-inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
-{
-    for (size_t i = 0; i < limit; ++i)
-        res_data[i] = data[indexes[i]];
-}
-);
-
-DECLARE_AVX512VBMI_SPECIFIC_CODE(
-template <typename Container, typename Type>
-inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
-{
-    static constexpr UInt64 MASK64 = 0xffffffffffffffff;
-    const size_t limit64 = limit & ~63;
-    size_t pos = 0;
-    size_t data_size = data.size();
-
-    auto data_pos = reinterpret_cast<const UInt8 *>(data.data());
-    auto indexes_pos = reinterpret_cast<const UInt8 *>(indexes.data());
-    auto res_pos = reinterpret_cast<UInt8 *>(res_data.data());
-
-    if (limit == 0)
-        return;   /// nothing to do, just return
-
-    if (data_size <= 64)
-    {
-        /// one single mask load for table size <= 64
-        __mmask64 last_mask = MASK64 >> (64 - data_size);
-        __m512i table1 = _mm512_maskz_loadu_epi8(last_mask, data_pos);
-
-        /// 64 bytes table lookup using one single permutexvar_epi8
-        while (pos < limit64)
-        {
-            __m512i vidx = _mm512_loadu_epi8(indexes_pos + pos);
-            __m512i out = _mm512_permutexvar_epi8(vidx, table1);
-            _mm512_storeu_epi8(res_pos + pos, out);
-            pos += 64;
-        }
-        /// tail handling
-        if (limit > limit64)
-        {
-            __mmask64 tail_mask = MASK64 >> (limit64 + 64 - limit);
-            __m512i vidx = _mm512_maskz_loadu_epi8(tail_mask, indexes_pos + pos);
-            __m512i out = _mm512_permutexvar_epi8(vidx, table1);
-            _mm512_mask_storeu_epi8(res_pos + pos, tail_mask, out);
-        }
-    }
-    else if (data_size <= 128)
-    {
-        /// table size (64, 128] requires 2 zmm load
-        __mmask64 last_mask = MASK64 >> (128 - data_size);
-        __m512i table1 = _mm512_loadu_epi8(data_pos);
-        __m512i table2 = _mm512_maskz_loadu_epi8(last_mask, data_pos + 64);
-
-        /// 128 bytes table lookup using one single permute2xvar_epi8
-        while (pos < limit64)
-        {
-            __m512i vidx = _mm512_loadu_epi8(indexes_pos + pos);
-            __m512i out = _mm512_permutex2var_epi8(table1, vidx, table2);
-            _mm512_storeu_epi8(res_pos + pos, out);
-            pos += 64;
-        }
-        if (limit > limit64)
-        {
-            __mmask64 tail_mask = MASK64 >> (limit64 + 64 - limit);
-            __m512i vidx = _mm512_maskz_loadu_epi8(tail_mask, indexes_pos + pos);
-            __m512i out = _mm512_permutex2var_epi8(table1, vidx, table2);
-            _mm512_mask_storeu_epi8(res_pos + pos, tail_mask, out);
-        }
-    }
-    else
-    {
-        if (data_size > 256)
-        {
-            /// byte index will not exceed 256 boundary.
-            data_size = 256;
-        }
-
-        __m512i table1 = _mm512_loadu_epi8(data_pos);
-        __m512i table2 = _mm512_loadu_epi8(data_pos + 64);
-        __m512i table3, table4;
-        if (data_size <= 192)
-        {
-            /// only 3 tables need to load if size <= 192
-            __mmask64 last_mask = MASK64 >> (192 - data_size);
-            table3 = _mm512_maskz_loadu_epi8(last_mask, data_pos + 128);
-            table4 = _mm512_setzero_si512();
-        }
-        else
-        {
-            __mmask64 last_mask = MASK64 >> (256 - data_size);
-            table3 = _mm512_loadu_epi8(data_pos + 128);
-            table4 = _mm512_maskz_loadu_epi8(last_mask, data_pos + 192);
-        }
-
-        /// 256 bytes table lookup can use: 2 permute2xvar_epi8 plus 1 blender with MSB
-        while (pos < limit64)
-        {
-            __m512i vidx = _mm512_loadu_epi8(indexes_pos + pos);
-            __m512i tmp1 = _mm512_permutex2var_epi8(table1, vidx, table2);
-            __m512i tmp2 = _mm512_permutex2var_epi8(table3, vidx, table4);
-            __mmask64 msb = _mm512_movepi8_mask(vidx);
-            __m512i out = _mm512_mask_blend_epi8(msb, tmp1, tmp2);
-            _mm512_storeu_epi8(res_pos + pos, out);
-            pos += 64;
-        }
-        if (limit > limit64)
-        {
-            __mmask64 tail_mask = MASK64 >> (limit64 + 64 - limit);
-            __m512i vidx = _mm512_maskz_loadu_epi8(tail_mask, indexes_pos + pos);
-            __m512i tmp1 = _mm512_permutex2var_epi8(table1, vidx, table2);
-            __m512i tmp2 = _mm512_permutex2var_epi8(table3, vidx, table4);
-            __mmask64 msb = _mm512_movepi8_mask(vidx);
-            __m512i out = _mm512_mask_blend_epi8(msb, tmp1, tmp2);
-            _mm512_mask_storeu_epi8(res_pos + pos, tail_mask, out);
-        }
-    }
-}
-);
-
-template <typename T>
-template <typename Type>
-ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
-{
-    assert(limit <= indexes.size());
-
-    auto res = this->create(limit);
-    typename Self::Container & res_data = res->getData();
-#if USE_MULTITARGET_CODE
-    if constexpr (sizeof(T) == 1 && sizeof(Type) == 1)
-    {
-        /// VBMI optimization only applicable for (U)Int8 types
-        if (isArchSupported(TargetArch::AVX512VBMI))
-        {
-            TargetSpecific::AVX512VBMI::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
-            return res;
-        }
-    }
-#endif
-    TargetSpecific::Default::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
-
-    return res;
-}
-
 template <class TCol>
 concept is_col_vector = std::is_same_v<TCol, ColumnVector<typename TCol::ValueType>>;
 
@@ -481,6 +336,7 @@ extern template class ColumnVector<Int32>;
 extern template class ColumnVector<Int64>;
 extern template class ColumnVector<Int128>;
 extern template class ColumnVector<Int256>;
+extern template class ColumnVector<BFloat16>;
 extern template class ColumnVector<Float32>;
 extern template class ColumnVector<Float64>;
 extern template class ColumnVector<UUID>;

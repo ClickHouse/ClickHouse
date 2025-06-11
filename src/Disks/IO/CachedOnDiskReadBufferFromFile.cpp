@@ -10,6 +10,7 @@
 #include <base/hex.h>
 #include <base/scope_guard.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/assert_cast.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -77,7 +78,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
-    , cache_log(cache_log_)
+    , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
 }
 
@@ -138,7 +139,7 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
         file_segments = cache->getOrSet(
             cache_key, file_offset_of_buffer_end, size, file_size.value(),
-            create_settings, settings.filesystem_cache_segments_batch_size, user);
+            create_settings, settings.filesystem_cache_segments_batch_size, user, settings.filesystem_cache_boundary_alignment);
     }
 
     return !file_segments->empty();
@@ -295,12 +296,10 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
             read_type = ReadType::CACHED;
             return getCacheReadBuffer(file_segment);
         }
-        else
-        {
-            LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
-            read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-            return getRemoteReadBuffer(file_segment, read_type);
-        }
+
+        LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
+        read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+        return getRemoteReadBuffer(file_segment, read_type);
     }
 
     while (true)
@@ -403,14 +402,13 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                     read_type = ReadType::CACHED;
                     return getCacheReadBuffer(file_segment);
                 }
-                else
-                {
-                    LOG_TRACE(
-                        log, "Bypassing cache because file segment state is "
-                        "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
-                    read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                    return getRemoteReadBuffer(file_segment, read_type);
-                }
+
+                LOG_TRACE(
+                    log,
+                    "Bypassing cache because file segment state is "
+                    "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
+                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                return getRemoteReadBuffer(file_segment, read_type);
             }
         }
     }
@@ -538,7 +536,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     chassert(file_offset_of_buffer_end > completed_range.right);
     cache_file_reader.reset();
 
-    file_segments->popFront();
+    file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
     if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
@@ -558,6 +556,12 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
     if (cache_log && file_segments && !file_segments->empty())
     {
         appendFilesystemCacheLog(file_segments->front(), read_type);
+    }
+
+    if (file_segments && !file_segments->empty() && !file_segments->front().isCompleted())
+    {
+        file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
+        file_segments = {};
     }
 }
 
@@ -787,6 +791,7 @@ bool CachedOnDiskReadBufferFromFile::writeCache(char * data, size_t size, size_t
             LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
             return false;
         }
+        chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
         throw;
     }
 
@@ -1080,18 +1085,47 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
         auto cache_file_path = getFileNameFromReadBuffer(*implementation_buffer);
 
+        std::string download_finished_time;
+        if (file_segment.isDownloaded())
+        {
+            WriteBufferFromString buf{download_finished_time};
+            writeDateTimeText(file_segment.getFinishedDownloadTime(), buf);
+        }
+        else
+            download_finished_time = "None";
+
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Having zero bytes, but range is not finished: file offset: {}, starting offset: {}, "
-            "reading until: {}, read type: {}, cache file size: {}, cache file path: {}, "
-            "cache file offset: {}, current file segment: {}",
+            "Having zero bytes, but range is not finished: "
+            "result: {}, "
+            "file offset: {}, "
+            "read bytes: {}, "
+            "initial read offset: {}, "
+            "nextimpl working buffer offset: {},"
+            "reading until: {}, "
+            "read type: {}, "
+            "working buffer size: {}, "
+            "internal buffer size: {}, "
+            "finished download time: {}, "
+            "cache file size: {}, "
+            "cache file path: {}, "
+            "cache file offset: {}, "
+            "remaining file segments: {}, "
+            "current file segment: {}",
+            result,
             file_offset_of_buffer_end,
+            size,
             first_offset,
+            nextimpl_working_buffer_offset,
             read_until_position,
             toString(read_type),
+            implementation_buffer->buffer().size(),
+            implementation_buffer->internalBuffer().size(),
+            download_finished_time,
             cache_file_size ? std::to_string(cache_file_size) : "None",
             cache_file_path,
             implementation_buffer->getFileOffsetOfBufferEnd(),
+            file_segments->size(),
             file_segment.getInfoForLog());
     }
 

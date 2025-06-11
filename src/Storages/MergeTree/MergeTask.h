@@ -5,6 +5,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
+#include <Formats/MarkInCompressedFile.h>
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
@@ -27,6 +28,7 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/PartitionActionBlocker.h>
 
 namespace ProfileEvents
 {
@@ -41,6 +43,9 @@ namespace DB
 class MergeTask;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
 class RowsSourcesTemporaryFile;
+
+class MergedPartOffsets;
+using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 
 /**
  * Overview of the merge algorithm
@@ -82,11 +87,12 @@ public:
         MergeTreeData::MergingParams merging_params_,
         bool need_prefix,
         IMergeTreeDataPart * parent_part_,
+        MergedPartOffsetsPtr merged_part_offsets_,
         String suffix_,
         MergeTreeTransactionPtr txn,
         MergeTreeData * data_,
         MergeTreeDataMergerMutator * mutator_,
-        ActionBlocker * merges_blocker_,
+        PartitionActionBlocker * merges_blocker_,
         ActionBlocker * ttl_merges_blocker_)
         {
             global_ctx = std::make_shared<GlobalRuntimeContext>();
@@ -106,6 +112,7 @@ public:
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
             global_ctx->cleanup = std::move(cleanup_);
             global_ctx->parent_part = std::move(parent_part_);
+            global_ctx->merged_part_offsets = std::move(merged_part_offsets_);
             global_ctx->data = std::move(data_);
             global_ctx->mutator = std::move(mutator_);
             global_ctx->merges_blocker = std::move(merges_blocker_);
@@ -131,7 +138,16 @@ public:
         return nullptr;
     }
 
+    PlainMarksByName releaseCachedMarks() const
+    {
+        PlainMarksByName res;
+        std::swap(global_ctx->cached_marks, res);
+        return res;
+    }
+
     bool execute();
+
+    void cancel() noexcept;
 
 private:
     struct IStage;
@@ -146,6 +162,7 @@ private:
         virtual StageRuntimeContextPtr getContextForNextStage() = 0;
         virtual ProfileEvents::Event getTotalTimeProfileEvent() const = 0;
         virtual bool execute() = 0;
+        virtual void cancel() noexcept = 0;
         virtual ~IStage() = default;
     };
 
@@ -161,7 +178,7 @@ private:
         MergeListElement * merge_list_element_ptr{nullptr};
         MergeTreeData * data{nullptr};
         MergeTreeDataMergerMutator * mutator{nullptr};
-        ActionBlocker * merges_blocker{nullptr};
+        PartitionActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
         StorageSnapshotPtr storage_snapshot{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
@@ -169,6 +186,7 @@ private:
         std::vector<AlterConversionsPtr> alter_conversions;
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
+        MergedPartOffsetsPtr merged_part_offsets;
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};
@@ -181,6 +199,7 @@ private:
         NamesAndTypesList merging_columns{};
         NamesAndTypesList storage_columns{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
+        ColumnsWithTypeAndName gathered_columns_samples{};
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
@@ -208,6 +227,7 @@ private:
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
+        PlainMarksByName cached_marks;
 
         MergeTreeTransactionPtr txn;
         bool need_prefix;
@@ -215,7 +235,12 @@ private:
         MergeTreeData::MergingParams merging_params{};
 
         scope_guard temporary_directory_lock;
+
         UInt64 prev_elapsed_ms{0};
+
+        // will throw an exception if merge was cancelled in any way.
+        void checkOperationIsNotCanceled() const;
+        bool isCancelled() const;
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
@@ -228,7 +253,6 @@ private:
         bool need_remove_expired_values{false};
         bool force_ttl{false};
         CompressionCodecPtr compression_codec{nullptr};
-        size_t sum_input_rows_upper_bound{0};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
@@ -246,7 +270,9 @@ private:
         std::function<bool()> is_cancelled{};
 
         /// Local variables for this stage
+        size_t sum_input_rows_upper_bound{0};
         size_t sum_compressed_bytes_upper_bound{0};
+        size_t sum_uncompressed_bytes_upper_bound{0};
         bool blocks_are_granules_size{false};
 
         LoggerPtr log{getLogger("MergeTask::PrepareStage")};
@@ -262,6 +288,7 @@ private:
     struct ExecuteAndFinalizeHorizontalPart : public IStage
     {
         bool execute() override;
+        void cancel() noexcept override;
 
         bool prepare() const;
         bool executeImpl() const;
@@ -350,6 +377,8 @@ private:
     struct VerticalMergeStage : public IStage
     {
         bool execute() override;
+        void cancel() noexcept override;
+
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
             ctx = static_pointer_cast<VerticalMergeRuntimeContext>(local);
@@ -405,6 +434,8 @@ private:
     struct MergeProjectionsStage : public IStage
     {
         bool execute() override;
+
+        void cancel() noexcept override;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {

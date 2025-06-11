@@ -30,7 +30,8 @@ SELECT count() FROM 02581_trips SETTINGS select_sequential_consistency = 1;
 DELETE FROM 02581_trips                        WHERE id IN (SELECT (number*10 + 9)::UInt32 FROM numbers(10000000)) SETTINGS lightweight_deletes_sync = 2;
 SELECT count(), _part from 02581_trips WHERE description = '' GROUP BY _part ORDER BY _part SETTINGS select_sequential_consistency=1;
 
-SYSTEM FLUSH LOGS;
+SET max_rows_to_read = 0; -- system.text_log can be really big
+SYSTEM FLUSH LOGS text_log;
 -- Check that in every mutation there were parts that built sets (log messages like 'Created Set with 10000000 entries from 10000000 rows in 0.388989187 sec.' )
 -- and parts that shared sets (log messages like 'Got set from cache in 0.388930505 sec.' )
 WITH (

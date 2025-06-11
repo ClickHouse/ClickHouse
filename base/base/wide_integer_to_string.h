@@ -1,49 +1,38 @@
 #pragma once
 
 #include <string>
-#include <ostream>
 #include <fmt/format.h>
 
-#include "wide_integer.h"
+namespace wide
+{
+template <size_t Bits, typename Signed>
+class integer;
+}
 
+using Int128 = wide::integer<128, signed>;
+using UInt128 = wide::integer<128, unsigned>;
+using Int256 = wide::integer<256, signed>;
+using UInt256 = wide::integer<256, unsigned>;
 
 namespace wide
 {
 
 template <size_t Bits, typename Signed>
-inline std::string to_string(const integer<Bits, Signed> & n)
-{
-    std::string res;
-    if (integer<Bits, Signed>::_impl::operator_eq(n, 0U))
-        return "0";
+std::string to_string(const integer<Bits, Signed> & n);
 
-    integer<Bits, unsigned> t;
-    bool is_neg = integer<Bits, Signed>::_impl::is_negative(n);
-    if (is_neg)
-        t = integer<Bits, Signed>::_impl::operator_unary_minus(n);
-    else
-        t = n;
-
-    while (!integer<Bits, unsigned>::_impl::operator_eq(t, 0U))
-    {
-        res.insert(res.begin(), '0' + char(integer<Bits, unsigned>::_impl::operator_percent(t, 10U)));
-        t = integer<Bits, unsigned>::_impl::operator_slash(t, 10U);
-    }
-
-    if (is_neg)
-        res.insert(res.begin(), '-');
-    return res;
+extern template std::string to_string(const Int128 & n);
+extern template std::string to_string(const UInt128 & n);
+extern template std::string to_string(const Int256 & n);
+extern template std::string to_string(const UInt256 & n);
 }
-
-}
-
 
 template <size_t Bits, typename Signed>
-std::ostream & operator<<(std::ostream & out, const wide::integer<Bits, Signed> & value)
-{
-    return out << to_string(value);
-}
+std::ostream & operator<<(std::ostream & out, const wide::integer<Bits, Signed> & value);
 
+extern std::ostream & operator<<(std::ostream & out, const Int128 & value);
+extern std::ostream & operator<<(std::ostream & out, const UInt128 & value);
+extern std::ostream & operator<<(std::ostream & out, const Int256 & value);
+extern std::ostream & operator<<(std::ostream & out, const UInt256 & value);
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
 template <size_t Bits, typename Signed>
@@ -67,3 +56,8 @@ struct fmt::formatter<wide::integer<Bits, Signed>>
         return fmt::format_to(ctx.out(), "{}", to_string(value));
     }
 };
+
+extern template struct fmt::formatter<Int128>;
+extern template struct fmt::formatter<UInt128>;
+extern template struct fmt::formatter<Int256>;
+extern template struct fmt::formatter<UInt256>;

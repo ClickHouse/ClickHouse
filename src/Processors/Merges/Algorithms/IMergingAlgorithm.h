@@ -1,10 +1,13 @@
 #pragma once
 
 #include <Processors/Chunk.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/ProfileEvents.h>
 
 namespace DB
 {
+
+using IColumnPermutation = PaddedPODArray<size_t>;
 
 class IMergingAlgorithm
 {
@@ -29,7 +32,7 @@ public:
         /// between different algorithm objects in parallel FINAL.
         bool skip_last_row = false;
 
-        IColumn::Permutation * permutation = nullptr;
+        IColumnPermutation * permutation = nullptr;
 
         void swap(Input & other) noexcept
         {

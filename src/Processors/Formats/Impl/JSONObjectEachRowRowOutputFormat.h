@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <IO/WriteBuffer.h>
 #include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 #include <Formats/FormatSettings.h>
 

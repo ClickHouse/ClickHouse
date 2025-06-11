@@ -38,7 +38,7 @@ DESCRIBE ( SELECT '1947 #3 QUERY - TRUE',
     ) FORMAT Null;
 
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT '1947 #1 CHECK - TRUE' as test,
        ProfileEvents['SleepFunctionCalls'] as sleep_calls,
@@ -107,7 +107,7 @@ DESCRIBE ( SELECT '1947 #3 QUERY - FALSE',
             USING (id)
     ) FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT '1947 #1 CHECK - FALSE' as test,
        ProfileEvents['SleepFunctionCalls'] as sleep_calls,

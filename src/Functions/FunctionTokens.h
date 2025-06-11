@@ -48,6 +48,7 @@ namespace ErrorCodes
   * - otherwise, an empty array
   *
   * alphaTokens(s[, max_substrings])            - select from the string subsequence `[a-zA-Z]+`.
+  * sparseGrams(s[, min_length])                - find all substrings where border ngrams hashes are bigger than internal.
   *
   * URL functions are located separately.
   */
@@ -148,7 +149,7 @@ public:
 
             return col_res;
         }
-        else if (col_str_const)
+        if (col_str_const)
         {
             String src = col_str_const->getValue<String>();
             Array dst;
@@ -162,9 +163,12 @@ public:
 
             return result_type->createColumnConst(col_str_const->size(), dst);
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {} of arguments of function {}",
-                    array_argument.column->getName(), array_argument.column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal columns {}, {} of arguments of function {}",
+            array_argument.column->getName(),
+            array_argument.column->getName(),
+            getName());
     }
 };
 

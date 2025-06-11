@@ -6,16 +6,21 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
+}
+
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 bool StorageFromMergeTreeDataPart::materializeTTLRecalculateOnly() const
 {
     if (parts.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "parts must not be empty for materializeTTLRecalculateOnly");
-    return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
+    return (*parts.front().data_part->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
 }
 
 void StorageFromMergeTreeDataPart::read(
@@ -45,7 +50,7 @@ StorageSnapshotPtr
 StorageFromMergeTreeDataPart::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
-    if (!hasDynamicSubcolumns(storage_columns))
+    if (!hasDynamicSubcolumnsDeprecated(storage_columns))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 
     auto data_parts = storage.getDataPartsVectorForInternalUsage();

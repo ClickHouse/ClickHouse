@@ -62,7 +62,7 @@ SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.a I
 {% endfor -%}
 {% endfor -%}
 
--- Stupid condition
+-- Arbitraty condition containing combination of columns and functions
 {% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
 {% for algorithm in ['hash', 'grace_hash'] -%}
 SET join_algorithm='{{ algorithm }}';

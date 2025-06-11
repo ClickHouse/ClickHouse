@@ -1,0 +1,32 @@
+Expression ((Project names + Projection))
+Header: id Int32
+Actions: INPUT : 0 -> __table1.id Int32 : 0
+         ALIAS __table1.id :: 0 -> id Int32 : 1
+Positions: 1
+  CreatingSets (Create sets before main query execution)
+  Header: __table1.id Int32
+    Filter (( + Change column names to column identifiers))
+    Header: __table1.id Int32
+    Filter column: in(__table1.id, set column) (removed)
+    Actions: INPUT : 0 -> id Int32 : 0
+             COLUMN Set -> set column Set : 1
+             ALIAS id : 0 -> __table1.id Int32 : 2
+             FUNCTION in(id :: 0, set column :: 1) -> in(__table1.id, set column) UInt8 : 3
+    Positions: 3 2
+      ReadFromMergeTree (default.t1)
+      Header: id Int32
+      ReadType: Default
+      Parts: 1
+      Granules: 1
+222	2
+222	222
+333	333
+Expression ((Project names + Projection))
+  CreatingSets (Create sets before main query execution)
+    Expression
+      ReadFromMergeTree (system.query_log)
+    CreatingSet (Create set for subquery)
+      Expression ((JOIN keys + Change column names to column identifiers))
+        ReadFromSystemOneBlock
+0
+1	1

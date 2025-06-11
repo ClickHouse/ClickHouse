@@ -2,9 +2,10 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-import pytest
-import uuid
 import time
+import uuid
+
+import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -441,8 +442,9 @@ def test_secure_cluster_distributed_over_distributed_different_users_remote():
 
 def test_secure_cluster_distributed_over_distributed_different_users_cluster():
     id_ = "cluster-user" + "-" + generate_query_id()
+    # serialize_query_plan is disabled because every replica is treated as local
     n1.query(
-        f"SELECT *, '{id_}' FROM cluster(secure, currentDatabase(), dist_secure)",
+        f"SELECT *, '{id_}' FROM cluster(secure, currentDatabase(), dist_secure) settings serialize_query_plan = 0",
         user="nopass",
         settings={
             "prefer_localhost_replica": 0,

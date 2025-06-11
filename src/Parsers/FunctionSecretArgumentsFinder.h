@@ -2,6 +2,7 @@
 
 #include <Common/KnownObjectNames.h>
 #include <Common/re2.h>
+#include <Common/maskURIPassword.h>
 #include <Core/QualifiedTableName.h>
 #include <base/defines.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -88,16 +89,20 @@ protected:
 
     void findOrdinaryFunctionSecretArguments()
     {
-        if ((function->name() == "mysql") || (function->name() == "postgresql") || (function->name() == "mongodb"))
+        if ((function->name() == "mysql") || (function->name() == "postgresql"))
         {
             /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
             /// postgresql('host:port', 'database', 'table', 'user', 'password', ...)
             /// mongodb('host:port', 'database', 'collection', 'user', 'password', ...)
             findMySQLFunctionSecretArguments();
         }
+        else if (function->name() == "mongodb")
+        {
+            findMongoDBSecretArguments();
+        }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
                  (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
-                 (function->name() == "gcs"))
+                 (function->name() == "gcs") || (function->name() == "icebergS3"))
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
@@ -107,7 +112,7 @@ protected:
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
         }
-        else if (function->name() == "azureBlobStorage")
+        else if ((function->name() == "azureBlobStorage") || (function->name() == "icebergAzure"))
         {
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
@@ -146,6 +151,58 @@ protected:
         {
             /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
             markSecretArgument(4);
+        }
+    }
+
+    void findMongoDBSecretArguments()
+    {
+        String uri;
+
+        if (isNamedCollectionName(0))
+        {
+            /// MongoDB(named_collection, ..., password = 'password', ...)
+            if (findSecretNamedArgument("password", 1))
+                return;
+
+            /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
+            findNamedArgument(&uri, "uri", 1);
+            result.are_named = true;
+            result.start = 1;
+        }
+        else if (function->arguments->size() == 2)
+        {
+            tryGetStringFromArgument(0, &uri);
+            result.are_named = false;
+            result.start = 0;
+        }
+        else
+        {
+            // MongoDB('127.0.0.1:27017', 'database', 'collection', 'user, 'password'...)
+            markSecretArgument(4, false);
+            return;
+        }
+
+        chassert(result.count == 0);
+        maskURIPassword(&uri);
+        result.count = 1;
+        result.replacement = std::move(uri);
+    }
+
+    void findRedisSecretArguments()
+    {
+        /// Redis does not have URL/address argument,
+        /// only 'host:port' and separate "password" argument.
+
+        if (isNamedCollectionName(0))
+        {
+            if (findSecretNamedArgument("password", 1))
+                return;
+        }
+        else
+        {
+            // Redis('host:port', 'db_index', 'password', 'pool_size')
+            markSecretArgument(2, false);
+            return;
         }
     }
 
@@ -217,7 +274,7 @@ protected:
             findSecretNamedArgument("account_key", 1);
             return;
         }
-        else if (is_cluster_function && isNamedCollectionName(1))
+        if (is_cluster_function && isNamedCollectionName(1))
         {
             /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
             if (maskAzureConnectionString(-1, true, 2))
@@ -230,8 +287,8 @@ protected:
             return;
 
         /// We should check other arguments first because we don't need to do any replacement in case of
-        /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
-        /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
+        /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
+        /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
         size_t count = function->arguments->size();
         if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
         {
@@ -239,7 +296,7 @@ protected:
             if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
             {
                 if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
-                    return; /// The argument after 'url' is a format: s3('url', 'format', ...)
+                    return;
             }
         }
 
@@ -269,6 +326,17 @@ protected:
         {
             static re2::RE2 account_key_pattern = "AccountKey=.*?(;|$)";
             if (RE2::Replace(&url_arg, account_key_pattern, "AccountKey=[HIDDEN]\\1"))
+            {
+                chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
+                result.start = url_arg_idx;
+                result.are_named = argument_is_named;
+                result.count = 1;
+                result.replacement = url_arg;
+                return true;
+            }
+
+            static re2::RE2 sas_signature_pattern = "SharedAccessSignature=.*?(;|$)";
+            if (RE2::Replace(&url_arg, sas_signature_pattern, "SharedAccessSignature=[HIDDEN]\\1"))
             {
                 chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
                 result.start = url_arg_idx;
@@ -424,8 +492,7 @@ protected:
             /// ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password')
             findExternalDistributedTableEngineSecretArguments();
         }
-        else if ((engine_name == "MySQL") || (engine_name == "PostgreSQL") ||
-                    (engine_name == "MaterializedPostgreSQL") || (engine_name == "MongoDB"))
+        else if ((engine_name == "MySQL") || (engine_name == "PostgreSQL") || (engine_name == "MaterializedPostgreSQL"))
         {
             /// MySQL('host:port', 'database', 'table', 'user', 'password', ...)
             /// PostgreSQL('host:port', 'database', 'table', 'user', 'password', ...)
@@ -433,8 +500,14 @@ protected:
             /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
             findMySQLFunctionSecretArguments();
         }
-        else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") ||
-                    (engine_name == "DeltaLake") || (engine_name == "Hudi") || (engine_name == "Iceberg") || (engine_name == "S3Queue"))
+        else if (engine_name == "MongoDB")
+        {
+            findMongoDBSecretArguments();
+        }
+        else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS")
+                 || (engine_name == "DeltaLake") || (engine_name == "Hudi")
+                 || (engine_name == "Iceberg") || (engine_name == "IcebergS3")
+                 || (engine_name == "S3Queue"))
         {
             /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
             findS3TableEngineSecretArguments();
@@ -442,6 +515,14 @@ protected:
         else if (engine_name == "URL")
         {
             findURLSecretArguments();
+        }
+        else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
+        {
+            findAzureBlobStorageTableEngineSecretArguments();
+        }
+        else if (engine_name == "Redis")
+        {
+            findRedisSecretArguments();
         }
     }
 
@@ -496,12 +577,47 @@ protected:
             markSecretArgument(2);
     }
 
+    void findAzureBlobStorageTableEngineSecretArguments()
+    {
+       /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
+        size_t url_arg_idx = 0;
+
+        if (isNamedCollectionName(url_arg_idx))
+        {
+            /// AzureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
+            if (maskAzureConnectionString(-1, true, 1))
+                return;
+            findSecretNamedArgument("account_key", 1);
+            return;
+        }
+
+        if (maskAzureConnectionString(url_arg_idx))
+            return;
+
+        /// We should check other arguments first because we don't need to do any replacement in case of
+        /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
+        size_t count = function->arguments->size();
+        if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
+        {
+            String fourth_arg;
+            if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
+            {
+                if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
+                    return;
+            }
+        }
+
+        /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
+        if (url_arg_idx + 4 < count)
+            markSecretArgument(url_arg_idx + 4);
+    }
+
     void findDatabaseEngineSecretArguments()
     {
         const String & engine_name = function->name();
-        if ((engine_name == "MySQL") || (engine_name == "MaterializeMySQL") ||
-            (engine_name == "MaterializedMySQL") || (engine_name == "PostgreSQL") ||
-            (engine_name == "MaterializedPostgreSQL"))
+        if (engine_name == "MySQL" ||
+            engine_name == "PostgreSQL" ||
+            engine_name == "MaterializedPostgreSQL")
         {
             /// MySQL('host:port', 'database', 'user', 'password')
             /// PostgreSQL('host:port', 'database', 'user', 'password')
@@ -511,6 +627,10 @@ protected:
         {
             /// S3('url', 'access_key_id', 'secret_access_key')
             findS3DatabaseSecretArguments();
+        }
+        else if (engine_name == "DataLakeCatalog")
+        {
+            findDataLakeCatalogSecretArguments();
         }
     }
 
@@ -542,6 +662,14 @@ protected:
         }
     }
 
+    void findDataLakeCatalogSecretArguments()
+    {
+        /// datalake catalog should support different storage types,
+        /// we need a function to check if the url is S3 or Azure.
+        /// right now we assume it's a S3 url
+        findS3DatabaseSecretArguments();
+    }
+
     void findBackupNameSecretArguments()
     {
         const String & engine_name = function->name();
@@ -549,6 +677,10 @@ protected:
         {
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
             markSecretArgument(2);
+        }
+        else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
+        {
+            findAzureBlobStorageTableEngineSecretArguments();
         }
     }
 
@@ -591,11 +723,15 @@ protected:
 
     /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// If the argument is found, it is marked as a secret.
-    void findSecretNamedArgument(const std::string_view & key, size_t start = 0)
+    bool findSecretNamedArgument(const std::string_view & key, size_t start = 0)
     {
         ssize_t arg_idx = findNamedArgument(nullptr, key, start);
         if (arg_idx >= 0)
+        {
             markSecretArgument(arg_idx, /* argument_is_named= */ true);
+            return true;
+        }
+        return false;
     }
 };
 

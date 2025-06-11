@@ -11,7 +11,7 @@ function check_log
 {
 ${CLICKHOUSE_CLIENT} --format=JSONEachRow -q "
 set enable_analyzer = 1;
-system flush logs;
+system flush logs opentelemetry_span_log;
 
 -- Show queries sorted by start time.
 select attribute['db.statement'] as query,
@@ -124,7 +124,7 @@ do
 done
 wait
 
-${CLICKHOUSE_CLIENT} -q "system flush logs"
+${CLICKHOUSE_CLIENT} -q "system flush logs opentelemetry_span_log"
 ${CLICKHOUSE_CLIENT} -q "
     -- expect 40 * 0.5 = 20 sampled events on average;
     -- probability of getting 0, 1, 39, or 40 sampled events: 82/2^40 = 1 in 13.4 B runs;

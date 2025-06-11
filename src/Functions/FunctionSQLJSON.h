@@ -12,15 +12,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
 #include <Functions/IFunction.h>
-#include <Functions/JSONPath/ASTs/ASTJSONPath.h>
 #include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
-#include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Interpreters/Context.h>
-#include <Parsers/IParser.h>
-#include <Parsers/Lexer.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <base/range.h>
 
@@ -334,10 +329,8 @@ public:
             DataTypePtr string_type = std::make_shared<DataTypeString>();
             return std::make_shared<DataTypeNullable>(string_type);
         }
-        else
-        {
-            return std::make_shared<DataTypeString>();
-        }
+
+        return std::make_shared<DataTypeString>();
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
@@ -355,7 +348,7 @@ public:
                 {
                     break;
                 }
-                else if (!(current_element.isArray() || current_element.isObject()))
+                if (!(current_element.isArray() || current_element.isObject()))
                 {
                     break;
                 }

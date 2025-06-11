@@ -1,12 +1,15 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Core/SortDescription.h>
-#include "Columns/IColumn.h"
-
+#include <base/types.h>
+#include <Columns/IColumn_fwd.h>
+#include <Common/PODArray_fwd.h>
 
 namespace DB
 {
+
+class Block;
+class SortDescription;
+using IColumnPermutation = PaddedPODArray<size_t>;
 
 /// Sort one block by `description`. If limit != 0, then the partial sort of the first `limit` rows is produced.
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0, EqualRanges ranges = {});
@@ -17,7 +20,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit 
   *  - because based on the order of rows it is determined whether to delete or leave groups of rows when collapsing.
   * Used only in StorageMergeTree to sort the data with INSERT.
   */
-void stableGetPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & out_permutation);
+void stableGetPermutation(const Block & block, const SortDescription & description, IColumnPermutation & out_permutation);
 
 /** Quickly check whether the block is already sorted. If the block is not sorted - returns false as fast as possible.
   */

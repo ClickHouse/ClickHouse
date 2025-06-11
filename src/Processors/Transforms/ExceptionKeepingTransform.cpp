@@ -1,3 +1,4 @@
+#include <exception>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
@@ -91,23 +92,11 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
     return Status::Ready;
 }
 
-static std::exception_ptr runStep(std::function<void()> step, ThreadStatus * thread_status, std::atomic_uint64_t * elapsed_ms)
+static std::exception_ptr runStep(std::function<void()> step, ThreadGroupPtr & thread_group)
 {
+    ThreadGroupSwitcher switcher(thread_group, "RuntimeData", /*allow_existing_group*/ true);
+
     std::exception_ptr res;
-    std::optional<Stopwatch> watch;
-
-    auto * original_thread = current_thread;
-    SCOPE_EXIT({ current_thread = original_thread; });
-
-    if (thread_status)
-    {
-        /// Change thread context to store individual metrics. Once the work in done, go back to the original thread
-        thread_status->resetPerformanceCountersLastUsage();
-        current_thread = thread_status;
-    }
-
-    if (elapsed_ms)
-        watch.emplace();
 
     try
     {
@@ -118,12 +107,6 @@ static std::exception_ptr runStep(std::function<void()> step, ThreadStatus * thr
         res = std::current_exception();
     }
 
-    if (thread_status)
-        thread_status->updatePerformanceCounters();
-
-    if (elapsed_ms && watch)
-        *elapsed_ms += watch->elapsedMilliseconds();
-
     return res;
 }
 
@@ -133,12 +116,13 @@ void ExceptionKeepingTransform::work()
     {
         stage = Stage::Consume;
 
-        if (auto exception = runStep([this] { onStart(); }, thread_status, elapsed_counter_ms))
+        if (auto exception = runStep([this] { onStart(); }, thread_group))
         {
             stage = Stage::Exception;
             ready_output = true;
             data.exception = exception;
             onException(data.exception);
+            cancel();
         }
     }
     else if (stage == Stage::Consume || stage == Stage::Generate)
@@ -147,12 +131,13 @@ void ExceptionKeepingTransform::work()
         {
             ready_input = false;
 
-            if (auto exception = runStep([this] { onConsume(std::move(data.chunk)); }, thread_status, elapsed_counter_ms))
+            if (auto exception = runStep([this] { onConsume(std::move(data.chunk)); }, thread_group))
             {
                 stage = Stage::Exception;
                 ready_output = true;
                 data.exception = exception;
                 onException(data.exception);
+                cancel();
             }
             else
                 stage = Stage::Generate;
@@ -161,12 +146,13 @@ void ExceptionKeepingTransform::work()
         if (stage == Stage::Generate)
         {
             GenerateResult res;
-            if (auto exception = runStep([this, &res] { res = onGenerate(); }, thread_status, elapsed_counter_ms))
+            if (auto exception = runStep([this, &res] { res = onGenerate(); }, thread_group))
             {
                 stage = Stage::Exception;
                 ready_output = true;
                 data.exception = exception;
                 onException(data.exception);
+                cancel();
             }
             else
             {
@@ -183,20 +169,20 @@ void ExceptionKeepingTransform::work()
     }
     else if (stage == Stage::Finish)
     {
-        if (auto exception = runStep([this] { onFinish(); }, thread_status, elapsed_counter_ms))
+        if (auto exception = runStep([this] { onFinish(); }, thread_group))
         {
             stage = Stage::Exception;
             ready_output = true;
             data.exception = exception;
             onException(data.exception);
+            cancel();
         }
     }
 }
 
-void ExceptionKeepingTransform::setRuntimeData(ThreadStatus * thread_status_, std::atomic_uint64_t * elapsed_counter_ms_)
+void ExceptionKeepingTransform::setRuntimeData(ThreadGroupPtr thread_group_)
 {
-    thread_status = thread_status_;
-    elapsed_counter_ms = elapsed_counter_ms_;
+    thread_group = thread_group_;
 }
 
 }

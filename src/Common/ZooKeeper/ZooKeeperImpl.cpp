@@ -15,10 +15,12 @@
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Histogram.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
@@ -44,6 +46,8 @@ namespace ProfileEvents
     extern const Event ZooKeeperRemove;
     extern const Event ZooKeeperExists;
     extern const Event ZooKeeperMulti;
+    extern const Event ZooKeeperMultiRead;
+    extern const Event ZooKeeperMultiWrite;
     extern const Event ZooKeeperReconfig;
     extern const Event ZooKeeperGet;
     extern const Event ZooKeeperSet;
@@ -61,6 +65,41 @@ namespace CurrentMetrics
 {
     extern const Metric ZooKeeperRequest;
     extern const Metric ZooKeeperWatch;
+}
+
+namespace Metrics::ResponseTime
+{
+    using namespace DB;
+
+    Histogram::MetricFamily & mf = Histogram::Factory::instance().registerMetric(
+        "keeper_response_time_ms",
+        "The response time of Keeper, in milliseconds",
+        {1, 2, 5, 10, 20, 50, 100},
+        {"operation"}
+    );
+
+    Histogram::Metric & create = mf.withLabels({"create"});
+    Histogram::Metric & remove = mf.withLabels({"remove"});
+    Histogram::Metric & removeRecursive = mf.withLabels({"remove_recursive"});
+    Histogram::Metric & exists = mf.withLabels({"exists"});
+    Histogram::Metric & get = mf.withLabels({"get"});
+    Histogram::Metric & set = mf.withLabels({"set"});
+    Histogram::Metric & list = mf.withLabels({"list"});
+    Histogram::Metric & check = mf.withLabels({"check"});
+    Histogram::Metric & sync = mf.withLabels({"sync"});
+    Histogram::Metric & reconfig = mf.withLabels({"reconfig"});
+    Histogram::Metric & multi = mf.withLabels({"multi"});
+
+    template <typename Response>
+    void instrument(std::function<void(const Response &)> & callback, Histogram::Metric & histogram)
+    {
+        callback = [&histogram, callback, timer = Stopwatch()](const Response & response)
+        {
+            const Int64 response_time = timer.elapsedMilliseconds();
+            histogram.observe(response_time);
+            return callback(response);
+        };
+    }
 }
 
 
@@ -306,6 +345,14 @@ void ZooKeeper::flushWriteBuffer()
     out->next();
 }
 
+void ZooKeeper::cancelWriteBuffer() noexcept
+{
+    if (compressed_out)
+         compressed_out->cancel();
+    if (out)
+        out->cancel();
+}
+
 ReadBuffer & ZooKeeper::getReadBuffer()
 {
     if (compressed_in)
@@ -378,6 +425,11 @@ ZooKeeper::ZooKeeper(
     try
     {
         use_compression = args.use_compression;
+        if (args.use_xid_64)
+        {
+            use_xid_64 = true;
+            close_xid = CLOSE_XID_64;
+        }
         connect(nodes, args.connection_timeout_ms * 1000);
     }
     catch (...)
@@ -435,7 +487,9 @@ void ZooKeeper::connect(
     if (nodes.empty())
         throw Exception::fromMessage(Error::ZBADARGUMENTS, "No nodes passed to ZooKeeper constructor");
 
-    static constexpr size_t num_tries = 3;
+    /// We always have at least one attempt to connect.
+    size_t num_tries = args.num_connection_retries + 1;
+
     bool connected = false;
     bool dns_error = false;
 
@@ -445,7 +499,7 @@ void ZooKeeper::connect(
         try
         {
             const Poco::Net::SocketAddress host_socket_addr{node.host};
-            LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority);
+            LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority.value);
             node.address = host_socket_addr;
             ++resolved_count;
         }
@@ -468,8 +522,7 @@ void ZooKeeper::connect(
         if (dns_error)
             throw zkutil::KeeperException::fromMessage(
                 Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
-        else
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
+        throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
     }
 
     WriteBufferFromOwnString fail_reasons;
@@ -542,6 +595,7 @@ void ZooKeeper::connect(
             catch (...)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address->toString();
+                cancelWriteBuffer();
             }
         }
 
@@ -572,10 +626,8 @@ void ZooKeeper::connect(
         message << fail_reasons.str() << "\n";
         throw Exception(Error::ZCONNECTIONLOSS, "All connection tries failed while connecting to ZooKeeper. nodes: {}", message.str());
     }
-    else
-    {
-        LOG_INFO(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
-    }
+
+    LOG_INFO(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
 }
 
 
@@ -585,19 +637,28 @@ void ZooKeeper::sendHandshake()
     int64_t last_zxid_seen = 0;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
-    constexpr int32_t passwd_len = 16;
-    std::array<char, passwd_len> passwd {};
+    std::string password = args.password;
+    password.resize(Coordination::PASSWORD_LENGTH, '\0');
     bool read_only = true;
 
     write(handshake_length);
-    if (use_compression)
+    if (use_xid_64)
+    {
+        write(ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64);
+        write(use_compression);
+    }
+    else if (use_compression)
+    {
         write(ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION);
+    }
     else
+    {
         write(ZOOKEEPER_PROTOCOL_VERSION);
+    }
     write(last_zxid_seen);
     write(timeout);
     write(previous_session_id);
-    write(passwd);
+    write(password);
     write(read_only);
     flushWriteBuffer();
 }
@@ -624,10 +685,15 @@ void ZooKeeper::receiveHandshake()
                                      "Keeper server rejected the connection during the handshake. "
                                      "Possibly it's overloaded, doesn't see leader or stale");
 
-    if (use_compression)
+    if (use_xid_64)
+    {
+        if (protocol_version_read < ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
+            throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version with 64bit XID: {}", protocol_version_read);
+    }
+    else if (use_compression)
     {
         if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
-            throw Exception(Error::ZMARSHALLINGERROR,"Unexpected protocol version with compression: {}", protocol_version_read);
+            throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version with compression: {}", protocol_version_read);
     }
     else if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version: {}", protocol_version_read);
@@ -650,7 +716,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.scheme = scheme;
     request.data = data;
     request.xid = AUTH_XID;
-    request.write(getWriteBuffer());
+    request.write(getWriteBuffer(), use_xid_64);
     flushWriteBuffer();
 
     int32_t length;
@@ -660,7 +726,17 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 
     read(length);
     size_t count_before_event = in->count();
-    read(read_xid);
+    if (use_xid_64)
+    {
+        read(read_xid);
+    }
+    else
+    {
+        int32_t xid_32{0};
+        read(xid_32);
+        read_xid = xid_32;
+    }
+
     read(zxid);
     read(err);
 
@@ -710,7 +786,7 @@ void ZooKeeper::sendThread()
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
-                    if (info.request->xid != CLOSE_XID)
+                    if (info.request->xid != close_xid)
                     {
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
                         std::lock_guard lock(operations_mutex);
@@ -730,13 +806,13 @@ void ZooKeeper::sendThread()
                     info.request->addRootPath(args.chroot);
 
                     info.request->probably_sent = true;
-                    info.request->write(getWriteBuffer());
+                    info.request->write(getWriteBuffer(), use_xid_64);
                     flushWriteBuffer();
 
                     logOperationIfNeeded(info.request);
 
                     /// We sent close request, exit
-                    if (info.request->xid == CLOSE_XID)
+                    if (info.request->xid == close_xid)
                         break;
                 }
             }
@@ -747,7 +823,7 @@ void ZooKeeper::sendThread()
 
                 ZooKeeperHeartbeatRequest request;
                 request.xid = PING_XID;
-                request.write(getWriteBuffer());
+                request.write(getWriteBuffer(), use_xid_64);
                 flushWriteBuffer();
             }
 
@@ -833,7 +909,16 @@ void ZooKeeper::receiveEvent()
 
     read(length);
     size_t count_before_event = in->count();
-    read(xid);
+    if (use_xid_64)
+    {
+        read(xid);
+    }
+    else
+    {
+        int32_t xid_32{0};
+        read(xid_32);
+        xid = xid_32;
+    }
     read(zxid);
     read(err);
 
@@ -1050,6 +1135,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         /// Set expired flag after we sent close event
         expire_session_if_not_expired();
 
+        cancelWriteBuffer();
+
         try
         {
             /// This will also wakeup the receiving thread.
@@ -1191,7 +1278,10 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         if (!info.request->xid)
         {
             info.request->xid = next_xid.fetch_add(1);
-            if (info.request->xid == CLOSE_XID)
+            if (!use_xid_64)
+                info.request->xid = static_cast<int32_t>(info.request->xid);
+
+            if (info.request->xid == close_xid)
                 throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "xid equal to close_xid");
             if (info.request->xid < 0)
                 throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "XID overflow");
@@ -1248,7 +1338,7 @@ std::optional<String> ZooKeeper::tryGetSystemZnode(const std::string & path, con
         LOG_TRACE(log, "Failed to get {}", description);
         return std::nullopt;
     }
-    else if (response.error != Coordination::Error::ZOK)
+    if (response.error != Coordination::Error::ZOK)
     {
         throw Exception(response.error, "Failed to get {}", description);
     }
@@ -1322,6 +1412,8 @@ void ZooKeeper::create(
     request.is_sequential = is_sequential;
     request.acls = acls.empty() ? default_acls : acls;
 
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::create);
+
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCreateRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CreateResponse &>(response)); };
@@ -1338,6 +1430,8 @@ void ZooKeeper::remove(
     ZooKeeperRemoveRequest request;
     request.path = path;
     request.version = version;
+
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::remove);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperRemoveRequest>(std::move(request));
@@ -1359,6 +1453,8 @@ void ZooKeeper::removeRecursive(
     request.path = path;
     request.remove_nodes_limit = remove_nodes_limit;
 
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::removeRecursive);
+
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperRemoveRecursiveRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveRecursiveResponse &>(response)); };
@@ -1374,6 +1470,8 @@ void ZooKeeper::exists(
 {
     ZooKeeperExistsRequest request;
     request.path = path;
+
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::exists);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperExistsRequest>(std::move(request));
@@ -1392,6 +1490,8 @@ void ZooKeeper::get(
 {
     ZooKeeperGetRequest request;
     request.path = path;
+
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::get);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperGetRequest>(std::move(request));
@@ -1413,6 +1513,8 @@ void ZooKeeper::set(
     request.path = path;
     request.data = data;
     request.version = version;
+
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::set);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperSetRequest>(std::move(request));
@@ -1446,6 +1548,8 @@ void ZooKeeper::list(
 
     request->path = path;
 
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::list);
+
     RequestInfo request_info;
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
     if (watch)
@@ -1466,6 +1570,8 @@ void ZooKeeper::check(
     request.path = path;
     request.version = version;
 
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::check);
+
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCheckRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CheckResponse &>(response)); };
@@ -1480,6 +1586,8 @@ void ZooKeeper::sync(
 {
     ZooKeeperSyncRequest request;
     request.path = path;
+
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::sync);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperSyncRequest>(std::move(request));
@@ -1501,6 +1609,8 @@ void ZooKeeper::reconfig(
     request.leaving = leaving;
     request.new_members = new_members;
     request.version = version;
+
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::reconfig);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperReconfigRequest>(std::move(request));
@@ -1526,19 +1636,27 @@ void ZooKeeper::multi(
     if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
 
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::multi);
+
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperMultiRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const MultiResponse &>(response)); };
 
+    bool is_read_request = request_info.request->isReadRequest();
     pushRequest(std::move(request_info));
+
     ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
+    if (is_read_request)
+        ProfileEvents::increment(ProfileEvents::ZooKeeperMultiRead);
+    else
+        ProfileEvents::increment(ProfileEvents::ZooKeeperMultiWrite);
 }
 
 
 void ZooKeeper::close()
 {
     ZooKeeperCloseRequest request;
-    request.xid = CLOSE_XID;
+    request.xid = close_xid;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
@@ -1555,8 +1673,7 @@ std::optional<int8_t> ZooKeeper::getConnectedNodeIdx() const
     int8_t res = original_index.load();
     if (res == -1)
         return std::nullopt;
-    else
-        return res;
+    return res;
 }
 
 String ZooKeeper::getConnectedHostPort() const
@@ -1564,11 +1681,10 @@ String ZooKeeper::getConnectedHostPort() const
     auto idx = getConnectedNodeIdx();
     if (idx)
         return args.hosts[*idx];
-    else
-        return "";
+    return "";
 }
 
-int32_t ZooKeeper::getConnectionXid() const
+int64_t ZooKeeper::getConnectionXid() const
 {
     return next_xid.load();
 }

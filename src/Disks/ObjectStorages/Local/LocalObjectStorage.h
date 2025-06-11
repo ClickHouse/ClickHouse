@@ -4,39 +4,47 @@
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
+
 namespace Poco
 {
-class Logger;
+    class Logger;
 }
 
 namespace DB
 {
 
+struct LocalObjectStorageSettings
+{
+    LocalObjectStorageSettings(String key_prefix_, bool read_only_)
+        : key_prefix(key_prefix_), read_only(read_only_)
+    {
+    }
+
+    String key_prefix;
+    bool read_only = false;
+};
+
 /// Treat local disk as an object storage (for interface compatibility).
 class LocalObjectStorage : public IObjectStorage
 {
 public:
-    explicit LocalObjectStorage(String key_prefix_);
+    explicit LocalObjectStorage(LocalObjectStorageSettings settings_);
 
     std::string getName() const override { return "LocalObjectStorage"; }
 
     ObjectStorageType getType() const override { return ObjectStorageType::Local; }
 
-    std::string getCommonKeyPrefix() const override { return key_prefix; }
+    std::string getCommonKeyPrefix() const override { return settings.key_prefix; }
 
     std::string getDescription() const override { return description; }
+
+    bool isReadOnly() const override { return settings.read_only; }
 
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
-
-    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings = ReadSettings{},
+        const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
@@ -47,10 +55,6 @@ public:
         std::optional<ObjectAttributes> attributes = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
-
-    void removeObject(const StoredObject & object) override;
-
-    void removeObjects(const StoredObjects &  objects) override;
 
     void removeObjectIfExists(const StoredObject & object) override;
 
@@ -83,12 +87,19 @@ public:
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
+    bool areObjectKeysRandom() const override { return true; }
+
     bool isRemote() const override { return false; }
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
 private:
-    String key_prefix;
+    void removeObject(const StoredObject & object) const;
+    void removeObjects(const StoredObjects &  objects) const;
+
+    void throwIfReadonly() const;
+
+    LocalObjectStorageSettings settings;
     LoggerPtr log;
     std::string description;
 };
