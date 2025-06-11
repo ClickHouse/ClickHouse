@@ -479,12 +479,12 @@ Returns the difference between two dates or dates with time values. The differen
     FunctionDocumentation::Syntax syntax_timeDiff = R"(
 timeDiff(first_datetime, second_datetime)
     )";
-    FunctionDocumentation::Arguments arguments_timeDiff = {
+    FunctionDocumentation::Arguments arguments_timeDiff{
         {"first_datetime", "A DateTime/DateTime64 type const value or an expression. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"second_datetime", "A DateTime/DateTime64 type const value or an expression. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeDiff = "Returns the difference between two dates or dates with time values in seconds. [`Int64`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_timeDiff = {
+    FunctionDocumentation::Examples examples_timeDiff{
         {"Calculate time difference in seconds", R"(
 SELECT timeDiff(toDateTime64('1927-01-01 00:00:00', 3), toDate32('1927-01-02'))
         )",
@@ -496,7 +496,7 @@ SELECT timeDiff(toDateTime64('1927-01-01 00:00:00', 3), toDate32('1927-01-02'))
     };
     FunctionDocumentation::IntroducedIn introduced_in_timeDiff = {24, 1};
     FunctionDocumentation::Category category_timeDiff = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_timeDiff = {
+    FunctionDocumentation documentation_timeDiff{
         description_timeDiff,
         syntax_timeDiff,
         arguments_timeDiff,
@@ -517,14 +517,14 @@ Calculates the difference between two date or date with time values.
     FunctionDocumentation::Syntax syntax_dateDiff_implementation = R"(
 dateDiff('unit', startdate, enddate[, timezone])
     )";
-    FunctionDocumentation::Arguments arguments_dateDiff_implementation = {
+    FunctionDocumentation::Arguments arguments_dateDiff_implementation{
         {"unit", "The type of interval for result. [`String`](../data-types/string.md)."},
         {"startdate", "The first time value. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"enddate", "The second time value. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"timezone", "Optional. Timezone name. If specified, it is applied to both arguments. If not specified, timezones from the input datatypes are used. [`String`](../data-types/string.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_dateDiff_implementation = "Returns the difference between the two date or date with time values in the specified unit. [`Int`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_dateDiff_documentation = {
+    FunctionDocumentation::Examples examples_dateDiff_documentation{
         {"Calculate difference between dates", R"(
 SELECT dateDiff('day', toDate('2021-01-01'), toDate('2021-01-15'))
         )",
@@ -536,7 +536,7 @@ SELECT dateDiff('day', toDate('2021-01-01'), toDate('2021-01-15'))
     };
     FunctionDocumentation::IntroducedIn introduced_in_dateDiff_implementation = {1, 1};
     FunctionDocumentation::Category category_dateDiff_implementation = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_dateDiff_implementation = {
+    FunctionDocumentation documentation_dateDiff_implementation{
         description_dateDiff_implementation,
         syntax_dateDiff_implementation,
         arguments_dateDiff_implementation,
