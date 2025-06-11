@@ -682,9 +682,6 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
             {
                 ctx.for_interpreter.push_back(command);
                 ctx.mutated_data.updated_columns.insert(command.column_name);
-
-                auto type = table_columns.getColumn(GetColumnsOptions::AllPhysical, command.column_name).type;
-                addColumn(ctx, command.column_name, type);
             }
         }
         else if (command.type == MutationCommand::DELETE || command.type == MutationCommand::APPLY_DELETED_MASK)
@@ -708,10 +705,16 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
         }
     }
 
-    if (ctx.mutated_data.has_lightweight_delete)
-        addColumn(ctx, RowExistsColumn::name, std::make_shared<DataTypeUInt8>());
-    else if (ctx.mutated_data.affects_all_columns && ctx.new_part_columns.has(RowExistsColumn::name))
+    for (const auto & column : ctx.mutated_data.updated_columns)
+    {
+        auto type = table_columns.getColumn(GetColumnsOptions::AllPhysical, column).type;
+        addColumn(ctx, column, type);
+    }
+
+    if (ctx.mutated_data.affects_all_columns && !ctx.mutated_data.has_lightweight_delete && ctx.new_part_columns.has(RowExistsColumn::name))
+    {
         dropColumn(ctx, RowExistsColumn::name);
+    }
 
     return ctx.mutated_data;
 }
@@ -737,14 +740,12 @@ void addColumnsRequiredForDependencies(MutationContext & ctx)
 
 static void modifyColumn(MutationContext & ctx, const String & column_name, const DataTypePtr & new_type)
 {
+    auto old_type = ctx.new_part_columns.getPhysical(column_name).type;
     ctx.new_part_columns.modify(column_name, [&](auto & column) { column.type = new_type; });
 
     auto it = ctx.new_serialization_infos.find(column_name);
     if (it == ctx.new_serialization_infos.end())
         return;
-
-    auto old_info = it->second;
-    auto old_type = ctx.new_part_columns.getPhysical(column_name).type;
 
     SerializationInfo::Settings settings
     {
@@ -752,6 +753,7 @@ static void modifyColumn(MutationContext & ctx, const String & column_name, cons
         .choose_kind = false
     };
 
+    auto old_info = it->second;
     ctx.new_serialization_infos.erase(it);
 
     if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
