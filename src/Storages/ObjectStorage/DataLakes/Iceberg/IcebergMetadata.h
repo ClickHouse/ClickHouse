@@ -91,7 +91,8 @@ protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
-        size_t list_batch_size) const override;
+        size_t list_batch_size,
+        ContextPtr local_context) const override;
 
 private:
     const ObjectStoragePtr object_storage;
@@ -118,7 +119,7 @@ private:
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed);
 
-    Strings getDataFiles(const ActionsDAG * filter_dag) const;
+    Strings getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
 
     void updateSnapshot(Poco::JSON::Object::Ptr metadata_object);
 
@@ -134,8 +135,6 @@ private:
     Iceberg::ManifestFilePtr getManifestFile(const String & filename, Int64 inherited_sequence_number) const;
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
-
-    Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 };
