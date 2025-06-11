@@ -982,16 +982,16 @@ The server successfully detected this situation and will download merged part fr
     M(HTTPConnectionsErrors, "Number of cases when creation of a client HTTP connection failed", ValueType::Number) \
     M(HTTPConnectionsElapsedMicroseconds, "Total time spend on creating client HTTP connections", ValueType::Microseconds) \
     \
-    M(HTTPServerConnectionsCreated, "Number of created server http connections", ValueType::Number) \
-    M(HTTPServerConnectionsReused, "Number of reused server http connections", ValueType::Number) \
-    M(HTTPServerConnectionsPreserved, "Number of preserved server http connections. Connection kept alive successfully", ValueType::Number) \
-    M(HTTPServerConnectionsExpired, "Number of expired server http connections.", ValueType::Number) \
-    M(HTTPServerConnectionsClosed, "Number of closed server http connections. Keep alive has not been negotiated", ValueType::Number) \
-    M(HTTPServerConnectionsReset, "Number of reset server http connections. Server closes connection", ValueType::Number) \
+    M(HTTPServerConnectionsCreated, "Number of created server HTTP connections", ValueType::Number) \
+    M(HTTPServerConnectionsReused, "Number of reused server HTTP connections", ValueType::Number) \
+    M(HTTPServerConnectionsPreserved, "Number of preserved server HTTP connections. Connection kept alive successfully", ValueType::Number) \
+    M(HTTPServerConnectionsExpired, "Number of expired server HTTP connections.", ValueType::Number) \
+    M(HTTPServerConnectionsClosed, "Number of closed server HTTP connections. Keep alive has not been negotiated", ValueType::Number) \
+    M(HTTPServerConnectionsReset, "Number of reset server HTTP connections. Server closes connection", ValueType::Number) \
     \
-    M(AddressesDiscovered, "Total count of new addresses in dns resolve results for HTTP connections", ValueType::Number) \
-    M(AddressesExpired, "Total count of expired addresses which is no longer presented in dns resolve results for HTTP connections", ValueType::Number) \
-    M(AddressesMarkedAsFailed, "Total count of addresses which has been marked as faulty due to connection errors for HTTP connections", ValueType::Number) \
+    M(AddressesDiscovered, "Total count of new addresses in DNS resolve results for HTTP connections", ValueType::Number) \
+    M(AddressesExpired, "Total count of expired addresses which is no longer presented in DNS resolve results for HTTP connections", ValueType::Number) \
+    M(AddressesMarkedAsFailed, "Total count of addresses which have been marked as faulty due to connection errors for HTTP connections", ValueType::Number) \
     \
     M(ReadWriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by ReadWriteBufferFromHTTP", ValueType::Number) \
     M(ReadWriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by ReadWriteBufferFromHTTP. Doesn't include HTTP headers.", ValueType::Bytes) \
