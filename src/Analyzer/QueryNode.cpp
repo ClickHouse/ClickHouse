@@ -144,6 +144,23 @@ DataTypePtr QueryNode::getResultType() const
     {
         if (projection_columns.size() == 1)
         {
+            /// Scalar correlated subquery must return nullable result,
+            /// because it must return NULL value if subquery produces an empty result set.
+            ///
+            /// Example:
+            ///
+            /// SELECT
+            ///     *
+            /// FROM partsupp as ps
+            /// WHERE ps.ps_availqty > (
+            ///         SELECT 0.5 * sum(l.l_quantity)
+            ///         FROM lineitem as l
+            ///         WHERE (l.l_partkey = ps.ps_partkey) AND (l.l_suppkey = ps.ps_suppkey)
+            ///     )
+            ///
+            /// In this case, if the subquery returns a non-nullable value, it'll be evaluate to `0` for empty result set.
+            /// It will lead to incorrect result, because the condition `ps.ps_availqty > 0` will be true.
+            /// To avoid this, we return Null value here and the condition will evaluate to false.
             return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
         }
         else

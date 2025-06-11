@@ -469,6 +469,7 @@ void addStepForResultRenaming(
 
     const auto & result_column = subquery_result_columns[0];
     auto expected_result_type = correlated_subquery.query_tree->getResultType();
+    /// Scalar correlated subquery must return nullable result. See method `QueryNode::getResultType()` for details.
     if (!expected_result_type->equals(*makeNullableOrLowCardinalityNullableSafe(result_column.type)))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
