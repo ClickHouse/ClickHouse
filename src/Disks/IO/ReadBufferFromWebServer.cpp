@@ -107,6 +107,8 @@ bool ReadBufferFromWebServer::nextImpl()
         }
     }
 
+    chassert(internal_buffer.size(), fmt::format("use_external_buffer: {}", use_external_buffer));
+
     if (use_external_buffer)
     {
         impl->set(internal_buffer.begin(), internal_buffer.size());
@@ -120,7 +122,8 @@ bool ReadBufferFromWebServer::nextImpl()
         impl->position() = position();
     }
 
-    chassert(impl->buffer().begin() != nullptr);
+    chassert(impl->internalBuffer().begin() != nullptr);
+    chassert(impl->internalBuffer().size() > 0);
     chassert(impl->available() == 0);
 
     auto result = impl->next();

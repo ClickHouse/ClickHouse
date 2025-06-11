@@ -83,11 +83,12 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
         {
             auto cache_key = FileCacheKey::fromPath(object.remote_path);
             auto global_context = Context::getGlobalContextInstance();
-            auto modified_read_settings = read_settings.withNestedBuffer();
 
             auto read_buffer_creator = [=, this]()
             {
-                return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+                auto modified_read_settings = read_settings.withNestedBuffer();
+                return object_storage->readObject(
+                    object, patchSettings(modified_read_settings), read_hint, file_size);
             };
 
             return std::make_unique<CachedOnDiskReadBufferFromFile>(
@@ -96,7 +97,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
                 cache,
                 FileCache::getCommonUser(),
                 read_buffer_creator,
-                modified_read_settings,
+                read_settings,
                 std::string(CurrentThread::getQueryId()),
                 object.bytes_size,
                 /* allow_seeks */!read_settings.remote_read_buffer_restrict_seek,
