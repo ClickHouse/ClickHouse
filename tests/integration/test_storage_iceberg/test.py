@@ -2168,7 +2168,6 @@ def test_explicit_metadata_file(started_cluster, storage_type):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
-
 @pytest.mark.parametrize("format_version", ["2"])
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_cluster_table_function_with_partition_pruning(
