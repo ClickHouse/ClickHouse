@@ -26,8 +26,8 @@ public:
     template <typename... IArgs>
     explicit AggregateFunctionNumericIndexedVector(const DataTypes & types, const Array & params, IArgs &&... args)
         : IAggregateFunctionDataHelper<
-            AggregateFunctionGroupNumericIndexedVectorData<VectorImpl>,
-            AggregateFunctionNumericIndexedVector<VectorImpl, TArgs...>>({types}, {params}, createResultType())
+              AggregateFunctionGroupNumericIndexedVectorData<VectorImpl>,
+              AggregateFunctionNumericIndexedVector<VectorImpl, TArgs...>>({types}, {params}, createResultType())
         , init_args_tuple(std::tuple<TArgs...>(std::forward<IArgs>(args)...))
     {
     }

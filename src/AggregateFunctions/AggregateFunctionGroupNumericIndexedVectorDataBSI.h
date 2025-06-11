@@ -216,6 +216,19 @@ public:
                 MAX_TOTAL_BIT_NUM);
     }
 
+    bool isEmpty() const
+    {
+        if (zero_indexes->size() > 0)
+            return false;
+        UInt32 total_bit_num = getTotalBitNum();
+        for (size_t i = 0; i < total_bit_num; ++i)
+        {
+            if (getDataArrayAt(i)->size() > 0)
+                return false;
+        }
+        return true;
+    }
+
     bool isValueTypeSigned() const
     {
         WhichDataType second_which(DataTypeNumber<ValueType>().getTypeId());
@@ -400,7 +413,13 @@ public:
     {
         if (index >= data_array.size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array index out of bounds.");
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Array index out of bounds. index: {}; integer_bit_num: {}; fraction_bit_num: {}; data_array_size: {}",
+                index,
+                integer_bit_num,
+                fraction_bit_num,
+                data_array.size());
         }
         return data_array[index];
     }
@@ -426,6 +445,12 @@ public:
      */
     void pointwiseAddInplace(const BSINumericIndexedVector & rhs)
     {
+        if (isEmpty())
+        {
+            deepCopyFrom(rhs);
+            return;
+        }
+
         auto total_indexes = getAllIndex();
         total_indexes->rb_or(*rhs.getAllIndex());
 
@@ -962,6 +987,8 @@ public:
             UInt64 bit_mask = ~((1ULL << total_bit_num) - 1);
             for (size_t i = 0; i < result_cnt; ++i)
             {
+                if (bit_buffer[i] >= 65536)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "bit_buffer index out of bounds. bit_buffer[i]: {}", bit_buffer[i]);
                 if ((buffer[bit_buffer[i]] & (1ULL << (total_bit_num - 1))) != 0)
                 {
                     /// sign extend
@@ -1361,7 +1388,11 @@ public:
         }
         else if (lhs.isValueTypeSigned() && rhs.isValueTypeSigned())
         {
-            const auto & lhs_negative_indexes = lhs.getDataArrayAt(lhs.getTotalBitNum() - 1);
+            std::shared_ptr<Roaring> lhs_negative_indexes = std::make_shared<Roaring>();
+            if (lhs.getTotalBitNum() > 0)
+            {
+                lhs_negative_indexes->rb_or(*lhs.getDataArrayAt(lhs.getTotalBitNum() - 1));
+            }
             auto lhs_positive_indexes = std::make_shared<Roaring>();
             lhs_positive_indexes->rb_or(*lhs.getAllNonZeroIndex());
             lhs_positive_indexes->rb_andnot(*lhs_negative_indexes);
@@ -1370,7 +1401,11 @@ public:
             BSINumericIndexedVector lhs_negative_vector;
             filterWithMask(lhs, lhs_negative_indexes, lhs_negative_vector);
 
-            const auto & rhs_negative_indexes = rhs.getDataArrayAt(rhs.getTotalBitNum() - 1);
+            std::shared_ptr<Roaring> rhs_negative_indexes = std::make_shared<Roaring>();
+            if (rhs.getTotalBitNum() > 0)
+            {
+                rhs_negative_indexes->rb_or(*rhs.getDataArrayAt(rhs.getTotalBitNum() - 1));
+            }
             auto rhs_positive_indexes = std::make_shared<Roaring>();
             rhs_positive_indexes->rb_or(*rhs.getAllNonZeroIndex());
             rhs_positive_indexes->rb_andnot(*rhs_negative_indexes);
@@ -1724,7 +1759,10 @@ public:
         else if (which.isInt() || which.isFloat())
         {
             Roaring neg_idx_bm;
-            neg_idx_bm.rb_or(*getDataArrayAt(total_bit_num - 1));
+            if (total_bit_num > 0)
+            {
+                neg_idx_bm.rb_or(*getDataArrayAt(total_bit_num - 1));
+            }
             PaddedPODArray<IndexType> neg_idx_array;
             neg_idx_bm.rb_to_array(neg_idx_array);
             for (size_t i = total_bit_num; i < 64; ++i)
