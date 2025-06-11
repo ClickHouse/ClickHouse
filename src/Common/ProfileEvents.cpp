@@ -974,13 +974,13 @@ The server successfully detected this situation and will download merged part fr
     M(DiskConnectionsErrors, "Number of cases when creation of a connection for disk is failed", ValueType::Number) \
     M(DiskConnectionsElapsedMicroseconds, "Total time spend on creating connections for disk", ValueType::Microseconds) \
     \
-    M(HTTPConnectionsCreated, "Number of created clients HTTP connections", ValueType::Number) \
-    M(HTTPConnectionsReused, "Number of reused clients HTTP connections", ValueType::Number) \
-    M(HTTPConnectionsReset, "Number of reset clients HTTP connections", ValueType::Number) \
-    M(HTTPConnectionsPreserved, "Number of preserved clients HTTP connections", ValueType::Number) \
-    M(HTTPConnectionsExpired, "Number of expired clients HTTP connections", ValueType::Number) \
-    M(HTTPConnectionsErrors, "Number of cases when creation of a clients HTTP connection failed", ValueType::Number) \
-    M(HTTPConnectionsElapsedMicroseconds, "Total time spend on creating clients HTTP connections", ValueType::Microseconds) \
+    M(HTTPConnectionsCreated, "Number of created client HTTP connections", ValueType::Number) \
+    M(HTTPConnectionsReused, "Number of reused client HTTP connections", ValueType::Number) \
+    M(HTTPConnectionsReset, "Number of reset client HTTP connections", ValueType::Number) \
+    M(HTTPConnectionsPreserved, "Number of preserved client HTTP connections", ValueType::Number) \
+    M(HTTPConnectionsExpired, "Number of expired client HTTP connections", ValueType::Number) \
+    M(HTTPConnectionsErrors, "Number of cases when creation of a client HTTP connection failed", ValueType::Number) \
+    M(HTTPConnectionsElapsedMicroseconds, "Total time spend on creating client HTTP connections", ValueType::Microseconds) \
     \
     M(HTTPServerConnectionsCreated, "Number of created server http connections", ValueType::Number) \
     M(HTTPServerConnectionsReused, "Number of reused server http connections", ValueType::Number) \
