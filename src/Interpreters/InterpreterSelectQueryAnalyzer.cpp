@@ -176,8 +176,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ContextPtr & context_,
     const SelectQueryOptions & select_query_options_,
     const Names & column_names)
-    : IInterpreter(context_)
-    , query(normalizeAndValidateQuery(query_, column_names))
+    : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
@@ -191,8 +190,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const StoragePtr & storage_,
     const SelectQueryOptions & select_query_options_,
     const Names & column_names)
-    : IInterpreter(context_)
-    , query(normalizeAndValidateQuery(query_, column_names))
+    : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
