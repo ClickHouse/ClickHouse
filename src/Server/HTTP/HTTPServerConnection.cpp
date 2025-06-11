@@ -106,7 +106,7 @@ void HTTPServerConnection::run()
                         bool keep_alive = false;
                         if (!params->getKeepAlive() || !request.canKeepAlive())
                         {
-                            /// Either server is not configured to keep connetions alive or client did not ask it
+                            /// Either server is not configured to keep connections alive or client did not ask it
                             ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsClosed);
                         }
                         else if (session.getMaxKeepAliveRequests() == 0 || !session.canKeepAlive())
