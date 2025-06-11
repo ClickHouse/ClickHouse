@@ -97,12 +97,14 @@ add_library(gpr
   ${_gRPC_SOURCE_DIR}/src/core/config/config_vars_non_generated.cc
   ${_gRPC_SOURCE_DIR}/src/core/config/load_config.cc
   ${_gRPC_SOURCE_DIR}/src/core/lib/event_engine/thread_local.cc
+  ${_gRPC_SOURCE_DIR}/src/core/lib/event_engine/forkable.cc
   ${_gRPC_SOURCE_DIR}/src/core/util/alloc.cc
   ${_gRPC_SOURCE_DIR}/src/core/util/log.cc
   ${_gRPC_SOURCE_DIR}/src/core/util/string.cc
   ${_gRPC_SOURCE_DIR}/src/core/util/sync.cc
   ${_gRPC_SOURCE_DIR}/src/core/util/sync_abseil.cc
   ${_gRPC_SOURCE_DIR}/src/core/util/time.cc
+  ${_gRPC_SOURCE_DIR}/src/core/util/gpr_time.cc
   ${_gRPC_SOURCE_DIR}/src/core/util/time_precise.cc
   ${_gRPC_SOURCE_DIR}/src/core/util/crash.cc
   ${_gRPC_SOURCE_DIR}/src/core/util/examine_stack.cc
@@ -668,6 +670,7 @@ add_library(grpc
   ${_gRPC_SOURCE_DIR}/src/core/lib/event_engine/default_event_engine.cc
   ${_gRPC_SOURCE_DIR}/src/core/lib/event_engine/default_event_engine_factory.cc
   ${_gRPC_SOURCE_DIR}/src/core/lib/event_engine/event_engine.cc
+  ${_gRPC_SOURCE_DIR}/src/core/lib/event_engine/forkable.cc
   ${_gRPC_SOURCE_DIR}/src/core/lib/event_engine/posix_engine/ev_epoll1_linux.cc
   ${_gRPC_SOURCE_DIR}/src/core/lib/event_engine/posix_engine/ev_poll_posix.cc
   ${_gRPC_SOURCE_DIR}/src/core/lib/event_engine/posix_engine/event_poller_posix_default.cc
@@ -1495,9 +1498,6 @@ endif()
 
 add_library(upb
    ${_gRPC_SOURCE_DIR}/third_party/upb/upb/base/status.c
-   # ${_gRPC_SOURCE_DIR}/third_party/upb/upb/collections/array.c
-   # ${_gRPC_SOURCE_DIR}/third_party/upb/upb/collections/map.c
-   # ${_gRPC_SOURCE_DIR}/third_party/upb/upb/collections/map_sorter.c
    ${_gRPC_SOURCE_DIR}/third_party/upb/upb/hash/common.c
    ${_gRPC_SOURCE_DIR}/third_party/upb/upb/lex/atoi.c
    ${_gRPC_SOURCE_DIR}/third_party/upb/upb/lex/round_trip.c
@@ -1533,6 +1533,39 @@ target_include_directories(upb
 target_link_libraries(upb
   ${_gRPC_ALLTARGETS_LIBRARIES}
   utf8_range_lib
+)
+
+add_library(upb_mini_descriptor_lib
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/mini_descriptor/build_enum.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/mini_descriptor/decode.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/mini_descriptor/internal/base92.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/mini_descriptor/internal/encode.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/mini_descriptor/link.c
+)
+
+target_compile_features(upb_mini_descriptor_lib PUBLIC cxx_std_17)
+
+set_target_properties(upb_mini_descriptor_lib PROPERTIES
+  VERSION ${gRPC_CORE_VERSION}
+  SOVERSION ${gRPC_CORE_SOVERSION}
+)
+
+target_include_directories(upb_mini_descriptor_lib
+  PUBLIC ${_gRPC_SOURCE_DIR}/include
+  PRIVATE
+    ${_gRPC_SOURCE_DIR}
+    ${_gRPC_ADDRESS_SORTING_INCLUDE_DIR}
+    ${_gRPC_RE2_INCLUDE_DIR}
+    ${_gRPC_SSL_INCLUDE_DIR}
+    ${_gRPC_UPB_GENERATED_DIR}
+    ${_gRPC_UPB_GRPC_GENERATED_DIR}
+    ${_gRPC_UPB_INCLUDE_DIR}
+    ${_gRPC_XXHASH_INCLUDE_DIR}
+    ${_gRPC_ZLIB_INCLUDE_DIR}
+)
+target_link_libraries(upb_mini_descriptor_lib
+  ${_gRPC_ALLTARGETS_LIBRARIES}
+  upb_mini_table_lib
 )
 
 add_library(upb_reflection_lib
@@ -1578,6 +1611,107 @@ target_link_libraries(upb_reflection_lib
   upb_wire_lib
 )
 
+add_library(upb_wire_lib
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/message/internal/iterator.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/wire/decode.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/wire/encode.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/wire/eps_copy_input_stream.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/wire/internal/decode_fast.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/wire/reader.c
+)
+
+target_compile_features(upb_wire_lib PUBLIC cxx_std_17)
+
+set_target_properties(upb_wire_lib PROPERTIES
+  VERSION ${gRPC_CORE_VERSION}
+  SOVERSION ${gRPC_CORE_SOVERSION}
+)
+
+target_include_directories(upb_wire_lib
+  PUBLIC ${_gRPC_SOURCE_DIR}/include
+  PRIVATE
+    ${_gRPC_SOURCE_DIR}
+    ${_gRPC_ADDRESS_SORTING_INCLUDE_DIR}
+    ${_gRPC_RE2_INCLUDE_DIR}
+    ${_gRPC_SSL_INCLUDE_DIR}
+    ${_gRPC_UPB_GENERATED_DIR}
+    ${_gRPC_UPB_GRPC_GENERATED_DIR}
+    ${_gRPC_UPB_INCLUDE_DIR}
+    ${_gRPC_XXHASH_INCLUDE_DIR}
+    ${_gRPC_ZLIB_INCLUDE_DIR}
+)
+target_link_libraries(upb_wire_lib
+  ${_gRPC_ALLTARGETS_LIBRARIES}
+  utf8_range_lib
+  upb_message_lib
+)
+
+add_library(upb_mini_table_lib
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/mini_table/extension_registry.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/mini_table/internal/message.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/mini_table/message.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/hash/common.c
+)
+
+target_compile_features(upb_mini_table_lib PUBLIC cxx_std_17)
+
+set_target_properties(upb_mini_table_lib PROPERTIES
+  VERSION ${gRPC_CORE_VERSION}
+  SOVERSION ${gRPC_CORE_SOVERSION}
+)
+
+target_include_directories(upb_mini_table_lib
+  PUBLIC ${_gRPC_SOURCE_DIR}/include
+  PRIVATE
+    ${_gRPC_SOURCE_DIR}
+    ${_gRPC_ADDRESS_SORTING_INCLUDE_DIR}
+    ${_gRPC_RE2_INCLUDE_DIR}
+    ${_gRPC_SSL_INCLUDE_DIR}
+    ${_gRPC_UPB_GENERATED_DIR}
+    ${_gRPC_UPB_GRPC_GENERATED_DIR}
+    ${_gRPC_UPB_INCLUDE_DIR}
+    ${_gRPC_XXHASH_INCLUDE_DIR}
+    ${_gRPC_ZLIB_INCLUDE_DIR}
+)
+target_link_libraries(upb_mini_table_lib
+  ${_gRPC_ALLTARGETS_LIBRARIES}
+)
+
+add_library(upb_message_lib
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/message/accessors.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/message/array.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/message/compat.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/message/internal/extension.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/message/internal/message.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/message/map.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/message/map_sorter.c
+  ${_gRPC_SOURCE_DIR}/third_party/upb/upb/message/message.c
+)
+
+target_compile_features(upb_message_lib PUBLIC cxx_std_17)
+
+set_target_properties(upb_message_lib PROPERTIES
+  VERSION ${gRPC_CORE_VERSION}
+  SOVERSION ${gRPC_CORE_SOVERSION}
+)
+
+target_include_directories(upb_message_lib
+  PUBLIC ${_gRPC_SOURCE_DIR}/include
+  PRIVATE
+    ${_gRPC_SOURCE_DIR}
+    ${_gRPC_ADDRESS_SORTING_INCLUDE_DIR}
+    ${_gRPC_RE2_INCLUDE_DIR}
+    ${_gRPC_SSL_INCLUDE_DIR}
+    ${_gRPC_UPB_GENERATED_DIR}
+    ${_gRPC_UPB_GRPC_GENERATED_DIR}
+    ${_gRPC_UPB_INCLUDE_DIR}
+    ${_gRPC_XXHASH_INCLUDE_DIR}
+    ${_gRPC_ZLIB_INCLUDE_DIR}
+)
+target_link_libraries(upb_message_lib
+  ${_gRPC_ALLTARGETS_LIBRARIES}
+  upb_mini_table_lib
+)
 
 add_library(upb_json_lib
   ${_gRPC_SOURCE_DIR}/third_party/upb/upb/json/decode.c
@@ -1602,6 +1736,7 @@ target_include_directories(upb_json_lib
 target_link_libraries(upb_json_lib
   ${_gRPC_ALLTARGETS_LIBRARIES}
   upb
+  upb_reflection_lib
 )
 
 
@@ -1628,10 +1763,12 @@ target_include_directories(upb_textformat_lib
 target_link_libraries(upb_textformat_lib
   ${_gRPC_ALLTARGETS_LIBRARIES}
   upb
+  upb_reflection_lib
 )
 
 
 add_library(utf8_range_lib
+  ${_gRPC_SOURCE_DIR}/third_party/utf8_range/utf8_range.c
   ${_gRPC_SOURCE_DIR}/third_party/utf8_range/naive.c
   ${_gRPC_SOURCE_DIR}/third_party/utf8_range/range2-neon.c
   ${_gRPC_SOURCE_DIR}/third_party/utf8_range/range2-sse.c
