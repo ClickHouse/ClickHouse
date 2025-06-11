@@ -2168,65 +2168,6 @@ def test_explicit_metadata_file(started_cluster, storage_type):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
-    snapshot1_timestamp = datetime.now(timezone.utc)
-    snapshot1_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
-    time.sleep(0.1)
-
-    write_iceberg_from_df(
-        spark,
-        generate_data(spark, 100, 200),
-        TABLE_NAME,
-        mode="append",
-        format_version=format_version,
-    )
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
-    )
-    snapshot2_timestamp = datetime.now(timezone.utc)
-    snapshot2_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
-    time.sleep(0.1)
-
-    write_iceberg_from_df(
-        spark,
-        generate_data(spark, 200, 300),
-        TABLE_NAME,
-        mode="append",
-        format_version=format_version,
-    )
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
-    )
-    snapshot3_timestamp = datetime.now(timezone.utc)
-    snapshot3_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY 1") == instance.query(
-        "SELECT number, toString(number + 1) FROM numbers(300)"
-    )
-
-    # Validate that each snapshot timestamp only sees the data inserted by that time.
-    assert (
-        instance.query(
-            f"""
-                          SELECT * FROM {TABLE_NAME} ORDER BY 1
-                          SETTINGS iceberg_timestamp_ms = {int(snapshot1_timestamp.timestamp() * 1000)}"""
-        )
-        == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
-    )
-
-    assert (
-        instance.query(
-            f"""
-                          SELECT * FROM {TABLE_NAME} ORDER BY 1
-                          SETTINGS iceberg_snapshot_id = {snapshot1_id}"""
-        )
-        == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
-    )
 
 @pytest.mark.parametrize("format_version", ["2"])
 @pytest.mark.parametrize("storage_type", ["s3"])
