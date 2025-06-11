@@ -705,9 +705,11 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
         }
     }
 
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::Persistent);
+
     for (const auto & column : ctx.mutated_data.updated_columns)
     {
-        auto type = table_columns.getColumn(GetColumnsOptions::AllPhysical, column).type;
+        auto type = ctx.storage_snapshot->getColumn(options, column).type;
         addColumn(ctx, column, type);
     }
 
