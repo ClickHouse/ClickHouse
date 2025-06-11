@@ -54,7 +54,7 @@ void HTTPChunkedStreamBuf::close()
 		sync();
 		_session.write("0\r\n\r\n", 5);
 
-        _chunk = std::char_traits<char>::eof();
+		_chunk = std::char_traits<char>::eof();
 	}
 }
 
@@ -140,10 +140,23 @@ int HTTPChunkedStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 }
 
 
-bool HTTPChunkedStreamBuf::isComplete()
+bool HTTPChunkedStreamBuf::isComplete(bool read_from_device_to_check_eof)
 {
-    readFromDevice(nullptr, 0);
-    return _chunk == std::char_traits<char>::eof();
+	if (read_from_device_to_check_eof)
+	{
+		try
+		{
+			/// If the stream is closed without final last chunk
+			/// "Unexpected EOF" exception would be thrown
+			readFromDevice(nullptr, 0);
+		}
+		catch (Poco::Net::MessageException &)
+		{
+			return false;
+		}
+	}
+
+	return _chunk == std::char_traits<char>::eof();
 }
 
 
