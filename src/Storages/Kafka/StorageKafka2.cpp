@@ -983,6 +983,14 @@ void StorageKafka2::saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const
 
 void StorageKafka2::saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent)
 {
+    if (intent <= 0)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Intent for topic-partition [{}:{}] must be greater than 0, but got {}",
+            topic_partition.topic,
+            topic_partition.partition_id,
+            intent);
+
     LOG_TEST(
         log,
         "Saving intent of {} for topic-partition [{}:{}] at offset {}",
