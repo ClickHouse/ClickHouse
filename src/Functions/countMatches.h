@@ -117,19 +117,17 @@ public:
         Pos end = reinterpret_cast<Pos>(src.data() + src.size());
 
         uint64_t match_count = 0;
-        while (true)
+        while (pos < end)
         {
-            if (pos >= end)
-                break;
-            if (!re.match(pos, end - pos, matches, matches_limit))
-                break;
-            /// Progress should be made, but with empty match the progress will not be done.
-            /// Also note that simply check is pattern empty is not enough,
-            /// since for example "'[f]{0}'" will match zero bytes:
-            if (!matches[0].length)
-                break;
-            pos += matches[0].offset + matches[0].length;
-            ++match_count;
+            if (re.match(pos, end - pos, matches, matches_limit) && matches[0].length > 0)
+            {
+                pos += matches[0].offset + matches[0].length;
+                ++match_count;
+            }
+            else
+                /// Progress is made by a single character in case the pattern does not match or have zero-byte match.
+                /// The reason is simply because the pattern could match another part of input when forwarded.
+                pos++;
         }
 
         return match_count;

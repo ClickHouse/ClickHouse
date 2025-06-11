@@ -34,3 +34,8 @@ select countMatches('foo', materialize('foo')); -- { serverError ILLEGAL_COLUMN 
 select 'FixedString';
 select countMatches(toFixedString('foobarfoo', 9), 'foo');
 select countMatches(materialize(toFixedString('foobarfoo', 9)), 'foo');
+
+select 'Pattern could match zero-bytes';
+select countMatches('  foo bar   ', '[a-zA-Z]*');
+select countMatches(toFixedString('  foo bar   ', 12), '[a-zA-Z]*');
+select countMatches(materialize(toFixedString('  foo bar   ', 12)), '[a-zA-Z]*');
