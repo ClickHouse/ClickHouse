@@ -47,7 +47,7 @@ void HTTPServerConnection::run()
         if (!session.hasMoreRequests())
         {
             if (is_first_request)
-                // it is strange to have a connection being oppend but no request has been sent, account it as an error case
+                // it is strange to have a connection being opened but no request has been sent, account it as an error case
                 ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsReset);
             else
                 ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsExpired);
