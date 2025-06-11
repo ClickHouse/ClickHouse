@@ -255,7 +255,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
                 UChar s[2];
                 int32_t length = 0;
                 U16_APPEND_UNSAFE(s, length, code);
-                auto _ = u_strFoldCase(buffer, 32, s, 2, U_FOLD_CASE_DEFAULT, &err_code);
+                u_strFoldCase(buffer, 32, s, 2, U_FOLD_CASE_DEFAULT, &err_code);
                 icu::UnicodeString str(buffer);
                 str.toUTF8String(ret);
             }
@@ -265,7 +265,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
                 UChar s[2];
                 int32_t length = 0;
                 U16_APPEND_UNSAFE(s, length, code);
-                auto _ = u_strToLower(buffer, 32, s, 2, "", &err_code);
+                u_strToLower(buffer, 32, s, 2, "", &err_code);
                 icu::UnicodeString str(buffer);
                 str.toUTF8String(ret);
             }
@@ -305,7 +305,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
                 UChar s[2];
                 int32_t length = 0;
                 U16_APPEND_UNSAFE(s, length, code);
-                auto _ = u_strToUpper(buffer, 32, s, 2, "", &err_code);
+                u_strToUpper(buffer, 32, s, 2, "", &err_code);
                 icu::UnicodeString str(buffer);
                 str.toUTF8String(ret);
             }
