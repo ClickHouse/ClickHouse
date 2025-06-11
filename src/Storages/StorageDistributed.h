@@ -247,6 +247,7 @@ private:
 
     bool has_sharding_key;
     bool sharding_key_is_deterministic = false;
+    ContextMutablePtr sharding_key_expr_context;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;
 
