@@ -593,10 +593,13 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
 
 std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String data_path) const
 {
-    if (!schema_id_by_data_file_initialized)
     {
-        initializeSchemasFromManifestList(relevant_snapshot->manifest_list_entries);
-        schema_id_by_data_file_initialized = true;
+        std::lock_guard lock(schema_id_by_data_file_mutex);
+        if (!schema_id_by_data_file_initialized)
+        {
+            initializeSchemasFromManifestList(relevant_snapshot->manifest_list_entries);
+            schema_id_by_data_file_initialized = true;
+        }
     }
     auto schema_id_it = schema_id_by_data_file.find(data_path);
     if (schema_id_it == schema_id_by_data_file.end())
