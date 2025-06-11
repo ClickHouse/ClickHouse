@@ -24,14 +24,3 @@ Union
       BlocksMarshalling
         Expression ((Projection + Change column names to column identifiers))
           ReadFromMergeTree (default.t)
-Expression ((Project names + Projection))
-  MergingAggregated
-    Union
-      Aggregating
-        Expression ((Before GROUP BY + Change column names to column identifiers))
-          ReadFromMergeTree (default.t)
-      ReadFromRemote (Read from remote replica)
-        BlocksMarshalling
-          Aggregating
-            Expression ((Before GROUP BY + Change column names to column identifiers))
-              ReadFromMergeTree (default.t)
