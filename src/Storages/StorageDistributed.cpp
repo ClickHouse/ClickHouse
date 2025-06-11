@@ -410,7 +410,11 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
-        sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
+        /// buildShardingKeyExpression() may create interpreters
+        auto local_context = Context::createCopy(getContext());
+        local_context->makeQueryContext();
+
+        sharding_key_expr = buildShardingKeyExpression(sharding_key_, local_context, storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
     }
@@ -2072,7 +2076,7 @@ void registerStorageDistributed(StorageFactory & factory)
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)
         {
-            auto sharding_expr = buildShardingKeyExpression(sharding_key, context, args.columns.getAllPhysical(), true);
+            auto sharding_expr = buildShardingKeyExpression(sharding_key, local_context, args.columns.getAllPhysical(), true);
             const Block & block = sharding_expr->getSampleBlock();
 
             if (block.columns() != 1)
