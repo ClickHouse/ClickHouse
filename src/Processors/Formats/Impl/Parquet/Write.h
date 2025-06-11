@@ -85,7 +85,6 @@ struct ColumnChunkWriteState
     int compression_level = 3;
     Int64 datetime_multiplier = 1; // for converting e.g. seconds to milliseconds
     bool is_bool = false; // bool vs UInt8 have the same column type but are encoded differently
-    DataTypePtr enum_type = nullptr;
 
     /// Repetition and definition levels. Produced by prepareColumnForWrite().
     /// def is empty iff max_def == 0, which means no arrays or nullables.

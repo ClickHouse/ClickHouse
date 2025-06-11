@@ -330,7 +330,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
                 parq::LogicalType t;
                 t.__set_ENUM({});
                 types(T::BYTE_ARRAY, C::ENUM, t);
-                state.enum_type = type;
+                state.type = type;
             }
             else if (type->getTypeId() == TypeIndex::Enum8)
                 types(T::INT32, C::INT_8, int_type(8, true));

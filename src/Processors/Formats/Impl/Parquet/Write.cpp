@@ -1022,7 +1022,7 @@ void writeColumnChunkBody(
         case TypeIndex::UInt64 : N(UInt64, Int64Type); break;
         case TypeIndex::Int8:
         {
-            if (options.output_enum_as_byte_array && s.enum_type)
+            if (options.output_enum_as_byte_array && isEnum8(s.type))
                 writeColumnImpl<parquet::ByteArrayType>(
                     s, options, out, ConverterEnumAsString<Int8>(s.primitive_column, s.enum_type));
             else
@@ -1031,7 +1031,7 @@ void writeColumnChunkBody(
         }
         case TypeIndex::Int16:
         {
-            if (options.output_enum_as_byte_array && s.enum_type)
+            if (options.output_enum_as_byte_array && isEnum16(s.type))
                 writeColumnImpl<parquet::ByteArrayType>(
                     s, options, out, ConverterEnumAsString<Int16>(s.primitive_column, s.enum_type));
             else
