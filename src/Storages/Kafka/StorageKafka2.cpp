@@ -837,11 +837,13 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
 
         LOG_TRACE(
             log,
-            "Locked topic partition: {}:{} at offset {} with intent size {}",
+            "Locked topic partition: {}:{} at offset {} with intent size {}, offset present: {}, intent size present: {}",
             partition_to_lock.topic,
             partition_to_lock.partition_id,
             lock_info.committed_offset.value_or(0),
-            lock_info.intent_size.value_or(0));
+            lock_info.intent_size.value_or(0),
+            lock_info.committed_offset.has_value(),
+            lock_info.intent_size.has_value());
 
         return lock_info;
     }
