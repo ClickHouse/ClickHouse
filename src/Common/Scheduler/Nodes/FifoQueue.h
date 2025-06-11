@@ -61,8 +61,8 @@ public:
         if (is_not_usable)
             throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue is about to be destructed");
 
-        if (requests.size() > queue_size)
-            throw Exception(ErrorCodes::SERVER_OVERLOADED, PreformattedMessage::create("Queue limit has been reached: {} of {}", requests.size(), queue_size));
+        if (requests.size() > static_cast<size_t>(queue_size))
+            throw Exception(ErrorCodes::SERVER_OVERLOADED, "Queue limit has been reached: {} of {}", requests.size(), queue_size);
         queue_cost += request->cost;
         bool was_empty = requests.empty();
         requests.push_back(*request);
