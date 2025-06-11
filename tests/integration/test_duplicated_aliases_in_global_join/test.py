@@ -53,7 +53,7 @@ def test_duplicated_alias_in_join(started_cluster):
         (
             SELECT a AS a1
             FROM t1
-        ) AS b ON a.a1 = b.a1 settings allow_experimental_parallel_reading_from_replicas=1,max_parallel_replicas=2
+        ) AS b ON a.a1 = b.a1 settings allow_experimental_analyzer=0,allow_experimental_parallel_reading_from_replicas=1,max_parallel_replicas=2
         """
     )) == TSV(expected)
 
