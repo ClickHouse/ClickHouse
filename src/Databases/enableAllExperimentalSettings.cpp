@@ -30,6 +30,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_map_type", 1);
     context->setSetting("allow_experimental_bigint_types", 1);
     context->setSetting("allow_experimental_bfloat16_type", 1);
+    context->setSetting("allow_experimental_time_time64_type", 1);
     context->setSetting("allow_experimental_correlated_subqueries", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
 
