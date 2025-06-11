@@ -82,6 +82,8 @@ enum class IndexMode
 template <typename T>
 struct NpvCalculator
 {
+    using FloatType = std::conditional_t<std::floating_point<T>, T, double>;
+
     explicit NpvCalculator(std::span<T> cashflows_)
         : cashflows(cashflows_)
     {
@@ -108,7 +110,7 @@ struct NpvCalculator
             double discount_factor = growth_factor; // (1+r)^1
             for (size_t i = 1; i < cashflows.size(); ++i)
             {
-                npv += cashflows[i] / discount_factor;
+                npv += static_cast<FloatType>(cashflows[i]) / discount_factor;
                 discount_factor *= growth_factor;
             }
         }
@@ -118,7 +120,7 @@ struct NpvCalculator
             double discount_factor = growth_factor; // Start with (1+r)^1 for t=1
             for (size_t i = 0; i < cashflows.size(); ++i)
             {
-                npv += cashflows[i] / discount_factor;
+                npv += static_cast<FloatType>(cashflows[i]) / discount_factor;
                 discount_factor *= growth_factor;
             }
         }
@@ -132,13 +134,12 @@ struct NpvCalculator
             return std::numeric_limits<double>::quiet_NaN();
 
         double derivative = 0.0;
-        double compound = 1.0 + rate;
+        double compound = (1.0 + rate);
 
-        // Start from i=1 since derivative of first term (i=0) is zero
         for (size_t i = 1; i < cashflows.size(); ++i)
         {
-            derivative += -cashflows[i] * i / compound;
             compound *= (1.0 + rate);
+            derivative += -static_cast<FloatType>(cashflows[i]) * i / compound;
         }
         return derivative;
     }
@@ -159,6 +160,8 @@ double npv(double rate, std::span<T> cashflows)
 template <typename T, typename D, DayCountType day_count>
 struct XnpvCalculator
 {
+    using FloatType = std::conditional_t<std::floating_point<T>, T, double>;
+
     XnpvCalculator(std::span<T> cashflows_, std::span<D> dates_)
         : cashflows(cashflows_)
         , dates(dates_)
@@ -180,7 +183,7 @@ struct XnpvCalculator
             if (time == 0.0)
                 npv += cashflows[i];
             else
-                npv += cashflows[i] / std::pow(1.0 + rate, time);
+                npv += static_cast<FloatType>(cashflows[i]) / std::pow(1.0 + rate, time);
         }
 
         return npv;
@@ -197,7 +200,7 @@ struct XnpvCalculator
         {
             double time = yearFraction<day_count>(dates[0], dates[i]);
             if (time != 0.0)
-                derivative -= cashflows[i] * time / std::pow(1.0 + rate, time + 1);
+                derivative -= static_cast<FloatType>(cashflows[i]) * time / std::pow(1.0 + rate, time + 1);
         }
 
         return derivative;
