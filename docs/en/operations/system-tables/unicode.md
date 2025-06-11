@@ -4,6 +4,7 @@ keywords: ['system table', 'unicode']
 slug: /operations/system-tables/unicode
 title: 'system.unicode'
 ---
+
 # system.unicode
 
 The `system.unicode` table is a virtual table that provides information about Unicode characters and their properties(https://unicode-org.github.io/icu/userguide/strings/properties.html). This table is generated on-the-fly.
