@@ -31,7 +31,7 @@ os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_port
 from integration.helpers.cluster import ClickHouseCluster
 from integration.helpers.postgres_utility import get_postgres_conn
 from generators import BuzzHouseGenerator
-from properties import modify_server_settings
+from properties import modify_server_settings, modify_user_settings
 
 
 def ordered_pair(value):
@@ -256,11 +256,19 @@ cluster = ClickHouseCluster(__file__)
 
 # Use random server settings sometimes
 server_settings = args.server_config
-modified_server_settings = False
+user_settings = args.user_config
+modified_server_settings = modified_user_settings = False
+generated_clusters = 0
 if server_settings is not None:
-    modified_server_settings, server_settings = modify_server_settings(
-        args, cluster, len(args.replica_values), is_private_binary, server_settings
+    modified_server_settings, server_settings, generated_clusters = (
+        modify_server_settings(
+            args, cluster, len(args.replica_values), is_private_binary, server_settings
+        )
     )
+    if generated_clusters > 0:
+        modified_user_settings, user_settings = modify_user_settings(
+            user_settings, generated_clusters
+        )
 
 dolor_main_configs = [
     "../config/server.crt",
@@ -292,7 +300,7 @@ for i in range(0, len(args.replica_values)):
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             storage_opt=None if args.storage_limit == "" else args.storage_limit,
             main_configs=dolor_main_configs,
-            user_configs=[args.user_config] if args.user_config is not None else [],
+            user_configs=[user_settings] if user_settings is not None else [],
             macros={"replica": args.replica_values[i], "shard": args.shard_values[i]},
         )
     )

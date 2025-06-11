@@ -494,8 +494,10 @@ def modify_server_settings(
     number_replicas: int,
     is_private_binary: bool,
     input_config_path: str,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, int]:
     modified = False
+    number_clusters = 0
+
     # Parse the existing XML file
     tree = ET.parse(input_config_path)
     root = tree.getroot()
@@ -642,6 +644,48 @@ def modify_server_settings(
                 modified = True
                 new_element = ET.SubElement(root, setting)
                 new_element.text = str(generator())
+
+    if modified:
+        ET.indent(tree, space="    ", level=0)  # indent tree
+        temp_path = None
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as temp_file:
+            temp_path = temp_file.name
+            # Write the modified XML to the temporary file
+            tree.write(temp_path, encoding="utf-8", xml_declaration=True)
+        return True, temp_path, number_clusters
+    return False, input_config_path, number_clusters
+
+
+def modify_user_settings(
+    input_config_path: str, number_clusters: int
+) -> tuple[bool, str]:
+    modified = False
+
+    # Parse the existing XML file
+    tree = ET.parse(input_config_path)
+    root = tree.getroot()
+    if root.tag != "clickhouse":
+        raise Exception("<clickhouse> element not found")
+
+    if number_clusters > 0:
+        modified = True
+        profiles_xml = root.find("profiles")
+        if profiles_xml is None:
+            profiles_xml = ET.SubElement(root, "profiles")
+        default_xml = profiles_xml.find("default")
+        if default_xml is None:
+            default_xml = ET.SubElement(profiles_xml, "default")
+        cluster_for_parallel_replicas_xml = default_xml.find(
+            "cluster_for_parallel_replicas"
+        )
+        if cluster_for_parallel_replicas_xml is None:
+            cluster_for_parallel_replicas_xml = ET.SubElement(
+                default_xml, "cluster_for_parallel_replicas"
+            )
+        cluster_for_parallel_replicas_xml.text = (
+            f"cluster{random.choice(range(0, number_clusters))}"
+        )
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree
