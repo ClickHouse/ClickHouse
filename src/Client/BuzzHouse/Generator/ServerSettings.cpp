@@ -682,12 +682,12 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
-    {"output_format_parquet_datetime_as_uint32", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_enum_as_byte_array", CHSetting(trueOrFalse, {}, false)},
-    {"output_format_parquet_fixed_string_as_fixed_byte_array", CHSetting(trueOrFalse, {}, false)},
-    {"output_format_parquet_parallel_encoding", CHSetting(trueOrFalse, {}, false)},
-    {"output_format_parquet_string_as_string", CHSetting(trueOrFalse, {}, false)},
-    {"output_format_parquet_use_custom_encoder", CHSetting(trueOrFalse, {}, false)},
+    {"output_format_parquet_datetime_as_uint32", trueOrFalseSettingNoOracle},
+    {"output_format_parquet_fixed_string_as_fixed_byte_array", trueOrFalseSettingNoOracle},
+    {"output_format_parquet_parallel_encoding", trueOrFalseSettingNoOracle},
+    {"output_format_parquet_string_as_string", trueOrFalseSettingNoOracle},
+    {"output_format_parquet_use_custom_encoder", trueOrFalseSettingNoOracle},
     {"output_format_parquet_version",
      CHSetting(
          [](RandomGenerator & rg)
