@@ -64,9 +64,9 @@ public:
         size_t max_count,
         double size_ratio)
     {
-        auto on_remove_entry_function = [this](const MappedPtr & mapped_ptr)
+        auto on_remove_entry_function = [this](size_t weight_loss, const MappedPtr & mapped_ptr)
         {
-            onEntryRemoval(mapped_ptr);
+            onEntryRemoval(weight_loss, mapped_ptr);
         };
 
         if (cache_policy_name.empty())
@@ -340,7 +340,7 @@ private:
 
     /// This is called when an entry is being evicted from the cache.
     /// Override this method if you want to handle individual entry removals from cache
-    virtual void onEntryRemoval(const MappedPtr &) { }
+    virtual void onEntryRemoval(size_t /*weight_loss*/, const MappedPtr &) { }
 };
 
 

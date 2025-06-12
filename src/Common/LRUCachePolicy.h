@@ -243,7 +243,7 @@ private:
 
             current_size_in_bytes -= cell.size;
             current_weight_lost += cell.size;
-            on_remove_entry_function(cell.value);
+            on_remove_entry_function(cell.size, cell.value);
 
             cells.erase(it);
             queue.pop_front();

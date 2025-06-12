@@ -60,14 +60,14 @@ public:
     }
 
 private:
-    /// Called for each individual cell being evicted from cache
-    void onEntryRemoval(const MappedPtr & mapped_ptr) override
+    /// Called for each individual entry being evicted from cache
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
     {
         /// File is the key of MarkCache, each removal means eviction of 1 file from the cache.
         ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles);
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, weight_loss);
 
         auto marks_in_compressed_file = std::static_pointer_cast<MarksInCompressedFile>(mapped_ptr);
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, MarksWeightFunction()(*marks_in_compressed_file));
         ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks, marks_in_compressed_file->getNumberOfMarks());
     }
 

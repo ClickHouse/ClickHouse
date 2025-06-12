@@ -90,10 +90,10 @@ public:
 
 private:
     /// Called for each individual entry being evicted from cache
-    void onEntryRemoval(const MappedPtr & mapped_ptr) override
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
     {
-        auto vector_similarity_index_cache_cell = std::static_pointer_cast<VectorSimilarityIndexCacheCell>(mapped_ptr);
-        ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheWeightLost, VectorSimilarityIndexCacheWeightFunction()(*vector_similarity_index_cache_cell));
+        ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheWeightLost, weight_loss);
+        UNUSED(mapped_ptr);
     }
 };
 
