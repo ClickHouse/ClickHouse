@@ -24,8 +24,8 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
 
 def file_size_value(max_val: int):
     def gen():
-        return str(threshold_generator(0.05, 0.3, 1, max_val)()) + random.choice(
-            ["ki", "Mi", "Gi"]
+        return str(threshold_generator(0.2, 0.2, 1, max_val)()) + random.choice(
+            ["ki", "ki", "Mi", "Gi"] # Increased probability
         )
 
     return gen
@@ -431,7 +431,7 @@ def add_single_disk(
 
         if disk_type == "cache":
             max_size_xml = ET.SubElement(next_disk, "max_size")
-            max_size_xml.text = file_size_value(10)()
+            max_size_xml.text = file_size_value(100)()
 
             # Add random settings
             if random.randint(1, 100) <= 70:

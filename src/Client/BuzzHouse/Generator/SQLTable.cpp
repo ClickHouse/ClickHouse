@@ -1274,13 +1274,6 @@ void StatementGenerator::generateEngineDetails(
 
                 sv->set_property("input_format_with_names_use_header");
                 sv->set_value("0");
-                if (b.isS3QueueEngine())
-                {
-                    SetValue * sv2 = svs->add_other_values();
-
-                    sv2->set_property("mode");
-                    sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
-                }
             }
             else if (
                 b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
