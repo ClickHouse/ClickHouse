@@ -136,13 +136,16 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
     return common_header;
 }
 
-ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
+ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
 
     // In case of cross-replication we don't know what database is used for the table.
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-    auto result_ast = query_node_typed.toAST({ .qualify_indentifiers_with_database = false });
+    auto result_ast = query_node_typed.toAST({
+        .qualify_indentifiers_with_database = false,
+        .set_subquery_cte_name = set_subquery_cte_name
+    });
 
     while (true)
     {
@@ -162,31 +165,13 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
     return result_ast;
 }
 
-static void removeCTEs(ASTPtr & ast)
-{
-    std::stack<IAST *> stack;
-    stack.push(ast.get());
-    while (!stack.empty())
-    {
-        auto * node = stack.top();
-        stack.pop();
-
-        if (auto * subquery = typeid_cast<ASTSubquery *>(node))
-            subquery->cte_name = {};
-
-        for (const auto & child : node->children)
-            stack.push(child.get());
-    }
-}
-
 ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
 {
-    auto ast = queryNodeToSelectQuery(query_node);
     /// Remove CTEs information from distributed queries.
     /// Now, if cte_name is set for subquery node, AST -> String serialization will only print cte name.
     /// But CTE is defined only for top-level query part, so may not be sent.
     /// Removing cte_name forces subquery to be always printed.
-    removeCTEs(ast);
+    auto ast = queryNodeToSelectQuery(query_node, /*set_subquery_cte_name=*/false);
     return ast;
 }
 
