@@ -14,6 +14,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 mapfile queries <<<"$($CLICKHOUSE_CURL -sSk "${CLICKHOUSE_URL}&default_format=LineAsString" -d "SELECT formatQuerySingleLine(replace(replace(query, '(default', '(test_shard_localhost'), '_log', '_log$')) FROM system.dashboards")"
 $CLICKHOUSE_CURL -sSk "${CLICKHOUSE_URL}" -d "SYSTEM FLUSH LOGS"
 for q in "${queries[@]}"; do
-  $CLICKHOUSE_CURL -sSk "${CLICKHOUSE_URL}&param_rounding=60&param_seconds=600&default_format=Null" -d "$q" || echo "$q" &
+  $CLICKHOUSE_CURL -sSk "${CLICKHOUSE_URL}&param_rounding=60&param_seconds=600&serialize_query_plan=0&default_format=Null" -d "$q" || echo "$q" &
 done
 wait
