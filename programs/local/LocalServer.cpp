@@ -964,17 +964,23 @@ void LocalServer::processConfig()
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
+        /// Case when --no-system-tables is no set - create system databases and attach all system tables.
         attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
 
-        // Background tasks are required for DDL operations like DROP VIEW SYNC, even in temporary mode (no --path).
-        // Only skip if --only-system-tables is requested.
-        if (!getClientConfiguration().has("only-system-tables"))
-        {
-            DatabaseCatalog::instance().createBackgroundTasks();
-            DatabaseCatalog::instance().startupBackgroundTasks();
-        }
+        /// Create background tasks for DDL operations like DROP VIEW SYNC, even in temporary mode (--path  not set)
+        /// without persistent storage
+        DatabaseCatalog::instance().createBackgroundTasks();
+        DatabaseCatalog::instance().startupBackgroundTasks();
+    }
+    else
+    {
+        /// Case when --no-system-tables or --only-system-tables is set and --path is not set.
+        /// Similarly, still need background tasks for DDL operations like DROP VIEW SYNC in temporaty mode (--path  not set)
+        /// without persistent storage
+        DatabaseCatalog::instance().createBackgroundTasks();
+        DatabaseCatalog::instance().startupBackgroundTasks();
     }
 
     std::string default_database = getClientConfiguration().getString("database", server_default_database);
