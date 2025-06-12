@@ -268,7 +268,7 @@ class JobConfigs:
         name=JobNames.BUILD,
         runs_on=["...from params..."],
         requires=[],
-        command="bash -c 'git config --global --add safe.directory $PWD && nix --extra-experimental-features \"nix-command flakes\" build .#default'",
+        command="bash -c 'git config --global --add safe.directory $PWD && nix --extra-experimental-features \"nix-command flakes\" build .#default' -L -v",
         run_in_docker="nixos/nix:latest+--env=HOME=/",
         timeout=3600 * 2,
         digest_config=Job.CacheDigestConfig(
