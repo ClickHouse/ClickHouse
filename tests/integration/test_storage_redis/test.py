@@ -411,8 +411,6 @@ def test_direct_join(started_cluster):
     drop_table("test_direct_join")
     drop_table("test_mt")
 
-    node.query
-
     # create table
     node.query(
         f"""
@@ -422,7 +420,6 @@ def test_direct_join(started_cluster):
             INSERT INTO TABLE test_mt VALUES (1);
         """
     )
-
 
     response = TSV.toMat(node.query("SELECT * FROM test_direct_join JOIN test_mt ON "
                                     "test_direct_join.k = test_mt.k FORMAT TSV"))

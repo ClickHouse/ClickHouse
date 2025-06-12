@@ -406,7 +406,7 @@ std::pair<RedisIterator, RedisArray> StorageRedis::scan(RedisIterator iterator, 
 RedisArray StorageRedis::multiGet(const RedisArray & keys) const
 {
     if (keys.isNull() || keys.size() == 0)
-        return{};
+        return {};
 
     auto connection = getRedisConnection(pool, configuration);
 
