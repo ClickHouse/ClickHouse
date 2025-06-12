@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Storages/IStorage.h>
-#include <arrow/flight/client.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/StorageConfiguration.h>
 #include <Core/Names.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageConfiguration.h>
+#include <Storages/StorageFactory.h>
+#include <arrow/flight/client.h>
 
 namespace DB
 {
@@ -42,11 +42,8 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context_,
-        bool async_write) override;
+    SinkToStoragePtr
+    write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool async_write) override;
 
     Names getColumnNames();
 
