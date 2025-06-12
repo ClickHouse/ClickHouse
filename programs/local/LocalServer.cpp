@@ -967,6 +967,14 @@ void LocalServer::processConfig()
         attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+
+        // Background tasks are required for DDL operations like DROP VIEW SYNC, even in temporary mode (no --path).
+        // Only skip if --only-system-tables is requested.
+        if (!getClientConfiguration().has("only-system-tables"))
+        {
+            DatabaseCatalog::instance().createBackgroundTasks();
+            DatabaseCatalog::instance().startupBackgroundTasks();
+        }
     }
 
     std::string default_database = getClientConfiguration().getString("database", server_default_database);
