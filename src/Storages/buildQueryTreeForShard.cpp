@@ -16,6 +16,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <IO/WriteHelpers.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -25,10 +26,8 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 
-
 namespace DB
 {
-
 namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
@@ -41,7 +40,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
 }
 
@@ -198,20 +196,11 @@ private:
 
         if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
-            std::optional<StorageID> resolved_remote_storage_id;
-
-            bool database_can_be_changed = distributed_storage->getCluster()->maybeCrossReplication();
-            if (database_can_be_changed)
-                resolved_remote_storage_id = StorageID{{}, distributed_storage->getRemoteTableName()};
-            else
-            {
-                StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(),
-                    distributed_storage->getRemoteTableName()};
-                resolved_remote_storage_id = getContext()->resolveStorageID(remote_storage_id);
-            }
-
+            StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(),
+                distributed_storage->getRemoteTableName()};
+            auto resolved_remote_storage_id = getContext()->resolveStorageID(remote_storage_id);
             const auto & distributed_storage_columns = table_node_typed.getStorageSnapshot()->metadata->getColumns();
-            auto storage = std::make_shared<StorageDummy>(*resolved_remote_storage_id, distributed_storage_columns);
+            auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_columns);
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
             if (auto table_expression_modifiers = table_node_typed.getTableExpressionModifiers())
                 replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
@@ -361,7 +350,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
 
 }
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
+QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
@@ -382,7 +371,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
         {
             QueryTreeNodePtr join_table_expression;
             const auto join_kind = join_node->getKind();
-            if (!allow_global_join_for_right_table || join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
+            if (join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
             {
                 join_table_expression = join_node->getRightTableExpression();
             }
@@ -392,7 +381,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
             else
             {
-                throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Unexpected global join kind: {}", toString(join_kind));
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Unexpected join kind: {}", join_kind);
             }
 
             auto subquery_node

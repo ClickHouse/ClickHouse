@@ -72,8 +72,6 @@ using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
-struct PartitionCommand;
-
 /**
  * Provide interface for reservation.
  */
@@ -384,22 +382,22 @@ public:
     virtual bool isSymlink(const String &) const
     {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method isSymlink is not implemented for disk type: {}", getDataSourceDescription().toString());
+            ErrorCodes::NOT_IMPLEMENTED, "Method isSymlink() is not implemented for disk type: {}", getDataSourceDescription().toString());
     }
 
     virtual bool isSymlinkNoThrow(const String &) const
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method isSymlinkNothrow is not implemented for disk type: {}",
+            "Method isSymlinkNothrow() is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
-    virtual void createDirectorySymlink(const String &, const String &)
+    virtual void createDirectoriesSymlink(const String &, const String &)
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDirectorySymlink is not implemented for disk type: {}",
+            "Method createDirectoriesSymlink() is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -407,20 +405,20 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method readSymlink is not implemented for disk type: {}",
+            "Method readSymlink() is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
     virtual bool equivalent(const String &, const String &) const
     {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent is not implemented for disk type: {}", getDataSourceDescription().toString());
+            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent() is not implemented for disk type: {}", getDataSourceDescription().toString());
     }
 
     virtual bool equivalentNoThrow(const String &, const String &) const
     {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent is not implemented for disk type: {}", getDataSourceDescription().toString());
+            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent() is not implemented for disk type: {}", getDataSourceDescription().toString());
     }
 
     /// Truncate file to specified size.
@@ -442,14 +440,9 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
-    /// If the disk is plain object storage.
-    virtual bool isPlain() const { return false; }
-
     virtual bool isWriteOnce() const { return false; }
 
     virtual bool supportsHardLinks() const { return true; }
-
-    virtual bool supportsPartitionCommand(const PartitionCommand & command) const;
 
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
@@ -464,10 +457,9 @@ public:
     virtual void startupImpl(ContextPtr) {}
 
     /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
-    /// but don't do it more frequently than the specified parameter.
     /// Note: for performance reasons, it's allowed to assume that only some subset of changes are possible
     /// (those that MergeTree tables can make).
-    virtual void refresh(UInt64 /* not_sooner_than_milliseconds */)
+    virtual void refresh()
     {
         /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
     }
@@ -501,7 +493,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method getMetadataStorage is not implemented for disk type: {}",
+            "Method getMetadataStorage() is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -535,7 +527,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method getObjectStorage is not implemented for disk type: {}",
+            "Method getObjectStorage() is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -546,7 +538,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDiskObjectStorage is not implemented for disk type: {}",
+            "Method createDiskObjectStorage() is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -568,7 +560,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method getS3StorageClient is not implemented for disk type: {}",
+            "Method getS3StorageClient() is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 

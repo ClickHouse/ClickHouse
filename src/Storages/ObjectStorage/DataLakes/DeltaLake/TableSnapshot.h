@@ -9,7 +9,6 @@
 #include <Common/Logger.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include "KernelPointerWrapper.h"
 #include "KernelHelper.h"
 #include <boost/noncopyable.hpp>
@@ -39,29 +38,24 @@ public:
     bool update();
 
     /// Iterate over DeltaLake data files.
-    DB::ObjectIterator iterate(
-        const DB::ActionsDAG * filter_dag,
-        DB::IDataLakeMetadata::FileProgressCallback callback,
-        size_t list_batch_size);
+    DB::ObjectIterator iterate();
 
     /// Get schema from DeltaLake table metadata.
-    const DB::NamesAndTypesList & getTableSchema() const;
+    const DB::NamesAndTypesList & getTableSchema();
     /// Get read schema derived from data files.
     /// (In most cases it would be the same as table schema).
-    const DB::NamesAndTypesList & getReadSchema() const;
+    const DB::NamesAndTypesList & getReadSchema();
     /// DeltaLake stores partition columns values not in the data files,
     /// but in data file path directory names.
     /// Therefore "table schema" would contain partition columns,
     /// but "read schema" would not.
-    const DB::Names & getPartitionColumns() const;
-    const DB::NameToNameMap & getPhysicalNamesMap() const;
+    const DB::Names & getPartitionColumns();
 
 private:
     class Iterator;
     using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
     using KernelSnapshot = KernelPointerWrapper<ffi::SharedSnapshot, ffi::free_snapshot>;
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
-    using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
 
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
@@ -70,16 +64,18 @@ private:
     mutable KernelExternEngine engine;
     mutable KernelSnapshot snapshot;
     mutable KernelScan scan;
-    mutable KernelGlobalScanState scan_state;
     mutable size_t snapshot_version;
 
-    mutable DB::NamesAndTypesList table_schema;
-    mutable DB::NameToNameMap physical_names_map;
-    mutable DB::NamesAndTypesList read_schema;
-    mutable DB::Names partition_columns;
+    std::optional<DB::NamesAndTypesList> table_schema;
+    std::optional<DB::NamesAndTypesList> read_schema;
+    std::optional<DB::Names> partition_columns;
 
     void initSnapshot() const;
     void initSnapshotImpl() const;
+    /// Both read schema and partition columns are loaded with the same data scan object,
+    /// therefore we load them together.
+    void loadReadSchemaAndPartitionColumns();
+    ffi::SharedSnapshot * getSnapshot();
 };
 
 /// TODO; Enable event tracing in DeltaKernel.
