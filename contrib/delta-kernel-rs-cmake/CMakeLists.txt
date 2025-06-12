@@ -25,7 +25,7 @@ endif()
 # * delta_kernel/cloud: s3 client
 clickhouse_import_crate(
     MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
-    FEATURES "default-engine, delta_kernel/cloud"
+    FEATURES "default-engine"
 )
 clickhouse_config_crate_flags(delta_kernel_ffi)
 
