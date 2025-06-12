@@ -48,18 +48,6 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
     {
         path = String{"/"};
     }
-
-    String relative_path = normalizePathAndGetAsRelative(path);
-    if (disk->existsDirectory(relative_path) || relative_path.empty())
-    {
-        return;
-    }
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Initializing path {} (normalized path: {}) at disk {} is not a directory",
-        path,
-        relative_path,
-        disk->getName());
 }
 
 std::vector<String> DiskWithPath::listAllFilesByPath(const String & any_path) const

@@ -7,7 +7,9 @@
 
 #include <Common/TypePromotion.h>
 
-#include <city.h>
+#include <DataTypes/IDataType.h>
+
+#include <Parsers/IAST_fwd.h>
 
 class SipHash;
 
@@ -16,14 +18,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int UNSUPPORTED_METHOD;
+    extern const int UNSUPPORTED_METHOD;
 }
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class WriteBuffer;
 
@@ -47,7 +43,7 @@ enum class QueryTreeNodeType : uint8_t
     ARRAY_JOIN,
     CROSS_JOIN,
     JOIN,
-    UNION,
+    UNION
 };
 
 /// Convert query tree node type to string
@@ -71,21 +67,6 @@ using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
 using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
 using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
 
-struct ConvertToASTOptions
-{
-    /// Add _CAST if constant literal type is different from column type
-    bool add_cast_for_constants = true;
-
-    /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
-    bool fully_qualified_identifiers = true;
-
-    /// Identifiers are qualified but database name is not added (`table.column`) if set to false.
-    bool qualify_indentifiers_with_database = true;
-
-    /// Set CTE name in ASTSubquery field.
-    bool set_subquery_cte_name = true;
-};
-
 class IQueryTreeNode : public TypePromotion<IQueryTreeNode>
 {
 public:
@@ -106,12 +87,12 @@ public:
       */
     virtual DataTypePtr getResultType() const
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query tree node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
     virtual void convertToNullable()
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query tree node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query node", getNodeTypeName());
     }
 
     struct CompareOptions
@@ -212,8 +193,20 @@ public:
       */
     String formatOriginalASTForErrorMessage() const;
 
+    struct ConvertToASTOptions
+    {
+        /// Add _CAST if constant literal type is different from column type
+        bool add_cast_for_constants = true;
+
+        /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
+        bool fully_qualified_identifiers = true;
+
+        /// Identifiers are qualified but database name is not added (`table.column`) if set to false.
+        bool qualify_indentifiers_with_database = true;
+    };
+
     /// Convert query tree to AST
-    ASTPtr toAST(const ConvertToASTOptions & options = {}) const;
+    ASTPtr toAST(const ConvertToASTOptions & options = { .add_cast_for_constants = true, .fully_qualified_identifiers = true, .qualify_indentifiers_with_database = true }) const;
 
     /// Convert query tree to AST and then format it for error message.
     String formatConvertedASTForErrorMessage() const;

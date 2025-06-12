@@ -40,7 +40,7 @@ SELECT simpleJSONExtractInt(json, 'foo') FROM jsons ORDER BY json;)",
 0
 -3
 5)"}},
-        .category = FunctionDocumentation::Category::JSON});
+        .category{"JSON"}});
     factory.registerAlias("visitParamExtractInt", "simpleJSONExtractInt");
 }
 

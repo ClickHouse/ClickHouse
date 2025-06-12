@@ -2,13 +2,13 @@
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="https://archive.ubuntu.com"
-RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
 
 
-RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client /usr/share/clickhouse/ && chmod 777 /etc/clickhouse-* /usr/share/clickhouse \
+RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client && chmod 777 /etc/clickhouse-* \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server && chmod 777 /var/log/clickhouse-server /var/lib/clickhouse
 
 RUN addgroup --gid 1000 clickhouse && adduser --uid 1000 --gid 1000 --disabled-password clickhouse
@@ -21,10 +21,6 @@ RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-
 # gnuplot - for perf tests
 # imagemagick - for perf tests
 # parallel - for perf tests
-
-# We need ca-certificates first to be able to update all repos. This is why it's run twice
-RUN apt-get update \
-    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
 
 # golang version 1.13 on Ubuntu 20 is enough for tests
 RUN apt-get update -y \
@@ -43,6 +39,8 @@ RUN apt-get update -y \
             mysql-client=8.0* \
             ncdu \
             netcat-openbsd \
+            nodejs \
+            npm \
             odbcinst \
             openjdk-11-jre-headless \
             openssl \
@@ -69,19 +67,7 @@ RUN apt-get update -y \
             ripgrep \
             gnuplot \
             imagemagick \
-            parallel
-
-RUN BRIDGE_VERSION='25.1.5.31' \
-    && ARCH=$(dpkg --print-architecture) \
-    && cd /tmp \
-    && wget "https://packages.clickhouse.com/deb/pool/main/c/clickhouse/clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb" \
-    && wget "https://packages.clickhouse.com/deb/pool/main/c/clickhouse/clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb" \
-    && dpkg -i clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb \
-    && rm clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb
-
-# Install Node.js 20 from NodeSource (azurite 3.34 fails with 24)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
+            parallel \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -127,15 +113,12 @@ ENV MINIO_ROOT_PASSWORD="clickhouse"
 RUN chmod 777 /home
 ENV HOME="/home"
 
-RUN npm install -g azurite@3.34.0 \
-    && npm install -g tslib
+RUN npm install -g azurite@3.30.0 \
+    && npm install -g tslib && npm install -g node
 
 ENV PYTHONPATH=".:./ci"
-
-#USER clickhouse
+USER clickhouse
 
 # A directory for cache
 RUN mkdir /dev/shm/clickhouse
 
-COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
-ENV PATH="/opt/gdb/bin:${PATH}"

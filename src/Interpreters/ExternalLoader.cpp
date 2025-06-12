@@ -676,7 +676,6 @@ public:
             }
         }
 
-        size_t loaded_or_scheduled_count = 0;
         /// Iterate through all the objects again and either start loading or just set `next_update_time`.
         {
             std::lock_guard lock{mutex};
@@ -701,13 +700,11 @@ public:
 
                         /// Object was modified or it was failed to reload last time, so it should be reloaded.
                         startLoading(info);
-                        ++loaded_or_scheduled_count;
                     }
                     else if (info.failed())
                     {
                         /// Object was never loaded successfully and should be reloaded.
                         startLoading(info);
-                        ++loaded_or_scheduled_count;
                     }
                     else
                     {
@@ -716,7 +713,6 @@ public:
                 }
             }
         }
-        LOG_DEBUG(log, "Loaded or scheduled for load {} objects", loaded_or_scheduled_count);
     }
 
 private:
@@ -759,7 +755,6 @@ private:
                 result.exception = exception;
                 result.loading_start_time = loading_start_time;
                 result.last_successful_update_time = last_successful_update_time;
-                result.error_count = error_count;
                 result.loading_duration = loadingDuration();
                 result.config = config;
                 return result;
@@ -1220,8 +1215,8 @@ class ExternalLoader::PeriodicUpdater : private boost::noncopyable
 public:
     static constexpr UInt64 check_period_sec = 5;
 
-    PeriodicUpdater(LoadablesConfigReader & config_files_reader_, LoadingDispatcher & loading_dispatcher_, LoggerPtr log_)
-        : config_files_reader(config_files_reader_), loading_dispatcher(loading_dispatcher_), log(log_)
+    PeriodicUpdater(LoadablesConfigReader & config_files_reader_, LoadingDispatcher & loading_dispatcher_)
+        : config_files_reader(config_files_reader_), loading_dispatcher(loading_dispatcher_)
     {
     }
 
@@ -1232,22 +1227,12 @@ public:
         std::unique_lock lock{mutex};
         enabled = enable_;
 
-        LOG_DEBUG(log, "Periodic updates {}", enabled ? "enabled" : "disabled");
-
         if (enable_)
         {
             if (!thread.joinable())
             {
-                try
-                {
-                    /// Starts the thread which will do periodic updates.
-                    thread = ThreadFromGlobalPool{&PeriodicUpdater::doPeriodicUpdates, this};
-                }
-                catch (Exception & e)
-                {
-                    e.addMessage("while enabling periodic updates");
-                    throw;
-                }
+                /// Starts the thread which will do periodic updates.
+                thread = ThreadFromGlobalPool{&PeriodicUpdater::doPeriodicUpdates, this};
             }
         }
         else
@@ -1269,33 +1254,19 @@ private:
     {
         setThreadName("ExterLdrReload");
 
-        LOG_DEBUG(log, "Starting periodic updates");
-        SCOPE_EXIT_SAFE({
-            LOG_DEBUG(log, "Stopped periodic updates (enabled: {})", enabled);
-        });
-
         std::unique_lock lock{mutex};
         auto pred = [this] { return !enabled; };
         while (!event.wait_for(lock, std::chrono::seconds(check_period_sec), pred))
         {
             lock.unlock();
-            try
-            {
-                loading_dispatcher.setConfiguration(config_files_reader.read());
-                loading_dispatcher.reloadOutdated();
-            }
-            catch (...)
-            {
-                LOG_ERROR(log, "Received uncaught exception: {}", getCurrentExceptionMessage(true));
-            }
+            loading_dispatcher.setConfiguration(config_files_reader.read());
+            loading_dispatcher.reloadOutdated();
             lock.lock();
         }
     }
 
     LoadablesConfigReader & config_files_reader;
     LoadingDispatcher & loading_dispatcher;
-    LoggerPtr log;
-
     mutable std::mutex mutex;
     bool enabled = false;
     ThreadFromGlobalPool thread;
@@ -1306,7 +1277,7 @@ private:
 ExternalLoader::ExternalLoader(const String & type_name_, LoggerPtr log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(type_name_, log_, *this))
-    , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher, log_))
+    , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
     , type_name(type_name_)
     , log(log_)
 {
