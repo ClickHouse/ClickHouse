@@ -60,6 +60,9 @@ class Job:
 
         parameter: Any = None
 
+        # Hacky way to start integrating Nix build, FIXME
+        is_nix_build: bool = False
+
         # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
 

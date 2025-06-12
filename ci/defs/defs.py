@@ -287,6 +287,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
     ARM_TIDY = "arm_tidy"
+    AMD_NIX = "amd_nix"
     AMD_DARWIN = "amd_darwin"
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"

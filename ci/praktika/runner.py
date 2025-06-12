@@ -221,6 +221,7 @@ class Runner:
                 job.run_in_docker.split("+")[1:],
             )
             from_root = "root" in docker_settings
+            from_root = from_root or job.is_nix_build
             settings = [s for s in docker_settings if s.startswith("--")]
             if ":" in job.run_in_docker:
                 docker_name, docker_tag = job.run_in_docker.split(":")

@@ -264,6 +264,26 @@ class JobConfigs:
             RunnerLabels.BUILDER_ARM,  # fuzzers
         ],
     )
+    nix_build_job = Job.Config(
+        name=JobNames.BUILD,
+        runs_on=["...from params..."],
+        requires=[],
+        command="bash -c 'git config --global --add safe.directory $PWD && nix --extra-experimental-features \"nix-command flakes\" build .#default'",
+        run_in_docker="nixos/nix:latest+--env=HOME=/",
+        timeout=3600 * 2,
+        digest_config=build_digest_config,
+        is_nix_build=True,
+    ).parametrize(
+        parameter=[
+            BuildTypes.AMD_NIX,
+        ],
+        provides=[
+            [],
+        ],
+        runs_on=[
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
+        ],
+    )
     builds_for_tests = [b.name for b in build_jobs] + [tidy_build_jobs[0]]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
