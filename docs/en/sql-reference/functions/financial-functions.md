@@ -8,7 +8,7 @@ title: 'Financial Functions'
 
 # Financial Functions
 
-## irr {#irr}
+## financialInternalRateOfReturn {#financialInternalRateOfReturn}
 
 Calculates the Internal Rate of Return (IRR) for a series of cash flows occurring at regular intervals. IRR is the discount rate at which the Net Present Value (NPV) equals zero.
 
@@ -21,7 +21,7 @@ $$
 **Syntax**
 
 ```sql
-irr(cashflows[, guess])
+financialInternalRateOfReturn(cashflows[, guess])
 ```
 
 **Arguments**
@@ -42,21 +42,21 @@ irr(cashflows[, guess])
 
 Basic usage:
 ```sql
-SELECT irr([-100000, 25000, 25000, 25000, 25000, 25000])
+SELECT financialInternalRateOfReturn([-100000, 25000, 25000, 25000, 25000, 25000]);
 ```
 ```text
-┌─irr([-100000_00, 25000])─┐
-│      0.07930826116052854 │
+┌─financialInt_00, 25000])─┐
+│      0.07930826116052862 │
 └──────────────────────────┘
 ```
 
 With initial guess:
 ```sql
-SELECT irr([-100, 60, 60], 0.2)
+SELECT financialInternalRateOfReturn([-100, 60, 60], 0.2);
 ```
 ```text
-┌─irr([-100, 60, 60], 0.2)─┐
-│       0.1306623862918073 │
+┌─financialInt_, 60], 0.2)─┐
+│      0.13066238629180732 │
 └──────────────────────────┘
 ```
 
@@ -66,7 +66,7 @@ SELECT irr([-100, 60, 60], 0.2)
 - At least one cash flow must be negative and one must be positive for a meaningful IRR calculation.
 
 
-## xirr {#xirr}
+## financialInternalRateOfReturnExtended {#financialInternalRateOfReturnExtended}
 
 Calculates the Extended Internal Rate of Return (XIRR) for a series of cash flows occurring at irregular intervals. XIRR is the discount rate at which the net present value (NPV) of all cash flows equals zero.
 
@@ -79,7 +79,7 @@ $$
 **Syntax**
 
 ```sql
-xirr(cashflows, dates[, guess[, daycount]])
+financialInternalRateOfReturnExtended(cashflows, dates[, guess[, daycount]])
 ```
 
 **Arguments**
@@ -105,22 +105,21 @@ xirr(cashflows, dates[, guess[, daycount]])
 
 Basic usage:
 ```sql
-SELECT xirr(
+SELECT financialInternalRateOfReturnExtended(
     [-10000, 5750, 4250, 3250],
     [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]
 );
 ```
 ```text
-┌─xirr([-10000_1-02-15')])─┐
+┌─financialInt_1-02-15')])─┐
 │       0.6342972615260243 │
 └──────────────────────────┘
-
 ```
 
 Using different day count convention:
 ```sql
 SELECT round(
-    xirr([100000, -110000],
+    financialInternalRateOfReturnExtended([100000, -110000],
     [toDate('2020-01-01'), toDate('2021-01-01')],
     0.1,
     'ACT_365_25'
@@ -137,7 +136,7 @@ SELECT round(
 - The function uses Newton-Raphson and TOMS748 methods for finding the root.
 - The dates array must be sorted in ascending order with unique values.
 
-## xnpv {#xnpv}
+## financialNetPresentValueExtended {#financialNetPresentValueExtended}
 
 Calculates the Extended Net Present Value (XNPV) for a series of cash flows occurring at irregular intervals. XNPV considers the specific timing of each cash flow when calculating present value.
 
@@ -150,7 +149,7 @@ $$
 **Syntax**
 
 ```sql
-xnpv(rate, cashflows, dates[, daycount])
+financialNetPresentValueExtended(rate, cashflows, dates[, daycount])
 ```
 
 **Arguments**
@@ -170,28 +169,28 @@ xnpv(rate, cashflows, dates[, daycount])
 
 Basic usage:
 ```sql
-SELECT xnpv(0.1, [-10_000., 5750., 4250., 3250.], 
-    [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')])
+SELECT financialNetPresentValueExtended(0.1, [-10_000., 5750., 4250., 3250.], 
+    [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]);
 ```
 ```text
-┌─xnpv(0.1, [-_1-02-15')])─┐
+┌─financialNet_1-02-15')])─┐
 │        2506.579458169746 │
 └──────────────────────────┘
 ```
 
 Using different day count convention:
 ```sql
-SELECT xnpv(0.1, [-10_000., 5750., 4250., 3250.], 
+SELECT financialNetPresentValueExtended(0.1, [-10_000., 5750., 4250., 3250.], 
     [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 
-    'ACT_365_25')
+    'ACT_365_25');
 ```
 ```text
-┌─xnpv(0.1, [-_CT_365_25')─┐
+┌─financialNet_CT_365_25')─┐
 │        2507.067268742502 │
 └──────────────────────────┘
 ```
 
-## npv {#npv}
+## financialNetPresentValue {#financialNetPresentValue}
 
 Calculates the Net Present Value (NPV) of a series of cash flows assuming equal time intervals between each cash flow.
 
@@ -210,7 +209,7 @@ $$
 **Syntax**
 
 ```sql
-npv(rate, cashflows[, start_from_zero])
+financialNetPresentValue(rate, cashflows[, start_from_zero])
 ```
 
 **Arguments**
@@ -227,21 +226,21 @@ npv(rate, cashflows[, start_from_zero])
 
 Basic usage:
 ```sql
-SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.])
+SELECT financialNetPresentValue(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.]);
 ```
 ```text
-┌─npv(0.08, [-_., 30000.])─┐
+┌─financialNet_., 30000.])─┐
 │       3065.2226681795255 │
 └──────────────────────────┘
 ```
 
 With start_from_zero = false (Excel compatibility mode):
 ```sql
-SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False)
+SELECT financialNetPresentValue(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False);
 ```
 ```text
-┌─npv(0.08, [-_30000.], 0)─┐
-│        2838.169137203262 │
+┌─financialNet_30000.], 0)─┐
+│       2838.1691372032656 │
 └──────────────────────────┘
 ```
 

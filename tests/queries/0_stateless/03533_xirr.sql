@@ -1,29 +1,29 @@
-SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6) AS xirr_rate;
-SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 0.5), 6) AS xirr_rate;
-SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate;
+SELECT round(financialInternalRateOfReturnExtended([-10000, 5750, 4250, 3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6) AS xirr_rate;
+SELECT round(financialInternalRateOfReturnExtended([-10000, 5750, 4250, 3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 0.5), 6) AS xirr_rate;
+SELECT round(financialInternalRateOfReturnExtended([-10000, 5750, 4250, 3250], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate;
 
 SELECT 'Different day count modes:';
-SELECT round(xirr([100000, -110000], [toDate('2020-01-01'), toDate('2021-01-01')], 0.1, 'ACT_365F'), 6) AS xirr_365,
-    round(xirr([100000, -110000], [toDate('2020-01-01'), toDate('2021-01-01')], 0.1, 'ACT_365_25'), 6) AS xirr_365_25;
+SELECT round(financialInternalRateOfReturnExtended([100000, -110000], [toDate('2020-01-01'), toDate('2021-01-01')], 0.1, 'ACT_365F'), 6) AS xirr_365,
+    round(financialInternalRateOfReturnExtended([100000, -110000], [toDate('2020-01-01'), toDate('2021-01-01')], 0.1, 'ACT_365_25'), 6) AS xirr_365_25;
 
-SELECT xirr(123, toDate('2020-01-01')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT xirr([123], toDate('2020-01-01')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT xirr(123, [toDate('2020-01-01')]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT round(xirr([-10000], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT round(xirr([-10000, NULL, 4250, 3250], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT xirr([-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 1);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT xirr([-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 1.0, 'QWERTY');  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialInternalRateOfReturnExtended(123, toDate('2020-01-01')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialInternalRateOfReturnExtended([123], toDate('2020-01-01')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialInternalRateOfReturnExtended(123, [toDate('2020-01-01')]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT round(financialInternalRateOfReturnExtended([-10000], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT round(financialInternalRateOfReturnExtended([-10000, NULL, 4250, 3250], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialInternalRateOfReturnExtended([-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 1);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialInternalRateOfReturnExtended([-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 1.0, 'QWERTY');  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'Zero cashflow entries -> NaN:';
-SELECT xirr([]::Array(Float32), []::Array(Date));
+SELECT financialInternalRateOfReturnExtended([]::Array(Float32), []::Array(Date));
 SELECT 'Just one cashflow entry -> NaN:';
-SELECT xirr([-10000], [toDate('2020-01-01')]);
+SELECT financialInternalRateOfReturnExtended([-10000], [toDate('2020-01-01')]);
 SELECT 'Zero cashflow -> NaN:';
-SELECT xirr([-0., 0.], [toDate('2020-01-01'), toDate('2020-01-02')]);
+SELECT financialInternalRateOfReturnExtended([-0., 0.], [toDate('2020-01-01'), toDate('2020-01-02')]);
 SELECT 'Unsorted dates -> NaN:';
-SELECT round(xirr([-10000, 5750, 4250, 3250], [toDate('2025-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6) AS xirr_rate;
+SELECT round(financialInternalRateOfReturnExtended([-10000, 5750, 4250, 3250], [toDate('2025-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6) AS xirr_rate;
 SELECT 'Non-unique dates -> NaN:';
-SELECT xirr([-100, 10], [toDate('2020-01-01'), toDate('2020-01-01')]);
+SELECT financialInternalRateOfReturnExtended([-100, 10], [toDate('2020-01-01'), toDate('2020-01-01')]);
 
 CREATE TABLE IF NOT EXISTS 3533_xirr_test (
     tag String,
@@ -53,12 +53,12 @@ INSERT INTO 3533_xirr_test VALUES
 
 SELECT
     tag,
-    round( xirr(groupArray(value), groupArray(date)), 6) AS result_f64_date,
-    round( xirr(groupArray(value), groupArray(date32)), 6) AS result_f64_date32,
-    round( xirr(groupArray(toFloat32(value)), groupArray(date)), 6) AS result_f32_date,
-    round( xirr(groupArray(toFloat32(value)), groupArray(date32)), 6) AS result_f32_date32,
-    round( xirr(groupArray(toInt64(value)), groupArray(date)), 6) AS result_i64_date,
-    round( xirr(groupArray(toInt64(value)), groupArray(date32)), 6) AS result_i64_date32
+    round( financialInternalRateOfReturnExtended(groupArray(value), groupArray(date)), 6) AS result_f64_date,
+    round( financialInternalRateOfReturnExtended(groupArray(value), groupArray(date32)), 6) AS result_f64_date32,
+    round( financialInternalRateOfReturnExtended(groupArray(toFloat32(value)), groupArray(date)), 6) AS result_f32_date,
+    round( financialInternalRateOfReturnExtended(groupArray(toFloat32(value)), groupArray(date32)), 6) AS result_f32_date32,
+    round( financialInternalRateOfReturnExtended(groupArray(toInt64(value)), groupArray(date)), 6) AS result_i64_date,
+    round( financialInternalRateOfReturnExtended(groupArray(toInt64(value)), groupArray(date32)), 6) AS result_i64_date32
 FROM (
     SELECT
         tag,
@@ -72,27 +72,27 @@ GROUP BY tag
 ORDER BY tag;
 
 SELECT 'IRR';
-SELECT irr(123);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT irr([1,2,NULL]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT irr([]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT [-100, 39, 59, 55, 20] as cf, round(irr(cf), 6) as irr_rate, round(npv(irr_rate, cf), 6) as npv_from_irr;
-SELECT irr([0., 39., 59., 55., 20.]);
+SELECT financialInternalRateOfReturn(123);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialInternalRateOfReturn([1,2,NULL]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialInternalRateOfReturn([]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT [-100, 39, 59, 55, 20] as cf, round(financialInternalRateOfReturn(cf), 6) as irr_rate, round(financialNetPresentValue(irr_rate, cf), 6) as financialNetPresentValue_from_irr;
+SELECT financialInternalRateOfReturn([0., 39., 59., 55., 20.]);
 
 SELECT 'XNPV:';
-SELECT xnpv(0.1, 123., [toDate('2020-01-01')]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT xnpv(0.1, [123.], toDate('2020-01-01')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT xnpv(0.1, [-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 'QWERTY'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT xnpv(0.1, [], []); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialNetPresentValueExtended(0.1, 123., [toDate('2020-01-01')]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialNetPresentValueExtended(0.1, [123.], toDate('2020-01-01')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialNetPresentValueExtended(0.1, [-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 'QWERTY'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialNetPresentValueExtended(0.1, [], []); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT xnpv(0.1, [-10], [toDate('2020-01-01')]);
-SELECT xnpv(0.1, [-0., 0.], [toDate('2020-01-01'), toDate('2020-01-02')]);
-SELECT round(xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6);
-SELECT round(xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 'ACT_365_25'), 6);
+SELECT financialNetPresentValueExtended(0.1, [-10], [toDate('2020-01-01')]);
+SELECT financialNetPresentValueExtended(0.1, [-0., 0.], [toDate('2020-01-01'), toDate('2020-01-02')]);
+SELECT round(financialNetPresentValueExtended(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6);
+SELECT round(financialNetPresentValueExtended(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 'ACT_365_25'), 6);
 
 SELECT tag,
-    round(xnpv(any(r), groupArray(value), groupArray(date)), 6) AS xnpv_f64_date,
-    round(xnpv(any(r), groupArray(value), groupArray(date32)), 6) AS xnpv_f64_date32,
-    round(xnpv(any(toFloat32(r)), groupArray(toFloat32(value)), groupArray(date)), 6) AS xnpv_f32_date
+    round(financialNetPresentValueExtended(any(r), groupArray(value), groupArray(date)), 6) AS financialNetPresentValueExtended_f64_date,
+    round(financialNetPresentValueExtended(any(r), groupArray(value), groupArray(date32)), 6) AS financialNetPresentValueExtended_f64_date32,
+    round(financialNetPresentValueExtended(any(toFloat32(r)), groupArray(toFloat32(value)), groupArray(date)), 6) AS financialNetPresentValueExtended_f32_date
 FROM (
     SELECT
         tag,
@@ -108,18 +108,18 @@ ORDER BY tag;
 
 
 SELECT 'NPV:';
-SELECT npv(0.1, 123., True); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT npv(0.1, [1.,2.], 2.); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT npv(0.1, [1.,NULL]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT npv(0.1, []); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.]), 6);
-SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], True), 6);
-SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False), 6);
+SELECT financialNetPresentValue(0.1, 123., True); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialNetPresentValue(0.1, [1.,2.], 2.); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialNetPresentValue(0.1, [1.,NULL]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT financialNetPresentValue(0.1, []); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT round(financialNetPresentValue(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.]), 6);
+SELECT round(financialNetPresentValue(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], True), 6);
+SELECT round(financialNetPresentValue(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False), 6);
 
 SELECT tag,
-    round(npv(any(r), groupArray(value)), 6) AS xnpv_f64_date,
-    round(npv(any(r), groupArray(value)), 6) AS xnpv_f64_date32,
-    round(npv(any(toFloat32(r)), groupArray(toFloat32(value))), 6) AS xnpv_f32_date
+    round(financialNetPresentValue(any(r), groupArray(value)), 6) AS financialNetPresentValueExtended_f64_date,
+    round(financialNetPresentValue(any(r), groupArray(value)), 6) AS financialNetPresentValueExtended_f64_date32,
+    round(financialNetPresentValue(any(toFloat32(r)), groupArray(toFloat32(value))), 6) AS financialNetPresentValueExtended_f32_date
 FROM (
     SELECT
         tag,
@@ -137,9 +137,9 @@ ORDER BY tag;
 DROP TABLE IF EXISTS 3533_xirr_test;
 
 SELECT 'Excel docs example:';
-SELECT round(npv(0.1, [-10000, 3000, 4200, 6800], False), 6);
-SELECT round(npv(0.08, [8000., 9200., 10000., 12000., 14500.], False), 6) - 40000;
-SELECT round(xnpv(0.09, [-10_000, 2750, 4250, 3250, 2750], [toDate('2008-01-01'), toDate('2008-03-01'), toDate('2008-10-30'), toDate('2009-02-15'), toDate('2009-04-01')], 'ACT_365F'), 6);
-SELECT round(irr([-70000, 12000, 15000, 18000, 21000, 26000]), 6);
-SELECT round(xirr([-10000, 2750, 4250, 3250, 2750], [toDate32('2008-01-01'), toDate32('2008-03-01'), toDate32('2008-10-30'), toDate32('2009-02-15'), toDate32('2009-04-01')]), 6);
+SELECT round(financialNetPresentValue(0.1, [-10000, 3000, 4200, 6800], False), 6);
+SELECT round(financialNetPresentValue(0.08, [8000., 9200., 10000., 12000., 14500.], False), 6) - 40000;
+SELECT round(financialNetPresentValueExtended(0.09, [-10_000, 2750, 4250, 3250, 2750], [toDate('2008-01-01'), toDate('2008-03-01'), toDate('2008-10-30'), toDate('2009-02-15'), toDate('2009-04-01')], 'ACT_365F'), 6);
+SELECT round(financialInternalRateOfReturn([-70000, 12000, 15000, 18000, 21000, 26000]), 6);
+SELECT round(financialInternalRateOfReturnExtended([-10000, 2750, 4250, 3250, 2750], [toDate32('2008-01-01'), toDate32('2008-03-01'), toDate32('2008-10-30'), toDate32('2009-02-15'), toDate32('2009-04-01')]), 6);
 

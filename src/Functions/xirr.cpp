@@ -374,7 +374,7 @@ void dispatchCashflowDate(const IColumn * cashflow_data, const IColumn * date_da
 class FunctionXirr : public IFunction
 {
 public:
-    static constexpr auto name = "xirr";
+    static constexpr auto name = "financialInternalRateOfReturnExtended";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionXirr>(); }
 
     String getName() const override { return name; }
@@ -492,7 +492,7 @@ public:
 class FunctionIRR : public IFunction
 {
 public:
-    static constexpr auto name = "irr";
+    static constexpr auto name = "financialInternalRateOfReturn";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIRR>(); }
 
     String getName() const override { return name; }
@@ -588,7 +588,7 @@ public:
 class FunctionXnpv : public IFunction
 {
 public:
-    static constexpr auto name = "xnpv";
+    static constexpr auto name = "financialNetPresentValueExtended";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionXnpv>(); }
 
     String getName() const override { return name; }
@@ -706,7 +706,7 @@ public:
 class FunctionNPV : public IFunction
 {
 public:
-    static constexpr auto name = "npv";
+    static constexpr auto name = "financialNetPresentValue";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNPV>(); }
 
     String getName() const override { return name; }
