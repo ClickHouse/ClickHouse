@@ -1,0 +1,6 @@
+if(ENABLE_LEXER_TEST)
+    add_executable(lexer_test main.c)
+    target_include_directories(lexer_test PRIVATE ${CMAKE_SOURCE_DIR}/src/Parsers)
+    target_compile_options(lexer_test PRIVATE -std=c99 -Wno-vla -Wno-declaration-after-statement)
+    target_link_libraries(lexer_test PRIVATE lexer-c)
+endif()
