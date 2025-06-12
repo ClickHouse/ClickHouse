@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Processors/ISource.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Processors/ISource.h>
 #include <arrow/flight/api.h>
 #include <arrow/table.h>
 
