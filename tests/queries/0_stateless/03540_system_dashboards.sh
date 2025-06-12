@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-# - no-parallel - to avoid failures for flaky check
+# Tags: no-parallel, no-flaky-check
+# - no-parallel - can be quite intense
+# - no-flaky-check - too slow under ASan
 
 # Check that all queries from system.dashboards are correct
 
