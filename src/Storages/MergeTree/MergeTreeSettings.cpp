@@ -2063,7 +2063,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             index_granularity.value);
     }
 
-    if (merge_max_block_size < 1)
+    if (merge_max_block_size <= 0)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
