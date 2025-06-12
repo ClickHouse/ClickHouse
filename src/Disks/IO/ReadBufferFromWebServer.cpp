@@ -107,7 +107,7 @@ bool ReadBufferFromWebServer::nextImpl()
         }
     }
 
-    chassert(internal_buffer.size(), fmt::format("use_external_buffer: {}", use_external_buffer));
+    chassert(!internal_buffer.empty(), fmt::format("use_external_buffer: {}", use_external_buffer));
 
     if (use_external_buffer)
     {
