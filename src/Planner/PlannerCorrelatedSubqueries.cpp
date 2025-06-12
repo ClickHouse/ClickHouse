@@ -9,12 +9,10 @@
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinInfo.h>
-#include <Interpreters/Context.h>
 
 #include <Parsers/SelectUnionMode.h>
 
@@ -469,8 +467,7 @@ void addStepForResultRenaming(
 
     const auto & result_column = subquery_result_columns[0];
     auto expected_result_type = correlated_subquery.query_tree->getResultType();
-    /// Scalar correlated subquery must return nullable result. See method `QueryNode::getResultType()` for details.
-    if (!expected_result_type->equals(*makeNullableOrLowCardinalityNullableSafe(result_column.type)))
+    if (!expected_result_type->equals(*result_column.type))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected {} as correlated subquery result, but got {}",
@@ -479,20 +476,8 @@ void addStepForResultRenaming(
 
     ActionsDAG dag(subquery_result_columns);
 
-    const ActionsDAG::Node * result_node = nullptr;
-    if (!expected_result_type->equals(*result_column.type))
-    {
-        result_node = &dag.addCast(
-            *dag.getOutputs()[0],
-            expected_result_type,
-            correlated_subquery.action_node_name);
-    }
-    else
-    {
-        result_node = &dag.addAlias(*dag.getOutputs()[0], correlated_subquery.action_node_name);
-    }
-
-    dag.getOutputs() = { result_node };
+    const auto * alias_node = &dag.addAlias(*dag.getOutputs()[0], correlated_subquery.action_node_name);
+    dag.getOutputs() = { alias_node };
 
     auto expression_step = std::make_unique<ExpressionStep>(header, std::move(dag));
     expression_step->setStepDescription("Create correlated subquery result alias");

@@ -62,7 +62,6 @@ void registerOutputFormatCapnProto(FormatFactory & factory)
                 format_settings);
     });
     factory.markOutputFormatNotTTYFriendly("CapnProto");
-    factory.setContentType("CapnProto", "application/octet-stream");
 }
 
 }

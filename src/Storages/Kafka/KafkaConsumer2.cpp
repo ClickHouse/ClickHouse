@@ -6,6 +6,7 @@
 #include <cppkafka/cppkafka.h>
 #include <cppkafka/topic_partition_list.h>
 #include <fmt/ostream.h>
+#include <boost/algorithm/string/join.hpp>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
@@ -14,9 +15,21 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 
+#include <algorithm>
+#include <iterator>
+
+
+namespace CurrentMetrics
+{
+extern const Metric KafkaAssignedPartitions;
+extern const Metric KafkaConsumersWithAssignment;
+}
 
 namespace ProfileEvents
 {
+extern const Event KafkaRebalanceRevocations;
+extern const Event KafkaRebalanceAssignments;
+extern const Event KafkaRebalanceErrors;
 extern const Event KafkaMessagesPolled;
 extern const Event KafkaCommitFailures;
 extern const Event KafkaCommits;
@@ -28,18 +41,14 @@ namespace DB
 using namespace std::chrono_literals;
 static constexpr auto EVENT_POLL_TIMEOUT = 50ms;
 static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
-static constexpr auto GET_KAFKA_METADATA_TIMEOUT_MS = 1000ms;
+
 
 bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) const
 {
     return std::tie(topic, partition_id, offset) < std::tie(other.topic, other.partition_id, other.offset);
 }
 
-// BROKER-SIDE REBALANCE REMOVED
-//
-// We no longer rely on Kafka’s group rebalance callbacks
-// (assignment/revocation).  All partition assignment
-// is now driven explicitly by StorageKafka2 via ZooKeeper locks.
+
 KafkaConsumer2::KafkaConsumer2(
     ConsumerPtr consumer_,
     LoggerPtr log_,
@@ -55,11 +64,70 @@ KafkaConsumer2::KafkaConsumer2(
     , current(messages.begin())
     , topics(topics_)
 {
+    // called (synchronously, during poll) when we enter the consumer group
+    consumer->set_assignment_callback(
+        [this](const cppkafka::TopicPartitionList & topic_partitions)
+        {
+            CurrentMetrics::add(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
+            ProfileEvents::increment(ProfileEvents::KafkaRebalanceAssignments);
+
+            if (topic_partitions.empty())
+            {
+                LOG_INFO(log, "Got empty assignment: Not enough partitions in the topic for all consumers?");
+            }
+            else
+            {
+                LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
+                CurrentMetrics::add(CurrentMetrics::KafkaConsumersWithAssignment, 1);
+            }
+
+            chassert(!assignment.has_value());
+
+            assignment.emplace();
+            assignment->reserve(topic_partitions.size());
+            needs_offset_update = true;
+            for (const auto & topic_partition : topic_partitions)
+            {
+                assignment->push_back(
+                    TopicPartition{topic_partition.get_topic(), topic_partition.get_partition(), topic_partition.get_offset()});
+            }
+
+            // We need to initialize the queues here in order to detach them from the consumer queue. Otherwise `pollEvents` might eventually poll actual messages also.
+            initializeQueues(topic_partitions);
+        });
+
+    // called (synchronously, during poll) when we leave the consumer group
+    consumer->set_revocation_callback(
+        [this](const cppkafka::TopicPartitionList & topic_partitions)
+        {
+            CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
+            ProfileEvents::increment(ProfileEvents::KafkaRebalanceRevocations);
+
+            // Rebalance is happening now, and now we have a chance to finish the work
+            // with topics/partitions we were working with before rebalance
+            LOG_TRACE(log, "Rebalance initiated. Revoking partitions: {}", topic_partitions);
+
+            if (!topic_partitions.empty())
+            {
+                CurrentMetrics::sub(CurrentMetrics::KafkaConsumersWithAssignment, 1);
+            }
+
+            assignment.reset();
+            queues.clear();
+            needs_offset_update = true;
+        });
+
+    consumer->set_rebalance_error_callback(
+        [this](cppkafka::Error err)
+        {
+            LOG_ERROR(log, "Rebalance error: {}", err);
+            ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
+        });
 }
 
 KafkaConsumer2::~KafkaConsumer2()
 {
-    StorageKafkaUtils::consumerStopWithoutRebalance(*consumer, DRAIN_TIMEOUT_MS, log);
+    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log);
 }
 
 void KafkaConsumer2::pollEvents()
@@ -85,6 +153,16 @@ bool KafkaConsumer2::polledDataUnusable(const TopicPartition & topic_partition) 
     return different_topic_partition;
 }
 
+KafkaConsumer2::TopicPartitions const * KafkaConsumer2::getKafkaAssignment() const
+{
+    if (assignment.has_value())
+    {
+        return &*assignment;
+    }
+
+    return nullptr;
+}
+
 void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
 {
     cppkafka::TopicPartitionList original_topic_partitions;
@@ -98,6 +176,7 @@ void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
             return cppkafka::TopicPartition{tp.topic, tp.partition_id, tp.offset};
         });
     initializeQueues(original_topic_partitions);
+    needs_offset_update = false;
     stalled_status = StalledStatus::NOT_STALLED;
 }
 
@@ -233,38 +312,14 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
     }
 }
 
-KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const
+void KafkaConsumer2::subscribeIfNotSubscribedYet()
 {
-    std::unordered_set<String> topics_set;
-    topics_set.insert(topics.begin(), topics.end());
-    TopicPartitions topic_partitions;
+    if (likely(is_subscribed))
+        return;
 
-    try
-    {
-        auto metadata = consumer->get_metadata(true, GET_KAFKA_METADATA_TIMEOUT_MS);
-        for (const auto & topic_metadata : metadata.get_topics())
-        {
-            if (!topics_set.contains(topic_metadata.get_name()))
-                continue;
-
-            for (const auto & partition_metadata : topic_metadata.get_partitions())
-            {
-                topic_partitions.emplace_back(
-                    KafkaConsumer2::TopicPartition
-                    {
-                        .topic = topic_metadata.get_name(),
-                        .partition_id = static_cast<int32_t>(partition_metadata.get_id()),
-                        .offset = INVALID_OFFSET
-                    }
-                );
-            }
-        }
-    } catch (const cppkafka::HandleException & e)
-    {
-        LOG_ERROR(log, "Exception during get topic partitions from Kafka: {}", e.what());
-    }
-
-    return topic_partitions;
+    consumer->subscribe(topics);
+    is_subscribed = true;
+    LOG_DEBUG(log, "Subscribed.");
 }
 
 ReadBufferPtr KafkaConsumer2::getNextMessage()

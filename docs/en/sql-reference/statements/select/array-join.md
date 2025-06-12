@@ -222,7 +222,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-The example below uses the [arrayEnumerate](/sql-reference/functions/array-functions#arrayEnumerate) function:
+The example below uses the [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) function:
 
 ```sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -355,7 +355,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Example of using the [arrayEnumerate](/sql-reference/functions/array-functions#arrayEnumerate) function:
+Example of using the [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) function:
 
 ```sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num

@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/Context.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -1196,8 +1195,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::onStart()
 template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
 {
-    if (isCancelled())
-        return;
+    chassert(!isCancelled());
 
     const auto & settings = context->getSettingsRef();
     ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(

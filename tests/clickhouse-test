@@ -204,13 +204,9 @@ class SharedEngineReplacer:
 
     def _need_to_replace_something(self):
         return (
-            (
-                (self.replace_replicated or self.replace_non_replicated)
-                and "shared_merge_tree" not in self.file_name
-            )
-            or self.cloud
-            or self.args.replace_log_memory_with_mergetree
-        )
+            (self.replace_replicated or self.replace_non_replicated)
+            and "shared_merge_tree" not in self.file_name
+        ) or self.cloud
 
     def _has_show_create_table(self):
         with open(self.file_name, "r", encoding="utf-8") as f:
@@ -234,12 +230,9 @@ class SharedEngineReplacer:
         data_engines = r"(Engine\s*=?\s*)(Log|TinyLog|StripeLog|Memory)\(?\)?"
         # Replace them with SMT
         replace_with = f"{replace_engine}() ORDER BY tuple()"
-        if self.reference_file and not self.with_echo:
-            replace_with = f"{replace_engine}\\nORDER BY tuple()\\nSETTINGS index_granularity = 8192"
-
         if (
             re.search(data_engines, line, flags=re.IGNORECASE)
-            and "CREATE DATABASE" not in line.upper()
+            and "CREATE DATABASE" not in line
         ):
             modified_statement = re.sub(
                 data_engines,
@@ -291,7 +284,6 @@ class SharedEngineReplacer:
         self.replace_non_replicated = replace_non_replicated
         self.reference_file = reference_file
         self.cloud = cloud
-        self.with_echo = False
         use_random_path = not reference_file and not self._has_show_create_table()
 
         if not self._need_to_replace_something():
@@ -306,17 +298,9 @@ class SharedEngineReplacer:
         ):
             for line in source:
                 # Replace table engines if echo enabled to match changed reference
-                if (
-                    self.cloud or self.args.replace_log_memory_with_mergetree
-                ) and re.match("-- ?{ ?echo.*", line):
-                    self.with_echo = True
-
-                if self.cloud and self.with_echo:
+                if self.cloud and line.startswith("-- { echo"):
                     self.replace_replicated = True
                     self.replace_non_replicated = True
-
-                if self.args.replace_log_memory_with_mergetree:
-                    line = self._replace_data_engines(line, replace_engine="MergeTree")
 
                 if (
                     self._is_select_line(line)
@@ -1473,12 +1457,6 @@ class TestCase:
         if "no-async-insert" in tags and args.no_async_insert:
             return FailureReason.NO_ASYNC_INSERT
 
-        # Do not run *Log and Memory engine-specific tests
-        if (
-            "memory-engine" in tags or "log-engine" in tags
-        ) and args.replace_log_memory_with_mergetree:
-            return FailureReason.NOT_SUPPORTED
-
         if args.skip and any(s in self.name for s in args.skip):
             return FailureReason.SKIP
 
@@ -1922,8 +1900,7 @@ class TestCase:
         pattern = "{test} > {stdout} 2> {stderr}"
 
         tests_env = os.environ.copy()
-        if args.trace:
-            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
+        tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
 
         if self.ext == ".sql" and args.cloud:
             # Get at least some logs, because we don't have access to system.text_log and pods...
@@ -3858,12 +3835,6 @@ def parse_args():
         default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
-    parser.add_argument(
-        "--replace-log-memory-with-mergetree",
-        action="store_true",
-        default=os.environ.get("REPLACE_LOG_MEM_WITH_MT", False),
-        help="Replace *Log and Memory engines with MergeTree",
-    )
 
     parser.add_argument(
         "--client-log",
@@ -3875,7 +3846,6 @@ def parse_args():
         action="store_true",
         help="Capture stacktraces from clickhouse-client/local on errors",
     )
-    parser.add_argument("--trace", action="store_true", help="Capture various tracing info")
 
     return parser.parse_args()
 

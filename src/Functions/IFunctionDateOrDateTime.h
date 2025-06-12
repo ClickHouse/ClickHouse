@@ -11,7 +11,6 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/TransformDateTime64.h>
 
-
 namespace DB
 {
 

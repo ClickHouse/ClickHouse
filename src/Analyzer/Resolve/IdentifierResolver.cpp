@@ -187,7 +187,10 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage)
         return {};
 
-    storage->updateExternalDynamicMetadataIfExists(context);
+    if (storage->hasExternalDynamicMetadata())
+    {
+        storage->updateExternalDynamicMetadata(context);
+    }
 
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
