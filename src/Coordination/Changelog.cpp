@@ -604,7 +604,6 @@ public:
         ChangelogReadResult result{};
         result.compressed_log = compression_method != CompressionMethod::None;
         const auto & filepath = changelog_description->path;
-        LOG_INFO(log, "Reading changelog from {}", filepath);
         try
         {
             while (!read_buf->eof())

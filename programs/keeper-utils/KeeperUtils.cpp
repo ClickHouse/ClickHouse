@@ -1,5 +1,4 @@
 #include <iostream>
-#include <fstream>
 #include <Columns/IColumn.h>
 #include <Coordination/Changelog.h>
 #include <Coordination/CoordinationSettings.h>
@@ -11,6 +10,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Disks/DiskLocal.h>
 #include <Formats/formatBlock.h>
 #include <Interpreters/Context.h>
@@ -38,6 +39,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SNAPSHOT;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace CoordinationSetting
@@ -209,11 +211,7 @@ void analyzeChangelogs(const std::string & log_path, const std::string & specifi
     }
 }
 
-void spliceChangelogFile(
-    const std::string & source_path,
-    const std::string & destination_path,
-    uint64_t start_index,
-    uint64_t end_index)
+void spliceChangelogFile(const std::string & source_path, const std::string & destination_path, uint64_t start_index, uint64_t end_index)
 {
     try
     {
@@ -243,8 +241,11 @@ void spliceChangelogFile(
         {
             throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Index range [{}, {}) is out of bounds for source file {} (range: [{}, {}])",
-                start_index, end_index, source_path, source_desc->from_log_index, source_desc->to_log_index);
+                "Index range [{}, {}) is out of changelog range [{}, {}]",
+                start_index,
+                end_index,
+                source_desc->from_log_index,
+                source_desc->to_log_index + 1);
         }
 
         // Generate destination filename based on source filename and index range
@@ -276,11 +277,105 @@ void spliceChangelogFile(
     }
 }
 
-void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & output_file = "", const std::string & output_format = "CSVWithNamesAndTypes", bool parallel_output = false)
+void dumpSessions(const DB::KeeperMemoryStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output)
 {
-    std::ofstream out_file;
-    // std::ostream * out = &std::cout;
 
+    // Get session info
+    auto sessions = storage.getActiveSessions();
+    const auto & ephemerals = storage.committed_ephemerals;
+    const auto & session_auth = storage.committed_session_and_auth;
+
+    if (!output_file.empty())
+    {
+        SharedContextHolder shared_context;
+        ContextMutablePtr global_context;
+        shared_context = DB::Context::createShared();
+        global_context = DB::Context::createGlobal(shared_context.get());
+        global_context->makeGlobalContext();
+        DB::registerFormats();
+        WriteBufferFromFile output_buf(output_file);
+
+        // Define output columns
+        DB::ColumnsWithTypeAndName columns;
+        columns.emplace_back(std::make_shared<DB::DataTypeInt64>(), "session_id");
+        columns.emplace_back(std::make_shared<DB::DataTypeInt64>(), "timeout_ms");
+        columns.emplace_back(std::make_shared<DB::DataTypeUInt64>(), "ephemeral_nodes_count");
+        columns.emplace_back(std::make_shared<DB::DataTypeString>(), "auths");
+
+        DB::Block data(columns);
+        auto res_columns = data.cloneEmptyColumns();
+
+        for (const auto & [session_id, timeout] : sessions)
+        {
+            size_t i = 0;
+            res_columns[i++]->insert(session_id);
+            res_columns[i++]->insert(timeout);
+
+            // Count ephemeral nodes for this session
+            size_t ephemeral_count = 0;
+            if (auto it = ephemerals.find(session_id); it != ephemerals.end())
+                ephemeral_count = it->second.size();
+            res_columns[i++]->insert(ephemeral_count);
+
+            if (auto it = session_auth.find(session_id); it != session_auth.end())
+            {
+                std::string auths;
+                for (const auto & auth : it->second)
+                {
+                    if (!auths.empty())
+                        auths += ",";
+                    auths += fmt::format("{}:{}", auth.scheme, auth.id);
+                }
+                res_columns[i++]->insert(auths);
+            }
+            else
+            {
+                res_columns[i++]->insert("");
+            }
+        }
+
+        data.setColumns(std::move(res_columns));
+
+        // Write output
+        DB::OutputFormatPtr output_format_processor;
+        if (parallel_output)
+            output_format_processor = DB::FormatFactory::instance().getOutputFormatParallelIfPossible(
+                output_format, output_buf, data, DB::Context::getGlobalContextInstance());
+        else
+            output_format_processor = DB::FormatFactory::instance().getOutputFormat(
+                output_format, output_buf, data, DB::Context::getGlobalContextInstance());
+
+        formatBlock(output_format_processor, data);
+        output_buf.finalize();
+
+        return;
+    }
+    for (const auto & [session_id, timeout] : sessions)
+    {
+        std::cout << fmt::format("Session: {}\n", session_id);
+        std::cout << fmt::format("\tTimeout: {}ms\n", timeout);
+
+        // Count ephemeral nodes for this session
+        size_t ephemeral_count = 0;
+        if (auto it = ephemerals.find(session_id); it != ephemerals.end())
+                ephemeral_count = it->second.size();
+            std::cout << fmt::format("\tEphemeral nodes: {}\n", ephemeral_count);
+
+        // Get auth info
+        if (auto it = session_auth.find(session_id); it != session_auth.end() && !it->second.empty())
+        {
+            std::cout << "\tAuth:\n";
+            for (const auto & auth : it->second)
+            {
+                std::cout << fmt::format("\t\t{}:{}\n", auth.scheme, auth.id);
+            }
+        }
+        std::cout << "\n";
+    }
+}
+
+void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output, bool with_acl)
+{
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
@@ -309,10 +404,6 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
     PrintFunction print_function;
     if (!output_file.empty())
     {
-        out_file.open(output_file);
-        if (!out_file.is_open())
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot open output file {}", output_file);
-
         LOG_INFO(getLogger("keeper-utils"), "Writing nodes to {}", output_file);
 
         shared_context = DB::Context::createShared();
@@ -336,6 +427,9 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             {std::make_shared<DataTypeInt64>(), "pzxid"},
             {std::make_shared<DataTypeString>(), "data"},
         };
+
+        if (with_acl)
+            columns.emplace_back(std::make_shared<DataTypeString>(), "acl");
 
         Block data(columns);
 
@@ -364,6 +458,19 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             res_columns[i++]->insert(value.stats.numChildren());
             res_columns[i++]->insert(value.stats.pzxid);
             res_columns[i++]->insert(value.getData());
+
+            if (with_acl)
+            {
+                std::string acl_str;
+                const auto acls = storage.acl_map.convertNumber(value.acl_id);
+                for (const auto & acl : acls)
+                {
+                    if (!acl_str.empty())
+                        acl_str += "; ";
+                    acl_str += std::to_string(static_cast<int>(acl.permissions)) + ":" + acl.scheme + ":" + acl.id;
+                }
+                res_columns[i++]->insert(acl_str);
+            }
         };
 
         print_nodes(print_function);
@@ -375,7 +482,7 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
         return;
     }
 
-    print_function = [](const auto & key, const auto & value)
+    print_function = [&](const auto & key, const auto & value)
     {
         std::cout << key << "\n";
         std::cout << fmt::format(
@@ -388,15 +495,66 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             value.stats.numChildren(),
             value.stats.data_size);
 
+        if (with_acl)
+        {
+            std::string acl_str;
+            const auto acls = storage.acl_map.convertNumber(value.acl_id);
+            for (const auto & acl : acls)
+            {
+                if (!acl_str.empty())
+                    acl_str += "; ";
+                acl_str += std::to_string(static_cast<int>(acl.permissions)) + ":" + acl.scheme + ":" + acl.id;
+            }
+            std::cout << "\tACL: " << acl_str << std::endl;
+        }
+
         std::cout << "\tData: " << value.getData() << std::endl;
     };
 
     print_nodes(print_function);
 }
 
+namespace
+{
+auto op_num_enum = std::make_shared<DataTypeEnum16>(DataTypeEnum16::Values
+{
+    {"Watch", 0},
+    {"Close", static_cast<Int16>(Coordination::OpNum::Close)},
+    {"Error", static_cast<Int16>(Coordination::OpNum::Error)},
+    {"Create", static_cast<Int16>(Coordination::OpNum::Create)},
+    {"Remove", static_cast<Int16>(Coordination::OpNum::Remove)},
+    {"Exists", static_cast<Int16>(Coordination::OpNum::Exists)},
+    {"Reconfig", static_cast<Int16>(Coordination::OpNum::Reconfig)},
+    {"Get", static_cast<Int16>(Coordination::OpNum::Get)},
+    {"Set", static_cast<Int16>(Coordination::OpNum::Set)},
+    {"GetACL", static_cast<Int16>(Coordination::OpNum::GetACL)},
+    {"SetACL", static_cast<Int16>(Coordination::OpNum::SetACL)},
+    {"SimpleList", static_cast<Int16>(Coordination::OpNum::SimpleList)},
+    {"Sync", static_cast<Int16>(Coordination::OpNum::Sync)},
+    {"Heartbeat", static_cast<Int16>(Coordination::OpNum::Heartbeat)},
+    {"List", static_cast<Int16>(Coordination::OpNum::List)},
+    {"Check", static_cast<Int16>(Coordination::OpNum::Check)},
+    {"Multi", static_cast<Int16>(Coordination::OpNum::Multi)},
+    {"MultiRead", static_cast<Int16>(Coordination::OpNum::MultiRead)},
+    {"Auth", static_cast<Int16>(Coordination::OpNum::Auth)},
+    {"SessionID", static_cast<Int16>(Coordination::OpNum::SessionID)},
+    {"FilteredList", static_cast<Int16>(Coordination::OpNum::FilteredList)},
+    {"CheckNotExists", static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
+    {"CreateIfNotExists", static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
+    {"RemoveRecursive", static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},
+});
+}
 
-
-int dumpStateMachine(const std::string & snapshot_path, const std::string & log_path, bool debug_mode = false, const std::string & output_file = "", const std::string & output_format = "CSVWithNamesAndTypes", bool parallel_output = false)
+int dumpStateMachine(
+    const std::string & snapshot_path,
+    const std::string & log_path,
+    bool debug_mode,
+    const std::string & output_file,
+    const std::string & output_format,
+    bool parallel_output,
+    bool with_acl,
+    uint64_t end_index = std::numeric_limits<uint64_t>::max(),
+    bool dump_sessions = false)
 {
     Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
     Poco::Logger::root().setChannel(channel);
@@ -430,37 +588,299 @@ int dumpStateMachine(const std::string & snapshot_path, const std::string & log_
     else
         LOG_INFO(logger, "Last changelog entry {}", changelog.next_slot() - 1);
 
-    // Apply all log entries to the state machine
-    for (size_t i = last_committed_index + 1; i < changelog.next_slot(); ++i)
+    // Apply log entries to the state machine up to end_index
+    size_t last_index_to_apply = std::min(changelog.next_slot() - 1, end_index);
+    if (last_committed_index + 1 < last_index_to_apply)
     {
-        auto & entry = *changelog.entry_at(i);
-        if (entry.get_val_type() == nuraft::log_val_type::app_log)
+        LOG_INFO(logger, "Applying changelog entries from {} to {}", last_committed_index + 1, last_index_to_apply - 1);
+        for (size_t i = last_committed_index + 1; i < last_index_to_apply; ++i)
         {
-            if (debug_mode)
+            auto & entry = *changelog.entry_at(i);
+            if (entry.get_val_type() == nuraft::log_val_type::app_log)
             {
-                LOG_INFO(logger, "Current digest of state machine: {}", state_machine->getNodesDigest().value);
-
-                auto req = state_machine->parseRequest(entry.get_buf(), true);
-                LOG_INFO(
-                    logger,
-                    "Applying log entry {}: term={}, zxid={}, session_id={}\nrequest:\n{}",
-                    i,
-                    entry.get_term(),
-                    req->zxid,
-                    req->session_id,
-                    req->request->toString());
+                if (debug_mode)
+                {
+                    LOG_INFO(logger, "Current digest of state machine: {}", state_machine->getNodesDigest().value);
+                    auto req = state_machine->parseRequest(entry.get_buf(), true);
+                    LOG_INFO(
+                        logger,
+                        "Applying log entry {}: term={}, zxid={}, session_id={}\nrequest:\n{}",
+                        i,
+                        entry.get_term(),
+                        req->zxid,
+                        req->session_id,
+                        req->request->toString());
+                }
+                state_machine->pre_commit(i, entry.get_buf());
+                state_machine->commit(i, entry.get_buf());
             }
-            state_machine->pre_commit(i, entry.get_buf());
-            state_machine->commit(i, entry.get_buf());
         }
     }
 
-    // Dump all nodes with the specified output format
-    dumpNodes(state_machine->getStorageUnsafe(), output_file, output_format, parallel_output);
+    // Dump all nodes with the specified output format and options
+    // Dump nodes or sessions to output
+    if (dump_sessions)
+        dumpSessions(state_machine->getStorageUnsafe(), output_file, output_format, parallel_output);
+    else
+        dumpNodes(state_machine->getStorageUnsafe(), output_file, output_format, parallel_output, with_acl);
     return 0;
 }
 
-} // namespace
+int deserializeChangelog(
+    const std::string & changelog_path,
+    const std::string & output_file,
+    const std::string & output_format,
+    bool parallel_output,
+    bool with_requests,
+    uint64_t start_index,
+    uint64_t end_index)
+{
+    try
+    {
+        auto desc = Changelog::getChangelogFileDescription(changelog_path);
+        desc->disk = std::make_shared<DB::DiskLocal>("LogDisk", fs::path(changelog_path).parent_path().string());
+
+        CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+        LogEntryStorage entry_storage{LogFileSettings{}, std::make_shared<KeeperContext>(true, settings)};
+        Changelog::readChangelog(desc, entry_storage);
+
+        if (start_index == 0)
+            start_index = desc->from_log_index;
+        else if (start_index < desc->from_log_index || start_index > desc->to_log_index)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "start_index {} is out of range for changelog {} which has range [{}, {}]",
+                start_index,
+                changelog_path,
+                desc->from_log_index,
+                desc->to_log_index);
+        }
+
+        if (end_index == std::numeric_limits<uint64_t>::max())
+            end_index = desc->from_log_index + entry_storage.size();
+        else if (end_index < desc->from_log_index || end_index > desc->from_log_index + entry_storage.size())
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "end_index {} is out of range for changelog {} which has range [{}, {}]",
+                end_index,
+                changelog_path,
+                desc->from_log_index,
+                desc->from_log_index + entry_storage.size());
+        }
+
+        ResponsesQueue queue(std::numeric_limits<size_t>::max());
+        SnapshotsQueue snapshots_queue{1};
+        KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+        keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", fs::temp_directory_path() / "keeper-utils-log"));
+        keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", fs::temp_directory_path() / "keeper-utils-snapshot"));
+        auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, keeper_context, nullptr);
+
+        if (!output_file.empty())
+        {
+            LOG_INFO(getLogger("keeper-utils"), "Writing changelog entries to {}", output_file);
+
+            SharedContextHolder shared_context;
+            ContextMutablePtr global_context;
+            shared_context = DB::Context::createShared();
+            global_context = DB::Context::createGlobal(shared_context.get());
+            global_context->makeGlobalContext();
+            DB::registerFormats();
+
+            // Define output columns
+            ColumnsWithTypeAndName columns
+            {
+                {std::make_shared<DataTypeUInt64>(), "log_index"},
+                {std::make_shared<DataTypeUInt64>(), "term"},
+                {std::make_shared<DataTypeString>(), "entry_type"},
+                {std::make_shared<DataTypeUInt64>(), "entry_size"},
+                {std::make_shared<DataTypeUInt64>(), "entry_crc32"},
+            };
+
+            if (with_requests)
+            {
+                columns.push_back({std::make_shared<DataTypeUInt64>(), "session_id"});
+                columns.push_back({std::make_shared<DataTypeUInt64>(), "zxid"});
+                columns.push_back({std::make_shared<DataTypeDateTime64>(3), "request_timestamp"});
+                columns.push_back({std::make_shared<DataTypeUInt64>(), "digest_value"});
+                columns.push_back({std::make_shared<DataTypeUInt8>(), "digest_version"});
+                columns.push_back({op_num_enum, "op_num"});
+                columns.push_back({std::make_shared<DataTypeInt64>(), "xid"});
+                columns.push_back({std::make_shared<DataTypeInt32>(), "request_idx"});
+                columns.push_back({std::make_shared<DataTypeString>(), "path"});
+                columns.push_back({std::make_shared<DataTypeUInt8>(), "has_watch"});
+                columns.push_back({std::make_shared<DataTypeUInt64>(), "version"});
+                columns.push_back({std::make_shared<DataTypeUInt8>(), "is_ephemeral"});
+                columns.push_back({std::make_shared<DataTypeUInt8>(), "is_sequential"});
+                columns.push_back({std::make_shared<DataTypeString>(), "data"});
+            }
+
+            Block data(columns);
+            auto res_columns = data.cloneEmptyColumns();
+            WriteBufferFromFile output_buf(output_file);
+
+            OutputFormatPtr output_format_processor;
+            if (parallel_output)
+                output_format_processor = DB::FormatFactory::instance().getOutputFormatParallelIfPossible(
+                    output_format, output_buf, data, global_context);
+            else
+                output_format_processor = DB::FormatFactory::instance().getOutputFormat(
+                    output_format, output_buf, data, global_context);
+
+            // Process entries in the specified range
+            for (size_t i = start_index; i < end_index; ++i)
+            {
+                auto entry = entry_storage.getEntry(i);
+
+                if (entry == nullptr)
+                {
+                    throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Log entry {} is missing", i);
+                }
+                size_t col_idx = 0;
+
+                const auto add_log_entry_info = [&]()
+                {
+                    res_columns[col_idx++]->insert(i);
+                    res_columns[col_idx++]->insert(entry->get_term());
+                    res_columns[col_idx++]->insert(DB::toString(entry->get_val_type()));
+                    res_columns[col_idx++]->insert(entry->get_buf().size());
+                    res_columns[col_idx++]->insert(entry->get_crc32());
+                };
+
+                add_log_entry_info();
+                if (with_requests)
+                {
+                    if (entry->get_val_type() != nuraft::log_val_type::app_log)
+                    {
+                        for (; col_idx < columns.size(); ++col_idx)
+                            res_columns[col_idx]->insertDefault();
+
+                        continue;
+                    }
+
+                    auto req = state_machine->parseRequest(entry->get_buf(), true);
+                    auto digest = req->digest.value_or(KeeperDigest{KeeperDigestVersion::NO_DIGEST, 0});
+
+                    const auto add_request_general_info = [&]()
+                    {
+                        res_columns[col_idx++]->insert(req->session_id);
+                        res_columns[col_idx++]->insert(req->zxid);
+                        res_columns[col_idx++]->insert(static_cast<Decimal64>(req->time));
+                        res_columns[col_idx++]->insert(digest.value);
+                        res_columns[col_idx++]->insert(digest.version);
+                    };
+
+                    add_request_general_info();
+
+                    const auto xid = req->request->xid;
+                    const auto add_request_info = [&](const ZooKeeperRequestPtr & request, size_t request_idx)
+                    {
+                        res_columns[col_idx++]->insert(request->getOpNum());
+                        res_columns[col_idx++]->insert(xid);
+                        res_columns[col_idx++]->insert(request_idx);
+                        res_columns[col_idx++]->insert(request->getPath());
+                        res_columns[col_idx++]->insert(request->has_watch);
+
+                        /// add version
+                        if (const auto * remove_request = dynamic_cast<ZooKeeperRemoveRequest *>(request.get()))
+                            res_columns[col_idx++]->insert(remove_request->version);
+                        else if (const auto * set_request = dynamic_cast<ZooKeeperSetRequest *>(request.get()))
+                            res_columns[col_idx++]->insert(set_request->version);
+                        else if (const auto * check_request = dynamic_cast<ZooKeeperCheckRequest *>(request.get()))
+                            res_columns[col_idx++]->insert(check_request->version);
+                        else
+                            res_columns[col_idx++]->insert(0);
+
+                        /// add create info
+                        if (const auto * create_request = dynamic_cast<ZooKeeperCreateRequest *>(request.get()))
+                        {
+                            res_columns[col_idx++]->insert(create_request->is_ephemeral);
+                            res_columns[col_idx++]->insert(create_request->is_sequential);
+                        }
+                        else
+                        {
+                            res_columns[col_idx++]->insert(0);
+                            res_columns[col_idx++]->insert(0);
+                        }
+
+                        /// add data
+                        if (const auto * create_request = dynamic_cast<ZooKeeperCreateRequest *>(request.get()))
+                            res_columns[col_idx++]->insert(create_request->data);
+                        else if (const auto * set_request = dynamic_cast<ZooKeeperSetRequest *>(request.get()))
+                            res_columns[col_idx++]->insert(set_request->data);
+                        else
+                            res_columns[col_idx++]->insert("");
+                    };
+
+                    add_request_info(req->request, 0);
+
+                    if (const auto * multi_request = dynamic_cast<ZooKeeperMultiRequest *>(req->request.get()))
+                    {
+                        for (size_t sub_request_idx = 0; sub_request_idx < multi_request->requests.size(); ++sub_request_idx)
+                        {
+                            col_idx = 0;
+                            add_log_entry_info();
+                            add_request_general_info();
+                            add_request_info(multi_request->requests[sub_request_idx], sub_request_idx + 1);
+                        }
+                    }
+                }
+            }
+
+            data.setColumns(std::move(res_columns));
+
+            formatBlock(output_format_processor, data);
+            output_buf.finalize();
+            return 0;
+        }
+
+        // Process entries in the specified range
+        for (size_t i = start_index; i < end_index; ++i)
+        {
+            auto entry = entry_storage.getEntry(i);
+
+            std::cout << "Log Index: " << i << "\n"
+                      << "Term: " << entry->get_term() << "\n"
+                      << "Value Type: " << DB::toString(entry->get_val_type()) << "\n"
+                      << "Data Size: " << entry->get_buf().size() << "\n"
+                      << "CRC32: " << entry->get_crc32() << "\n";
+
+            if (with_requests && entry->get_val_type() == nuraft::log_val_type::app_log)
+            {
+                try
+                {
+                    if (auto buffer = entry->get_buf_ptr(); buffer)
+                    {
+                        auto request = state_machine->parseRequest(*buffer, true);
+                        std::cout << "Session ID: " << request->session_id << "\n"
+                                  << "ZXID: " << request->zxid << "\n"
+                                  << "Request timestamp: " << request->time << "\n";
+                        if (request->digest)
+                            std::cout << fmt::format("Digest: {} ({})\n", request->digest->value, request->digest->version);
+                        std::cout << "Uses XID64: " << request->use_xid_64 << "\n"
+                                  << "Request: " << request->request->toString() << "\n";
+                    }
+                }
+                catch (const std::exception & e)
+                {
+                    std::cout << "Error parsing request: " << e.what() << "\n";
+                }
+            }
+
+            std::cout << "------------------------------------------\n";
+        }
+
+        return 0;
+    }
+    catch (const std::exception & e)
+    {
+        std::cerr << "Error deserializing changelog: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+}
 
 int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
 {
@@ -488,10 +908,11 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
             std::cout << "ClickHouse Keeper Utils - A utility for managing ClickHouse Keeper data\n\n"
                       << "Usage:\n  clickhouse-keeper-utils <command> [options]\n\n"
                       << "Available commands:\n"
-                      << "  dump-state           Dump Keeper state from snapshot and changelog\n"
-                      << "  snapshot-analyzer    Analyze Keeper snapshots and print basic information\n"
-                      << "  changelog-analyzer   Analyze Keeper changelogs and print information about them\n"
-                      << "  changelog-splicer    Extract a range of entries from a changelog to a new file\n\n"
+                      << "  dump-state             Dump Keeper state from snapshot and changelog\n"
+                      << "  snapshot-analyzer      Analyze Keeper snapshot files\n"
+                      << "  changelog-analyzer     Analyze Keeper changelog files\n"
+                      << "  changelog-splicer      Extract a range of entries from a changelog\n"
+                      << "  changelog-deserializer Deserialize and display changelog contents\n\n"
                       << "Use 'clickhouse-keeper-utils <command> --help' for help with a specific command.\n";
             return 0;
         }
@@ -509,7 +930,10 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                 ("log-path", po::value<std::string>()->required(), "Path to logs directory")
                 ("output-file,o", po::value<std::string>(), "Optional: Write output to file instead of stdout")
                 ("output-format,f", po::value<std::string>()->default_value("CSVWithNamesAndTypes"), "Output format (default: CSVWithNamesAndTypes)")
-                ("parallel-output", po::bool_switch()->default_value(false), "Enable parallel output format processing");
+                ("parallel-output", po::bool_switch()->default_value(false), "Enable parallel output format processing")
+                ("with-acl", po::bool_switch()->default_value(false), "Include ACL information in the output (only for node output)")
+                ("end-index", po::value<uint64_t>()->default_value(std::numeric_limits<uint64_t>::max()), "End index (exclusive) for changelog processing")
+                ("dump-sessions", po::bool_switch()->default_value(false), "Dump session information instead of node tree");
 
             // Create a new variables map for the subcommand
             po::variables_map dump_state_vm;
@@ -532,14 +956,17 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                               << "Options:\n"
                               << dump_state_options << "\n"
                               << "Examples:\n"
-                              << "  # Output to stdout\n"
+                              << "  # Dump node tree to stdout\n"
                               << "  clickhouse-keeper-utils dump-state --snapshot-path /path/to/snapshots --log-path /path/to/logs\n\n"
-                              << "  # Output to file with custom format\n"
+                              << "  # Dump node tree to file with custom format\n"
                               << "  clickhouse-keeper-utils dump-state --snapshot-path /path/to/snapshots \n"
-                              << "      --log-path /path/to/logs --output-file output.txt --output-format JSONEachRow\n\n"
-                              << "  # Enable parallel output processing\n"
+                              << "      --log-path /path/to/logs --output-file nodes.txt --output-format JSONEachRow\n\n"
+                              << "  # Dump session information to stdout\n"
                               << "  clickhouse-keeper-utils dump-state --snapshot-path /path/to/snapshots \n"
-                              << "      --log-path /path/to/logs --output-file output.txt --parallel-output\n";
+                              << "      --log-path /path/to/logs --dump-sessions\n\n"
+                              << "  # Dump session information to file\n"
+                              << "  clickhouse-keeper-utils dump-state --snapshot-path /path/to/snapshots \n"
+                              << "      --log-path /path/to/logs --output-file sessions.txt --dump-sessions\n";
                     return 0;
                 }
 
@@ -553,18 +980,16 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                 if (dump_state_vm.contains("output-file"))
                     output_file = dump_state_vm["output-file"].as<std::string>();
 
-                // Get output format and parallel flag
-                std::string output_format = dump_state_vm["output-format"].as<std::string>();
-                bool parallel_output = dump_state_vm["parallel-output"].as<bool>();
-
-                // If we get here, all required arguments are present
                 return dumpStateMachine(
                     dump_state_vm["snapshot-path"].as<std::string>(),
                     dump_state_vm["log-path"].as<std::string>(),
                     dump_state_vm.contains("debug-mode") > 0,
                     output_file,
-                    output_format,
-                    parallel_output);
+                    dump_state_vm["output-format"].as<std::string>(),
+                    dump_state_vm["parallel-output"].as<bool>(),
+                    dump_state_vm["with-acl"].as<bool>(),
+                    dump_state_vm["end-index"].as<uint64_t>(),
+                    dump_state_vm["dump-sessions"].as<bool>());
             }
             catch (const std::exception & e)
             {
@@ -572,7 +997,14 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                     << "Error in dump-state: " << e.what() << "\n"
                     << "Usage: clickhouse-keeper-utils dump-state --snapshot-path <snapshot_path> --log-path <log_path>\n"
                     << "       [--debug-mode] [--output-file <output_file>] [--output-format <format>]\n"
-                    << "       Supported formats: CSV, CSVWithNames, CSVWithNamesAndTypes, JSON, JSONEachRow, etc.\n";
+                    << "       [--dump-sessions] [--with-acl] [--end-index <index>]\n"
+                    << "\n"
+                    << "When --dump-sessions is specified, the command will output session information\n"
+                    << "including session IDs, timeouts, ephemeral nodes count, and watch counts.\n"
+                    << "When --dump-sessions is not specified, it will output the node tree.\n"
+                    << "\n"
+                    << "Note: --output-format and --parallel-output are only used when --output-file is specified.\n"
+                    << "      --with-acl is only used when --dump-sessions is not specified.\n";
                 return 1;
             }
         }
@@ -732,10 +1164,88 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                 return 1;
             }
         }
+        else if (cmd == "changelog-deserializer")
+        {
+            // Create a new command line parser for the subcommand
+            po::options_description deserializer_options("Changelog deserializer options");
+            deserializer_options.add_options()
+                ("help,h", "Show help message")
+                ("changelog-path", po::value<std::string>()->required(), "Path to the changelog file to deserialize")
+                ("output-file,o", po::value<std::string>(), "Write output to file instead of stdout")
+                ("output-format,f", po::value<std::string>()->default_value("CSVWithNamesAndTypes"), "Output format (default: CSVWithNamesAndTypes)")
+                ("parallel-output", po::bool_switch()->default_value(false), "Enable parallel output format processing")
+                ("with-requests", po::bool_switch()->default_value(false), "Include deserialized request information")
+                ("start-index", po::value<uint64_t>()->default_value(0), "Start index (inclusive) of entries to process")
+                ("end-index", po::value<uint64_t>()->default_value(std::numeric_limits<uint64_t>::max()), "End index (exclusive) of entries to process");
+
+            try
+            {
+                // Parse the remaining arguments (after the command)
+                std::vector<std::string> subcommand_args;
+                for (int i = 2; i < argc; ++i)
+                    subcommand_args.push_back(argv[i]);
+
+                // Check for help flag first
+                if (std::ranges::find_if(subcommand_args, [](const std::string & s) { return s == "--help" || s == "-h"; })
+                    != subcommand_args.end())
+                {
+                    std::cout << "Deserialize and display contents of a Keeper changelog\n\n"
+                              << "Usage:\n  clickhouse-keeper-utils changelog-deserializer [options]\n\n"
+                              << "Options:\n"
+                              << deserializer_options << "\n"
+                              << "Examples:\n"
+                              << "  # Output to console\n"
+                              << "  clickhouse-keeper-utils changelog-deserializer --changelog-path /path/to/changelog.bin\n\n"
+                              << "  # Save to file with JSON format\n"
+                              << "  clickhouse-keeper-utils changelog-deserializer --changelog-path /path/to/changelog.bin \\n"
+                              << "      --output-file output.json --output-format JSONEachRow\n"
+                              << "  # Process a specific range of entries\n"
+                              << "  clickhouse-keeper-utils changelog-deserializer --changelog-path /path/to/changelog.bin \\n"
+                              << "      --start-index 100 --end-index 200\n";
+                    return 0;
+                }
+
+                po::variables_map deserializer_vm;
+                po::store(po::command_line_parser(subcommand_args).options(deserializer_options).run(), deserializer_vm);
+                po::notify(deserializer_vm);
+
+                std::string output_file;
+                if (deserializer_vm.contains("output-file"))
+                    output_file = deserializer_vm["output-file"].as<std::string>();
+
+                uint64_t start_idx = deserializer_vm["start-index"].as<uint64_t>();
+                uint64_t end_idx = deserializer_vm["end-index"].as<uint64_t>();
+
+                if (start_idx >= end_idx)
+                    throw po::error("start-index must be less than end-index");
+
+                return deserializeChangelog(
+                    deserializer_vm["changelog-path"].as<std::string>(),
+                    output_file,
+                    deserializer_vm["output-format"].as<std::string>(),
+                    deserializer_vm["parallel-output"].as<bool>(),
+                    deserializer_vm["with-requests"].as<bool>(),
+                    start_idx,
+                    end_idx);
+            }
+            catch (const std::exception & e)
+            {
+                std::cerr << "Error in changelog-deserializer: " << e.what() << "\n"
+                          << "Usage: clickhouse-keeper-utils changelog-deserializer --changelog-path <changelog_file> "
+                          << "[--output-file <output_file>] [--output-format <format>] [--parallel-output]\n";
+                return 1;
+            }
+        }
         else
         {
-            std::cerr << "Error: Unknown command " << cmd << "\n"
-                      << "Available commands: load-state, snapshot-analyzer, changelog-analyzer, changelog-splicer\n";
+            std::cerr << "Error: Unknown command '" << cmd << "'\n"
+                      << "Available commands:\n"
+                      << "  dump-state          Dump Keeper state from snapshot and changelog\n"
+                      << "  snapshot-analyzer   Analyze Keeper snapshot files\n"
+                      << "  changelog-analyzer  Analyze Keeper changelog files\n"
+                      << "  changelog-splicer   Extract a range of entries from a changelog\n"
+                      << "  changelog-deserializer  Deserialize and display changelog contents\n"
+                      << "\nUse 'clickhouse-keeper-utils <command> --help' for more information about a specific command.\n";
             return 1;
         }
     }
