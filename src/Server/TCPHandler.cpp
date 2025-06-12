@@ -508,6 +508,8 @@ void TCPHandler::runImpl()
 
             chassert(query_state.has_value());
 
+            checkConnectionLimits();
+
             /// Set up tracing context for this query on current thread
             thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("TCPHandler",
                 query_state->query_context->getClientInfo().client_trace_context,
@@ -753,8 +755,6 @@ void TCPHandler::runImpl()
 
             sendLogs(query_state.value());
             sendEndOfStream(query_state.value());
-
-            checkConnectionLimits();
 
             query_state->finalizeOut(out);
         }
@@ -2699,8 +2699,8 @@ void TCPHandler::checkConnectionLimits()
 
     double elapsed_seconds = connection_timer.elapsedSeconds();
 
-    bool max_queries_exceeded = max_queries > 0 && query_count >= max_queries;
-    bool max_seconds_exceeded = max_seconds > 0 && elapsed_seconds >= max_seconds;
+    bool max_queries_exceeded = max_queries > 0 && query_count > max_queries;
+    bool max_seconds_exceeded = max_seconds > 0 && elapsed_seconds > max_seconds;
 
     if (max_queries_exceeded || max_seconds_exceeded)
     {
