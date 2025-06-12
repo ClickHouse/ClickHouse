@@ -123,7 +123,7 @@ bool ReadBufferFromWebServer::nextImpl()
     }
 
     chassert(impl->internalBuffer().begin() != nullptr);
-    chassert(impl->internalBuffer().size() > 0);
+    chassert(!impl->internalBuffer().empty());
     chassert(impl->available() == 0);
 
     auto result = impl->next();
