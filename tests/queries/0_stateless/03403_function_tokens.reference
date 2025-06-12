@@ -16,3 +16,8 @@ Special cases (not systematically tested)
 ['abc','def','foo','bar','baz','code','hello','world']
 -- non-const inputs
 ['abc','def','foo','bar','baz','code','hello','world']
+Sparse tokenizer
+[]
+['abc','bc ','c d',' de','c de','bc de','def','bc def','ef ','f c',' cb','f cb','ef cb','cba']
+['abc ','bc d','c de',' def','c def','def ','c def ','bc def ','ef c','f cb','ef cb',' cba']
+['bc def ']
