@@ -46,7 +46,7 @@ public:
         return false;
     }
 
-    /// Returns the minium number of tokens available for use.
+    /// Returns the minimum number of tokens available for use.
     Int64 getAvailable() override
     {
         Int64 min_available = std::numeric_limits<Int64>::max();
