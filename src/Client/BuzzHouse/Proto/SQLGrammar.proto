@@ -3141,20 +3141,22 @@ enum TableEngineValues {
     S3 = 23;
     S3Queue = 24;
     Hudi = 25;
-    DeltaLake = 26;
-    IcebergS3 = 27;
-    IcebergAzure = 28;
-    IcebergLocal = 29;
-    Merge = 30;
-    Distributed = 31;
-    Dictionary = 32;
-    GenerateRandom = 33;
-    AzureBlobStorage = 34;
-    AzureQueue = 35;
-    URL = 36;
-    KeeperMap = 37;
-    ExternalDistributed = 38;
-    MaterializedPostgreSQL = 39;
+    DeltaLakeS3 = 26;
+    DeltaLakeAzure = 27;
+    DeltaLakeLocal = 28;
+    IcebergS3 = 29;
+    IcebergAzure = 30;
+    IcebergLocal = 31;
+    Merge = 32;
+    Distributed = 33;
+    Dictionary = 34;
+    GenerateRandom = 35;
+    AzureBlobStorage = 36;
+    AzureQueue = 37;
+    URL = 38;
+    KeeperMap = 39;
+    ExternalDistributed = 40;
+    MaterializedPostgreSQL = 41;
 }
 
 enum TableEngineOption {
