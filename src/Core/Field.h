@@ -106,6 +106,8 @@ template <is_decimal T>
 class DecimalField
 {
 public:
+    using ValueType = T;
+
     explicit DecimalField(T value = {}, UInt32 scale_ = 0)
     :   dec(value),
         scale(scale_)
@@ -117,6 +119,9 @@ public:
     UInt32 getScale() const { return scale; }
 
     explicit operator bool() const { return dec.value != 0; }
+
+    template <std::floating_point F>
+    explicit operator F() const;
 
     template <typename U>
     bool operator < (const DecimalField<U> & r) const
