@@ -39,3 +39,13 @@ select 'Pattern could match zero-bytes';
 select countMatches('  foo bar   ', '[a-zA-Z]*');
 select countMatches(toFixedString('  foo bar   ', 12), '[a-zA-Z]*');
 select countMatches(materialize(toFixedString('  foo bar   ', 12)), '[a-zA-Z]*');
+
+select 'Legacy behavior: stop at empty match';
+SET count_matches_stop_at_empty_match = 1;
+select countMatches('foo bar   ', '[a-zA-Z]*');
+select countMatches('  foo bar   ', '[a-zA-Z]*');
+select countMatches(toFixedString('foo bar   ', 12), '[a-zA-Z]*');
+select countMatches(toFixedString('  foo bar   ', 12), '[a-zA-Z]*');
+select countMatches(materialize(toFixedString('foo bar   ', 12)), '[a-zA-Z]*');
+select countMatches(materialize(toFixedString('  foo bar   ', 12)), '[a-zA-Z]*');
+SET count_matches_stop_at_empty_match = 0;
