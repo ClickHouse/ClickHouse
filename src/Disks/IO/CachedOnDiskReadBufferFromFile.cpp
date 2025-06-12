@@ -566,7 +566,7 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
     }
 }
 
-void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
+bool CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 {
     Stopwatch predownload_watch(CLOCK_MONOTONIC);
     SCOPE_EXIT({
@@ -700,26 +700,17 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
-                swap(*implementation_buffer);
-                resetWorkingBuffer();
-
-                implementation_buffer = getRemoteReadBuffer(file_segment, read_type);
-
-                swap(*implementation_buffer);
-
-                implementation_buffer->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]
-                implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
-
                 LOG_TRACE(
                     log,
                     "Predownload failed because of space limit. "
                     "Will read from remote filesystem starting from offset: {}",
                     file_offset_of_buffer_end);
 
-                break;
+                return false;
             }
         }
     }
+    return true;
 }
 
 bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
@@ -942,10 +933,25 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     size_t needed_to_predownload = bytes_to_predownload;
     if (needed_to_predownload)
     {
-        predownload(file_segment);
+        if (predownload(file_segment))
+        {
+            result = implementation_buffer->hasPendingData();
+            size = implementation_buffer->available();
+        }
+        else
+        {
+            /// Move buffer back from implementation_buffer to us.
+            swap.reset();
+            resetWorkingBuffer();
 
-        result = implementation_buffer->hasPendingData();
-        size = implementation_buffer->available();
+            implementation_buffer = getRemoteReadBuffer(file_segment, read_type);
+
+            /// Recreate swap helper.
+            swap.emplace(*this, *implementation_buffer);
+
+            implementation_buffer->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]
+            implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
+        }
     }
 
     auto download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
