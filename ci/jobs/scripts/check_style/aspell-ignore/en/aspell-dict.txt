@@ -3135,6 +3135,7 @@ timeSeriesPredictLinearToGrid
 timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesSelector
 timeSeriesTags
 timeSlot
 timeSlots
