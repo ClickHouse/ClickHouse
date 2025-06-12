@@ -47,7 +47,7 @@ namespace ErrorCodes
     DECLARE(String, kafka_sasl_mechanism, "", "SASL mechanism to use for authentication. Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER.", 0) \
     DECLARE(String, kafka_sasl_username, "", "SASL username for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
     DECLARE(String, kafka_sasl_password, "", "SASL password for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
-    DECLARE(Bool, kafka_autodetect_client_rack, false, "Use cloud facilities to set client.rack to communicate with the nearest kafka replica. AWS and GCP are supported", 0) \
+    DECLARE(String, kafka_autodetect_client_rack, "", "Use cloud facilities to set client.rack to communicate with the nearest kafka replica. Supported: 'MSK' (for AWS)", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \

@@ -36,7 +36,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_sasl_mechanism;
     extern const KafkaSettingsString kafka_sasl_username;
     extern const KafkaSettingsString kafka_sasl_password;
-    extern const KafkaSettingsBool kafka_autodetect_client_rack;
+    extern const KafkaSettingsString kafka_autodetect_client_rack;
 }
 
 namespace ErrorCodes
@@ -365,7 +365,7 @@ void updateGlobalConfiguration(
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
         kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
 
-    if (kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value)
+    if (kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value == "MSK")
     {
         std::string rack = S3::tryGetRunningAvailabilityZone(true /*zone-id */);
         if (!rack.empty())
