@@ -66,12 +66,15 @@ struct MergeTreeIndexBuildContext
     /// For each part, stores all ranges need to be read.
     const RangesByIndex read_ranges;
 
-    /// Thread-safe shared pool for reading and building index filters.
+    /// Thread-safe shared pool for reading and building index filters. Must not be null (enforced in constructor).
     const MergeTreeIndexReadResultPoolPtr index_reader;
 
     /// Tracks how many marks are still being processed for each part during the execution phase. Once the count reaches
     /// zero for a part, its cached index can be released to free resources.
     const PartRemainingMarks part_remaining_marks;
+
+    MergeTreeIndexBuildContext(
+        RangesByIndex read_ranges_, MergeTreeIndexReadResultPoolPtr index_reader_, PartRemainingMarks part_remaining_marks_);
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
