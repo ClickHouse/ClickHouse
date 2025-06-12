@@ -46,8 +46,6 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
     res_header = params->getCustomHeader(/* final_= */ false);
 
-    LOG_TEST(&Poco::Logger::get("AggregatingInOrderTransform"), "Will use sort description: {}", dumpSortDescription(sort_description));
-
     for (size_t i = 0; i < sort_description_for_merging.size(); ++i)
     {
         const auto & column_description = group_by_description_[i];
