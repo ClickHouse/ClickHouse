@@ -303,6 +303,7 @@
     M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
+    M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the iceberg metadata cache") \
@@ -397,6 +398,9 @@
     M(ConcurrencyControlAcquiredNonCompeting, "Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)") \
     M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
     \
+    M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
+    M(ConcurrentQueryAcquired, "Total number of acquired query slots") \
+    \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
     \
     M(SharedCatalogStateApplicationThreads, "Number of threads in the threadpool for state application in Shared Catalog.") \
@@ -432,6 +436,8 @@
     M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
     M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
     M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
+    M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
+    M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
     M(ProtobufSchemaCacheBytes, "Size of the Protobuf schema cache in bytes") \
     M(ProtobufSchemaCacheCells, "Number of cached Protobuf schemas") \
     M(ProtobufSchemaRegistryCacheBytes, "Size of the Protobuf schema registry cache in bytes") \

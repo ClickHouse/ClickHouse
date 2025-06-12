@@ -16,6 +16,8 @@
 #include <IO/Operators.h>
 #include <Columns/IColumn.h>
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
 
@@ -23,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int LOGICAL_ERROR;
 }
 
 #define LIST_OF_FILE_CACHE_SETTINGS(DECLARE, ALIAS) \
@@ -164,6 +167,7 @@ void FileCacheSettings::dumpToSystemSettingsColumns(
 void FileCacheSettings::loadFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
+    const std::string & cache_path_prefix_if_relative,
     const std::string & default_cache_path)
 {
     if (!config.has(config_prefix))
@@ -180,17 +184,41 @@ void FileCacheSettings::loadFromConfig(
         impl->set(key, config.getString(config_prefix + "." + key));
     }
 
-    if (!(*this)[FileCacheSetting::path].changed)
+    if ((*this)[FileCacheSetting::path].changed)
+    {
+        if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
+        {
+            if (cache_path_prefix_if_relative.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache path prefix for relative paths was not provided");
+
+            is_path_relative_in_config = true;
+            (*this)[FileCacheSetting::path] = fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value;
+        }
+    }
+    else
+    {
         (*this)[FileCacheSetting::path] = default_cache_path;
+    }
 
     validate();
 }
 
-void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
+void FileCacheSettings::loadFromCollection(
+    const NamedCollection & collection,
+    const std::string & cache_path_prefix_if_relative)
 {
     for (const auto & key : collection.getKeys())
     {
         impl->set(key, collection.get<String>(key));
+    }
+
+    if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
+    {
+        if (cache_path_prefix_if_relative.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache path prefix for relative paths was not provided");
+
+        is_path_relative_in_config = true;
+        (*this)[FileCacheSetting::path] = fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value;
     }
 
     validate();
@@ -202,6 +230,9 @@ void FileCacheSettings::validate()
 
     if (!settings[FileCacheSetting::path].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
+
+    if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute");
 
     if (!settings[FileCacheSetting::max_size].changed && !settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either `max_size` or `max_size_ratio_to_total_space` must be defined in cache configuration");
@@ -217,15 +248,18 @@ void FileCacheSettings::validate()
         if (settings[FileCacheSetting::max_size_ratio_to_total_space] <= 0 || settings[FileCacheSetting::max_size_ratio_to_total_space] > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size_ratio_to_total_space` must be in range (0, 1]");
 
-        std::filesystem::create_directories(settings[FileCacheSetting::path].value);
+        fs::create_directories(settings[FileCacheSetting::path].value);
         struct statvfs stat = getStatVFS(settings[FileCacheSetting::path]);
         const auto total_space = stat.f_blocks * stat.f_frsize;
-        settings[FileCacheSetting::max_size] = static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * total_space));
+        settings[FileCacheSetting::max_size] =
+            static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * total_space));
 
-        LOG_TRACE(
+        LOG_INFO(
             getLogger("FileCacheSettings"),
-            "Using max_size as ratio {} to total disk space: {} (total space: {})",
-            settings[FileCacheSetting::max_size_ratio_to_total_space].value, settings[FileCacheSetting::max_size].value, total_space);
+            "Using max_size as ratio {} to total disk space on path {}: {} (total space: {})",
+            settings[FileCacheSetting::max_size_ratio_to_total_space].value,
+            settings[FileCacheSetting::path].value,
+            settings[FileCacheSetting::max_size].value, total_space);
     }
 }
 

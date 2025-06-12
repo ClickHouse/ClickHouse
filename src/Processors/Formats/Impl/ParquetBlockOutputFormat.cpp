@@ -592,6 +592,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
         });
     factory.markFormatHasNoAppendSupport("Parquet");
     factory.markOutputFormatNotTTYFriendly("Parquet");
+    factory.setContentType("Parquet", "application/octet-stream");
 }
 
 }
