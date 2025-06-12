@@ -35,7 +35,7 @@ Throttler::Throttler(size_t max_speed_, const ThrottlerPtr & parent_,
 Throttler::Throttler(size_t max_speed_,
         ProfileEvents::Event event_amount_,
         ProfileEvents::Event event_sleep_us_)
-    : Throttler(max_speed_, nullptr, event_sleep_us_, event_amount_)
+    : Throttler(max_speed_, nullptr, event_amount_, event_sleep_us_)
 {}
 
 Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_, const ThrottlerPtr & parent_)
