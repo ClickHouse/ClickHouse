@@ -1094,7 +1094,7 @@ void StatementGenerator::generateEngineDetails(
                 b.file_comp = rg.pickRandomly(S3Compress);
                 te->add_params()->set_svalue(b.file_comp);
             }
-            if (b.isAnyS3Engine() && rg.nextSmallNumber() < 5)
+            if (b.isS3Engine() && rg.nextSmallNumber() < 5)
             {
                 generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
             }
@@ -1209,7 +1209,7 @@ void StatementGenerator::generateEngineDetails(
             b.file_comp = rg.pickRandomly(AzureCompress);
             te->add_params()->set_svalue(b.file_comp);
         }
-        if (rg.nextSmallNumber() < 5)
+        if (b.isAzureEngine() && rg.nextSmallNumber() < 5)
         {
             generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
         }
