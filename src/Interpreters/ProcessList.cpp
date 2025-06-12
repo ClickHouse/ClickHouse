@@ -416,7 +416,7 @@ ProcessListEntry::~ProcessListEntry()
 
     parent.have_space.notify_all();
 
-    /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
+    /// If there are no more queries for the user, then we will reset memory tracker.
     if (user_process_list.queries.empty())
         user_process_list.resetTrackers();
 
