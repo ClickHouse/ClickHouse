@@ -42,6 +42,9 @@ struct WorkloadSettings
     /// Limits total number of queries
     Int64 max_concurrent_queries = unlimited;
 
+    /// Limits total number of waiting queries
+    Int64 max_waiting_queries = unlimited;
+
     /// Settings that are applied depend on cost unit
     CostUnit unit = CostUnit::IOByte;
 
@@ -54,6 +57,9 @@ struct WorkloadSettings
     bool hasSemaphore() const;
     Int64 getSemaphoreMaxRequests() const;
     Int64 getSemaphoreMaxCost() const;
+
+    // Queue
+    Int64 getQueueSize() const;
 
     // Should be called after default constructor
     void initFromChanges(CostUnit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);
