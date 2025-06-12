@@ -67,7 +67,7 @@ class MergeTreeIndexReadResultPool
 public:
     explicit MergeTreeIndexReadResultPool(MergeTreeSkipIndexReaderPtr skip_index_reader_);
 
-    /// Holds a shared future to a lazily built SkipIndexReadResult.
+    /// Holds a shared future to a lazily built MergeTreeIndexReadResult.
     /// This enables concurrent consumers to wait on a single computation.
     struct IndexReadResultEntry
     {
@@ -81,13 +81,13 @@ public:
         }
     };
 
-    /// Lazily constructs and caches the SkipIndexReadResult for a given data part. If it is already being built by
+    /// Lazily constructs and caches the MergeTreeIndexReadResult for a given data part. If it is already being built by
     /// another thread, waits for its result. Throws if the builder fails.
     ///
     /// This map uses raw pointer of data part as key because it is unique and stable for the lifetime of the part.
     MergeTreeIndexReadResultPtr getOrBuildIndexReadResult(const RangesInDataPart & part);
 
-    /// Cleans up the cached SkipIndexReadResult for a given part if it exists.
+    /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.
     void clear(const DataPartPtr & part);
 

@@ -88,6 +88,15 @@ std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
     return callback(ParallelReadRequest{mode, number_of_current_replica, min_number_of_marks, description});
 }
 
+MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
+    RangesByIndex read_ranges_, MergeTreeIndexReadResultPoolPtr index_reader_, PartRemainingMarks part_remaining_marks_)
+    : read_ranges(std::move(read_ranges_))
+    , index_reader(std::move(index_reader_))
+    , part_remaining_marks(std::move(part_remaining_marks_))
+{
+    chassert(index_reader);
+}
+
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeReadPoolPtr pool_,
     MergeTreeSelectAlgorithmPtr algorithm_,
@@ -287,10 +296,7 @@ void MergeTreeSelectProcessor::cancel() noexcept
 {
     is_cancelled = true;
     if (merge_tree_index_build_context)
-    {
-        if (merge_tree_index_build_context->index_reader)
-            merge_tree_index_build_context->index_reader->cancel();
-    }
+        merge_tree_index_build_context->index_reader->cancel();
 }
 
 void MergeTreeSelectProcessor::initializeReadersChain()
@@ -311,8 +317,7 @@ void MergeTreeSelectProcessor::initializeReadersChain()
     {
         const auto & part_ranges = merge_tree_index_build_context->read_ranges.at(task->getInfo().part_index_in_query);
         auto & remaining_marks = merge_tree_index_build_context->part_remaining_marks.at(task->getInfo().part_index_in_query).value;
-        if (merge_tree_index_build_context->index_reader)
-            index_read_result = merge_tree_index_build_context->index_reader->getOrBuildIndexReadResult(part_ranges);
+        index_read_result = merge_tree_index_build_context->index_reader->getOrBuildIndexReadResult(part_ranges);
 
         /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
         /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
@@ -320,10 +325,7 @@ void MergeTreeSelectProcessor::initializeReadersChain()
         size_t task_marks = task->getNumMarksToRead();
         bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
         if (part_last_task)
-        {
-            if (merge_tree_index_build_context->index_reader)
-                merge_tree_index_build_context->index_reader->clear(task->getInfo().data_part);
-        }
+            merge_tree_index_build_context->index_reader->clear(task->getInfo().data_part);
     }
 
     task->initializeReadersChain(all_prewhere_actions, read_steps_performance_counters, std::move(index_read_result));
