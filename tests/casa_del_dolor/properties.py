@@ -454,6 +454,17 @@ def add_single_disk(
     return (prev_disk, final_type)
 
 
+def add_single_cache(i: int, next_cache: ET.Element):
+    max_size_xml = ET.SubElement(next_cache, "max_size")
+    max_size_xml.text = file_size_value()()
+    path_xml = ET.SubElement(next_cache, "path")
+    path_xml.text = f"fcache{i}"
+
+    # Add random settings
+    if random.randint(1, 100) <= 70:
+        add_settings_from_dict(cache_storage_properties, next_cache)
+
+
 def add_ssl_settings(next_ssl: ET.Element):
     certificate_xml = ET.SubElement(next_ssl, "certificateFile")
     private_key_xml = ET.SubElement(next_ssl, "privateKeyFile")
@@ -632,6 +643,18 @@ def modify_server_settings(
         allowed_path_xml1.text = "/var/lib/clickhouse/"
         allowed_path_xml2 = ET.SubElement(backups_element, "allowed_path")
         allowed_path_xml2.text = "/var/lib/clickhouse/user_files/"
+
+    # Add filesystem caches
+    if (
+        root.find("filesystem_caches") is None
+        and random.randint(1, 100) <= args.add_filesystem_caches_prob
+    ):
+        modified = True
+        filesystem_caches_config = ET.SubElement(root, "filesystem_caches")
+
+        number_caches = random.randint(args.min_caches, args.max_caches)
+        for i in range(0, number_caches):
+            add_single_cache(i, ET.SubElement(filesystem_caches_config, f"fcache{i}"))
 
     # Add keeper_map_path_prefix
     if args.add_keeper_map_prefix:

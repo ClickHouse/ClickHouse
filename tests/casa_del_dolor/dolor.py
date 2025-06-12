@@ -106,6 +106,25 @@ parser.add_argument(
     help="Maximum number of remote servers to generate",
 )
 parser.add_argument(
+    "--add-filesystem-caches-prob",
+    type=int,
+    default=80,
+    choices=range(0, 101),
+    help="Probability to add filesystem caches",
+)
+parser.add_argument(
+    "--min-caches",
+    type=int,
+    default=1,
+    help="Minimum number of filesystem caches to generate",
+)
+parser.add_argument(
+    "--max-caches",
+    type=int,
+    default=3,
+    help="Maximum number of filesystem caches to generate",
+)
+parser.add_argument(
     "--change-server-version-prob",
     type=int,
     default=80,
@@ -215,6 +234,8 @@ if args.min_disks > args.max_disks:
     raise f"The min disks value {args.min_disks} is greater than max disks value {args.max_disks}"
 if args.min_servers > args.max_servers:
     raise f"The min servers value {args.min_servers} is greater than max servers value {args.max_servers}"
+if args.min_caches > args.max_caches:
+    raise f"The min caches value {args.min_caches} is greater than max caches value {args.max_caches}"
 
 logging.basicConfig(
     filename=args.log_path,

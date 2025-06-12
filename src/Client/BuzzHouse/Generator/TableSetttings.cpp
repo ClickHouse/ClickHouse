@@ -3,7 +3,7 @@
 namespace BuzzHouse
 {
 
-static DB::Strings storagePolicies, disks;
+static DB::Strings storagePolicies, disks, caches;
 
 static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg)
@@ -273,6 +273,11 @@ std::unordered_map<String, CHSetting> ipTreeLayoutSettings = {{"ACCESS_TO_KEY_FR
 
 void loadFuzzerTableSettings(const FuzzConfig & fc)
 {
+    std::unordered_map<String, CHSetting> s3Settings;
+    std::unordered_map<String, CHSetting> s3QueueTableSettings;
+    std::unordered_map<String, CHSetting> azureBlobStorageSettings;
+    std::unordered_map<String, CHSetting> azureQueueSettings;
+
     if (!fc.storage_policies.empty())
     {
         storagePolicies.insert(storagePolicies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
@@ -289,6 +294,36 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         mergeTreeTableSettings.insert({{"disk", disk_setting}});
         logTableSettings.insert({{"disk", disk_setting}});
     }
+    if (!fc.caches.empty())
+    {
+        caches.insert(caches.end(), fc.caches.begin(), fc.caches.end());
+        const auto & cache_setting
+            = CHSetting([&](RandomGenerator & rg) { return "1, filesystem_cache_name = '" + rg.pickRandomly(caches) + "'"; }, {}, false);
+
+        s3Settings.insert({{"enable_filesystem_cache", cache_setting}});
+        azureBlobStorageSettings.insert({{"enable_filesystem_cache", cache_setting}});
+    }
+
+    s3QueueTableSettings.insert(s3Settings.begin(), s3Settings.end());
+    azureQueueSettings.insert(azureBlobStorageSettings.begin(), azureBlobStorageSettings.end());
+    s3QueueTableSettings.insert(
+        {{"after_processing",
+          CHSetting(
+              [](RandomGenerator & rg)
+              {
+                  const DB::Strings & choices = {"''", "'keep'", "'delete'"};
+                  return rg.pickRandomly(choices);
+              },
+              {},
+              false)},
+         {"parallel_inserts", CHSetting(trueOrFalse, {}, false)},
+         {"s3queue_buckets",
+          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.8, 0, 16)); }, {}, false)},
+         {"s3queue_enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
+         {"s3queue_processing_threads_num", threadSetting},
+         {"s3queue_tracked_files_limit",
+          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.8, 0, 3000)); }, {}, false)}});
+
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
          {ReplacingMergeTree, mergeTreeTableSettings},
@@ -312,7 +347,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {SQLite, {}},
          {MongoDB, {}},
          {Redis, {}},
-         {S3, {}},
+         {S3, s3Settings},
          {S3Queue, s3QueueTableSettings},
          {Hudi, {}},
          {DeltaLake, {}},
@@ -323,8 +358,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Distributed, distributedTableSettings},
          {Dictionary, {}},
          {GenerateRandom, {}},
-         {AzureBlobStorage, {}},
-         {AzureQueue, {}},
+         {AzureBlobStorage, azureBlobStorageSettings},
+         {AzureQueue, azureQueueSettings},
          {URL, {}},
          {KeeperMap, {}},
          {ExternalDistributed, {}},

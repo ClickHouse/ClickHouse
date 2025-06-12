@@ -93,24 +93,6 @@ const std::unordered_map<String, CHSetting> fileTableSettings
             {},
             false)}};
 
-const std::unordered_map<String, CHSetting> s3QueueTableSettings
-    = {{"after_processing",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                const DB::Strings & choices = {"''", "'keep'", "'delete'"};
-                return rg.pickRandomly(choices);
-            },
-            {},
-            false)},
-       {"parallel_inserts", CHSetting(trueOrFalse, {}, false)},
-       {"s3queue_buckets",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.8, 0, 16)); }, {}, false)},
-       {"s3queue_enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
-       {"s3queue_processing_threads_num", threadSetting},
-       {"s3queue_tracked_files_limit",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.8, 0, 3000)); }, {}, false)}};
-
 const std::unordered_map<String, CHSetting> distributedTableSettings
     = {{"background_insert_batch", CHSetting(trueOrFalse, {}, false)},
        {"background_insert_split_batch_on_failure", CHSetting(trueOrFalse, {}, false)},

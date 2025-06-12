@@ -138,7 +138,7 @@ private:
 public:
     LoggerPtr log;
     std::ofstream outf;
-    DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters;
+    DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
         minio_server, http_server, azurite_server;
     std::unordered_map<String, PerformanceMetric> metrics;
@@ -168,7 +168,7 @@ public:
     bool processServerQuery(bool outlog, const String & query);
 
 private:
-    void loadServerSettings(DB::Strings & out, bool distinct, const String & table, const String & col, const String & extra_clause);
+    void loadServerSettings(DB::Strings & out, const String & desc, const String & query);
 
 public:
     void loadServerConfigurations();
