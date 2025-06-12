@@ -159,7 +159,7 @@ now([timezone])
         {"timezone", "Optional. Timezone name for the returned value. [`String`](../data-types/string.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_now = "Returns the current date and time. [`DateTime`](../data-types/datetime.md).";
-    FunctionDocumentation::Examples examples_now = {t
+    FunctionDocumentation::Examples examples_now = {
         {"Query without timezone", R"(
 SELECT now()
         )",
