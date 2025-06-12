@@ -183,7 +183,7 @@ void MergeTreeReadTask::initializeReadersChain(
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
 
-    if (index_read_result && index_read_result->skip_index_read_result)
+    if (index_read_result)
         readers.index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result));
 
     readers_chain = createReadersChain(readers, prewhere_actions, read_steps_performance_counters);

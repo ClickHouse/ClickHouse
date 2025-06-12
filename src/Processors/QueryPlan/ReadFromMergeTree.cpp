@@ -43,8 +43,8 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeSkipIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -2528,9 +2528,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// Optionally initializes index build context to filter on data reading. This context is shared across multiple
     /// MergeTreeSelectProcessor instances, and is used to construct and apply index filters in a thread-safe manner.
     MergeTreeIndexBuildContextPtr index_build_context;
-    if (indexes && indexes->use_skip_indexes && !indexes->skip_indexes.empty()
+    bool build_skip_index_reader = indexes && indexes->use_skip_indexes && !indexes->skip_indexes.empty()
         && (!query_info.isFinal() || !settings[Setting::use_skip_indexes_if_final_exact_mode])
-        && settings[Setting::use_skip_indexes_on_data_read])
+        && settings[Setting::use_skip_indexes_on_data_read];
+
+    if (build_skip_index_reader)
     {
         RangesByIndex read_ranges;
         PartRemainingMarks part_remaining_marks;
@@ -2540,16 +2542,21 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             part_remaining_marks.emplace(ranges.part_index_in_query, ranges.getMarksCount());
         }
 
-        auto skip_index_reader = std::make_shared<MergeTreeSkipIndexReadResultPool>(
+        MergeTreeSkipIndexReaderPtr skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
             indexes->skip_indexes,
             context->getIndexMarkCache(),
             context->getIndexUncompressedCache(),
             context->getVectorSimilarityIndexCache(),
             reader_settings,
-            getLogger("MergeTreeSkipIndexReadResultPool"));
+            getLogger("MergeTreeSkipIndexReader"));
+
+        /// TODO(ab): If projection index is available, build projection index reader and pass it into result pool.
+
+        MergeTreeIndexReadResultPoolPtr index_read_result_pool
+            = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader));
 
         index_build_context = std::make_shared<MergeTreeIndexBuildContext>(
-            std::move(read_ranges), std::move(skip_index_reader), std::move(part_remaining_marks));
+            std::move(read_ranges), std::move(index_read_result_pool), std::move(part_remaining_marks));
     }
 
     Pipe pipe = output_each_partition_through_separate_port

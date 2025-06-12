@@ -14,8 +14,8 @@
 #include <Storages/LazilyReadInfo.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/MergeTreeSkipIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -287,7 +287,10 @@ void MergeTreeSelectProcessor::cancel() noexcept
 {
     is_cancelled = true;
     if (merge_tree_index_build_context)
-        merge_tree_index_build_context->skip_index_reader->cancel();
+    {
+        if (merge_tree_index_build_context->index_reader)
+            merge_tree_index_build_context->index_reader->cancel();
+    }
 }
 
 void MergeTreeSelectProcessor::initializeReadersChain()
@@ -306,14 +309,10 @@ void MergeTreeSelectProcessor::initializeReadersChain()
     MergeTreeIndexReadResultPtr index_read_result;
     if (merge_tree_index_build_context)
     {
-        index_read_result = std::make_shared<MergeTreeIndexReadResult>();
         const auto & part_ranges = merge_tree_index_build_context->read_ranges.at(task->getInfo().part_index_in_query);
         auto & remaining_marks = merge_tree_index_build_context->part_remaining_marks.at(task->getInfo().part_index_in_query).value;
-        if (merge_tree_index_build_context->skip_index_reader)
-        {
-            index_read_result->skip_index_read_result
-                = merge_tree_index_build_context->skip_index_reader->getOrBuildSkipIndexReadResult(part_ranges);
-        }
+        if (merge_tree_index_build_context->index_reader)
+            index_read_result = merge_tree_index_build_context->index_reader->getOrBuildIndexReadResult(part_ranges);
 
         /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
         /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
@@ -322,8 +321,8 @@ void MergeTreeSelectProcessor::initializeReadersChain()
         bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
         if (part_last_task)
         {
-            if (merge_tree_index_build_context->skip_index_reader)
-                merge_tree_index_build_context->skip_index_reader->clear(task->getInfo().data_part);
+            if (merge_tree_index_build_context->index_reader)
+                merge_tree_index_build_context->index_reader->clear(task->getInfo().data_part);
         }
     }
 

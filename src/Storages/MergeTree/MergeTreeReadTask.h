@@ -29,15 +29,7 @@ using DeserializationPrefixesCachePtr = std::shared_ptr<DeserializationPrefixesC
 class MergedPartOffsets;
 using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 
-using SkipIndexReadResult = std::vector<bool>;
-using SkipIndexReadResultPtr = std::shared_ptr<SkipIndexReadResult>;
-
-struct MergeTreeIndexReadResult
-{
-    SkipIndexReadResultPtr skip_index_read_result;
-
-    /// TODO(ab): Projection index result will be added here.
-};
+struct MergeTreeIndexReadResult;
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 
 enum class MergeTreeReadType : uint8_t

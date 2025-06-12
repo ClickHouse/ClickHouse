@@ -50,8 +50,8 @@ private:
 };
 
 using RangesByIndex = std::unordered_map<size_t, RangesInDataPart>;
-class MergeTreeSkipIndexReadResultPool;
-using MergeTreeSkipIndexReadResultPoolPtr = std::shared_ptr<MergeTreeSkipIndexReadResultPool>;
+class MergeTreeIndexReadResultPool;
+using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
 
 /// A simple wrapper to allow atomic counters to be mutated even when accessed through a const map.
 struct MutableAtomicSizeT
@@ -66,8 +66,8 @@ struct MergeTreeIndexBuildContext
     /// For each part, stores all ranges need to be read.
     const RangesByIndex read_ranges;
 
-    /// Thread-safe shared pool for reading skip indexes and building granule-level filters.
-    const MergeTreeSkipIndexReadResultPoolPtr skip_index_reader;
+    /// Thread-safe shared pool for reading and building index filters.
+    const MergeTreeIndexReadResultPoolPtr index_reader;
 
     /// Tracks how many marks are still being processed for each part during the execution phase. Once the count reaches
     /// zero for a part, its cached index can be released to free resources.
