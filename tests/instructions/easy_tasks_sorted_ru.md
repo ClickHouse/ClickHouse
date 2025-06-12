@@ -137,7 +137,7 @@ position с конца строки.
 
 ## Возможность использовать ALIAS столбцы при INSERT.
 
-https://clickhouse.com/docs/query_language/create/#create-table
+https://clickhouse.com/docs/en/query_language/create/#create-table
 
 `INSERT INTO table (column1, column2, ...)`
 
@@ -179,7 +179,7 @@ world │ 123 │
 
 ## Работоспособность внешних данных на время сессии.
 
-https://clickhouse.com/docs/operations/table_engines/external_data/
+https://clickhouse.com/docs/en/operations/table_engines/external_data/
 
 Не работает, если открыть clickhouse-client в интерактивном режиме и делать несколько запросов.
 

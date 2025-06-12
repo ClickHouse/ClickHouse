@@ -731,9 +731,10 @@ private:
         {
             if (object)
                 return isLoading() ? Status::LOADED_AND_RELOADING : Status::LOADED;
-            if (exception)
+            else if (exception)
                 return isLoading() ? Status::FAILED_AND_RELOADING : Status::FAILED;
-            return isLoading() ? Status::LOADING : Status::NOT_LOADED;
+            else
+                return isLoading() ? Status::LOADING : Status::NOT_LOADED;
         }
 
         Duration loadingDuration() const
@@ -755,7 +756,6 @@ private:
                 result.exception = exception;
                 result.loading_start_time = loading_start_time;
                 result.last_successful_update_time = last_successful_update_time;
-                result.error_count = error_count;
                 result.loading_duration = loadingDuration();
                 result.config = config;
                 return result;
@@ -970,7 +970,13 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
     {
-        ThreadGroupSwitcher switcher(thread_group, "ExternalLoader");
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachFromGroupIfNotDetached();
+        );
+
+        if (thread_group)
+            CurrentThread::attachToGroup(thread_group);
 
         /// Do not account memory that was occupied by the dictionaries for the query/user context.
         MemoryTrackerBlockerInThread memory_blocker;
@@ -1187,10 +1193,12 @@ private:
             LOG_TRACE(log, "Supposed update time for '{}' is {} (backoff, {} errors)", loaded_object->getLoadableName(), to_string(result), error_count);
             return result;
         }
-
-        auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-        LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors)", to_string(result), error_count);
-        return result;
+        else
+        {
+            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
+            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors)", to_string(result), error_count);
+            return result;
+        }
     }
 
     const String type_name;

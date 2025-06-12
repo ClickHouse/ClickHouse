@@ -8,7 +8,6 @@ Expression ((Projection + Before ORDER BY))
         Condition: (plus(c, 1) in [11, +Inf))
         Parts: 1/2
         Granules: 1/2
-        Search algorithm: generic exclusion search
       Skip
         Name: i
         Description: minmax GRANULARITY 1
@@ -24,7 +23,6 @@ Expression ((Project names + Projection))
         Condition: (plus(c, 1) in [11, +Inf))
         Parts: 1/2
         Granules: 1/2
-        Search algorithm: generic exclusion search
       Skip
         Name: i
         Description: minmax GRANULARITY 1
@@ -40,7 +38,6 @@ Expression ((Projection + Before ORDER BY))
         Condition: (plus(plus(c, 1), 1) in [16, +Inf))
         Parts: 1/2
         Granules: 1/2
-        Search algorithm: generic exclusion search
       Skip
         Name: i
         Description: minmax GRANULARITY 1
@@ -56,7 +53,6 @@ Expression ((Project names + Projection))
         Condition: (plus(plus(c, 1), 1) in [16, +Inf))
         Parts: 1/2
         Granules: 1/2
-        Search algorithm: generic exclusion search
       Skip
         Name: i
         Description: minmax GRANULARITY 1

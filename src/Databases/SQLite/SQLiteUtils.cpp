@@ -2,7 +2,6 @@
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
-#include <Interpreters/Context.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -21,7 +20,8 @@ void processSQLiteError(const String & message, bool throw_on_error)
 {
     if (throw_on_error)
         throw Exception::createDeprecated(message, ErrorCodes::PATH_ACCESS_DENIED);
-    LOG_ERROR(getLogger("SQLiteEngine"), fmt::runtime(message));
+    else
+        LOG_ERROR(getLogger("SQLiteEngine"), fmt::runtime(message));
 }
 
 String validateSQLiteDatabasePath(const String & path, const String & user_files_path, bool need_check, bool throw_on_error)

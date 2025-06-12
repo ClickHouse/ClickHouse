@@ -60,8 +60,6 @@ public:
     /// file offset and what getPosition() returns.
     virtual bool isRegularLocalFile(size_t * /*out_view_offsee*/) { return false; }
 
-    virtual bool isCached() const { return false; }
-
 protected:
     std::optional<size_t> file_size;
     ProfileCallback profile_callback;

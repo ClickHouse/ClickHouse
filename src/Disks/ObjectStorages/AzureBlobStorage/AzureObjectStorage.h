@@ -33,16 +33,12 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    /// Sanitizer build may crash with max_keys=1; this looks like a false positive.
     ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     std::string getName() const override { return "AzureObjectStorage"; }
 
     ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
 
-    std::string getRootPrefix() const override { return object_namespace; }
-
-    /// Object keys are unique within the object namespace (container + prefix).
     std::string getCommonKeyPrefix() const override { return ""; }
 
     std::string getDescription() const override { return description; }
@@ -51,7 +47,13 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = ReadSettings{},
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
+        const StoredObjects & objects,
+        const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
@@ -62,6 +64,11 @@ public:
         std::optional<ObjectAttributes> attributes = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
+
+    /// Remove file. Throws exception if file doesn't exists or it's a directory.
+    void removeObject(const StoredObject & object) override;
+
+    void removeObjects(const StoredObjects & objects) override;
 
     void removeObjectIfExists(const StoredObject & object) override;
 
@@ -96,22 +103,16 @@ public:
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
-    bool areObjectKeysRandom() const override { return true; }
-
     bool isRemote() const override { return true; }
 
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
 
-    bool isReadOnly() const override { return settings.get()->read_only; }
-
     bool supportParallelWrite() const override { return true; }
 
 private:
-    void removeObjectImpl(
-        const StoredObject & object,
-        const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-        bool if_exists);
+    using SharedAzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
+    void removeObjectImpl(const StoredObject & object, const SharedAzureClientPtr & client_ptr, bool if_exists);
 
     const String name;
     /// client used to access the files in the Blob Storage cloud

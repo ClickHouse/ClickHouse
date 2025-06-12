@@ -31,12 +31,13 @@ GRANT SHOW ON database_03400.* TO 'user_test_03400';
 REVOKE ALL ON database_03400.no_show_allowed FROM 'user_test_03400';
 GRANT SELECT ON database_03400.allowed TO 'user_test_03400';
 GRANT SELECT(a) ON database_03400.partial_allowed TO 'user_test_03400';
-GRANT SELECT ON database_03400.merge* TO 'user_test_03400';
+GRANT SELECT ON database_03400.merge TO 'user_test_03400';
+GRANT SELECT ON database_03400.merge_user TO 'user_test_03400';
 """
 
 echo "----Table engine"
 # access from the Merge table
-$CLICKHOUSE_CLIENT --multiline --user user_test_03400 --password user_test_03400 -q """
+$CLICKHOUSE_CLIENT --multiline --user user_test_03400 --password user_test_03400 --optimize_read_in_order=0 -q """
 SELECT * FROM database_03400.merge; -- { serverError ACCESS_DENIED }
 SELECT a FROM database_03400.merge; -- { serverError ACCESS_DENIED }
 SELECT '----select allowed columns and databases';
@@ -55,7 +56,7 @@ CREATE TABLE database_03400.merge_user_fail Engine=Merge(database_03400, 'no_sho
 
 echo "----Table function"
 # access from the Merge table function
-$CLICKHOUSE_CLIENT --multiline --user user_test_03400 --password user_test_03400 -q """
+$CLICKHOUSE_CLIENT --multiline --user user_test_03400 --password user_test_03400 --optimize_read_in_order=0 -q """
 SELECT * FROM merge(database_03400, '.*allowed'); -- { serverError ACCESS_DENIED }
 SELECT a FROM merge(database_03400, '.*allowed'); -- { serverError ACCESS_DENIED }
 SELECT '----select allowed columns and databases';

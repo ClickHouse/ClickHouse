@@ -18,7 +18,6 @@ Expression ((Projection + Before ORDER BY))
             Condition: (id in [101, 101])
             Parts: 1/1
             Granules: 1/1
-            Search algorithm: binary search
       Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
         ReadFromMergeTree (default.t2)
         Indexes:
@@ -27,7 +26,7 @@ Expression ((Projection + Before ORDER BY))
             Parts: 1/1
             Granules: 1/1
 Expression ((Project names + Projection))
-  Filter (WHERE)
+  Filter ((WHERE + DROP unused columns after JOIN))
     Join (JOIN FillRightFirst)
       Expression
         ReadFromMergeTree (default.t1)
@@ -38,7 +37,6 @@ Expression ((Project names + Projection))
             Condition: (id in [101, 101])
             Parts: 1/1
             Granules: 1/1
-            Search algorithm: binary search
       Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
         ReadFromMergeTree (default.t2)
         Indexes:

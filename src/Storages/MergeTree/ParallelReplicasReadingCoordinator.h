@@ -1,11 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <Storages/MergeTree/RequestResponse.h>
 
-#include <memory>
-#include <mutex>
-#include <set>
-#include <vector>
 
 namespace DB
 {
@@ -18,10 +15,10 @@ class ParallelReplicasReadingCoordinator
 public:
     class ImplInterface;
 
-    explicit ParallelReplicasReadingCoordinator(size_t replicas_count_);
+    explicit ParallelReplicasReadingCoordinator(size_t replicas_count_, size_t mark_segment_size_ = 0);
     ~ParallelReplicasReadingCoordinator();
 
-    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement);
+    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement);
     ParallelReadResponse handleRequest(ParallelReadRequest request);
 
     /// Called when some replica is unavailable and we skipped it.
@@ -33,18 +30,15 @@ public:
     /// needed to report total rows to read
     void setProgressCallback(ProgressCallback callback);
 
-    /// snapshot replica - first replica the coordinator got InitialAllRangesAnnouncement from
-    std::optional<size_t> getSnapshotReplicaNum() const { return snapshot_replica_num; }
-
 private:
     void initialize(CoordinationMode mode);
 
     std::mutex mutex;
     const size_t replicas_count{0};
+    size_t mark_segment_size{0};
     std::unique_ptr<ImplInterface> pimpl;
     ProgressCallback progress_callback; // store the callback only to bypass it to coordinator implementation
     std::set<size_t> replicas_used;
-    std::optional<size_t> snapshot_replica_num;
 
     /// To initialize `pimpl` we need to know the coordinator mode. We can know it only from initial announcement or regular request.
     /// The problem is `markReplicaAsUnavailable` might be called before any of these requests happened.

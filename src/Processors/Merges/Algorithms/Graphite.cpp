@@ -6,14 +6,12 @@
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <base/find_symbols.h>
 #include <base/sort.h>
-#include <Common/SipHash.h>
 
 #include <string_view>
 #include <vector>
 #include <unordered_map>
 
 #include <fmt/format.h>
-#include <fmt/ranges.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -54,13 +52,14 @@ RuleType ruleType(const String & s)
 {
     if (s == "all")
         return RuleTypeAll;
-    if (s == "plain")
+    else if (s == "plain")
         return RuleTypePlain;
-    if (s == "tagged")
+    else if (s == "tagged")
         return RuleTypeTagged;
-    if (s == "tag_list")
+    else if (s == "tag_list")
         return RuleTypeTagList;
-    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", s);
+    else
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", s);
 }
 
 void Pattern::updateHash(SipHash & hash) const
@@ -95,12 +94,15 @@ inline static const Patterns & selectPatternsForMetricType(const Graphite::Param
     if (params.patterns_typed)
     {
         std::string_view path_view = path;
-        if (!path_view.contains("?"sv))
+        if (path_view.find("?"sv) == std::string::npos)
             return params.patterns_plain;
-        return params.patterns_tagged;
+        else
+            return params.patterns_tagged;
     }
-
-    return params.patterns;
+    else
+    {
+        return params.patterns;
+    }
 }
 
 Graphite::RollupRule selectPatternForPath(
@@ -175,7 +177,7 @@ static bool compareRetentions(const Retention & a, const Retention & b)
     {
         return true;
     }
-    if (a.age < b.age && a.precision < b.precision)
+    else if (a.age < b.age && a.precision < b.precision)
     {
         return false;
     }
@@ -289,7 +291,7 @@ std::string buildTaggedRegex(std::string regexp_str)
     /* remove empty elements */
     using namespace std::string_literals;
     std::erase(tags, ""s);
-    if (tags[0].find('=') == tags[0].npos)  /// NOLINT(readability-static-accessed-through-instance)
+    if (tags[0].find('=') == tags[0].npos)
     {
         if (tags.size() == 1) /* only name */
             return "^" + tags[0] + "\\?";
@@ -500,22 +502,6 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unhandled rule_type in config: {}", ruleTypeStr(pattern.rule_type));
         }
     }
-}
-
-void Params::updateHash(SipHash & hash) const
-{
-    hash.update(path_column_name);
-    hash.update(time_column_name);
-    hash.update(value_column_name);
-    hash.update(value_column_name);
-    hash.update(version_column_name);
-    hash.update(patterns_typed);
-    for (const auto & p : patterns)
-        p.updateHash(hash);
-    for (const auto & p : patterns_plain)
-        p.updateHash(hash);
-    for (const auto & p : patterns_tagged)
-        p.updateHash(hash);
 }
 
 }

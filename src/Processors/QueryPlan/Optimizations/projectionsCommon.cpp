@@ -6,25 +6,15 @@
 
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool aggregate_functions_null_for_empty;
-    extern const SettingsBool allow_experimental_query_deduplication;
-    extern const SettingsBool apply_mutations_on_fly;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 select_sequential_consistency;
-}
 
 namespace ErrorCodes
 {
@@ -51,29 +41,22 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->readsInOrder())
         return false;
 
-    const auto & query_settings = reading->getContext()->getSettingsRef();
-
     // Currently projection don't support deduplication when moving parts between shards.
-    if (query_settings[Setting::allow_experimental_query_deduplication])
+    if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
         return false;
 
     // Currently projection don't support settings which implicitly modify aggregate functions.
-    if (query_settings[Setting::aggregate_functions_null_for_empty])
-        return false;
-
-    /// Don't use projections if have mutations to apply
-    /// because we need to apply them on original data.
-    if (query_settings[Setting::apply_mutations_on_fly] && reading->getMutationsSnapshot()->hasDataMutations())
+    if (reading->getContext()->getSettingsRef().aggregate_functions_null_for_empty)
         return false;
 
     return true;
 }
 
-PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading)
+std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * reading)
 {
     ContextPtr context = reading->getContext();
 
-    if (context->getSettingsRef()[Setting::select_sequential_consistency])
+    if (context->getSettingsRef().select_sequential_consistency)
     {
         if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(&reading->getMergeTreeData()))
             return std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
@@ -227,24 +210,24 @@ bool analyzeProjectionCandidate(
     const RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
-    const PartitionIdToMaxBlockPtr & max_added_blocks,
+    const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
     const ActionsDAG * dag)
 {
-    RangesInDataParts projection_parts;
-    RangesInDataParts normal_parts;
-
+    MergeTreeData::DataPartsVector projection_parts;
+    MergeTreeData::DataPartsVector normal_parts;
+    std::vector<AlterConversionsPtr> alter_conversions;
     for (const auto & part_with_ranges : parts_with_ranges)
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
         if (it != created_projections.end() && !it->second->is_broken)
         {
-            projection_parts.push_back(
-                RangesInDataPart(it->second, part_with_ranges.part_index_in_query, part_with_ranges.part_starting_offset_in_query));
+            projection_parts.push_back(it->second);
         }
         else
         {
-            normal_parts.push_back(part_with_ranges);
+            normal_parts.push_back(part_with_ranges.data_part);
+            alter_conversions.push_back(part_with_ranges.alter_conversions);
         }
     }
 
@@ -258,12 +241,11 @@ bool analyzeProjectionCandidate(
 
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
-        reading.getMutationsSnapshot()->cloneEmpty(),
         required_column_names,
         candidate.projection->metadata,
         projection_query_info,
         context,
-        context->getSettingsRef()[Setting::max_threads],
+        context->getSettingsRef().max_threads,
         max_added_blocks);
 
     candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
@@ -272,7 +254,7 @@ bool analyzeProjectionCandidate(
     if (!normal_parts.empty())
     {
         /// TODO: We can reuse existing analysis_result by filtering out projection parts
-        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts));
+        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts), std::move(alter_conversions));
 
         if (normal_result_ptr->selected_marks != 0)
         {
