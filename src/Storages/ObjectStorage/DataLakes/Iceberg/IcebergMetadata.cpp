@@ -817,12 +817,12 @@ ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 
     return create_fn();
 }
 
-Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
+Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
     if (!relevant_snapshot)
         return {};
 
-    bool use_partition_pruning = filter_dag && getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning];
+    bool use_partition_pruning = filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning];
 
     if (!use_partition_pruning && cached_unprunned_files_for_last_processed_snapshot.has_value())
         return cached_unprunned_files_for_last_processed_snapshot.value();
@@ -835,7 +835,7 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
         ManifestFilesPruner pruner(
             schema_processor, relevant_snapshot_schema_id,
             use_partition_pruning ? filter_dag : nullptr,
-            *manifest_file_ptr, getContext());
+            *manifest_file_ptr, local_context);
         const auto & data_files_in_manifest = manifest_file_ptr->getFiles();
         for (const auto & manifest_file_entry : data_files_in_manifest)
         {
@@ -927,9 +927,10 @@ std::optional<size_t> IcebergMetadata::totalBytes() const
 ObjectIterator IcebergMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
-    size_t /* list_batch_size */) const
+    size_t /* list_batch_size */,
+    ContextPtr local_context) const
 {
-    return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
+    return createKeysIterator(getDataFiles(filter_dag, local_context), object_storage, callback);
 }
 
 }
