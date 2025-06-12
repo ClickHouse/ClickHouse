@@ -84,6 +84,13 @@ const DecimalField<T> & DecimalField<T>::operator -= (const DecimalField<T> & r)
     return *this;
 }
 
+template <is_decimal T>
+template <std::floating_point F>
+DecimalField<T>::operator F() const
+{
+    return DecimalUtils::convertTo<F>(dec, scale);
+}
+
 bool Field::operator< (const Field & rhs) const
 {
     if (which < rhs.which)
@@ -860,6 +867,17 @@ template class DecimalField<Decimal128>;
 template class DecimalField<Decimal256>;
 template class DecimalField<DateTime64>;
 template class DecimalField<Time64>;
+
+template DecimalField<Decimal32>::operator Float32() const;
+template DecimalField<Decimal32>::operator Float64() const;
+template DecimalField<Decimal64>::operator Float32() const;
+template DecimalField<Decimal64>::operator Float64() const;
+template DecimalField<Decimal128>::operator Float32() const;
+template DecimalField<Decimal128>::operator Float64() const;
+template DecimalField<Decimal256>::operator Float32() const;
+template DecimalField<Decimal256>::operator Float64() const;
+template DecimalField<DateTime64>::operator Float32() const;
+template DecimalField<DateTime64>::operator Float64() const;
 
 template <typename T>
 NearestFieldType<std::decay_t<T>> & Field::safeGet() &
