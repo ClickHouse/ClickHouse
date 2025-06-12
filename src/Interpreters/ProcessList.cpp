@@ -420,9 +420,7 @@ ProcessListEntry::~ProcessListEntry()
     if (user_process_list.queries.empty())
         user_process_list.resetTrackers();
 
-    /// Reset throttler, similarly (see above).
-    if (parent.processes.empty())
-        parent.total_network_throttler.reset();
+    /// NOTE: Do not reset parent.total_network_throttler, it MUST account for periods of inactivity for correct work. Also creating multiple parent throttlers is wrong.
 }
 
 
