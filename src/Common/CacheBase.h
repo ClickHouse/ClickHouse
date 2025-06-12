@@ -64,9 +64,9 @@ public:
         size_t max_count,
         double size_ratio)
     {
-        auto on_remove_function = [this](const MappedPtr & mappedPtr)
+        auto on_remove_function = [this](const MappedPtr & mapped_ptr)
         {
-            onValueRemoval(mappedPtr);
+            onValueRemoval(mapped_ptr);
         };
 
         if (cache_policy_name.empty())
@@ -340,7 +340,7 @@ private:
 
     /// This is called when a cell is being evicted from the cache.
     /// Override this method if you want to handle individual value removals from cache
-    virtual void onValueRemoval(const MappedPtr & /*mapped*/) { }
+    virtual void onValueRemoval(const MappedPtr &) { }
 };
 
 
