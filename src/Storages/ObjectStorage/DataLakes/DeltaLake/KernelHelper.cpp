@@ -62,9 +62,6 @@ public:
         set_option("aws_secret_access_key", secret_access_key);
         set_option("aws_token", token);
 
-        if (no_sign || (access_key_id.empty() && secret_access_key.empty()))
-            set_option("aws_skip_signature", "true");
-
         if (!region.empty())
             set_option("aws_region", region);
 
