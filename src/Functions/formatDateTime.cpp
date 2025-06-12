@@ -2019,7 +2019,7 @@ The example column in the table below shows formatting result for `2018-01-02 22
 | %C | year divided by 100 and truncated to integer (00-99) | 20 |
 | %d | day of the month, zero-padded (01-31) | 02 |
 | %D | Short MM/DD/YY date, equivalent to %m/%d/%y | 01/02/18 |
-| %e | day of the month, space-padded ( 1-31) | 2 |
+| %e | day of the month, space-padded (1-31) | 2 |
 | %f | fractional second | 123456 |
 | %F | short YYYY-MM-DD date, equivalent to %Y-%m-%d | 2018-01-02 |
 | %g | two-digit year format, aligned to ISO 8601 | 18 |
@@ -2058,13 +2058,15 @@ The example column in the table below shows formatting result for `2018-01-02 22
     FunctionDocumentation::Syntax syntax_formatDateTime = R"(
 formatDateTime(datetime, format[, timezone])
     )";
-    FunctionDocumentation::Arguments arguments_formatDateTime = {
+    FunctionDocumentation::Arguments arguments_formatDateTime =
+    {
         {"datetime", "A date or date time to format. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"format", "Format string with replacement fields. [`String`](../data-types/string.md)."},
         {"timezone", "Optional. Timezone name for the formatted time. [`String`](../data-types/string.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_formatDateTime = "Returns time and date values according to the determined format. [`String`](../data-types/string.md).";
-    FunctionDocumentation::Examples examples_formatDateTime = {
+    FunctionDocumentation::Examples examples_formatDateTime =
+    {
         {"Format date with year placeholder", R"(
 SELECT formatDateTime(toDate('2010-01-04'), '%g')
         )",
@@ -2107,7 +2109,8 @@ LIMIT 10
     };
     FunctionDocumentation::IntroducedIn introduced_in_formatDateTime = {1, 1};
     FunctionDocumentation::Category category_formatDateTime = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_formatDateTime = {
+    FunctionDocumentation documentation_formatDateTime =
+    {
         description_formatDateTime,
         syntax_formatDateTime,
         arguments_formatDateTime,

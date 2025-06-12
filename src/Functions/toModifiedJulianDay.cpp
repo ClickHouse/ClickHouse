@@ -224,11 +224,13 @@ Converts a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Prolepti
         FunctionDocumentation::Syntax syntax_toModifiedJulianDay = R"(
 toModifiedJulianDay(date)
     )";
-        FunctionDocumentation::Arguments arguments_toModifiedJulianDay = {
+        FunctionDocumentation::Arguments arguments_toModifiedJulianDay =
+        {
             {"date", "The date in String form. [`String`](../data-types/string.md)/[`FixedString`](../data-types/fixedstring.md)."}
         };
         FunctionDocumentation::ReturnedValue returned_value_toModifiedJulianDay = "Returns Modified Julian Day number. [`Int32`](../data-types/int-uint.md).";
-        FunctionDocumentation::Examples examples_toModifiedJulianDay = {
+        FunctionDocumentation::Examples examples_toModifiedJulianDay =
+        {
             {"Convert date to Modified Julian Day", R"(
 SELECT toModifiedJulianDay('2020-01-01')
         )",
@@ -240,7 +242,8 @@ SELECT toModifiedJulianDay('2020-01-01')
         };
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDay = {21, 1};
         FunctionDocumentation::Category category_toModifiedJulianDay = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_toModifiedJulianDay = {
+        FunctionDocumentation documentation_toModifiedJulianDay =
+        {
             description_toModifiedJulianDay,
             syntax_toModifiedJulianDay,
             arguments_toModifiedJulianDay,
@@ -258,11 +261,13 @@ Similar to [`toModifiedJulianDay()`](#tomodifiedjulianday), but instead of raisi
         FunctionDocumentation::Syntax syntax_toModifiedJulianDayOrNull = R"(
 toModifiedJulianDayOrNull(date)
     )";
-        FunctionDocumentation::Arguments arguments_toModifiedJulianDayOrNull = {
+        FunctionDocumentation::Arguments arguments_toModifiedJulianDayOrNull =
+        {
             {"date", "Date in text form. [`String`](../data-types/string.md)/[`FixedString`](../data-types/fixedstring.md)."}
         };
         FunctionDocumentation::ReturnedValue returned_value_toModifiedJulianDayOrNull = "Returns the modified Julian day number. [`Nullable(Int32)`](../data-types/int-uint.md).";
-        FunctionDocumentation::Examples examples_toModifiedJulianDayOrNull = {
+        FunctionDocumentation::Examples examples_toModifiedJulianDayOrNull =
+        {
             {"Convert date to Modified Julian Day with null handling", R"(
 SELECT toModifiedJulianDayOrNull('2020-01-01')
         )",
@@ -274,7 +279,8 @@ SELECT toModifiedJulianDayOrNull('2020-01-01')
         };
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDayOrNull = {21, 1};
         FunctionDocumentation::Category category_toModifiedJulianDayOrNull = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_toModifiedJulianDayOrNull = {
+        FunctionDocumentation documentation_toModifiedJulianDayOrNull =
+        {
             description_toModifiedJulianDayOrNull,
             syntax_toModifiedJulianDayOrNull,
             arguments_toModifiedJulianDayOrNull,

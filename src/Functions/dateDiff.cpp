@@ -517,14 +517,16 @@ Calculates the difference between two date or date with time values.
     FunctionDocumentation::Syntax syntax_dateDiff_implementation = R"(
 dateDiff('unit', startdate, enddate[, timezone])
     )";
-    FunctionDocumentation::Arguments arguments_dateDiff_implementation = {
+    FunctionDocumentation::Arguments arguments_dateDiff_implementation =
+    {
         {"unit", "The type of interval for result. [`String`](../data-types/string.md)."},
         {"startdate", "The first time value. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"enddate", "The second time value. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"timezone", "Optional. Timezone name. If specified, it is applied to both arguments. If not specified, timezones from the input datatypes are used. [`String`](../data-types/string.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_dateDiff_implementation = "Returns the difference between the two date or date with time values in the specified unit. [`Int`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_dateDiff_documentation = {
+    FunctionDocumentation::Examples examples_dateDiff_documentation =
+    {
         {"Calculate difference between dates", R"(
 SELECT dateDiff('day', toDate('2021-01-01'), toDate('2021-01-15'))
         )",
@@ -536,7 +538,8 @@ SELECT dateDiff('day', toDate('2021-01-01'), toDate('2021-01-15'))
     };
     FunctionDocumentation::IntroducedIn introduced_in_dateDiff_implementation = {1, 1};
     FunctionDocumentation::Category category_dateDiff_implementation = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_dateDiff_implementation = {
+    FunctionDocumentation documentation_dateDiff_implementation =
+    {
         description_dateDiff_implementation,
         syntax_dateDiff_implementation,
         arguments_dateDiff_implementation,
