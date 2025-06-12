@@ -27,5 +27,5 @@ for key in $submodules; do
     rev=$(git -C "$repo_root/$path" rev-parse HEAD)
 
     input_name=$(basename "$path")
-    echo "  contrib-${input_name} = { url = \"github:${org}/${repo}/${rev}\"; flake = false; };"
+    echo "    contrib-${input_name} = { url = \"github:${org}/${repo}/${rev}\"; flake = false; };"
 done

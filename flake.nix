@@ -1,5 +1,4 @@
 {
-
   outputs = inputs@{ self, nixpkgs, fenix, ... }:
     let
       system = "x86_64-linux"; # Change this if needed
@@ -118,7 +117,8 @@
     nixpkgs.url = "github:NixOS/nixpkgs";
     fenix.url = "github:nix-community/fenix";
 
-    # Use utils/nix/generate_submodule_inputs.sh
+    # Use utils/nix/update_submodule_inputs.sh
+    # Everything after first contrib- line (including it) will be replaced by the script.
     contrib-jwt-cpp = { url = "github:Thalhammer/jwt-cpp/a6927cb8140858c34e05d1a954626b9849fbcdfc"; flake = false; };
     contrib-zstd = { url = "github:facebook/zstd/437081852c396eeb61edb7d47044d8cad911885e"; flake = false; };
     contrib-lz4 = { url = "github:lz4/lz4/ebb370ca83af193212df4dcbadcc5d87bc0de2f0"; flake = false; };
@@ -135,7 +135,7 @@
     contrib-arrow = { url = "github:ClickHouse/arrow/210f686ab96733180bed04e36098911825d70345"; flake = false; };
     contrib-thrift = { url = "github:apache/thrift/2a93df80f27739ccabb5b885cb12a8dc7595ecdf"; flake = false; };
     contrib-libhdfs3 = { url = "github:ClickHouse/libhdfs3/d0ae7d2568151feef61d3ec7896803262f0e0f91"; flake = false; };
-    contrib-libxml2 = { url = "github:GNOME/libxml2/223cb03a5d27b1b2393b266a8657443d046139d6"; flake = false; };
+    contrib-libxml2 = { url = "github:GNOME/libxml2/8d509f483dd5ce268b2fded9c738132c47d820d8"; flake = false; };
     contrib-libgsasl = { url = "github:ClickHouse/libgsasl/2d16b4e0d9435bec4546875ef07d36383bb993a5"; flake = false; };
     contrib-snappy = { url = "github:ClickHouse/snappy/6ebb5b1ab8801ea3fde103c5c29f5ab86df5fe7a"; flake = false; };
     contrib-cppkafka = { url = "github:ClickHouse/cppkafka/114d5be53330390a16c7ee227ef5e3551a9b5f49"; flake = false; };
@@ -144,7 +144,7 @@
     contrib-simdjson = { url = "github:simdjson/simdjson/e341c8b43861b43de29c48ab65f292d997096953"; flake = false; };
     contrib-rapidjson = { url = "github:ClickHouse/rapidjson/800ca2f38fc3b387271d9e1926fcfc9070222104"; flake = false; };
     contrib-fastops = { url = "github:ClickHouse/fastops/1460583af7d13c0e980ce46aec8ee9400314669a"; flake = false; };
-    contrib-orc = { url = "github:ClickHouse/orc/c6c189db27fc450b0edb370716550da36f361ed0"; flake = false; };
+    contrib-orc = { url = "github:ClickHouse/orc/1892a6539e655280d38a8d0669214dbb9b1d0919"; flake = false; };
     contrib-sparsehash-c11 = { url = "github:sparsehash/sparsehash-c11/cf0bffaa456f23bc4174462a789b90f8b6f5f42f"; flake = false; };
     contrib-grpc = { url = "github:ClickHouse/grpc/62e871c36fa93c0af939bd31762845265214fe3d"; flake = false; };
     contrib-aws = { url = "github:ClickHouse/aws-sdk-cpp/a86b913abc2795ee23941b24dd51e862214ec6b0"; flake = false; };
@@ -164,13 +164,13 @@
     contrib-cassandra = { url = "github:ClickHouse/cpp-driver/f4a31e92a25c34c02c7291ff97c7813bc83b0e09"; flake = false; };
     contrib-libuv = { url = "github:ClickHouse/libuv/714b58b9849568211ade86b44dd91d37f8a2175e"; flake = false; };
     contrib-fmtlib = { url = "github:fmtlib/fmt/123913715afeb8a437e6388b4473fcc4753e1c9a"; flake = false; };
-    contrib-krb5 = { url = "github:ClickHouse/krb5/c5b4b994c18db86933255907a97eee5993fd18fe"; flake = false; };
+    contrib-krb5 = { url = "github:ClickHouse/krb5/ed01212a0ba6e101f51178b9014368af062c01c4"; flake = false; };
     contrib-cyrus-sasl = { url = "github:ClickHouse/cyrus-sasl/e6466edfd638cc5073debe941c53345b18a09512"; flake = false; };
     contrib-croaring = { url = "github:RoaringBitmap/CRoaring/9b7cc0ff1c41e9457efb6228cfd2c538d0155303"; flake = false; };
     contrib-miniselect = { url = "github:danlark1/miniselect/be0af6bd0b6eb044d1acc4f754b229972d99903a"; flake = false; };
     contrib-rocksdb = { url = "github:ClickHouse/rocksdb/4d479be3591e7855cecebfb894585e04cd9e4245"; flake = false; };
     contrib-xz = { url = "github:xz-mirror/xz/869b9d1b4edd6df07f819d360d306251f8147353"; flake = false; };
-    contrib-abseil-cpp = { url = "github:ClickHouse/abseil-cpp/a3c4dd3e77f28b526efbb0eb394b72e29c633936"; flake = false; };
+    contrib-abseil-cpp = { url = "github:ClickHouse/abseil-cpp/9ac7062b1860d895fb5a8cbf58c3e9ef8f674b5f"; flake = false; };
     contrib-dragonbox = { url = "github:ClickHouse/dragonbox/923705af6fd953aa948fc175f6020b15f7359838"; flake = false; };
     contrib-fast_float = { url = "github:fastfloat/fast_float/7eae925b51fd0f570ccd5c880c12e3e27a23b86f"; flake = false; };
     contrib-NuRaft = { url = "github:ClickHouse/NuRaft/c01f5cd9e0edb90c4febf49685b962cf0de91833"; flake = false; };
@@ -233,12 +233,12 @@
     contrib-idna = { url = "github:ada-url/idna/3c8be01d42b75649f1ac9b697d0ef757eebfe667"; flake = false; };
     contrib-google-cloud-cpp = { url = "github:ClickHouse/google-cloud-cpp/83f30caadb8613fb5c408d8c2fd545291596b53f"; flake = false; };
     contrib-rust_vendor = { url = "github:ClickHouse/rust_vendor/3f5cbcac0698db449b5174236dfd7040a5ca1a4d"; flake = false; };
-    contrib-openssl = { url = "github:ClickHouse/openssl/b3e62c440f390e12e77c80675f883af82ad3d5ed"; flake = false; };
+    contrib-openssl = { url = "github:ClickHouse/openssl/2aa34c68d677b447fb85c55167d8d1ab98ba4def"; flake = false; };
     contrib-double-conversion = { url = "github:ClickHouse/double-conversion/4f7a25d8ced8c7cf6eee6fd09d6788eaa23c9afe"; flake = false; };
     contrib-mongo-cxx-driver = { url = "github:ClickHouse/mongo-cxx-driver/3166bdb49b717ce1bc30f46cc2b274ab1de7005b"; flake = false; };
     contrib-mongo-c-driver = { url = "github:ClickHouse/mongo-c-driver/d55410c69183c90d18fd3b3f1d9db3d224fc8d52"; flake = false; };
     contrib-numactl = { url = "github:ClickHouse/numactl/ff32c618d63ca7ac48cce366c5a04bb3563683a0"; flake = false; };
-    contrib-postgres = { url = "github:ClickHouse/postgres/c041ed8cbda02eb881de8d7645ca96b6e4b2327d"; flake = false; };
+    contrib-postgres = { url = "github:ClickHouse/postgres/9da0420d861df7542b92058342afd4723e95ef4c"; flake = false; };
     contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/1ee29c80f31547ea3cee2fc453c12b618ef35882"; flake = false; };
     contrib-SHA3IUF = { url = "github:brainhub/SHA3IUF/fc8504750a5c2174a1874094dd05e6a0d8797753"; flake = false; };
     contrib-chdig = { url = "github:azat/chdig/e5d3cfdb163c6fdb2c9f1359eda8d22d0db38a0e"; flake = false; };
