@@ -316,13 +316,18 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
               },
               {},
               false)},
+         {"enable_hash_ring_filtering", CHSetting(trueOrFalse, {}, false)},
+         {"list_objects_batch_size",
+          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.8, 0, 3000)); }, {}, false)},
+         {"max_processed_bytes_before_commit", CHSetting(bytesRange, {}, false)},
+         {"max_processed_files_before_commit", CHSetting(rowsRange, {}, false)},
+         {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
          {"parallel_inserts", CHSetting(trueOrFalse, {}, false)},
          {"s3queue_buckets",
           CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.8, 0, 16)); }, {}, false)},
          {"s3queue_enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
          {"s3queue_processing_threads_num", threadSetting},
-         {"s3queue_tracked_files_limit",
-          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.8, 0, 3000)); }, {}, false)}});
+         {"s3queue_tracked_files_limit", CHSetting(rowsRange, {}, false)}});
 
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
