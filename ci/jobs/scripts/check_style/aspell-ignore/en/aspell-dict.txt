@@ -2027,6 +2027,7 @@ iTerm
 icebergCluster
 icosahedron
 icudata
+idelta
 idempotency
 idnaDecode
 idnaEncode
@@ -2064,6 +2065,7 @@ intervalLengthSum
 invalidCertificateHandler
 invariants
 invertedindexes
+irate
 isConstant
 isDecimalOverflow
 isFinite
@@ -2980,7 +2982,13 @@ throwIf
 throwif
 timeDiff
 timeSeriesData
+timeSeriesDeltaToGrid
 timeSeriesMetrics
+timeSeriesInstantDeltaToGrid
+timeSeriesInstantRateToGrid
+timeSeriesLastTwoSamples
+timeSeriesRateToGrid
+timeSeriesResampleToGridWithStaleness
 timeSeriesTags
 timeSlot
 timeSlots

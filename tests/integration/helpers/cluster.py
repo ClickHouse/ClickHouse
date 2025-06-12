@@ -2512,7 +2512,7 @@ class ClickHouseCluster:
             if monitor is not None:
                 monitor.start(self)
 
-    def reset_rabbitmq(self, timeout=120):
+    def reset_rabbitmq(self, timeout=240):
         self.stop_rabbitmq_app()
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
         self.start_rabbitmq_app()

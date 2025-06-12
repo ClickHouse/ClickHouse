@@ -20,6 +20,8 @@ const auto zeroToThree = [](RandomGenerator & rg) { return std::to_string(rg.ran
 
 const auto probRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
 
+const auto probRangeNoZero = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.01, 0.99)); };
+
 const auto highRange = [](RandomGenerator & rg)
 {
     const auto val = rg.randomInt<uint32_t>(0, 25);
@@ -37,6 +39,8 @@ const auto threadSetting = CHSetting(
     false);
 
 const auto probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);
+
+const auto probRangeNoZeroSetting = CHSetting(probRangeNoZero, {"0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999"}, false);
 
 const auto trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
 

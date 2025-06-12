@@ -63,10 +63,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
             [](RandomGenerator & rg)
             {
                 const DB::Strings & choices
-                    = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'Delta'", "'T64'", "'AES_128_GCM_SIV'"};
+                    = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'T64'", "'AES_128_GCM_SIV'"};
                 return rg.pickRandomly(choices);
             },
-            {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'Delta'", "'T64'", "'AES_128_GCM_SIV'"},
+            {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'T64'", "'AES_128_GCM_SIV'"},
             false)},
        {"detach_not_byte_identical_parts", trueOrFalseSetting},
        {"detach_old_local_parts_when_cloning_replica", trueOrFalseSetting},
