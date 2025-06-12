@@ -893,24 +893,107 @@ void StatementGenerator::generateUptDelWhere(RandomGenerator & rg, const SQLTabl
     }
 }
 
-void StatementGenerator::generateNextDelete(RandomGenerator & rg, LightDelete * del)
+void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt)
 {
-    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-    const std::optional<String> & cluster = t.getCluster();
-
-    t.setName(del->mutable_est(), false);
-    if (cluster.has_value())
+    if (t.isMergeTreeFamily() && rg.nextBool())
     {
-        del->mutable_cluster()->set_cluster(cluster.value());
+        generateNextTablePartition(rg, false, t, upt->mutable_single_partition()->mutable_partition());
     }
+    flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
+    if (this->entries.empty())
+    {
+        UpdateSet * upset = upt->mutable_update();
+
+        upset->mutable_col()->mutable_col()->set_column("c0");
+        upset->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_int_lit(0);
+    }
+    else
+    {
+        const uint32_t nupdates
+            = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(4))) + 1;
+
+        std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
+        for (uint32_t j = 0; j < nupdates; j++)
+        {
+            columnPathRef(this->entries[j], j == 0 ? upt->mutable_update()->mutable_col() : upt->add_other_updates()->mutable_col());
+        }
+        for (uint32_t j = 0; j < nupdates; j++)
+        {
+            const ColumnPathChain & entry = this->entries[j];
+            UpdateSet & uset = const_cast<UpdateSet &>(j == 0 ? upt->update() : upt->other_updates(j - 1));
+            Expr * expr = uset.mutable_expr();
+
+            if (rg.nextSmallNumber() < 9)
+            {
+                /// Set constant value
+                String buf;
+                LiteralValue * lv = expr->mutable_lit_val();
+
+                if ((entry.dmod.has_value() && entry.dmod.value() == DModifier::DEF_DEFAULT && rg.nextMediumNumber() < 6)
+                    || (entry.path.size() == 1 && rg.nextLargeNumber() < 2))
+                {
+                    buf = "DEFAULT";
+                }
+                else if (entry.special == ColumnSpecial::SIGN)
+                {
+                    buf = rg.nextBool() ? "1" : "-1";
+                }
+                else if (entry.special == ColumnSpecial::IS_DELETED)
+                {
+                    buf = rg.nextBool() ? "1" : "0";
+                }
+                else
+                {
+                    buf = strAppendAnyValue(rg, entry.getBottomType());
+                }
+                lv->set_no_quote_str(buf);
+            }
+            else
+            {
+                addTableRelation(rg, true, "", t);
+                this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+                this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+                generateExpression(rg, expr);
+                this->levels.clear();
+            }
+        }
+        this->entries.clear();
+    }
+
+    generateUptDelWhere(rg, t, upt->mutable_where()->mutable_expr()->mutable_expr());
+}
+
+void StatementGenerator::generateNextDelete(RandomGenerator & rg, const SQLTable & t, Delete * del)
+{
     if (t.isMergeTreeFamily() && rg.nextBool())
     {
         generateNextTablePartition(rg, false, t, del->mutable_single_partition()->mutable_partition());
     }
     generateUptDelWhere(rg, t, del->mutable_where()->mutable_expr()->mutable_expr());
+}
+
+template <typename T>
+void StatementGenerator::generateNextUpdateOrDelete(RandomGenerator & rg, T * st)
+{
+    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+    const std::optional<String> & cluster = t.getCluster();
+
+    t.setName(st->mutable_est(), false);
+    if (cluster.has_value())
+    {
+        st->mutable_cluster()->set_cluster(cluster.value());
+    }
+    if constexpr (std::is_same_v<T, LightDelete>)
+    {
+        generateNextDelete(rg, t, st->mutable_del());
+    }
+    else
+    {
+        generateNextUpdate(rg, t, st->mutable_upt());
+    }
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, del->mutable_setting_values());
+        generateSettingValues(rg, serverSettings, st->mutable_setting_values());
     }
 }
 
@@ -1203,13 +1286,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             }
             else if (heavy_delete && nopt < (heavy_delete + alter_order_by + 1))
             {
-                HeavyDelete * hdel = ati->mutable_del();
-
-                if (t.isMergeTreeFamily() && rg.nextBool())
-                {
-                    generateNextTablePartition(rg, false, t, hdel->mutable_single_partition()->mutable_partition());
-                }
-                generateUptDelWhere(rg, t, hdel->mutable_del()->mutable_expr()->mutable_expr());
+                generateNextDelete(rg, t, ati->mutable_del());
             }
             else if (add_column && nopt < (heavy_delete + alter_order_by + add_column + 1))
             {
@@ -1331,75 +1408,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + 1))
             {
-                Update * upt = ati->mutable_update();
-
-                if (t.isMergeTreeFamily() && rg.nextBool())
-                {
-                    generateNextTablePartition(rg, false, t, upt->mutable_single_partition()->mutable_partition());
-                }
-                flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
-                if (this->entries.empty())
-                {
-                    UpdateSet * upset = upt->mutable_update();
-
-                    upset->mutable_col()->mutable_col()->set_column("c0");
-                    upset->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_int_lit(0);
-                }
-                else
-                {
-                    const uint32_t nupdates
-                        = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(4))) + 1;
-
-                    std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
-                    for (uint32_t j = 0; j < nupdates; j++)
-                    {
-                        columnPathRef(
-                            this->entries[j], j == 0 ? upt->mutable_update()->mutable_col() : upt->add_other_updates()->mutable_col());
-                    }
-                    for (uint32_t j = 0; j < nupdates; j++)
-                    {
-                        const ColumnPathChain & entry = this->entries[j];
-                        UpdateSet & uset = const_cast<UpdateSet &>(j == 0 ? upt->update() : upt->other_updates(j - 1));
-                        Expr * expr = uset.mutable_expr();
-
-                        if (rg.nextSmallNumber() < 9)
-                        {
-                            /// Set constant value
-                            String buf;
-                            LiteralValue * lv = expr->mutable_lit_val();
-
-                            if ((entry.dmod.has_value() && entry.dmod.value() == DModifier::DEF_DEFAULT && rg.nextMediumNumber() < 6)
-                                || (entry.path.size() == 1 && rg.nextLargeNumber() < 2))
-                            {
-                                buf = "DEFAULT";
-                            }
-                            else if (entry.special == ColumnSpecial::SIGN)
-                            {
-                                buf = rg.nextBool() ? "1" : "-1";
-                            }
-                            else if (entry.special == ColumnSpecial::IS_DELETED)
-                            {
-                                buf = rg.nextBool() ? "1" : "0";
-                            }
-                            else
-                            {
-                                buf = strAppendAnyValue(rg, entry.getBottomType());
-                            }
-                            lv->set_no_quote_str(buf);
-                        }
-                        else
-                        {
-                            addTableRelation(rg, true, "", t);
-                            this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-                            this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
-                            generateExpression(rg, expr);
-                            this->levels.clear();
-                        }
-                    }
-                    this->entries.clear();
-                }
-
-                generateUptDelWhere(rg, t, upt->mutable_where()->mutable_expr()->mutable_expr());
+                generateNextUpdate(rg, t, ati->mutable_update());
             }
             else if (
                 add_stats
@@ -3523,10 +3532,11 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     const uint32_t rename = 1
         * static_cast<uint32_t>(!in_parallel
                                 && (collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases));
+    const uint32_t light_update = 6 * static_cast<uint32_t>(has_tables);
     const uint32_t select_query = 800 * static_cast<uint32_t>(!in_parallel);
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
-        + create_dictionary + rename + select_query;
+        + create_dictionary + rename + light_update + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -3549,7 +3559,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     }
     else if (light_delete && nopt < (create_table + create_view + drop + insert + light_delete + 1))
     {
-        generateNextDelete(rg, sq->mutable_del());
+        generateNextUpdateOrDelete<LightDelete>(rg, sq->mutable_del());
     }
     else if (truncate && nopt < (create_table + create_view + drop + insert + light_delete + truncate + 1))
     {
@@ -3661,11 +3671,20 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
         generateNextRename(rg, sq->mutable_rename());
     }
     else if (
+        light_update
+        && nopt
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
+               + create_dictionary + rename + light_update + 1))
+    {
+        generateNextUpdateOrDelete<LightUpdate>(rg, sq->mutable_upt());
+    }
+    else if (
         select_query
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
                + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
-               + create_dictionary + rename + select_query + 1))
+               + create_dictionary + rename + light_update + select_query + 1))
     {
         generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
     }

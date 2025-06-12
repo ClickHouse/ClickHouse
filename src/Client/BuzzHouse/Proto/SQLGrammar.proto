@@ -3323,12 +3323,35 @@ message SinglePartitionExpr {
     required PartitionExpr partition = 1;
 }
 
+message Delete {
+    optional SinglePartitionExpr single_partition = 1;
+    required WhereStatement where = 2;
+}
+
 message LightDelete {
     required ExprSchemaTable est = 1;
-    optional SinglePartitionExpr single_partition = 2;
-    optional Cluster cluster = 3;
+    optional Cluster cluster = 2;
+    required Delete del = 3;
+    optional SettingValues setting_values = 4;
+}
+
+message UpdateSet {
+    required ColumnPath col = 1;
+    required Expr expr = 2;
+}
+
+message Update {
+    required UpdateSet update = 1;
+    repeated UpdateSet other_updates = 2;
+    optional SinglePartitionExpr single_partition = 3;
     required WhereStatement where = 4;
-    optional SettingValues setting_values = 5;
+}
+
+message LightUpdate {
+    required ExprSchemaTable est = 1;
+    optional Cluster cluster = 2;
+    required Update upt = 3;
+    optional SettingValues setting_values = 4;
 }
 
 message Truncate {
@@ -3401,23 +3424,6 @@ message Exchange {
     required SQLObjectName object2 = 3;
     optional Cluster cluster = 4;
     optional SettingValues setting_values = 5;
-}
-
-message UpdateSet {
-    required ColumnPath col = 1;
-    required Expr expr = 2;
-}
-
-message Update {
-    required UpdateSet update = 1;
-    repeated UpdateSet other_updates = 2;
-    optional SinglePartitionExpr single_partition = 3;
-    required WhereStatement where = 4;
-}
-
-message HeavyDelete {
-    optional SinglePartitionExpr single_partition = 1;
-    required WhereStatement del = 2;
 }
 
 message AddWhere {
@@ -3662,7 +3668,7 @@ message MovePartition {
 message AlterItem {
     oneof alter_oneof {
         /// For tables
-        HeavyDelete del = 1;
+        Delete del = 1;
         Update update = 2;
         TableKey order = 3;
         ColInPartition materialize_column = 4;
@@ -3887,22 +3893,23 @@ message SQLQueryInner {
         Drop drop = 3;
         Insert insert = 4;
         LightDelete del = 5;
-        Truncate trunc = 6;
-        OptimizeTable opt = 7;
-        CheckTable check = 8;
-        DescTable desc = 9;
-        Exchange exchange = 10;
-        Alter alter = 11;
-        SettingValues setting_values = 12;
-        CreateView create_view = 13;
-        Attach attach = 14;
-        Detach detach = 15;
-        CreateDatabase create_database = 16;
-        CreateFunction create_function = 17;
-        SystemCommand system_cmd = 18;
-        BackupRestore backup_restore = 19;
-        CreateDictionary create_dictionary = 20;
-        Rename rename = 21;
+        LightUpdate upt = 6;
+        Truncate trunc = 7;
+        OptimizeTable opt = 8;
+        CheckTable check = 9;
+        DescTable desc = 10;
+        Exchange exchange = 11;
+        Alter alter = 12;
+        SettingValues setting_values = 13;
+        CreateView create_view = 14;
+        Attach attach = 15;
+        Detach detach = 16;
+        CreateDatabase create_database = 17;
+        CreateFunction create_function = 18;
+        SystemCommand system_cmd = 19;
+        BackupRestore backup_restore = 20;
+        CreateDictionary create_dictionary = 21;
+        Rename rename = 22;
     }
 }
 

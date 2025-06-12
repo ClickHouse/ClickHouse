@@ -335,7 +335,10 @@ private:
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
     void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
-    void generateNextDelete(RandomGenerator & rg, LightDelete * del);
+    void generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt);
+    void generateNextDelete(RandomGenerator & rg, const SQLTable & t, Delete * del);
+    template <typename T>
+    void generateNextUpdateOrDelete(RandomGenerator & rg, T * st);
     void generateNextTruncate(RandomGenerator & rg, Truncate * trunc);
     void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot);
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
