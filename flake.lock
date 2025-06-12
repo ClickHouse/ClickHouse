@@ -105,17 +105,17 @@
     "contrib-abseil-cpp": {
       "flake": false,
       "locked": {
-        "lastModified": 1718115242,
-        "narHash": "sha256-35X2Yhifgb+vSfj/kiiqcdd/0JPv9z6OnhcB701K3I0=",
+        "lastModified": 1738597845,
+        "narHash": "sha256-uOgUtF8gaEgcxFK9WAoAhv4GoS8P23IoUxHZZVZdpPk=",
         "owner": "ClickHouse",
         "repo": "abseil-cpp",
-        "rev": "a3c4dd3e77f28b526efbb0eb394b72e29c633936",
+        "rev": "9ac7062b1860d895fb5a8cbf58c3e9ef8f674b5f",
         "type": "github"
       },
       "original": {
         "owner": "ClickHouse",
         "repo": "abseil-cpp",
-        "rev": "a3c4dd3e77f28b526efbb0eb394b72e29c633936",
+        "rev": "9ac7062b1860d895fb5a8cbf58c3e9ef8f674b5f",
         "type": "github"
       }
     },
@@ -1074,17 +1074,17 @@
     "contrib-krb5": {
       "flake": false,
       "locked": {
-        "lastModified": 1725724778,
-        "narHash": "sha256-hjiAKfVzjlm8P0Vgl2U2REMGzLDh2/3fj1mKKX1JHmk=",
+        "lastModified": 1749243612,
+        "narHash": "sha256-tzCbsCmXUgFunTd2CRkGVI5dQEJJ2zH80yZHQELo3cM=",
         "owner": "ClickHouse",
         "repo": "krb5",
-        "rev": "c5b4b994c18db86933255907a97eee5993fd18fe",
+        "rev": "ed01212a0ba6e101f51178b9014368af062c01c4",
         "type": "github"
       },
       "original": {
         "owner": "ClickHouse",
         "repo": "krb5",
-        "rev": "c5b4b994c18db86933255907a97eee5993fd18fe",
+        "rev": "ed01212a0ba6e101f51178b9014368af062c01c4",
         "type": "github"
       }
     },
@@ -1346,17 +1346,17 @@
     "contrib-libxml2": {
       "flake": false,
       "locked": {
-        "lastModified": 1681211623,
-        "narHash": "sha256-MsC27L4hMvTubNvcBpP/vg3kS0LlH30GCLJ4gKWREdc=",
+        "lastModified": 1747146639,
+        "narHash": "sha256-1VKFJbYoYnTUl+TcEMhhg4GT652hfU5SVfIbL5orsCE=",
         "owner": "GNOME",
         "repo": "libxml2",
-        "rev": "223cb03a5d27b1b2393b266a8657443d046139d6",
+        "rev": "8d509f483dd5ce268b2fded9c738132c47d820d8",
         "type": "github"
       },
       "original": {
         "owner": "GNOME",
         "repo": "libxml2",
-        "rev": "223cb03a5d27b1b2393b266a8657443d046139d6",
+        "rev": "8d509f483dd5ce268b2fded9c738132c47d820d8",
         "type": "github"
       }
     },
@@ -1601,34 +1601,34 @@
     "contrib-openssl": {
       "flake": false,
       "locked": {
-        "lastModified": 1725644856,
-        "narHash": "sha256-FAH/Ku6apLt3AJNpvWzHaWfHYsdIYdRPnB7Vu+OlgCM=",
+        "lastModified": 1749231524,
+        "narHash": "sha256-Oc05V6ONF/XWrkInYoPvh16mt0XA+MU165f6MLw4zNc=",
         "owner": "ClickHouse",
         "repo": "openssl",
-        "rev": "b3e62c440f390e12e77c80675f883af82ad3d5ed",
+        "rev": "2aa34c68d677b447fb85c55167d8d1ab98ba4def",
         "type": "github"
       },
       "original": {
         "owner": "ClickHouse",
         "repo": "openssl",
-        "rev": "b3e62c440f390e12e77c80675f883af82ad3d5ed",
+        "rev": "2aa34c68d677b447fb85c55167d8d1ab98ba4def",
         "type": "github"
       }
     },
     "contrib-orc": {
       "flake": false,
       "locked": {
-        "lastModified": 1741002580,
-        "narHash": "sha256-wfnbk6ACNADpIKjTePvroy+WlkU3dv/6HhaGvRznzmc=",
+        "lastModified": 1749247482,
+        "narHash": "sha256-rXIOWrhmhN9K9yl3vEuaBcItsK4oRKLoN/3SehfWgX4=",
         "owner": "ClickHouse",
         "repo": "orc",
-        "rev": "c6c189db27fc450b0edb370716550da36f361ed0",
+        "rev": "1892a6539e655280d38a8d0669214dbb9b1d0919",
         "type": "github"
       },
       "original": {
         "owner": "ClickHouse",
         "repo": "orc",
-        "rev": "c6c189db27fc450b0edb370716550da36f361ed0",
+        "rev": "1892a6539e655280d38a8d0669214dbb9b1d0919",
         "type": "github"
       }
     },
@@ -1652,17 +1652,17 @@
     "contrib-postgres": {
       "flake": false,
       "locked": {
-        "lastModified": 1726744478,
-        "narHash": "sha256-x7jtDXH7B+wxg4j/91pPMDtv5ZLpa2og0iizWeUCBF8=",
+        "lastModified": 1749231127,
+        "narHash": "sha256-2zLsa35+ywfWq08r/dOaEwjKx7N3gR4ZEcjLDkl8Ue8=",
         "owner": "ClickHouse",
         "repo": "postgres",
-        "rev": "c041ed8cbda02eb881de8d7645ca96b6e4b2327d",
+        "rev": "9da0420d861df7542b92058342afd4723e95ef4c",
         "type": "github"
       },
       "original": {
         "owner": "ClickHouse",
         "repo": "postgres",
-        "rev": "c041ed8cbda02eb881de8d7645ca96b6e4b2327d",
+        "rev": "9da0420d861df7542b92058342afd4723e95ef4c",
         "type": "github"
       }
     },

@@ -24,7 +24,7 @@ for key in $submodules; do
 
     org="${BASH_REMATCH[1]}"
     repo="${BASH_REMATCH[2]}"
-    rev=$(git -C "$repo_root/$path" rev-parse HEAD)
+    rev=$(git -C "$repo_root" ls-tree HEAD "$path" | awk '{ print $3 }')
 
     input_name=$(basename "$path")
     echo "    contrib-${input_name} = { url = \"github:${org}/${repo}/${rev}\"; flake = false; };"
