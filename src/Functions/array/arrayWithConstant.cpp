@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Reasonable thresholds.
@@ -58,11 +59,20 @@ public:
         ColumnArray::Offsets & offsets = offsets_col->getData();
         offsets.reserve(num_rows);
 
+        auto element_size = col_value->byteSizeAt(0);
+        if (!isColumnConst(*col_value) && (col_value->byteSize() != element_size * col_value->size()))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected variable size of data for type {}. Column size {}. Element size {}. Number of elements {}",
+                arguments[1].type->getPrettyName(),
+                col_value->byteSize(),
+                element_size,
+                col_value->size());
+
         ColumnArray::Offset offset = 0;
         for (size_t i = 0; i < num_rows; ++i)
         {
             auto array_size = col_num->getInt(i);
-            auto element_size = col_value->byteSizeAt(i);
 
             if (unlikely(array_size < 0))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} cannot be negative: while executing function {}", array_size, getName());
