@@ -206,6 +206,8 @@ void optimizeTreeSecondPass(
         {
             auto local_plan = read_from_local->extractQueryPlan();
             local_plan->optimize(optimization_settings);
+            // after applying optimize() we still can have several expression in a row,
+            // so merge them to make plan more concise
             if (optimization_settings.merge_expressions)
                 local_plan->mergeExpressions();
 
