@@ -122,10 +122,11 @@ public:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         IDataLakeMetadata::FileProgressCallback callback,
-        size_t list_batch_size) override
+        size_t list_batch_size,
+        ContextPtr context) override
     {
         chassert(current_metadata);
-        return current_metadata->iterate(filter_dag, callback, list_batch_size);
+        return current_metadata->iterate(filter_dag, callback, list_batch_size, context);
     }
 
     /// This is an awful temporary crutch,
