@@ -75,12 +75,25 @@ namespace PODArrayDetails
 
 void protectMemoryRegion(void * addr, size_t len, int prot);
 
+[[noreturn]] void throwCannotAllocateMemory();
+
 /// The amount of memory occupied by the num_elements of the elements.
-size_t byte_size(size_t num_elements, size_t element_size); /// NOLINT
+inline ALWAYS_INLINE size_t byte_size(size_t num_elements, size_t element_size)
+{
+    size_t amount;
+    if (__builtin_mul_overflow(num_elements, element_size, &amount))
+        throwCannotAllocateMemory();
+    return amount;
+}
 
 /// Minimum amount of memory to allocate for num_elements, including padding.
-size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right); /// NOLINT
-
+inline ALWAYS_INLINE size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right)
+{
+    size_t amount;
+    if (__builtin_add_overflow(byte_size(num_elements, element_size), pad_left + pad_right, &amount))
+        throwCannotAllocateMemory();
+    return amount;
+}
 };
 
 /** Base class that depend only on size of element, not on element itself.
@@ -89,7 +102,7 @@ size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, siz
 template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
-protected:
+public:
     /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = integerRoundUp(pad_right_, ELEMENT_SIZE);
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
@@ -97,6 +110,7 @@ protected:
     /// Empty array will point to this static memory as padding and begin/end.
     static constexpr char * null = const_cast<char *>(empty_pod_array) + pad_left;
 
+protected:
     static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
     static_assert(pad_left % ELEMENT_SIZE == 0, "pad_left must be multiple of element alignment");
 
