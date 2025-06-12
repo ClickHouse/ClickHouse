@@ -77,7 +77,29 @@ private:
 
 REGISTER_FUNCTION(TimezoneOf)
 {
-    factory.registerFunction<FunctionTimezoneOf>();
+    FunctionDocumentation::Description description_timezone_of = R"(
+Returns the timezone name of a [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) value.
+    )";
+    FunctionDocumentation::Syntax syntax_timezone_of = "timeZoneOf(datetime)";
+    FunctionDocumentation::Arguments arguments_timezone_of = {
+        {"datetime", "A value of type [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_timezone_of = "Returns the timezone name for `datetime`. [`String`](/sql-reference/data-types/string).";
+    FunctionDocumentation::Examples examples_timezone_of = {
+        {"Usage example", R"(
+SELECT timezoneOf(now());
+        )",
+        R"(
+┌─timezoneOf(now())─┐
+│ Europe/Amsterdam  │
+└───────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_timezone_of = {21, 4};
+    FunctionDocumentation::Category category_timezone_of = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_timezone_of = {description_timezone_of, syntax_timezone_of, arguments_timezone_of, returned_value_timezone_of, examples_timezone_of, introduced_in_timezone_of, category_timezone_of};
+
+    factory.registerFunction<FunctionTimezoneOf>(documentation_timezone_of);
     factory.registerAlias("timeZoneOf", "timezoneOf");
 }
 

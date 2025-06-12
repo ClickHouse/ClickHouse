@@ -543,8 +543,6 @@ throwIf
 tid
 timeSlot
 timeSlots
-timezoneOf
-timezoneOffset
 toBool
 toColumnTypeName
 toDate
@@ -564,9 +562,6 @@ toDateTime64OrZero
 toDateTimeOrDefault
 toDateTimeOrNull
 toDateTimeOrZero
-toDayOfMonth
-toDayOfWeek
-toDayOfYear
 toDecimal128
 toDecimal128OrDefault
 toDecimal128OrNull
@@ -592,7 +587,6 @@ toFloat64
 toFloat64OrDefault
 toFloat64OrNull
 toFloat64OrZero
-toHour
 toIPv4
 toIPv4OrDefault
 toIPv4OrNull
@@ -641,12 +635,9 @@ toIntervalYear
 toJSONString
 toLastDayOfWeek
 toLowCardinality
-toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
-toMonth
 toNullable
-toQuarter
 toRelativeDayNum
 toRelativeHourNum
 toRelativeMinuteNum
@@ -655,7 +646,6 @@ toRelativeQuarterNum
 toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
-toSecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -671,7 +661,6 @@ toStartOfWeek
 toString
 toStringCutToZero
 toTime
-toTimezone
 toTypeName
 toUInt128
 toUInt128OrNull
@@ -710,7 +699,6 @@ toWeek
 toYYYYMM
 toYYYYMMDD
 toYYYYMMDDhhmmss
-toYear
 toYearWeek
 today
 transactionID
