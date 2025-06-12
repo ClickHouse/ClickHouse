@@ -1922,7 +1922,8 @@ class TestCase:
         pattern = "{test} > {stdout} 2> {stderr}"
 
         tests_env = os.environ.copy()
-        tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
+        if args.trace:
+            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
 
         if self.ext == ".sql" and args.cloud:
             # Get at least some logs, because we don't have access to system.text_log and pods...
@@ -3874,6 +3875,7 @@ def parse_args():
         action="store_true",
         help="Capture stacktraces from clickhouse-client/local on errors",
     )
+    parser.add_argument("--trace", action="store_true", help="Capture various tracing info")
 
     return parser.parse_args()
 

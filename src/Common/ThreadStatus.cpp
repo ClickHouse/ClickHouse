@@ -110,8 +110,8 @@ ThreadGroup::ThreadGroup()
     , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
 {}
 
-ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
-    : thread_id{getThreadId()}, check_current_thread_on_destruction(check_current_thread_on_destruction_)
+ThreadStatus::ThreadStatus()
+    : thread_id(getThreadId())
 {
     chassert(!current_thread);
 
@@ -274,7 +274,7 @@ ThreadStatus::~ThreadStatus()
     if (deleter)
         deleter();
 
-    chassert(!check_current_thread_on_destruction || current_thread == this);
+    chassert(current_thread == this);
 
     /// Flush untracked_memory **right before** switching the current_thread to avoid losing untracked_memory in deleter (detachFromGroup)
     flushUntrackedMemory();
@@ -283,8 +283,8 @@ ThreadStatus::~ThreadStatus()
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
     if (current_thread == this)
         current_thread = nullptr;
-    else if (check_current_thread_on_destruction)
-        LOG_ERROR(log, "current_thread contains invalid address");
+    else
+        LOG_FATAL(log, "current_thread contains invalid address");
 }
 
 void ThreadStatus::updatePerformanceCounters()

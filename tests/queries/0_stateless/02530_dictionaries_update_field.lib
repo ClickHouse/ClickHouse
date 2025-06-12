@@ -1,36 +1,34 @@
 #!/usr/bin/env bash
-# Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# NOTE: dictionaries will be updated according to server TZ, not session, so prohibit it's randomization
-$CLICKHOUSE_CLIENT --session_timezone '' -q "
-    CREATE TABLE table_for_update_field_dictionary
-    (
-        key UInt64,
-        value String,
-        last_insert_time DateTime
-    )
-    ENGINE = TinyLog
-"
 
-layouts=(
-    flat
-    hashed
-    complex_key_hashed
-)
-for layout in "${layouts[@]}"; do
+function run_test_with_layout()
+{
+    local layout=$1
+
+    # NOTE: dictionaries will be updated according to server TZ, not session, so prohibit it's randomization
+    $CLICKHOUSE_CLIENT --session_timezone '' -q "
+        CREATE TABLE table_for_update_field_dictionary
+        (
+            key UInt64,
+            value String,
+            last_insert_time DateTime
+        )
+        ENGINE = TinyLog
+    "
+
     for custom_query in "" "custom"; do
         if [[ $custom_query == custom ]]; then
             dictionary_name="dict_${layout}_custom"
-            dictionary_source="query \$doc\$SELECT key, value, last_insert_time FROM $CLICKHOUSE_DATABASE.table_for_update_field_dictionary WHERE {condition};\$doc\$ update_field 'last_insert_time'"
+            dictionary_source="query \$doc\$SELECT key, value, last_insert_time FROM $CLICKHOUSE_DATABASE.table_for_update_field_dictionary WHERE {condition};\$doc\$ update_field 'last_insert_time' update_lag 0"
 
             echo "$layout/custom"
         else
             dictionary_name="dict_${layout}"
-            dictionary_source="table 'table_for_update_field_dictionary' update_field 'last_insert_time'"
+            dictionary_source="table 'table_for_update_field_dictionary' update_field 'last_insert_time' update_lag 0"
 
             echo "$layout"
         fi
@@ -57,7 +55,7 @@ for layout in "${layouts[@]}"; do
             sleep .1;
         done
 
-        $CLICKHOUSE_CLIENT --query "INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());"
+        $CLICKHOUSE_CLIENT --query "INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now()+5);"
 
         while true
         do
@@ -65,7 +63,7 @@ for layout in "${layouts[@]}"; do
             sleep .1;
         done
 
-        $CLICKHOUSE_CLIENT --query "INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now()), (3, 'Third', now())"
+        $CLICKHOUSE_CLIENT --query "INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now()+10), (3, 'Third', now()+10)"
 
         while true
         do
@@ -74,8 +72,9 @@ for layout in "${layouts[@]}"; do
         done
 
         $CLICKHOUSE_CLIENT --query "DROP DICTIONARY $dictionary_name"
-
     done
-done
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS table_for_update_field_dictionary"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS table_for_update_field_dictionary"
+}
+
+# vi: ft=bash

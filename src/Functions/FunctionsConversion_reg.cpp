@@ -52,7 +52,52 @@ Example:
     factory.registerFunction<detail::FunctionToIPv6>();
     factory.registerFunction<detail::FunctionToString>();
 
-    factory.registerFunction<detail::FunctionToUnixTimestamp>();
+    FunctionDocumentation::Description description_to_unix_timestamp = R"(
+Converts a `String`, `Date`, or `DateTime` to a Unix timestamp (seconds since `1970-01-01 00:00:00 UTC`) as `UInt32`.
+    )";
+    FunctionDocumentation::Syntax syntax_to_unix_timestamp = R"(
+toUnixTimestamp(date, [timezone])
+    )";
+    FunctionDocumentation::Arguments arguments_to_unix_timestamp = {
+        {"date", "Value to convert. [`Date`](/sql-reference/data-types/date)/[`Date32`](/sql-reference/data-types/date32)/[`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)/[`String`](/sql-reference/data-types/string)."},
+        {"timezone", "Optional. Timezone to use for conversion. If not specified, the server's timezone is used. [`String`](/sql-reference/data-types/string)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_to_unix_timestamp = "Returns the Unix timestamp as [`UInt32`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_to_unix_timestamp = {
+        {"Usage example", R"(
+SELECT
+'2017-11-05 08:07:47' AS dt_str,
+toUnixTimestamp(dt_str) AS from_str,
+toUnixTimestamp(dt_str, 'Asia/Tokyo') AS from_str_tokyo,
+toUnixTimestamp(toDateTime(dt_str)) AS from_datetime,
+toUnixTimestamp(toDateTime64(dt_str, 0)) AS from_datetime64,
+toUnixTimestamp(toDate(dt_str)) AS from_date,
+toUnixTimestamp(toDate32(dt_str)) AS from_date32
+FORMAT Vertical;
+        )", R"(
+Row 1:
+──────
+dt_str:          2017-11-05 08:07:47
+from_str:        1509869267
+from_str_tokyo:  1509836867
+from_datetime:   1509869267
+from_datetime64: 1509869267
+from_date:       1509840000
+from_date32:     1509840000
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_to_unix_timestamp = {1, 1};
+    FunctionDocumentation::Category category_to_unix_timestamp = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_to_unix_timestamp = {
+        description_to_unix_timestamp,
+        syntax_to_unix_timestamp,
+        arguments_to_unix_timestamp,
+        returned_value_to_unix_timestamp,
+        examples_to_unix_timestamp,
+        introduced_in_to_unix_timestamp,
+        category_to_unix_timestamp
+    };
+    factory.registerFunction<detail::FunctionToUnixTimestamp>(documentation_to_unix_timestamp);
 
     factory.registerFunction<detail::FunctionToUInt8OrZero>();
     factory.registerFunction<detail::FunctionToUInt16OrZero>();

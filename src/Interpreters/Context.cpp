@@ -43,6 +43,7 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/S3Settings.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
@@ -546,6 +547,7 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<Context::Dashboards> dashboards;
 
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
+    std::optional<AzureSettingsByEndpoint> storage_azure_settings TSA_GUARDED_BY(mutex);   /// Settings of AzureBlobStorage
     std::unordered_map<Context::WarningType, PreformattedMessage> warnings TSA_GUARDED_BY(mutex); /// Store warning messages about server.
 
     /// Background executors for *MergeTree tables
@@ -1661,12 +1663,13 @@ void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_role
 
 void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> &)
 {
+    // External roles are roles received from other node, current roles is a collection of roles that were assigned locally
     if (!new_external_roles.empty())
     {
-        if (current_roles)
-            current_roles->insert(current_roles->end(), new_external_roles.begin(), new_external_roles.end());
+        if (external_roles)
+            external_roles->insert(external_roles->end(), new_external_roles.begin(), new_external_roles.end());
         else
-            current_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
+            external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
         need_recalculate_access = true;
     }
 }
@@ -5243,6 +5246,12 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
             shared->storage_s3_settings->loadFromConfig(config, /* config_prefix */"s3", getSettingsRef());
     }
 
+    {
+        std::lock_guard lock(shared->mutex);
+        if (shared->storage_azure_settings)
+            shared->storage_azure_settings->loadFromConfig(config, /* config_prefix */"configuration.disks.", getSettingsRef());
+    }
+
 }
 
 
@@ -5313,6 +5322,19 @@ const S3SettingsByEndpoint & Context::getStorageS3Settings() const
     }
 
     return *shared->storage_s3_settings;
+}
+
+const AzureSettingsByEndpoint & Context::getStorageAzureSettings() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->storage_azure_settings)
+    {
+        const auto & config = shared->getConfigRefWithLock(lock);
+        shared->storage_azure_settings.emplace().loadFromConfig(config, "storage_configuration.disks", getSettingsRef());
+    }
+
+    return *shared->storage_azure_settings;
 }
 
 void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const
@@ -5557,10 +5579,21 @@ void Context::setGoogleProtosPath(const String & path)
 
 std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> Context::getSampleBlockCache() const
 {
-    assert(hasQueryContext());
+    chassert(hasQueryContext());
     return std::make_pair(&getQueryContext()->sample_block_cache, std::unique_lock(getQueryContext()->sample_block_cache_mutex));
 }
 
+std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> Context::getStorageMetadataCache() const
+{
+    chassert(hasQueryContext());
+    return std::make_pair(&getQueryContext()->storage_metadata_cache, std::unique_lock(getQueryContext()->storage_metadata_cache_mutex));
+}
+
+std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> Context::getStorageSnapshotCache() const
+{
+    chassert(hasQueryContext());
+    return std::make_pair(&getQueryContext()->storage_snapshot_cache, std::unique_lock(getQueryContext()->storage_snapshot_cache_mutex));
+}
 
 bool Context::hasQueryParameters() const
 {
