@@ -521,6 +521,8 @@ def _finish_workflow(workflow, job_name):
             continue
         if result.status == Result.Status.SUCCESS:
             continue
+        if result.status == Result.Status.SKIPPED:
+            continue
         if result.status == Result.Status.DROPPED:
             dropped_results.append(result.name)
         if not result.is_completed():
