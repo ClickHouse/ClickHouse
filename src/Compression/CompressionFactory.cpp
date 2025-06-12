@@ -131,9 +131,8 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
             res_columns[3]->insert(tmp->isGenericCompression());
             res_columns[4]->insert(tmp->isEncryption());
             res_columns[5]->insert(tmp->isFloatingPointTimeSeriesCodec());
-            res_columns[6]->insert(tmp->isDeltaCompression());
-            res_columns[7]->insert(tmp->isExperimental());
-            res_columns[8]->insert(tmp->getDescription());
+            res_columns[6]->insert(tmp->isExperimental());
+            res_columns[7]->insert(tmp->getDescription());
         }
     );
 }
