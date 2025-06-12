@@ -1,4 +1,3 @@
-#include <delta_kernel_ffi.hpp>
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
@@ -18,6 +17,7 @@
 #include "getSchemaFromSnapshot.h"
 #include "PartitionPruner.h"
 #include "KernelUtils.h"
+#include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 
 namespace fs = std::filesystem;
