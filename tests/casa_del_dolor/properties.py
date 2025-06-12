@@ -22,9 +22,9 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
     return gen
 
 
-def file_size_value():
+def file_size_value(max_val: int):
     def gen():
-        return str(threshold_generator(0.05, 0.3, 1, 100)()) + random.choice(
+        return str(threshold_generator(0.05, 0.3, 1, max_val)()) + random.choice(
             ["ki", "Mi", "Gi"]
         )
 
@@ -234,7 +234,7 @@ cache_storage_properties = {
     "load_metadata_asynchronously": lambda: random.randint(0, 1),
     "load_metadata_threads": lambda: random.randint(0, multiprocessing.cpu_count()),
     "max_elements": threshold_generator(0.2, 0.2, 1, 10000000),
-    "max_file_segment_size": file_size_value(),
+    "max_file_segment_size": file_size_value(100),
     # "max_size_ratio_to_total_space": threshold_generator(0.2, 0.2, 0.0, 1.0), cannot be specified with `max_size` at the same time
     "slru_size_ratio": threshold_generator(0.2, 0.2, 0.01, 0.99),
     "write_cache_per_user_id_directory": lambda: random.randint(0, 1),
@@ -431,7 +431,7 @@ def add_single_disk(
 
         if disk_type == "cache":
             max_size_xml = ET.SubElement(next_disk, "max_size")
-            max_size_xml.text = file_size_value()()
+            max_size_xml.text = file_size_value(10)()
 
             # Add random settings
             if random.randint(1, 100) <= 70:
@@ -456,7 +456,7 @@ def add_single_disk(
 
 def add_single_cache(i: int, next_cache: ET.Element):
     max_size_xml = ET.SubElement(next_cache, "max_size")
-    max_size_xml.text = file_size_value()()
+    max_size_xml.text = file_size_value(10)()
     path_xml = ET.SubElement(next_cache, "path")
     path_xml.text = f"fcache{i}"
 
