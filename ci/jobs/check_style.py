@@ -368,7 +368,7 @@ if __name__ == "__main__":
         )
         results.append(
             Result.from_commands_run(
-                name=testname,
+                name=f"nix_{testname}",
                 command=check_nix_submodule_inputs,
             )
         )
