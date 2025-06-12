@@ -1784,10 +1784,12 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         if (connections.hasMinIOConnection())
         {
             this->ids.emplace_back(S3);
+            this->ids.emplace_back(S3Queue);
         }
         if (connections.hasAzuriteConnection())
         {
             this->ids.emplace_back(AzureBlobStorage);
+            this->ids.emplace_back(AzureQueue);
         }
         if (connections.hasHTTPConnection())
         {
