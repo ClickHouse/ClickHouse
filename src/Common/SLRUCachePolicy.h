@@ -326,8 +326,10 @@ private:
             else
             {
                 current_weight_lost += cell.size;
-                if (!is_protected)
-                    on_remove_entry_function(cell.size, cell.value);
+
+                /// We cannot have protected cells in non-protected queue
+                chassert(!is_protected);
+                on_remove_entry_function(cell.size, cell.value);
 
                 cells.erase(it);
                 queue.pop_front();
