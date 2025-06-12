@@ -2063,6 +2063,13 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             index_granularity.value);
     }
 
+    if (merge_max_block_size < 1)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "merge_max_block_size: value should be greater than 0.");
+    }
+
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
     // If index_granularity_bytes is not disabled i.e > 0 b, then always ensure that it's greater than
     // min_index_granularity_bytes. This is mainly a safeguard against accidents whereby a really low
