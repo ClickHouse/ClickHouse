@@ -366,7 +366,8 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
     /// Most of the times use SET command, other times SYSTEM
     if (use_settings)
     {
-        const uint32_t nsets = rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1);
+        std::uniform_int_distribution<uint32_t> settings_range(1, 10);
+        const uint32_t nsets = settings_range(rg.generator);
         SettingValues * sv = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_setting_values();
 
         nsettings.clear();

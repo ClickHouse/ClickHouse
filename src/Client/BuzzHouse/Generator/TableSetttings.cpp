@@ -62,8 +62,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
         CHSetting(
             [](RandomGenerator & rg)
             {
-                const DB::Strings & choices
-                    = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'T64'", "'AES_128_GCM_SIV'"};
+                const DB::Strings & choices = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'T64'", "'AES_128_GCM_SIV'"};
                 return rg.pickRandomly(choices);
             },
             {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'T64'", "'AES_128_GCM_SIV'"},

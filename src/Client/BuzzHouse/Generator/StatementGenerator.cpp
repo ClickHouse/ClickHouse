@@ -112,7 +112,9 @@ void StatementGenerator::generateSettingValues(
 void StatementGenerator::generateSettingValues(
     RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals)
 {
-    generateSettingValues(rg, settings, std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 40) + 1)), vals);
+    std::uniform_int_distribution<size_t> settings_range(1, 40);
+
+    generateSettingValues(rg, settings, std::min<size_t>(settings.size(), settings_range(rg.generator)), vals);
 }
 
 void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingList * sl)
@@ -702,7 +704,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         {
             ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
         }
-        url += "http://" + fc.host + ":" + std::to_string(fc.http_port) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool()) + "+(";
+        url += fc.getHTTPURL(rg.nextSmallNumber() < 4) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool()) + "+(";
         for (const auto & entry : this->entries)
         {
             url += fmt::format("{}{}", first ? "" : ",", columnPathRef(entry));

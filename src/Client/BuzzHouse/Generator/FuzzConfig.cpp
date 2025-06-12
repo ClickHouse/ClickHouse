@@ -125,6 +125,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
         {"secure_port", [&](const JSONObjectType & value) { secure_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"http_port", [&](const JSONObjectType & value) { http_port = static_cast<uint32_t>(value.getUInt64()); }},
+        {"http_secure_port", [&](const JSONObjectType & value) { http_secure_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
@@ -348,6 +349,11 @@ void FuzzConfig::loadServerConfigurations()
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const
 {
     return fmt::format("{}:{}", this->host, secure ? this->secure_port : this->port);
+}
+
+String FuzzConfig::getHTTPURL(const bool secure) const
+{
+    return fmt::format("http{}://{}:{}", secure ? "s" : "", this->host, secure ? this->http_secure_port : this->http_port);
 }
 
 void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables)
