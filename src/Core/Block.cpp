@@ -261,17 +261,14 @@ void Block::erase(const String & name)
         throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "No such name in Block::erase(): '{}'", name);
 
     auto position = index_it->second;
-    if (position < data.size() - 2)
-    {
-        for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
-        {
-            if (it->second > position)
-                --it->second;
-        }
-    }
-
-    index_by_name.erase(index_it);
     data.erase(data.begin() + position);
+
+    for (auto & it : index_by_name)
+    {
+        if (it.second > position)
+            --it.second;
+    }
+    index_by_name.erase(index_it);
 }
 
 
