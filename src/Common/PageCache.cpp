@@ -145,7 +145,7 @@ bool PageCache::contains(const PageCacheKey & key, bool inject_eviction) const
     return shard.contains(key_hash);
 }
 
-void PageCache::Shard::onValueRemoval(const MappedPtr & mapped_ptr)
+void PageCache::Shard::onEntryRemoval(const MappedPtr & mapped_ptr)
 {
     auto page_cache_cell = std::static_pointer_cast<PageCacheCell>(mapped_ptr);
     ProfileEvents::increment(ProfileEvents::PageCacheWeightLost, PageCacheWeightFunction()(*page_cache_cell));

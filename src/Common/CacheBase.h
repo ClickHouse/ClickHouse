@@ -64,9 +64,9 @@ public:
         size_t max_count,
         double size_ratio)
     {
-        auto on_remove_function = [this](const MappedPtr & mapped_ptr)
+        auto on_remove_entry_function = [this](const MappedPtr & mapped_ptr)
         {
-            onValueRemoval(mapped_ptr);
+            onEntryRemoval(mapped_ptr);
         };
 
         if (cache_policy_name.empty())
@@ -78,12 +78,12 @@ public:
         if (cache_policy_name == "LRU")
         {
             using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<LRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_remove_function);
+            cache_policy = std::make_unique<LRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_remove_entry_function);
         }
         else if (cache_policy_name == "SLRU")
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_remove_function);
+            cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_remove_entry_function);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
@@ -338,9 +338,9 @@ private:
 
     InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
 
-    /// This is called when a cell is being evicted from the cache.
-    /// Override this method if you want to handle individual value removals from cache
-    virtual void onValueRemoval(const MappedPtr &) { }
+    /// This is called when an entry is being evicted from the cache.
+    /// Override this method if you want to handle individual entry removals from cache
+    virtual void onEntryRemoval(const MappedPtr &) { }
 };
 
 

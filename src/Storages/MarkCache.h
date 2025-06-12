@@ -61,7 +61,7 @@ public:
 
 private:
     /// Called for each individual cell being evicted from cache
-    void onValueRemoval(const MappedPtr & mapped_ptr) override
+    void onEntryRemoval(const MappedPtr & mapped_ptr) override
     {
         /// File is the key of MarkCache, each removal means eviction of 1 file from the cache.
         ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles);

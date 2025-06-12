@@ -26,7 +26,7 @@ public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-    using OnRemoveFunction = std::function<void(const MappedPtr &)>;  // For per-item callback
+    using OnRemoveEntryFunction = std::function<void(const MappedPtr &)>;  /// For per-item callback
 
     struct KeyMapped
     {

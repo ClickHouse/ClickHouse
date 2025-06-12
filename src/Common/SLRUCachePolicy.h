@@ -23,7 +23,7 @@ public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
-    using typename Base::OnRemoveFunction;
+    using typename Base::OnRemoveEntryFunction;
 
     /** Initialize SLRUCachePolicy with max_size_in_bytes and max_protected_size.
       * max_protected_size shows how many of the most frequently used entries will not be evicted after a sequential scan.
@@ -36,7 +36,7 @@ public:
         size_t max_size_in_bytes_,
         size_t max_count_,
         double size_ratio_,
-        OnRemoveFunction on_remove_function_)
+        OnRemoveEntryFunction on_remove_entry_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
         , max_protected_size(calculateMaxProtectedSize(max_size_in_bytes_, size_ratio_))
@@ -44,7 +44,7 @@ public:
         , size_ratio(size_ratio_)
         , current_size_in_bytes_metric(size_in_bytes_metric_)
         , count_metric(count_metric_)
-        , on_remove_function(on_remove_function_)
+        , on_remove_entry_function(on_remove_entry_function_)
     {
     }
 
@@ -270,7 +270,7 @@ private:
     CurrentMetrics::Metric count_metric;
 
     WeightFunction weight_function;
-    OnRemoveFunction on_remove_function;
+    OnRemoveEntryFunction on_remove_entry_function;
 
     static size_t calculateMaxProtectedSize(size_t max_size_in_bytes, double size_ratio)
     {
@@ -327,7 +327,7 @@ private:
             {
                 current_weight_lost += cell.size;
                 if (!is_protected)
-                    on_remove_function(cell.value);
+                    on_remove_entry_function(cell.value);
 
                 cells.erase(it);
                 queue.pop_front();

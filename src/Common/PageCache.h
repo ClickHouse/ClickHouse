@@ -98,7 +98,7 @@ private:
     public:
         using Base::Base;
 
-        void onValueRemoval(const MappedPtr & mapped_ptr) override;
+        void onEntryRemoval(const MappedPtr & mapped_ptr) override;
     };
 
 public:

@@ -61,8 +61,8 @@ public:
     }
 
 private:
-    /// Called for each individual cell being evicted from cache
-    void onValueRemoval(const MappedPtr & mapped_ptr) override
+    /// Called for each individual entry being evicted from cache
+    void onEntryRemoval(const MappedPtr & mapped_ptr) override
     {
         auto uncompressed_cache_cell = std::static_pointer_cast<UncompressedCacheCell>(mapped_ptr);
         ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, UncompressedSizeWeightFunction()(*uncompressed_cache_cell));

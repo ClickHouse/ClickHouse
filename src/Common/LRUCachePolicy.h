@@ -21,7 +21,7 @@ public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
-    using typename Base::OnRemoveFunction;
+    using typename Base::OnRemoveEntryFunction;
 
     /** Initialize LRUCachePolicy with max_size_in_bytes and max_count.
      *  max_size_in_bytes == 0 means the cache accepts no entries.
@@ -32,13 +32,13 @@ public:
         CurrentMetrics::Metric count_metric_,
         size_t max_size_in_bytes_,
         size_t max_count_,
-        OnRemoveFunction on_remove_function_)
+        OnRemoveEntryFunction on_remove_entry_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
         , max_count(max_count_)
         , current_size_in_bytes_metric(size_in_bytes_metric_)
         , count_metric(count_metric_)
-        , on_remove_function(on_remove_function_)
+        , on_remove_entry_function(on_remove_entry_function_)
     {
     }
 
@@ -221,7 +221,7 @@ private:
     CurrentMetrics::Metric count_metric;
 
     WeightFunction weight_function;
-    OnRemoveFunction on_remove_function;
+    OnRemoveEntryFunction on_remove_entry_function;
 
     void removeOverflow()
     {
@@ -243,7 +243,7 @@ private:
 
             current_size_in_bytes -= cell.size;
             current_weight_lost += cell.size;
-            on_remove_function(cell.value);
+            on_remove_entry_function(cell.value);
 
             cells.erase(it);
             queue.pop_front();

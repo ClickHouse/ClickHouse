@@ -149,8 +149,8 @@ public:
     }
 
 private:
-    /// Called for each individual cell being evicted from cache
-    void onValueRemoval(const MappedPtr & mapped_ptr) override
+    /// Called for each individual entry being evicted from cache
+    void onEntryRemoval(const MappedPtr & mapped_ptr) override
     {
         auto iceberg_metadata_files_cache_cell = std::static_pointer_cast<IcebergMetadataFilesCacheCell>(mapped_ptr);
         ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheWeightLost, IcebergMetadataFilesCacheWeightFunction()(*iceberg_metadata_files_cache_cell));
