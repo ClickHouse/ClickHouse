@@ -34,13 +34,22 @@ DROP TABLE tab;
 CREATE TABLE tab
 (
     str String,
+    INDEX idx str TYPE text(tokenizer = 'string')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    str String,
     INDEX idx str TYPE text(tokenizer = 'no_op')
 )
 ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
-SELECT '-- tokenizer must be default, ngram or no_op.';
+SELECT '-- tokenizer must be default, ngram, string or no_op.';
 
 CREATE TABLE tab
 (
@@ -75,6 +84,37 @@ CREATE TABLE tab
 (
     str String,
     INDEX idx str TYPE text(tokenizer = 'ngram', ngram_size = 9)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+SELECT 'Test separators argument.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'string', separators = ['\n', '\\'])
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT '-- separators must be array.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'string', separators = '\n')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+SELECT '-- separators must be an array of strings.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'string', separators = ['\n', 1])
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
