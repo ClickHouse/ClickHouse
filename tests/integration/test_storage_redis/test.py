@@ -402,3 +402,34 @@ def test_hiding_credentials(started_cluster):
     message = node.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE {table_name}%'")
     assert "password" not in message
     assert f"Redis(\\'{address}\\', 0, \\'[HIDDEN]\\')" in message
+
+
+def test_direct_join(started_cluster):
+    address = get_address_for_ch()
+
+    # clean all
+    drop_table("test_direct_join")
+    drop_table("test_mt")
+
+    node.query
+
+    # create table
+    node.query(
+        f"""
+            CREATE TABLE test_direct_join(k Int) Engine=Redis('{address}', 0, 'clickhouse') PRIMARY KEY (k);
+            CREATE TABLE test_mt (k Int) ENGINE = MergeTree() ORDER BY tuple();
+            INSERT INTO TABLE test_direct_join VALUES (1);
+            INSERT INTO TABLE test_mt VALUES (1);
+        """
+    )
+
+
+    response = TSV.toMat(node.query("SELECT * FROM test_direct_join JOIN test_mt ON "
+                                    "test_direct_join.k = test_mt.k FORMAT TSV"))
+    assert len(response) == 1
+    assert response[0] == ["1", "1"]
+
+    response = TSV.toMat(node.query("SELECT * FROM test_mt JOIN test_direct_join ON "
+                                    "test_direct_join.k = test_mt.k FORMAT TSV"))
+    assert len(response) == 1
+    assert response[0] == ["1", "1"]

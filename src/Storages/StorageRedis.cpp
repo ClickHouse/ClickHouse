@@ -357,7 +357,7 @@ Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<
 
     RedisArray values = multiGet(keys);
     if (values.isNull() || values.size() == 0)
-        return {};
+        return Chunk(std::move(columns), 0);
 
     if (null_map)
     {
@@ -405,6 +405,9 @@ std::pair<RedisIterator, RedisArray> StorageRedis::scan(RedisIterator iterator, 
 
 RedisArray StorageRedis::multiGet(const RedisArray & keys) const
 {
+    if (keys.isNull() || keys.size() == 0)
+        return{};
+
     auto connection = getRedisConnection(pool, configuration);
 
     RedisCommand cmd_mget("MGET");
