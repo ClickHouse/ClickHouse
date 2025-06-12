@@ -1,5 +1,4 @@
 #include <Common/Exception.h>
-#include "Planner/Utils.h"
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -211,7 +210,7 @@ void optimizeTreeSecondPass(
             if (optimization_settings.merge_expressions)
                 local_plan->mergeExpressions();
 
-            query_plan.replaceNode(frame.node, std::move(local_plan));
+            query_plan.replaceNodeWithPlan(frame.node, std::move(local_plan));
         }
 
         stack.pop_back();

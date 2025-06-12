@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <stack>
 
@@ -704,8 +705,11 @@ QueryPlan QueryPlan::clone() const
     return result;
 }
 
-void QueryPlan::replaceNode(Node * node, QueryPlanPtr plan)
+
+void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
 {
+    chassert(nodes.end() != std::find_if(cbegin(nodes), cend(nodes), [node](const Node & n) { return n.step == node->step; }));
+
     const auto & header = node->step->getOutputHeader();
     const auto & plan_header = plan->getCurrentHeader();
 
