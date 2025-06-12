@@ -3514,6 +3514,7 @@ CONV_FN(LightUpdate, upt)
     {
         ClusterToString(ret, true, upt.cluster());
     }
+    ret += " SET ";
     UpdateToString(ret, upt.upt());
     if (upt.has_setting_values())
     {
