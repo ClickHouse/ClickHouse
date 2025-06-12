@@ -1,5 +1,6 @@
-#include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeReaderIndex.h>
+
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 
 namespace DB
 {
@@ -34,14 +35,14 @@ size_t MergeTreeReaderIndex::readRows(
     size_t rows_offset,
     Columns & res_columns)
 {
-    /// TODO(ab): Projection index result will be used here to construct a filter column.
-
     if (!res_columns.empty())
+    {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Invalid number of columns passed to MergeTreeReaderIndex::readRows. "
             "Expected 0, got {}",
             res_columns.size());
+    }
 
     /// Determine the starting row.
     size_t starting_row;
@@ -55,13 +56,21 @@ size_t MergeTreeReaderIndex::readRows(
     if (starting_row < total_rows)
         max_rows_to_read = std::min(max_rows_to_read, total_rows - starting_row);
 
+    /// TODO(ab): If projection index is available, attempt to construct the filter column.
+
+    current_row += max_rows_to_read;
     return max_rows_to_read;
 }
 
 bool MergeTreeReaderIndex::canSkipMark(size_t mark) const
 {
     chassert(mark < index_read_result->skip_index_read_result->size());
-    return !index_read_result->skip_index_read_result->at(mark);
+    if (!index_read_result->skip_index_read_result->at(mark))
+        return true;
+
+    /// TODO(ab): If projection index is available, attempt to skip via projection bitmap.
+
+    return false;
 }
 
 }
