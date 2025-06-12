@@ -52,16 +52,18 @@ public:
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        if (checkColumn<ColumnString>(*arguments[0].column))
+        auto column = arguments[0].column;
+        Serializer serializer;
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
-            return executeColumnImpl(column_string, input_rows_count);
+            auto str = column->getDataAt(i);
+            ReadBufferFromString in_buffer(std::string_view(str.data, str.size));
+
+            auto object = parseWKBFormat(in_buffer);
+            auto boost_object = std::get<Geometry>(object);
+            serializer.add(boost_object);
         }
-        else
-        {
-            const auto & column_string = checkAndGetColumn<ColumnFixedString>(*arguments[0].column);
-            return executeColumnImpl(column_string, input_rows_count);
-        }
+        return serializer.finalize();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -69,24 +71,6 @@ public:
     static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionReadWKB<ReturnDataTypeName, Geometry, Serializer, NameHolder>>();
-    }
-
-private:
-    template <typename T>
-    ColumnPtr executeColumnImpl(const T & column, size_t input_rows_count) const
-    {
-        Serializer serializer;
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            auto str = column.getDataAt(i);
-            ReadBufferFromString in_buffer(std::string_view(str.data, str.size));
-
-            auto object = parseWKBFormat(in_buffer);
-            auto boost_object = std::get<Geometry>(object);
-            serializer.add(boost_object);
-        }
-
-        return serializer.finalize();
     }
 };
 
