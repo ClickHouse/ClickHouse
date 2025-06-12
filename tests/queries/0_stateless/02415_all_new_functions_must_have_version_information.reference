@@ -270,6 +270,8 @@ firstSignificantSubdomainRFC
 flattenTuple
 floor
 format
+formatDateTime
+formatDateTimeInJodaSyntax
 formatQuery
 formatQueryOrNull
 formatQuerySingleLine
@@ -626,7 +628,6 @@ runningDifference
 runningDifferenceStartingWithFirstValue
 seriesDecomposeSTL
 seriesOutliersDetectTukey
-serverTimezone
 serverUUID
 shardCount
 shardNum
@@ -696,10 +697,6 @@ tgamma
 throwIf
 tid
 timeDiff
-timestamp
-timezone
-timezoneOf
-timezoneOffset
 toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
@@ -722,9 +719,6 @@ toDateTime64OrZero
 toDateTimeOrDefault
 toDateTimeOrNull
 toDateTimeOrZero
-toDayOfMonth
-toDayOfWeek
-toDayOfYear
 toDaysSinceYearZero
 toDecimal128
 toDecimal128OrDefault
@@ -752,7 +746,6 @@ toFloat64
 toFloat64OrDefault
 toFloat64OrNull
 toFloat64OrZero
-toHour
 toIPv4
 toIPv4OrDefault
 toIPv4OrNull
@@ -802,11 +795,7 @@ toIntervalYear
 toJSONString
 toLastDayOfWeek
 toLowCardinality
-toMillisecond
-toMinute
-toMonth
 toNullable
-toQuarter
 toRelativeDayNum
 toRelativeHourNum
 toRelativeMinuteNum
@@ -815,7 +804,6 @@ toRelativeQuarterNum
 toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
-toSecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -831,7 +819,6 @@ toStartOfWeek
 toString
 toStringCutToZero
 toTime
-toTimezone
 toTypeName
 toUInt128
 toUInt128OrDefault
@@ -867,7 +854,6 @@ toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
 toWeek
-toYear
 toYearWeek
 today
 tokens
