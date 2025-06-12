@@ -10,7 +10,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 echo "Starting clickhouse-server"
 
-$CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "${CLICKHOUSE_TMP}/" > server.log 2>&1 &
+$PORT
+
+$CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path /tmp/ > server.log 2>&1 &
 PID=$!
 
 function finish {

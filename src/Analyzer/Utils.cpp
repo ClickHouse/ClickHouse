@@ -46,7 +46,6 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
-
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <ranges>
@@ -242,24 +241,8 @@ bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
     return isQueryOrUnionNode(node.get());
 }
 
-bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
+bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source)
 {
-    auto * query_node = node->as<QueryNode>();
-    auto * union_node = node->as<UnionNode>();
-
-    return (query_node != nullptr && query_node->isCorrelated()) || (union_node != nullptr && union_node->isCorrelated());
-}
-
-bool checkCorrelatedColumn(
-    IdentifierResolveScope * scope_to_check,
-    const QueryTreeNodePtr & column
-)
-{
-    auto * current_scope = scope_to_check;
-    chassert(column->getNodeType() == QueryTreeNodeType::COLUMN);
-    auto * column_node = column->as<ColumnNode>();
-    auto column_source = column_node->getColumnSource();
-
     /// The case of lambda argument. Example:
     /// arrayMap(X -> X + Y, [0])
     ///
@@ -268,31 +251,15 @@ bool checkCorrelatedColumn(
     if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
         return false;
 
-    bool is_correlated = false;
-
     while (scope_to_check != nullptr)
     {
         if (scope_to_check->registered_table_expression_nodes.contains(column_source))
-            break;
-
+            return false;
         if (isQueryOrUnionNode(scope_to_check->scope_node))
-        {
-            is_correlated = true;
-            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>())
-                query_node->addCorrelatedColumn(column);
-            else if (auto * union_node = scope_to_check->scope_node->as<UnionNode>())
-                union_node->addCorrelatedColumn(column);
-        }
+            return true;
         scope_to_check = scope_to_check->parent_scope;
     }
-    if (!scope_to_check)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot find the original scope of the column '{}'. Current scope: {}",
-            column_node->getColumnName(),
-            current_scope->scope_node->formatASTForErrorMessage());
-
-    return is_correlated;
+    return true;
 }
 
 DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)

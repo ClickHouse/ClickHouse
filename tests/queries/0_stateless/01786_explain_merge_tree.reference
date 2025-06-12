@@ -17,7 +17,6 @@
           y
         Parts: 2/3
         Granules: 6/10
-        Search algorithm: generic exclusion search
       Skip
         Name: t_minmax
         Description: minmax GRANULARITY 2
@@ -108,7 +107,6 @@
         Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-Inf, 2]))
         Parts: 1/1
         Granules: 1/1
-        Search algorithm: generic exclusion search
     ReadFromMergeTree (default.test_index)
     Indexes:
       MinMax
@@ -128,7 +126,6 @@
           y
         Parts: 2/3
         Granules: 6/10
-        Search algorithm: generic exclusion search
       Skip
         Name: t_minmax
         Description: minmax GRANULARITY 2
@@ -221,4 +218,3 @@
         Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-Inf, 2]))
         Parts: 1/1
         Granules: 1/1
-        Search algorithm: generic exclusion search

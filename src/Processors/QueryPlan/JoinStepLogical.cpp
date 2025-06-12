@@ -112,9 +112,9 @@ JoinStepLogical::JoinStepLogical(
     : expression_actions(std::move(join_expression_actions_))
     , join_info(std::move(join_info_))
     , required_output_columns(std::move(required_output_columns_))
-    , use_nulls(use_nulls_)
-    , join_settings(std::move(join_settings_))
-    , sorting_settings(std::move(sorting_settings_))
+    , use_nulls(use_nulls_) // query_context_->getSettingsRef()[Setting::join_use_nulls])
+    , join_settings(std::move(join_settings_)) // JoinSettings::create(query_context_->getSettingsRef()))
+    , sorting_settings(std::move(sorting_settings_)) //*query_context_)
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -516,31 +516,6 @@ static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolve
     }
 }
 
-void JoinStepLogical::appendRequiredOutputsToActions(JoinActionRef & post_filter)
-{
-    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
-    addRequiredInputToOutput(expression_actions.left_pre_join_actions, required_output_columns_set);
-    addRequiredInputToOutput(expression_actions.right_pre_join_actions, required_output_columns_set);
-    addRequiredInputToOutput(expression_actions.post_join_actions, required_output_columns_set);
-
-    ActionsDAG::NodeRawConstPtrs new_outputs;
-    for (const auto * output : expression_actions.post_join_actions->getOutputs())
-    {
-        if (required_output_columns_set.contains(output->result_name))
-            new_outputs.push_back(output);
-    }
-
-    if (new_outputs.empty())
-    {
-        new_outputs = getAnyColumn(expression_actions.post_join_actions->getOutputs());
-    }
-
-    if (post_filter)
-        new_outputs.push_back(post_filter.getNode());
-    expression_actions.post_join_actions->getOutputs() = std::move(new_outputs);
-    expression_actions.post_join_actions->removeUnusedActions();
-}
-
 JoinPtr JoinStepLogical::convertToPhysical(
     JoinActionRef & post_filter,
     bool is_explain_logical,
@@ -722,7 +697,27 @@ JoinPtr JoinStepLogical::convertToPhysical(
         mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), actions_settings);
     }
 
-    appendRequiredOutputsToActions(post_filter);
+    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
+    addRequiredInputToOutput(expression_actions.left_pre_join_actions, required_output_columns_set);
+    addRequiredInputToOutput(expression_actions.right_pre_join_actions, required_output_columns_set);
+    addRequiredInputToOutput(expression_actions.post_join_actions, required_output_columns_set);
+
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    for (const auto * output : expression_actions.post_join_actions->getOutputs())
+    {
+        if (required_output_columns_set.contains(output->result_name))
+            new_outputs.push_back(output);
+    }
+
+    if (new_outputs.empty())
+    {
+        new_outputs = getAnyColumn(expression_actions.post_join_actions->getOutputs());
+    }
+
+    if (post_filter)
+        new_outputs.push_back(post_filter.getNode());
+    expression_actions.post_join_actions->getOutputs() = std::move(new_outputs);
+    expression_actions.post_join_actions->removeUnusedActions();
 
     table_join->setInputColumns(
         expression_actions.left_pre_join_actions->getNamesAndTypesList(),
@@ -887,23 +882,6 @@ std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & c
         use_nulls,
         std::move(join_settings),
         std::move(sort_settings));
-}
-
-QueryPlanStepPtr JoinStepLogical::clone() const
-{
-    auto new_expression_actions = expression_actions.clone();
-    auto new_join_info = join_info.clone(new_expression_actions);
-
-    auto result_step = std::make_unique<JoinStepLogical>(
-        getInputHeaders().front(), getInputHeaders().back(),
-        std::move(new_join_info),
-        std::move(new_expression_actions),
-        required_output_columns,
-        use_nulls,
-        join_settings,
-        sorting_settings);
-    result_step->setStepDescription(getStepDescription());
-    return result_step;
 }
 
 void registerJoinStep(QueryPlanStepRegistry & registry)

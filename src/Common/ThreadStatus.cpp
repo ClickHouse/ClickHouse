@@ -4,7 +4,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
-#include <Common/memory.h>
 #include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
@@ -19,23 +18,9 @@ namespace DB
 {
 thread_local ThreadStatus constinit * current_thread = nullptr;
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_ALLOCATE_MEMORY;
-}
-
 #if !defined(SANITIZER)
 namespace
 {
-
-constexpr bool guardPagesEnabled()
-{
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    return true;
-#else
-    return false;
-#endif
-}
 
 /// For aarch64 16K is not enough (likely due to tons of registers)
 constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
@@ -55,48 +40,24 @@ constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
 struct ThreadStack
 {
     ThreadStack()
+        : data(aligned_alloc(getPageSize(), getSize()))
     {
-        auto page_size = getPageSize();
-        data = aligned_alloc(page_size, getSize());
-        if (!data)
-            throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate ThreadStack");
-
-        if constexpr (guardPagesEnabled())
-        {
-            try
-            {
-                /// Since the stack grows downward, we need to protect the first page
-                memoryGuardInstall(data, page_size);
-            }
-            catch (...)
-            {
-                free(data);
-                throw;
-            }
-        }
+        /// Add a guard page
+        /// (and since the stack grows downward, we need to protect the first page).
+        mprotect(data, getPageSize(), PROT_NONE);
     }
     ~ThreadStack()
     {
-        if constexpr (guardPagesEnabled())
-            memoryGuardRemove(data, getPageSize());
-
+        mprotect(data, getPageSize(), PROT_WRITE|PROT_READ);
         free(data);
     }
 
-    static size_t getSize()
-    {
-        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
-
-        if constexpr (guardPagesEnabled())
-            size += getPageSize();
-
-        return size;
-    }
+    static size_t getSize() { return std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ); }
     void * getData() const { return data; }
 
 private:
     /// 16 KiB - not too big but enough to handle error.
-    void * data = nullptr;
+    void * data;
 };
 
 }
@@ -107,7 +68,7 @@ static thread_local bool has_alt_stack = false;
 
 ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
-    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
+    , memory_spill_scheduler(false)
 {}
 
 ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
@@ -172,20 +133,9 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
     return thread_group;
 }
 
-void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
-{
-    chassert(query_id.empty());
-    query_id = std::move(new_query_id);
-}
-
-void ThreadStatus::clearQueryId() noexcept
-{
-    query_id.clear();
-}
-
 const String & ThreadStatus::getQueryId() const
 {
-    return query_id;
+    return query_id_from_query_context;
 }
 
 ContextPtr ThreadStatus::getQueryContext() const

@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <csignal>
 #include <iostream>
-#include <mutex>
+#include <iomanip>
 #include <optional>
 #include <random>
 #include <string_view>
@@ -26,6 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/UseSSL.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
@@ -35,6 +36,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ErrorCodes.h>
 #include "IO/WriteBuffer.h"
 
 
@@ -88,7 +90,7 @@ public:
             const String & query_to_execute_,
             size_t max_consecutive_errors_,
             bool continue_on_errors_,
-            size_t reconnect_,
+            bool reconnect_,
             bool display_client_side_time_,
             bool print_stacktrace_,
             const Settings & settings_)
@@ -137,8 +139,7 @@ public:
                 /* cluster_secret_= */ "",
                 /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
                 Protocol::Compression::Enable,
-                secure,
-                /* bind_host_= */ ""));
+                secure));
 
             if (!round_robin || comparison_info_per_interval.empty())
             {
@@ -146,9 +147,6 @@ public:
                 comparison_info_total.emplace_back(std::make_shared<Stats>());
             }
         }
-
-        // Initialize queries_per_connection to track queries for each connection
-        queries_per_connection.resize(connections.size(), 0);
 
         global_context->makeGlobalContext();
         global_context->setSettings(settings);
@@ -219,7 +217,7 @@ private:
     String query_to_execute;
     bool continue_on_errors;
     size_t max_consecutive_errors;
-    size_t reconnect;
+    bool reconnect;
     bool display_client_side_time;
     bool print_stacktrace;
     const Settings & settings;
@@ -236,9 +234,6 @@ private:
     std::atomic<bool> shutdown{false};
 
     std::atomic<size_t> queries_executed{0};
-
-    std::mutex queries_per_connection_mutex;
-    std::vector<size_t> queries_per_connection TSA_GUARDED_BY(queries_per_connection_mutex);
 
     struct Stats
     {
@@ -318,9 +313,7 @@ private:
         std::lock_guard lock(mutex);
 
         log << "\nQueries executed: " << num;
-        if (max_iterations > 1)
-            log << " (" << (num * 100.0 / max_iterations) << "%)";
-        else if (queries.size() > 1)
+        if (queries.size() > 1)
             log << " (" << (num * 100.0 / queries.size()) << "%)";
         log << ".\n" << flush;
     }
@@ -469,22 +462,18 @@ private:
         }
     }
 
-    void execute(const Query & query, size_t connection_index)
+    void execute(Query & query, size_t connection_index)
     {
         Stopwatch watch;
 
-        ConnectionPool::Entry entry = connections[connection_index]->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
+        ConnectionPool::Entry entry = connections[connection_index]->get(
+            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
 
-        bool should_reconnect = false;
-        {
-            std::lock_guard lock(queries_per_connection_mutex);
-            should_reconnect = reconnect > 0 && (++queries_per_connection[connection_index] % reconnect == 0);
-        }
-
-        if (should_reconnect)
+        if (reconnect)
             entry->disconnect();
 
-        RemoteQueryExecutor executor(*entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+        RemoteQueryExecutor executor(
+            *entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
 
         if (!query_id.empty())
             executor.setQueryId(query_id);
@@ -514,7 +503,7 @@ private:
         t_test.add(info_index, duration);
     }
 
-    void report(const MultiStats & infos, double seconds)
+    void report(MultiStats & infos, double seconds)
     {
         std::lock_guard lock(mutex);
 
@@ -577,7 +566,7 @@ private:
 
         if (!cumulative)
         {
-            for (const auto & info : infos)
+            for (auto & info : infos)
                 info->clear();
         }
 
@@ -647,7 +636,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
-            ("reconnect", value<size_t>()->default_value(1), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
+            ("reconnect", "establish new connection for every query")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
 
@@ -660,7 +649,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         clearPasswordFromCommandLine(argc, argv);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
@@ -668,22 +657,23 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             return 0;
         }
 
-        print_stacktrace = options.contains("stacktrace");
+        print_stacktrace = options.count("stacktrace");
 
         /// NOTE Maybe clickhouse-benchmark should also respect .xml configuration of clickhouse-client.
 
-        UInt16 default_port = options.contains("secure") ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT;
+        UInt16 default_port = options.count("secure") ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT;
 
-        Ports ports = options.contains("port")
+        UseSSL use_ssl;
+        Ports ports = options.count("port")
             ? options["port"].as<Ports>()
             : Ports({default_port});
 
-        Strings hosts = options.contains("host") ? options["host"].as<Strings>() : Strings({"localhost"});
+        Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
 
         String proto_send_chunked {"notchunked"};
         String proto_recv_chunked {"notchunked"};
 
-        if (options.contains("proto_caps"))
+        if (options.count("proto_caps"))
         {
             std::string proto_caps_str = options["proto_caps"].as<std::string>();
 
@@ -729,9 +719,9 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["delay"].as<double>(),
             std::move(hosts),
             std::move(ports),
-            options.contains("roundrobin"),
-            options.contains("cumulative"),
-            options.contains("secure"),
+            options.count("roundrobin"),
+            options.count("cumulative"),
+            options.count("secure"),
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),
@@ -739,7 +729,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             proto_recv_chunked,
             options["quota_key"].as<std::string>(),
             options["stage"].as<std::string>(),
-            options.contains("randomize"),
+            options.count("randomize"),
             options["iterations"].as<size_t>(),
             options["timelimit"].as<double>(),
             options["confidence"].as<size_t>(),
@@ -747,9 +737,9 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["query_id_prefix"].as<std::string>(),
             options["query"].as<std::string>(),
             options["max-consecutive-errors"].as<size_t>(),
-            options.contains("ignore-error"),
-            options["reconnect"].as<size_t>(),
-            options.contains("client-side-time"),
+            options.count("ignore-error"),
+            options.count("reconnect"),
+            options.count("client-side-time"),
             print_stacktrace,
             settings);
         return benchmark.run();

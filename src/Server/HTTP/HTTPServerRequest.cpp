@@ -17,7 +17,7 @@
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Poco/Net/SSLException.h>
-#include <Common/Crypto/X509Certificate.h>
+#include <Poco/Net/X509Certificate.h>
 #endif
 
 static constexpr UInt64 HTTP_MAX_CHUNK_SIZE = 100ULL << 30;
@@ -106,16 +106,15 @@ bool HTTPServerRequest::havePeerCertificate() const
     return secure_socket->havePeerCertificate();
 }
 
-X509Certificate HTTPServerRequest::peerCertificate() const
+Poco::Net::X509Certificate HTTPServerRequest::peerCertificate() const
 {
-    if (!secure)
-        throw Poco::Net::SSLException("No certificate available");
-
-    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
-    if (!secure_socket)
-        throw Poco::Net::SSLException("No certificate available");
-
-    return X509Certificate(secure_socket->peerCertificate());
+    if (secure)
+    {
+        const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+        if (secure_socket)
+            return secure_socket->peerCertificate();
+    }
+    throw Poco::Net::SSLException("No certificate available");
 }
 #endif
 
