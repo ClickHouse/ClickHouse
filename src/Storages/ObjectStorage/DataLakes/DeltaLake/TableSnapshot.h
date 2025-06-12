@@ -61,7 +61,7 @@ private:
     using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
     using KernelSnapshot = KernelPointerWrapper<ffi::SharedSnapshot, ffi::free_snapshot>;
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
-    using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
+    // using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
 
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
@@ -70,7 +70,7 @@ private:
     mutable KernelExternEngine engine;
     mutable KernelSnapshot snapshot;
     mutable KernelScan scan;
-    mutable KernelGlobalScanState scan_state;
+    // mutable KernelGlobalScanState scan_state;
     mutable size_t snapshot_version;
 
     mutable DB::NamesAndTypesList table_schema;
