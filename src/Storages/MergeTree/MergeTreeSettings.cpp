@@ -267,7 +267,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Merge settings. */ \
-    DECLARE(UInt64, merge_max_block_size, 8192, R"(
+    DECLARE(NonZeroUInt64, merge_max_block_size, 8192, R"(
     The number of rows that are read from the merged parts into memory.
 
     Possible values:
@@ -2061,13 +2061,6 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity: value {} makes no sense",
             index_granularity.value);
-    }
-
-    if (merge_max_block_size <= 0)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "merge_max_block_size: value should be greater than 0.");
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
