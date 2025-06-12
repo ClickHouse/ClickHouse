@@ -60,7 +60,7 @@ SELECT
     round( xirr(groupArray(toInt64(value)), groupArray(date)), 6) AS result_i64_date,
     round( xirr(groupArray(toInt64(value)), groupArray(date32)), 6) AS result_i64_date32
 FROM (
-    SELECT 
+    SELECT
         tag,
         date,
         date32,
@@ -89,12 +89,12 @@ SELECT xnpv(0.1, [-0., 0.], [toDate('2020-01-01'), toDate('2020-01-02')]);
 SELECT round(xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]), 6);
 SELECT round(xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 'ACT_365_25'), 6);
 
-SELECT tag, 
+SELECT tag,
     round(xnpv(any(r), groupArray(value), groupArray(date)), 6) AS xnpv_f64_date,
     round(xnpv(any(r), groupArray(value), groupArray(date32)), 6) AS xnpv_f64_date32,
     round(xnpv(any(toFloat32(r)), groupArray(toFloat32(value)), groupArray(date)), 6) AS xnpv_f32_date
 FROM (
-    SELECT 
+    SELECT
         tag,
         date,
         date32,
@@ -116,12 +116,12 @@ SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.]), 6);
 SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], True), 6);
 SELECT round(npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False), 6);
 
-SELECT tag, 
+SELECT tag,
     round(npv(any(r), groupArray(value)), 6) AS xnpv_f64_date,
     round(npv(any(r), groupArray(value)), 6) AS xnpv_f64_date32,
     round(npv(any(toFloat32(r)), groupArray(toFloat32(value))), 6) AS xnpv_f32_date
 FROM (
-    SELECT 
+    SELECT
         tag,
         date,
         date32,
@@ -135,3 +135,11 @@ ORDER BY tag;
 
 
 DROP TABLE IF EXISTS 3533_xirr_test;
+
+SELECT 'Excel docs example:';
+SELECT round(npv(0.1, [-10000, 3000, 4200, 6800], False), 6);
+SELECT round(npv(0.08, [8000., 9200., 10000., 12000., 14500.], False), 6) - 40000;
+SELECT round(xnpv(0.09, [-10_000, 2750, 4250, 3250, 2750], [toDate('2008-01-01'), toDate('2008-03-01'), toDate('2008-10-30'), toDate('2009-02-15'), toDate('2009-04-01')], 'ACT_365F'), 6);
+SELECT round(irr([-70000, 12000, 15000, 18000, 21000, 26000]), 6);
+SELECT round(xirr([-10000, 2750, 4250, 3250, 2750], [toDate32('2008-01-01'), toDate32('2008-03-01'), toDate32('2008-10-30'), toDate32('2009-02-15'), toDate32('2009-04-01')]), 6);
+
