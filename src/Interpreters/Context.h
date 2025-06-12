@@ -140,6 +140,7 @@ struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
 class S3SettingsByEndpoint;
+class AzureSettingsByEndpoint;
 class IDatabase;
 class DDLWorker;
 class ITableFunction;
@@ -1319,6 +1320,7 @@ public:
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
     const DistributedSettings & getDistributedSettings() const;
     const S3SettingsByEndpoint & getStorageS3Settings() const;
+    const AzureSettingsByEndpoint & getStorageAzureSettings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
