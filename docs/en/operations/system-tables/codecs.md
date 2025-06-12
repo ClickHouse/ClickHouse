@@ -14,8 +14,8 @@ The `system.codecs` table contains the following columns (the column type is sho
 
 - `name` ([String](../../sql-reference/data-types/string.md)) — Codec name.
 - `method_byte` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Byte which indicates codec in compressed file.
-- `is_compression` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — The codec performs data compression.
-- `is_generic_compression` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — The codec is a generic compression.
+- `is_compression` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — True if this codec compresses something. Otherwise it can be just a transformation that helps compression.
+- `is_generic_compression` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — The codec is a generic compression algorithm like lz4, zstd.
 - `is_encryption` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — The codec encrypts the data.
 - `is_timeseries_codec`([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — The codec is for floating-point time series data.
 - `is_experimental` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — The codec is experimental.
