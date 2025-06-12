@@ -14,7 +14,6 @@ from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
-from .native_jobs import _is_praktika_job
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
@@ -37,7 +36,7 @@ class Runner:
             BRANCH="branch_name",
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr or -1,
-            EVENT_TYPE=workflow.event,
+            EVENT_TYPE="",
             JOB_OUTPUT_STREAM="",
             EVENT_FILE_PATH="",
             CHANGE_URL="",
@@ -74,7 +73,7 @@ class Runner:
 
         workflow_config.dump()
 
-        Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
+        Result.generate_pending(job.name).dump()
 
     def _setup_env(self, _workflow, job):
         # source env file to write data into fs (workflow config json, workflow status json)
@@ -120,7 +119,12 @@ class Runner:
                 print("Update Job and Workflow Report")
                 HtmlRunnerHooks.pre_run(workflow, job)
 
-        if job.requires and not _is_praktika_job(job.name):
+        if job.requires and job.name not in (
+            Settings.CI_CONFIG_JOB_NAME,
+            Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+            Settings.FINISH_WORKFLOW_JOB_NAME,
+        ):
             print("Download required artifacts")
             required_artifacts = []
             # praktika service jobs do not require any of artifacts and excluded in if to not upload "hacky" artifact report.
@@ -136,7 +140,18 @@ class Runner:
                 else:
                     if (
                         requires_artifact_name
-                        in [job.name for job in workflow.jobs if job.provides]
+                        in [
+                            job.name
+                            for job in workflow.jobs
+                            if job.name
+                            not in (
+                                Settings.CI_CONFIG_JOB_NAME,
+                                Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+                                Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+                                Settings.FINISH_WORKFLOW_JOB_NAME,
+                            )
+                            and job.provides
+                        ]
                         and Settings.ENABLE_ARTIFACTS_REPORT
                     ):
                         print(
@@ -232,18 +247,8 @@ class Runner:
                     job.run_in_docker,
                     RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
                 )
-                if Utils.is_arm():
-                    docker_tag += "_arm"
-                elif Utils.is_amd():
-                    docker_tag += "_amd"
-                else:
-                    raise RuntimeError("Unsupported CPU architecture")
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
-            Shell.check(
-                "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
-                verbose=True,
-            )
             cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
@@ -318,7 +323,7 @@ class Runner:
                 info=info,
             ).dump()
         elif prerun_exit_code != 0:
-            info = ResultInfo.PRE_JOB_FAILED
+            info = f"ERROR: {ResultInfo.PRE_JOB_FAILED}"
             print(info)
             # set Result with error and logs
             Result(
@@ -368,7 +373,9 @@ class Runner:
                     name = check.__name__
                 else:
                     name = str(check)
-                results_.append(Result.from_commands_run(name=name, command=check))
+                results_.append(
+                    Result.from_commands_run(name=name, command=check, with_info=True)
+                )
             result.results.append(
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )
@@ -501,8 +508,7 @@ class Runner:
                 description=result.info.splitlines()[0] if result.info else "",
                 url=report_url,
             ):
-                env.add_info("Failed to post GH commit status for the job")
-                print(f"ERROR: Failed to post commit status for the job")
+                print(f"ERROR: Failed to post failed commit status for the job")
 
         if workflow.enable_report:
             # to make it visible in GH Actions annotations

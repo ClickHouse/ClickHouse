@@ -26,7 +26,6 @@ public:
 
     AzureObjectStorage(
         const String & name_,
-        AzureBlobStorage::AuthMethod auth_method,
         ClientPtr && client_,
         SettingsPtr && settings_,
         const String & object_namespace_,
@@ -49,8 +48,6 @@ public:
     std::string getDescription() const override { return description; }
 
     bool exists(const StoredObject & object) const override;
-
-    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override { return auth_method; }
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
@@ -106,8 +103,6 @@ public:
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
 
-    bool isReadOnly() const override { return settings.get()->read_only; }
-
     bool supportParallelWrite() const override { return true; }
 
 private:
@@ -117,7 +112,6 @@ private:
         bool if_exists);
 
     const String name;
-    AzureBlobStorage::AuthMethod auth_method;
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<AzureBlobStorage::ContainerClient> client;
     MultiVersion<AzureBlobStorage::RequestSettings> settings;

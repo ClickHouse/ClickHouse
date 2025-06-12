@@ -205,15 +205,49 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
 
 bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
 {
-    return rpnEvaluatesAlwaysUnknownOrTrue(
-        rpn,
-        {RPNElement::FUNCTION_EQUALS,
-         RPNElement::FUNCTION_NOT_EQUALS,
-         RPNElement::FUNCTION_HAS,
-         RPNElement::FUNCTION_HAS_ANY,
-         RPNElement::FUNCTION_HAS_ALL,
-         RPNElement::FUNCTION_IN,
-         RPNElement::FUNCTION_NOT_IN});
+    std::vector<bool> rpn_stack;
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_UNKNOWN
+            || element.function == RPNElement::ALWAYS_TRUE)
+        {
+            rpn_stack.push_back(true);
+        }
+        else if (element.function == RPNElement::FUNCTION_EQUALS
+            || element.function == RPNElement::FUNCTION_NOT_EQUALS
+            || element.function == RPNElement::FUNCTION_HAS
+            || element.function == RPNElement::FUNCTION_HAS_ANY
+            || element.function == RPNElement::FUNCTION_HAS_ALL
+            || element.function == RPNElement::FUNCTION_IN
+            || element.function == RPNElement::FUNCTION_NOT_IN
+            || element.function == RPNElement::ALWAYS_FALSE)
+        {
+            rpn_stack.push_back(false);
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            // do nothing
+        }
+        else if (element.function == RPNElement::FUNCTION_AND)
+        {
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+            rpn_stack.back() = arg1 && arg2;
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+            rpn_stack.back() = arg1 || arg2;
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+    }
+
+    return rpn_stack[0];
 }
 
 bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule) const
@@ -373,8 +407,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
         function_name == "notEquals" ||
         function_name == "has" ||
         function_name == "mapContains" ||
-        function_name == "mapContainsKey" ||
-        function_name == "mapContainsValue" ||
         function_name == "indexOf" ||
         function_name == "hasAny" ||
         function_name == "hasAll")
@@ -694,25 +726,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         return true;
     }
 
-    if (function_name == "mapContainsValue" || function_name == "mapContainsKey" || function_name == "mapContains" || function_name == "has")
+    if (function_name == "mapContains" || function_name == "has")
     {
         auto map_keys_index_column_name = fmt::format("mapKeys({})", key_column_name);
-        auto map_values_index_column_name = fmt::format("mapValues({})", key_column_name);
-        size_t position = 0;
-
-        if (header.has(map_keys_index_column_name))
-        {
-            position = header.getPositionByName(map_keys_index_column_name);
-        }
-        else if (header.has(map_values_index_column_name))
-        {
-            position = header.getPositionByName(map_values_index_column_name);
-        }
-        else
-        {
+        if (!header.has(map_keys_index_column_name))
             return false;
-        }
 
+        size_t position = header.getPositionByName(map_keys_index_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
