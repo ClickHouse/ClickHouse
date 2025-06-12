@@ -1,43 +1,18 @@
+# rebuild in #33610
 # docker build -t clickhouse/stateless-test .
-FROM ubuntu:22.04
-
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="https://archive.ubuntu.com"
-RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ARG FROM_TAG=latest
+FROM clickhouse/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
-
-
-RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client && chmod 777 /etc/clickhouse-* \
-    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server && chmod 777 /var/log/clickhouse-server /var/lib/clickhouse
-
-RUN addgroup --gid 1000 clickhouse && adduser --uid 1000 --gid 1000 --disabled-password clickhouse
-RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-password clickhouse2
-
-# moreutils - provides ts fo FT
-# expect, bzip2 - requried by FT
-# bsdmainutils - provides hexdump for FT
-# git - required in one of FT TC
-# gnuplot - for perf tests
-# imagemagick - for perf tests
-# parallel - for perf tests
-
-# We need ca-certificates first to be able to update all repos. This is why it's run twice
-RUN apt-get update \
-    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
 
 # golang version 1.13 on Ubuntu 20 is enough for tests
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
-            git \
             awscli \
             brotli \
             lz4 \
             expect \
-            moreutils \
-            bzip2 \
-            bsdmainutils \
             golang \
             lsof \
             mysql-client=8.0* \
@@ -65,13 +40,6 @@ RUN apt-get update -y \
             zip \
             unzip \
             p7zip-full \
-            curl \
-            wget \
-            xz-utils \
-            ripgrep \
-            gnuplot \
-            imagemagick \
-            parallel \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -106,23 +74,13 @@ ARG TARGETARCH
 
 # Download Minio-related binaries
 RUN arch=${TARGETARCH:-amd64} \
-    && curl -L "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -o /minio \
-    && curl -L "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -o /mc \
-    && chmod +x /mc /minio
+    && curl -L "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -o ./minio \
+    && curl -L "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -o ./mc \
+    && chmod +x ./mc ./minio
 
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
+ENV EXPORT_S3_STORAGE_POLICIES=1
 
-# for minio to work without root
-RUN chmod 777 /home
-ENV HOME="/home"
-
-RUN npm install -g azurite@3.30.0 \
+RUN npm install -g azurite@3.33.0 \
     && npm install -g tslib && npm install -g node
-
-ENV PYTHONPATH=".:./ci"
-USER clickhouse
-
-# A directory for cache
-RUN mkdir /dev/shm/clickhouse
-
