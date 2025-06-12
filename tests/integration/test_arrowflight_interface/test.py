@@ -84,8 +84,8 @@ def test_doput_unexisting_table():
         writer.write_batch(batch)
         writer.close()
         assert False, "Expected error but query succeeded: insert into unexisting table"
-    except flight.FlightServerError:
-        pass
+    except flight.FlightServerError as e:
+        assert "Table default.unexisting_table does not exist" in str(e)
 
 def test_doput_cmd_descriptor():
     node.query("""
@@ -211,8 +211,8 @@ def test_doput_invalid_query():
         writer.write_batch(batch)
         writer.close()
         assert False, "Expected error but query succeeded"
-    except flight.FlightServerError:
-        pass
+    except flight.FlightServerError as e:
+        assert "Unknown table expression identifier 'my_table' in scope SELECT * FROM my_table" in str(e)
 
 
 def test_doget():
@@ -235,23 +235,27 @@ def test_doget():
     try:
         incorrect_ticket = flight.Ticket(b"INSERT INTO doget_test_insert SELECT number, toString(number) FROM numbers(10)")
         _ = client.do_get(incorrect_ticket, options)
+    except flight.FlightServerError as e:
+        assert "Table default.doget_test_insert does not exist" in str(e)
+    else:
         assert False, "INSERT clause in DoGet query is forbidden, but query succeeded"
-    except flight.FlightServerError:
-        pass
     
     try:
         incorrect_ticket = flight.Ticket(b"some incorrect query")
         _ = client.do_get(incorrect_ticket, options)
+        
+    except flight.FlightServerError as e:
+        assert "Syntax error" in str(e)
+    else:
         assert False, "Query is incorrect, but succeeded"
-    except flight.FlightServerError:
-        pass
 
     try:
         incorrect_ticket = flight.Ticket(b"SELECT * FROM unexisting_table")
-        _ = client.do_get(incorrect_ticket, options)
+        _ = client.do_get(incorrect_ticket, options) 
+    except flight.FlightServerError as e:
+        assert "Unknown table expression identifier 'unexisting_table'" in str(e)
+    else:
         assert False, "Table is unexisting, but query succeeded"
-    except flight.FlightServerError:
-        pass
     
     real_ticket = flight.Ticket(b"SELECT * FROM doget_test")
     reader = client.do_get(real_ticket, options)
@@ -285,6 +289,45 @@ def test_doget():
     assert actual.column("id").equals(expected_ids)
 
     node.query("DROP TABLE IF EXISTS doget_test SYNC")
+
+
+def test_doget_custom_db():
+    node.query("CREATE DATABASE IF NOT EXISTS test_db")
+    node.query("CREATE DATABASE IF NOT EXISTS another_db")
+
+    node.query(
+        """
+        USE test_db;
+
+        CREATE TABLE doget_test_custom_db (
+            id Int64,
+            name String
+        )
+        ORDER BY id;
+
+        INSERT INTO doget_test_custom_db VALUES(10, 'abc'), (20, 'cde');
+        """
+    )
+    
+    client, options = get_client()
+
+    try:
+        # Table in test_db, but we use another_db
+        incorrect_ticket = flight.Ticket(b"SELECT * FROM another_db.doget_test_custom_db")
+        _ = client.do_get(incorrect_ticket, options)
+    except flight.FlightServerError as e:
+        assert "Unknown table expression identifier 'another_db.doget_test_custom_db'" in str(e)
+    else:
+        assert False, "Table is unexisting, but query succeeded"
+
+    real_ticket = flight.Ticket(b"SELECT * FROM test_db.doget_test_custom_db")
+    reader = client.do_get(real_ticket, options)
+    reader.read_all()
+
+    node.query("""
+               DROP DATABASE IF EXISTS test_db SYNC;
+               DROP DATABASE IF EXISTS another_db SYNC;
+               """)
 
 
 def test_doget_format_json():
@@ -345,9 +388,9 @@ def test_doget_invalid_user():
         real_ticket = flight.Ticket(b"SELECT * FROM doget_test_invalid_user")
         client.do_get(real_ticket, options)
     except Exception as e:
-        print("Unauthenticated:", e)
+        assert "Authentication failed: password is incorrect, or there is no user with such name" in str(e)
     else:
-        raise RuntimeError("Expected call to fail: login and password are not correct")
+        assert False, "Expected call to fail: login and password are not correct"
     
     result = node.query("SELECT * FROM doget_test_invalid_user")
 
