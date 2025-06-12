@@ -115,7 +115,8 @@ struct NpvCalculator
             }
         }
         else
-        { // IndexMode::OneBased
+        {
+            // IndexMode::OneBased
             // All cashflows are discounted (t=1, t=2, ...)
             double discount_factor = growth_factor; // Start with (1+r)^1 for t=1
             for (size_t i = 0; i < cashflows.size(); ++i)
