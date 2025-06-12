@@ -553,6 +553,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             "Node must have query or union type. Actual {} {}",
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
+    if (isCorrelatedQueryOrUnionNode(node))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Scalar correlated subqueries are not supported");
 
     auto & context = scope.context;
 
