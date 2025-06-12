@@ -45,6 +45,12 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
+
+#include <absl/base/log_severity.h>
+#include <absl/log/globals.h>
+#include <absl/log/initialize.h>
+#include <absl/log/log_sink_registry.h>
+
 #include <grpc/support/log.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
@@ -90,37 +96,71 @@ namespace ErrorCodes
 namespace
 {
     /// Make grpc to pass logging messages to ClickHouse logging system.
-    // void initGRPCLogging(const Poco::Util::AbstractConfiguration &)
-    // {
-        // static std::once_flag once_flag;
-        // std::call_once(once_flag, [&config]
-        // {
-        //     static LoggerRawPtr logger = getRawLogger("grpc");
-        //     gpr_set_log_function([](gpr_log_func_args* args)
-        //     {
-        //         if (args->severity == GPR_LOG_SEVERITY_DEBUG)
-        //             LOG_DEBUG(logger, "{} ({}:{})", args->message, args->file, args->line);
-        //         else if (args->severity == GPR_LOG_SEVERITY_INFO)
-        //             LOG_INFO(logger, "{} ({}:{})", args->message, args->file, args->line);
-        //         else if (args->severity == GPR_LOG_SEVERITY_ERROR)
-        //             LOG_ERROR(logger, "{} ({}:{})", args->message, args->file, args->line);
-        //     });
-        //
-        //     if (config.getBool("grpc.verbose_logs", false))
-        //     {
-        //         gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
-        //         grpc_tracer_set_enabled("all", true);
-        //     }
-        //     else if (logger->is(Poco::Message::PRIO_DEBUG))
-        //     {
-        //         gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
-        //     }
-        //     else if (logger->is(Poco::Message::PRIO_INFORMATION))
-        //     {
-        //         gpr_set_log_verbosity(GPR_LOG_SEVERITY_INFO);
-        //     }
-        // });
-    // }
+    class GrpcLogSink : public absl::LogSink
+    {
+    public:
+        void Send(const absl::LogEntry & entry) override
+        {
+            static LoggerRawPtr logger = getRawLogger("grpc");
+
+            const auto msg = std::string(entry.text_message());
+            const auto file = entry.source_filename();
+            int line = entry.source_line();
+
+            switch (entry.log_severity())
+            {
+                case absl::LogSeverity::kInfo:
+                    LOG_INFO(logger, "{} ({}:{})", msg, file, line);
+                    break;
+                case absl::LogSeverity::kWarning:
+                    LOG_WARNING(logger, "{} ({}:{})", msg, file, line);
+                    break;
+                case absl::LogSeverity::kError:
+                    LOG_ERROR(logger, "{} ({}:{})", msg, file, line);
+                    break;
+                case absl::LogSeverity::kFatal:
+                    LOG_ERROR(logger, "FATAL: {} ({}:{})", msg, file, line);
+                    break;
+            }
+        }
+    };
+    GrpcLogSink grpc_log_sink;
+
+    /// See also contrib/grpc/src/core/util/log.cc
+    void initGRPCLogging(const Poco::Util::AbstractConfiguration & config)
+    {
+        static std::once_flag once_flag;
+        std::call_once(once_flag, [&config]
+        {
+            absl::AddLogSink(&grpc_log_sink);
+            absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
+            absl::InitializeLog();
+
+            absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
+
+            const bool verbose = config.getBool("grpc.verbose_logs", false);
+            static LoggerRawPtr logger = getRawLogger("grpc");
+
+            if (verbose)
+                grpc_tracer_set_enabled("all", true);
+
+            if (logger->is(Poco::Message::PRIO_DEBUG))
+            {
+                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
+                absl::SetVLogLevel("*grpc*/*", 2);
+            }
+            else if (logger->is(Poco::Message::PRIO_INFORMATION))
+            {
+                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
+                absl::SetVLogLevel("*grpc*/*", -1);
+            }
+            else
+            {
+                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kWarning);
+                absl::SetVLogLevel("*grpc*/*", -1);
+            }
+        });
+    }
 
     /// Gets file's contents as a string, throws an exception if failed.
     String readFile(const String & filepath)
@@ -1923,7 +1963,7 @@ GRPCServer::~GRPCServer()
 
 void GRPCServer::start()
 {
-    // initGRPCLogging(iserver.config());
+    initGRPCLogging(iserver.config());
     grpc::ServerBuilder builder;
     builder.AddListeningPort(address_to_listen.toString(), makeCredentials(iserver.config()));
     builder.RegisterService(&grpc_service);
