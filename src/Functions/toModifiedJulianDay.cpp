@@ -265,16 +265,20 @@ toModifiedJulianDayOrNull(date)
         {
             {"date", "Date in text form. [`String`](../data-types/string.md)/[`FixedString`](../data-types/fixedstring.md)."}
         };
-        FunctionDocumentation::ReturnedValue returned_value_toModifiedJulianDayOrNull = "Returns the modified Julian day number. [`Nullable(Int32)`](../data-types/int-uint.md).";
+        FunctionDocumentation::ReturnedValue returned_value_toModifiedJulianDayOrNull = "Returns the modified Julian day number for valid `date`, otherwise `null`. [`Nullable(Int32)`](../data-types/int-uint.md).";
         FunctionDocumentation::Examples examples_toModifiedJulianDayOrNull =
         {
             {"Convert date to Modified Julian Day with null handling", R"(
-SELECT toModifiedJulianDayOrNull('2020-01-01')
+SELECT toModifiedJulianDayOrNull('2020-01-01');
+SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
         )",
             R"(
-┌─toModifiedJulianDayOrNull('2020-01-01')─┐
-│                                   58849 │
-└─────────────────────────────────────────┘
+┌─toModifiedJu⋯020-01-01')─┐
+│                    58849 │
+└──────────────────────────┘
+┌─toModifiedJu⋯000-00-00')─┐
+│                     ᴺᵁᴸᴸ │
+└──────────────────────────┘
         )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDayOrNull = {21, 1};

@@ -263,15 +263,19 @@ fromModifiedJulianDayOrNull(day)
         FunctionDocumentation::Arguments arguments_fromModifiedJulianDayOrNull = {
             {"day", "Modified Julian Day number. [Any integral types](../data-types/int-uint.md)."}
         };
-        FunctionDocumentation::ReturnedValue returned_value_fromModifiedJulianDayOrNull = "Returns date in text form. [`Nullable(String)`](../data-types/string.md).";
+        FunctionDocumentation::ReturnedValue returned_value_fromModifiedJulianDayOrNull = "Returns date in text form for valid `day` argument, otherwise `null`. [`Nullable(String)`](../data-types/string.md).";
         FunctionDocumentation::Examples examples_fromModifiedJulianDayOrNull = {
             {"Convert Modified Julian Day to date with null handling", R"(
-SELECT fromModifiedJulianDayOrNull(58849)
+SELECT fromModifiedJulianDayOrNull(58849);
+SELECT fromModifiedJulianDayOrNull(60000000); -- invalid argument, returns NULL
         )",
             R"(
-┌─fromModifiedJulianDayOrNull(58849)─┐
-│ 2020-01-01                         │
-└────────────────────────────────────┘
+┌─fromModified⋯Null(58849)─┐
+│ 2020-01-01               │
+└──────────────────────────┘
+┌─fromModified⋯l(60000000)─┐
+│ ᴺᵁᴸᴸ                     │
+└──────────────────────────┘
         )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDayOrNull = {21, 1};
