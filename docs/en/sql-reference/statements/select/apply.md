@@ -3,6 +3,7 @@ description: 'Documentation describing the APPLY modifier which allows you to in
 sidebar_label: 'APPLY'
 slug: /sql-reference/statements/select/apply
 title: 'APPLY modifier'
+keywords: ['APPLY', 'modifier']
 ---
 
 # APPLY modifier {#apply}

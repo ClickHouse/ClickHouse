@@ -3,7 +3,7 @@ description: 'Documentation for the EXCEPT modifier which returns only those row
 sidebar_label: 'EXCEPT'
 slug: /sql-reference/statements/select/except
 title: 'EXCEPT modifier'
-keywords: ['EXCEPT']
+keywords: ['EXCEPT', 'modifier']
 ---
 
 # EXCEPT modifier

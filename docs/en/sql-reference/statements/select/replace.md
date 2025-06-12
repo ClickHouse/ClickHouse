@@ -3,6 +3,7 @@ description: 'Documentation describing the APPLY modifier which allows you to in
 sidebar_label: 'REPLACE'
 slug: /sql-reference/statements/select/replace
 title: 'Replace modifier'
+keywords: ['REPLACE', 'modifier']
 ---
 
 # Replace modifier {#replace}
