@@ -150,19 +150,25 @@ StorageObjectStorage::StorageObjectStorage(
     {
         if (do_lazy_init)
             do_init();
-        try
+        if (!configuration->isDataLakeConfiguration())
         {
-            sample_path = getPathSample(context);
-        }
-        catch (...)
-        {
-            LOG_WARNING(
-                log, "Failed to list object storage, cannot use hive partitioning. "
-                "Error: {}", getCurrentExceptionMessage(true));
+            try
+            {
+                sample_path = getPathSample(context);
+            }
+            catch (...)
+            {
+                LOG_WARNING(
+                    log,
+                    "Failed to list object storage, cannot use hive partitioning. "
+                    "Error: {}",
+                    getCurrentExceptionMessage(true));
+            }
         }
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns, context, sample_path, format_settings, configuration->isDataLakeConfiguration()));
     setInMemoryMetadata(metadata);
 }
 
@@ -197,9 +203,9 @@ bool StorageObjectStorage::hasExternalDynamicMetadata() const
     return configuration->hasExternalDynamicMetadata();
 }
 
-IDataLakeMetadata * StorageObjectStorage::getExternalMetadata() const
+IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
-    return configuration->getExternalMetadata();
+    return configuration->getExternalMetadata(object_storage, query_context);
 }
 
 void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)

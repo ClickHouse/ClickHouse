@@ -1,4 +1,3 @@
-#include "Disks/ObjectStorages/StoredObject.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -12,6 +11,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h"
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -455,6 +455,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     if (previous_snapshot_id != relevant_snapshot_id)
     {
         cached_unprunned_files_for_last_processed_snapshot = std::nullopt;
+        schema_id_by_data_file_initialized.store(false);
         return true;
     }
     return previous_snapshot_schema_id != relevant_snapshot_schema_id;
@@ -574,13 +575,21 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, bool metadat
 
 std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String data_path) const
 {
-    auto manifest_file_it = manifest_file_by_data_file.find(data_path);
-    if (manifest_file_it == manifest_file_by_data_file.end())
+    if (!schema_id_by_data_file_initialized.load())
+    {
+        std::lock_guard lock(schema_id_by_data_file_mutex);
+        if (!schema_id_by_data_file_initialized.load())
+        {
+            initializeSchemasFromManifestList(relevant_snapshot->manifest_list_entries);
+            schema_id_by_data_file_initialized.store(true);
+        }
+    }
+    auto schema_id_it = schema_id_by_data_file.find(data_path);
+    if (schema_id_it == schema_id_by_data_file.end())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find manifest file for data file: {}", data_path);
     }
-    const ManifestFileContent & manifest_file = *manifest_file_it->second;
-    auto schema_id = manifest_file.getSchemaId();
+    auto schema_id = schema_id_it->second;
     if (schema_id == relevant_snapshot_schema_id)
         return std::nullopt;
     return std::optional{schema_id};
@@ -635,19 +644,25 @@ DataLakeMetadataPtr IcebergMetadata::create(
     return ptr;
 }
 
-void IcebergMetadata::initializeDataFiles(ManifestListPtr manifest_list_ptr) const
+void IcebergMetadata::initializeSchemasFromManifestList(ManifestFileCacheKeys manifest_list_ptr) const
 {
-    for (const auto & manifest_file_content : *manifest_list_ptr)
+    for (const auto & manifest_list_entry : manifest_list_ptr)
     {
-        for (const auto & data_file_path : manifest_file_content->getFiles())
-        {
-            if (std::holds_alternative<DataFileEntry>(data_file_path.file))
-                manifest_file_by_data_file.emplace(std::get<DataFileEntry>(data_file_path.file).file_name, manifest_file_content);
-        }
+        auto manifest_file_ptr = getManifestFile(manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
+        initializeSchemasFromManifestFile(manifest_file_ptr);
     }
 }
 
-ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
+void IcebergMetadata::initializeSchemasFromManifestFile(ManifestFilePtr manifest_file_ptr) const
+{
+    for (const auto & manifest_file_entry : manifest_file_ptr->getFiles())
+    {
+        if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
+            schema_id_by_data_file.emplace(std::get<DataFileEntry>(manifest_file_entry.file).file_name, manifest_file_ptr->getSchemaId());
+    }
+}
+
+ManifestFileCacheKeys IcebergMetadata::getManifestList(const String & filename) const
 {
     auto configuration_ptr = configuration.lock();
     if (configuration_ptr == nullptr)
@@ -655,7 +670,6 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
 
     auto create_fn = [&]()
     {
-        ManifestList manifest_list;
         StorageObjectStorage::ObjectInfo object_info(filename);
         auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
         AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(getContext()));
@@ -678,7 +692,6 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
     };
 
     ManifestFileCacheKeys manifest_file_cache_keys;
-    ManifestList manifest_list;
     if (manifest_cache)
     {
         manifest_file_cache_keys = manifest_cache->getOrSetManifestFileCacheKeys(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
@@ -687,14 +700,7 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
     {
         manifest_file_cache_keys = create_fn();
     }
-    for (const auto & entry : manifest_file_cache_keys)
-    {
-        auto manifest_file_ptr = getManifestFile(entry.manifest_file_path, entry.added_sequence_number);
-        manifest_list.push_back(manifest_file_ptr);
-    }
-    ManifestListPtr manifest_list_ptr = std::make_shared<ManifestList>(std::move(manifest_list));
-    initializeDataFiles(manifest_list_ptr);
-    return manifest_list_ptr;
+    return manifest_file_cache_keys;
 }
 
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
@@ -728,15 +734,19 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
             parents_list[snapshot_id] = 0;
     }
 
-    auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
-
-    /// Add current snapshot-id to ancestors list
-    ancestors.push_back(current_snapshot_id);
-    while (parents_list[current_snapshot_id] != 0)
+    /// For empty table we may have no snapshots
+    if (metadata_object->has(f_current_snapshot_id))
     {
-        ancestors.push_back(parents_list[current_snapshot_id]);
-        current_snapshot_id = parents_list[current_snapshot_id];
+        auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
+        /// Add current snapshot-id to ancestors list
+        ancestors.push_back(current_snapshot_id);
+        while (parents_list[current_snapshot_id] != 0)
+        {
+            ancestors.push_back(parents_list[current_snapshot_id]);
+            current_snapshot_id = parents_list[current_snapshot_id];
+        }
     }
+
 
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
@@ -819,8 +829,10 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
         return cached_unprunned_files_for_last_processed_snapshot.value();
 
     Strings data_files;
-    for (const auto & manifest_file_ptr : *(relevant_snapshot->manifest_list))
+    for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
     {
+        auto manifest_file_ptr = getManifestFile(manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
+        initializeSchemasFromManifestFile(manifest_file_ptr);
         ManifestFilesPruner pruner(
             schema_processor, relevant_snapshot_schema_id,
             use_partition_pruning ? filter_dag : nullptr,
@@ -839,6 +851,7 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
         }
     }
 
+    schema_id_by_data_file_initialized = true;
     if (!use_partition_pruning)
     {
         cached_unprunned_files_for_last_processed_snapshot = data_files;
@@ -869,9 +882,10 @@ std::optional<size_t> IcebergMetadata::totalRows() const
     }
 
     Int64 result = 0;
-    for (const auto & manifest_list_entry : *(relevant_snapshot->manifest_list))
+    for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
     {
-        auto count = manifest_list_entry->getRowsCountInAllDataFilesExcludingDeleted();
+        auto manifest_file_ptr = getManifestFile(manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
+        auto count = manifest_file_ptr->getRowsCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
             return {};
 
@@ -898,9 +912,10 @@ std::optional<size_t> IcebergMetadata::totalBytes() const
         return relevant_snapshot->total_bytes;
 
     Int64 result = 0;
-    for (const auto & manifest_list_entry : *(relevant_snapshot->manifest_list))
+    for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
     {
-        auto count = manifest_list_entry->getBytesCountInAllDataFiles();
+        auto manifest_file_ptr = getManifestFile(manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
+        auto count = manifest_file_ptr->getBytesCountInAllDataFiles();
         if (!count.has_value())
             return {};
 

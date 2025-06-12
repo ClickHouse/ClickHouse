@@ -34,7 +34,12 @@ struct DivideFloatingImpl
 };
 
 template <typename A, typename B>
-struct DivideFloatingOrNullImpl : DivideFloatingImpl<A, B>{};
+struct DivideFloatingOrNullImpl : DivideFloatingImpl<A, B>
+{
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
+#endif
+};
 
 struct NameDivide { static constexpr auto name = "divide"; };
 using FunctionDivide = BinaryArithmeticOverloadResolver<DivideFloatingImpl, NameDivide>;

@@ -491,7 +491,8 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
+            (!key_condition || key_condition->alwaysUnknownOrTrue()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         pipeline->reset();
