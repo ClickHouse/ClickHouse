@@ -117,7 +117,7 @@ class QueryPool:
                         f"select count(*) from numbers_mt(100000000) settings "
                         f"workload='{self.workload}', max_threads=2"
                     )
-                except ex:
+                except Exception as ex:
                     self.error = str(ex)
 
         for _ in range(self.num_queries):
@@ -203,7 +203,7 @@ def test_max_waiting_queries() -> None:
     node.query(
         f"""
         create resource query (query);
-        create workload all settings max_concurrent_queries=1 max_waiting_queries=1;
+        create workload all settings max_concurrent_queries=1, max_waiting_queries=1;
         """
     )
 
