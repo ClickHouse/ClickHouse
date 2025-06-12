@@ -298,7 +298,9 @@ private:
     private:
         void createQueue(EventQueue * event_queue_)
         {
-            queue = std::make_shared<FifoQueue>(event_queue_, SchedulerNodeInfo{}, settings.getQueueSize());
+            SchedulerNodeInfo node_info{};
+            node_info.queue_size = settings.getQueueSize();
+            queue = std::make_shared<FifoQueue>(event_queue_, node_info);
             queue->basename = "fifo";
         }
 

@@ -31,9 +31,8 @@ public:
         : ISchedulerQueue(event_queue_, config, config_prefix)
     {}
 
-    FifoQueue(EventQueue * event_queue_, const SchedulerNodeInfo & info_, Int64 queue_size_)
+    FifoQueue(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
         : ISchedulerQueue(event_queue_, info_)
-        , queue_size(queue_size_)
     {}
 
     ~FifoQueue() override
@@ -62,8 +61,8 @@ public:
         if (is_not_usable)
             throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue is about to be destructed");
 
-        if (requests.size() > static_cast<size_t>(queue_size))
-            throw Exception(ErrorCodes::SERVER_OVERLOADED, "Queue limit has been reached: {} of {}", requests.size(), queue_size);
+        if (requests.size() > static_cast<size_t>(info.queue_size))
+            throw Exception(ErrorCodes::SERVER_OVERLOADED, "Queue limit has been reached: {} of {}", requests.size(), info.queue_size);
         queue_cost += request->cost;
         bool was_empty = requests.empty();
         requests.push_back(*request);
@@ -169,7 +168,6 @@ private:
     Int64 queue_cost = 0;
     boost::intrusive::list<ResourceRequest> requests;
     bool is_not_usable = false;
-    Int64 queue_size;
 };
 
 }
