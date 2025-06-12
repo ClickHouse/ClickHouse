@@ -190,9 +190,14 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
             else
 
             LIST_OF_RESTORE_SETTINGS(GET_RESTORE_SETTINGS_FROM_QUERY)
-            /// else
+
+            if (setting.name == "allow_s3_native_copy")
+            {
+                SettingFieldBoolAuto bool_auto{setting.value};
+                res.allow_s3_native_copy = bool_auto.is_auto ? std::nullopt : std::make_optional(bool_auto.base.value);
+            }
             /// `allow_unresolved_access_dependencies` is an obsolete name.
-            if (setting.name == "allow_unresolved_access_dependencies")
+            else if (setting.name == "allow_unresolved_access_dependencies")
             {
                 res.skip_unresolved_access_dependencies = SettingFieldBool{setting.value}.value;
             }
@@ -226,6 +231,9 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
         query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
 
     LIST_OF_RESTORE_SETTINGS(COPY_RESTORE_SETTINGS_TO_QUERY)
+
+    if (allow_s3_native_copy)
+        query_settings->changes.emplace_back("allow_s3_native_copy", static_cast<Field>(SettingFieldBool{*allow_s3_native_copy}));
 
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());

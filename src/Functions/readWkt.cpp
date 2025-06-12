@@ -134,7 +134,7 @@ Parses a Well-Known Text (WKT) representation of a LineString geometry and retur
 └──────────────────────────────────────────────────────────────────┘
             )"},
         },
-        .category = FunctionDocumentation::Category::UUID
+        .category{"Unique identifiers"}
     });
     factory.registerFunction<FunctionReadWKT<DataTypeMultiLineStringName, CartesianMultiLineString, MultiLineStringSerializer<CartesianPoint>, ReadWKTMultiLineStringNameHolder>>(FunctionDocumentation
     {
@@ -159,7 +159,7 @@ Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and 
 └─────────────────────────────────────────────────────────────────────────┘
             )"},
         },
-        .category = FunctionDocumentation::Category::Geo
+        .category{"Geo - Polygons"}
     });
     factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>();
     factory.registerFunction<FunctionReadWKT<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWKTPolygonNameHolder>>();

@@ -4,7 +4,7 @@
 [0,1,2]
 Expression ((Project names + (Projection + )))
   ArrayJoin (ARRAY JOIN)
-    Expression
+    Filter ((( + WHERE) + (DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers))))
       ReadFromMergeTree (default.test)
       Indexes:
         Skip

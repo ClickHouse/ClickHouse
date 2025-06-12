@@ -1,5 +1,4 @@
 #include <Parsers/ASTShowColumnsQuery.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <iomanip>
 #include <Common/quoteString.h>
@@ -31,17 +30,11 @@ void ASTShowColumnsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
 
 
     if (!like.empty())
-    {
-        ostr
-            << (settings.hilite ? hilite_keyword : "")
-            << (not_like ? " NOT" : "")
-            << (case_insensitive_like ? " ILIKE " : " LIKE")
-            << (settings.hilite ? hilite_none : "");
-        if (settings.hilite)
-            highlightStringWithMetacharacters(quoteString(like), ostr, "%_");
-        else
-            ostr << quoteString(like);
-    }
+        ostr << (settings.hilite ? hilite_keyword : "")
+                      << (not_like ? " NOT" : "")
+                      << (case_insensitive_like ? " ILIKE " : " LIKE")
+                      << (settings.hilite ? hilite_none : "")
+                      << DB::quote << like;
 
     if (where_expression)
     {

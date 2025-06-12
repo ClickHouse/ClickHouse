@@ -94,7 +94,6 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
-add_headers_and_sources(clickhouse_common_io Common/Crypto)
 add_headers_and_sources(clickhouse_common_io Common/JSONParsers)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
@@ -458,6 +457,10 @@ dbms_target_link_libraries (
         clickhouse_common_io
         Poco::Redis
 )
+
+if (USE_MONGODB)
+    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
+endif()
 
 if (TARGET ch_contrib::mongocxx)
     dbms_target_link_libraries(

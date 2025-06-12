@@ -33,12 +33,10 @@ from typing import List, Optional
 
 from ci_buddy import CIBuddy
 from ci_config import Labels
-from ci_utils import Shell
 from env_helper import IS_CI, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
 from github_helper import GitHub, PullRequest, PullRequests, Repository
-from report import GITHUB_JOB_URL
 from ssh import SSHKey
 
 
@@ -84,24 +82,7 @@ Treat it as a standard pull-request: look at the checks and resolve conflicts.
 Merge it only if you intend to backport changes to the target branch, otherwise just \
 close it.
 """
-    PR_SOURCE_DESCRIPTION = ""
     REMOTE = ""
-
-    @property
-    def pr_source(self) -> str:
-        if self.PR_SOURCE_DESCRIPTION:
-            return self.PR_SOURCE_DESCRIPTION
-        header = "\n\n### The PR source\n"
-        if not IS_CI:
-            self.PR_SOURCE_DESCRIPTION = (
-                f"{header}The PR is created manually outside of the CI"
-            )
-        else:
-            self.PR_SOURCE_DESCRIPTION = (
-                f"{header}The PR is created in the [CI job]({GITHUB_JOB_URL()})"
-            )
-
-        return self.PR_SOURCE_DESCRIPTION
 
     def __init__(
         self,
@@ -125,14 +106,12 @@ close it.
         self.pre_check()
 
     def pre_check(self):
-        self._backported = Shell.check(
-            f"git merge-base --is-ancestor {self.pr.merge_commit_sha} {self.REMOTE}/{self.name}",
-            verbose=True,
+        branch_updated = git_runner(
+            f"git branch -a --contains={self.pr.merge_commit_sha} "
+            f"{self.REMOTE}/{self.name}"
         )
-        if self._backported:
-            print(
-                f"WARNING: Backport for PR [{self.pr}] is already present on {self.name}"
-            )
+        if branch_updated:
+            self._backported = True
 
     def pop_prs(self, prs: PullRequests) -> PullRequests:
         """the method processes all prs and pops the ReleaseBranch related prs"""
@@ -255,8 +234,7 @@ close it.
                 pr_url=self.pr.html_url,
                 backport_created_label=self.backport_created_label,
                 label_cherrypick=Labels.PR_CHERRYPICK,
-            )
-            + self.pr_source,
+            ),
             base=self.backport_branch,
             head=self.cherrypick_branch,
         )
@@ -294,8 +272,7 @@ close it.
             title=title,
             body=f"Original pull-request {self.pr.html_url}\n"
             f"Cherry-pick pull-request #{self.cherrypick_pr.number}\n\n"
-            f"{self.BACKPORT_DESCRIPTION}"
-            f"{self.pr_source}",
+            f"{self.BACKPORT_DESCRIPTION}",
             base=self.name,
             head=self.backport_branch,
         )
@@ -350,11 +327,6 @@ close it.
         assignees = [self.pr.user, self.pr.merged_by]
         if self.pr.assignees:
             assignees.extend(self.pr.assignees)
-        assignees = [
-            a
-            for a in assignees
-            if "robot-clickhouse" not in str(a) and "clickhouse-gh" not in str(a)
-        ]
         logging.info(
             "Assing #%s to author and assignees of the original PR: %s",
             new_pr.number,

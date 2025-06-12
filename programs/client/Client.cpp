@@ -1,7 +1,6 @@
 #include "Client.h"
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
-#include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/ThreadStatus.h>
@@ -9,6 +8,7 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
@@ -19,16 +19,16 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
 
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Parsers/ASTAlterQuery.h>
 
 #include <Poco/Util/Application.h>
 
@@ -72,7 +72,7 @@ Client::Client()
 
 Client::~Client() = default;
 
-void Client::processError(std::string_view query) const
+void Client::processError(const String & query) const
 {
     if (server_exception)
     {
@@ -177,13 +177,7 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
         if (config.has(prefix + ".port"))
             config.setInt("port", config.getInt(prefix + ".port"));
         if (config.has(prefix + ".secure"))
-        {
-            bool secure = config.getBool(prefix + ".secure");
-            if (secure)
-                config.setBool("secure", true);
-            else
-                config.setBool("no-secure", true);
-        }
+            config.setBool("secure", config.getBool(prefix + ".secure"));
         if (config.has(prefix + ".user"))
             config.setString("user", config.getString(prefix + ".user"));
         if (config.has(prefix + ".password"))
@@ -345,6 +339,7 @@ void Client::initialize(Poco::Util::Application & self)
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
+    UseSSL use_ssl;
     auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 
@@ -360,6 +355,7 @@ try
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
@@ -652,7 +648,7 @@ void Client::printChangedSettings() const
     };
 
     print_changes(client_context->getSettingsRef().changes(), "settings");
-    print_changes(cmd_merge_tree_settings->changes(), "MergeTree settings");
+    print_changes(cmd_merge_tree_settings.changes(), "MergeTree settings");
 }
 
 
@@ -666,7 +662,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
     output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n";
-    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parameterized queries.\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
 
@@ -792,7 +788,7 @@ void Client::processOptions(
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::CLIENT);
-    global_context->setSettings(*cmd_settings);
+    global_context->setSettings(cmd_settings);
 
     /// Copy settings-related program options to config.
     /// TODO: Is this code necessary?

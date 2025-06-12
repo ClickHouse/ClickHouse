@@ -4,7 +4,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/DateLUTImpl.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -140,8 +139,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"used_functions", array_low_cardinality_string, "Canonical names of functions, which were used during query execution."},
         {"used_storages", array_low_cardinality_string, "Canonical names of storages, which were used during query execution."},
         {"used_table_functions", array_low_cardinality_string, "Canonical names of table functions, which were used during query execution."},
-        {"used_executable_user_defined_functions", array_low_cardinality_string, "Canonical names of executable user defined functions, which were used during query execution."},
-        {"used_sql_user_defined_functions", array_low_cardinality_string, "Canonical names of sql user defined functions, which were used during query execution."},
 
         {"used_row_policies", array_low_cardinality_string, "The list of row policies names that were used during query execution."},
 
@@ -278,8 +275,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_executable_user_defined_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_sql_user_defined_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_row_policies_names = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_used_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_missing_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
@@ -305,8 +300,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_functions, column_function_factory_objects);
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
-        fill_column(used_executable_user_defined_functions, column_executable_user_defined_function_factory_objects);
-        fill_column(used_sql_user_defined_functions, column_sql_user_defined_function_factory_objects);
         fill_column(used_row_policies, column_row_policies_names);
         fill_column(used_privileges, column_used_privileges);
         fill_column(missing_privileges, column_missing_privileges);

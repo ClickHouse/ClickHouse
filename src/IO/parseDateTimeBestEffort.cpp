@@ -185,12 +185,6 @@ ReturnType parseDateTimeBestEffortImpl(
 
                 /// This is unix timestamp.
                 readDecimalNumber<10>(res, digits);
-                if (fractional && !in.eof() && *in.position() == '.')
-                {
-                    ++in.position();
-                    fractional->digits = readDigits(digits, sizeof(digits), in);
-                    readDecimalNumber(fractional->value, fractional->digits, digits);
-                }
                 return ReturnType(true);
             }
             if (num_digits == 9 && !year && !has_time)
@@ -200,12 +194,6 @@ ReturnType parseDateTimeBestEffortImpl(
 
                 /// This is unix timestamp.
                 readDecimalNumber<9>(res, digits);
-                if (fractional && !in.eof() && *in.position() == '.')
-                {
-                    ++in.position();
-                    fractional->digits = readDigits(digits, sizeof(digits), in);
-                    readDecimalNumber(fractional->value, fractional->digits, digits);
-                }
                 return ReturnType(true);
             }
             if (num_digits == 14 && !year && !has_time)

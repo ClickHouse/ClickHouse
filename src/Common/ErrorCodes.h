@@ -41,8 +41,6 @@ namespace ErrorCodes
         std::string message;
         /// Stacktrace for the last error.
         FramePointers trace;
-        /// Initial query id if available.
-        std::string query_id;
     };
     struct ErrorPair
     {
