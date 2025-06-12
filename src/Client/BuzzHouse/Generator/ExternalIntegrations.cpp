@@ -837,7 +837,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     {
         connection_str += fmt::format("{}{}@", scc.user, scc.password.empty() ? "" : (":" + scc.password));
     }
-    connection_str += fmt::format("{}={}", scc.hostname, scc.port);
+    connection_str += fmt::format("{}:{}", scc.hostname, scc.port);
 
     try
     {
