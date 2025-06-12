@@ -1562,7 +1562,7 @@ Returns the number of regular expression matches for a `pattern` in a `haystack`
 The behavior of this function depends on the ClickHouse version:
 - in versions < v25.6, `countMatches` would stop counting at the first empty match even if a pattern accepts.
 - in versions >= 25.6, `countMatches` would continue its execution when an empty match occurs.
-  can be restored using setting [count_matches_stop_at_empty_match = true](/operations/settings/settings#count_matches_stop_at_empty_match);
+  The legacy behavior can be restored using setting [count_matches_stop_at_empty_match = true](/operations/settings/settings#count_matches_stop_at_empty_match);
 
 **Syntax**
 

@@ -1,3 +1,5 @@
+SET count_matches_stop_at_empty_match = 0;
+
 select 'basic';
 select countMatches('', 'foo');
 select countMatches('foo', '');
