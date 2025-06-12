@@ -271,7 +271,13 @@ class JobConfigs:
         command="bash -c 'git config --global --add safe.directory $PWD && nix --extra-experimental-features \"nix-command flakes\" build .#default'",
         run_in_docker="nixos/nix:latest+--env=HOME=/",
         timeout=3600 * 2,
-        digest_config=build_digest_config,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./flake.nix",
+                "./flake.lock",
+            ] + build_digest_config.include_paths,
+            with_git_submodules=True,
+        ),
         is_nix_build=True,
     ).parametrize(
         parameter=[
