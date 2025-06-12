@@ -11,8 +11,8 @@
 
 namespace DB
 {
-class Throttler;
-using ThrottlerPtr = std::shared_ptr<Throttler>;
+class IThrottler;
+using ThrottlerPtr = std::shared_ptr<IThrottler>;
 
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;

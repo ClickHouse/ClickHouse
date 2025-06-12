@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
