@@ -42,6 +42,37 @@ namespace DB::ErrorCodes
 
 namespace DeltaLake
 {
+/// delta-kernel-rs provides ExpressionVisitor API.
+/// It requires for us to implement visitor functions:
+/// 1. Literal visitors: visitStringLiteral, visitDateTimeLiteral, etc
+/// 2. Identifier visitor: visitColumnExpression.
+/// 3. Operator visitors: visitIn, visitAnd, visitGreater, etc
+/// 4. Function visitors: visitAdd, etc
+///
+/// This ExpressionVisitor API uses "lists" to represent the expression structure.
+/// To explain what it is, let's take this simple example,
+/// which we will have in ScanCallback's transform expression,
+/// when a table only has ordinary (a, b, d) and partition columns (c - Array(DateLiteral()), e - Tuple(String, Array(Int))):
+/// structExpression(
+///     ColumnExpr(a),
+///     ColumnExpr(b),
+///     ArrayLiteral(DateLiteral('2025-12-12'), DateLiteral('2025-01-01')),
+///     ColumnExpr(d),
+///     TupleLiteral(StringLiteral('Amsterdam'), ArrayLiteral(IntLiteral(12), IntLiteral(1), IntLiteral(2))))
+/// So in delta-kernel's "lists" it will look like:
+///
+///                                       [StructExpression(child_list_id = 1)] -- list_id = 0
+///                                                         |
+///                                                         |
+/// [ColumnExpr(a), ColumnExpr(b), ArrayLiteral(child_list_id = 2), ColumnExpr(c), TupleLiteral(child_list_id = 3)] <-- list_id = 1
+///                                     |                              |
+///                                     |                              |
+///            DateLiteral('2025-12-12'), DateLiteral('2025-01-01')] <----- list_id = 2
+///                                                                    |
+///                                          [StringLiteral('Amstedam'), ArrayLiteral(child_list_id = 4)] <-- list_id = 3
+///                                                                            |
+///                                                                            |
+///                                                      [IntLiteral(12), IntLiteral{1}, IntLiteral(2)] <-- list_id = 4
 
 /// ExpressionVisitorData holds a state of ExpressionVisitor.
 class ExpressionVisitorData
@@ -293,14 +324,14 @@ private:
     enum NotImplementedMethod
     {
         LT,
-        LE,
+        //LE,
         GT,
-        GE,
+        //GE,
         EQ,
-        NE,
+        //NE,
         DISTINCT,
         IN,
-        NOT_IN,
+        //NOT_IN,
         ADD,
         MINUS,
         MULTIPLY,
@@ -348,14 +379,14 @@ private:
         visitor.visit_is_null = &visitFunction<IS_NULL, DB::FunctionIsNull>;
 
         visitor.visit_lt = &throwNotImplemented<LT>;
-        visitor.visit_le = &throwNotImplemented<LE>;
+        //visitor.visit_le = &throwNotImplemented<LE>;
         visitor.visit_gt = &throwNotImplemented<GT>;
-        visitor.visit_ge = &throwNotImplemented<GE>;
+        //visitor.visit_ge = &throwNotImplemented<GE>;
         visitor.visit_eq = &throwNotImplemented<EQ>;
-        visitor.visit_ne = &throwNotImplemented<NE>;
+        //visitor.visit_ne = &throwNotImplemented<NE>;
         visitor.visit_distinct = &throwNotImplemented<DISTINCT>;
         visitor.visit_in = &throwNotImplemented<IN>;
-        visitor.visit_not_in = &throwNotImplemented<NOT_IN>;
+        //visitor.visit_not_in = &throwNotImplemented<NOT_IN>;
         visitor.visit_add = &throwNotImplemented<ADD>;
         visitor.visit_minus = &throwNotImplemented<MINUS>;
         visitor.visit_multiply = &throwNotImplemented<MULTIPLY>;

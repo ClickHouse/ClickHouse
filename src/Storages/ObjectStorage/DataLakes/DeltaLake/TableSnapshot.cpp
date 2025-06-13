@@ -76,7 +76,7 @@ public:
         const KernelSnapshot & snapshot_,
         KernelScan & scan_,
         const std::string & data_prefix_,
-        const DB::NamesAndTypesList & table_schema_,
+        const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
         DB::ObjectStoragePtr object_storage_,
@@ -106,10 +106,24 @@ public:
 
         if (!physical_names_map_.empty())
         {
+            auto get_physical_name = [&](const std::string & name)
+            {
+                auto it = physical_names_map_.find(name);
+                if (it == physical_names_map_.end())
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::LOGICAL_ERROR,
+                        "Cannot find column {} in physical names map (size: {})",
+                        name, physical_names_map_.size());
+                }
+                return it->second;
+            };
+
             for (auto & [name, value] : expression_schema)
-                name = physical_names_map_.at(name);
+                name = get_physical_name(name);
+
             for (auto & name : partition_columns)
-                name = physical_names_map_.at(name);
+                name = get_physical_name(name);
         }
     }
 
