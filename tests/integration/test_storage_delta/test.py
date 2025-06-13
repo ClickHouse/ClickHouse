@@ -31,10 +31,12 @@ from pyspark.sql.types import (
     LongType,
     ShortType,
     StringType,
+    DecimalType,
     StructField,
     StructType,
     TimestampType,
 )
+from decimal import Decimal
 from pyspark.sql.window import Window
 
 import helpers.client
@@ -830,7 +832,7 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_partition_columns")
     result_file = f"{TABLE_NAME}"
-    partition_columns = ["b", "c", "d"]
+    partition_columns = ["b", "c", "d", "e", "f", "g"]
 
     delta_table = (
         DeltaTable.create(spark)
@@ -840,7 +842,10 @@ def test_partition_columns(started_cluster, use_delta_kernel):
         .addColumn("b", "STRING")
         .addColumn("c", "DATE")
         .addColumn("d", "INT")
-        .addColumn("e", "BOOLEAN")
+        .addColumn("e", "TIMESTAMP")
+        .addColumn("f", "BOOLEAN")
+        .addColumn("g", "DECIMAL(10,2)")
+        .addColumn("h", "BOOLEAN")
         .partitionedBy(partition_columns)
         .execute()
     )
@@ -852,10 +857,14 @@ def test_partition_columns(started_cluster, use_delta_kernel):
             StructField("b", StringType()),
             StructField("c", DateType()),
             StructField("d", IntegerType()),
-            StructField("e", BooleanType()),
+            StructField("e", TimestampType()),
+            StructField("f", BooleanType()),
+            StructField("g", DecimalType(10, 2)),
+            StructField("h", BooleanType()),
         ]
     )
 
+    now = datetime.now()
     for i in range(1, num_rows + 1):
         data = [
             (
@@ -863,6 +872,15 @@ def test_partition_columns(started_cluster, use_delta_kernel):
                 "test" + str(i),
                 datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
                 i,
+                (
+                    now
+                    if i % 2 == 0
+                    else datetime.strptime(
+                        f"2012-01-0{i} 12:34:56.789123", "%Y-%m-%d %H:%M:%S.%f"
+                    )
+                ),
+                True if i % 2 == 0 else False,
+                Decimal(f"{i * 1.11:.2f}"),
                 False if i % 2 == 0 else True,
             )
         ]
@@ -880,27 +898,55 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     print(f"Uploaded files: {files}")
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
-    result = instance.query(f"describe table {table_function}").strip()
 
+    result = instance.query(f"describe table {table_function}").strip()
     assert (
-        result
-        == "a\tNullable(Int32)\t\t\t\t\t\nb\tNullable(String)\t\t\t\t\t\nc\tNullable(Date32)\t\t\t\t\t\nd\tNullable(Int32)\t\t\t\t\t\ne\tNullable(Bool)"
+        result == "a\tNullable(Int32)\t\t\t\t\t\n"
+        "b\tNullable(String)\t\t\t\t\t\n"
+        "c\tNullable(Date32)\t\t\t\t\t\n"
+        "d\tNullable(Int32)\t\t\t\t\t\n"
+        "e\tNullable(DateTime64(6))\t\t\t\t\t\n"
+        "f\tNullable(Bool)\t\t\t\t\t\n"
+        "g\tNullable(Decimal(10, 2))\t\t\t\t\t\n"
+        "h\tNullable(Bool)"
     )
 
     result = int(instance.query(f"SELECT count() FROM {table_function}"))
     assert result == num_rows
 
+    expected_output = f"""1	test1	2000-01-01	1	2012-01-01 12:34:56.789123	false	1.11	true
+2	test2	2000-01-02	2	{now}	true	2.22	false
+3	test3	2000-01-03	3	2012-01-03 12:34:56.789123	false	3.33	true
+4	test4	2000-01-04	4	{now}	true	4.44	false
+5	test5	2000-01-05	5	2012-01-05 12:34:56.789123	false	5.55	true
+6	test6	2000-01-06	6	{now}	true	6.66	false
+7	test7	2000-01-07	7	2012-01-07 12:34:56.789123	false	7.77	true
+8	test8	2000-01-08	8	{now}	true	8.88	false
+9	test9	2000-01-09	9	2012-01-09 12:34:56.789123	false	9.99	true"""
+
+    assert (
+        expected_output
+        == instance.query(f"SELECT * FROM {table_function} ORDER BY b").strip()
+    )
+
     query_id = f"query_with_filter_{TABLE_NAME}"
     result = int(
         instance.query(
-            f"""SELECT count()
-            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
-            WHERE c == toDateTime('2000/01/05')
+            f"""SELECT count() FROM {table_function} WHERE c == toDateTime('2000/01/05')
             """,
             query_id=query_id,
         )
     )
     assert result == 1
+
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE e = toDateTime64('{now}', 6)
+            """,
+            query_id=query_id,
+        )
+    )
+    assert result == 4
 
     if use_delta_kernel == 1:
         instance.query("SYSTEM FLUSH LOGS")
@@ -916,7 +962,7 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     instance.query(
         f"""
        DROP TABLE IF EXISTS {TABLE_NAME};
-       CREATE TABLE {TABLE_NAME} (a Nullable(Int32), b Nullable(String), c Nullable(Date32), d Nullable(Int32), e Nullable(Bool))
+       CREATE TABLE {TABLE_NAME} (a Nullable(Int32), b Nullable(String), c Nullable(Date32), d Nullable(Int32), h Nullable(Bool))
        ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')
        SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
         """
@@ -950,7 +996,7 @@ def test_partition_columns(started_cluster, use_delta_kernel):
        CREATE TABLE {TABLE_NAME} (b Nullable(String), c Nullable(Date32), d Nullable(Int32))
        ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')
        SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-        """
+       """
     )
     assert (
         """test1	2000-01-01	1
@@ -972,6 +1018,15 @@ test9	2000-01-09	9"""
                 "test" + str(i),
                 datetime.strptime(f"2000-01-{i}", "%Y-%m-%d"),
                 i,
+                (
+                    now
+                    if i % 2 == 0
+                    else datetime.strptime(
+                        f"2012-01-{i} 12:34:56.789123", "%Y-%m-%d %H:%M:%S.%f"
+                    )
+                ),
+                True if i % 2 == 0 else False,
+                Decimal(f"{i * 1.1:.2f}"),
                 False if i % 2 == 0 else True,
             )
         ]
@@ -988,40 +1043,29 @@ test9	2000-01-09	9"""
             ok = True
     assert ok
 
-    result = int(
-        instance.query(
-            f"""SELECT count()
-            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
-            """
-        )
-    )
+    result = int(instance.query(f"SELECT count() FROM {table_function}"))
     assert result == num_rows * 2
 
     assert (
-        """1	test1	2000-01-01	1	true
-2	test2	2000-01-02	2	false
-3	test3	2000-01-03	3	true
-4	test4	2000-01-04	4	false
-5	test5	2000-01-05	5	true
-6	test6	2000-01-06	6	false
-7	test7	2000-01-07	7	true
-8	test8	2000-01-08	8	false
-9	test9	2000-01-09	9	true
-10	test10	2000-01-10	10	false
-11	test11	2000-01-11	11	true
-12	test12	2000-01-12	12	false
-13	test13	2000-01-13	13	true
-14	test14	2000-01-14	14	false
-15	test15	2000-01-15	15	true
-16	test16	2000-01-16	16	false
-17	test17	2000-01-17	17	true
-18	test18	2000-01-18	18	false"""
-        == instance.query(
-            f"""
-SELECT * FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}) ORDER BY c
-        """
-        ).strip()
-    )
+        f"""1	test1	2000-01-01	1	2012-01-01 12:34:56.789123	false	1.11	true
+2	test2	2000-01-02	2	{now}	true	2.22	false
+3	test3	2000-01-03	3	2012-01-03 12:34:56.789123	false	3.33	true
+4	test4	2000-01-04	4	{now}	true	4.44	false
+5	test5	2000-01-05	5	2012-01-05 12:34:56.789123	false	5.55	true
+6	test6	2000-01-06	6	{now}	true	6.66	false
+7	test7	2000-01-07	7	2012-01-07 12:34:56.789123	false	7.77	true
+8	test8	2000-01-08	8	{now}	true	8.88	false
+9	test9	2000-01-09	9	2012-01-09 12:34:56.789123	false	9.99	true
+10	test10	2000-01-10	10	{now}	true	11	false
+11	test11	2000-01-11	11	2012-01-11 12:34:56.789123	false	12.1	true
+12	test12	2000-01-12	12	{now}	true	13.2	false
+13	test13	2000-01-13	13	2012-01-13 12:34:56.789123	false	14.3	true
+14	test14	2000-01-14	14	{now}	true	15.4	false
+15	test15	2000-01-15	15	2012-01-15 12:34:56.789123	false	16.5	true
+16	test16	2000-01-16	16	{now}	true	17.6	false
+17	test17	2000-01-17	17	2012-01-17 12:34:56.789123	false	18.7	true
+18	test18	2000-01-18	18	{now}	true	19.8	false"""
+        == instance.query(f"SELECT * FROM {table_function} ORDER BY c").strip())
     assert (
         int(
             instance.query(
@@ -1343,8 +1387,7 @@ def test_session_token(started_cluster):
     )
 
 
-@pytest.mark.parametrize("use_delta_kernel", ["1"])
-def test_partition_columns_2(started_cluster, use_delta_kernel):
+def test_partition_columns_2(started_cluster):
     node = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_partition_columns_2")
 
@@ -1429,6 +1472,18 @@ deltaLake(
     assert num_files == 6
 
     query_id = f"{table_name}-{uuid.uuid4()}"
+
+    assert (
+        "1\t4\t7\taa\taa\n2\t3\t7\taa\tcc\n2\t5\t7\tbb\tbb\n3\t6\t8\tcc\tcc\n4\t7\t9\taa\taa\n5\t8\t10\tbb\tcc"
+        == node.query(
+            f" SELECT * FROM {delta_function} ORDER BY all",
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "use_hive_partitioning": 0,
+            },
+        ).strip()
+    )
+
     assert (
         "1"
         in node.query(
