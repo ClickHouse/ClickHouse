@@ -47,13 +47,13 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
     , parent(parent_)
 {}
 
-UInt64 Throttler::add(size_t amount)
+size_t Throttler::throttle(size_t amount)
 {
     // Values obtained under lock to be checked after release
     size_t count_value = 0;
     double tokens_value = 0.0;
     size_t max_speed_value = 0;
-    addImpl(amount, count_value, tokens_value, max_speed_value);
+    throttleImpl(amount, count_value, tokens_value, max_speed_value);
 
     if (limit && count_value > limit)
         throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
@@ -75,18 +75,32 @@ UInt64 Throttler::add(size_t amount)
         ProfileEvents::increment(event_amount, amount);
 
     if (parent)
-        sleep_time_ns += parent->add(amount);
+        sleep_time_ns += parent->throttle(amount);
 
-    return static_cast<UInt64>(sleep_time_ns);
+    return static_cast<size_t>(sleep_time_ns);
 }
 
-void Throttler::addImpl(size_t amount, size_t & count_value, double & tokens_value)
+void Throttler::throttleNonBlocking(size_t amount)
+{
+    size_t count_value = 0;
+    double tokens_value = 0.0;
+    size_t max_speed_value = 0;
+    throttleImpl(amount, count_value, tokens_value, max_speed_value);
+
+    if (event_amount != ProfileEvents::end())
+        ProfileEvents::increment(event_amount, amount);
+
+    if (parent)
+        parent->throttleNonBlocking(amount);
+}
+
+void Throttler::throttleImpl(size_t amount, size_t & count_value, double & tokens_value)
 {
     size_t max_speed_value = 0;
-    addImpl(amount, count_value, tokens_value, max_speed_value);
+    throttleImpl(amount, count_value, tokens_value, max_speed_value);
 }
 
-void Throttler::addImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value)
+void Throttler::throttleImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value)
 {
     std::lock_guard lock(mutex);
     auto now = clock_gettime_ns_adjusted(prev_ns);
@@ -128,7 +142,7 @@ Int64 Throttler::getAvailable()
     // To update bucket state and receive current number of token in a thread-safe way
     size_t count_value = 0;
     double tokens_value = 0.0;
-    addImpl(0, count_value, tokens_value);
+    throttleImpl(0, count_value, tokens_value);
 
     return static_cast<Int64>(tokens_value);
 }

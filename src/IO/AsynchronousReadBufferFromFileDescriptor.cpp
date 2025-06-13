@@ -102,7 +102,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     file_offset_of_buffer_end += result.size;
 
     if (throttler)
-        throttler->add(result.size);
+        throttler->throttle(result.size);
 
     if (bytes_read)
     {

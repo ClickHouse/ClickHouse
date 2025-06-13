@@ -320,7 +320,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
 void WriteBufferFromS3::hidePartialData()
 {
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(offset());
+        write_settings.remote_throttler->throttle(offset());
 
     chassert(memory.size() >= hidden_size + offset());
 

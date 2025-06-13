@@ -178,7 +178,7 @@ bool ReadBufferFromS3::nextImpl()
         impl->releaseResult();
 
     if (read_settings.remote_throttler)
-        read_settings.remote_throttler->add(working_buffer.size());
+        read_settings.remote_throttler->throttle(working_buffer.size());
 
     return true;
 }
@@ -211,7 +211,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
                 return initial_n - n + bytes_copied;
 
             if (read_settings.remote_throttler)
-                read_settings.remote_throttler->add(bytes_copied);
+                read_settings.remote_throttler->throttle(bytes_copied);
 
             /// Read remaining bytes after the end of the payload
             istr.ignore(INT64_MAX);
