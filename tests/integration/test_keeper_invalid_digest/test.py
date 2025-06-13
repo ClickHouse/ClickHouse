@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+
+import time
+import pytest
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+
+cluster = ClickHouseCluster(__file__)
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/enable_keeper1.xml"],
+    stay_alive=True,
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/enable_keeper2.xml"],
+    stay_alive=True,
+)
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def wait_nodes():
+    keeper_utils.wait_nodes(cluster, [node1, node2])
+
+
+def get_fake_zk(nodename, timeout=30.0):
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
+
+
+def test_keeper_invalid_digest(started_cluster):
+    try:
+        # Wait for the cluster to be ready
+        wait_nodes()
+
+        # Enable the failpoint on node1 to set invalid digest
+        node1.query("SYSTEM ENABLE FAILPOINT keeper_leader_sets_invalid_digest")
+
+        # Create a zookeeper connection to node1
+        node1_zk = get_fake_zk("node1")
+
+        # Perform an operation that will trigger the failpoint
+        # The second node should detect the invalid digest and abort
+        node1_zk.create_async("/test_invalid_digest", b"testdata")
+
+        node2.wait_for_log_line(
+            "Digest for nodes is not matching after preprocessing request of type 'Create' at log index",
+            look_behind_lines=1000,
+        )
+        node2.stop_clickhouse(kill=True)
+
+        def get_last_committed_log_idx():
+            return int(
+                next(
+                    filter(
+                        lambda line: line.startswith("last_committed_log_idx"),
+                        keeper_utils.send_4lw_cmd(cluster, node1, "lgif").split("\n"),
+                    )
+                ).split("\t")[1]
+            )
+
+        last_committed_log_idx = get_last_committed_log_idx()
+        node2.start_clickhouse()
+        node2.wait_for_log_line(
+            "Digest for nodes is not matching after preprocessing request of type 'Create' at log index",
+            look_behind_lines=1000,
+        )
+        assert get_last_committed_log_idx() == last_committed_log_idx
+    finally:
+        # Clean up connections
+        try:
+            if 'node1_zk' in locals():
+                node1_zk.stop()
+                node1_zk.close()
+        except:
+            pass
