@@ -6,11 +6,7 @@
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
-
 #include <Processors/Chunk.h>
-
-#include <boost/core/noncopyable.hpp>
-
 
 namespace DB
 {
@@ -53,6 +49,37 @@ private:
     const size_t total_nodes_count;
 };
 
+using RangesByIndex = std::unordered_map<size_t, RangesInDataPart>;
+using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+class MergeTreeIndexReadResultPool;
+using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
+
+/// A simple wrapper to allow atomic counters to be mutated even when accessed through a const map.
+struct MutableAtomicSizeT
+{
+    mutable std::atomic_size_t value;
+};
+using PartRemainingMarks = std::unordered_map<size_t, MutableAtomicSizeT>;
+
+/// Provides shared context needed to build filtering indexes (e.g., skip indexes or projection indexes) during data reads.
+struct MergeTreeIndexBuildContext
+{
+    /// For each part, stores all ranges need to be read.
+    const RangesByIndex read_ranges;
+
+    /// For each part, stores a set of read ranges grouped by projection.
+    const ProjectionRangesByIndex projection_read_ranges;
+
+    /// Thread-safe shared pool for reading and building index filters.
+    const MergeTreeIndexReadResultPoolPtr index_reader;
+
+    /// Tracks how many marks are still being processed for each part during the execution phase. Once the count reaches
+    /// zero for a part, its cached index can be released to free resources.
+    const PartRemainingMarks part_remaining_marks;
+};
+
+using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
 class MergeTreeSelectProcessor : private boost::noncopyable
 {
@@ -63,7 +90,8 @@ public:
         const PrewhereInfoPtr & prewhere_info_,
         const LazilyReadInfoPtr & lazily_read_info_,
         const ExpressionActionsSettings & actions_settings_,
-        const MergeTreeReaderSettings & reader_settings_);
+        const MergeTreeReaderSettings & reader_settings_,
+        MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {});
 
     String getName() const;
 
@@ -76,7 +104,7 @@ public:
 
     ChunkAndProgress read();
 
-    void cancel() noexcept { is_cancelled = true; }
+    void cancel() noexcept;
 
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 
@@ -91,11 +119,9 @@ public:
     void onFinish() const;
 
 private:
-    static void injectLazilyReadColumns(
-        size_t rows,
-        Block & block,
-        size_t part_index,
-        const LazilyReadInfoPtr & lazily_read_info);
+    friend class SingleProjectionIndexReader;
+
+    static void injectLazilyReadColumns(size_t rows, Block & block, size_t part_index, const LazilyReadInfoPtr & lazily_read_info);
 
     /// Sets up range readers corresponding to data readers
     void initializeReadersChain();
@@ -122,10 +148,11 @@ private:
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;
 
+    /// Shared context used for building indexes during query execution.
+    MergeTreeIndexBuildContextPtr merge_tree_index_build_context;
+
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};
 };
-
-using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 
 }
