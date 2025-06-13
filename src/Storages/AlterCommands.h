@@ -236,10 +236,15 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
-    /// Check if commands have any GIN index or a (legacy) full_text or inverted index
-    static bool hasGinIndex(const StorageInMemoryMetadata & metadata);
+    /// Check if commands have a text index
+    static bool hasTextIndex(const StorageInMemoryMetadata & metadata);
+    /// ------------------------------------------------------------
+    /// Legacy names for text index.
+    /// Remove this block one year after full-text indexes became GA.
+    static bool hasLegacyGinIndex(const StorageInMemoryMetadata & metadata);
     static bool hasLegacyFullTextIndex(const StorageInMemoryMetadata & metadata);
     static bool hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata);
+/// ------------------------------------------------------------
 
     /// Check if commands have any vector similarity index
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);

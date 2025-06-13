@@ -1,4 +1,5 @@
 #include <limits>
+#include <Common/Scheduler/CostUnit.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/ISchedulerNode.h>
@@ -16,52 +17,58 @@ namespace ErrorCodes
 bool WorkloadSettings::hasThrottler() const
 {
     switch (unit) {
-        case Unit::IOByte: return max_bytes_per_second != 0;
-        case Unit::CPUSlot: return false;
+        case CostUnit::IOByte: return max_bytes_per_second != 0;
+        case CostUnit::CPUSlot: return false;
+        case CostUnit::QuerySlot: return max_queries_per_second != 0;
     }
 }
 
 Float64 WorkloadSettings::getThrottlerMaxSpeed() const
 {
     switch (unit) {
-        case Unit::IOByte: return max_bytes_per_second;
-        case Unit::CPUSlot: return 0;
+        case CostUnit::IOByte: return max_bytes_per_second;
+        case CostUnit::CPUSlot: return 0;
+        case CostUnit::QuerySlot: return max_queries_per_second;
     }
 }
 
 Float64 WorkloadSettings::getThrottlerMaxBurst() const
 {
     switch (unit) {
-        case Unit::IOByte: return max_burst_bytes;
-        case Unit::CPUSlot: return 0;
+        case CostUnit::IOByte: return max_burst_bytes;
+        case CostUnit::CPUSlot: return 0;
+        case CostUnit::QuerySlot: return max_burst_queries;
     }
 }
 
 bool WorkloadSettings::hasSemaphore() const
 {
     switch (unit) {
-        case Unit::IOByte: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
-        case Unit::CPUSlot: return max_concurrent_threads != unlimited;
+        case CostUnit::IOByte: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
+        case CostUnit::CPUSlot: return max_concurrent_threads != unlimited;
+        case CostUnit::QuerySlot: return max_concurrent_queries != unlimited;
     }
 }
 
 Int64 WorkloadSettings::getSemaphoreMaxRequests() const
 {
     switch (unit) {
-        case Unit::IOByte: return max_io_requests;
-        case Unit::CPUSlot: return max_concurrent_threads;
+        case CostUnit::IOByte: return max_io_requests;
+        case CostUnit::CPUSlot: return max_concurrent_threads;
+        case CostUnit::QuerySlot: return max_concurrent_queries;
     }
 }
 
 Int64 WorkloadSettings::getSemaphoreMaxCost() const
 {
     switch (unit) {
-        case Unit::IOByte: return max_bytes_inflight;
-        case Unit::CPUSlot: return unlimited;
+        case CostUnit::IOByte: return max_bytes_inflight;
+        case CostUnit::CPUSlot: return unlimited;
+        case CostUnit::QuerySlot: return unlimited;
     }
 }
 
-void WorkloadSettings::initFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name, bool throw_on_unknown_setting)
+void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name, bool throw_on_unknown_setting)
 {
     // Set resource unit
     unit = unit_;
@@ -71,10 +78,13 @@ void WorkloadSettings::initFromChanges(Unit unit_, const ASTCreateWorkloadQuery:
         std::optional<Priority> priority;
         std::optional<Float64> max_bytes_per_second;
         std::optional<Float64> max_burst_bytes;
+        std::optional<Float64> max_queries_per_second;
+        std::optional<Float64> max_burst_queries;
         std::optional<Int64> max_io_requests;
         std::optional<Int64> max_bytes_inflight;
         std::optional<Int64> max_concurrent_threads;
         std::optional<Float64> max_concurrent_threads_ratio_to_cores;
+        std::optional<Int64> max_concurrent_queries;
 
         static Float64 getNotNegativeFloat64(const String & name, const Field & field)
         {
@@ -134,6 +144,10 @@ void WorkloadSettings::initFromChanges(Unit unit_, const ASTCreateWorkloadQuery:
                 max_bytes_per_second = getNotNegativeFloat64(name, value);
             else if (name == "max_burst_bytes" || name == "max_burst")
                 max_burst_bytes = getNotNegativeFloat64(name, value);
+            else if (name == "max_queries_per_second")
+                max_queries_per_second = getNotNegativeFloat64(name, value);
+            else if (name == "max_burst_queries")
+                max_burst_queries = getNotNegativeFloat64(name, value);
             else if (name == "max_io_requests" || name == "max_requests")
                 max_io_requests = getNotNegativeInt64(name, value);
             else if (name == "max_bytes_inflight" || name == "max_cost")
@@ -142,6 +156,8 @@ void WorkloadSettings::initFromChanges(Unit unit_, const ASTCreateWorkloadQuery:
                 max_concurrent_threads = getNotNegativeInt64(name, value);
             else if (name == "max_concurrent_threads_ratio_to_cores")
                 max_concurrent_threads_ratio_to_cores = getNotNegativeFloat64(name, value);
+            else if (name == "max_concurrent_queries")
+                max_concurrent_queries = getNotNegativeInt64(name, value);
             else if (throw_on_unknown_setting)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload setting '{}'", name);
         }
@@ -177,6 +193,8 @@ void WorkloadSettings::initFromChanges(Unit unit_, const ASTCreateWorkloadQuery:
     // NOTE: previous values contain defaults.
     weight = get_value(specific.weight, regular.weight, weight);
     priority = get_value(specific.priority, regular.priority, priority);
+
+    // IO throttling
     if (specific.max_bytes_per_second || regular.max_bytes_per_second)
     {
         max_bytes_per_second = get_value(specific.max_bytes_per_second, regular.max_bytes_per_second, max_bytes_per_second);
@@ -185,6 +203,16 @@ void WorkloadSettings::initFromChanges(Unit unit_, const ASTCreateWorkloadQuery:
         max_burst_bytes = default_burst_seconds * max_bytes_per_second;
     }
     max_burst_bytes = get_value(specific.max_burst_bytes, regular.max_burst_bytes, max_burst_bytes);
+
+    // Query throttling
+    if (specific.max_queries_per_second || regular.max_queries_per_second)
+    {
+        max_queries_per_second = get_value(specific.max_queries_per_second, regular.max_queries_per_second, max_queries_per_second);
+        // We always set max_burst_queries if max_queries_per_second is changed.
+        // This is done for users to be able to ignore more advanced max_burst_queries setting and rely only on max_queries_per_second.
+        max_burst_queries = default_burst_seconds * max_queries_per_second;
+    }
+    max_burst_queries = get_value(specific.max_burst_queries, regular.max_burst_queries, max_burst_queries);
 
     // Choose semaphore constraint values.
     // Zero setting value means unlimited number of requests or bytes.
@@ -205,6 +233,9 @@ void WorkloadSettings::initFromChanges(Unit unit_, const ASTCreateWorkloadQuery:
             limit = value;
     }
     max_concurrent_threads = limit;
+
+    // Concurrent queries limit
+    max_concurrent_queries = get_value(specific.max_concurrent_queries, regular.max_concurrent_queries, max_concurrent_queries, unlimited);
 }
 
 }

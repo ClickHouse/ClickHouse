@@ -17,6 +17,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/GraphiteRollupSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -186,6 +187,7 @@ namespace Setting
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsBool enable_shared_storage_snapshot_in_query;
 }
 
 namespace MergeTreeSetting
@@ -371,7 +373,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , log(std::move(log_))
     , analyzed_result_ptr(analyzed_result_ptr_)
     , is_parallel_reading_from_replicas(enable_parallel_reading_)
-    , enable_remove_parts_from_snapshot_optimization(query_info_.merge_tree_enable_remove_parts_from_snapshot_optimization)
+    , enable_remove_parts_from_snapshot_optimization(!context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] && query_info_.merge_tree_enable_remove_parts_from_snapshot_optimization)
     , number_of_current_replica(number_of_current_replica_)
 {
     if (is_parallel_reading_from_replicas)
@@ -419,7 +421,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
 {
     const bool enable_parallel_reading = true;
     return std::make_unique<ReadFromMergeTree>(
-        prepared_parts,
+        getParts(),
         mutations_snapshot,
         all_column_names,
         data,
@@ -1262,7 +1264,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
                 ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
                 new_parts.emplace_back(
-                    part.data_part, part.part_index_in_query, part.part_starting_offset_in_query, std::move(ranges_to_get_from_part));
+                    part.data_part,
+                    part.parent_part,
+                    part.part_index_in_query,
+                    part.part_starting_offset_in_query,
+                    std::move(ranges_to_get_from_part));
             }
 
             split_parts_and_ranges.emplace_back(std::move(new_parts));
@@ -1395,6 +1401,14 @@ static void addMergingFinal(
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedTransform>(header, num_outputs,
                             sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, merging_params.graphite_params, now);
+
+            case MergeTreeData::MergingParams::Coalescing:
+            {
+                auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
+                required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
+                return std::make_shared<CoalescingSortedTransform>(header, num_outputs,
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0);
+            }
         }
     };
 
@@ -1521,8 +1535,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             RangesInDataParts new_parts;
 
             for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
+            {
                 new_parts.emplace_back(
-                    part_it->data_part, part_it->part_index_in_query, part_it->part_starting_offset_in_query, part_it->ranges);
+                    part_it->data_part,
+                    part_it->parent_part,
+                    part_it->part_index_in_query,
+                    part_it->part_starting_offset_in_query,
+                    part_it->ranges);
+            }
 
             if (new_parts.empty())
                 continue;
@@ -1662,13 +1682,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
-    return selectRangesToRead(prepared_parts, find_exact_ranges);
-}
-
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(RangesInDataParts parts, bool find_exact_ranges) const
-{
-    return selectRangesToRead(
-        std::move(parts),
+    analyzed_result_ptr = selectRangesToRead(
+        getParts(),
         mutations_snapshot,
         vector_search_parameters,
         storage_snapshot->metadata,
@@ -1681,6 +1696,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Range
         log,
         indexes,
         find_exact_ranges);
+    return analyzed_result_ptr;
 }
 
 static void buildIndexes(
@@ -1870,7 +1886,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             indexes,
             query_info.filter_actions_dag.get(),
             data,
-            prepared_parts,
+            getParts(),
             mutations_snapshot,
             vector_search_parameters,
             context,
@@ -2173,8 +2189,9 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 
     const auto & settings = context->getSettingsRef();
 
-    const auto partitions_cnt = countPartitions(prepared_parts);
-    if (!settings[Setting::force_aggregate_partitions_independently] && (partitions_cnt == 1 || partitions_cnt < settings[Setting::max_threads] / 2))
+    const auto partitions_cnt = countPartitions(getParts());
+    if (!settings[Setting::force_aggregate_partitions_independently]
+        && (partitions_cnt == 1 || partitions_cnt < settings[Setting::max_threads] / 2))
     {
         LOG_TRACE(
             log,
@@ -2200,7 +2217,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
     if (!settings[Setting::force_aggregate_partitions_independently])
     {
         std::unordered_map<String, size_t> partition_rows;
-        for (const auto & part : prepared_parts)
+        for (const auto & part : getParts())
             partition_rows[part.data_part->info.getPartitionId()] += part.data_part->rows_count;
         size_t sum_rows = 0;
         size_t max_rows = 0;
@@ -2227,7 +2244,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
     return output_each_partition_through_separate_port = true;
 }
 
-ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
+ReadFromMergeTree::AnalysisResult & ReadFromMergeTree::getAnalysisResultImpl() const
 {
     if (!analyzed_result_ptr)
         analyzed_result_ptr = selectRangesToRead();
@@ -2346,7 +2363,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto result = getAnalysisResult();
+    auto & result = getAnalysisResult();
 
     if (enable_remove_parts_from_snapshot_optimization)
     {
@@ -2541,7 +2558,7 @@ static const char * readTypeToString(ReadFromMergeTree::ReadType type)
 
 void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 {
-    auto result = getAnalysisResult();
+    const auto & result = getAnalysisResult();
     std::string prefix(format_settings.offset, format_settings.indent_char);
     format_settings.out << prefix << "ReadType: " << readTypeToString(result.read_type) << '\n';
 
@@ -2589,7 +2606,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 
 void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 {
-    auto result = getAnalysisResult();
+    const auto & result = getAnalysisResult();
     map.add("Read Type", readTypeToString(result.read_type));
     if (!result.index_stats.empty())
     {
@@ -2629,9 +2646,25 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Virtual row conversions", virtual_row_conversion->toTree());
 }
 
+namespace
+{
+    std::string_view searchAlgorithmToString(const MarkRanges::SearchAlgorithm search_algorithm)
+    {
+        switch (search_algorithm)
+        {
+        case MarkRanges::SearchAlgorithm::BinarySearch:
+            return "binary search";
+        case MarkRanges::SearchAlgorithm::GenericExclusionSearch:
+            return "generic exclusion search";
+        default:
+            return "";
+        }
+    };
+}
+
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
-    auto result = getAnalysisResult();
+    const auto & result = getAnalysisResult();
     const auto & index_stats = result.index_stats;
 
     std::string prefix(format_settings.offset, format_settings.indent_char);
@@ -2660,7 +2693,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 
             if (!stat.used_keys.empty())
             {
-                format_settings.out << prefix << indent << indent << "Keys: " << stat.name << '\n';
+                format_settings.out << prefix << indent << indent << "Keys:" << '\n';
                 for (const auto & used_key : stat.used_keys)
                     format_settings.out << prefix << indent << indent << indent << used_key << '\n';
             }
@@ -2677,14 +2710,18 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             if (i)
                 format_settings.out << '/' << index_stats[i - 1].num_granules_after;
             format_settings.out << '\n';
+
+            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+            if (!search_algorithm.empty())
+                format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
         }
     }
 }
 
 void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 {
-    auto result = getAnalysisResult();
-    auto index_stats = std::move(result.index_stats);
+    const auto & result = getAnalysisResult();
+    const auto & index_stats = result.index_stats;
 
     if (!index_stats.empty())
     {
@@ -2723,6 +2760,10 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
             if (!stat.condition.empty())
                 index_map->add("Condition", stat.condition);
 
+            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+            if (!search_algorithm.empty())
+                index_map->add("Search Algorithm", search_algorithm);
+
             if (i)
                 index_map->add("Initial Parts", index_stats[i - 1].num_parts_after);
             index_map->add("Selected Parts", stat.num_parts_after);
@@ -2738,5 +2779,83 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
     }
 }
 
+void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) const
+{
+    const auto & result = getAnalysisResult();
+    const auto & projection_stats = result.projection_stats;
+
+    std::string prefix(format_settings.offset, format_settings.indent_char);
+    if (!projection_stats.empty())
+    {
+        std::string indent(format_settings.indent, format_settings.indent_char);
+        format_settings.out << prefix << "Projections:\n";
+
+        for (const auto & stat : projection_stats)
+        {
+            format_settings.out << prefix << indent << "Name: " << stat.name << '\n';
+
+            if (!stat.description.empty())
+                format_settings.out << prefix << indent << indent << "Description: " << stat.description << '\n';
+
+            if (!stat.condition.empty())
+                format_settings.out << prefix << indent << indent << "Condition: " << stat.condition << '\n';
+
+            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+            if (!search_algorithm.empty())
+                format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
+
+            format_settings.out << prefix << indent << indent << "Parts: " << stat.selected_parts;
+            format_settings.out << '\n';
+
+            format_settings.out << prefix << indent << indent << "Marks: " << stat.selected_marks;
+            format_settings.out << '\n';
+
+            format_settings.out << prefix << indent << indent << "Ranges: " << stat.selected_ranges;
+            format_settings.out << '\n';
+
+            format_settings.out << prefix << indent << indent << "Rows: " << stat.selected_rows;
+            format_settings.out << '\n';
+
+            format_settings.out << prefix << indent << indent << "Filtered Parts: " << stat.filtered_parts;
+            format_settings.out << '\n';
+        }
+    }
+}
+
+void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
+{
+    const auto & result = getAnalysisResult();
+    const auto & projection_stats = result.projection_stats;
+
+    if (!projection_stats.empty())
+    {
+        auto projections_array = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto & stat : projection_stats)
+        {
+             auto projection_map = std::make_unique<JSONBuilder::JSONMap>();
+            projection_map->add("Name", stat.name);
+
+            if (!stat.description.empty())
+                projection_map->add("Description", stat.description);
+
+            if (!stat.condition.empty())
+                projection_map->add("Condition", stat.condition);
+
+            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+            if (!search_algorithm.empty())
+                projection_map->add("Search Algorithm", search_algorithm);
+
+            projection_map->add("Selected Parts", stat.selected_parts);
+            projection_map->add("Selected Marks", stat.selected_marks);
+            projection_map->add("Selected Ranges", stat.selected_ranges);
+            projection_map->add("Selected Rows", stat.selected_rows);
+            projection_map->add("Filtered Parts", stat.filtered_parts);
+
+            projections_array->add(std::move(projection_map));
+        }
+
+        map.add("Projections", std::move(projections_array));
+    }
+}
 
 }

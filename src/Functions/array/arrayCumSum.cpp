@@ -176,7 +176,23 @@ using FunctionArrayCumSum = FunctionArrayMapped<ArrayCumSumImpl, NameArrayCumSum
 
 REGISTER_FUNCTION(ArrayCumSum)
 {
-    factory.registerFunction<FunctionArrayCumSum>();
+    FunctionDocumentation::Description description = "Returns an array of the partial (running) sums of the elements in the source array. If a lambda function is specified, the sum is computed from applying the lambda to the array elements at each position.";
+    FunctionDocumentation::Syntax syntax = "arrayCumSum([func,] arr1[, arr2, ... , arrN])";
+    FunctionDocumentation::Arguments arguments = {
+        {"func", "Optional. A lambda function to apply to the array elements at each position. [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"arr1", "The source array of numeric values. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[arr2, ..., arrN]", "Optional. Additional arrays of the same size, passed as arguments to the lambda function if specified. [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array of the partial sums of the elements in the source array. The result type matches the input array's numeric type.";
+    FunctionDocumentation::Examples examples = {
+        {"Basic usage", "SELECT arrayCumSum([1, 1, 1, 1]) AS res", "[1, 2, 3, 4]"},
+        {"With lambda", "SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res", "[2, 6, 12]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayCumSum>(documentation);
 }
 
 }

@@ -183,6 +183,7 @@ CloudAvailableBadge
 CloudDetails
 CloudNotSupportedBadge
 CloudStorage
+CoalescingMergeTree
 CodeBlock
 CodeLLDB
 Codecs
@@ -264,6 +265,8 @@ DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
+DictionaryMaxUpdateDelay
+DictionaryTotalFailedUpdates
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
@@ -2024,6 +2027,7 @@ iTerm
 icebergCluster
 icosahedron
 icudata
+idelta
 idempotency
 idnaDecode
 idnaEncode
@@ -2061,6 +2065,7 @@ intervalLengthSum
 invalidCertificateHandler
 invariants
 invertedindexes
+irate
 isConstant
 isDecimalOverflow
 isFinite
@@ -2075,6 +2080,7 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
+isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2260,6 +2266,7 @@ metacharacters
 metasymbols
 metrica
 metroHash
+mergeTreePartInfo
 mfedotov
 mflix
 minMap
@@ -2629,6 +2636,11 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKBLineString
+readWKBMultiLineString
+readWKBMultiPolygon
+readWKBPoint
+readWKBPolygon
 readWKTLineString
 readWKTMultiLineString
 readWKTMultiPolygon
@@ -2975,7 +2987,13 @@ throwIf
 throwif
 timeDiff
 timeSeriesData
+timeSeriesDeltaToGrid
 timeSeriesMetrics
+timeSeriesInstantDeltaToGrid
+timeSeriesInstantRateToGrid
+timeSeriesLastTwoSamples
+timeSeriesRateToGrid
+timeSeriesResampleToGridWithStaleness
 timeSeriesTags
 timeSlot
 timeSlots
@@ -3062,7 +3080,6 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
-toTimeWithFixedDate
 toTimeZone
 toType
 toTypeName
@@ -3082,6 +3099,7 @@ toYear
 toYearWeek
 tokenbf
 tokenization
+tokenize
 tokenized
 tokenizer
 toml
