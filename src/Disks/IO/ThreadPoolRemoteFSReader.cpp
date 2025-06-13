@@ -119,6 +119,12 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
 {
     CurrentMetrics::Increment metric_increment{CurrentMetrics::RemoteRead};
 
+    if (!request.buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Request buffer is invalid");
+
+    if (!request.size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Request buffer size cannot be zero");
+
     auto * fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
     auto & reader = fd->getReader();
 
