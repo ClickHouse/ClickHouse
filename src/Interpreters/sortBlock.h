@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Columns/IColumn_fwd.h>
 #include <Common/PODArray_fwd.h>
 
 namespace DB
@@ -11,7 +12,7 @@ class SortDescription;
 using IColumnPermutation = PaddedPODArray<size_t>;
 
 /// Sort one block by `description`. If limit != 0, then the partial sort of the first `limit` rows is produced.
-void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0);
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0, EqualRanges ranges = {});
 
 /** Same as sortBlock, but do not sort the block, but only calculate the permutation of the values,
   *  so that you can rearrange the column values yourself.
