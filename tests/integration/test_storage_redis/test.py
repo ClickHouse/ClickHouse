@@ -1,4 +1,5 @@
 ## sudo -H pip install redis
+import json
 import struct
 import sys
 
@@ -430,3 +431,27 @@ def test_direct_join(started_cluster):
                                     "test_direct_join.k = test_mt.k FORMAT TSV"))
     assert len(response) == 1
     assert response[0] == ["1", "1"]
+
+
+def test_get_keys(started_cluster):
+    """
+    Checks that ClickHouse reads by key instead of full scan if possible.
+    """
+    address = get_address_for_ch()
+
+    # clean all
+    drop_table("test_get_keys")
+
+    # create table
+    node.query(f"""
+               CREATE TABLE test_get_keys(k Int) Engine=Redis('{address}', 2, 'clickhouse') PRIMARY KEY (k);
+               INSERT INTO test_get_keys VALUES (1), (2), (3);
+               """)
+
+    def check_rows_read(query, expected_rows):
+        res = node.query(query)
+        assert json.loads(res)['statistics']['rows_read'] == expected_rows
+
+    check_rows_read("SELECT * FROM test_get_keys FORMAT JSON", 3)
+    check_rows_read("SELECT * FROM test_get_keys WHERE k = 1 FORMAT JSON", 1)
+    check_rows_read("SELECT * FROM test_get_keys WHERE k in (3) FORMAT JSON", 1)
