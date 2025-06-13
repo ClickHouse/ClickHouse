@@ -347,8 +347,10 @@ String getRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility)
     LOG_INFO(getLogger("Application"), "Trying to detect the availability zone.");
 
     using AZGetter = std::function<String(bool)>;
+
     std::vector<AZGetter> az_getters =
     {
+        /// order of getters reflects DB::S3::AZFacilities, except ALL, which is skipped
         AWSEC2MetadataClient::getAvailabilityZoneOrException,
         getGCPAvailabilityZoneOrException
     };
@@ -366,7 +368,8 @@ String getRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility)
             catch (...)
             {
                 auto ex_msg = getExceptionMessage(std::current_exception(), false);
-                LOG_INFO(getLogger("Application"), "Trying to detect the availability zone. Error: {}", ex_msg);
+                LOG_INFO(getLogger("Application"), "Trying to detect the availability zone via {}. Error: {}",
+                    magic_enum::enum_name(az_facility), ex_msg);
             }
         }
         throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -377,12 +380,14 @@ String getRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility)
     {
         try
         {
-            return az_getters[magic_enum::enum_integer(az_facility)](is_zone_id);
+            auto getter_index = magic_enum::enum_integer(az_facility) - 1;
+            return az_getters[getter_index](is_zone_id);
         }
         catch (...)
         {
             auto ex_msg = getExceptionMessage(std::current_exception(), false);
-            LOG_INFO(getLogger("Application"), "Trying to detect the availability zone.");
+            LOG_INFO(getLogger("Application"), "Trying to detect the availability zone via {}. Error: {}",
+                magic_enum::enum_name(az_facility), ex_msg);
         }
     }
 
@@ -938,7 +943,7 @@ namespace DB
 namespace S3
 {
 
-std::string getRunningAvailabilityZone()
+std::string getRunningAvailabilityZone(bool, AZFacilities)
 {
     throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Does not support availability zone detection for non-cloud environment");
 }

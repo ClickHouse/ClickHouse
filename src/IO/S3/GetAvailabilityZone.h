@@ -12,6 +12,6 @@ enum class AZFacilities
 };
 
 /// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
-std::string getRunningAvailabilityZone(bool is_zone_id = false, AZFacilities az_facilities = AZFacilities::ALL);
-std::string tryGetRunningAvailabilityZone(bool is_zone_id = false, AZFacilities az_facilities = AZFacilities::ALL);
+std::string getRunningAvailabilityZone(bool is_zone_id = false, AZFacilities az_facility = AZFacilities::ALL);
+std::string tryGetRunningAvailabilityZone(bool is_zone_id = false, AZFacilities az_facility = AZFacilities::ALL);
 }
