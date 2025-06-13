@@ -450,7 +450,6 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     }
 
     ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
-    ASTs storage_children = ast_storage->children;
     auto storage_engine_arguments = ast_storage->engine->arguments;
 
     if (storage_engine_arguments->children.empty())
