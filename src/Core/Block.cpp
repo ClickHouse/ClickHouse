@@ -242,14 +242,24 @@ void Block::erase(size_t position)
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position out of bound in Block::erase(), max position = {}",
             data.size() - 1);
 
+    eraseImpl(position);
+}
+
+
+void Block::eraseImpl(size_t position)
+{
     data.erase(data.begin() + position);
 
-    for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
+    for (auto it = index_by_name.begin(); it != index_by_name.end();)
     {
         if (it->second == position)
-            index_by_name.erase(it);
-        else if (it->second > position)
-            --it->second;
+            it = index_by_name.erase(it);
+        else
+        {
+            if (it->second > position)
+                --it->second;
+            ++it;
+        }
     }
 }
 
@@ -260,15 +270,7 @@ void Block::erase(const String & name)
     if (index_it == index_by_name.end())
         throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "No such name in Block::erase(): '{}'", name);
 
-    auto position = index_it->second;
-    data.erase(data.begin() + position);
-
-    for (auto & it : index_by_name)
-    {
-        if (it.second > position)
-            --it.second;
-    }
-    index_by_name.erase(index_it);
+    eraseImpl(index_it->second);
 }
 
 
