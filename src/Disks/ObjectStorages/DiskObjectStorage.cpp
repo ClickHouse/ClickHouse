@@ -35,7 +35,9 @@ namespace ErrorCodes
 
 DiskTransactionPtr DiskObjectStorage::createTransaction()
 {
-    return std::make_shared<FakeDiskTransaction>(*this);
+    if (use_fake_transaction)
+        return std::make_shared<FakeDiskTransaction>(*this);
+    return createObjectStorageTransaction();
 }
 
 ObjectStoragePtr DiskObjectStorage::getObjectStorage()
@@ -68,7 +70,8 @@ DiskObjectStorage::DiskObjectStorage(
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix)
+    const String & config_prefix,
+    bool use_fake_transaction_)
     : IDisk(name_, config, config_prefix)
     , object_key_prefix(object_key_prefix_)
     , log(getLogger("DiskObjectStorage(" + name + ")"))
@@ -78,6 +81,7 @@ DiskObjectStorage::DiskObjectStorage(
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
+    , use_fake_transaction(use_fake_transaction_)
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
     data_source_description = DataSourceDescription{

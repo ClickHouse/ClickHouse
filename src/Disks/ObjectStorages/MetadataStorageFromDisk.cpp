@@ -6,6 +6,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/logger_useful.h>
+
 #include <memory>
 #include <shared_mutex>
 
@@ -244,6 +246,8 @@ void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::stri
 
 void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
 {
+    LOG_INFO(getLogger("MetadataStorageFromDiskTransaction"), "MetadataStorageFromDiskTransaction createMetadataFile path {} object_key {} size {}", path, object_key.serialize(), size_in_bytes);
+
     addOperation(std::make_unique<RewriteFileOperation>(path, std::move(object_key), size_in_bytes, *metadata_storage.disk, metadata_storage));
 }
 

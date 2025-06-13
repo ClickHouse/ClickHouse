@@ -1,18 +1,20 @@
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/IO/WriteBufferWithFinalizeCallback.h>
-#include <Interpreters/Context.h>
+#include <Disks/WriteMode.h>
+
+#include <Common/Logger.h>
 #include <Common/checkStackSize.h>
-#include <ranges>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <Disks/WriteMode.h>
+#include <Common/FailPoint.h>
 #include <base/defines.h>
 
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <boost/algorithm/string/join.hpp>
 
+#include <ranges>
 #include <fmt/ranges.h>
 
 namespace DB
@@ -27,6 +29,12 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char disk_object_storage_fail_commit_metadata_transaction[];
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
@@ -760,6 +768,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
+    LOG_INFO(getLogger("DiskObjectStorageTransaction"), "DiskObjectStorageTransaction writeFile {} mode {} auto commit {}", path, mode, autocommit);
+
     auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
 
@@ -821,6 +831,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
         create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation, mode, path, key_ = std::move(object_key), do_not_write_empty_blob](size_t count)
         {
+            LOG_INFO(getLogger("DiskObjectStorageTransaction"), "create_metadata_callback path {} key_ {}", path, key_.serialize());
             /// This callback called in WriteBuffer finalize method -- only there we actually know
             /// how many bytes were written. We don't control when this finalize method will be called
             /// so here we just modify operation itself, but don't execute anything (and don't modify metadata transaction).
@@ -833,13 +844,20 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             /// tx->commit()
             write_op->setOnExecute([object_storage_tx, mode, path, key_, count, do_not_write_empty_blob](MetadataTransactionPtr tx)
             {
+                LOG_INFO(getLogger("DiskObjectStorageTransaction"), "create_metadata_callback on execute");
+
                 if (mode == WriteMode::Rewrite)
                 {
                     /// Otherwise we will produce lost blobs which nobody points to
                     /// WriteOnce storages are not affected by the issue
                     if (!object_storage_tx->object_storage.isPlain() && object_storage_tx->metadata_storage.existsFile(path))
                     {
-                        object_storage_tx->object_storage.removeObjectsIfExist(object_storage_tx->metadata_storage.getStorageObjects(path));
+                        auto x = object_storage_tx->metadata_storage.getStorageObjects(path);
+                        std::vector<String> xx;
+                        for (auto & i : x)
+                            xx.push_back(i.local_path + "->(" + i.remote_path + ")");
+                        LOG_INFO(getLogger("DiskObjectStorageTransaction"), "object_storage.removeObjectsIfExist x.size {}", fmt::join(xx, ", "));
+                        object_storage_tx->object_storage.removeObjectsIfExist(x);
                     }
 
                     if (do_not_write_empty_blob && count == 0)
@@ -1028,6 +1046,11 @@ void DiskObjectStorageTransaction::commit()
 
     try
     {
+        fiu_do_on(FailPoints::disk_object_storage_fail_commit_metadata_transaction,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "disk_object_storage_fail_commit_metadata_transaction");
+        });
+
         metadata_transaction->commit();
     }
     catch (...)
