@@ -469,6 +469,7 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
     /// The StoredObject::bytes_size is not determined at the beginning
     /// it is set only after the writer is finalized
     std::shared_ptr<StoredObject> object;
+    ObjectStorageKey remote_key;
     WriteMode mode;
     bool do_not_write_empty_blob;
 
@@ -476,13 +477,17 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         std::shared_ptr<StoredObject> object_,
+        ObjectStorageKey remote_key_,
         WriteMode mode_,
         bool do_not_write_empty_blob_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
         , object(std::move(object_))
+        , remote_key(remote_key_)
         , mode(mode_)
         , do_not_write_empty_blob(do_not_write_empty_blob_)
-    {}
+    {
+        chassert(remote_key.serialize() == object->remote_path);
+    }
 
     std::string getInfoForLog() const override
     {
@@ -502,12 +507,12 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
                 tx->createEmptyMetadataFile(object->local_path);
             }
             else
-                tx->createMetadataFile(object->local_path, ObjectStorageKey::createAsAbsolute(object->remote_path), object->bytes_size);
+                tx->createMetadataFile(object->local_path, remote_key, object->bytes_size);
         }
         else
         {
             /// Even if do_not_write_empty_blob and size is 0, we still need to add metadata just to make sure that a file gets created if this is the 1st append
-            tx->addBlobToMetadata(object->local_path, ObjectStorageKey::createAsAbsolute(object->remote_path), object->bytes_size);
+            tx->addBlobToMetadata(object->local_path, remote_key, object->bytes_size);
         }
     }
 
@@ -837,7 +842,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     if (mode == WriteMode::Rewrite && !object_storage.isPlain())
         truncateFile(object->local_path, /*target_size*/ 0);
 
-    operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, mode, do_not_write_empty_blob));
+    operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, object_key, mode, do_not_write_empty_blob));
 
     auto create_metadata_callback = [object_storage_tx = shared_from_this(), object, autocommit](size_t count)
     {
@@ -899,7 +904,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
         truncateFile(object->local_path, /*target_size*/ 0);
 
     /// seems ok
-    operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, mode, /*do_not_write_empty_blob*/ false));
+    operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, object_key, mode, /*do_not_write_empty_blob*/ false));
 
     /// See DiskObjectStorage::getBlobPath().
     Strings blob_path;
