@@ -414,7 +414,7 @@ def test_direct_join(started_cluster):
     # create table
     node.query(
         f"""
-            CREATE TABLE test_direct_join(k Int) Engine=Redis('{address}', 0, 'clickhouse') PRIMARY KEY (k);
+            CREATE TABLE test_direct_join(k Int) Engine=Redis('{address}', 1, 'clickhouse') PRIMARY KEY (k);
             CREATE TABLE test_mt (k Int) ENGINE = MergeTree() ORDER BY tuple();
             INSERT INTO TABLE test_direct_join VALUES (1);
             INSERT INTO TABLE test_mt VALUES (1);

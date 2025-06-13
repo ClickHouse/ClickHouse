@@ -207,7 +207,6 @@ StorageRedis::StorageRedis(
     const String & primary_key_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , table_id(table_id_)
     , configuration(configuration_)
     , log(getLogger("StorageRedis"))
     , primary_key(primary_key_)
@@ -427,7 +426,7 @@ void StorageRedis::multiSet(const RedisArray & data) const
 
     auto ret = connection->client->execute<RedisSimpleString>(cmd_mget);
     if (ret != "OK")
-        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to write to redis table {}, for {}", table_id.getFullNameNotQuoted(), ret);
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to write to redis table {}, for {}", getStorageID().getFullNameNotQuoted(), ret);
 }
 
 RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
@@ -445,7 +444,7 @@ RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
             "Try to delete {} rows but actually deleted {} rows from redis table {}.",
             keys.size(),
             ret,
-            table_id.getFullNameNotQuoted());
+            getStorageID().getFullNameNotQuoted());
 
     return ret;
 }
@@ -491,7 +490,7 @@ void StorageRedis::truncate(const ASTPtr & query, const StorageMetadataPtr &, Co
     auto ret = connection->client->execute<RedisSimpleString>(cmd_flush_db);
 
     if (ret != "OK")
-        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to truncate redis table {}, for {}", table_id.getFullNameNotQuoted(), ret);
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to truncate redis table {}, for {}", getStorageID().getFullNameNotQuoted(), ret);
 }
 
 void StorageRedis::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
