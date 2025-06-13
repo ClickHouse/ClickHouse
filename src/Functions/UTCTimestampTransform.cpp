@@ -83,68 +83,47 @@ namespace
             {
                 const auto & date_time_col = checkAndGetColumn<ColumnDateTime>(*arg1.column);
                 using ColVecTo = DataTypeDateTime::ColumnType;
+
                 typename ColVecTo::MutablePtr result_column = ColVecTo::create(input_rows_count);
                 typename ColVecTo::Container & result_data = result_column->getData();
+
+                auto safe_add = [](UInt32 value, UInt32 offset) -> UInt32
+                {
+                    if (value > std::numeric_limits<UInt32>::max() - offset)
+                        return std::numeric_limits<UInt32>::max();
+                    return value + offset;
+                };
+
+                auto safe_subtract = [](UInt32 value, UInt32 offset) -> UInt32
+                {
+                    if (value < offset)
+                        return 0;
+                    return value - offset;
+                };
+
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     UInt32 date_time_val = date_time_col.getElement(i);
                     auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
+                    UInt32 abs_offset = static_cast<UInt32>(std::abs(time_zone_offset));
 
                     if constexpr (toUTC)
                     {
-                        if (time_zone_offset < 0)
-                        {
-                            // For negative timezone offsets,We need to add the absolute offset to get UTC time
-                            UInt32 abs_offset = static_cast<UInt32>(-time_zone_offset);
-                            if (date_time_val > std::numeric_limits<UInt32>::max() - abs_offset)
-                            {
-                                // If adding the offset would overflow, clamp to max value
-                                result_data[i] = std::numeric_limits<UInt32>::max();
-                            }
-                            else
-                            {
-                                // Normal case: add the offset to convert to UTC
-                                result_data[i] = date_time_val + abs_offset;
-                            }
-                        }
-                        else
-                        {
-                            // We need to subtract the offset to get UTC time
-                            if (date_time_val < static_cast<UInt32>(time_zone_offset))
-                            {
-                                // If subtracting the offset would underflow, clamp to 0
-                                result_data[i] = 0;
-                            }
-                            else
-
-                                result_data[i] = date_time_val - static_cast<UInt32>(time_zone_offset);
-                        }
+                        // Convert from local time to UTC
+                        // UTC = Local - Offset (for positive offsets like UTC+3)
+                        // UTC = Local + |Offset| (for negative offsets like UTC-5)
+                        result_data[i] = (time_zone_offset >= 0)
+                            ? safe_subtract(date_time_val, abs_offset)
+                            : safe_add(date_time_val, abs_offset);
                     }
                     else
                     {
-                        if (time_zone_offset < 0)
-                        {
-                            // For negative timezone offsets,We need to subtract the absolute offset to get local time
-                            UInt32 abs_offset = static_cast<UInt32>(-time_zone_offset);
-                            if (date_time_val < abs_offset)
-                            {
-                                // If subtracting the offset would underflow, clamp to 0
-                                result_data[i] = 0;
-                            }
-                            else
-                                result_data[i] = date_time_val - abs_offset;
-                        }
-                        else
-                        {
-                            // For positive timezone offsets,We need to add the offset to get local time
-                            if (date_time_val > std::numeric_limits<UInt32>::max() - static_cast<UInt32>(time_zone_offset))
-                            {
-                                // If adding the offset would overflow, clamp to max value
-                                result_data[i] = std::numeric_limits<UInt32>::max();
-                            }
-                            else
-                                result_data[i] = date_time_val + static_cast<UInt32>(time_zone_offset);
-                        }
+                        // Convert from UTC to local time
+                        // Local = UTC + Offset (for positive offsets like UTC+3)
+                        // Local = UTC - |Offset| (for negative offsets like UTC-5)
+                        result_data[i] = (time_zone_offset >= 0)
+                            ? safe_add(date_time_val, abs_offset)
+                            : safe_subtract(date_time_val, abs_offset);
                     }
                 }
                 return result_column;
