@@ -71,7 +71,7 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(ColumnsWithTypeAnd
             data_column,
             key_value_delimiter,
             pair_delimiters,
-            quoting_character,
+            quoting_character
         };
     }
 
