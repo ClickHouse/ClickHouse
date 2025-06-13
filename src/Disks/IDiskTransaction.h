@@ -71,12 +71,18 @@ public:
         const WriteSettings & write_settings) = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
         const std::string & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {},
-        bool autocommit = true) = 0;
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) = 0;
+
+    /// Open the file for write and return WriteBufferFromFileBase object.
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) = 0;
 
     using WriteBlobFunction = std::function<size_t(const std::vector<std::string> & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
 

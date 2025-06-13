@@ -218,7 +218,7 @@ TEST_F(DiskObjectStorageTest, WriteFileTxCommit)
     std::string file_content = getTestName() + "_file_context";
 
     {
-        auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{}, /* autocommit = */ false);
+        auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
         DB::writeText(file_content, *wb);
         wb->finalize();
     }
@@ -238,7 +238,7 @@ TEST_F(DiskObjectStorageTest, WriteFileTxUndo)
     std::string file_content = getTestName() + "_file_context";
 
     {
-        auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{}, /* autocommit = */ false);
+        auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
         DB::writeText(file_content, *wb);
         wb->finalize();
     }
@@ -276,7 +276,7 @@ TEST_F(DiskObjectStorageTest, RewriteFileTxUndo)
     auto tx = disk->createTransaction();
 
     {
-        auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{}, /* autocommit = */ false);
+        auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
         DB::writeText(rewrite_file_content, *wb);
         wb->finalize();
     }
