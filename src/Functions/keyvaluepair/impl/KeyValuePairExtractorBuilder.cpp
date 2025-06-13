@@ -30,7 +30,7 @@ KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withMaxNumberOfPair
 }
 
 KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withUnexpectedQuotingCharacterStrategy(
-    const std::string & unexpected_quoting_character_strategy_)
+    extractKV::Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy_)
 {
     unexpected_quoting_character_strategy = unexpected_quoting_character_strategy_;
     return *this;

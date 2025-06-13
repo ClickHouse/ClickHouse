@@ -22,7 +22,7 @@ public:
 
     KeyValuePairExtractorBuilder & withMaxNumberOfPairs(uint64_t max_number_of_pairs_);
 
-    KeyValuePairExtractorBuilder & withUnexpectedQuotingCharacterStrategy(const std::string & unexpected_quoting_character_strategy_);
+    KeyValuePairExtractorBuilder & withUnexpectedQuotingCharacterStrategy(extractKV::Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy_);
 
     auto buildWithoutEscaping() const
     {
@@ -50,7 +50,7 @@ private:
     char quoting_character = '"';
     std::vector<char> item_delimiters = {' ', ',', ';'};
     uint64_t max_number_of_pairs = std::numeric_limits<uint64_t>::max();
-    std::string unexpected_quoting_character_strategy = "invalid";
+    extractKV::Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy = extractKV::Configuration::UnexpectedQuotingCharacterStrategy::INVALID;
 };
 
 }

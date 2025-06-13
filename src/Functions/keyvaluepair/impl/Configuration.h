@@ -40,7 +40,7 @@ private:
 struct ConfigurationFactory
 {
 public:
-    static Configuration createWithoutEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters, const std::string & unexpected_quoting_character_strategy);
+    static Configuration createWithoutEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy);
 
     static Configuration createWithEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters);
 

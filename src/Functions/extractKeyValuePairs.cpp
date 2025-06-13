@@ -21,6 +21,11 @@ namespace Setting
     extern const SettingsUInt64 extract_key_value_pairs_max_pairs_per_row;
 }
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 template <typename Name, bool WITH_ESCAPING>
 class ExtractKeyValuePairs : public IFunction
 {
@@ -52,7 +57,16 @@ class ExtractKeyValuePairs : public IFunction
 
         if (parsed_arguments.unexpected_quoting_character_strategy)
         {
-            builder.withUnexpectedQuotingCharacterStrategy(parsed_arguments.unexpected_quoting_character_strategy->getDataAt(0).toString());
+            const auto unexpected_quoting_character_strategy_string = parsed_arguments.unexpected_quoting_character_strategy->getDataAt(0).toString();
+            const auto unexpected_quoting_character_strategy = magic_enum::enum_cast<extractKV::Configuration::UnexpectedQuotingCharacterStrategy>(
+                    unexpected_quoting_character_strategy_string, magic_enum::case_insensitive);
+
+            if (!unexpected_quoting_character_strategy)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid unexpected_quoting_character_strategy argument: {}", unexpected_quoting_character_strategy_string);
+            }
+
+            builder.withUnexpectedQuotingCharacterStrategy(unexpected_quoting_character_strategy.value());
         }
 
         if constexpr (WITH_ESCAPING)

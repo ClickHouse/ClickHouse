@@ -1,5 +1,4 @@
 #include <Functions/keyvaluepair/impl/Configuration.h>
-#include "Poco/String.h"
 
 #include <Common/Exception.h>
 
@@ -13,29 +12,6 @@ namespace ErrorCodes
 
 namespace extractKV
 {
-
-static Configuration::UnexpectedQuotingCharacterStrategy unexpectedQuotingCharacterStrategyFromString(
-    const std::string & unexpected_quoting_character_strategy)
-{
-    const auto unexpected_quoting_character_strategy_lower = Poco::toLower(unexpected_quoting_character_strategy);
-
-    if (unexpected_quoting_character_strategy_lower == "accept")
-    {
-        return Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT;
-    }
-
-    if (unexpected_quoting_character_strategy_lower == "invalid")
-    {
-        return Configuration::UnexpectedQuotingCharacterStrategy::INVALID;
-    }
-
-    if (unexpected_quoting_character_strategy_lower == "promote")
-    {
-        return Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE;
-    }
-
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid unexpected_quoting_character_strategy argument: {}", unexpected_quoting_character_strategy);
-}
 
 Configuration::Configuration(
     char key_value_delimiter_,
@@ -53,7 +29,7 @@ Configuration ConfigurationFactory::createWithoutEscaping(
     char key_value_delimiter,
     char quoting_character,
     std::vector<char> pair_delimiters,
-    const std::string & unexpected_quoting_character_strategy)
+    Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy)
 {
     validate(key_value_delimiter, quoting_character, pair_delimiters);
 
@@ -61,7 +37,7 @@ Configuration ConfigurationFactory::createWithoutEscaping(
         key_value_delimiter,
         quoting_character,
         pair_delimiters,
-        unexpectedQuotingCharacterStrategyFromString(unexpected_quoting_character_strategy));
+        unexpected_quoting_character_strategy);
 }
 
 Configuration ConfigurationFactory::createWithEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
@@ -82,7 +58,7 @@ Configuration ConfigurationFactory::createWithEscaping(char key_value_delimiter,
         key_value_delimiter,
         quoting_character,
         pair_delimiters,
-        "accept");
+        Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT);
 }
 
 void ConfigurationFactory::validate(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
