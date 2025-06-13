@@ -1,14 +1,14 @@
 ---
-description: 'Documentation for the EXCEPT modifier which returns only those rows that result from the first query without the second. '
+description: 'Documentation for the EXCEPT clause which returns only those rows that result from the first query without the second.'
 sidebar_label: 'EXCEPT'
 slug: /sql-reference/statements/select/except
-title: 'EXCEPT modifier'
-keywords: ['EXCEPT', 'modifier']
+title: 'EXCEPT clause'
+keywords: ['EXCEPT', 'clause']
 ---
 
-# EXCEPT modifier
+# EXCEPT clause
 
-> The `EXCEPT` modifier returns only those rows that result from the first query without the second. 
+> The `EXCEPT` clause returns only those rows that result from the first query without the second. 
 
 - Both queries must have the same number of columns in the same order and data type.
 - The result of `EXCEPT` can contain duplicate rows. Use `EXCEPT DISTINCT` if this is not desirable.
