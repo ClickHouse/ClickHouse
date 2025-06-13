@@ -41,3 +41,11 @@ $CLICKHOUSE_LOCAL --query="
     INSERT INTO geom5 VALUES([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]]);
     SELECT * FROM geom5 ORDER BY point FORMAT Parquet;" > "${CLICKHOUSE_TMP}/parquet_geom5.parquet"
 $CLICKHOUSE_LOCAL --query="SELECT * FROM file('${CLICKHOUSE_TMP}/parquet_geom5.parquet', Parquet);"
+
+$CLICKHOUSE_LOCAL --query="
+    DROP TABLE IF EXISTS geom6;
+    CREATE TABLE IF NOT EXISTS geom6 (point Point) ENGINE = Memory();
+    INSERT INTO geom6 VALUES((10, 20));
+    INSERT INTO geom6 VALUES((30, 40));
+    SELECT * FROM geom6 ORDER BY point FORMAT Parquet SETTINGS output_format_parquet_geometadata=false;" > "${CLICKHOUSE_TMP}/parquet_geom6.parquet"
+$CLICKHOUSE_LOCAL --query="SELECT * FROM file('${CLICKHOUSE_TMP}/parquet_geom6.parquet', Parquet);"

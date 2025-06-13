@@ -1237,58 +1237,61 @@ void writeFileFooter(FileWriteState & file,
             c.__set_TYPE_ORDER({});
     }
 
-    std::vector<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
-    for (const auto & [column_name, type] : header.getNamesAndTypesList())
+    if (options.write_geometadata)
     {
-        if (type->getCustomName() &&
-            (type->getCustomName()->getName() == "Point" ||
-            type->getCustomName()->getName() == "LineString" ||
-            type->getCustomName()->getName() == "Polygon" ||
-            type->getCustomName()->getName() == "MultiLineString" ||
-            type->getCustomName()->getName() == "MultiPolygon"))
+        std::vector<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
+        for (const auto & [column_name, type] : header.getNamesAndTypesList())
         {
-            Poco::JSON::Object::Ptr geom_meta = new Poco::JSON::Object;
-            geom_meta->set("encoding", "WKB");
-
-            Poco::JSON::Array::Ptr geom_types = new Poco::JSON::Array;
-            geom_types->add(type->getCustomName()->getName());
-            geom_meta->set("geometry_types", geom_types);
-            geom_meta->set("crs", "EPSG:4326");
-
-            geo_columns_metadata.push_back({column_name, geom_meta});
-
-            if (type->getCustomName()->getName() == "Polygon" ||
-                type->getCustomName()->getName() == "MultiPolygon")
+            if (type->getCustomName() &&
+                (type->getCustomName()->getName() == "Point" ||
+                type->getCustomName()->getName() == "LineString" ||
+                type->getCustomName()->getName() == "Polygon" ||
+                type->getCustomName()->getName() == "MultiLineString" ||
+                type->getCustomName()->getName() == "MultiPolygon"))
             {
-                geom_meta->set("edges", "planar");
-                geom_meta->set("orientation", "counterclockwise");
+                Poco::JSON::Object::Ptr geom_meta = new Poco::JSON::Object;
+                geom_meta->set("encoding", "WKB");
+
+                Poco::JSON::Array::Ptr geom_types = new Poco::JSON::Array;
+                geom_types->add(type->getCustomName()->getName());
+                geom_meta->set("geometry_types", geom_types);
+                geom_meta->set("crs", "EPSG:4326");
+
+                geo_columns_metadata.push_back({column_name, geom_meta});
+
+                if (type->getCustomName()->getName() == "Polygon" ||
+                    type->getCustomName()->getName() == "MultiPolygon")
+                {
+                    geom_meta->set("edges", "planar");
+                    geom_meta->set("orientation", "counterclockwise");
+                }
+                geo_columns_metadata.push_back({column_name, geom_meta});
             }
-            geo_columns_metadata.push_back({column_name, geom_meta});
         }
-    }
 
-    if (!geo_columns_metadata.empty())
-    {
-        Poco::JSON::Object::Ptr columns = new Poco::JSON::Object;
-        for (const auto & [column_name, column_type] : geo_columns_metadata)
+        if (!geo_columns_metadata.empty())
         {
-            columns->set(column_name, column_type);
+            Poco::JSON::Object::Ptr columns = new Poco::JSON::Object;
+            for (const auto & [column_name, column_type] : geo_columns_metadata)
+            {
+                columns->set(column_name, column_type);
+            }
+
+            Poco::JSON::Object::Ptr geo = new Poco::JSON::Object;
+            geo->set("version", "1.0.0");
+            geo->set("columns", columns);
+            geo->set("primary_column", geo_columns_metadata[0].first);
+
+            std::ostringstream oss;
+            Poco::JSON::Stringifier::stringify(geo, oss, 4);
+
+            parquet::format::KeyValue key_value;
+            key_value.__set_key("geo");
+            key_value.__set_value(oss.str());
+
+            meta.key_value_metadata.push_back(std::move(key_value));
+            meta.__isset.key_value_metadata = true;
         }
-
-        Poco::JSON::Object::Ptr geo = new Poco::JSON::Object;
-        geo->set("version", "1.0.0");
-        geo->set("columns", columns);
-        geo->set("primary_column", geo_columns_metadata[0].first);
-
-        std::ostringstream oss;
-        Poco::JSON::Stringifier::stringify(geo, oss, 4);
-
-        parquet::format::KeyValue key_value;
-        key_value.__set_key("geo");
-        key_value.__set_value(oss.str());
-
-        meta.key_value_metadata.push_back(std::move(key_value));
-        meta.__isset.key_value_metadata = true;
     }
 
     size_t footer_size = serializeThriftStruct(meta, out);

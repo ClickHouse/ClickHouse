@@ -306,6 +306,7 @@ struct FormatSettings
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
+        bool write_geometadata = true;
     } parquet{};
 
     struct Pretty

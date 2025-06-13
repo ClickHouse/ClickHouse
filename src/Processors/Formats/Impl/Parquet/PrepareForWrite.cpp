@@ -705,7 +705,8 @@ void prepareColumnForWrite(
 
     ColumnChunkWriteStates states;
     SchemaElements schemas;
-    prepareGeoColumns(column, type);
+    if (options.write_geometadata)
+        prepareGeoColumns(column, type);
     prepareColumnRecursive(column, type, name, options, states, schemas);
 
     if (out_columns_to_write)

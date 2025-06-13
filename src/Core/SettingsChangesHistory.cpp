@@ -82,6 +82,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_skip_indexes_if_final_exact_mode", 0, 1, "Change in default value of setting"},
             {"allow_experimental_time_series_aggregate_functions", false, false, "New setting to enable experimental timeSeries* aggregate functions."},
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
+            {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
