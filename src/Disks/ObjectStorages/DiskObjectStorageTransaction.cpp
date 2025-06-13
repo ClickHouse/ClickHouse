@@ -465,9 +465,9 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 
 struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperation
 {
-    /// this object is shared with writer
+    /// this object is shared with the object file writer
     /// The StoredObject::bytes_size is not determined at the beginning
-    /// it is set only after writer is finalized
+    /// it is set only after the writer is finalized
     std::shared_ptr<StoredObject> object;
     WriteMode mode;
     bool do_not_write_empty_blob;
@@ -492,8 +492,6 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 
     void execute(MetadataTransactionPtr tx) override
     {
-        LOG_INFO(getLogger("DiskObjectStorageTransaction"), "create_metadata_callback on execute");
-
         chassert(object->bytes_size != std::numeric_limits<uint64_t>::max());
 
         if (mode == WriteMode::Rewrite)
@@ -588,7 +586,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOperation
 {
     std::string path;
-    size_t size;
+    size_t target_size;
 
     TruncateFileOperationOutcomePtr truncate_outcome;
 
@@ -596,21 +594,21 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         const std::string & path_,
-        size_t size_)
+        size_t target_size_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
         , path(path_)
-        , size(size_)
+        , target_size(target_size_)
     {}
 
     std::string getInfoForLog() const override
     {
-        return fmt::format("TruncateFileObjectStorageOperation (path: {}, size: {})", path, size);
+        return fmt::format("TruncateFileObjectStorageOperation (path: {}, size: {})", path, target_size);
     }
 
     void execute(MetadataTransactionPtr tx) override
     {
         if (metadata_storage.existsFile(path))
-            truncate_outcome = tx->truncateFile(path, size);
+            truncate_outcome = tx->truncateFile(path, target_size);
     }
 
     void undo() override
@@ -811,8 +809,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     WriteMode mode,
     const WriteSettings & settings)
 {
-    LOG_INFO(getLogger("DiskObjectStorageTransaction"), "DiskObjectStorageTransaction writeFile {} mode {}", path, mode);
-
     auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
 
@@ -855,9 +851,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         /// ...
         /// buf1->finalize() // shouldn't do anything with metadata operations, just memoize what to do
         /// tx->commit()
-
-        LOG_INFO(getLogger("DiskObjectStorageTransaction"), "create_metadata_callback local {} remote {}", object->local_path, object->remote_path);
-
         object->bytes_size = count;
 
         if (autocommit)

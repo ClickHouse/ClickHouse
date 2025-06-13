@@ -73,8 +73,6 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     size_t buf_size,
     const WriteSettings & /* write_settings */)
 {
-    LOG_INFO(log, "writeObject {}->({}):{}", object.local_path, object.remote_path, object.bytes_size);
-
     throwIfReadonly();
 
     if (mode != WriteMode::Rewrite)
@@ -91,8 +89,6 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 
 void LocalObjectStorage::removeObject(const StoredObject & object) const
 {
-    LOG_INFO(log, "removeObject {}->({}):{}", object.local_path, object.remote_path, object.bytes_size);
-
     throwIfReadonly();
 
     /// For local object storage files are actually removed when "metadata" is removed.
