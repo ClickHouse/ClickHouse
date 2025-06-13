@@ -55,6 +55,7 @@ node7 = cluster.add_instance(
     "node7",
     main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
     with_zookeeper=True,
+    stay_alive=True,
     ipv6_address="2001:3984:3989::1:1117",
     ipv4_address="10.5.95.17",
 )
@@ -405,10 +406,7 @@ def test_dns_resolver_filter(cluster_ready, allow_ipv4, allow_ipv6):
         "/etc/clickhouse-server/config.d/dns_filter.xml",
         _render_filter_config(allow_ipv4, allow_ipv6),
     )
-
-    node.query("SYSTEM RELOAD CONFIG")
-    node.query("SYSTEM DROP DNS CACHE")
-    node.query("SYSTEM DROP CONNECTIONS CACHE")
+    node.restart_clickhouse()
 
     if not allow_ipv4 and not allow_ipv6:
         with pytest.raises(QueryRuntimeException):
