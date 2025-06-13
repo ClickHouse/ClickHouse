@@ -68,6 +68,7 @@ private:
     SortDescription sort_description;
     SortDescriptionWithPositions group_by_description;
     bool group_by_key = false;
+    Blocks group_by_blocks;
     Block group_by_block;
     EqualRanges equal_ranges;
     ColumnRawPtrs key_columns_raw;

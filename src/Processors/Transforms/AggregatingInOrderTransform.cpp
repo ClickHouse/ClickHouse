@@ -3,13 +3,16 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
+#include <fmt/ranges.h>
 #include <Poco/Logger.h>
 #include "Common/logger_useful.h"
 #include "Core/SortDescription.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -38,13 +41,16 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , max_block_bytes(max_block_bytes_)
     , params(std::move(params_))
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
-    , sort_description(sort_description_for_merging)
+    , sort_description()
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
 {
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
     res_header = params->getCustomHeader(/* final_= */ false);
+
+    LOG_DEBUG(getLogger(__func__), "Desc for merging: {}", dumpSortDescription(sort_description_for_merging));
+    LOG_DEBUG(getLogger(__func__), "Desc GROUP BY: {}", dumpSortDescription(group_by_description_));
 
     for (size_t i = 0; i < sort_description_for_merging.size(); ++i)
     {
@@ -58,9 +64,11 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
         /// group_by_description may contains duplicates, so we use keys_size from Aggregator::params
         key_columns_raw.resize(params->params.keys_size);
 
-        for (size_t i = sort_description.size(); i < group_by_description_.size(); ++i)
+        for (size_t i = sort_description_for_merging.size(); i < group_by_description_.size(); ++i)
             sort_description.push_back(group_by_description_[i]);
     }
+
+    LOG_DEBUG(getLogger(__func__), "Will use sort description: {}", dumpSortDescription(sort_description));
 }
 
 AggregatingInOrderTransform::~AggregatingInOrderTransform() = default;
@@ -167,7 +175,15 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             if (params->params.only_merge)
             {
                 if (group_by_key)
+                {
                     params->aggregator.mergeOnBlockSmall(variants, key_begin, key_end, aggregate_columns_data, key_columns_raw);
+                    auto result_group_by_block
+                        = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
+                    variants.invalidate();
+                    sortBlock(result_group_by_block, sort_description);
+
+                    group_by_blocks.push_back(std::move(result_group_by_block));
+                }
                 else
                     params->aggregator.mergeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_columns_data, is_cancelled);
             }
@@ -175,10 +191,31 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             {
                 if (group_by_key)
                 {
-                    auto range_start = variants.size();
                     params->aggregator.executeOnBlockSmall(variants, key_begin, key_end, key_columns_raw, aggregate_function_instructions.data());
-                    auto range_end = variants.size();
-                    equal_ranges.push_back({range_start, range_end});
+                    auto result_group_by_block
+                        = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
+                    variants.invalidate();
+                    sortBlock(result_group_by_block, sort_description);
+
+                    // More detailed dump including data
+                    LOG_DEBUG(getLogger(__func__), "Block:\n{}", result_group_by_block.dumpStructure());
+                    size_t block_rows = result_group_by_block.rows();
+
+                    size_t rows_to_print = std::min(block_rows, size_t(5));
+                    for (size_t row = 0; row < rows_to_print; ++row)
+                    {
+                        std::vector<String> row_values(result_group_by_block.columns());
+                        for (size_t i = 0; i < result_group_by_block.columns(); ++i)
+                        {
+                            auto & column = result_group_by_block.getByPosition(i).column;
+                            row_values[i] = (*column)[row].dump();
+                        }
+                        LOG_DEBUG(getLogger(__func__), "[ {} ]: {}", row, fmt::join(row_values, ", "));
+                    }
+
+                    LOG_DEBUG(getLogger(__func__), "Aggregated {} rows into {}", key_end - key_begin, result_group_by_block.rows());
+
+                    group_by_blocks.push_back(std::move(result_group_by_block));
                 }
                 else
                     params->aggregator.executeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_function_instructions.data());
@@ -196,9 +233,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             /// If max_block_size is reached we have to stop consuming and generate the block. Save the extra rows into new chunk.
             if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes)
             {
-                if (group_by_key)
-                    group_by_block
-                        = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
                 cur_block_bytes += current_memory_usage;
                 finalizeCurrentChunk(std::move(chunk), key_end);
                 equal_ranges.clear();
@@ -306,8 +340,9 @@ void AggregatingInOrderTransform::generate()
     if (cur_block_size && is_consume_finished)
     {
         if (group_by_key)
-            group_by_block
-                = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
+        {}
+            // group_by_block
+            //     = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
         else
             params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
         variants.invalidate();
@@ -328,10 +363,9 @@ void AggregatingInOrderTransform::generate()
     }
     else
     {
+        to_push_chunk = convertToChunk(concatenateBlocks(group_by_blocks));
         /// Sorting is required after aggregation, for proper merging, via
         /// FinishAggregatingInOrderTransform/MergingAggregatedBucketTransform
-        sortBlock(group_by_block, sort_description, 0, std::move(equal_ranges));
-        to_push_chunk = convertToChunk(group_by_block);
     }
 
     if (!to_push_chunk.getNumRows())
