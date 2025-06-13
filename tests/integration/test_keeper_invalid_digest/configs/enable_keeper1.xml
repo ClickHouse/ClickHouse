@@ -29,7 +29,7 @@
     </keeper_server>
 
     <logger>
-        <level>debug</level>
+        <level>trace</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
     </logger>

@@ -2,6 +2,7 @@
 
 import time
 import pytest
+from multiprocessing.dummy import Pool
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -37,10 +38,34 @@ def get_fake_zk(nodename, timeout=30.0):
     return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
+def start_clickhouse(node):
+    node.start_clickhouse()
+
+
+def setup_nodes():
+    node1.stop_clickhouse()
+    node2.stop_clickhouse()
+
+    p = Pool(2)
+    waiters = []
+    for node in [node1, node2]:
+        node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/log"])
+        node.exec_in_container(
+            ["rm", "-rf", "/var/lib/clickhouse/coordination/snapshots"]
+        )
+
+        waiters.append(p.apply_async(start_clickhouse, (node,)))
+
+    for waiter in waiters:
+        waiter.wait()
+
+    wait_nodes()
+
+
 def test_keeper_invalid_digest(started_cluster):
     try:
         # Wait for the cluster to be ready
-        wait_nodes()
+        setup_nodes()
 
         # Enable the failpoint on node1 to set invalid digest
         node1.query("SYSTEM ENABLE FAILPOINT keeper_leader_sets_invalid_digest")
