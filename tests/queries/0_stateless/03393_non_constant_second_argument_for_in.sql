@@ -129,3 +129,30 @@ SETTINGS transform_null_in = 1;
 SELECT 1 IN [1, toNullable(number)]
 FROM numbers(2)
 SETTINGS transform_null_in = 0;
+
+SELECT
+    0 AS x,
+    [if(number > 1, NULL, number)] AS arr,
+    tuple(arr[1]) AS t,
+    x IN (t),
+    x IN (arr)
+FROM numbers(3)
+SETTINGS transform_null_in = 0;
+
+SELECT
+    arrayJoin([0, 1, NULL]) AS x,
+    [if(number > 1, NULL, number)] AS arr,
+    tuple(arr[1]) AS t,
+    x IN (t),
+    x IN (arr)
+FROM numbers(3)
+SETTINGS transform_null_in = 0;
+
+SELECT
+    NULL AS x,
+    [if(number > 1, NULL, number)] AS arr,
+    tuple(arr[1]) AS t,
+    x IN (t),
+    x IN (arr)
+FROM numbers(3)
+SETTINGS transform_null_in = 0;
