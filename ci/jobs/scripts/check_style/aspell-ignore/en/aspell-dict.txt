@@ -1837,6 +1837,10 @@ filesystemFree
 filesystemUnreserved
 filesystems
 finalizeAggregation
+financialInternalRateOfReturn
+financialInternalRateOfReturnExtended
+financialNetPresentValue
+financialNetPresentValueExtended
 fips
 firstLine
 firstSignficantSubdomain
@@ -3316,11 +3320,9 @@ wrt
 wyHash
 xcode
 xeus
-xirr
 xkcd
 xlarge
 xml
-xnpv
 xxHash
 xz
 yaml
