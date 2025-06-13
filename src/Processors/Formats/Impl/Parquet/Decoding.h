@@ -79,14 +79,24 @@ struct PageDecoderInfo
 {
     enum class Kind
     {
+        /// Representation in IColumn is the same as in parquet PLAIN encoding. Can just memcpy.
+        /// E.g. INT64 -> Int64/UInt64/Decimal64, FIXED_LEN_BYTE_ARRAY -> FixedString.
         FixedSize,
         String,
-        ShortInt, // convert Int32 to UInt8 or UInt16
+        /// Convert Int32 to UInt8 or UInt16.
+        ShortInt,
+        /// Signed big-endian integer. Input values have a fixed size <= 32 bytes (not necessarily
+        /// power of two). Decoder reverses bytes and pads+sign-extends to value_size.
+        BigEndian,
         Boolean,
     };
 
     Kind kind = Kind::FixedSize;
-    size_t value_size = 0; // if FixedSize or ShortInt
+    size_t value_size = 0; // if FixedSize, ShortInt, or BigEndian
+
+    /// If BigEndian. input_value_size <= value_size.
+    /// Read values of size input_value_size and pad them with zeroes to size value_size.
+    size_t input_value_size = 0;
 
     /// True if we can decompress the whole page directly into IColumn's memory.
     bool canReadDirectlyIntoColumn(parq::Encoding::type, size_t /*num_values*/, IColumn &, std::span<char> & out) const;
@@ -105,8 +115,10 @@ struct PageDecoderInfo
 /// E.g. if the parquet file has column `x String`, but we read it as `file(..., 'x Int64')`, we
 /// silently auto-cast data from String to Int64 (by parsing number as text); but we can't do the
 /// same for min/max values because String min/max is not the same as Int64 min/max (e.g. "10" < "9").
-/// So we have an allowlist of type conversions (dispatched in SchemaConverter), and the conversion is
-/// done by together with decoding, by StatsDecoder.
+/// So we have a small allowlist of type conversions (dispatched in SchemaConverter), and the
+/// conversion is done together with decoding, by StatsDecoder.
+/// In particular we don't call something like convertFieldToType, working through all the cases
+/// would be a nightmare.
 struct StatsDecoder
 {
     /// Decodes min/max value from parquet Statistics or ColumnIndex.
@@ -133,6 +145,8 @@ struct IntStatsDecoder : public StatsDecoder
 
 /// Input physical type: INT32, INT64, BYTE_ARRAY, or FIXED_LEN_BYTE_ARRAY.
 /// Output Field type: Decimal32, Decimal64, Decimal128, or Decimal256.
+/// (This struct has information for converting between different scales and sizes, but conversions
+///  are not implemented. `decode` will only produce result if input and output have the same size and scale.)
 struct DecimalStatsDecoder : public StatsDecoder
 {
     size_t input_value_size = 0;
@@ -146,12 +160,10 @@ struct DecimalStatsDecoder : public StatsDecoder
     void decode(const String &, bool, Field &) const override;
 };
 
-/// Input physical type: FLOAT or DOUBLE.
-/// Output Field type: Float32 or Float64.
+/// FLOAT -> Float32, or DOUBLE -> Float64.
 struct FloatStatsDecoder : public StatsDecoder
 {
-    size_t input_value_size = 0;
-    size_t output_value_size = 0;
+    size_t value_size = 0;
 
     void decode(const String &, bool, Field &) const override;
 };

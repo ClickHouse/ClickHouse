@@ -16,10 +16,6 @@ namespace CurrentMetrics
     extern const Metric ParquetDecoderThreads;
     extern const Metric ParquetDecoderThreadsActive;
     extern const Metric ParquetDecoderThreadsScheduled;
-
-    extern const Metric ParquetDecoderIOThreads;
-    extern const Metric ParquetDecoderIOThreadsActive;
-    extern const Metric ParquetDecoderIOThreadsScheduled;
 }
 
 namespace DB

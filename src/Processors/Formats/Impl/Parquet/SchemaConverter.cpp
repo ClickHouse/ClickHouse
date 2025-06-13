@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -347,7 +348,6 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
     else
     {
         /// Tuple. (Possibly a Map key_value tuple.)
-        /// TODO [parquet]: Test type hint having different element names.
         auto tuple_type_hint = typeid_cast<const DataTypeTuple *>(type_hint.get());
         if (type_hint && !tuple_type_hint)
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", name, type_hint->getName());
@@ -594,21 +594,22 @@ void SchemaConverter::processPrimitiveColumn(
 
     auto dispatch_float_stats_decoder = [&](size_t input_value_size)
     {
-        auto dec = std::make_unique<FloatStatsDecoder>();
-        dec->input_value_size = input_value_size;
+        size_t output_value_size;
         switch (get_output_type_index())
         {
             case TypeIndex::Float32:
-                dec->output_value_size = 4;
+                output_value_size = 4;
                 break;
             case TypeIndex::Float64:
-                dec->output_value_size = 8;
+                output_value_size = 8;
                 break;
             default:
                 return;
         }
-        if (dec->output_value_size < dec->input_value_size)
+        if (output_value_size != input_value_size)
             return;
+        auto dec = std::make_unique<FloatStatsDecoder>();
+        dec->value_size = input_value_size;
         out_stats_decoder = std::move(dec);
     };
 
@@ -744,25 +745,47 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (logical.__isset.DECIMAL || converted == CONV::DECIMAL)
     {
-        /// TODO [parquet]:
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "decimal not implemented yet");
+        UInt32 precision = logical.__isset.DECIMAL ? logical.DECIMAL.precision : element.precision;
+        UInt32 scale = logical.__isset.DECIMAL ? logical.DECIMAL.scale : element.scale;
+        precision = std::max(precision, scale);
 
-        // if physical is INT32:
-        //     require that precision <= 9
-        //     parse as Decimal32(scale) (memcpy)
-        // else if physical is INT64:
-        //     require that precision <= 18
-        //     parse as Decimal64(scale) (memcpy)
-        // else if physical is FIXED_LEN_BYTE_ARRAY:
-        //     pick type:
-        //         precision <= 9, length <= 4: Decimal32
-        //         precision <= 18, length <= 8: Decimal64
-        //         precision <= 38, length <= 16: Decimal128
-        //         precision <= 76, length <= 32: Decimal256
-        //         else: error
-        //     parse (not memcpy, parquet data is big-endian, reverse bytes after reading; can do it in place though)
-        // dispatch_decimal_stats_decoder(/*input_value_size=*/ , /*input_scale=*/ , /*input_big_endian=*/ );
-        // return;
+        UInt32 max_precision = 0;
+        if (type == parq::Type::INT32)
+            max_precision = 9;
+        else if (type == parq::Type::INT64)
+            max_precision = 18;
+        else if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+        {
+            /// FIXED_LEN_BYTE_ARRAY decimals are big endian, while INT32/INT64 are little-endian.
+            out_decoder.kind = PageDecoderInfo::Kind::BigEndian;
+            out_decoder.input_value_size = element.type_length;
+
+            if (out_decoder.input_value_size > 32)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal value too long: {} bytes (at most 32 is supported)", out_decoder.input_value_size);
+
+            if (precision <= 9 && out_decoder.input_value_size <= 4)
+                max_precision = 9;
+            else if (precision <= 18 && out_decoder.input_value_size <= 8)
+                max_precision = 18;
+            else if (precision <= 36 && out_decoder.input_value_size <= 16)
+                max_precision = 36;
+            else
+                max_precision = 76;
+        }
+        else if (type == parq::Type::BYTE_ARRAY)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Decimal encoded as BYTE_ARRAY is not supported");
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for Decimal column: {}", thriftToString(type));
+
+        if (precision > max_precision)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal type precision or scale is too big ({} digits) for physical type {}", precision, thriftToString(type));
+
+        out_inferred_type = createDecimal<DataTypeDecimal>(max_precision, scale);
+        out_decoder.value_size = out_inferred_type->getSizeOfValueInMemory();
+
+        dispatch_decimal_stats_decoder(out_decoder.input_value_size, scale, out_decoder.kind == PageDecoderInfo::Kind::BigEndian);
+
+        return;
     }
     else if (logical.__isset.MAP || logical.__isset.LIST || converted == CONV::MAP ||
              converted == CONV::MAP_KEY_VALUE || converted == CONV::LIST)
@@ -771,15 +794,16 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (logical.__isset.UNKNOWN)
     {
-        /// TODO [parquet]: DataTypeNothing (for now fall through to dispatch by physical type)
+        /// This means all values are nulls. We could use DataTypeNothing here, or fall through to
+        /// dispatch by physical type. Either way seems fine, currently we do the latter.
     }
     else if (logical.__isset.UUID)
     {
         if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 16)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
-        /// TODO [parquet]: check if byte order is correct; check if stats are usable
-        out_decoder.value_size = 16;
-        out_inferred_type = std::make_shared<DataTypeUUID>();
+
+        /// TODO [parquet]: Support UUIDs. Make sure to get the byte order right, it seems tricky.
+        /// For now, fall through to reading as FixedString(16).
     }
     else if (logical.__isset.FLOAT16)
     {

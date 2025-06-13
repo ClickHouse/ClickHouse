@@ -8,9 +8,9 @@
 
 namespace CurrentMetrics
 {
-extern const Metric ParquetDecoderIOThreads;
-extern const Metric ParquetDecoderIOThreadsActive;
-extern const Metric ParquetDecoderIOThreadsScheduled;
+extern const Metric IOThreads;
+extern const Metric IOThreadsActive;
+extern const Metric IOThreadsScheduled;
 }
 
 namespace DB
@@ -44,9 +44,9 @@ ParquetReader::ParquetReader(
     if (!io_pool)
     {
         io_pool = std::make_shared<ThreadPool>(
-            CurrentMetrics::ParquetDecoderIOThreads,
-            CurrentMetrics::ParquetDecoderIOThreadsActive,
-            CurrentMetrics::ParquetDecoderIOThreadsScheduled,
+            CurrentMetrics::IOThreads,
+            CurrentMetrics::IOThreadsActive,
+            CurrentMetrics::IOThreadsScheduled,
             1);
     }
 }

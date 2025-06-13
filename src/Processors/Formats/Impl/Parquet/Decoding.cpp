@@ -204,6 +204,83 @@ struct PlainCastDecoder : public PageDecoder
     }
 };
 
+template <typename T>
+struct BigEndianDecoder : public PageDecoder
+{
+    size_t input_value_size = 0;
+
+    size_t value_offset = 0;
+    T value_mask = 0;
+    T sign_mask = 0;
+    T sign_extension_mask = 0;
+
+    BigEndianDecoder(std::span<const char> data_, size_t input_value_size_) : PageDecoder(data_), input_value_size(input_value_size_)
+    {
+        chassert(sizeof(T) >= input_value_size);
+        value_offset = sizeof(T) - input_value_size;
+        value_mask = (~T(0)) << (8 * value_offset);
+
+        if (value_offset != 0)
+        {
+            sign_mask = T(1) << (8 * input_value_size - 1);
+            sign_extension_mask = (~T(0)) << (8 * input_value_size);
+        }
+    }
+
+    void skip(size_t num_values) override
+    {
+        size_t bytes = num_values * input_value_size;
+        requireRemainingBytes(bytes);
+        data += bytes;
+    }
+
+    void decode(size_t num_values, IColumn & col) override
+    {
+        const char * from_bytes = data;
+        skip(num_values);
+        auto to_bytes = col.insertRawUninitialized(num_values);
+        chassert(to_bytes.size() == num_values * sizeof(T));
+        T * to = reinterpret_cast<T *>(to_bytes.data());
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            T x;
+
+            /// We take advantage of input padding and do fixed-size memcpy of size sizeof(T) instead
+            /// of variable-size memcpy of size input_value_size. Variable-size memcpy is slow.
+            memcpy(&x, from_bytes - value_offset, sizeof(T));
+            x &= value_mask; // mask off the garbage bytes that we've read out of bounds
+
+            /// Convert to little-endian.
+            if constexpr (sizeof(T) <= 8)
+                x = std::byteswap(x);
+            else
+            {
+                x.items[0] = std::byteswap(x.items[0]);
+                x.items[1] = std::byteswap(x.items[1]);
+                if constexpr (sizeof(T) == 16)
+                {
+                    std::swap(x.items[0], x.items[1]);
+                }
+                else
+                {
+                    static_assert(sizeof(T) == 32, "");
+                    x.items[2] = std::byteswap(x.items[2]);
+                    x.items[3] = std::byteswap(x.items[3]);
+                    std::swap(x.items[0], x.items[3]);
+                    std::swap(x.items[1], x.items[2]);
+                }
+            }
+
+            /// Sign-extend.
+            if (x & sign_mask)
+                x |= sign_extension_mask;
+
+            to[i] = x;
+            from_bytes += input_value_size;
+        }
+    }
+};
+
 struct PlainStringDecoder : public PageDecoder
 {
     using PageDecoder::PageDecoder;
@@ -264,15 +341,28 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
                         case 1: return std::make_unique<PlainCastDecoder<UInt32, UInt8>>(data);
                         case 2: return std::make_unique<PlainCastDecoder<UInt32, UInt16>>(data);
                         default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value_size for ShortInt decoder");
-                        }
+                    }
+                case Kind::BigEndian:
+                    switch (value_size)
+                    {
+                        case 4: return std::make_unique<BigEndianDecoder<UInt32>>(data, input_value_size);
+                        case 8: return std::make_unique<BigEndianDecoder<UInt64>>(data, input_value_size);
+                        case 16: return std::make_unique<BigEndianDecoder<UInt128>>(data, input_value_size);
+                        case 32: return std::make_unique<BigEndianDecoder<UInt256>>(data, input_value_size);
+                        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value_size for BigEndian decoder");
+                    }
                 case Kind::Boolean: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BOOLEAN is not implemented");
             }
-        /// TODO [parquet]:
+        /// TODO [parquet]: RLE for BOOLEAN (Kind::Boolean)
         case parq::Encoding::RLE: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RLE encoding is not implemented");
-        case parq::Encoding::BIT_PACKED: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BIT_PACKED encoding is not implemented");
+        case parq::Encoding::BIT_PACKED: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected BIT_PACKED encoding for values");
+        /// TODO [parquet]: DELTA_BINARY_PACKED for INT32 and INT64 (Kind::FixedSize or ShortInt)
         case parq::Encoding::DELTA_BINARY_PACKED: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_BINARY_PACKED encoding is not implemented");
+        /// TODO [parquet]: DELTA_LENGTH_BYTE_ARRAY for BYTE_ARRAY (Kind::String)
         case parq::Encoding::DELTA_LENGTH_BYTE_ARRAY: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_LENGTH_BYTE_ARRAY encoding is not implemented");
+        /// TODO [parquet]: DELTA_BYTE_ARRAY for BYTE_ARRAY (Kind::String) and FIXED_LEN_BYTE_ARRAY (Kind::FixedSize or BigEndian)
         case parq::Encoding::DELTA_BYTE_ARRAY: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_BYTE_ARRAY encoding is not implemented");
+        /// TODO [parquet]: BYTE_STREAM_SPLIT for FLOAT and DOUBLE (Kind::FixedSize)
         case parq::Encoding::BYTE_STREAM_SPLIT: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BYTE_STREAM_SPLIT encoding is not implemented");
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page encoding: {}", thriftToString(encoding));
     }
@@ -289,7 +379,7 @@ void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_v
             BitPackedRLEDecoder<UInt8>(data, size_t(max) + 1, /*has_header_byte=*/ false).decodeArray(num_values, out);
             break;
         case parq::Encoding::BIT_PACKED:
-            /// TODO [parquet]
+            /// TODO [parquet]: BIT_PACKED levels
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BIT_PACKED levels not implemented");
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected repetition/definition levels encoding: {}", thriftToString(encoding));
     }
@@ -377,6 +467,7 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected non-plain encoding in dictionary");
             }
             break;
+        case PageDecoderInfo::Kind::BigEndian:
         case PageDecoderInfo::Kind::ShortInt:
         case PageDecoderInfo::Kind::Boolean:
             mode = Mode::FixedSize;
@@ -456,7 +547,7 @@ void Dictionary::index(const PaddedPODArray<UInt32> & indexes, IColumn & out)
 void IntStatsDecoder::decode(const String & in, bool /*is_max*/, Field & out) const
 {
     if (in.size() != input_value_size)
-        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected size: {}", in.size());
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in int statistics: {} != {}", in.size(), input_value_size);
 
     UInt64 val = 0;
     switch (input_value_size)
@@ -496,14 +587,15 @@ void StringStatsDecoder::decode(const String & in, bool, Field & out) const
 
 void DecimalStatsDecoder::decode(const String &, bool, Field &) const
 {
-    /// TODO [parquet]:
-    //remember rounding up/down and overflow checks
+    /// TODO [parquet]: Decimal stats (be careful about rounding up/down and overflow checks).
 }
 
-void FloatStatsDecoder::decode(const String &, bool, Field &) const
+void FloatStatsDecoder::decode(const String & in, bool, Field & out) const
 {
-    /// TODO [parquet]:
-    /// Note this comment from parquet.thrift:
+    if (in.size() != value_size)
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in float statistics: {} != {}", in.size(), value_size);
+
+    /// parquet.thrift says:
     /// (*) Because the sorting order is not specified properly for floating
     ///     point values (relations vs. total ordering) the following
     ///     compatibility rules should be applied when reading statistics:
@@ -512,6 +604,23 @@ void FloatStatsDecoder::decode(const String &, bool, Field &) const
     ///     - If the min is +0, the row group may contain -0 values as well.
     ///     - If the max is -0, the row group may contain +0 values as well.
     ///     - When looking for NaN values, min and max should be ignored.
+    ///
+    /// We reject NaNs, but don't do anything about +-0 because normal Field comparisons should
+    /// already treat them as equal.
+
+    if (value_size == 8)
+    {
+        double x;
+        memcpy(&x, in.data(), 8);
+        out = Field(x);
+    }
+    else
+    {
+        chassert(value_size == 4);
+        float x;
+        memcpy(&x, in.data(), 4);
+        out = Field(x);
+    }
 }
 
 }

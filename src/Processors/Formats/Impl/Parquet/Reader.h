@@ -30,6 +30,7 @@ namespace DB::Parquet
 //     - perf or samply
 //     - add OpenTelemetry::SpanHolder-s and try https://github.com/ClickHouse/ClickHouse/blob/bae91a06d914eac4cda7b90ac65dfef07eef0c82/utils/trace-visualizer/README.md
 //  * check fields for false sharing, add cacheline padding as needed
+//  * enable_json_parsing
 //  * make sure userspace page cache read buffer supports readBigAt
 //  * assert that memory usage is zero at the end, the reset()s are easy to miss
 //  * make writer write DataPageV2
@@ -73,6 +74,7 @@ namespace DB::Parquet
 //     - bf and page filtering on prewhere-only columns
 //     - all types of filtering by IS NULL / IS NOT NULL
 //     - Bool type
+//     - looking for NaN using min/max indices; try it with merge tree too
 //  * write a comment explaining the advantage of the weird complicated two-step scheduling
 //    (tasks_to_schedule -> task queue -> run) and per-stage memory accounting - maximizing prefetch
 //    parallelism; contrast with a simpler strategy of having no queues, and worker threads e.g.
