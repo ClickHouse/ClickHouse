@@ -4,6 +4,7 @@
 #include <Core/Block.h>
 #include <Processors/Chunk.h>
 
+#include <Columns/IColumn.h>
 
 namespace DB
 {
@@ -19,7 +20,9 @@ public:
            chunks.push_back(chunk.clone());
     }
 
-    std::vector<Chunk> chunks = {};
+    std::vector<Chunk> chunks;
+    std::vector<IColumn::MutablePtr> mutable_columns;
+    std::vector<UInt8> have_same_serialization;
 };
 
 /** Merging consecutive passed blocks to specified minimum size.
@@ -54,6 +57,8 @@ private:
         std::vector<Chunk> chunks = {};
         size_t rows = 0;
         size_t bytes = 0;
+        std::vector<IColumn::MutablePtr> mutable_columns = {};
+        std::vector<UInt8> have_same_serialization = {};
 
         explicit operator bool () const { return !chunks.empty(); }
         size_t getRows() const { return rows; }
@@ -67,7 +72,7 @@ private:
 
     CurrentData accumulated;
 
-    static Chunk squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos);
+    static Chunk squash(ChunksToSquash && chunks_to_squash, Chunk::ChunkInfoCollection && infos);
 
     bool isEnoughSize() const;
     bool isEnoughSize(size_t rows, size_t bytes) const;

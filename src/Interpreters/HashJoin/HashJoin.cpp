@@ -1035,6 +1035,8 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
+    // LOG_DEBUG(&Poco::Logger::get("debug"), "block.dumpStructure()={}", block.dumpStructure());
+
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
