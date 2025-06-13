@@ -260,6 +260,10 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
             logProcessorProfile(data.getContext(), io.pipeline.getProcessors());
+
+            /// Finalize write in query cache to save scalar subquery result
+            if (data.getContext()->getCanUseQueryResultCache())
+                io.pipeline.finalizeWriteInQueryResultCache();
         }
 
         block = materializeBlock(block);
