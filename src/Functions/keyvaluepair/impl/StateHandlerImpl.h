@@ -115,19 +115,17 @@ public:
             }
             else if (isQuotingCharacter(*p))
             {
-                if (configuration.unexpected_quoting_character_strategy == Configuration::UnexpectedQuotingCharacterStrategy::INVALID)
+                switch (configuration.unexpected_quoting_character_strategy)
                 {
-                    return {next_pos, State::WAITING_KEY};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::INVALID:
+                        return {next_pos, State::WAITING_KEY};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE:
+                        return {next_pos, State::READING_QUOTED_KEY};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT:
+                        // The quoting character should not be added to the search symbols list in case strategy = Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT
+                        // See `NeedleFactory`
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to handle unexpected quoting character. This is a bug");
                 }
-
-                if (configuration.unexpected_quoting_character_strategy == Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE)
-                {
-                    return {next_pos, State::READING_QUOTED_KEY};
-                }
-
-                // The quoting character should not be added to the search symbols list in case strategy = Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT
-                // See `NeedleFactory`
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to handle unexpected quoting character. This is a bug");
             }
 
             pos = next_pos;
@@ -265,19 +263,17 @@ public:
             }
             else if (isQuotingCharacter(*p))
             {
-                if (configuration.unexpected_quoting_character_strategy == Configuration::UnexpectedQuotingCharacterStrategy::INVALID)
+                switch (configuration.unexpected_quoting_character_strategy)
                 {
-                    return {next_pos, State::WAITING_KEY};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::INVALID:
+                        return {next_pos, State::WAITING_KEY};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE:
+                        return {next_pos, State::READING_QUOTED_VALUE};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT:
+                        // The quoting character should not be added to the search symbols list in case strategy = Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT
+                        // See `NeedleFactory`
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to handle unexpected quoting character. This is a bug");
                 }
-
-                if (configuration.unexpected_quoting_character_strategy == Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE)
-                {
-                    return {next_pos, State::READING_QUOTED_VALUE};
-                }
-
-                // The quoting character should not be added to the search symbols list in case strategy = Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT
-                // See `NeedleFactory`
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to handle unexpected quoting character. This is a bug");
             }
 
             pos = next_pos;
