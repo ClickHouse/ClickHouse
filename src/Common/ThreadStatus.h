@@ -4,6 +4,7 @@
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/StringRef.h>
+#include <Common/IThrottler.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -217,9 +218,11 @@ public:
     Progress progress_in;
     Progress progress_out;
 
-    /// IO scheduling
+    /// IO scheduling and throttling
     ResourceLink read_resource_link;
     ResourceLink write_resource_link;
+    ThrottlerPtr read_throttler;
+    ThrottlerPtr write_throttler;
 
 private:
     /// Group of threads, to which this thread attached
