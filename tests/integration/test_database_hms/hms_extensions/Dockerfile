@@ -1,5 +1,7 @@
 FROM openjdk:8-jre-slim AS build
 
+RUN apt-get update && apt-get -o Acquire::Retries=5 install --fix-missing -y curl
+
 ENV HADOOP_VERSION=3.3.6
 ENV AWS_SDK_BUNDLE=1.12.753
 
