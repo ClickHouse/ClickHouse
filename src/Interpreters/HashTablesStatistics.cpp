@@ -62,7 +62,7 @@ HashTablesStatistics<Entry>::CachePtr HashTablesStatistics<Entry>::getHashTableS
 {
     std::lock_guard lock(mutex);
     if (!hash_table_stats)
-        hash_table_stats = std::make_shared<Cache>(params.max_entries_for_hash_table_stats * sizeof(Entry));
+        hash_table_stats = std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), params.max_entries_for_hash_table_stats * sizeof(Entry));
     return hash_table_stats;
 }
 

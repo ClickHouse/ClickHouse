@@ -215,7 +215,7 @@ function run_with_error()
 }
 
 # BASH_XTRACEFD is supported only since 4.1
-if [[ -n $CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
+if [[ -v CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
     exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
     # It will be also nice to have stderr in the tracing output, but:
     # - exec 2>&3

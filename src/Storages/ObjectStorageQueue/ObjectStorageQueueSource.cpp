@@ -960,11 +960,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
 
+            const auto & object_metadata = reader.getObjectInfo()->metadata;
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .size = reader.getObjectInfo()->metadata->size_bytes
+                    .size = object_metadata->size_bytes,
+                    .last_modified = object_metadata->last_modified
                 }, getContext());
 
             return chunk;
