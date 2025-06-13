@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -447,21 +448,27 @@ static void addFilters(
     if (!predicate)
         return;
 
-    JoinedTables joined_tables(context, getSelectQuery(query_ast), false, false);
-    joined_tables.resolveTables();
-    const auto & tables_with_columns = joined_tables.tablesWithColumns();
-
+    auto table_expressions = extractTableExpressions(query_node->getJoinTree());
     /// Case with JOIN is not supported so far.
-    if (tables_with_columns.size() != 1)
+    if (table_expressions.size() != 1)
         return;
+
+    const auto * table_node = table_expressions.front()->as<TableNode>();
+    if (!table_node)
+        return;
+
+    TableWithColumnNamesAndTypes table_with_columns(
+        DatabaseAndTableWithAlias(table_node->toASTIdentifier()),
+        table_node->getStorageSnapshot()->getColumns(GetColumnsOptions::Kind::Ordinary));
+    table_with_columns.table.alias = table_node->getAlias();
 
     bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
 
     ASTs predicates{predicate};
-    PredicateRewriteVisitor::Data data(context, predicates, tables_with_columns.front(), optimize_final, optimize_with);
+    PredicateRewriteVisitor::Data data(context, predicates, table_with_columns, optimize_final, optimize_with);
 
-    data.rewriteSubquery(getSelectQuery(query_ast), tables_with_columns.front().columns.getNames());
+    data.rewriteSubquery(getSelectQuery(query_ast), table_with_columns.columns.getNames());
 }
 
 void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header)
