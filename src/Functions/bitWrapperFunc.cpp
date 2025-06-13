@@ -27,7 +27,7 @@ struct BitWrapperFuncImpl
         // Need to investigate this.
         if constexpr (!is_integer<A>)
             throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "It's a bug! Only integer types are supported by __bitWrapperFunc.");
-        return a == 0 ? static_cast<ResultType>(0b10) : static_cast<ResultType >(0b1);
+        return a == 0 ? static_cast<ResultType>(0b10) : static_cast<ResultType>(0b01);
     }
 
 #if USE_EMBEDDED_COMPILER

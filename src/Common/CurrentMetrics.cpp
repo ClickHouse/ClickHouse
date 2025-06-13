@@ -306,8 +306,45 @@
     M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
+    M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-    M(VectorSimilarityIndexCacheSize, "Size of the vector similarity index cache in bytes") \
+    M(IcebergMetadataFilesCacheBytes, "Size of the iceberg metadata cache in bytes") \
+    M(IcebergMetadataFilesCacheFiles, "Number of cached files in the iceberg metadata cache") \
+    M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \
+    M(AvroSchemaCacheCells, "Number of cached Avro schemas") \
+    M(AvroSchemaRegistryCacheBytes, "Size of the Avro schema registry cache in bytes") \
+    M(AvroSchemaRegistryCacheCells, "Number of entries in Avro schema registry cache") \
+    M(HiveFilesCacheBytes, "Size of the hive cache in bytes") \
+    M(HiveFilesCacheFiles, "Number of cached files in the hive cache") \
+    M(HiveMetadataFilesCacheBytes, "Size of the hive metadata cache in bytes") \
+    M(HiveMetadataFilesCacheFiles, "Number of cached files in the hive metadata cache") \
+    M(VectorSimilarityIndexCacheBytes, "Size of the vector similarity index cache in bytes") \
+    M(VectorSimilarityIndexCacheCells, "Number of entries in vector similarity index cache") \
+    M(DNSHostsCacheBytes, "Size of the DNS hosts cache in bytes") \
+    M(DNSHostsCacheSize, "Number of cached DNS hosts") \
+    M(DNSAddressesCacheBytes, "Size of the DNS addresses cache in bytes") \
+    M(DNSAddressesCacheSize, "Number of cached DNS addresses") \
+    M(MarkCacheBytes, "Total size of mark cache in bytes") \
+    M(MarkCacheFiles, "Total number of mark files cached in the mark cache") \
+    M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes") \
+    M(PrimaryIndexCacheFiles, "Total number of index files cached in the primary index cache") \
+    M(PageCacheBytes, "Total size of userspace page cache in bytes") \
+    M(PageCacheCells, "Total number of entries in the userspace page cache") \
+    M(UncompressedCacheBytes, "Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
+    M(UncompressedCacheCells, "Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided") \
+    M(IndexMarkCacheBytes, "Total size of mark cache for secondary indices in bytes") \
+    M(IndexMarkCacheFiles, "Total number of mark files cached in the mark cache for secondary indices") \
+    M(IndexUncompressedCacheBytes, "Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
+    M(IndexUncompressedCacheCells, "Total number of entries in the uncompressed cache for secondary indices. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided") \
+    M(MMapCacheCells, "The number of files opened with `mmap` (mapped in memory). This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`. The files opened with `mmap` are kept in the cache to avoid costly TLB flushes.") \
+    M(QueryCacheBytes, "Total size of the query cache in bytes") \
+    M(QueryCacheEntries, "Total number of entries in the query cache") \
+    M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
+    M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
+    M(CompiledExpressionCacheBytes, "Total bytes used for the cache of JIT-compiled code") \
+    M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled code") \
+    M(MergeJoinBlocksCacheBytes, "Total bytes used for cached blocks in MergeJoin") \
+    M(MergeJoinBlocksCacheCount, "Total cached blocks in MergeJoin") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
@@ -339,6 +376,7 @@
     M(DistrCacheRegisteredServers, "Number of distributed cache registered servers") \
     M(DistrCacheRegisteredServersCurrentAZ, "Number of distributed cache registered servers in current az") \
     M(DistrCacheServerS3CachedClients, "Number of distributed cache S3 cached clients") \
+    M(DistrCacheServerRegistryConnections, "Number of active connections to ClickHouse server from Distributed Cache (not marked as cancelled because of limit)") \
     \
     M(SchedulerIOReadScheduled, "Number of IO reads are being scheduled currently") \
     M(SchedulerIOWriteScheduled, "Number of IO writes are being scheduled currently") \
@@ -358,9 +396,13 @@
     M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
     M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
     \
+    M(ConcurrencyControlScheduled, "Total number of CPU slot requests are being scheduled currently") \
     M(ConcurrencyControlAcquired, "Total number of acquired CPU slots") \
     M(ConcurrencyControlAcquiredNonCompeting, "Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)") \
     M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
+    \
+    M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
+    M(ConcurrentQueryAcquired, "Total number of acquired query slots") \
     \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
     \
@@ -376,6 +418,10 @@
     M(SharedCatalogDropZooKeeperThreadsActive, "Number of active threads in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
     M(SharedCatalogDropZooKeeperThreadsScheduled, "Number of queued or active jobs in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
     \
+    M(CoordinatedMergesCoordinatorRunningMerges, "Number of running merges visible for merge coordinator.") \
+    M(CoordinatedMergesCoordinatorAssignedMerges, "Number of assigned merges in merge coordinator state.") \
+    M(CoordinatedMergesWorkerAssignedMerges, "Number of assigned merges in merge worker state.") \
+    \
     M(SharedDatabaseCatalogTablesInLocalDropDetachQueue, "Number of tables in the queue for local drop or detach in Shared Catalog.") \
     \
     M(SharedCatalogDropDetachLocalTablesErrors, "Number of errors that occurred when attempting to drop or detach local tables in Shared Catalog.") \
@@ -390,6 +436,11 @@
     \
     M(TotalMergeFailures, "Number of all failed merges since startup, including the ones that were aborted") \
     M(NonAbortedMergeFailures, "Number of failed merges since startup, excluding the merges that were aborted") \
+    M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
+    M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
+    M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
+    M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
+    M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
@@ -405,7 +456,8 @@ namespace CurrentMetrics
     #undef M
     constexpr Metric END = Metric(__COUNTER__);
 
-    std::atomic<Value> values[END] {};    /// Global variable, initialized by zeros.
+    /// +1 to allow using END as a placeholder
+    std::atomic<Value> values[END + 1] {};    /// Global variable, initialized by zeros.
 
     const char * getName(Metric event)
     {

@@ -124,16 +124,18 @@ DiskObjectStorage::DiskObjectStorage(
                             {
                                 switch (mode)
                                 {
-                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql_any.insert(resource_name); break;
-                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ResourceAccessMode::DiskRead: new_read_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ResourceAccessMode::DiskWrite: new_write_resource_name_from_sql_any.insert(resource_name); break;
+                                    default: break;
                                 }
                             }
                             else if (*disk == name)
                             {
                                 switch (mode)
                                 {
-                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql.insert(resource_name); break;
-                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql.insert(resource_name); break;
+                                    case ResourceAccessMode::DiskRead: new_read_resource_name_from_sql.insert(resource_name); break;
+                                    case ResourceAccessMode::DiskWrite: new_write_resource_name_from_sql.insert(resource_name); break;
+                                    default: break;
                                 }
                             }
                         }
@@ -641,6 +643,11 @@ bool DiskObjectStorage::isWriteOnce() const
 bool DiskObjectStorage::supportsHardLinks() const
 {
     return !isWriteOnce() && !object_storage->isPlain();
+}
+
+bool DiskObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
+{
+    return !isWriteOnce() && metadata_storage->supportsPartitionCommand(command);
 }
 
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()

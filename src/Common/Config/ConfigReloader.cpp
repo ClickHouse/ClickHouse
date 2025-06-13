@@ -146,7 +146,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             if (throw_on_error)
                 exc->rethrow();
 
-            LOG_ERROR(log, "ZooKeeper error when loading config from '{}': {}", config_path, getExceptionMessage(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
+            LOG_ERROR(log, "ZooKeeper error when loading config from '{}': {}", config_path, getExceptionMessageForLogging(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
             return std::nullopt;
         }
         catch (...)
@@ -157,7 +157,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             if (throw_on_error)
                 exc->rethrow();
 
-            LOG_ERROR(log, "Error loading config from '{}': {}", config_path, getExceptionMessage(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
+            LOG_ERROR(log, "Error loading config from '{}': {}", config_path, getExceptionMessageForLogging(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
             return std::nullopt;
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
@@ -187,7 +187,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             if (throw_on_error)
                 exc->rethrow();
 
-            LOG_ERROR(log, "Error updating configuration from '{}': {}", config_path, getExceptionMessage(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
+            LOG_ERROR(log, "Error updating configuration from '{}': {}", config_path, getExceptionMessageForLogging(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
             return std::nullopt;
         }
 

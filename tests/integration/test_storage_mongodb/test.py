@@ -1,3 +1,4 @@
+import base64
 import datetime
 import json
 import uuid
@@ -1227,3 +1228,47 @@ def test_password_masking(started_cluster):
         == "CREATE DICTIONARY default.mongodb_dictionary_password_masking (`_id` String) PRIMARY KEY _id SOURCE(MONGODB(HOST \\'127.0.0.1\\' PORT 27017 USER \\'testuser\\' PASSWORD \\'[HIDDEN]\\' DB \\'example\\' COLLECTION \\'test_clickhouse\\' OPTIONS \\'ssl=true\\')) LIFETIME(MIN 0 MAX 0) LAYOUT(FLAT())\n"
     )
     node.query("DROP DICTIONARY IF EXISTS mongodb_dictionary_password_masking;")
+
+
+def test_json_serialization(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    json_serialization_table = db["json_serialization_table"]
+
+    date = datetime.datetime.strptime("2025-05-17 13:14:15", "%Y-%m-%d %H:%M:%S")
+
+    def create_dataset(mongo, level) -> dict:
+        return {
+            "type_string": "Type string",
+            "type_oid": bson.ObjectId("60f7e65e16b1c1d1c8a2b6b3") if mongo else "60f7e65e16b1c1d1c8a2b6b3",
+            "type_binary": bson.Binary(b"binarydata", subtype=0) if mongo else base64.b64encode(b"binarydata").decode(),
+            "type_bool": True,
+            "type_int32": 123,
+            "type_int64": bson.int64.Int64(2**63 - 1) if mongo else int(2**63 - 1),
+            "type_double": float(3.141592653589793238),
+            "type_date": date if mongo else date.strftime("%Y-%m-%d %H:%M:%S"),
+            "type_timestamp": bson.timestamp.Timestamp(date, 1) if mongo else date.strftime("%Y-%m-%d %H:%M:%S"),
+            "type_document": {"nested_doc": create_dataset(mongo, level - 1)} if level > 0 else {},
+            "type_array": [create_dataset(mongo, level - 1)] if level > 0 else [],
+            "type_regex": bson.regex.Regex(r"^pattern.*$", "i") if mongo else {"^pattern.*$": "i"},
+            "type_null": None,
+        }
+
+    json_serialization_table.insert_one({"dataset": create_dataset(True, 10)})
+    node = started_cluster.instances["node"]
+    node.query(
+        f"""
+        CREATE OR REPLACE TABLE json_serialization_table(
+            dataset String
+        ) ENGINE = MongoDB('mongo1:27017', 'test', 'json_serialization_table', 'root', '{mongo_pass}')
+        """
+    )
+
+    assert node.query(f"SELECT COUNT() FROM json_serialization_table") == "1\n"
+    assert (node.query(f"SELECT dataset FROM json_serialization_table")[:-1]
+            == json.dumps(create_dataset(False, 10), separators=(',', ':')))
+
+    node.query("DROP TABLE json_serialization_table")
+    json_serialization_table.drop()

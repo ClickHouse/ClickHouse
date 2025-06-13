@@ -19,6 +19,7 @@ workflow = Workflow.Config(
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_jobs,
+        *JobConfigs.tidy_arm_build_jobs,
         *[
             job.set_dependency(
                 [
@@ -67,6 +68,7 @@ workflow = Workflow.Config(
     ],
     dockers=DOCKERS,
     secrets=SECRETS,
+    enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,

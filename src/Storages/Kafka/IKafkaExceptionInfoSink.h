@@ -1,9 +1,8 @@
 #pragma once
 
 #include <memory>
-#include <cppkafka/cppkafka.h>
-#include <Core/Defines.h>
-#include <Core/Settings.h>
+
+#include <base/defines.h>
 
 namespace DB
 {

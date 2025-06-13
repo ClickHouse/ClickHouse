@@ -179,7 +179,7 @@ EOL
 
 function stop_server()
 {
-    local max_tries=90
+    local max_tries=300
     local check_hang=true
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.

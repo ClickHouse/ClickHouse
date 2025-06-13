@@ -201,7 +201,6 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     {
         /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
         RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
-
         executor.setPoolMode(PoolMode::GET_ONE);
         executor.setMainTable(remote_table_id);
 

@@ -83,6 +83,8 @@ public:
 
     virtual void savingThreadFunction() = 0;
 
+    virtual bool mustBePreparedAtStartup() const { return false; }
+
 protected:
     std::mutex thread_mutex;
     std::unique_ptr<ThreadFromGlobalPool> saving_thread;

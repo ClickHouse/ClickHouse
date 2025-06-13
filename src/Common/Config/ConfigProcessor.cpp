@@ -67,9 +67,11 @@ bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 ConfigProcessor::ConfigProcessor(
     const std::string & path_,
     bool throw_on_bad_incl_,
-    const Substitutions & substitutions_)
+    const Substitutions & substitutions_,
+    bool throw_on_bad_include_from_)
     : path(path_)
     , throw_on_bad_incl(throw_on_bad_incl_)
+    , throw_on_bad_include_from(throw_on_bad_include_from_)
     , substitutions(substitutions_)
     /// We need larger name pool to allow to support vast amount of users in users.xml files for ClickHouse.
     /// Size is prime because Poco::XML::NamePool uses bad (inefficient, low quality)
@@ -791,17 +793,24 @@ XMLDocumentPtr ConfigProcessor::processConfig(
                 include_from_path = default_path;
         }
 
-        processIncludes(
-            config,
-            substitutions,
-            include_from_path,
-            throw_on_bad_incl,
-            dom_parser,
-            log,
-            &contributing_zk_paths,
-            &contributing_files,
-            zk_node_cache,
-            zk_changed_event);
+        if (!throw_on_bad_include_from && !fs::exists(include_from_path))
+        {
+            LOG_WARNING(log, "File {} (from 'include_from') does not exist. Ignoring.", include_from_path);
+        }
+        else
+        {
+            processIncludes(
+                config,
+                substitutions,
+                include_from_path,
+                throw_on_bad_incl,
+                dom_parser,
+                log,
+                &contributing_zk_paths,
+                &contributing_files,
+                zk_node_cache,
+                zk_changed_event);
+        }
     }
     catch (Exception & e)
     {

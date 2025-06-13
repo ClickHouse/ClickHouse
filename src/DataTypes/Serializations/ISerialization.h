@@ -176,6 +176,7 @@ public:
             NamedNullMap,
 
             DictionaryKeys,
+            DictionaryKeysPrefix,
             DictionaryIndexes,
 
             SparseElements,
@@ -185,6 +186,7 @@ public:
             DeprecatedObjectData,
 
             VariantDiscriminators,
+            VariantDiscriminatorsPrefix,
             NamedVariantDiscriminators,
             VariantOffsets,
             VariantElements,
@@ -250,6 +252,15 @@ public:
         /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
         /// It may be needed when dynamic subcolumns are processed separately.
         bool enumerate_dynamic_streams = true;
+
+        /// If set to true, enumerate also specialized substreams for prefixes.
+        /// For example for discriminators in Variant column we should enumerate a separate
+        /// substream VariantDiscriminatorsPrefix together with substream VariantDiscriminators that is
+        /// used for discriminators data.
+        /// It's needed in compact parts when we write mark per each substream, because
+        /// all prefixes are serialized before the data and we need to separate streams for prefixes
+        /// and for data to be able to seek to them separately.
+        bool use_specialized_prefixes_substreams = false;
     };
 
     virtual void enumerateStreams(
@@ -291,6 +302,15 @@ public:
 
         bool native_format = false;
         const FormatSettings * format_settings = nullptr;
+
+        /// If set to true, all prefixes should be written to separate specialized substreams.
+        /// For example prefix for discriminators in Variant column should be written in a separate
+        /// substream VariantDiscriminatorsPrefix instead of substream VariantDiscriminators that is
+        /// used for discriminators data.
+        /// It's needed in compact parts when we write mark per each substream, because
+        /// all prefixes are serialized before the data and we need to separate streams for prefixes
+        /// and for data to be able to seek to them separately.
+        bool use_specialized_prefixes_substreams = false;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -317,6 +337,15 @@ public:
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
+
+        /// If set to true, all prefixes should be read from separate specialized substreams.
+        /// For example prefix for discriminators in Variant column should be read from a separate
+        /// substream VariantDiscriminatorsPrefix instead of substream VariantDiscriminators that is
+        /// used for discriminators data.
+        /// It's needed in compact parts when we write mark per each substream, because
+        /// all prefixes are serialized before the data and we need to separate streams for prefixes
+        /// and for data to be able to seek to them separately.
+        bool use_specialized_prefixes_substreams = false;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -485,7 +514,7 @@ public:
     static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
 
     /// Return true if the specified path contains prefix that should be deserialized in deserializeBinaryBulkStatePrefix.
-    static bool hasPrefix(const SubstreamPath & path);
+    static bool hasPrefix(const SubstreamPath & path, bool use_specialized_prefixes_substreams = false);
 
 protected:
     template <typename State, typename StatePtr>

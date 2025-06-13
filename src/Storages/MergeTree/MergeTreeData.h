@@ -8,10 +8,8 @@
 #include <Common/Logger_fwd.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/ExpressionActionsSettings.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/StoragePolicy.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
@@ -29,7 +27,7 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/DataDestinationType.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
@@ -182,11 +180,26 @@ public:
     /// Auxiliary structure for index comparison
     struct DataPartStateAndPartitionID
     {
+        DataPartStateAndPartitionID(DataPartState state_, const String & partition_id_)
+            : state(state_), kind(MergeTreePartInfo::getKind(partition_id_)), partition_id(partition_id_)
+        {
+        }
+
         DataPartState state;
+        MergeTreePartInfo::Kind kind;
         String partition_id;
     };
 
-    STRONG_TYPEDEF(String, PartitionID)
+    struct PartitionID
+    {
+        explicit PartitionID(const String & partition_id_)
+            : kind(MergeTreePartInfo::getKind(partition_id_)), partition_id(partition_id_)
+        {
+        }
+
+        MergeTreePartInfo::Kind kind;
+        String partition_id;
+    };
 
     struct LessDataPart
     {
@@ -195,8 +208,16 @@ public:
         bool operator()(const DataPartPtr & lhs, const MergeTreePartInfo & rhs) const { return lhs->info < rhs; }
         bool operator()(const MergeTreePartInfo & lhs, const DataPartPtr & rhs) const { return lhs < rhs->info; }
         bool operator()(const DataPartPtr & lhs, const DataPartPtr & rhs) const { return lhs->info < rhs->info; }
-        bool operator()(const MergeTreePartInfo & lhs, const PartitionID & rhs) const { return lhs.partition_id < rhs.toUnderType(); }
-        bool operator()(const PartitionID & lhs, const MergeTreePartInfo & rhs) const { return lhs.toUnderType() < rhs.partition_id; }
+
+        bool operator()(const MergeTreePartInfo & lhs, const PartitionID & rhs) const
+        {
+            return std::forward_as_tuple(lhs.getKind(), lhs.getPartitionId()) < std::forward_as_tuple(rhs.kind, rhs.partition_id);
+        }
+
+        bool operator()(const PartitionID & lhs, const MergeTreePartInfo & rhs) const
+        {
+            return std::forward_as_tuple(lhs.kind, lhs.partition_id) < std::forward_as_tuple(rhs.getKind(), rhs.getPartitionId());
+        }
     };
 
     struct LessStateDataPart
@@ -221,14 +242,14 @@ public:
 
         bool operator() (const DataPartStateAndInfo & lhs, const DataPartStateAndPartitionID & rhs) const
         {
-            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.partition_id)
-                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.partition_id);
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.getKind(), lhs.info.getPartitionId())
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.kind, rhs.partition_id);
         }
 
         bool operator() (const DataPartStateAndPartitionID & lhs, const DataPartStateAndInfo & rhs) const
         {
-            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.partition_id)
-                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.partition_id);
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.kind, lhs.partition_id)
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.getKind(), rhs.info.getPartitionId());
         }
     };
 
@@ -242,7 +263,6 @@ public:
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
     MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count) const;
-    MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
     MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
@@ -318,6 +338,8 @@ public:
         /// Renames part from old_name to new_name
         void tryRenameAll();
 
+        void rollBackAll();
+
         /// Renames all added parts from new_name to old_name if old name is not empty
         ~PartsTemporaryRename();
 
@@ -348,6 +370,7 @@ public:
             Replacing           = 5,
             Graphite            = 6,
             VersionedCollapsing = 7,
+            Coalescing          = 8,
         };
 
         Mode mode;
@@ -368,7 +391,7 @@ public:
         Graphite::Params graphite_params;
 
         /// Check that needed columns are present and have correct types.
-        void check(const StorageInMemoryMetadata & metadata) const;
+        void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
 
         String getModeName() const;
     };
@@ -411,7 +434,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
         const ActionsDAG * filter_dag,
-        const DataPartsVector & parts,
+        const RangesInDataParts & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
@@ -453,7 +476,7 @@ public:
 
     /// A snapshot of pending mutations that weren't applied to some of the parts yet
     /// and should be applied on the fly (i.e. when reading from the part).
-    /// Mutations not supported by AlterConversions (supportsMutationCommandType()) can be omitted.
+    /// Mutations not supported by AlterConversions (isSupported*Mutation) can be omitted.
     struct IMutationsSnapshot
     {
         /// Contains info that doesn't depend on state of mutations.
@@ -462,31 +485,39 @@ public:
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
             bool need_data_mutations = false;
+            bool need_alter_mutations = false;
         };
 
-        /// Contains info that depends on state of mutations.
-        struct Info
-        {
-            Int64 num_data_mutations = 0;
-            Int64 num_metadata_mutations = 0;
-        };
-
-        Params params;
-        Info info;
-
-        IMutationsSnapshot() = default;
-        IMutationsSnapshot(Params params_, Info info_): params(std::move(params_)), info(std::move(info_)) {}
+        virtual ~IMutationsSnapshot() = default;
 
         /// Returns mutation commands that are required to be applied to the `part`.
-        /// @return list of mutation commands, in *reverse* order (newest to oldest)
+        /// @return list of mutation commands in order: oldest to newest.
         virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
         virtual NameSet getAllUpdatedColumns() const = 0;
 
-        bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
-        bool hasMetadataMutations() const { return info.num_metadata_mutations > 0; }
+        virtual bool hasDataMutations() const = 0;
+        virtual bool hasAlterMutations() const = 0;
+        virtual bool hasMetadataMutations() const = 0;
+    };
 
-        virtual ~IMutationsSnapshot() = default;
+    struct MutationsSnapshotBase : public IMutationsSnapshot
+    {
+    public:
+        Params params;
+        MutationCounters counters;
+
+        MutationsSnapshotBase() = default;
+        MutationsSnapshotBase(Params params_, MutationCounters counters_);
+
+        bool hasDataMutations() const final { return params.need_data_mutations && counters.num_data > 0; }
+        bool hasAlterMutations() const final { return params.need_alter_mutations && counters.num_alter > 0; }
+        bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
+
+        bool hasSupportedCommands(const MutationCommands & commands) const;
+
+    protected:
+        void addSupportedCommands(const MutationCommands & commands, MutationCommands & result_commands) const;
     };
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
@@ -495,7 +526,7 @@ public:
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
-        DataPartsVector parts;
+        RangesInDataParts parts;
         MutationsSnapshotPtr mutations_snapshot;
     };
 
@@ -506,6 +537,10 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
+
+    /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
+    /// This method allows read-only replicas of tables on a shared storage.
+    void refreshDataParts(UInt64 interval_milliseconds);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -554,11 +589,8 @@ public:
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
 
-    /// Returns the number of data mutations (UPDATEs and DELETEs) suitable for applying on the fly.
-    virtual UInt64 getNumberOnFlyDataMutations() const = 0;
-
-    /// Returns the number of metadata mutations (RENAMEs) suitable for applying on the fly.
-    virtual UInt64 getNumberOnFlyMetadataMutations() const = 0;
+    /// Returns the number of data mutations suitable for applying on the fly.
+    virtual MutationCounters getMutationCounters() const = 0;
 
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
@@ -945,6 +977,8 @@ public:
         return storage_settings.get();
     }
 
+    StorageMetadataPtr getInMemoryMetadataPtr() const override;
+
     String getRelativeDataPath() const { return relative_data_path; }
 
     /// Get table path on disk
@@ -1014,7 +1048,6 @@ public:
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
         const MutationsSnapshotPtr & mutations,
-        const StorageMetadataPtr & metadata,
         const ContextPtr & query_context);
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
@@ -1082,7 +1115,7 @@ public:
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
     Block getBlockWithVirtualsForFilter(
-        const StorageMetadataPtr & metadata, const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
+        const StorageMetadataPtr & metadata, const RangesInDataParts & parts, bool ignore_empty = false) const;
 
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name
@@ -1132,7 +1165,7 @@ public:
     /// Overridden in StorageReplicatedMergeTree
     virtual MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
-    /// Check shared data usage on other replicas for detached/freezed part
+    /// Check shared data usage on other replicas for detached/frozen part
     /// Remove local files and remote files if needed
     virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name);
 
@@ -1175,6 +1208,10 @@ public:
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
+    static VirtualColumnsDescription createProjectionVirtuals(const StorageInMemoryMetadata & metadata);
+
+    /// Similar to IStorage::getVirtuals but returns only virtual columns valid in projection.
+    VirtualsDescriptionPtr getProjectionVirtualsPtr() const { return projection_virtuals.get(); }
 
     /// Load/unload primary keys of all data parts
     void loadPrimaryKeys() const;
@@ -1210,6 +1247,8 @@ private:
     mutable IndexSizeByName secondary_index_sizes;
 
 protected:
+    void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
+
     void resetColumnSizes()
     {
         column_sizes.clear();
@@ -1311,16 +1350,12 @@ protected:
 
     boost::iterator_range<DataPartIteratorByStateAndInfo> getDataPartsStateRange(DataPartState state) const
     {
-        auto begin = data_parts_by_state_and_info.lower_bound(state, LessStateDataPart());
-        auto end = data_parts_by_state_and_info.upper_bound(state, LessStateDataPart());
-        return {begin, end};
+        return data_parts_by_state_and_info.equal_range(state, LessStateDataPart());
     }
 
     boost::iterator_range<DataPartIteratorByInfo> getDataPartsPartitionRange(const String & partition_id) const
     {
-        auto begin = data_parts_by_info.lower_bound(PartitionID(partition_id), LessDataPart());
-        auto end = data_parts_by_info.upper_bound(PartitionID(partition_id), LessDataPart());
-        return {begin, end};
+        return data_parts_by_info.equal_range(PartitionID(partition_id), LessDataPart());
     }
 
     /// Creates description of columns of data type Object from the range of data parts.
@@ -1328,7 +1363,7 @@ protected:
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const ActionsDAG & filter_actions_dag, ContextPtr context, const DataPartsVector & parts) const;
+        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
@@ -1603,6 +1638,8 @@ protected:
     void startOutdatedAndUnexpectedDataPartsLoadingTask();
     void stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
+    BackgroundSchedulePoolTaskHolder refresh_parts_task;
+
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
@@ -1717,6 +1754,8 @@ private:
 
     mutable TemporaryParts temporary_parts;
 
+    MultiVersionVirtualsDescriptionPtr projection_virtuals;
+
     /// Estimate the number of marks to read to make a decision whether to enable parallel replicas (distributed processing) or not
     /// Note: it could be very rough.
     bool canUseParallelReplicasBasedOnPKAnalysis(
@@ -1726,6 +1765,9 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
+
+    StorageSnapshotPtr
+    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
@@ -1747,14 +1789,7 @@ struct CurrentlySubmergingEmergingTagger
 };
 
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
-void incrementMutationsCounters(
-    Int64 & num_data_mutations_to_apply,
-    Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands);
-
-void decrementMutationsCounters(
-    Int64 & num_data_mutations_to_apply,
-    Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands);
+void incrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
+void decrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
 
 }

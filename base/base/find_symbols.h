@@ -274,7 +274,7 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
     const char * pos = begin;
 
 #if defined(__SSE4_2__)
-    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
+    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;  // NOLINT(misc-redundant-expression)
 
     __m128i set = _mm_setr_epi8(c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13, c14, c15, c16);
 

@@ -122,12 +122,14 @@ void unregisterEphemeralPath(KeeperStorageBase::Ephemerals & ephemerals, int64_t
     if (ephemerals_it == ephemerals.end())
     {
         if (throw_if_missing)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path {}", session_id, path);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is expected to have ephemeral paths but no path is registered", session_id);
 
         return;
     }
 
-    ephemerals_it->second.erase(path);
+    if (auto erased = ephemerals_it->second.erase(path); !erased && throw_if_missing)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path {}", session_id, path);
+
     if (ephemerals_it->second.empty())
         ephemerals.erase(ephemerals_it);
 }
@@ -255,14 +257,9 @@ void NodeStats::copyStats(const Coordination::Stat & stat)
     aversion = stat.aversion;
 
     if (stat.ephemeralOwner == 0)
-    {
-        is_ephemeral_and_ctime.is_ephemeral = false;
         setNumChildren(stat.numChildren);
-    }
     else
-    {
         setEphemeralOwner(stat.ephemeralOwner);
-    }
 }
 
 void KeeperRocksNodeInfo::copyStats(const Coordination::Stat & stat)
@@ -1356,6 +1353,7 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
 
     if (prev_node.stats.ephemeralOwner() != 0)
     {
+        chassert(committed_ephemeral_nodes != 0);
         --committed_ephemeral_nodes;
         std::lock_guard lock(ephemeral_mutex);
         unregisterEphemeralPath(committed_ephemerals, prev_node.stats.ephemeralOwner(), path, /*throw_if_missing=*/true);
@@ -1370,40 +1368,40 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
     switch (zk_request.getOpNum())
     {
         case Coordination::OpNum::Heartbeat:
-            return function(dynamic_cast<const Coordination::ZooKeeperHeartbeatRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperHeartbeatRequest &>(zk_request));
         case Coordination::OpNum::Sync:
-            return function(dynamic_cast<const Coordination::ZooKeeperSyncRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperSyncRequest &>(zk_request));
         case Coordination::OpNum::Get:
-            return function(dynamic_cast<const Coordination::ZooKeeperGetRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperGetRequest &>(zk_request));
         case Coordination::OpNum::Create:
         case Coordination::OpNum::CreateIfNotExists:
-            return function(dynamic_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
-            return function(dynamic_cast<const Coordination::ZooKeeperRemoveRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperRemoveRequest &>(zk_request));
         case Coordination::OpNum::RemoveRecursive:
-            return function(dynamic_cast<const Coordination::ZooKeeperRemoveRecursiveRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperRemoveRecursiveRequest &>(zk_request));
         case Coordination::OpNum::Exists:
-            return function(dynamic_cast<const Coordination::ZooKeeperExistsRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperExistsRequest &>(zk_request));
         case Coordination::OpNum::Set:
-            return function(dynamic_cast<const Coordination::ZooKeeperSetRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperSetRequest &>(zk_request));
         case Coordination::OpNum::List:
         case Coordination::OpNum::FilteredList:
         case Coordination::OpNum::SimpleList:
-            return function(dynamic_cast<const Coordination::ZooKeeperListRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperListRequest &>(zk_request));
         case Coordination::OpNum::Check:
         case Coordination::OpNum::CheckNotExists:
-            return function(dynamic_cast<const Coordination::ZooKeeperCheckRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperCheckRequest &>(zk_request));
         case Coordination::OpNum::Multi:
         case Coordination::OpNum::MultiRead:
-            return function(dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperMultiRequest &>(zk_request));
         case Coordination::OpNum::Auth:
-            return function(dynamic_cast<const Coordination::ZooKeeperAuthRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperAuthRequest &>(zk_request));
         case Coordination::OpNum::Close:
-            return function(dynamic_cast<const Coordination::ZooKeeperCloseRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperCloseRequest &>(zk_request));
         case Coordination::OpNum::SetACL:
-            return function(dynamic_cast<const Coordination::ZooKeeperSetACLRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperSetACLRequest &>(zk_request));
         case Coordination::OpNum::GetACL:
-            return function(dynamic_cast<const Coordination::ZooKeeperGetACLRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperGetACLRequest &>(zk_request));
         default:
             throw Exception{DB::ErrorCodes::LOGICAL_ERROR, "Unexpected request type: {}", zk_request.getOpNum()};
     }
@@ -2769,6 +2767,9 @@ KeeperResponsesForSessions processWatches(
 {
     KeeperResponsesForSessions result;
 
+    if (deltas.empty() || std::get_if<FailedMultiDelta>(&deltas.front().operation))
+        return result;
+
     const auto & subrequests = zk_request.requests;
     for (const auto & generic_request : subrequests)
     {
@@ -3338,8 +3339,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                     static constexpr std::array list_requests{
                         Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList};
 
-                    auto is_list_watch
-                        = std::find(list_requests.begin(), list_requests.end(), zk_request->getOpNum()) != list_requests.end();
+                    auto is_list_watch = std::ranges::contains(list_requests, zk_request->getOpNum());
 
                     auto & watches_type = is_list_watch ? list_watches : watches;
 

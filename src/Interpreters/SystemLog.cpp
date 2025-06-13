@@ -21,6 +21,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
@@ -158,7 +159,11 @@ std::shared_ptr<TSystemLog> createSystemLog(
     SystemLogSettings log_settings;
 
     log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
-    log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
+
+    if (default_table_name != TransposedMetricLog::TABLE_NAME_WITH_VIEW)
+        log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
+    else
+        log_settings.queue_settings.table = default_table_name;
 
     if (log_settings.queue_settings.database != default_database_name)
     {
@@ -279,7 +284,34 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
 
+    if constexpr (std::is_same_v<TSystemLog, MetricLog>)
+    {
+        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        if (schema == "wide")
+            return std::make_shared<TSystemLog>(context, log_settings);
+
+        return {};
+    }
+    else if (std::is_same_v<TSystemLog, TransposedMetricLog>)
+    {
+        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        if (schema == "transposed_with_wide_view")
+        {
+            log_settings.view_name_for_transposed_metric_log = config.getString(config_prefix + ".table", "metric_log");
+            return std::make_shared<TSystemLog>(context, log_settings);
+        }
+        else if (schema == "transposed")
+        {
+            return std::make_shared<TSystemLog>(context, log_settings);
+        }
+        else if (schema != "wide")
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'transposed_with_wide_view' are allowed", schema);
+        }
+    }
+
     return std::make_shared<TSystemLog>(context, log_settings);
+
 }
 
 
@@ -306,7 +338,20 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
     LIST_OF_ALL_SYSTEM_LOGS(CREATE_PUBLIC_MEMBERS)
 #undef CREATE_PUBLIC_MEMBERS
+
 /// NOLINTEND(bugprone-macro-parentheses)
+
+    if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed")
+    {
+        transposed_metric_log = createSystemLog<TransposedMetricLog>(
+            global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+    }
+    else if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view")
+    {
+        transposed_metric_log = createSystemLog<TransposedMetricLog>(
+            global_context, "system", TransposedMetricLog::TABLE_NAME_WITH_VIEW, config, "metric_log", TransposedMetricLog::DESCRIPTION);
+    }
+
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
     try
@@ -314,7 +359,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         for (auto & log : getAllLogs())
         {
             log->startup();
-            if (should_prepare)
+            if (should_prepare || log->mustBePreparedAtStartup())
                 log->prepareTable();
         }
     }
@@ -330,6 +375,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
         metric_log->startCollect("MetricLog", collect_interval_milliseconds);
+    }
+
+    if (transposed_metric_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
+                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        transposed_metric_log->startCollect("TMetricLog", collect_interval_milliseconds);
     }
 
     if (latency_log)
@@ -723,6 +775,15 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
+
+    if constexpr (std::is_same_v<LogElement, TransposedMetricLogElement>)
+    {
+        if (table_id.table_name == TransposedMetricLog::TABLE_NAME_WITH_VIEW)
+        {
+            auto * storage = storage_with_comment.storage->as<ASTStorage>();
+            storage->set(storage->order_by, TransposedMetricLog::getDefaultOrderByAST());
+        }
+    }
 
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);

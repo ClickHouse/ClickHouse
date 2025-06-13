@@ -58,6 +58,8 @@ public:
         QueryTreeNodePtr query_tree;
         PlannerContextPtr planner_context;
 
+        std::shared_ptr<QueryPlan> query_plan;
+
         /// Used to check the table existence on remote node
         StorageID main_table;
         Block header;

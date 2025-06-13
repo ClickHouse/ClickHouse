@@ -263,6 +263,21 @@ std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfosCoveredBy(const Me
     return covered;
 }
 
+Strings ActiveDataPartSet::getPartsWithLimit(size_t limit) const
+{
+    Strings res;
+    res.reserve(limit);
+    for (const auto & kv : part_info_to_name)
+    {
+        res.push_back(kv.second);
+        if (res.size() >= limit)
+            break;
+    }
+
+    return res;
+
+}
+
 Strings ActiveDataPartSet::getParts() const
 {
     Strings res;

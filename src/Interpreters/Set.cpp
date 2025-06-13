@@ -122,10 +122,10 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
 }
 
 Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
-    : log(getLogger("Set"))
-    , limits(limits_)
-    , max_elements_to_fill(max_elements_to_fill_)
+    : limits(limits_)
     , transform_null_in(transform_null_in_)
+    , max_elements_to_fill(max_elements_to_fill_)
+    , log(getLogger("Set"))
     , cast_cache(std::make_unique<InternalCastFunctionCache>())
 {
 }

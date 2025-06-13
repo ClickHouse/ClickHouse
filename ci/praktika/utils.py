@@ -10,13 +10,13 @@ import signal
 import subprocess
 import sys
 import time
-import traceback
 from abc import ABC, abstractmethod
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from shlex import quote
 from threading import Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
@@ -172,15 +172,18 @@ class Shell:
             stderr=subprocess.PIPE,
             text=True,
             executable="/bin/bash",
+            errors="ignore",
         )
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
         if strict and res.returncode != 0:
-            raise RuntimeError(f"command failed with {res.returncode}")
+            raise RuntimeError(
+                f"command failed with, exit_code {res.returncode}, stderr:\n>>>\n{res.stderr.strip()}\n<<<"
+            )
         return res.stdout.strip()
 
     @classmethod
-    def get_res_stdout_stderr(cls, command, verbose=True):
+    def get_res_stdout_stderr(cls, command, verbose=True, strip=True):
         if verbose:
             print(f"Run command [{command}]")
         res = subprocess.run(
@@ -189,8 +192,12 @@ class Shell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            errors="ignore",
         )
-        return res.returncode, res.stdout.strip(), res.stderr.strip()
+        if strip:
+            return res.returncode, res.stdout.strip(), res.stderr.strip()
+        else:
+            return res.returncode, res.stdout, res.stderr
 
     @classmethod
     def check(
@@ -202,7 +209,7 @@ class Shell:
         dry_run=False,
         stdin_str=None,
         timeout=None,
-        retries=0,
+        retries=1,
         **kwargs,
     ):
         return (
@@ -254,6 +261,37 @@ class Shell:
         return not failed
 
     @classmethod
+    def _check_timeout(cls, timeout, process) -> None:
+        if not timeout:
+            return
+        time.sleep(timeout)
+        print(
+            f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
+        )
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            print("Process already terminated.")
+            return
+
+        time_wait = 0
+        wait_interval = 5
+
+        # Wait for process to terminate
+        while process.poll() is None and time_wait < 100:
+            print("Waiting for process to exit...")
+            time.sleep(wait_interval)
+            time_wait += wait_interval
+
+        # Force kill if still running
+        if process.poll() is None:
+            print(f"WARNING: Process still running after SIGTERM, sending SIGKILL")
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                print("Process already terminated.")
+
+    @classmethod
     def run(
         cls,
         command,
@@ -263,39 +301,9 @@ class Shell:
         dry_run=False,
         stdin_str=None,
         timeout=None,
-        retries=0,
+        retries=1,
         **kwargs,
     ):
-        def _check_timeout(timeout, process) -> None:
-            if not timeout:
-                return
-            time.sleep(timeout)
-            print(
-                f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
-            )
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                print("Process already terminated.")
-                return
-
-            time_wait = 0
-            wait_interval = 5
-
-            # Wait for process to terminate
-            while process.poll() is None and time_wait < 100:
-                print("Waiting for process to exit...")
-                time.sleep(wait_interval)
-                time_wait += wait_interval
-
-            # Force kill if still running
-            if process.poll() is None:
-                print(f"WARNING: Process still running after SIGTERM, sending SIGKILL")
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    print("Process already terminated.")
-
         # Dry-run
         if dry_run:
             print(f"Dry-run. Would run command [{command}]")
@@ -306,7 +314,8 @@ class Shell:
 
         log_file = log_file or "/dev/null"
         proc = None
-        for retry in range(retries + 1):
+        err_output = []
+        for retry in range(retries):
             try:
                 with open(log_file, "w") as log_fp:
                     proc = subprocess.Popen(
@@ -324,7 +333,7 @@ class Shell:
 
                     # Start the timeout thread if specified
                     if timeout:
-                        t = Thread(target=_check_timeout, args=(timeout, proc))
+                        t = Thread(target=cls._check_timeout, args=(timeout, proc))
                         t.daemon = True
                         t.start()
 
@@ -334,16 +343,19 @@ class Shell:
                         proc.stdin.close()
 
                     # Process both stdout and stderr in real-time
-                    def stream_output(stream, output_fp):
+                    def stream_output(stream, output_fp, output=None):
                         for line in iter(stream.readline, ""):
                             sys.stdout.write(line)
                             output_fp.write(line)
+                            if output is not None:
+                                output.append(line)
 
+                    err_output = []
                     stdout_thread = Thread(
-                        target=stream_output, args=(proc.stdout, log_fp)
+                        target=stream_output, args=(proc.stdout, log_fp, None)
                     )
                     stderr_thread = Thread(
-                        target=stream_output, args=(proc.stderr, log_fp)
+                        target=stream_output, args=(proc.stderr, log_fp, err_output)
                     )
 
                     stdout_thread.start()
@@ -359,7 +371,7 @@ class Shell:
                     else:
                         if verbose:
                             print(
-                                f"ERROR: command [{command}] failed, exit code: {proc.returncode}, retry: {retry}/{retries}"
+                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry}/{retries}"
                             )
             except Exception as e:
                 if verbose:
@@ -368,14 +380,16 @@ class Shell:
                     )
                 if proc:
                     proc.kill()
+                if strict and retry == retries - 1:
+                    raise e
 
-        # Handle strict mode (ensure process success or fail)
-        if strict:
-            assert (
-                proc and proc.returncode == 0
-            ), f"Command failed with return code {proc.returncode}"
+            if strict and (not proc or proc.returncode != 0):
+                err = "\n   ".join(err_output).strip()
+                raise RuntimeError(
+                    f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
+                )
 
-        return proc.returncode if proc else 1  # Return 1 if process never started
+        return proc.returncode if proc else 1  # Return 1 if the process never started
 
     @classmethod
     def run_async(
@@ -468,6 +482,8 @@ class Utils:
     def cpu_count():
         return multiprocessing.cpu_count()
 
+    # deprecated: unnecessary lines in traceback + ide linting issues
+    # switch to regular raise Ex() inplace
     @staticmethod
     def raise_with_error(error_message, stdout="", stderr="", ex=None):
         Utils.print_formatted_error(error_message, stdout, stderr)
@@ -604,7 +620,8 @@ class Utils:
         return res
 
     @classmethod
-    def compress_file(cls, path):
+    def compress_file_zst(cls, path):
+        path_out = ""
         if Shell.check("which zstd"):
             path_out = f"{path}.zst"
             Shell.check(
@@ -612,6 +629,24 @@ class Utils:
                 verbose=True,
                 strict=True,
             )
+        return path_out
+
+    @classmethod
+    def compress_file_gz(cls, path):
+        path_out = ""
+        if Shell.check("which gzip"):
+            path_out = f"{path}.gz"
+            Shell.check(
+                f"rm -f {path_out} && gzip < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        return path_out
+
+    @classmethod
+    def compress_file(cls, path, no_strict=False):
+        if Shell.check("which zstd"):
+            return cls.compress_file_zst(path)
         elif Shell.check("which pigz"):
             path_out = f"{path}.gz"
             Shell.check(
@@ -620,18 +655,42 @@ class Utils:
                 strict=True,
             )
         elif Shell.check("which gzip"):
-            path_out = f"{path}.gz"
-            Shell.check(
-                f"rm -f {path_out} && gzip < {path} > {path_out}",
-                verbose=True,
-                strict=True,
-            )
+            return cls.compress_file_gz(path)
         else:
             path_out = path
-            Utils.raise_with_error(
-                f"Failed to compress file [{path}] no zstd or gz installed"
-            )
+            if not no_strict:
+                raise RuntimeError(
+                    f"Failed to compress file [{path}] no zstd or gz installed"
+                )
         return path_out
+
+    @classmethod
+    def decompress_file(cls, path, path_to=None, remove_archive=False, no_strict=False):
+        path = str(path)
+
+        if path.endswith(".zst"):
+            path_to = path_to or path.removesuffix(".zst")
+
+            # Ensure zstd is installed
+            if not Shell.check("which zstd", verbose=True, strict=not no_strict):
+                print("ERROR: zstd is not installed. Cannot decompress artifact.")
+                return False
+
+            # Perform decompression
+            res = Shell.check(
+                f"zstd --decompress --force -o {quote(path_to)} {quote(path)}",
+                verbose=True,
+                strict=not no_strict,
+            )
+        else:
+            raise NotImplementedError(
+                f"Decompression for file type not supported: {path}"
+            )
+
+        if res and remove_archive:
+            Shell.check(f"rm -f {quote(path)}", verbose=True)
+
+        return res
 
     @classmethod
     def add_to_PATH(cls, path):

@@ -9,6 +9,8 @@
 #include <Common/SharedMutex.h>
 #include <Interpreters/castColumn.h>
 
+#include <Common/Logger.h>
+
 
 namespace DB
 {
@@ -86,6 +88,14 @@ public:
 
     static DataTypes getElementTypes(DataTypes types, bool transform_null_in);
 
+    /// Limitations on the maximum size of the set
+    const SizeLimits limits;
+
+    /// If true, insert NULL values to set.
+    const bool transform_null_in;
+
+    const size_t max_elements_to_fill;
+
 private:
     size_t keys_size = 0;
     Sizes key_sizes;
@@ -117,15 +127,8 @@ private:
 
     LoggerPtr log;
 
-    /// Limitations on the maximum size of the set
-    SizeLimits limits;
-
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements = false;
-    size_t max_elements_to_fill;
-
-    /// If true, insert NULL values to set.
-    bool transform_null_in;
 
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;

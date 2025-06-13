@@ -159,7 +159,8 @@ Transforms numbers into a [Sqid](https://sqids.org/) which is a Youtube-like ID 
 │ gXHfJ1C6dN                │
 └───────────────────────────┘
             )"
-            }}
+            }},
+        .category = FunctionDocumentation::Category::Encoding
     });
     factory.registerAlias("sqid", FunctionSqidEncode::name);
 
@@ -177,7 +178,8 @@ Transforms a [Sqid](https://sqids.org/) back into an array of numbers.)",
 │ [1,2,3,4,5]              │
 └──────────────────────────┘
             )"
-            }}
+            }},
+        .category = FunctionDocumentation::Category::Encoding
     });
 }
 

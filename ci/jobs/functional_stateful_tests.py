@@ -36,7 +36,7 @@ def run_test(
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
 
-    test_command = f"clickhouse-test --jobs 2 --testname --shard --zookeeper --check-zookeeper-session --no-stateless \
+    test_command = f"clickhouse-test --jobs 2 --testname --shard --zookeeper --check-zookeeper-session --no-stateless --trace \
         --hung-check \
         --capture-client-stacktrace --queries ./tests/queries -- '{test}' \
         | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
@@ -104,9 +104,7 @@ def main():
             f"clickhouse-server --version",
         ]
         results.append(
-            Result.from_commands_run(
-                name="Install ClickHouse", command=commands, with_log=True
-            )
+            Result.from_commands_run(name="Install ClickHouse", command=commands)
         )
         res = results[-1].is_ok()
 

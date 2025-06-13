@@ -1,7 +1,6 @@
 #include "NativeORCBlockInputFormat.h"
 
 #if USE_ORC
-#    include <base/MemorySanitizer.h>
 #    include <Columns/ColumnDecimal.h>
 #    include <Columns/ColumnFixedString.h>
 #    include <Columns/ColumnMap.h>
@@ -31,19 +30,23 @@
 #    include <Formats/SchemaInferenceUtils.h>
 #    include <Formats/insertNullAsDefaultIfNeeded.h>
 #    include <IO/ReadBufferFromMemory.h>
+#    include <IO/SharedThreadPools.h>
 #    include <IO/WriteHelpers.h>
 #    include <IO/copyData.h>
 #    include <Interpreters/Set.h>
 #    include <Interpreters/castColumn.h>
 #    include <Storages/MergeTree/KeyCondition.h>
+#    include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#    include <base/MemorySanitizer.h>
 #    include <orc/MemoryPool.hh>
 #    include <orc/Vector.hh>
 #    include <Common/Allocator.h>
+#    include <Common/logger_useful.h>
 #    include <Common/quoteString.h>
 
 #    include "ArrowBufferedStreams.h"
 
-#    include <boost/algorithm/string/case_conv.hpp>
+#    include <boost/algorithm/string.hpp>
 
 
 namespace
@@ -67,19 +70,22 @@ public:
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TYPE;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int THERE_IS_NO_COLUMN;
-    extern const int INCORRECT_DATA;
-    extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int LOGICAL_ERROR;
+extern const int UNKNOWN_TYPE;
+extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+extern const int THERE_IS_NO_COLUMN;
+extern const int INCORRECT_DATA;
+extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_) : in(in_), file_size(file_size_)
+
+ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool use_prefetch)
+    : in(in_), file_size(file_size_), supports_read_at(use_prefetch && in_.supportsReadAt())
 {
+    if (supports_read_at)
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ORCFile");
 }
 
 UInt64 ORCInputStream::getLength() const
@@ -94,19 +100,59 @@ UInt64 ORCInputStream::getNaturalReadSize() const
 
 void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
 {
-    if (offset != static_cast<UInt64>(in.getPosition()))
-        in.seek(offset, SEEK_SET);
-
-    in.readStrict(reinterpret_cast<char *>(buf), length);
+    if (supports_read_at)
+    {
+        size_t bytes_read = 0;
+        while (bytes_read < length)
+        {
+            size_t bytes_to_read = length - bytes_read;
+            size_t n = in.readBigAt(reinterpret_cast<char *>(buf) + bytes_read, bytes_to_read, offset + bytes_read, nullptr);
+            bytes_read += n;
+        }
+    }
+    else
+    {
+        if (offset != static_cast<UInt64>(in.getPosition()))
+            in.seek(offset, SEEK_SET);
+        in.readStrict(reinterpret_cast<char *>(buf), length);
+    }
 }
 
-std::unique_ptr<orc::InputStream> asORCInputStream(ReadBuffer & in, const FormatSettings & settings, std::atomic<int> & is_cancelled)
+std::future<void> ORCInputStream::readAsync(void * buf, uint64_t length, uint64_t offset)
+{
+    if (supports_read_at)
+    {
+        return async_runner(
+            [this, buf, length, offset]
+            {
+                Stopwatch time;
+                read(buf, length, offset);
+                LOG_TEST(
+                    getLogger("NativeORCBlockInputFormat"),
+                    "Read {} bytes from {} offset in {} ms",
+                    length,
+                    offset,
+                    time.elapsed() / 1000000);
+            },
+            Priority{});
+    }
+    else
+    {
+        read(buf, length, offset);
+        std::promise<void> promise;
+        promise.set_value();
+        return promise.get_future();
+    }
+}
+
+std::unique_ptr<orc::InputStream>
+asORCInputStream(ReadBuffer & in, const FormatSettings & settings, bool use_prefetch, std::atomic<int> & is_cancelled)
 {
     bool has_file_size = isBufferWithFileSize(in);
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
 
     if (has_file_size && seekable_in && settings.seekable_read && seekable_in->checkIfActuallySeekable())
-        return std::make_unique<ORCInputStream>(*seekable_in, getFileSizeFromReadBuffer(in));
+        return std::make_unique<ORCInputStream>(*seekable_in, getFileSizeFromReadBuffer(in), use_prefetch);
 
     /// Fallback to loading the entire file in memory
     return asORCInputStreamLoadIntoMemory(in, is_cancelled);
@@ -134,8 +180,7 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
 static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name, bool ignore_case)
 {
     for (UInt64 i = 0; i != schema.getSubtypeCount(); ++i)
-        if (boost::equals(schema.getFieldName(i), name)
-            || (ignore_case && boost::iequals(schema.getFieldName(i), name)))
+        if (boost::equals(schema.getFieldName(i), name) || (ignore_case && boost::iequals(schema.getFieldName(i), name)))
             return schema.getSubtype(i);
     return nullptr;
 }
@@ -227,7 +272,8 @@ static DataTypePtr parseORCType(
             if (skipped)
                 return {};
 
-            DataTypePtr value_type = parseORCType(orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+            DataTypePtr value_type = parseORCType(
+                orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
             if (skipped)
                 return {};
 
@@ -241,8 +287,8 @@ static DataTypePtr parseORCType(
 
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
-                auto parsed_type
-                    = parseORCType(orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                auto parsed_type = parseORCType(
+                    orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
                 if (skipped)
                     return {};
 
@@ -492,8 +538,7 @@ static void buildORCSearchArgumentImpl(
         case KeyCondition::RPNElement::FUNCTION_IN_SET:
         case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET:
         case KeyCondition::RPNElement::FUNCTION_IS_NULL:
-        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
-        {
+        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL: {
             const bool need_wrap_not = curr.function == KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL
                 || curr.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE
                 || curr.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_SET;
@@ -504,7 +549,7 @@ static void buildORCSearchArgumentImpl(
             const bool contains_in_range = curr.function == KeyCondition::RPNElement::FUNCTION_IN_RANGE
                 || curr.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE;
 
-            SCOPE_EXIT({rpn_stack.pop_back();});
+            SCOPE_EXIT({ rpn_stack.pop_back(); });
 
 
             /// Key filter expressions like "func(col) > 100" are not supported for ORC filter push down
@@ -691,22 +736,19 @@ static void buildORCSearchArgumentImpl(
         case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
         /// There is no optimization with pointInPolygon for ORC.
         case KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON:
-        case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
-        {
+        case KeyCondition::RPNElement::FUNCTION_UNKNOWN: {
             builder.literal(orc::TruthValue::YES_NO_NULL);
             rpn_stack.pop_back();
             break;
         }
-        case KeyCondition::RPNElement::FUNCTION_NOT:
-        {
+        case KeyCondition::RPNElement::FUNCTION_NOT: {
             builder.startNot();
             rpn_stack.pop_back();
             buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
             builder.end();
             break;
         }
-        case KeyCondition::RPNElement::FUNCTION_AND:
-        {
+        case KeyCondition::RPNElement::FUNCTION_AND: {
             builder.startAnd();
             rpn_stack.pop_back();
             buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
@@ -714,8 +756,7 @@ static void buildORCSearchArgumentImpl(
             builder.end();
             break;
         }
-        case KeyCondition::RPNElement::FUNCTION_OR:
-        {
+        case KeyCondition::RPNElement::FUNCTION_OR: {
             builder.startOr();
             rpn_stack.pop_back();
             buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
@@ -723,14 +764,12 @@ static void buildORCSearchArgumentImpl(
             builder.end();
             break;
         }
-        case KeyCondition::RPNElement::ALWAYS_FALSE:
-        {
+        case KeyCondition::RPNElement::ALWAYS_FALSE: {
             builder.literal(orc::TruthValue::NO);
             rpn_stack.pop_back();
             break;
         }
-        case KeyCondition::RPNElement::ALWAYS_TRUE:
-        {
+        case KeyCondition::RPNElement::ALWAYS_TRUE: {
             builder.literal(orc::TruthValue::YES);
             rpn_stack.pop_back();
             break;
@@ -738,8 +777,8 @@ static void buildORCSearchArgumentImpl(
     }
 }
 
-std::unique_ptr<orc::SearchArgument>
-buildORCSearchArgument(const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings)
+std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
+    const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings)
 {
     auto rpn_stack = key_condition.getRPN();
     if (rpn_stack.empty())
@@ -755,6 +794,8 @@ static void getFileReader(
     std::unique_ptr<orc::Reader> & file_reader,
     orc::MemoryPool & pool,
     const FormatSettings & format_settings,
+    bool use_prefetch,
+    size_t min_bytes_for_seek,
     std::atomic<int> & is_stopped)
 {
     if (is_stopped)
@@ -762,15 +803,14 @@ static void getFileReader(
 
     orc::ReaderOptions options;
     options.setMemoryPool(pool);
-    auto input_stream = asORCInputStream(in, format_settings, is_stopped);
+    options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = min_bytes_for_seek, .rangeSizeLimit = 10 * 1024 * 1024UL});
+
+    auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
     file_reader = orc::createReader(std::move(input_stream), options);
 }
 
-static const orc::Type * traverseDownORCTypeByName(
-    const std::string & target,
-    const orc::Type * orc_type,
-    DataTypePtr & type,
-    bool ignore_case)
+static const orc::Type *
+traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type, DataTypePtr & type, bool ignore_case)
 {
     if (target.empty())
         return orc_type;
@@ -797,7 +837,7 @@ static const orc::Type * traverseDownORCTypeByName(
 
     if (orc::STRUCT == orc_type->getKind())
     {
-        const auto [next_target, next_orc_type]= search_struct_field(target, orc_type);
+        const auto [next_target, next_orc_type] = search_struct_field(target, orc_type);
         return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case) : nullptr;
     }
     if (orc::LIST == orc_type->getKind())
@@ -823,8 +863,8 @@ static const orc::Type * traverseDownORCTypeByName(
     return nullptr;
 }
 
-static void updateIncludeTypeIds(
-    DataTypePtr type, const orc::Type * orc_type, bool ignore_case, std::unordered_set<UInt64> & include_typeids)
+static void
+updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_case, std::unordered_set<UInt64> & include_typeids)
 {
     /// For primitive types, directly append column id into result
     if (orc_type->getSubtypeCount() == 0)
@@ -840,8 +880,7 @@ static void updateIncludeTypeIds(
             const auto * array_type = typeid_cast<const DataTypeArray *>(non_nullable_type.get());
             if (array_type)
             {
-                updateIncludeTypeIds(
-                    array_type->getNestedType(), orc_type->getSubtype(0), ignore_case, include_typeids);
+                updateIncludeTypeIds(array_type->getNestedType(), orc_type->getSubtype(0), ignore_case, include_typeids);
             }
             return;
         }
@@ -894,8 +933,7 @@ static void updateIncludeTypeIds(
                 else
                 {
                     for (size_t i = 0; i < tuple_type->getElements().size() && i < orc_type->getSubtypeCount(); ++i)
-                        updateIncludeTypeIds(
-                            tuple_type->getElement(i), orc_type->getSubtype(i), ignore_case, include_typeids);
+                        updateIncludeTypeIds(tuple_type->getElement(i), orc_type->getSubtype(i), ignore_case, include_typeids);
                 }
             }
             return;
@@ -905,24 +943,23 @@ static void updateIncludeTypeIds(
     }
 }
 
-NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
+NativeORCBlockInputFormat::NativeORCBlockInputFormat(
+    ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_)
     : IInputFormat(std::move(header_), &in_)
     , memory_pool(std::make_unique<MemoryPool>())
     , block_missing_values(getPort().getHeader().columns())
     , format_settings(format_settings_)
     , skip_stripes(format_settings.orc.skip_stripes)
+    , use_prefetch(use_prefetch_)
+    , min_bytes_for_seek(min_bytes_for_seek_)
 {
 }
 
 void NativeORCBlockInputFormat::prepareFileReader()
 {
-    getFileReader(*in, file_reader, *memory_pool, format_settings, is_stopped);
+    getFileReader(*in, file_reader, *memory_pool, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
     if (is_stopped)
         return;
-
-    total_stripes = static_cast<int>(file_reader->getNumberOfStripes());
-    current_stripe = -1;
-
 
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())
@@ -948,24 +985,66 @@ void NativeORCBlockInputFormat::prepareFileReader()
     }
     include_indices.assign(include_typeids.begin(), include_typeids.end());
 
-    if (format_settings.orc.filter_push_down && key_condition && !sarg)
+    if (format_settings.orc.filter_push_down && key_condition && !sargs)
+        sargs = buildORCSearchArgument(*key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
+
+    selected_stripes = calculateSelectedStripes(static_cast<int>(file_reader->getNumberOfStripes()), skip_stripes);
+    read_iterator = 0;
+    prefetch_iterator = 0;
+
+    if (use_prefetch)
+        prefetchStripes();
+}
+
+void NativeORCBlockInputFormat::prefetchStripes()
+{
+    if (prefetch_iterator >= selected_stripes.size())
+        return;
+
+    size_t total_stripe_size = 0;
+    std::vector<uint32_t> stripes;
+    while (prefetch_iterator < selected_stripes.size() && total_stripe_size < min_bytes_for_seek)
     {
-        sarg = buildORCSearchArgument(*key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
+        int stripe = selected_stripes[prefetch_iterator];
+        stripes.push_back(stripe);
+
+        total_stripe_size += file_reader->getStripe(stripe)->getLength();
+        ++prefetch_iterator;
     }
+
+    Stopwatch time;
+    file_reader->preBuffer(stripes, include_indices);
+    LOG_TEST(
+        getLogger("NativeORCBlockInputFormat"),
+        "Prefetch {} stripes with {} columns and {} bytes takes {} ms",
+        stripes.size(),
+        include_indices.size(),
+        total_stripe_size,
+        time.elapsedMilliseconds());
+}
+
+std::vector<int> NativeORCBlockInputFormat::calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes)
+{
+    std::vector<int> result;
+    result.reserve(std::max<ssize_t>(num_stripes - skip_stripes.size(), 0));
+    for (int stripe = 0; stripe < num_stripes; ++stripe)
+    {
+        if (skip_stripes.contains(stripe))
+            continue;
+
+        result.push_back(stripe);
+    }
+    return result;
 }
 
 bool NativeORCBlockInputFormat::prepareStripeReader()
 {
     assert(file_reader);
 
-    ++current_stripe;
-    for (; current_stripe < total_stripes && skip_stripes.contains(current_stripe); ++current_stripe)
-        ;
-
-    /// No more stripes to read
-    if (current_stripe >= total_stripes)
+    if (read_iterator >= selected_stripes.size())
         return false;
 
+    int current_stripe = selected_stripes[read_iterator];
     current_stripe_info = file_reader->getStripe(current_stripe);
     if (!current_stripe_info->getNumberOfRows())
         throw Exception(ErrorCodes::INCORRECT_DATA, "ORC stripe {} has no rows", current_stripe);
@@ -975,12 +1054,22 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
     row_reader_options.includeTypes(include_indices);
     row_reader_options.setTimezoneName(format_settings.orc.reader_time_zone_name);
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
-    if (format_settings.orc.filter_push_down && sarg)
+    if (format_settings.orc.filter_push_down && sargs)
     {
-        row_reader_options.searchArgument(sarg);
+        row_reader_options.searchArgument(sargs);
+    }
+    stripe_reader = file_reader->createRowReader(row_reader_options);
+    ++read_iterator;
+
+    if (use_prefetch)
+    {
+        /// Release outdated buffer before boundary to avoid OOM
+        file_reader->releaseBuffer(current_stripe_info->getOffset());
+
+        /// Prefetch next selected stripe
+        prefetchStripes();
     }
 
-    stripe_reader = file_reader->createRowReader(row_reader_options);
     return true;
 }
 
@@ -993,13 +1082,11 @@ Chunk NativeORCBlockInputFormat::read()
 
     if (need_only_count)
     {
-        ++current_stripe;
-        for (; current_stripe < total_stripes && skip_stripes.contains(current_stripe); ++current_stripe)
-            ;
-
-        if (current_stripe >= total_stripes)
+        if (read_iterator >= selected_stripes.size())
             return {};
 
+        int current_stripe = selected_stripes[read_iterator];
+        ++read_iterator;
         return getChunkForCount(file_reader->getStripe(current_stripe)->getNumberOfRows());
     }
 
@@ -1014,6 +1101,7 @@ Chunk NativeORCBlockInputFormat::read()
 
     /// TODO: figure out why reuse batch would cause asan fatals in https://s3.amazonaws.com/clickhouse-test-reports/55330/be39d23af2d7e27f5ec7f168947cf75aeaabf674/stateless_tests__asan__[4_4].html
     /// Not sure if it is a false positive case. Notice that reusing batch will speed up reading ORC by 1.15x.
+    Stopwatch time;
     auto batch = stripe_reader->createRowBatch(format_settings.orc.row_batch_size);
     while (true)
     {
@@ -1028,8 +1116,12 @@ Chunk NativeORCBlockInputFormat::read()
 
     Chunk res;
     size_t num_rows = batch->numElements;
+    LOG_TEST(getLogger("NativeORCBlockInputFormat"), "Read {} rows take {} ms", num_rows, time.elapsedMilliseconds());
+
+    time.restart();
     const auto & schema = stripe_reader->getSelectedType();
     orc_column_to_ch_column->orcTableToCHChunk(res, &schema, batch.get(), num_rows, &block_missing_values);
+    LOG_TEST(getLogger("NativeORCBlockInputFormat"), "Convert {} rows take {} ms", num_rows, time.elapsedMilliseconds());
 
     approx_bytes_read_for_chunk = num_rows * current_stripe_info->getLength() / current_stripe_info->getNumberOfRows();
     return res;
@@ -1042,7 +1134,7 @@ void NativeORCBlockInputFormat::resetParser()
     file_reader.reset();
     stripe_reader.reset();
     include_indices.clear();
-    sarg.reset();
+    sargs.reset();
     block_missing_values.clear();
 }
 
@@ -1061,8 +1153,7 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
     std::unique_ptr<orc::Reader> file_reader;
     std::atomic<int> is_stopped = 0;
     MemoryPool memory_pool;
-    getFileReader(in, file_reader, memory_pool, format_settings, is_stopped);
-
+    getFileReader(in, file_reader, memory_pool, format_settings, false, 0, is_stopped);
 
     const auto & schema = file_reader->getType();
     Block header;
@@ -1686,7 +1777,8 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             return readColumnWithNumericData<Float64, orc::DoubleVectorBatch>(orc_column, orc_type, column_name);
         case orc::DATE:
             return readColumnWithDateData(orc_column, orc_type, column_name, type_hint);
-        case orc::TIMESTAMP: [[fallthrough]];
+        case orc::TIMESTAMP:
+            [[fallthrough]];
         case orc::TIMESTAMP_INSTANT:
             return readColumnWithTimestampData(orc_column, orc_type, column_name);
         case orc::DECIMAL: {

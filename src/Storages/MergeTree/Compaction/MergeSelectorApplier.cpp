@@ -1,7 +1,8 @@
+#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
-#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Common/logger_useful.h>
 

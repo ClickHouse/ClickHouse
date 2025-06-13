@@ -75,6 +75,7 @@ private:
 
     void buildPlanForQueryNode();
 
+    LoggerPtr log;
     QueryTreeNodePtr query_tree;
     SelectQueryOptions & select_query_options;
     PlannerContextPtr planner_context;

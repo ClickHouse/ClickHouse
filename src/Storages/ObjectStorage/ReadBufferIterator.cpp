@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/Logger.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

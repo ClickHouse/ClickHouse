@@ -1,8 +1,6 @@
-import json
 import platform
 import sys
 import traceback
-from pathlib import Path
 from typing import Dict
 
 from . import Job, Workflow
@@ -13,6 +11,7 @@ from .docker import Docker
 from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
+from .info import Info
 from .mangle import _get_workflows
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
@@ -36,15 +35,26 @@ _workflow_config_job = Job.Config(
     timeout=600,
 )
 
-_docker_build_job = Job.Config(
-    name=Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-    runs_on=Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
+_docker_build_manifest_job = Job.Config(
+    name=Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
+    runs_on=Settings.DOCKER_MERGE_RUNS_ON,
     job_requirements=Job.Requirements(
         python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
         python_requirements_txt="",
     ),
     timeout=int(5.5 * 3600),
-    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME}'",
+    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_MANIFEST_JOB_NAME}'",
+)
+
+_docker_build_amd_linux_job = Job.Config(
+    name=Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
+    runs_on=Settings.DOCKER_BUILD_AMD_RUNS_ON,
+    job_requirements=Job.Requirements(
+        python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
+        python_requirements_txt="",
+    ),
+    timeout=int(5.5 * 3600),
+    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME}'",
 )
 
 _docker_build_arm_linux_job = Job.Config(
@@ -73,8 +83,9 @@ _final_job = Job.Config(
 def _is_praktika_job(job_name):
     if job_name in (
         Settings.CI_CONFIG_JOB_NAME,
-        Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+        Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
         Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+        Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         Settings.FINISH_WORKFLOW_JOB_NAME,
     ):
         return True
@@ -125,7 +136,10 @@ def _build_dockers(workflow, job_name):
             job_status = Result.Status.FAILED
             job_info = "Failed to login to dockerhub"
 
-    if job_status == Result.Status.SUCCESS:
+    if (
+        job_status == Result.Status.SUCCESS
+        and job_name != Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
+    ):
         for docker in dockers:
             if amd_only and Docker.Platforms.AMD not in docker.platforms:
                 continue
@@ -145,7 +159,6 @@ def _build_dockers(workflow, job_name):
                     digests=docker_digests,
                     amd_only=amd_only,
                     arm_only=arm_only,
-                    with_log=True,
                 )
             )
             if results[-1].is_ok():
@@ -156,7 +169,7 @@ def _build_dockers(workflow, job_name):
 
     if (
         job_status == Result.Status.SUCCESS
-        and job_name == Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME
+        and job_name == Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
     ):
         print("Start docker manifest merge")
         for docker in dockers:
@@ -165,7 +178,7 @@ def _build_dockers(workflow, job_name):
                     config=docker,
                     digests=docker_digests,
                     with_log=True,
-                    add_latest=workflow.set_latest_in_dockers_build,
+                    add_latest=workflow.set_latest_for_docker_merged_manifest,
                 )
             )
 
@@ -187,7 +200,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         return Result.from_commands_run(
             name="Check Workflows",
             command=commands,
-            with_info=True,
             fail_fast=True,
         )
 
@@ -270,16 +282,14 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 name = pre_check.__name__
             else:
                 name = str(pre_check)
-            res_.append(
-                Result.from_commands_run(name=name, command=pre_check, with_info=True)
-            )
+            res_.append(Result.from_commands_run(name=name, command=pre_check))
 
         results.append(
             Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
         )
 
     # checks:
-    if results[-1].is_ok():
+    if not results or results[-1].is_ok():
         result_ = _check_yaml_up_to_date()
         if result_.status != Result.Status.SUCCESS:
             print("ERROR: yaml files are outdated - regenerate, commit and push")
@@ -319,7 +329,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
-    if workflow.workflow_filter_hooks:
+    if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
             for job in workflow.jobs:
@@ -344,6 +354,86 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(
                 name="Filter Hooks", status=status, stopwatch=sw_, info=info
+            )
+        )
+
+    if workflow.enable_job_filtering_by_changes and results[-1].is_ok():
+        print("Filter not affected jobs")
+
+        def check_affected_jobs():
+            changed_files = Info().get_changed_files()
+            if changed_files is None:
+                print(
+                    "WARNING: Failed to get changed files — jobs won't be filtered by changed files list"
+                )
+
+            all_affected_dockers = Docker.find_affected_docker_images(
+                workflow.dockers, changed_files
+            )
+            if all_affected_dockers:
+                print(f"Affected docker images [{all_affected_dockers}]")
+
+            affected_artifacts = []
+            unaffected_jobs_with_artifacts = {}
+            all_required_artifacts = set()
+
+            for job in workflow.jobs:
+                # Skip native Praktika jobs
+                if _is_praktika_job(job.name):
+                    continue
+
+                is_affected = False
+
+                if any(dep in affected_artifacts for dep in job.requires):
+                    print(f"Job [{job.name}] requires affected artifacts")
+                    is_affected = True
+                elif job.get_docker_image_name() in all_affected_dockers:
+                    print(
+                        f"Job [{job.name}] runs in affected Docker image [{job.run_in_docker}]"
+                    )
+                    is_affected = True
+                elif job.is_affected_by(changed_files):
+                    print(f"Job [{job.name}] is directly affected by changed files")
+                    is_affected = True
+
+                if is_affected:
+                    affected_artifacts.extend(job.provides)
+                    if job.provides:
+                        # for cases when artifact report is used instead of real artifacts
+                        affected_artifacts.append(job.name)
+                    all_required_artifacts.update(job.requires)
+                else:
+                    print(f"Job [{job.name}] is not affected by the change")
+                    if not job.provides:
+                        workflow_config.set_job_as_filtered(
+                            job.name, "Not affected by the changed files"
+                        )
+                    else:
+                        print(
+                            f"NOTE: Job [{job.name}] is not affected, but may provide required artifacts"
+                        )
+                        unaffected_jobs_with_artifacts[job.name] = job.provides
+
+            for job_name, artifacts in unaffected_jobs_with_artifacts.items():
+                if (
+                    any(a in all_required_artifacts for a in artifacts)
+                    or job_name in all_required_artifacts
+                ):
+                    print(
+                        f"NOTE: Job [{job_name}] provides required artifacts — cannot be skipped"
+                    )
+                else:
+                    workflow_config.set_job_as_filtered(
+                        job_name,
+                        "Not affected by the changed files, and artifacts are not required",
+                    )
+
+            workflow_config.dump()
+
+        results.append(
+            Result.from_commands_run(
+                name="Filter not affected jobs",
+                command=check_affected_jobs,
             )
         )
 
@@ -412,9 +502,7 @@ def _finish_workflow(workflow, job_name):
                 name = check.__name__
             else:
                 name = str(check)
-            results_.append(
-                Result.from_commands_run(name=name, command=check, with_info=True)
-            )
+            results_.append(Result.from_commands_run(name=name, command=check))
 
         results.append(
             Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
@@ -446,8 +534,10 @@ def _finish_workflow(workflow, job_name):
             result.status = Result.Status.ERROR
             # dump workflow result after update - to have an updated result in post
             workflow_result.dump()
-            # add error into env - should apper in the report
+            # add error into env - should appear in the report on the main page
             env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
+            # add error info to job info as well
+            result.set_info(ResultInfo.NOT_FINALIZED)
             update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:
@@ -498,8 +588,9 @@ if __name__ == "__main__":
     try:
         workflow = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
         if job_name in (
-            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+            Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
             Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+            Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         ):
             result = _build_dockers(workflow, job_name)
         elif job_name == Settings.CI_CONFIG_JOB_NAME:
@@ -520,4 +611,4 @@ if __name__ == "__main__":
             # info=f"Failed with Exception [{e}]\n{error_traceback}",
         )
 
-    result.dump().complete_job()
+    result.dump().complete_job(with_job_summary_in_info=False)

@@ -121,7 +121,7 @@ class GH:
         except Exception:
             print("ERROR: Failed to get PR data")
             traceback.print_exc()
-            Info().store_exception_traceback()
+            Info().store_traceback()
             return "", "", []
         return title, body, labels
 
@@ -146,6 +146,10 @@ class GH:
         :param repo:
         :return: True or False in case of error
         """
+        description_max_size = 80  # GH limits to 140, but 80 is reasonable
+        description = description[:description_max_size].replace(
+            "'", "'\"'\"'"
+        )  # escape single quote
         status = cls.convert_to_gh_status(status)
         repo = _Environment.get().REPOSITORY
         command = (
@@ -170,6 +174,10 @@ class GH:
         :param commit_sha: Commit in a foreign repo
         :return: True or False in case of error
         """
+        description_max_size = 80  # GH limits to 140, but 80 is reasonable
+        description = description[:description_max_size].replace(
+            "'", "'\"'\"'"
+        )  # escape single quote
         status = cls.convert_to_gh_status(status)
         command = (
             f"gh api -X POST -H 'Accept: application/vnd.github.v3+json' "

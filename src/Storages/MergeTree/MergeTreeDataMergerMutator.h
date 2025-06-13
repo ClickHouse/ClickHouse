@@ -79,7 +79,7 @@ public:
       */
     MergeTaskPtr mergePartsToTemporaryPart(
         FutureMergedMutatedPartPtr future_part,
-        const StorageMetadataPtr & metadata_snapshot,
+        StorageMetadataPtr metadata_snapshot,
         MergeListEntry * merge_entry,
         std::unique_ptr<MergeListElement> projection_merge_list_element,
         TableLockHolder & table_lock_holder,
@@ -89,8 +89,8 @@ public:
         bool deduplicate,
         const Names & deduplicate_by_columns,
         bool cleanup,
-        const MergeTreeData::MergingParams & merging_params,
-        const MergeTreeTransactionPtr & txn,
+        MergeTreeData::MergingParams merging_params,
+        MergeTreeTransactionPtr txn,
         bool need_prefix = true,
         IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
