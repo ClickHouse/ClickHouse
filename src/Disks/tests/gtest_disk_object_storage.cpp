@@ -6,7 +6,7 @@
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.cpp>
+#include <IO/ReadHelpers.h>
 
 #include "Common/Exception.h"
 #include <Common/tests/gtest_global_context.h>
