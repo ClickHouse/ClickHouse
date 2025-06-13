@@ -1,7 +1,7 @@
 {
   outputs = inputs@{ self, nixpkgs, fenix, ... }:
     let
-      system = "x86_64-linux"; # Change this if needed
+      system = "x86_64-linux"; # FIXME we support way more architectures
       pkgs = import nixpkgs { inherit system; };
       lib = pkgs.lib;
 
@@ -55,11 +55,6 @@
 
         patchShebangs $out/src
         patchShebangs $out/utils
-
-        substituteInPlace $out/src/Storages/System/StorageSystemLicenses.sh \
-          --replace-fail '$(git rev-parse --show-toplevel)' "$NIX_BUILD_TOP/source"
-        substituteInPlace $out/utils/list-licenses/list-licenses.sh \
-          --replace-fail '$(git rev-parse --show-toplevel)' "$NIX_BUILD_TOP/source"
       '';
     in {
       packages.x86_64-linux.default = pkgs.llvmPackages_19.stdenv.mkDerivation {
@@ -78,19 +73,15 @@
           yasm
           nasm
 
-          libgccjit
-
           rustNightly.rustc
           rustNightly.cargo
         ];
 
         cmakeFlags = [
           "-DCOMPILER_CACHE=disabled"
-
           "-DENABLE_TESTS=0"
 
-          "-DENABLE_QATLIB=0"
-          "-DENABLE_DELTA_KERNEL_RS=0"
+          "-DENABLE_QATLIB=0"  # FIXME
         ];
 
         env = {
