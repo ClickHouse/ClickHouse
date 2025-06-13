@@ -644,7 +644,6 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     String buf;
     bool is_url = false;
     TableOrFunction * tof = ins->mutable_tof();
-    const uint32_t noption = rg.nextLargeNumber();
     const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
     const std::optional<String> & cluster = t.getCluster();
     std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
@@ -655,9 +654,9 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     const uint32_t remote_func = 5;
     const uint32_t url_func = 5;
     const uint32_t insert_into_table = 95;
-    const uint32_t prob_space = cluster_func + remote_func + url_func + insert_into_table;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt2 = next_dist(rg.generator);
+    const uint32_t prob_space2 = cluster_func + remote_func + url_func + insert_into_table;
+    std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
+    const uint32_t nopt2 = next_dist2(rg.generator);
 
     flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
@@ -739,7 +738,15 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         }
     }
 
-    if (!in_parallel && noption < 701)
+    const uint32_t hardcoded_insert = 70 * static_cast<uint32_t>(!in_parallel);
+    const uint32_t random_values = 5 * static_cast<uint32_t>(!in_parallel);
+    const uint32_t generate_random = 15;
+    const uint32_t insert_select = 10;
+    const uint32_t prob_space = hardcoded_insert + random_values + generate_random + insert_select;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+
+    if (hardcoded_insert && (nopt < hardcoded_insert + 1))
     {
         const uint64_t nrows = rows_dist(rg.generator);
 
@@ -787,7 +794,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         }
         ins->set_query(buf);
     }
-    else if (!in_parallel && noption < 751)
+    else if (random_values && nopt < (hardcoded_insert + random_values + 1))
     {
         const uint32_t nrows = (rg.nextSmallNumber() % 3) + 1;
         ValuesStatement * vs = ins->mutable_values();
@@ -825,7 +832,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     {
         Select * sel = ins->mutable_select();
 
-        if (noption < 901)
+        if (generate_random && nopt < (hardcoded_insert + random_values + generate_random + 1))
         {
             /// Use generateRandom
             bool first = true;
@@ -859,7 +866,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
             grf->set_max_array_length(nested_rows_dist(rg.generator));
             ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
         }
-        else
+        else if (insert_select && nopt < (hardcoded_insert + random_values + generate_random + insert_select + 1))
         {
             this->levels[this->current_level] = QueryLevel(this->current_level);
             if (rg.nextMediumNumber() < 13)
@@ -868,6 +875,10 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
             }
             generateSelect(rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), sel);
             this->levels.clear();
+        }
+        else
+        {
+            chassert(0);
         }
     }
     this->entries.clear();
