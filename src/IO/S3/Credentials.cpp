@@ -1,7 +1,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
-#include <IO/S3/GetAvailabilityZone.h>
+#include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>

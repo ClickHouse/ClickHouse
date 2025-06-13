@@ -1,7 +1,7 @@
 #pragma once
 
 #include "config.h"
-#include <IO/S3/GetAvailabilityZone.h>
+#include <IO/S3/getAvailabilityZone.h>
 
 #if USE_AWS_S3
 

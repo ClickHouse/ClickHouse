@@ -11,7 +11,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
-#include <IO/S3/GetAvailabilityZone.h>
+#include <IO/S3/getAvailabilityZone.h>
 
 
 namespace CurrentMetrics
