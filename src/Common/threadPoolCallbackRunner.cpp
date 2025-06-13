@@ -1,5 +1,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 
+#include <Common/futex.h>
+
 namespace DB
 {
 
@@ -19,7 +21,7 @@ void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max
     thread_name = thread_name_;
     thread_group = thread_group_;
 
-    /// TODO: Maybe adjust number of threads dynamically based on queue size.
+    /// TODO [parquet]: Maybe adjust number of threads dynamically based on queue size.
     threads = max_threads;
     for (size_t i = 0; i < max_threads; ++i)
         pool->scheduleOrThrowOnError([this] { threadFunction(); });
@@ -37,10 +39,16 @@ ThreadPoolCallbackRunnerFast::~ThreadPoolCallbackRunnerFast()
 
 void ThreadPoolCallbackRunnerFast::shutdown()
 {
-    /// May be called twice.
+    /// May be called multiple times.
     std::unique_lock lock(mutex);
     shutdown_requested = true;
+#ifdef OS_LINUX
+    const UInt32 a_lot = UINT32_MAX / 4;
+    queue_size += a_lot;
+    futexWake(&queue_size, a_lot);
+#else
     queue_cv.notify_all();
+#endif
     shutdown_cv.wait(lock, [&] { return threads == 0; });
 }
 
@@ -53,7 +61,17 @@ void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
         std::unique_lock lock(mutex);
         queue.push_back(std::move(f));
     }
-    queue_cv.notify_one();
+
+    if (mode == Mode::ThreadPool)
+    {
+#ifdef OS_LINUX
+        UInt32 prev_size = queue_size.fetch_add(1, std::memory_order_release);
+        if (prev_size < max_threads)
+            futexWake(&queue_size, 1);
+#else
+        queue_cv.notify_one();
+#endif
+    }
 }
 
 void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()>> fs)
@@ -69,14 +87,19 @@ void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()
         queue.insert(queue.end(), std::move_iterator(fs.begin()), std::move_iterator(fs.end()));
     }
 
-    if (fs.size() <= 2 || fs.size() * 4 < max_threads) // (numbers chosen at random, not optimized)
+    if (mode == Mode::ThreadPool)
     {
-        for (size_t i = 0; i < fs.size(); ++i)
-            queue_cv.notify_one();
-    }
-    else
-    {
-        queue_cv.notify_all();
+#ifdef OS_LINUX
+        UInt32 prev_size = queue_size.fetch_add(fs.size(), std::memory_order_release);
+        if (prev_size < max_threads)
+            futexWake(&queue_size, fs.size());
+#else
+        if (fs.size() < 4)
+            for (size_t i = 0; i < fs.size(); ++i)
+                queue_cv.notify_one();
+        else
+            queue_cv.notify_all();
+#endif
     }
 }
 
@@ -98,28 +121,44 @@ void ThreadPoolCallbackRunnerFast::threadFunction()
 {
     ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
 
-    std::unique_lock lock(mutex);
     while (true)
     {
-        chassert(lock.owns_lock());
-        if (shutdown_requested)
+#ifdef OS_LINUX
+        UInt32 x = queue_size.load(std::memory_order_relaxed);
+        while (true)
         {
-            threads -= 1;
-            if (threads == 0)
-                shutdown_cv.notify_all();
-            return;
+            if (x == 0)
+            {
+                futexWait(&queue_size, 0);
+                x = queue_size.load(std::memory_order_relaxed);
+            }
+            else if (queue_size.compare_exchange_weak(
+                        x, x - 1, std::memory_order_acquire, std::memory_order_relaxed))
+                break;
         }
+#endif
 
-        if (queue.empty())
+        std::function<void()> f;
         {
-            queue_cv.wait(lock);
-            continue;
+            std::unique_lock lock(mutex);
+
+#ifndef OS_LINUX
+            queue_cv.wait(lock, [&] { return shutdown_requested || !queue.empty(); });
+#endif
+
+            if (shutdown_requested)
+            {
+                threads -= 1;
+                if (threads == 0)
+                    shutdown_cv.notify_all();
+                return;
+            }
+
+            chassert(!queue.empty());
+
+            f = std::move(queue.front());
+            queue.pop_front();
         }
-
-        std::function<void()> f = std::move(queue.front());
-        queue.pop_front();
-
-        lock.unlock();
 
         try
         {
@@ -132,11 +171,8 @@ void ThreadPoolCallbackRunnerFast::threadFunction()
             tryLogCurrentException("FastThreadPool");
             chassert(false);
         }
-
-        lock.lock();
     }
 }
-
 
 bool ShutdownHelper::try_lock_shared()
 {
@@ -186,12 +222,21 @@ bool ShutdownHelper::shutdown_requested()
     return val.load(std::memory_order_relaxed) >= SHUTDOWN_START;
 }
 
-void ShutdownHelper::begin_shutdown()
+bool ShutdownHelper::begin_shutdown()
 {
     Int64 n = val.fetch_add(SHUTDOWN_START) + SHUTDOWN_START;
-    chassert(n < SHUTDOWN_START * 2); // shutdown requested more than once
+    bool already_called = n >= SHUTDOWN_START * 2;
+    if (already_called)
+        n = val.fetch_sub(SHUTDOWN_START) - SHUTDOWN_START;
     if (n == SHUTDOWN_START)
+    {
         val.fetch_add(SHUTDOWN_END);
+        {
+            std::unique_lock lock(mutex);
+        }
+        cv.notify_all();
+    }
+    return !already_called;
 }
 
 void ShutdownHelper::wait_shutdown()

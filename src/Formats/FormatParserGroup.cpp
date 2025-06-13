@@ -31,6 +31,11 @@ FormatParserGroupPtr FormatParserGroup::singleThreaded(const Settings & settings
     return parser_group;
 }
 
+bool FormatParserGroup::hasFilter() const
+{
+    return filter_actions_dag != nullptr;
+}
+
 void FormatParserGroup::finishStream()
 {
     num_streams.fetch_sub(1, std::memory_order_relaxed);

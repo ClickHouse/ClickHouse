@@ -93,6 +93,19 @@ namespace DB
     A value of `0` means unlimited.
     :::
     )", 0) \
+    DECLARE(UInt64, max_format_parsing_thread_pool_size, 100, R"(
+    Maximum total number of threads to use for parsing input.
+    )", 0) \
+    DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
+    Maximum number of idle standby threads to keep in the thread pool for parsing input.
+    )", 0) \
+    DECLARE(UInt64, format_parsing_thread_pool_queue_size, 10000, R"(
+    The maximum number of jobs that can be scheduled on thread pool for parsing input.
+
+    :::note
+    A value of `0` means unlimited.
+    :::
+    )", 0) \
     DECLARE(UInt64, max_fetch_partition_thread_pool_size, 64, R"(The number of threads for ALTER TABLE FETCH PARTITION.)", 0) \
     DECLARE(UInt64, max_active_parts_loading_thread_pool_size, 64, R"(The number of threads to load active set of data parts (Active ones) at startup.)", 0) \
     DECLARE(UInt64, max_outdated_parts_loading_thread_pool_size, 32, R"(The number of threads to load inactive set of data parts (Outdated ones) at startup.)", 0) \
