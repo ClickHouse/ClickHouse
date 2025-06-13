@@ -183,6 +183,7 @@ def main():
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
         run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
+        run_shell("Output lexer_test", f"ls -l {build_dir}/tests/lexer", verbose=True)
         Shell.check("pwd")
         res = results[-1].is_ok()
 
