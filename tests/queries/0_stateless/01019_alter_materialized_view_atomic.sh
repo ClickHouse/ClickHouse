@@ -15,20 +15,13 @@ CREATE TABLE src (v UInt64) ENGINE = Null;
 CREATE MATERIALIZED VIEW mv (v UInt8) Engine = MergeTree() ORDER BY v AS SELECT v FROM src;
 EOF
 
-# Test that ALTER doesn't cause data loss or duplication.
-#
-# Idea for future:
-#
-#    null
-#  /      \
-# mv1    mv2
-#  \      /
-#   \    /
-#   mv sink
-#
-# Insert N times into null while altering sink query and switching it from mv1 to mv2.
-
 STOP_ALTER=0
+
+# 用于统计
+total_alter_time=0
+alter_count=0
+total_sleep_time=0
+sleep_count=0
 
 function alter_thread()
 {
@@ -37,22 +30,50 @@ function alter_thread()
     ALTERS[0]="ALTER TABLE mv MODIFY QUERY SELECT v FROM src;"
     ALTERS[1]="ALTER TABLE mv MODIFY QUERY SELECT v * 2 as v FROM src;"
 
-    # Loop until INSERT is in progress
     while [[ $STOP_ALTER -eq 0 ]]; do
+        start_alter=$(date +%s%3N)
         $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTERS[$RANDOM % 2]}"
+        end_alter=$(date +%s%3N)
+        dur_alter=$((end_alter - start_alter))
+
+        echo "[ALTER] took ${dur_alter} ms"
+        total_alter_time=$((total_alter_time + dur_alter))
+        alter_count=$((alter_count + 1))
+
+        start_sleep=$(date +%s%3N)
         sleep "$(echo 0.$RANDOM)";
+        end_sleep=$(date +%s%3N)
+        dur_sleep=$((end_sleep - start_sleep))
+
+        echo "[SLEEP] took ${dur_sleep} ms"
+        total_sleep_time=$((total_sleep_time + dur_sleep))
+        sleep_count=$((sleep_count + 1))
     done
-    # Insert done, DROP the tables
+
+    # Insert done, drop tables
     $CLICKHOUSE_CLIENT -q "DROP VIEW mv"
     $CLICKHOUSE_CLIENT -q "DROP TABLE src"
+
+    # print
+    echo "=== ALTER THREAD STATS ==="
+    if [[ $alter_count -gt 0 ]]; then
+        echo "Total ALTERs: $alter_count, Average ALTER time: $((total_alter_time / alter_count)) ms"
+    else
+        echo "No ALTER executed"
+    fi
+    if [[ $sleep_count -gt 0 ]]; then
+        echo "Total SLEEPs: $sleep_count, Average SLEEP time: $((total_sleep_time / sleep_count)) ms"
+    else
+        echo "No SLEEP executed"
+    fi
+    echo "========================="
 }
 
 export -f alter_thread;
 alter_thread &
 ALTER_DROP_PID=$!
 
-for _ in {1..100}; do
-    # Retry (hopefully retriable (deadlock avoided)) errors.
+for i in {1..100}; do
     while true; do
         $CLICKHOUSE_CLIENT -q "INSERT INTO src VALUES (1);" 2>/dev/null && break
     done
@@ -60,8 +81,5 @@ done
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM mv;"
 
-# Notify the alter thread to stop and then we could drop tables
 kill -SIGINT $ALTER_DROP_PID
-
-# Wait until alter and drop finish
 wait $ALTER_DROP_PID
