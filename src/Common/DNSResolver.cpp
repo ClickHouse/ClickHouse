@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/IPAddress.h>
@@ -20,14 +19,6 @@
 namespace ProfileEvents
 {
     extern const Event DNSError;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric DNSHostsCacheBytes;
-    extern const Metric DNSHostsCacheSize;
-    extern const Metric DNSAddressesCacheBytes;
-    extern const Metric DNSAddressesCacheSize;
 }
 
 namespace std
@@ -179,8 +170,8 @@ struct DNSResolver::Impl
     using HostWithConsecutiveFailures = std::unordered_map<String, UInt32>;
     using AddressWithConsecutiveFailures = std::unordered_map<Poco::Net::IPAddress, UInt32>;
 
-    CacheBase<std::string, DNSResolver::CacheEntry> cache_host{CurrentMetrics::DNSHostsCacheBytes, CurrentMetrics::DNSHostsCacheSize, 1024};
-    CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{CurrentMetrics::DNSAddressesCacheBytes, CurrentMetrics::DNSAddressesCacheSize, 1024};
+    CacheBase<std::string, DNSResolver::CacheEntry> cache_host{1024};
+    CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{1024};
 
     std::mutex drop_mutex;
     std::mutex update_mutex;

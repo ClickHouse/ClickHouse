@@ -14,6 +14,7 @@
 #include <Common/escapeForFileName.h>
 #include <base/range.h>
 #include <base/sleep.h>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB

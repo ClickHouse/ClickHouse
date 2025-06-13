@@ -232,12 +232,19 @@ public:
     ///
     /// Must not be called after beginSend(), sendFile(), sendBuffer()
     /// or redirect() has been called.
-    std::shared_ptr<WriteBuffer> send();
+    std::shared_ptr<WriteBufferFromPocoSocket> send();
 
-    /// Dangerous, it is not a virtual method in HTTPResponse but it is redefined here
+    /// Sends the response headers to the client
+    /// but do not finish headers with \r\n,
+    /// allowing to continue sending additional header fields.
+    ///
+    /// Must not be called after send(), sendFile(), sendBuffer()
+    /// or redirect() has been called.
+    std::pair<std::shared_ptr<WriteBufferFromPocoSocket>, std::shared_ptr<WriteBufferFromPocoSocket>> beginSend();
+
     /// Override to correctly mark that the data send had been started for
     /// zero-copy response (i.e. replicated fetches).
-    void beginWrite(std::ostream & ostr);
+    void beginWrite(std::ostream & ostr) const;
 
     /// Sends the response header to the client, followed
     /// by the contents of the given buffer.
@@ -277,14 +284,12 @@ public:
 
     const Poco::Net::HTTPServerSession & getSession() const { return session; }
 
-    void allowKeepAliveIFFRequestIsFullyRead();
-
 private:
     Poco::Net::HTTPServerSession & session;
     HTTPServerRequest * request = nullptr;
     ProfileEvents::Event write_event;
-    std::shared_ptr<WriteBuffer> stream;
-    std::shared_ptr<WriteBuffer> header_stream;
+    std::shared_ptr<WriteBufferFromPocoSocket> stream;
+    std::shared_ptr<WriteBufferFromPocoSocket> header_stream;
     mutable bool send_started = false;
 };
 

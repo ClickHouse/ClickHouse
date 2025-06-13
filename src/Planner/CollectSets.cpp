@@ -1,7 +1,11 @@
 #include <Planner/CollectSets.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
+
 #include <Storages/StorageSet.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -9,11 +13,11 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Set.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
-
 
 namespace DB
 {
@@ -105,7 +109,7 @@ public:
             if (in_second_argument->as<TableNode>())
                 subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
 
-            auto ast = in_second_argument->toAST({ .set_subquery_cte_name = false });
+            auto ast = in_second_argument->toAST();
             sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
         }
         else
