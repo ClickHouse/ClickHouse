@@ -846,7 +846,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!is_supported_tokenizer)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index '{}' argument supports only 'default', 'ngram', and 'noop', but got {}",
+            "Text index '{}' argument supports only 'default', 'ngram', and 'no_op', but got {}",
             ARGUMENT_TOKENIZER,
             tokenizer.value());
 

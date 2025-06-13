@@ -600,7 +600,11 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
     if (is_trivial)
     {
         if (required_substring.empty())
+        {
+            match.offset = 0;
+            match.length = 0;
             return true;
+        }
 
         const UInt8 * pos;
         if (is_case_insensitive)
@@ -630,14 +634,13 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
 
     std::string_view piece;
 
-    if (!re2::RE2::PartialMatch({subject, subject_size}, *re2, &piece))
+    if (!re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, &piece, 1))
         return false;
 
     match.offset = piece.data() - subject;
     match.length = piece.length();
     return true;
 }
-
 
 unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
 {

@@ -2,6 +2,7 @@
 
 #include <boost/algorithm/string.hpp>
 
+#include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 
@@ -347,6 +348,53 @@ bool StringTokenExtractor::nextInString(const char * data, size_t length, size_t
 bool StringTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
+}
+
+PatternTokenExtractor::PatternTokenExtractor(const std::vector<String> & patterns)
+{
+    regular_expressions.reserve(patterns.size());
+    for (const auto & pattern : patterns)
+        regular_expressions.emplace_back(Regexps::createRegexp<false, true, false>(pattern));
+}
+
+std::vector<String> PatternTokenExtractor::getTokens(const char * data, size_t length) const
+{
+    std::vector<String> tokens;
+
+    OptimizedRegularExpression::Match match;
+    std::set<std::pair<size_t, size_t>> unique_matches;
+    for (const auto & regular_expression : regular_expressions)
+    {
+        for (size_t offset = 0; offset < length;)
+        {
+            if (regular_expression.match(data + offset, length - offset, match) && match.length > 0)
+            {
+                if (auto [_, inserted] = unique_matches.emplace(offset + match.offset, match.length); inserted)
+                    tokens.emplace_back(data + offset + match.offset, match.length);
+                offset += match.offset + match.length;
+            }
+            else
+                offset++;
+        }
+    }
+
+    return tokens;
+}
+
+bool PatternTokenExtractor::nextInString(
+    const char * /* data */,
+    size_t /* length */,
+    size_t * __restrict /* pos */,
+    size_t * __restrict /* token_start */,
+    size_t * __restrict /* token_length */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PatternTokenExtractor::nextInString is not implemented");
+}
+
+bool PatternTokenExtractor::nextInStringLike(
+    const char * /*data*/, size_t /*length*/, size_t * __restrict /*token_start*/, String & /*token_length*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PatternTokenExtractor::nextInStringLike is not implemented");
 }
 
 std::vector<String> NoOpTokenExtractor::getTokens(const char * data, size_t length) const
