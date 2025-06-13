@@ -77,6 +77,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char use_delayed_remote_source[];
+    extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
 static void addConvertingActions(Pipe & pipe, const Block & header, bool use_positions_to_match = false)
@@ -924,19 +925,27 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
         pipes.emplace_back(std::move(pipe));
     }
 
-    coordinator->setReadCompletedCallback(
-        [sources = std::move(remote_sources)](const std::set<size_t> & used_replicas)
-        {
-            for (const auto & [replica_num, processor] : sources)
+    bool wait_for_unused_replicas = false;
+    fiu_do_on(FailPoints::parallel_replicas_wait_for_unused_replicas,
+    {
+        wait_for_unused_replicas = true;
+    });
+    if (!wait_for_unused_replicas)
+    {
+        coordinator->setReadCompletedCallback(
+            [sources = std::move(remote_sources)](const std::set<size_t> & used_replicas)
             {
-                if (used_replicas.contains(replica_num))
-                    continue;
+                for (const auto & [replica_num, processor] : sources)
+                {
+                    if (used_replicas.contains(replica_num))
+                        continue;
 
-                auto proc = processor.lock();
-                if (proc)
-                    proc->cancel();
-            }
-        });
+                    auto proc = processor.lock();
+                    if (proc)
+                        proc->cancel();
+                }
+            });
+    }
 
     return pipes;
 }
