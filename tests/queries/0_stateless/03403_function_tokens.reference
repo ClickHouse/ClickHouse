@@ -1,14 +1,21 @@
 Negative tests
 Default tokenizer
 []
-['abc','def','foo','bar','baz','code','hello','world']
-['abc','def','foo','bar','baz','code','hello','world']
+['abc','def','foo','bar','baz','code','hello','world','xäöüx']
+['abc','def','foo','bar','baz','code','hello','world','xäöüx']
 Ngram tokenizer
 ['']
 ['abc','bc ','c d',' de','def']
 ['abc','bc ','c d',' de','def']
 ['abc def']
-NoOp tokenizer
+String tokenizer
+[]
+['  a  bc d']
+['a','bc','d']
+['a','bc','d']
+['a','bc','d']
+['a','bc','d']
+No-op tokenizer
 ['']
 ['abc def']
 Special cases (not systematically tested)
