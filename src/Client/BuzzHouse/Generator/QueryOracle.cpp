@@ -14,28 +14,6 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
-static const std::unordered_map<OutFormat, InFormat> outIn{
-    {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-    {OutFormat::OUT_Avro, InFormat::IN_Avro},
-    {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
-    {OutFormat::OUT_CSV, InFormat::IN_CSV},
-    {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
-    {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
-    {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
-    {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
-    {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
-    {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
-    {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
-    {OutFormat::OUT_ORC, InFormat::IN_ORC},
-    {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
-    {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
-    {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
-    {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
-    {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
-    {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
-    {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
-    {OutFormat::OUT_Values, InFormat::IN_Values}};
-
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 /// or
@@ -163,8 +141,8 @@ void QueryOracle::insertOnTableOrCluster(
         /// If the table is set on cluster, always insert to all replicas/shards
         ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
 
-        cdf->set_cname(ClusterFunc::clusterAllReplicas);
-        cdf->set_ccluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
+        cdf->set_all_replicas(true);
+        cdf->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
         t.setName(cdf->mutable_tof()->mutable_est(), true);
         if (rg.nextSmallNumber() < 4)
         {
@@ -217,7 +195,7 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
     gen.entries.clear();
 
     addLimitOrOffset(rg, gen, ncols, sel);
-    ts->set_format(rg.pickRandomly(outIn));
+    ts->set_format(rg.pickRandomly(StatementGenerator::outIn));
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
@@ -232,7 +210,7 @@ void QueryOracle::generateExportQuery(
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & cnfile = fc.client_file_path / "table.data";
     const std::filesystem::path & snfile = fc.server_file_path / "table.data";
-    OutFormat outf = rg.pickRandomly(outIn);
+    OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
     can_test_query_success &= test_content;
     /// Remove the file if exists
@@ -241,6 +219,7 @@ void QueryOracle::generateExportQuery(
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
     }
     ff->set_path(snfile.generic_string());
+    ff->set_fname(FileFunc_FName::FileFunc_FName_file);
 
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     if (!can_test_query_success && rg.nextSmallNumber() < 3)
@@ -329,8 +308,8 @@ void QueryOracle::generateImportQuery(
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
     const FileFunc & ff = oins.tof().tfunc().file();
-    const InFormat & inf
-        = (!can_test_query_success && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(outIn) : outIn.at(ff.outformat());
+    const InFormat & inf = (!can_test_query_success && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(StatementGenerator::outIn)
+                                                                                 : StatementGenerator::outIn.at(ff.outformat());
 
     insertOnTableOrCluster(rg, gen, t, false, nins->mutable_tof());
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
@@ -475,7 +454,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     {
         ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
-        OutFormat outf = rg.pickRandomly(outIn);
+        OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
         if (!std::filesystem::remove(qcfile, ec) && ec)
         {
@@ -488,6 +467,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             outf = OutFormat::OUT_CSV;
         }
         ff->set_outformat(outf);
+        ff->set_fname(FileFunc_FName::FileFunc_FName_file);
         sel = ins->mutable_select();
     }
 

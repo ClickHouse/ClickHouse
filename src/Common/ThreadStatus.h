@@ -48,7 +48,6 @@ using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
-using ThreadStatusPtr = ThreadStatus *;
 
 using QueryIsCanceledPredicate = std::function<bool()>;
 
@@ -209,6 +208,8 @@ public:
     MemoryTracker memory_tracker{VariableContext::Thread};
     /// Small amount of untracked memory (per thread atomic-less counter)
     Int64 untracked_memory = 0;
+    /// MemoryTrackerBlockerInThread state corresponding to untracked_memory.
+    VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
 
@@ -270,10 +271,8 @@ private:
 
     LoggerPtr log = nullptr;
 
-    bool check_current_thread_on_destruction;
-
 public:
-    explicit ThreadStatus(bool check_current_thread_on_destruction_ = true);
+    explicit ThreadStatus();
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;

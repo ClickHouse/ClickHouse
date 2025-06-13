@@ -50,7 +50,7 @@ using JSONObjectType = JSONParserImpl::Element;
 class ServerCredentials
 {
 public:
-    String hostname;
+    String hostname, container;
     uint32_t port, mysql_port;
     String unix_socket, user, password, database;
     std::filesystem::path user_files_dir, query_log_file;
@@ -65,6 +65,7 @@ public:
 
     ServerCredentials(
         const String & hostname_,
+        const String & container_,
         const uint32_t port_,
         const uint32_t mysql_port_,
         const String & unix_socket_,
@@ -74,6 +75,7 @@ public:
         const std::filesystem::path & user_files_dir_,
         const std::filesystem::path & query_log_file_)
         : hostname(hostname_)
+        , container(container_)
         , port(port_)
         , mysql_port(mysql_port_)
         , unix_socket(unix_socket_)
@@ -136,19 +138,19 @@ private:
 public:
     LoggerPtr log;
     std::ofstream outf;
-    DB::Strings collations, storage_policies, timezones, disks, clusters;
+    DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
-        minio_server;
+        minio_server, http_server, azurite_server;
     std::unordered_map<String, PerformanceMetric> metrics;
     std::unordered_set<uint32_t> disallowed_error_codes;
-    String host = "localhost";
+    String host = "localhost", keeper_map_path_prefix;
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, dump_table_oracle_compare_content = true,
          compare_success_results = false, measure_performance = false, allow_infinite_tables = false, compare_explains = false,
          allow_memory_tables = true, allow_client_restarts = false;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000;
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
              max_columns = 5, time_to_run = 0, type_mask = std::numeric_limits<uint32_t>::max(), port = 9000, secure_port = 9440,
-             use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000;
+             http_port = 8123, use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           client_file_path = std::filesystem::temp_directory_path() / "db",
                           server_file_path = std::filesystem::temp_directory_path() / "db",
@@ -165,7 +167,7 @@ public:
     bool processServerQuery(bool outlog, const String & query);
 
 private:
-    void loadServerSettings(DB::Strings & out, bool distinct, const String & table, const String & col);
+    void loadServerSettings(DB::Strings & out, bool distinct, const String & table, const String & col, const String & extra_clause);
 
 public:
     void loadServerConfigurations();

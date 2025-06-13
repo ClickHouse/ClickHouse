@@ -129,6 +129,7 @@ struct FunctionDocumentation
     IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
     Category category;                            /// E.g. Category::DatesAndTimes
 
+    std::string syntaxAsString() const;
     std::string argumentsAsString() const;
     std::string returnedValueAsString() const;
     std::string examplesAsString() const;

@@ -63,10 +63,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
             [](RandomGenerator & rg)
             {
                 const DB::Strings & choices
-                    = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'Delta'", "'T64'", "'AES_128_GCM_SIV'"};
+                    = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'T64'", "'AES_128_GCM_SIV'"};
                 return rg.pickRandomly(choices);
             },
-            {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'Delta'", "'T64'", "'AES_128_GCM_SIV'"},
+            {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'T64'", "'AES_128_GCM_SIV'"},
             false)},
        {"detach_not_byte_identical_parts", trueOrFalseSetting},
        {"detach_old_local_parts_when_cloning_replica", trueOrFalseSetting},
@@ -213,7 +213,8 @@ static std::unordered_map<String, CHSetting> logTableSettings = {};
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 std::unordered_map<String, CHSetting> restoreSettings
-    = {{"allow_different_database_def", CHSetting(trueOrFalse, {}, false)},
+    = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
+       {"allow_different_database_def", CHSetting(trueOrFalse, {}, false)},
        {"allow_different_table_def", CHSetting(trueOrFalse, {}, false)},
        {"allow_non_empty_tables", CHSetting(trueOrFalse, {}, false)},
        {"allow_s3_native_copy", CHSetting(trueOrFalse, {}, false)},
@@ -292,6 +293,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
          {ReplacingMergeTree, mergeTreeTableSettings},
+         {CoalescingMergeTree, mergeTreeTableSettings},
          {SummingMergeTree, mergeTreeTableSettings},
          {AggregatingMergeTree, mergeTreeTableSettings},
          {CollapsingMergeTree, mergeTreeTableSettings},
@@ -316,10 +318,18 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Hudi, {}},
          {DeltaLake, {}},
          {IcebergS3, {}},
+         {IcebergAzure, {}},
+         {IcebergLocal, {}},
          {Merge, {}},
          {Distributed, distributedTableSettings},
          {Dictionary, {}},
-         {GenerateRandom, {}}});
+         {GenerateRandom, {}},
+         {AzureBlobStorage, {}},
+         {AzureQueue, {}},
+         {URL, {}},
+         {KeeperMap, {}},
+         {ExternalDistributed, {}},
+         {MaterializedPostgreSQL, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},

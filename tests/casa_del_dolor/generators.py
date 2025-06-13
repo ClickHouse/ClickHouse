@@ -72,16 +72,34 @@ class BuzzHouseGenerator(Generator):
                 "query_log_file": "/tmp/mongodb.doc",
                 "database": "test",
                 "hostname": cluster.mongo_host,
-                "port": cluster.mongo_port,
+                "port": 27017,
                 "user": "root",
                 "password": mongo_pass,
             }
         if args.with_redis:
             buzz_config["redis"] = {
                 "hostname": cluster.redis_host,
-                "port": cluster.redis_port,
+                "port": 6379,
+                "user": "",
                 "password": "clickhouse",
             }
+        if args.with_nginx:
+            buzz_config["http"] = {
+                "hostname": cluster.nginx_host,
+                "port": cluster.nginx_port,
+            }
+        if args.with_azurite:
+            buzz_config["azurite"] = {
+                "hostname": cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"],
+                "database": cluster.env_variables[
+                    "AZURITE_CONNECTION_STRING"
+                ],  # it's hacking a little
+                "container": "cont",
+                "user": "devstoreaccount1",
+                "password": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+            }
+        if args.add_keeper_map_prefix:
+            buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
 
         with open(self.temp.name, "w") as file2:
             file2.write(json.dumps(buzz_config))
