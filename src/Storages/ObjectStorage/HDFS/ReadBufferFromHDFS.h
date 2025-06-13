@@ -5,24 +5,16 @@
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <string>
 #include <memory>
 #include <hdfs/hdfs.h>
 #include <base/types.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 
-namespace Poco
-{
-namespace Util
-{
-class AbstractConfiguration;
-}
-}
 
 namespace DB
 {
-
-struct ReadSettings;
-
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
@@ -53,10 +45,6 @@ public:
     size_t getFileOffsetOfBufferEnd() const override;
 
     String getFileName() const override;
-
-    size_t readBigAt(char * buffer, size_t size, size_t offset, const std::function<bool(size_t)> & function) const override;
-
-    bool supportsReadAt() override;
 
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;

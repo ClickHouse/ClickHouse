@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <Common/quoteString.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/Context.h>
@@ -8,22 +7,11 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
-}
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
-IInterpreter::IInterpreter(const ContextPtr & context)
-{
-    if (context->isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query execution with global context is a bug");
-}
 
 void IInterpreter::extendQueryLogElem(
     QueryLogElement & elem, const ASTPtr & ast, ContextPtr context, const String & query_database, const String & query_table) const
@@ -51,16 +39,16 @@ void IInterpreter::checkStorageSupportsTransactionsIfNeeded(const StoragePtr & s
     if (storage->supportsTransactions())
         return;
 
-    if (context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
+    if (context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage {} (table {}) does not support transactions",
                         storage->getName(), storage->getStorageID().getNameForLogs());
 
-    /// Do not allow transactions with replicated tables anyway (unless it's a readonly SELECT query)
+    /// Do not allow transactions with ReplicatedMergeTree anyway (unless it's a readonly SELECT query)
     /// because it may try to process transaction on MergeTreeData-level,
-    /// but then fail with a logical error or something on Storage{Replicated,Shared}MergeTree-level.
+    /// but then fail with a logical error or something on StorageReplicatedMergeTree-level.
     if (!is_readonly_query && storage->supportsReplication())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} (table {}) does not support transactions",
-                        storage->getName(), storage->getStorageID().getNameForLogs());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReplicatedMergeTree (table {}) does not support transactions",
+                        storage->getStorageID().getNameForLogs());
 }
 
 }

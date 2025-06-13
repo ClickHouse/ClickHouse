@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/NpyOutputFormat.h>
 
-#include <Common/assert_cast.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -11,7 +10,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Port.h>
+
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -67,7 +67,7 @@ NpyOutputFormat::NpyOutputFormat(WriteBuffer & out_, const Block & header_) : IO
 {
     const auto & header = getPort(PortKind::Main).getHeader();
     auto data_types = header.getDataTypes();
-    if (data_types.size() != 1)
+    if (data_types.size() > 1)
         throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "Expected single column for Npy output format, got {}", data_types.size());
     data_type = data_types[0];
 
@@ -264,8 +264,6 @@ void registerOutputFormatNpy(FormatFactory & factory)
         return std::make_shared<NpyOutputFormat>(buf, sample);
     });
     factory.markFormatHasNoAppendSupport("Npy");
-    factory.markOutputFormatNotTTYFriendly("Npy");
-    factory.setContentType("Npy", "application/octet-stream");
 }
 
 }

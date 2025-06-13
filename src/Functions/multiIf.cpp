@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
@@ -25,13 +24,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_execute_multiif_columnar;
-    extern const SettingsBool allow_experimental_variant_type;
-    extern const SettingsBool use_variant_as_common_type;
-}
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -60,8 +52,7 @@ public:
     static FunctionPtr create(ContextPtr context_)
     {
         const auto & settings = context_->getSettingsRef();
-        return std::make_shared<FunctionMultiIf>(
-            settings[Setting::allow_execute_multiif_columnar], settings[Setting::allow_experimental_variant_type], settings[Setting::use_variant_as_common_type]);
+        return std::make_shared<FunctionMultiIf>(settings.allow_execute_multiif_columnar, settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
     }
 
     explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_)
@@ -162,6 +153,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Fast path when data is empty
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
         ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
         /** We will gather values from columns in branches to result column,
@@ -239,21 +234,14 @@ public:
         }
 
         /// Special case if first instruction condition is always true and source is constant
-        if (instructions.size() == 1 && instructions.front().source_is_constant && instructions.front().condition_always_true)
+        if (instructions.size() == 1 && instructions.front().source_is_constant
+            && instructions.front().condition_always_true)
         {
             MutableColumnPtr res = return_type->createColumn();
             auto & instruction = instructions.front();
             res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
             return ColumnConst::create(std::move(res), instruction.source->size());
         }
-
-        /// Fast path when data is empty.
-        /// We should account for the above case when the result is constant, otherwise we might produce a full column instead of a
-        /// ColumnConst. But only for the header (while building pipeline, i.e. when input_rows_count==0), then we will get on with a
-        /// normal execution and return ColumnConst from the happy path.
-        /// It will break code that creates some data structures based on the input header column types.
-        if (input_rows_count == 0)
-            return result_type->createColumn();
 
         const WhichDataType which(removeNullable(result_type));
         bool execute_multiif_columnar = allow_execute_multiif_columnar && instructions.size() <= std::numeric_limits<UInt8>::max()
@@ -538,58 +526,7 @@ private:
 
 REGISTER_FUNCTION(MultiIf)
 {
-    FunctionDocumentation::Description description = R"(
-Allows writing the [`CASE`](/sql-reference/operators#conditional-expression) operator more compactly in the query.
-Evaluates each condition in order. For the first condition that is true (non-zero and not `NULL`), returns the corresponding branch value.
-If none of the conditions are true, returns the `else` value.
-
-Setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls
-whether short-circuit evaluation is used. If enabled, the `then_i` expression is evaluated only on rows where
-`((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` is true.
-
-For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the following query:
-
-```sql
-SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)
-```
-
-All branch and else expressions must have a common supertype. `NULL` conditions are treated as false.
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-multiIf(cond_1, then_1, cond_2, then_2, ..., else)
-    )";
-    FunctionDocumentation::Arguments arguments = {
-        {"cond_N", "The N-th evaluated condition which controls if `then_N` is returned. Each must be UInt8, Nullable(UInt8), or NULL."},
-        {"then_N", "The result of the function when `cond_N` is true."},
-        {"else", "The result of the function if none of the conditions is true."}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the result of `then_N` for matching `cond_N`, otherwise returns the `else` condition.";
-    FunctionDocumentation::Examples examples = {
-        {"Example usage", R"(
-CREATE TABLE LEFT_RIGHT (left Nullable(UInt8), right Nullable(UInt8)) ENGINE = Memory;
-INSERT INTO LEFT_RIGHT VALUES (NULL, 4), (1, 3), (2, 2), (3, 1), (4, NULL);
-
-SELECT
-    left,
-    right,
-    multiIf(left < right, 'left is smaller', left > right, 'left is greater', left = right, 'Both equal', 'Null value') AS result
-FROM LEFT_RIGHT;
-    )",
-    R"(
-┌─left─┬─right─┬─result──────────┐
-│ ᴺᵁᴸᴸ │     4 │ Null value      │
-│    1 │     3 │ left is smaller │
-│    2 │     2 │ Both equal      │
-│    3 │     1 │ left is greater │
-│    4 │  ᴺᵁᴸᴸ │ Null value      │
-└──────┴───────┴─────────────────┘
-    )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionMultiIf>(documentation);
+    factory.registerFunction<FunctionMultiIf>();
 
     /// These are obsolete function names.
     factory.registerAlias("caseWithoutExpr", "multiIf");

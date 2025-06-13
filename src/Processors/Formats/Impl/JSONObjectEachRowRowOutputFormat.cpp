@@ -1,9 +1,7 @@
-#include <Columns/IColumn.h>
-#include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
+#include <Processors/Formats/Impl/JSONObjectEachRowRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <IO/WriteHelpers.h>
-#include <Processors/Formats/Impl/JSONObjectEachRowRowInputFormat.h>
-#include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 
 namespace DB
 {
@@ -89,7 +87,6 @@ void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONObjectEachRow");
     factory.markFormatHasNoAppendSupport("JSONObjectEachRow");
-    factory.setContentType("JSONObjectEachRow", "application/json; charset=UTF-8");
 }
 
 }

@@ -1,7 +1,7 @@
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
@@ -45,10 +45,9 @@ def test_skip_all_replicas(
         initiator.query(
             f"SELECT key, count() FROM {table_name}  GROUP BY key ORDER BY key",
             settings={
-                "enable_parallel_replicas": 2,
+                "allow_experimental_parallel_reading_from_replicas": 2,
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
                 "skip_unavailable_shards": skip_unavailable_shards,
-                "parallel_replicas_local_plan": 0,
             },
         )

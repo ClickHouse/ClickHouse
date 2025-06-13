@@ -51,25 +51,25 @@ REGISTER_FUNCTION(CutToFirstSignificantSubdomain)
             {"cutToFirstSignificantSubdomain2", "SELECT cutToFirstSignificantSubdomain('www.tr')", ""},
             {"cutToFirstSignificantSubdomain3", "SELECT cutToFirstSignificantSubdomain('tr')", ""},
         },
-        .category = FunctionDocumentation::Category::URL
+        .categories{"URL"}
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWW>(
         FunctionDocumentation{
             .description=R"(Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain", without stripping "www".)",
             .examples{},
-            .category = FunctionDocumentation::Category::URL
+            .categories{"URL"}
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainRFC>(
         FunctionDocumentation{
             .description=R"(Similar to `cutToFirstSignificantSubdomain` but follows stricter rules to be compatible with RFC 3986 and less performant.)",
             .examples{},
-            .category = FunctionDocumentation::Category::URL
+            .categories{"URL"}
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWWRFC>(
         FunctionDocumentation{
             .description=R"(Similar to `cutToFirstSignificantSubdomainWithWWW` but follows stricter rules to be compatible with RFC 3986 and less performant.)",
             .examples{},
-            .category = FunctionDocumentation::Category::URL
+            .categories{"URL"}
         });
 }
 

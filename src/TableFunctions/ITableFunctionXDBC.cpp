@@ -10,7 +10,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/StorageXDBC.h>
-#include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -25,18 +24,10 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool external_table_functions_use_nulls;
-    extern const SettingsSeconds http_receive_timeout;
-    extern const SettingsBool odbc_bridge_use_connection_pooling;
-}
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -120,54 +111,23 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments.", getName());
 
     ASTs & args = args_func.arguments->children;
-
-    if (args.empty() || args.size() > 3)
+    if (args.size() != 2 && args.size() != 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{0}' requires 1, 2 or 3 arguments: {0}(named_collection) or {0}('DSN', table) or {0}('DSN', schema, table)", getName());
+            "Table function '{0}' requires 2 or 3 arguments: {0}('DSN', table) or {0}('DSN', schema, table)", getName());
 
-    if (args.size() == 1)
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+
+    if (args.size() == 3)
     {
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(ast_function->children.at(0)->children, context))
-        {
-            if (getName() == "JDBC")
-            {
-                validateNamedCollection<>(*named_collection, {"datasource"}, {"schema", "table"});
-                connection_string = named_collection->get<String>("datasource");
-                schema_name = named_collection->getOrDefault<String>("schema", "");
-                remote_table_name = named_collection->getOrDefault<String>("table", "");
-            }
-            else
-            {
-                validateNamedCollection<>(*named_collection, {"connection_settings"}, {"external_database", "external_table"});
-
-                connection_string = named_collection->get<String>("connection_settings");
-                schema_name = named_collection->getOrDefault<String>("external_database", "");
-                remote_table_name = named_collection->getOrDefault<String>("external_table", "");
-
-            }
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Table function '{0}' has 1 argument, it is expected to be named collection", getName());
-        }
+        connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        schema_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     }
-    else
+    else if (args.size() == 2)
     {
-        for (auto & arg : args)
-            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
-
-        if (args.size() == 3)
-        {
-            connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-            schema_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-            remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        }
-        else if (args.size() == 2)
-        {
-            connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-            remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        }
+        connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     }
 }
 
@@ -175,11 +135,7 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
 {
     if (!helper)
     {
-        helper = createBridgeHelper(
-            context,
-            context->getSettingsRef()[Setting::http_receive_timeout].value,
-            connection_string,
-            context->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
+        helper = createBridgeHelper(context, context->getSettingsRef().http_receive_timeout.value, connection_string, context->getSettingsRef().odbc_bridge_use_connection_pooling.value);
         helper->startBridgeSync();
     }
 }
@@ -195,7 +151,7 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
         columns_info_uri.addQueryParameter("schema", schema_name);
     columns_info_uri.addQueryParameter("table", remote_table_name);
 
-    bool use_nulls = context->getSettingsRef()[Setting::external_table_functions_use_nulls];
+    bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls", toString(use_nulls));
 
     Poco::Net::HTTPBasicCredentials credentials{};
@@ -204,7 +160,7 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(
                         context->getSettingsRef(),
-                        context->getServerSettings()))
+                        context->getServerSettings().keep_alive_timeout))
                    .create(credentials);
 
     std::string columns_info;

@@ -4,7 +4,6 @@
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -221,7 +220,6 @@ private:
     String name;
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
-    bool need_headers_virtual_column;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
@@ -235,9 +233,6 @@ private:
 
     Poco::Net::HTTPBasicCredentials credentials;
 
-    Map http_response_headers;
-    bool http_response_headers_initialized = false;
-
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
@@ -248,15 +243,15 @@ class StorageURLSink : public SinkToStorage
 {
 public:
     StorageURLSink(
-        String uri_,
-        String format_,
+        const String & uri,
+        const String & format,
         const std::optional<FormatSettings> & format_settings,
         const Block & sample_block,
         const ContextPtr & context,
         const ConnectionTimeouts & timeouts,
-        const CompressionMethod & compression_method,
-        HTTPHeaderEntries headers = {},
-        String method = Poco::Net::HTTPRequest::HTTP_POST);
+        CompressionMethod compression_method,
+        const HTTPHeaderEntries & headers = {},
+        const String & method = Poco::Net::HTTPRequest::HTTP_POST);
 
     ~StorageURLSink() override;
 
@@ -268,16 +263,6 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
-    void initBuffers();
-
-    String uri;
-    String format;
-    std::optional<FormatSettings> format_settings;
-    ContextPtr context;
-    ConnectionTimeouts timeouts;
-    CompressionMethod compression_method;
-    HTTPHeaderEntries headers;
-    String http_method;
 
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;

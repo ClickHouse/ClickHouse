@@ -2,6 +2,9 @@
 
 #include <Common/JSONBuilder.h>
 
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ArrayJoinAction.h>
+
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 
@@ -11,10 +14,11 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Planner/Utils.h>
+
 
 namespace DB
 {
@@ -22,20 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-SettingsChanges ExplainPlanOptions::toSettingsChanges() const
-{
-    SettingsChanges changes;
-    changes.emplace_back("header", int(header));
-    changes.emplace_back("description", int(description));
-    changes.emplace_back("actions", int(actions));
-    changes.emplace_back("indexes", int(indexes));
-    changes.emplace_back("projections", int(projections));
-    changes.emplace_back("sorting", int(sorting));
-    changes.emplace_back("distributed", int(distributed));
-
-    return changes;
 }
 
 QueryPlan::QueryPlan() = default;
@@ -57,14 +47,14 @@ void QueryPlan::checkNotCompleted() const
 
 bool QueryPlan::isCompleted() const
 {
-    return isInitialized() && !root->step->hasOutputHeader();
+    return isInitialized() && !root->step->hasOutputStream();
 }
 
-const Header & QueryPlan::getCurrentHeader() const
+const DataStream & QueryPlan::getCurrentDataStream() const
 {
     checkInitialized();
     checkNotCompleted();
-    return root->step->getOutputHeader();
+    return root->step->getOutputStream();
 }
 
 void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
@@ -72,8 +62,8 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     if (isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
 
-    const auto & inputs = step->getInputHeaders();
-    size_t num_inputs = step->getInputHeaders().size();
+    const auto & inputs = step->getInputStreams();
+    size_t num_inputs = step->getInputStreams().size();
     if (num_inputs != plans.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -84,8 +74,8 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
 
     for (size_t i = 0; i < num_inputs; ++i)
     {
-        const auto & step_header = inputs[i];
-        const auto & plan_header = plans[i]->getCurrentHeader();
+        const auto & step_header = inputs[i].header;
+        const auto & plan_header = plans[i]->getCurrentDataStream().header;
         if (!blocksHaveEqualStructure(step_header, plan_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -116,7 +106,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 {
     checkNotCompleted();
 
-    size_t num_input_streams = step->getInputHeaders().size();
+    size_t num_input_streams = step->getInputStreams().size();
 
     if (num_input_streams == 0)
     {
@@ -139,8 +129,8 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
                 "Cannot add step {} to QueryPlan because step has input, but QueryPlan is not initialized",
                 step->getName());
 
-        const auto & root_header = root->step->getOutputHeader();
-        const auto & step_header = step->getInputHeaders().front();
+        const auto & root_header = root->step->getOutputStream().header;
+        const auto & step_header = step->getInputStreams().front().header;
         if (!blocksHaveEqualStructure(root_header, step_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -165,12 +155,10 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
-    const BuildQueryPipelineSettings & build_pipeline_settings,
-    bool do_optimize)
+    const BuildQueryPipelineSettings & build_pipeline_settings)
 {
     checkInitialized();
-    if (do_optimize)
-        optimize(optimization_settings);
+    optimize(optimization_settings);
 
     struct Frame
     {
@@ -211,15 +199,13 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(std::move(resources));
-    last_pipeline->setConcurrencyControl(getConcurrencyControl());
 
     return last_pipeline;
 }
 
-static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const ExplainPlanOptions & options)
+static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {
     map.add("Node Type", step.getName());
-    map.add("Node Id", step.getUniqID());
 
     if (options.description)
     {
@@ -228,11 +214,11 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
             map.add("Description", description);
     }
 
-    if (options.header && step.hasOutputHeader())
+    if (options.header && step.hasOutputStream())
     {
         auto header_array = std::make_unique<JSONBuilder::JSONArray>();
 
-        for (const auto & output_column : step.getOutputHeader())
+        for (const auto & output_column : step.getOutputStream().header)
         {
             auto column_map = std::make_unique<JSONBuilder::JSONMap>();
             column_map->add("Name", output_column.name);
@@ -250,12 +236,9 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
 
     if (options.indexes)
         step.describeIndexes(map);
-
-    if (options.projections)
-        step.describeProjections(map);
 }
 
-JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const
+JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
 {
     checkInitialized();
 
@@ -315,9 +298,9 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 }
 
 static void explainStep(
-    IQueryPlanStep & step,
+    const IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
-    const ExplainPlanOptions & options)
+    const QueryPlan::ExplainPlanOptions & options)
 {
     std::string prefix(settings.offset, ' ');
     settings.out << prefix;
@@ -333,24 +316,22 @@ static void explainStep(
     {
         settings.out << prefix;
 
-        if (!step.hasOutputHeader())
+        if (!step.hasOutputStream())
             settings.out << "No header";
-        else if (!step.getOutputHeader())
+        else if (!step.getOutputStream().header)
             settings.out << "Empty header";
         else
         {
             settings.out << "Header: ";
             bool first = true;
 
-            for (const auto & elem : step.getOutputHeader())
+            for (const auto & elem : step.getOutputStream().header)
             {
                 if (!first)
                     settings.out << "\n" << prefix << "        ";
 
                 first = false;
                 elem.dumpNameAndType(settings.out);
-                if (elem.column && isColumnLazy(*elem.column.get()))
-                    settings.out << " (Lazy)";
             }
         }
         settings.out.write('\n');
@@ -359,10 +340,14 @@ static void explainStep(
 
     if (options.sorting)
     {
-        if (const auto & sort_description = step.getSortDescription(); !sort_description.empty())
+        if (step.hasOutputStream())
         {
-            settings.out << prefix << "Sorting: ";
-            dumpSortDescription(sort_description, settings.out);
+            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
+            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
+            {
+                settings.out << ": ";
+                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
+            }
             settings.out.write('\n');
         }
     }
@@ -372,24 +357,18 @@ static void explainStep(
 
     if (options.indexes)
         step.describeIndexes(settings);
-
-    if (options.projections)
-        step.describeProjections(settings);
-
-    if (options.distributed)
-        step.describeDistributedPlan(settings, options);
 }
 
-std::string debugExplainStep(IQueryPlanStep & step)
+std::string debugExplainStep(const IQueryPlanStep & step)
 {
     WriteBufferFromOwnString out;
-    ExplainPlanOptions options{.actions = true};
     IQueryPlanStep::FormatSettings settings{.out = out};
+    QueryPlan::ExplainPlanOptions options{.actions = true};
     explainStep(step, settings, options);
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent) const
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent)
 {
     checkInitialized();
 
@@ -443,7 +422,7 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
         settings.offset += settings.indent;
 }
 
-void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const
+void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options)
 {
     checkInitialized();
 
@@ -482,6 +461,39 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
+static void updateDataStreams(QueryPlan::Node & root)
+{
+    class UpdateDataStreams : public QueryPlanVisitor<UpdateDataStreams, false>
+    {
+    public:
+        explicit UpdateDataStreams(QueryPlan::Node * root_) : QueryPlanVisitor<UpdateDataStreams, false>(root_) { }
+
+        static bool visitTopDownImpl(QueryPlan::Node * /*current_node*/, QueryPlan::Node * /*parent_node*/) { return true; }
+
+        static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * /*parent_node*/)
+        {
+            auto & current_step = *current_node->step;
+            if (!current_step.canUpdateInputStream() || current_node->children.empty())
+                return;
+
+            for (const auto * child : current_node->children)
+            {
+                if (!child->step->hasOutputStream())
+                    return;
+            }
+
+            DataStreams streams;
+            streams.reserve(current_node->children.size());
+            for (const auto * child : current_node->children)
+                streams.emplace_back(child->step->getOutputStream());
+
+            current_step.updateInputStreams(std::move(streams));
+        }
+    };
+
+    UpdateDataStreams(&root).visit();
+}
+
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// optimization need to be applied before "mergeExpressions" optimization
@@ -493,10 +505,12 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
     if (optimization_settings.build_sets)
-        QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
+        QueryPlanOptimizations::addStepsToBuildSets(*this, *root, nodes);
+
+    updateDataStreams(*root);
 }
 
-void QueryPlan::explainEstimate(MutableColumns & columns) const
+void QueryPlan::explainEstimate(MutableColumns & columns)
 {
     checkInitialized();
 
@@ -547,160 +561,9 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
     }
 }
 
-// static void validatePlan(QueryPlan::Node * root, QueryPlan::Nodes & nodes)
-// {
-//     std::unordered_set<const QueryPlan::Node *> used;
-//     std::stack<const QueryPlan::Node *> stack;
-
-//     std::unordered_set<const QueryPlan::Node *> known;
-//     for (const auto & node : nodes)
-//         known.emplace(&node);
-
-//     stack.push(root);
-//     while (!stack.empty())
-//     {
-//         const auto * node = stack.top();
-//         used.insert(node);
-//         stack.pop();
-
-//         if (!known.contains(node))
-//             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not known", node->step->getName(), reinterpret_cast<const void *>(node));
-
-//         for (auto * child : node->children)
-//         {
-//             stack.push(child);
-//         }
-//     }
-
-//     for (const auto * node : known)
-//         if (!used.contains(node))
-//             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not used", node->step->getName(), reinterpret_cast<const void *>(node));
-// }
-
-QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
-{
-    std::unordered_set<Node *> used;
-    std::stack<Node *> stack;
-
-    stack.push(root);
-    used.insert(root);
-    while (!stack.empty())
-    {
-        const auto * node = stack.top();
-        stack.pop();
-
-        for (auto * child : node->children)
-        {
-            used.insert(child);
-            stack.push(child);
-        }
-    }
-
-    QueryPlan new_plan;
-    new_plan.root = root;
-
-    auto it = nodes.begin();
-    while (it != nodes.end())
-    {
-        auto curr = it;
-        ++it;
-
-        if (used.contains(&*curr))
-            new_plan.nodes.splice(new_plan.nodes.end(), nodes, curr);
-    }
-
-    // {
-    //     WriteBufferFromOwnString buf;
-    //     new_plan.explainPlan(buf, {.header=true, .actions=true});
-    //     std::cerr << buf.stringView() << std::endl;
-    // }
-
-    // validatePlan(new_plan.root, new_plan.nodes);
-
-    return new_plan;
-}
-
 std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndResources(QueryPlan && plan)
 {
     return {std::move(plan.nodes), std::move(plan.resources)};
-}
-
-QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
-{
-    std::unordered_set<Node *> used;
-    std::stack<Node *> stack;
-
-    stack.push(subplan_root);
-    used.insert(subplan_root);
-    while (!stack.empty())
-    {
-        const auto * node = stack.top();
-        stack.pop();
-
-        for (auto * child : node->children)
-        {
-            used.insert(child);
-            stack.push(child);
-        }
-    }
-
-    QueryPlan new_plan;
-    new_plan.root = subplan_root;
-
-    auto it = nodes.begin();
-    while (it != nodes.end())
-    {
-        auto curr = it;
-        ++it;
-
-        if (used.contains(&*curr))
-            new_plan.nodes.splice(new_plan.nodes.end(), nodes, curr);
-    }
-
-    return new_plan;
-}
-
-QueryPlan QueryPlan::clone() const
-{
-    QueryPlan result;
-
-    struct Frame
-    {
-        Node * node;
-        Node * clone;
-        std::vector<Node *> children = {};
-    };
-
-    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
-    result.root = &result.nodes.back();
-
-    std::vector<Frame> nodes_to_process{ Frame{ .node = root, .clone = result.root } };
-
-    while (!nodes_to_process.empty())
-    {
-        auto & frame = nodes_to_process.back();
-        if (frame.children.size() == frame.node->children.size())
-        {
-            frame.clone->step = frame.node->step->clone();
-            frame.clone->children = std::move(frame.children);
-            nodes_to_process.pop_back();
-        }
-        else
-        {
-            size_t next_child = frame.children.size();
-            auto * child = frame.node->children[next_child];
-
-            result.nodes.emplace_back(Node{ .step = {} });
-            result.nodes.back().children.reserve(child->children.size());
-            auto * child_clone = &result.nodes.back();
-
-            frame.children.push_back(child_clone);
-
-            nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
-        }
-    }
-
-    return result;
 }
 
 }

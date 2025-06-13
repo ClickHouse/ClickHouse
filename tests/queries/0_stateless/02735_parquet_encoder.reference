@@ -6,7 +6,7 @@ i8	Nullable(Int8)
 i16	Nullable(Int16)					
 i32	Nullable(Int32)					
 i64	Nullable(Int64)					
-date	Nullable(Date32)					
+date	Nullable(UInt16)					
 date32	Nullable(Date32)					
 datetime	Nullable(UInt32)					
 datetime64	Nullable(DateTime64(3, \'UTC\'))					
@@ -26,9 +26,6 @@ decimal128	Nullable(Decimal(38, 20))
 decimal256	Nullable(Decimal(76, 40))					
 ipv4	Nullable(UInt32)					
 ipv6	Nullable(FixedString(16))					
-0
-datetime	Nullable(DateTime64(3, \'UTC\'))					
-0
 0
 0
 0

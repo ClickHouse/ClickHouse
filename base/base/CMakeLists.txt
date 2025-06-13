@@ -4,7 +4,9 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-configure_file(GitHash.cpp.in GitHash.generated.cpp)
+# TODO: Remove this. We like to compile with C++23 (set by top-level CMakeLists) but Clang crashes with our libcxx
+# when instantiated from JSON.cpp. Try again when libcxx(abi) and Clang are upgraded to 16.
+set (CMAKE_CXX_STANDARD 20)
 
 set (SRCS
     argsToConfig.cpp
@@ -18,7 +20,6 @@ set (SRCS
     getPageSize.cpp
     getThreadId.cpp
     int8_to_string.cpp
-    IPv4andIPv6.cpp
     itoa.cpp
     JSON.cpp
     mremap.cpp
@@ -32,8 +33,6 @@ set (SRCS
     safeExit.cpp
     throwError.cpp
     Numa.cpp
-    GitHash.generated.cpp
-    wide_integer_to_string.cpp
 )
 
 add_library (common ${SRCS})

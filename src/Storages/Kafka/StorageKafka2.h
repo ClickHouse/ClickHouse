@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Core/Block_fwd.h>
-#include <Core/StreamingHandleErrorMode.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/Block.h>
 #include <Core/Types.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
-#include <Storages/Kafka/Kafka_fwd.h>
+#include <Storages/Kafka/KafkaSettings.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadStatus.h>
@@ -18,7 +17,6 @@
 #include <filesystem>
 #include <list>
 #include <mutex>
-#include <unordered_set>
 #include <rdkafka.h>
 
 namespace cppkafka
@@ -30,11 +28,7 @@ class Configuration;
 
 namespace DB
 {
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-struct KafkaSettings;
+
 template <typename TStorageKafka>
 struct KafkaInterceptors;
 
@@ -69,11 +63,9 @@ public:
         std::unique_ptr<KafkaSettings> kafka_settings_,
         const String & collection_name_);
 
-    ~StorageKafka2() override;
+    std::string getName() const override { return "Kafka"; }
 
-    std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
-
-    bool noPushingToViewsOnInserts() const override { return true; }
+    bool noPushingToViews() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -97,17 +89,11 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    StreamingHandleErrorMode getHandleKafkaErrorMode() const;
-
-    bool supportsDynamicSubcolumns() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
-
-    const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
+    StreamingHandleErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
 private:
     using TopicPartition = KafkaConsumer2::TopicPartition;
     using TopicPartitions = KafkaConsumer2::TopicPartitions;
-
 
     struct LockedTopicPartitionInfo
     {
@@ -122,39 +108,14 @@ private:
         KafkaConsumer2::OnlyTopicNameAndPartitionIdHash,
         KafkaConsumer2::OnlyTopicNameAndPartitionIdEquality>;
 
-    using TopicPartitionSet = std::
-        unordered_set<TopicPartition, KafkaConsumer2::OnlyTopicNameAndPartitionIdHash, KafkaConsumer2::OnlyTopicNameAndPartitionIdEquality>;
-
     struct ConsumerAndAssignmentInfo
     {
         KafkaConsumer2Ptr consumer;
         size_t consume_from_topic_partition_index{0};
         TopicPartitions topic_partitions{};
         zkutil::ZooKeeperPtr keeper;
+        TopicPartitionLocks locks{};
         Stopwatch watch{CLOCK_MONOTONIC_COARSE};
-        size_t poll_count = 0;
-        TopicPartitionLocks permanent_locks{};
-        TopicPartitionLocks tmp_locks{};
-
-        // Quota, how many temporary locks can be taken in current round
-        size_t tmp_locks_quota{};
-
-        // Searches first in permanent_locks, then in tmp_locks.
-        // Returns a pointer to the lock if found; otherwise, returns nullptr.
-        LockedTopicPartitionInfo * findTopicPartitionLock(const TopicPartition & topic_partition)
-        {
-            auto locks_it = permanent_locks.find(topic_partition);
-            if (locks_it != permanent_locks.end())
-                return &locks_it->second;
-            locks_it = tmp_locks.find(topic_partition);
-            if (locks_it != tmp_locks.end())
-                return &locks_it->second;
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot find locks for topic partition {}:{}",
-                topic_partition.topic,
-                topic_partition.partition_id);
-        }
     };
 
     struct PolledBatchInfo
@@ -166,12 +127,9 @@ private:
     // Stream thread
     struct TaskContext
     {
-        BackgroundSchedulePoolTaskHolder holder;
+        BackgroundSchedulePool::TaskHolder holder;
         std::atomic<bool> stream_cancelled{false};
-        explicit TaskContext(BackgroundSchedulePoolTaskHolder && task_)
-            : holder(std::move(task_))
-        {
-        }
+        explicit TaskContext(BackgroundSchedulePool::TaskHolder && task_) : holder(std::move(task_)) { }
     };
 
     enum class AssignmentChange
@@ -184,8 +142,7 @@ private:
     // Configuration and state
     mutable std::mutex keeper_mutex;
     zkutil::ZooKeeperPtr keeper;
-    const String keeper_path;
-    const std::filesystem::path fs_keeper_path;
+    String keeper_path;
     String replica_path;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
@@ -216,7 +173,7 @@ private:
     // Handling replica activation.
     std::atomic<bool> is_active = false;
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
-    BackgroundSchedulePoolTaskHolder activating_task;
+    BackgroundSchedulePool::TaskHolder activating_task;
     String active_node_identifier;
     UInt64 consecutive_activate_failures = 0;
     bool activate();
@@ -245,7 +202,6 @@ private:
         NoPartitions,
         NoMessages,
         KeeperSessionEnded,
-        NoMetadata
     };
 
     std::optional<StallReason> streamToViews(size_t idx);
@@ -260,35 +216,8 @@ private:
     void createReplica();
     void dropReplica();
 
-    struct ActiveReplicasInfo
-    {
-        UInt64 active_replica_count{0};
-        bool has_replica_without_locks{false};
-    };
-    std::pair<TopicPartitionSet, ActiveReplicasInfo> getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use);
-
-    std::pair<TopicPartitions, ActiveReplicasInfo>
-    getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions);
-
-    std::optional<LockedTopicPartitionInfo>
-    createLocksInfoIfFree(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
-
-    void lockTemporaryLocks(
-        zkutil::ZooKeeper & keeper_to_use,
-        const TopicPartitions & available_topic_partitions,
-        TopicPartitionLocks & tmp_locks,
-        size_t & tmp_locks_quota,
-        bool has_replica_without_locks);
-
-    void updatePermanentLocks(
-        zkutil::ZooKeeper & keeper_to_use,
-        const TopicPartitions & topic_partitions,
-        TopicPartitionLocks & permanent_locks,
-        size_t topic_partitions_count,
-        size_t active_replica_count);
-
-    // To save commit and intent nodes
-    void saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, const std::filesystem::path & keeper_path_to_data, const String & data);
+    // Takes lock over topic partitions and sets the committed offset in topic_partitions.
+    std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions);
     void saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition);
     void saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent);
 
@@ -307,7 +236,6 @@ private:
 
 
     std::filesystem::path getTopicPartitionPath(const TopicPartition & topic_partition);
-    std::filesystem::path getTopicPartitionLockPath(const TopicPartition & topic_partition);
 };
 
 }

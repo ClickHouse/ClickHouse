@@ -1,7 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Columns/FilterDescription.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
@@ -99,27 +98,6 @@ FilterDescription::FilterDescription(const IColumn & column_)
         "Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8) or Const variants of them.",
         column.getName());
 }
-
-ColumnPtr FilterDescription::filter(const IColumn & column, ssize_t result_size_hint) const
-{
-    return column.filter(*data, result_size_hint);
-}
-
-size_t FilterDescription::countBytesInFilter() const
-{
-    return DB::countBytesInFilter(*data);
-}
-
-ColumnPtr SparseFilterDescription::filter(const IColumn & column, ssize_t) const
-{
-    return column.index(*filter_indices, 0);
-}
-
-size_t SparseFilterDescription::countBytesInFilter() const
-{
-    return filter_indices->size();
-}
-
 
 SparseFilterDescription::SparseFilterDescription(const IColumn & column)
 {

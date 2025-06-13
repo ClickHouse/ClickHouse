@@ -1,10 +1,10 @@
+#include <sstream>
+
 #include <IO/LimitReadBuffer.h>
 #include <IO/copyData.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-#include <iostream>
-#include <sstream>
 
 namespace DB
 {
@@ -27,7 +27,7 @@ try
 
         ReadBuffer in(src.data(), src.size(), 0);
 
-        auto limit_in = LimitReadBuffer(in, {.read_no_more = 1});
+        LimitReadBuffer limit_in(in, 1, /* trow_exception */ false, /* exact_limit */ {});
 
         {
             WriteBufferFromString out(dst);
@@ -55,7 +55,7 @@ try
             char x;
             readChar(x, in);
 
-            auto limit_in = LimitReadBuffer(in, {.read_no_more = 1});
+            LimitReadBuffer limit_in(in, 1, /* trow_exception */ false, /* exact_limit */ {});
 
             copyData(limit_in, out);
 
@@ -85,7 +85,7 @@ try
         ReadBuffer in(src.data(), src.size(), 0);
 
         {
-            auto limit_in = LimitReadBuffer(in, {.read_no_more = 1});
+            LimitReadBuffer limit_in(in, 1, /* trow_exception */ false, /* exact_limit */ {});
 
             char x;
             readChar(x, limit_in);
