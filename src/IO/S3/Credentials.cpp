@@ -1,7 +1,10 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
+#include <IO/S3/GetAvailabilityZone.h>
 #include <Common/Exception.h>
+#include <base/EnumReflection.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -13,11 +16,11 @@ namespace ErrorCodes
 
 namespace S3
 {
-    std::string tryGetRunningAvailabilityZone(bool is_zone_id)
+    std::string tryGetRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility)
     {
         try
         {
-            return getRunningAvailabilityZone(is_zone_id);
+            return getRunningAvailabilityZone(is_zone_id, az_facility);
         }
         catch (...)
         {
@@ -314,7 +317,7 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException(bool is_zone_id)
     return response_data;
 }
 
-String getGCPAvailabilityZoneOrException()
+String getGCPAvailabilityZoneOrException([[maybe_unused]] bool is_zone_id = false)
 {
     Poco::URI uri(String(GCP_METADATA_SERVICE_ENDPOINT) + "/computeMetadata/v1/instance/zone");
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
@@ -338,9 +341,52 @@ String getGCPAvailabilityZoneOrException()
     return zone_info[3];
 }
 
-String getRunningAvailabilityZone(bool is_zone_id)
+
+String getRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility)
 {
     LOG_INFO(getLogger("Application"), "Trying to detect the availability zone.");
+
+    using AZGetter = std::function<String(bool)>;
+    std::vector<AZGetter> az_getters =
+    {
+        AWSEC2MetadataClient::getAvailabilityZoneOrException,
+        getGCPAvailabilityZoneOrException
+    };
+
+    if (az_facility == AZFacilities::ALL)
+    {
+        std::vector<std::string> ex_msgs;
+
+        for (auto & getter : az_getters)
+        {
+            try
+            {
+                return getter(is_zone_id);
+            }
+            catch (...)
+            {
+                auto ex_msg = getExceptionMessage(std::current_exception(), false);
+                LOG_INFO(getLogger("Application"), "Trying to detect the availability zone. Error: {}", ex_msg);
+            }
+        }
+        throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Failed to find the availability zone. Errors: {}", boost::algorithm::join(ex_msgs, ", "));
+    }
+
+    else
+    {
+        try
+        {
+            return az_getters[magic_enum::enum_integer(az_facility)](is_zone_id);
+        }
+        catch (...)
+        {
+            auto ex_msg = getExceptionMessage(std::current_exception(), false);
+            LOG_INFO(getLogger("Application"), "Trying to detect the availability zone.");
+        }
+    }
+
+
     try
     {
         return AWSEC2MetadataClient::getAvailabilityZoneOrException(is_zone_id);

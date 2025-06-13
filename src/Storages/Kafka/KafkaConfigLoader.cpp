@@ -11,6 +11,8 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
+#include <IO/S3/GetAvailabilityZone.h>
+
 
 namespace CurrentMetrics
 {
@@ -365,16 +367,23 @@ void updateGlobalConfiguration(
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
         kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
 
-    if (kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value == "MSK")
+    auto autodetect_rack = kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value;
+    if (!autodetect_rack.empty())
     {
-        std::string rack = S3::tryGetRunningAvailabilityZone(true /*zone-id */);
-        if (!rack.empty())
+        if (magic_enum::enum_contains<S3::AZFacilities>(autodetect_rack))
         {
-            kafka_config.set("client.rack", rack);
-            LOG_TRACE(params.log, "client.rack set to {}.", rack);
+            std::string rack
+                = S3::tryGetRunningAvailabilityZone(true /*zone-id */, magic_enum::enum_cast<S3::AZFacilities>(autodetect_rack).value());
+            if (!rack.empty())
+            {
+                kafka_config.set("client.rack", rack);
+                LOG_TRACE(params.log, "client.rack set to {}.", rack);
+            }
+            else
+                LOG_ERROR(params.log, "Failed to determine client.rack via facility {}.", autodetect_rack);
         }
         else
-            LOG_ERROR(params.log, "Failed to determine client.rack.");
+            LOG_ERROR(params.log, "Unknown kafka_autodetect_client_rack facility.");
     }
 
 #if USE_KRB5
@@ -459,7 +468,6 @@ void updateGlobalConfiguration(
             LOG_ERROR(params.log, "Cannot set dup conf interceptor due to {} error", status);
     }
 }
-
 }
 
 template <typename TKafkaStorage>
