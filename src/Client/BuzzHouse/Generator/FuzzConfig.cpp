@@ -125,6 +125,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
         {"secure_port", [&](const JSONObjectType & value) { secure_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"http_port", [&](const JSONObjectType & value) { http_port = static_cast<uint32_t>(value.getUInt64()); }},
+        {"http_secure_port", [&](const JSONObjectType & value) { http_secure_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
@@ -307,21 +308,13 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
     return res;
 }
 
-void FuzzConfig::loadServerSettings(
-    DB::Strings & out, const bool distinct, const String & table, const String & col, const String & extra_clause)
+void FuzzConfig::loadServerSettings(DB::Strings & out, const String & desc, const String & query)
 {
     String buf;
     uint64_t found = 0;
 
     if (processServerQuery(
-            false,
-            fmt::format(
-                R"(SELECT {}"{}" FROM "system"."{}"{} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
-                distinct ? "DISTINCT " : "",
-                col,
-                table,
-                extra_clause,
-                fuzz_server_out.generic_string())))
+            false, fmt::format(R"({} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)", query, fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         out.clear();
@@ -332,22 +325,29 @@ void FuzzConfig::loadServerSettings(
             found++;
         }
     }
-    LOG_INFO(log, "Found {} entries from {} table", found, table);
+    LOG_INFO(log, "Found {} entries for {}", found, desc);
 }
 
 void FuzzConfig::loadServerConfigurations()
 {
-    loadServerSettings(this->collations, false, "collations", "name", "");
-    loadServerSettings(this->storage_policies, false, "storage_policies", "policy_name", "");
-    loadServerSettings(this->disks, false, "disks", "name", "");
-    loadServerSettings(this->keeper_disks, false, "disks", "name", " WHERE metadata_type = 'Keeper'");
-    loadServerSettings(this->timezones, false, "time_zones", "time_zone", "");
-    loadServerSettings(this->clusters, true, "clusters", "cluster", "");
+    loadServerSettings(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
+    loadServerSettings(this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
+    loadServerSettings(this->disks, "disks", R"(SELECT DISTINCT "name" FROM "system"."disks")");
+    loadServerSettings(
+        this->keeper_disks, "keeper disks", R"(SELECT DISTINCT "name" FROM "system"."disks" WHERE metadata_type = 'Keeper')");
+    loadServerSettings(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
+    loadServerSettings(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
+    loadServerSettings(this->caches, "caches", "SHOW FILESYSTEM CACHES");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const
 {
     return fmt::format("{}:{}", this->host, secure ? this->secure_port : this->port);
+}
+
+String FuzzConfig::getHTTPURL(const bool secure) const
+{
+    return fmt::format("http{}://{}:{}", secure ? "s" : "", this->host, secure ? this->http_secure_port : this->http_port);
 }
 
 void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables)
