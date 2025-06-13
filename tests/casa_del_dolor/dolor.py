@@ -310,6 +310,7 @@ for i in range(0, len(args.replica_values)):
             with_dolor=True,
             with_zookeeper=True,
             stay_alive=True,
+            copy_common_configs=False,
             keeper_required_feature_flags=["multi_read"],
             with_minio=args.with_minio,
             with_nginx=args.with_nginx,
