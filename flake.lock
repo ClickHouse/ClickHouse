@@ -700,17 +700,17 @@
     "contrib-delta-kernel-rs": {
       "flake": false,
       "locked": {
-        "lastModified": 1747686782,
-        "narHash": "sha256-IDULrJKNM9O9SyQkQr3iYvq4d7jG2monZSWuiMf6RD0=",
+        "lastModified": 1749712836,
+        "narHash": "sha256-l18ckqVdkWw3ekYas6Zw0z+0xdud0Y6v4aPf42Udna4=",
         "owner": "ClickHouse",
         "repo": "delta-kernel-rs",
-        "rev": "1ee29c80f31547ea3cee2fc453c12b618ef35882",
+        "rev": "beb2eb808e8c7ae6992c99809331b7cc2ed85278",
         "type": "github"
       },
       "original": {
         "owner": "ClickHouse",
         "repo": "delta-kernel-rs",
-        "rev": "1ee29c80f31547ea3cee2fc453c12b618ef35882",
+        "rev": "beb2eb808e8c7ae6992c99809331b7cc2ed85278",
         "type": "github"
       }
     },
@@ -887,17 +887,17 @@
     "contrib-grpc": {
       "flake": false,
       "locked": {
-        "lastModified": 1728124339,
-        "narHash": "sha256-qkuiGxGY6CG+PVUrIHV4o1gyb/KyeYh1F7yk3ryDy/4=",
+        "lastModified": 1749708533,
+        "narHash": "sha256-FBiw8YzxpiulHe3lJn3FNXCHNk3ihYvjJQZaPMvJ7kg=",
         "owner": "ClickHouse",
         "repo": "grpc",
-        "rev": "62e871c36fa93c0af939bd31762845265214fe3d",
+        "rev": "fb3ee40ec8383f0c83b110d3d422f4a25c6f28ce",
         "type": "github"
       },
       "original": {
         "owner": "ClickHouse",
         "repo": "grpc",
-        "rev": "62e871c36fa93c0af939bd31762845265214fe3d",
+        "rev": "fb3ee40ec8383f0c83b110d3d422f4a25c6f28ce",
         "type": "github"
       }
     },
@@ -1465,17 +1465,17 @@
     "contrib-mongo-c-driver": {
       "flake": false,
       "locked": {
-        "lastModified": 1726766373,
-        "narHash": "sha256-G1dWCJq0rFDDphgzjqeaHkXIhG1rpXwki+4fxDyAxQg=",
+        "lastModified": 1749702537,
+        "narHash": "sha256-0nNEJgG4cD0rgBOUvf4RsVVY5ZwZDxb8EAV1FV9n9Uc=",
         "owner": "ClickHouse",
         "repo": "mongo-c-driver",
-        "rev": "d55410c69183c90d18fd3b3f1d9db3d224fc8d52",
+        "rev": "aabf2f86682aab0a7329160929b8f6654a18216a",
         "type": "github"
       },
       "original": {
         "owner": "ClickHouse",
         "repo": "mongo-c-driver",
-        "rev": "d55410c69183c90d18fd3b3f1d9db3d224fc8d52",
+        "rev": "aabf2f86682aab0a7329160929b8f6654a18216a",
         "type": "github"
       }
     },
@@ -1771,17 +1771,17 @@
     "contrib-rust_vendor": {
       "flake": false,
       "locked": {
-        "lastModified": 1749070397,
-        "narHash": "sha256-ylpOUXCpvQ00sD2TEZAB47mO8Erhne03JVWBKXJR2MY=",
+        "lastModified": 1749713891,
+        "narHash": "sha256-UsQMmNeu8G4vtSHdYdYxwP6jdngrq0jNlxf4X3RWo/g=",
         "owner": "ClickHouse",
         "repo": "rust_vendor",
-        "rev": "3f5cbcac0698db449b5174236dfd7040a5ca1a4d",
+        "rev": "f2d7604c8857ea1faa68d7220c67687a2ae84720",
         "type": "github"
       },
       "original": {
         "owner": "ClickHouse",
         "repo": "rust_vendor",
-        "rev": "3f5cbcac0698db449b5174236dfd7040a5ca1a4d",
+        "rev": "f2d7604c8857ea1faa68d7220c67687a2ae84720",
         "type": "github"
       }
     },
@@ -1890,17 +1890,17 @@
     "contrib-sysroot": {
       "flake": false,
       "locked": {
-        "lastModified": 1739329861,
-        "narHash": "sha256-e526t3z3t9hwDwHKDJ4EmoAKG6AoryrQMvsWM9Tt2rQ=",
+        "lastModified": 1749701655,
+        "narHash": "sha256-imgm6pUHhLX1awp+OPrz9iRyut00/rBU9kiRdS5f16s=",
         "owner": "ClickHouse",
         "repo": "sysroot",
-        "rev": "f03e1b77e57e32e0aed60a546d4b57d10f74f171",
+        "rev": "265c3be3412eda7abd00bbf55095f0af2f3f57a0",
         "type": "github"
       },
       "original": {
         "owner": "ClickHouse",
         "repo": "sysroot",
-        "rev": "f03e1b77e57e32e0aed60a546d4b57d10f74f171",
+        "rev": "265c3be3412eda7abd00bbf55095f0af2f3f57a0",
         "type": "github"
       }
     },
