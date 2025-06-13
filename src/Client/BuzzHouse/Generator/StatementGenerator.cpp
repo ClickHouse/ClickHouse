@@ -1280,7 +1280,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 {
                     flatTableColumnPath(
                         flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-                    generateTableKey(rg, createTableRelation(rg, true, true, "", t), t.teng, true, tkey);
+                    generateTableKey(rg, createTableRelation(rg, true, "", t), t.teng, true, tkey);
                     this->entries.clear();
                 }
             }

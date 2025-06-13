@@ -126,15 +126,13 @@ void StatementGenerator::flatColumnPath(const uint32_t flags, const std::unorder
     }
 }
 
-SQLRelation StatementGenerator::createTableRelation(
-    RandomGenerator & rg, const bool all_cols, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
+SQLRelation
+StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
 {
     SQLRelation rel(rel_name);
 
     flatTableColumnPath(
-        flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated,
-        t.cols,
-        [&all_cols](const SQLColumn & c) { return all_cols || !c.dmod.has_value() || c.dmod.value() != DModifier::DEF_EPHEMERAL; });
+        flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, t.cols, [](const SQLColumn &) { return true; });
     for (const auto & entry : this->table_entries)
     {
         DB::Strings names;
@@ -199,7 +197,7 @@ SQLRelation StatementGenerator::createTableRelation(
 
 void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
 {
-    const SQLRelation rel = createTableRelation(rg, false, allow_internal_cols, rel_name, t);
+    const SQLRelation rel = createTableRelation(rg, allow_internal_cols, rel_name, t);
 
     if (rel_name.empty())
     {
@@ -1525,7 +1523,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     if (!expr->has_comp_expr())
     {
         flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-        colRefOrExpression(rg, createTableRelation(rg, true, true, "", t), Null, rg.pickRandomly(this->entries), expr);
+        colRefOrExpression(rg, createTableRelation(rg, true, "", t), Null, rg.pickRandomly(this->entries), expr);
         this->entries.clear();
     }
     switch (itpe)
@@ -1995,7 +1993,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
 
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
     chassert(!next.cols.empty());
-    generateEngineDetails(rg, createTableRelation(rg, true, true, "", next), next, !added_pkey, te);
+    generateEngineDetails(rg, createTableRelation(rg, true, "", next), next, !added_pkey, te);
     this->entries.clear();
 
     if (next.cluster.has_value())
