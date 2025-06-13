@@ -59,7 +59,7 @@ public:
         ColumnArray::Offsets & offsets = offsets_col->getData();
         if (num_rows == 0)
             return ColumnArray::create(col_value->replicate(offsets)->convertToFullColumnIfConst(), std::move(offsets_col));
-        
+
         offsets.reserve(num_rows);
         auto element_size = col_value->byteSizeAt(0);
         if (!isColumnConst(*col_value) && (col_value->byteSize() != element_size * col_value->size()))
