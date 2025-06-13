@@ -430,6 +430,20 @@ class ArtifactConfigs:
             ArtifactNames.CH_LOONGARCH64,
         ]
     )
+    lexer_test = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/tests/lexer/lexer_test",
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DEBUG,
+            ArtifactNames.CH_AMD_ASAN,
+            ArtifactNames.CH_AMD_TSAN,
+            ArtifactNames.CH_AMD_MSAN,
+            ArtifactNames.CH_AMD_UBSAN,
+            ArtifactNames.CH_ARM_ASAN,
+        ]
+    )
     clickhouse_debians = Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
