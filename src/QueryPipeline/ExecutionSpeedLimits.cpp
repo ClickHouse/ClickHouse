@@ -104,7 +104,7 @@ void ExecutionSpeedLimits::throttle(
 }
 
 template <typename... Args>
-static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args)
+bool ExecutionSpeedLimits::handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args)
 {
     switch (mode)
     {
@@ -118,6 +118,15 @@ static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<A
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown overflow mode");
     }
 }
+
+template bool ExecutionSpeedLimits::handleOverflowMode<double, unsigned long const&>(
+    OverflowMode, int, FormatStringHelper<double, unsigned long const&>, double&&, unsigned long const&);
+
+template bool ExecutionSpeedLimits::handleOverflowMode<double, double>(
+    OverflowMode, int, FormatStringHelper<double, double>, double&&, double&&);
+
+template bool ExecutionSpeedLimits::handleOverflowMode<double, long>(
+    OverflowMode, int, FormatStringHelper<double, long>, double&&, long&&);
 
 bool ExecutionSpeedLimits::checkTimeLimit(const UInt64 & elapsed_ns, OverflowMode overflow_mode) const
 {
