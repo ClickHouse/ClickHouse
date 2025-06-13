@@ -24,6 +24,5 @@ if [[ "$ORIG_HASH" != "$NEW_HASH" ]]; then
   git --no-pager diff --color=always "$FLAKE_FILE"
   exit 1
 else
-  echo "✅ $FLAKE_FILE contrib inputs are up to date."
   exit 0
 fi
