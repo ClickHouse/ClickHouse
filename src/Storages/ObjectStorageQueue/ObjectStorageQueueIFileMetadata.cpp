@@ -493,7 +493,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
     LOG_TRACE(
         log,
-        "File `{}` failed at try {}/{}, "
+        "File {} failed at try {}/{}, "
         "retries node exists: {} (failed node path: {})",
         path, node_metadata.retries, max_loading_retries, has_failed_before, failed_node_path);
 
