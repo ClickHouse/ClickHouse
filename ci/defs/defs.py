@@ -361,6 +361,13 @@ class ArtifactNames:
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
+    LEXER_AMD_DEBUG = "LEXER_AMD_DEBUG"
+    LEXER_AMD_ASAN = "LEXER_AMD_ASAN"
+    LEXER_AMD_TSAN = "LEXER_AMD_TSAN"
+    LEXER_AMD_MSAN = "LEXER_AMD_MSAN"
+    LEXER_AMD_UBSAN = "LEXER_AMD_UBSAN"
+    LEXER_ARM_ASAN = "LEXER_ARM_ASAN"
+
     FAST_TEST = "FAST_TEST"
     UNITTEST_AMD_ASAN = "UNITTEST_AMD_ASAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
@@ -436,12 +443,12 @@ class ArtifactConfigs:
         path=f"{TEMP_DIR}/build/tests/lexer/lexer_test",
     ).parametrize(
         names=[
-            ArtifactNames.CH_AMD_DEBUG,
-            ArtifactNames.CH_AMD_ASAN,
-            ArtifactNames.CH_AMD_TSAN,
-            ArtifactNames.CH_AMD_MSAN,
-            ArtifactNames.CH_AMD_UBSAN,
-            ArtifactNames.CH_ARM_ASAN,
+            ArtifactNames.LEXER_AMD_DEBUG,
+            ArtifactNames.LEXER_AMD_ASAN,
+            ArtifactNames.LEXER_AMD_TSAN,
+            ArtifactNames.LEXER_AMD_MSAN,
+            ArtifactNames.LEXER_AMD_UBSAN,
+            ArtifactNames.LEXER_ARM_ASAN,
         ]
     )
     clickhouse_debians = Artifact.Config(
