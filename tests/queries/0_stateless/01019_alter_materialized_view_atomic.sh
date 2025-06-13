@@ -17,7 +17,6 @@ EOF
 
 STOP_ALTER=0
 
-# 用于统计
 total_alter_time=0
 alter_count=0
 total_sleep_time=0
