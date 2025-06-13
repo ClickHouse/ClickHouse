@@ -330,13 +330,13 @@ void FuzzConfig::loadServerSettings(DB::Strings & out, const String & desc, cons
 
 void FuzzConfig::loadServerConfigurations()
 {
-    loadServerSettings(this->collations, "collations", "SELECT \"name\" FROM \"system\".\"collations\"");
-    loadServerSettings(this->storage_policies, "storage policies", "SELECT DISTINCT \"policy_name\" FROM \"system\".\"storage_policies\"");
-    loadServerSettings(this->disks, "disks", "SELECT DISTINCT \"name\" FROM \"system\".\"disks\"");
+    loadServerSettings(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
+    loadServerSettings(this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
+    loadServerSettings(this->disks, "disks", R"(SELECT DISTINCT "name" FROM "system"."disks")");
     loadServerSettings(
-        this->keeper_disks, "keeper disks", "SELECT DISTINCT \"name\" FROM \"system\".\"disks\" WHERE metadata_type = 'Keeper'");
-    loadServerSettings(this->timezones, "timezones", "SELECT \"time_zone\" FROM \"system\".\"time_zones\"");
-    loadServerSettings(this->clusters, "clusters", "SELECT DISTINCT \"cluster\" FROM \"system\".\"clusters\"");
+        this->keeper_disks, "keeper disks", R"(SELECT DISTINCT "name" FROM "system"."disks" WHERE metadata_type = 'Keeper')");
+    loadServerSettings(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
+    loadServerSettings(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings(this->caches, "caches", "SHOW FILESYSTEM CACHES");
 }
 
