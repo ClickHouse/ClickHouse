@@ -1282,7 +1282,8 @@ void writeFileFooter(FileWriteState & file,
             geo->set("columns", columns);
             geo->set("primary_column", geo_columns_metadata[0].first);
 
-            std::ostringstream oss;
+            std::ostringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+                oss;
             Poco::JSON::Stringifier::stringify(geo, oss, 4);
 
             parquet::format::KeyValue key_value;

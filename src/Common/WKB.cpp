@@ -163,7 +163,7 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
 
 String WKBPointTransform::dumpObject(const Field & geo_object)
 {
-    constexpr std::endian endian = std::endian::little; 
+    constexpr std::endian endian = std::endian::little;
 
     const auto & point = geo_object.safeGet<Tuple>();
     const auto & x = point[0].safeGet<Float64>();
