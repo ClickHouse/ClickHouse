@@ -131,6 +131,7 @@ ProtobufSchemaReader::ProtobufSchemaReader(const FormatSettings & format_setting
     : schema_info(
         format_settings.schema.format_schema, "Protobuf", true, format_settings.schema.is_server, format_settings.schema.format_schema_path)
     , skip_unsupported_fields(format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference)
+    , oneof_presence(format_settings.protobuf.oneof_presence)
     , google_protos_path(format_settings.protobuf.google_protos_path)
 {
 }
@@ -139,7 +140,7 @@ NamesAndTypesList ProtobufSchemaReader::readSchema()
 {
     auto descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(
         schema_info, ProtobufSchemas::WithEnvelope::No, google_protos_path);
-    return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields);
+    return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields, oneof_presence);
 }
 
 void registerProtobufSchemaReader(FormatFactory & factory)

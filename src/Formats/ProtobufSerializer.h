@@ -58,7 +58,7 @@ public:
         ProtobufWriter & writer);
 };
 
-NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields);
-
+NamesAndTypesList
+protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields, bool oneof_presence);
 }
 #endif

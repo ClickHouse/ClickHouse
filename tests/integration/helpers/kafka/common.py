@@ -224,6 +224,47 @@ def kafka_produce_protobuf_social(kafka_cluster, topic, start_index, num_message
     producer.flush()
     logging.debug(("Produced {} messages for topic {}".format(num_messages, topic)))
 
+def kafka_produce_transaction_oneof(kafka_cluster, topic, start_index, num_messages):
+    data = b""
+    for i in range(start_index, start_index + num_messages):
+        msg = transaction_pb2.Transaction()
+        msg.username = "John Doe {}".format(i)
+        msg.timestamp = 1000000 + i
+        serialized_msg = msg.SerializeToString()
+        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+        tbuy = transaction_pb2.Transaction()
+        tbuy.date = str(1000000 + i)
+        tbuy.buy.payment.cash_value = 10
+        tbuy.buy.vendor_name = "dell"
+        tbuy.buy.items_bought = 1
+        serialized_msg = tbuy.SerializeToString()
+        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+        tsell = transaction_pb2.Transaction()
+        tsell.date = str(2000000 + i)
+        tsell.sell.payment.cash_value = 10
+        tsell.sell.customer_name = "bas&friends"
+        tsell.sell.items_sold = 2
+        serialized_msg = tsell.SerializeToString()
+        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+        empty_sell_details = transaction_pb2.Transaction.SellDetails()
+
+        temptysell = transaction_pb2.Transaction(
+            date = str(3000000 + i)
+            sell = empty_sell_details
+        )
+        serialized_msg = temptysell.SerializeToString()
+        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
+        value_serializer=producer_serializer,
+    )
+    producer.send(topic=topic, value=data)
+    producer.flush()
+    logging.debug(("Produced {} messages for topic {}".format(num_messages, topic)))
 
 def avro_message(value):
     schema = avro.schema.make_avsc_object(

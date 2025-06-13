@@ -4032,9 +4032,10 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
         with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers, false);
 }
 
-NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields)
+NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields, bool oneof_presence)
 {
     NamesAndTypesList schema;
+    NamesAndTypesList oneofs;
 
     std::set<String> known_oneofs;
 
@@ -4042,27 +4043,33 @@ NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * 
     for (int i = 0; i != message_descriptor->field_count(); ++i)
     {
         if (auto name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i), skip_unsupported_fields))
-            schema.push_back(*name_and_type);
-        if (const OneofDescriptor * oneof_descriptor = message_descriptor->field(i)->containing_oneof())
         {
-            if (!known_oneofs.contains(oneof_descriptor->name()))
+            schema.push_back(*name_and_type);
+            if (oneof_presence)
             {
-                std::vector<std::pair<String, Int8>> values;
-
-                for (int fnum = 0; fnum < oneof_descriptor->field_count(); ++fnum)
+                if (const OneofDescriptor * oneof_descriptor = message_descriptor->field(i)->containing_oneof())
                 {
-                    const FieldDescriptor * field_descriptor = oneof_descriptor->field(fnum);
-                    values.emplace_back(field_descriptor->name(), field_descriptor->number() );
+                    if (!known_oneofs.contains(oneof_descriptor->name()))
+                    {
+                        std::vector<std::pair<String, Int8>> values;
 
+                        for (int fnum = 0; fnum < oneof_descriptor->field_count(); ++fnum)
+                        {
+                            const FieldDescriptor * field_descriptor = oneof_descriptor->field(fnum);
+                            values.emplace_back(field_descriptor->name(), field_descriptor->number());
+                        }
+                        // schema.push_back({oneof_descriptor->name() + "_presence", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum<Int8>>(std::move(values)))});
+                        oneofs.push_back({oneof_descriptor->name() + "_presence", std::make_shared<DataTypeEnum<Int8>>(std::move(values))});
+                        known_oneofs.insert(oneof_descriptor->name());
+                    }
                 }
-                // schema.push_back({oneof_descriptor->name() + "_presence", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum<Int8>>(std::move(values)))});
-                schema.push_back({oneof_descriptor->name() + "_presence", std::make_shared<DataTypeEnum<Int8>>(std::move(values))});
-                known_oneofs.insert(oneof_descriptor->name());
             }
         }
     }
     if (schema.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert Protobuf schema to ClickHouse table schema, all fields have unsupported types");
+    if (!oneofs.empty())
+        schema.splice(schema.end(), oneofs);
     return schema;
 }
 }

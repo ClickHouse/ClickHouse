@@ -74,6 +74,7 @@ public:
 private:
     const FormatSchemaInfo schema_info;
     bool skip_unsupported_fields;
+    bool oneof_presence;
     String google_protos_path;
 };
 
