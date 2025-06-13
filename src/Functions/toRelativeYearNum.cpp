@@ -17,11 +17,13 @@ Converts a date or date with time to the number of years elapsed since a certain
     FunctionDocumentation::Syntax syntax_toRelativeYearNum = R"(
 toRelativeYearNum(date)
     )";
-    FunctionDocumentation::Arguments arguments_toRelativeYearNum = {
+    FunctionDocumentation::Arguments arguments_toRelativeYearNum = 
+    {
         {"date", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_toRelativeYearNum = "Returns the number of years from a fixed reference point in the past. [`UInt16`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_toRelativeYearNum = {
+    FunctionDocumentation::Examples examples_toRelativeYearNum = 
+    {
         {"Get relative year numbers", R"(
 SELECT
     toRelativeYearNum(toDate('2002-12-08')) AS y1,
@@ -35,7 +37,8 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_toRelativeYearNum = {1, 1};
     FunctionDocumentation::Category category_toRelativeYearNum = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toRelativeYearNum = {
+    FunctionDocumentation documentation_toRelativeYearNum = 
+    {
         description_toRelativeYearNum,
         syntax_toRelativeYearNum,
         arguments_toRelativeYearNum,
