@@ -78,7 +78,7 @@ def test_keeper_invalid_digest(started_cluster):
     finally:
         # Clean up connections
         try:
-            if 'node1_zk' in locals():
+            if "node1_zk" in locals():
                 node1_zk.stop()
                 node1_zk.close()
         except:
