@@ -716,7 +716,6 @@ public:
                 }
             }
         }
-        LOG_DEBUG(log, "Loaded or scheduled for load {} objects", loaded_or_scheduled_count);
     }
 
 private:
