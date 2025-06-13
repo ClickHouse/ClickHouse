@@ -137,8 +137,6 @@ private:
     const LoggerPtr log = getLogger("SchemaVisitor");
 
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
-    // using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
-
 };
 
 /**

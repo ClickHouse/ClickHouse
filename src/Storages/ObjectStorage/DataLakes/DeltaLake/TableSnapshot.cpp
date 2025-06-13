@@ -387,10 +387,6 @@ void TableSnapshot::initSnapshotImpl() const
     LOG_TRACE(log, "Snapshot version: {}", snapshot_version);
 
     scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
-    // scan_state = ffi::get_global_scan_state(scan.get());
-    // auto test = ffi::scan_table_root(scan.get(), [](ffi::KernelStringSlice kernel_str) -> ffi::NullableCvoid {
-    //     return KernelUtils::allocateString(kernel_str);
-    // });
 
     LOG_TRACE(log, "Initialized scan state");
 
