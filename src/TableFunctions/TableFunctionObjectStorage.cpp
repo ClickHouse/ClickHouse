@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/S3/CriblConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
@@ -230,6 +231,13 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         },
         .allow_readonly = false
     });
+
+    factory.registerFunction<TableFunctionObjectStorage<CriblS3Definition, CriblConfiguration>>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the data stored on OSS.)",
+            .examples{{"oss", "SELECT * FROM oss(url, access_key_id, secret_access_key)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
 #endif
 
 #if USE_AZURE_BLOB_STORAGE

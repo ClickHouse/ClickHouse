@@ -45,7 +45,7 @@ struct S3ObjectStorageSettings
 
 class S3ObjectStorage : public IObjectStorage
 {
-private:
+protected:
     S3ObjectStorage(
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,
@@ -157,7 +157,7 @@ public:
 
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
-private:
+protected:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
     void removeObjectImpl(const StoredObject & object, bool if_exists);

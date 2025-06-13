@@ -12,6 +12,8 @@
 namespace DB::S3
 {
 
+
+// we need to hack this one
 /**
  * Represents S3 URI.
  *

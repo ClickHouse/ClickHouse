@@ -34,7 +34,10 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
     auto & chars = column_string.getChars();
     auto & offsets = column_string.getOffsets();
 
-    readStringUntilNewlineInto(chars, *in);
+    String line;
+    readStringUntilNewlineInto(line, *in);
+    
+
     chars.push_back(0);
     offsets.push_back(chars.size());
 

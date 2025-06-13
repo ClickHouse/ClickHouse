@@ -493,7 +493,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
 
-        auto input_format = FormatFactory::instance().getInput(
+        auto input_format = FormatFactory::instance().getInput( //We get the input_format here.
             configuration->format,
             *read_buf,
             initial_header,

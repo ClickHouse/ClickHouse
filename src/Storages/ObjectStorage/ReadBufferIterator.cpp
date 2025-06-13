@@ -275,7 +275,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         else
         {
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
-            read_buf = StorageObjectStorageSource::createReadBuffer(*current_object_info, object_storage, getContext(), getLogger("ReadBufferIterator"));
+            read_buf = StorageObjectStorageSource::createReadBuffer(*current_object_info, object_storage, getContext(), getLogger("ReadBufferIterator")); //here, we read the file
         }
 
         if (!query_settings.skip_empty_files || !read_buf->eof())

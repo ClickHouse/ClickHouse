@@ -20,6 +20,8 @@ void registerFileSegmentationEngineHiveText(FormatFactory & factory);
 #endif
 void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
 void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
+void registerFileSegmentationEngineCriblLineAsString(FormatFactory & factory);
+
 
 /// Formats for both input/output.
 
@@ -106,6 +108,8 @@ void registerInputFormatParquetMetadata(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
 
+void registerInputFormatCribl(FormatFactory & factory);
+
 #if USE_HIVE
 void registerInputFormatHiveText(FormatFactory & factory);
 #endif
@@ -169,6 +173,7 @@ void registerFormats()
 #endif
     registerFileSegmentationEngineLineAsString(factory);
     registerFileSegmentationEngineBSONEachRow(factory);
+    registerFileSegmentationEngineCriblLineAsString(factory);
 
 
     registerInputFormatNative(factory);
@@ -245,6 +250,8 @@ void registerFormats()
     registerInputFormatJSONAsString(factory);
     registerInputFormatJSONAsObject(factory);
     registerInputFormatLineAsString(factory);
+
+    registerInputFormatCribl(factory);
 #if USE_HIVE
     registerInputFormatHiveText(factory);
 #endif

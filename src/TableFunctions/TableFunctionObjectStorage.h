@@ -119,6 +119,12 @@ struct HudiDefinition
     static constexpr auto storage_type_name = "S3";
 };
 
+struct CriblS3Definition
+{
+    static constexpr auto name = "criblS3";
+    static constexpr auto storage_type_name = "S3";
+};
+
 template <typename Definition, typename Configuration>
 class TableFunctionObjectStorage : public ITableFunction
 {
