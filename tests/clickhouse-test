@@ -298,11 +298,10 @@ class SharedEngineReplacer:
             return
 
         shutil.copyfile(self.file_name, self.temp_file_path)
-        shutil.copymode(self.file_name, self.temp_file_path)
 
         with (
-            open(self.file_name, "w", newline="", encoding="utf-8") as modified,
-            open(self.temp_file_path, "r", newline="", encoding="utf-8") as source,
+            open(self.file_name, "r", newline="", encoding="utf-8") as source,
+            open(self.temp_file_path, "w", newline="", encoding="utf-8") as modified,
         ):
             for line in source:
                 # Replace table engines if echo enabled to match changed reference
@@ -369,7 +368,12 @@ class SharedEngineReplacer:
     def __exit__(self, exc_type, exc_value, exc_tb):
         if not self._need_to_replace_something():
             return
-        shutil.move(self.temp_file_path, self.file_name)
+        os.unlink(self.temp_file_path)
+
+    def get_path(self):
+        if not self._need_to_replace_something():
+            return self.file_name
+        return self.temp_file_path
 
 
 def get_temp_file_path():
@@ -2062,7 +2066,7 @@ class TestCase:
                         args.replace_non_replicated_with_shared,
                         False,
                         args.cloud,
-                    ),
+                    ) as test_replacer,
                     SharedEngineReplacer(
                         args,
                         self.reference_file,
@@ -2071,8 +2075,11 @@ class TestCase:
                         args.replace_non_replicated_with_shared or args.cloud,
                         True,
                         args.cloud,
-                    ),
+                    ) as reference_replacer,
                 ):
+                    self.case_file = test_replacer.get_path()
+                    self.reference_file = reference_replacer.get_path()
+
                     (
                         proc,
                         total_time,
