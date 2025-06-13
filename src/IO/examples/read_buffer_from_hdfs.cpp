@@ -1,4 +1,5 @@
-#include <IO/ReadSettings.h>
+#include <memory>
+#include <string>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>

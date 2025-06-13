@@ -10,7 +10,7 @@ namespace DB
 class CommandSwitchDisk final : public ICommand
 {
 public:
-    explicit CommandSwitchDisk() : ICommand("CommandSwitchDisk")
+    explicit CommandSwitchDisk() : ICommand()
     {
         command_name = "switch-disk";
         description = "Switch disk (makes sense only in interactive mode)";
@@ -24,7 +24,6 @@ public:
         String disk = getValueFromCommandLineOptions<String>(options, "disk");
         std::optional<String> path = getValueFromCommandLineOptionsWithOptional<String>(options, "path");
 
-        client.addDisk(disk, path);
         client.switchToDisk(disk, path);
     }
 };

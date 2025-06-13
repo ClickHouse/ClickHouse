@@ -1,25 +1,18 @@
-#include <Core/Settings.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
-namespace DB
-{
-namespace Setting
-{
-    extern const SettingsString preferred_optimize_projection_name;
-    extern const SettingsBool force_optimize_projection;
-}
-}
+#include <algorithm>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -32,7 +25,7 @@ struct NormalProjectionCandidate : public ProjectionCandidate
 {
 };
 
-static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header, const Block & main_header)
+static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header, const Block main_header)
 {
     /// Materialize constants in case we don't have it in output header.
     /// This may happen e.g. if we have PREWHERE.
@@ -70,6 +63,18 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     return dag;
 }
 
+static bool hasAllRequiredColumns(const ProjectionDescription * projection, const Names & required_columns)
+{
+    for (const auto & col : required_columns)
+    {
+        if (!projection->sample_block.has(col))
+            return false;
+    }
+
+    return true;
+}
+
+
 std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 {
     const auto & frame = stack.back();
@@ -86,7 +91,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     {
         iter = std::next(iter);
 
-        if (!typeid_cast<FilterStep *>(iter->node->step.get()) && !typeid_cast<ExpressionStep *>(iter->node->step.get()))
+        if (!typeid_cast<FilterStep *>(iter->node->step.get()) &&
+            !typeid_cast<ExpressionStep *>(iter->node->step.get()))
             break;
     }
 
@@ -109,8 +115,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     auto it = std::find_if(
         normal_projections.begin(),
         normal_projections.end(),
-        [&](const auto * projection)
-        { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
+        [&](const auto * projection) { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
 
     if (it != normal_projections.end())
     {
@@ -119,44 +124,11 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         normal_projections.push_back(preferred_projection);
     }
 
-    Names required_columns = reading->getAllColumnNames();
-
-    /// If `with_parent_part_offset` is true and the required columns include `_part_offset`,
-    /// we need to remap it to `_parent_part_offset`. This ensures that the projection's
-    /// ActionsDAG reads from the correct column and generates `_part_offset` in the output.
-    bool with_parent_part_offset = std::any_of(
-        normal_projections.begin(), normal_projections.end(), [](const auto & projection) { return projection->with_parent_part_offset; });
-    bool need_parent_part_offset = false;
-    if (with_parent_part_offset)
-    {
-        for (auto & name : required_columns)
-        {
-            if (name == "_part_offset")
-            {
-                name = "_parent_part_offset";
-                need_parent_part_offset = true;
-            }
-        }
-    }
-
     QueryDAG query;
     {
         auto & child = iter->node->children[iter->next_child - 1];
         if (!query.build(*child))
             return {};
-
-        if (need_parent_part_offset)
-        {
-            ActionsDAG rename_dag;
-            const auto * node = &rename_dag.addInput("_parent_part_offset", std::make_shared<DataTypeUInt64>());
-            node = &rename_dag.addAlias(*node, "_part_offset");
-            rename_dag.getOutputs() = {node};
-
-            if (query.dag)
-                query.dag = ActionsDAG::merge(std::move(rename_dag), *std::move(query.dag));
-            else
-                query.dag = std::move(rename_dag);
-        }
 
         if (query.dag)
             query.dag->removeUnusedActions();
@@ -165,6 +137,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     std::list<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
 
+    const Names & required_columns = reading->getAllColumnNames();
     const auto & query_info = reading->getQueryInfo();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
@@ -182,25 +155,11 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     const auto & parts_with_ranges = ordinary_reading_select_result->parts_with_ranges;
 
-    PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
-
-    auto logger = getLogger("optimizeUseNormalProjections");
-
-    auto projection_virtuals = reading->getMergeTreeData().getProjectionVirtualsPtr();
-    auto has_all_required_columns = [&](const ProjectionDescription * projection)
-    {
-        for (const auto & col : required_columns)
-        {
-            if (!projection->sample_block.has(col) && !projection_virtuals->has(col))
-                return false;
-        }
-
-        return true;
-    };
+    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
     for (const auto * projection : normal_projections)
     {
-        if (!has_all_required_columns(projection))
+        if (!hasAllRequiredColumns(projection, required_columns))
             continue;
 
         auto & candidate = candidates.emplace_back();
@@ -220,39 +179,11 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         if (!analyzed)
             continue;
 
-        /// Only consider projection with equal cost when force_optimize_projection is true.
-        if (candidate.sum_marks > ordinary_reading_marks
-            || (candidate.sum_marks == ordinary_reading_marks && !context->getSettingsRef()[Setting::force_optimize_projection]))
-        {
-            LOG_DEBUG(
-                logger,
-                "Projection {} is usable but it needs to read {} marks, which is no better than reading {} marks from original table",
-                candidate.projection->name,
-                candidate.sum_marks,
-                ordinary_reading_marks);
+        if (candidate.sum_marks >= ordinary_reading_marks)
             continue;
-        }
 
         if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
-        {
-            LOG_DEBUG(
-                logger,
-                "Projection {} is selected as current best candidate with {} marks to read, while original table needs to scan {} marks",
-                candidate.projection->name,
-                candidate.sum_marks,
-                ordinary_reading_marks);
             best_candidate = &candidate;
-        }
-        else
-        {
-            LOG_DEBUG(
-                logger,
-                "Projection {} with {} marks is less efficient than current best candidate {} with {} marks",
-                candidate.projection->name,
-                candidate.sum_marks,
-                best_candidate->projection->name,
-                best_candidate->sum_marks);
-        }
     }
 
     if (!best_candidate)
@@ -267,8 +198,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     query_info_copy.prewhere_info = nullptr;
 
     auto projection_reading = reader.readFromParts(
-        /*parts=*/{},
-        reading->getMutationsSnapshot()->cloneEmpty(),
+        /*parts=*/ {},
+        /*alter_conversions=*/ {},
         required_columns,
         proj_snapshot,
         query_info_copy,
@@ -310,11 +241,15 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         if (query.filter_node)
         {
             expr_or_filter_node.step = std::make_unique<FilterStep>(
-                projection_reading_node.step->getOutputHeader(), std::move(*query.dag), query.filter_node->result_name, true);
+                projection_reading_node.step->getOutputStream(),
+                std::move(*query.dag),
+                query.filter_node->result_name,
+                true);
         }
         else
-            expr_or_filter_node.step
-                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(*query.dag));
+            expr_or_filter_node.step = std::make_unique<ExpressionStep>(
+                projection_reading_node.step->getOutputStream(),
+                std::move(*query.dag));
 
         expr_or_filter_node.children.push_back(&projection_reading_node);
         next_node = &expr_or_filter_node;
@@ -327,13 +262,13 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     }
     else
     {
-        const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
-        const auto * proj_stream = &next_node->step->getOutputHeader();
+        const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputStream();
+        const auto * proj_stream = &next_node->step->getOutputStream();
 
-        if (auto materializing = makeMaterializingDAG(*proj_stream, main_stream))
+        if (auto materializing = makeMaterializingDAG(proj_stream->header, main_stream.header))
         {
             auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
-            proj_stream = &converting->getOutputHeader();
+            proj_stream = &converting->getOutputStream();
             auto & expr_node = nodes.emplace_back();
             expr_node.step = std::move(converting);
             expr_node.children.push_back(next_node);
@@ -341,8 +276,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         }
 
         auto & union_node = nodes.emplace_back();
-        Headers input_headers = {main_stream, *proj_stream};
-        union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
+        DataStreams input_streams = {main_stream, *proj_stream};
+        union_node.step = std::make_unique<UnionStep>(std::move(input_streams));
         union_node.children = {iter->node->children[iter->next_child - 1], next_node};
         iter->node->children[iter->next_child - 1] = &union_node;
     }

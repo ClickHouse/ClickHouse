@@ -1,10 +1,10 @@
 #pragma once
+#include <IO/WriteBuffer.h>
+#include <Core/Block.h>
+
 
 namespace DB
 {
-
-class Block;
-class WriteBuffer;
 
 /// Prints internal server logs or profile events with colored output (if requested).
 /// NOTE: IRowOutputFormat does not suite well for this case
@@ -38,7 +38,10 @@ public:
     /// See also TCPHandler::sendProfileEvents() for block columns.
     void writeProfileEvents(const Block & block);
 
-    void flush();
+    void flush()
+    {
+        wb.next();
+    }
 
 private:
     WriteBuffer & wb;

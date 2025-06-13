@@ -1,4 +1,3 @@
-#include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/Impl/FormRowInputFormat.h>
 #include "Formats/EscapingRuleUtils.h"
 #include <Formats/FormatFactory.h>
@@ -50,8 +49,7 @@ void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
     seen_columns[index] = true;
     const auto & serialization = serializations[index];
 
-    String encoded_str;
-    String decoded_str;
+    String encoded_str, decoded_str;
     readStringUntilAmpersand(encoded_str,*in);
 
     if (!in->eof())

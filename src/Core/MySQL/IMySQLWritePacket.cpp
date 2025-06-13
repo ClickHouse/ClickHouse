@@ -1,4 +1,3 @@
-#include <Common/Exception.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
 #include <IO/MySQLPacketPayloadWriteBuffer.h>
 
@@ -31,16 +30,18 @@ size_t getLengthEncodedNumberSize(uint64_t x)
     {
         return 1;
     }
-    if (x < (1 << 16))
+    else if (x < (1 << 16))
     {
         return 3;
     }
-    if (x < (1 << 24))
+    else if (x < (1 << 24))
     {
         return 4;
     }
-
-    return 9;
+    else
+    {
+        return 9;
+    }
 }
 
 size_t getLengthEncodedStringSize(const String & s)

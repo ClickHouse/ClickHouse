@@ -6,6 +6,7 @@
 namespace DB
 {
 
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 struct ProjectionDescription;
 class MergeTreeDataSelectExecutor;
 
@@ -18,7 +19,7 @@ namespace DB::QueryPlanOptimizations
 bool canUseProjectionForReadingStep(ReadFromMergeTree * reading);
 
 /// Max blocks for sequential consistency reading from replicated table.
-PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading);
+std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * reading);
 
 /// This is a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, for all the Filter steps, we collect filter conditions into filter_nodes.
@@ -58,7 +59,7 @@ bool analyzeProjectionCandidate(
     const RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
-    const PartitionIdToMaxBlockPtr & max_added_blocks,
+    const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
     const ActionsDAG * dag);
 
 }

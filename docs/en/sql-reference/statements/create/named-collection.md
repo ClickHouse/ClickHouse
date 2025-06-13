@@ -1,8 +1,6 @@
 ---
-description: 'Documentation for CREATE NAMED COLLECTION'
-sidebar_label: 'NAMED COLLECTION'
-slug: /sql-reference/statements/create/named-collection
-title: 'CREATE NAMED COLLECTION'
+slug: /en/sql-reference/statements/create/named-collection
+sidebar_label: NAMED COLLECTION
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -31,10 +29,10 @@ CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
 
 **Related statements**
 
-- [CREATE NAMED COLLECTION](/sql-reference/statements/alter/named-collection)
-- [DROP NAMED COLLECTION](/sql-reference/statements/drop#drop-function)
+- [CREATE NAMED COLLECTION](https://clickhouse.com/docs/en/sql-reference/statements/alter/named-collection)
+- [DROP NAMED COLLECTION](https://clickhouse.com/docs/en/sql-reference/statements/drop#drop-function)
 
 
 **See Also**
 
-- [Named collections guide](/operations/named-collections.md)
+- [Named collections guide](/docs/en/operations/named-collections.md)

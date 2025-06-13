@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
+#include <BridgeHelper/IBridgeHelper.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -12,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB

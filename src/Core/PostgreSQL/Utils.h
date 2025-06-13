@@ -7,6 +7,7 @@
 #include <pqxx/pqxx>
 #include <Core/Types.h>
 #include "Connection.h"
+#include <Common/Exception.h>
 
 namespace pqxx
 {

@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include <Core/callOnTypeIndex.h>
 #include <base/extended_types.h>
 #include <base/itoa.h>
 
@@ -39,7 +38,8 @@ int digits10(T x)
             {
                 if (x < 10000ULL)
                     return 4;
-                return 5 + (x >= 100000ULL);
+                else
+                    return 5 + (x >= 100000ULL);
             }
 
             return 7 + (x >= 10000000ULL);
@@ -82,11 +82,6 @@ public:
                             arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeUInt8>(); /// Up to 255 decimal digits.
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

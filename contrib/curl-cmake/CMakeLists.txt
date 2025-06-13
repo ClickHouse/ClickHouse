@@ -35,6 +35,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curl_gssapi.c"
     "${LIBRARY_DIR}/lib/curl_memrchr.c"
     "${LIBRARY_DIR}/lib/curl_ntlm_core.c"
+    "${LIBRARY_DIR}/lib/curl_path.c"
     "${LIBRARY_DIR}/lib/curl_range.c"
     "${LIBRARY_DIR}/lib/curl_rtmp.c"
     "${LIBRARY_DIR}/lib/curl_sasl.c"
@@ -148,9 +149,8 @@ set (SRCS
     "${LIBRARY_DIR}/lib/vauth/oauth2.c"
     "${LIBRARY_DIR}/lib/vauth/spnego_gssapi.c"
     "${LIBRARY_DIR}/lib/vauth/spnego_sspi.c"
-    "${LIBRARY_DIR}/lib/vauth/vauth.c"    
+    "${LIBRARY_DIR}/lib/vauth/vauth.c"
     "${LIBRARY_DIR}/lib/vquic/vquic.c"
-    "${LIBRARY_DIR}/lib/vssh/curl_path.c"
     "${LIBRARY_DIR}/lib/vssh/libssh.c"
     "${LIBRARY_DIR}/lib/vssh/libssh2.c"
 
@@ -191,8 +191,7 @@ target_compile_definitions (_curl PRIVATE
     BUILDING_LIBCURL
     CURL_HIDDEN_SYMBOLS
     libcurl_EXPORTS
-    OPENSSL_NO_ENGINE
-    CURL_OS="${CMAKE_SYSTEM_NAME}"
+    OS="${CMAKE_SYSTEM_NAME}"
 )
 
 target_include_directories (_curl SYSTEM PUBLIC

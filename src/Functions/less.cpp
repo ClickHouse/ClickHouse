@@ -8,7 +8,6 @@ namespace DB
 
 using FunctionLess = FunctionComparison<LessOp, NameLess>;
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
-extern template class FunctionComparison<EqualsOp, NameEquals>;
 
 REGISTER_FUNCTION(Less)
 {
@@ -20,7 +19,7 @@ ColumnPtr FunctionComparison<LessOp, NameLess>::executeTupleImpl(
     const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const
 {
     FunctionOverloadResolverPtr less
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionLess>(params));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionLess>(check_decimal_overflow));
 
     FunctionOverloadResolverPtr func_builder_or
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
@@ -29,7 +28,7 @@ ColumnPtr FunctionComparison<LessOp, NameLess>::executeTupleImpl(
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
     FunctionOverloadResolverPtr func_builder_equals
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(check_decimal_overflow));
 
     return executeTupleLessGreaterImpl(
         less,

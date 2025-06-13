@@ -1,11 +1,7 @@
 ---
-description: 'Guide for integrating Rust libraries into ClickHouse'
-sidebar_label: 'Rust Libraries'
-slug: /development/integrating_rust_libraries
-title: 'Integrating Rust Libraries'
+slug: /en/development/integrating_rust_libraries
 ---
-
-# Rust Libraries
+# Integrating Rust libraries
 
 Rust library integration will be described based on BLAKE3 hash-function integration.
 
@@ -13,7 +9,7 @@ The first step of integration is to add the library to /rust folder. To do this,
 
 Next, you need to link the library to CMake using Corrosion library. The first step is to add the library folder in the CMakeLists.txt inside the /rust folder. After that, you should add the CMakeLists.txt file to the library directory. In it, you need to call the Corrosion import function. These lines were used to import BLAKE3:
 
-```CMake
+```
 corrosion_import_crate(MANIFEST_PATH Cargo.toml NO_STD)
 
 target_include_directories(_ch_rust_blake3 INTERFACE include)
@@ -24,14 +20,7 @@ Thus, we will create a correct CMake target using Corrosion, and then rename it 
 
 Since Rust data types are not compatible with C/C++ data types, we will use our empty library project to create shim methods for conversion of data received from C/C++, calling library methods, and inverse conversion for output data. For example, this method was written for BLAKE3:
 
-```rust
-#[no_mangle]
-pub unsafe extern "C" fn blake3_apply_shim(
-    begin: *const c_char,
-    _size: u32,
-    out_char_data: *mut u8,
 ```
-```rust
 #[no_mangle]
 pub unsafe extern "C" fn blake3_apply_shim(
     begin: *const c_char,
@@ -60,7 +49,7 @@ After writing the code for the shim methods, we need to prepare the header file 
 
 An example of a build script that can auto-generate a header file:
 
-```rust
+```
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
     let package_name = env::var("CARGO_PKG_NAME").unwrap();

@@ -2,7 +2,6 @@ import random
 import string
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -22,10 +21,9 @@ def start_cluster():
 
 
 def get_compression_codec_byte(node, table_name, part_name, filename):
-    data_path = node.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table_name}'"
-    ).strip()
-    cmd = f"tail -c +17 {data_path}/{part_name}/{filename}.bin | od -x -N 1 | head -n 1 | awk '{{print $2}}'"
+    cmd = "tail -c +17 /var/lib/clickhouse/data/default/{}/{}/{}.bin | od -x -N 1 | head -n 1 | awk '{{print $2}}'".format(
+        table_name, part_name, filename
+    )
     return node.exec_in_container(["bash", "-c", cmd]).strip()
 
 
@@ -42,7 +40,6 @@ CODECS_MAPPING = {
 
 def test_nested_compression_codec(start_cluster):
     for i, node in enumerate([node1, node2]):
-        node.query("DROP TABLE IF EXISTS compression_table SYNC")
         node.query(
             """
         CREATE TABLE compression_table (
@@ -116,6 +113,3 @@ def test_nested_compression_codec(start_cluster):
             )
             == CODECS_MAPPING["NONE"]
         )
-
-    for node in [node1, node2]:
-        node.query("DROP TABLE IF EXISTS compression_table SYNC")
