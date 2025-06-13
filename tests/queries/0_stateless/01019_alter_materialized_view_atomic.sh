@@ -8,11 +8,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT <<EOF
-DROP TABLE IF EXISTS src;
-DROP TABLE IF EXISTS mv;
+DROP TABLE IF EXISTS src_456;
+DROP TABLE IF EXISTS mv_456;
 
-CREATE TABLE src (v UInt64) ENGINE = Null;
-CREATE MATERIALIZED VIEW mv (v UInt8) Engine = MergeTree() ORDER BY v AS SELECT v FROM src;
+CREATE TABLE src_456 (v UInt64) ENGINE = Null;
+CREATE MATERIALIZED VIEW mv_456 (v UInt8) Engine = MergeTree() ORDER BY v AS SELECT v FROM src_456;
 EOF
 
 # Test that ALTER doesn't cause data loss or duplication.
@@ -24,7 +24,7 @@ EOF
 # mv1    mv2
 #  \      /
 #   \    /
-#   mv sink
+#   mv_456 sink
 #
 # Insert N times into null while altering sink query and switching it from mv1 to mv2.
 
@@ -36,8 +36,8 @@ function alter_thread()
     # When INSERT done, we got signal
     trap 'INSERT_DONE=1' SIGINT SIGTERM
 
-    ALTERS[0]="ALTER TABLE mv MODIFY QUERY SELECT v FROM src;"
-    ALTERS[1]="ALTER TABLE mv MODIFY QUERY SELECT v * 2 as v FROM src;"
+    ALTERS[0]="ALTER TABLE mv_456 MODIFY QUERY SELECT v FROM src_456;"
+    ALTERS[1]="ALTER TABLE mv_456 MODIFY QUERY SELECT v * 2 as v FROM src_456;"
 
     # Loop to make the ALTER run concurrently with INSERT
     for i in {1..10}; do
@@ -51,8 +51,8 @@ function alter_thread()
     done
 
     # Insert done, DROP the tables
-    $CLICKHOUSE_CLIENT -q "DROP VIEW mv"
-    $CLICKHOUSE_CLIENT -q "DROP TABLE src"
+    $CLICKHOUSE_CLIENT -q "DROP VIEW mv_456"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE src_456"
 }
 
 export -f alter_thread;
@@ -62,11 +62,11 @@ ALTER_DROP_PID=$!
 for _ in {1..100}; do
     # Retry (hopefully retriable (deadlock avoided)) errors.
     while true; do
-        $CLICKHOUSE_CLIENT -q "INSERT INTO src VALUES (1);" 2>/dev/null && break
+        $CLICKHOUSE_CLIENT -q "INSERT INTO src_456 VALUES (1);" 2>/dev/null && break
     done
 done
 
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM mv;"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM mv_456;"
 
 # After INSERT is done, notify the alter thread to stop and then we could drop tables
 kill -SIGINT $ALTER_DROP_PID
