@@ -266,7 +266,7 @@ void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & c
             }
 
             LOG_DEBUG(log, "Finalizing order {}", order_url);
-            api->finalizeOrder(order_data.finalize_url, domains, pkey);
+            api->finalizeOrder(order_data.finalize_url, domains, key);
 
             refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
             return;
@@ -319,15 +319,21 @@ void Client::authentication_fn()
 
     chassert(keys_initialized);
 
-    if (!private_acme_key)
     {
-        LOG_WARNING(log, "Private key is not initialized, retrying in 1 second. This is a bug.");
-        refresh_key_task->scheduleAfter(REFRESH_TASK_IN_A_SECOND);
-        return;
+        std::lock_guard key_lock(private_acme_key_mutex);
+
+        if (!private_acme_key)
+        {
+            LOG_FATAL(log, "Private key is not initialized, retrying in 1 second. This is a bug.");
+            refresh_key_task->scheduleAfter(REFRESH_TASK_IN_A_SECOND);
+            return;
+        }
     }
 
     try
     {
+        std::lock_guard key_lock(private_acme_key_mutex);
+
         if (!api)
             api = std::make_shared<ACME::API>(ACME::API::Configuration{
                 .directory_url = directory_url,
@@ -353,10 +359,14 @@ void Client::refresh_key_fn()
 {
     LOG_DEBUG(log, "Running ACME::Client key refresh task");
 
-    if (private_acme_key)
     {
-        keys_initialized = true;
-        return;
+        std::lock_guard key_lock(private_acme_key_mutex);
+
+        if (private_acme_key)
+        {
+            keys_initialized = true;
+            return;
+        }
     }
 
     std::string private_key;
@@ -388,14 +398,15 @@ void Client::refresh_key_fn()
     }
 
     chassert(!private_key.empty());
-    chassert(!private_acme_key);
 
     {
         std::lock_guard key_lock(private_acme_key_mutex);
+
+        chassert(!private_acme_key);
         private_acme_key = std::make_shared<KeyPair>(KeyPair::fromBuffer(private_key));
     }
 
-    LOG_TEST(log, "ACME private key successfully loaded");
+    LOG_TRACE(log, "ACME private key successfully loaded");
 
     keys_initialized = true;
     authentication_task->activateAndSchedule();

@@ -31,7 +31,7 @@ namespace
 {
     std::string readURLUntilEOF(const Poco::URI & url)
     {
-        auto *log = &Poco::Logger::get("ACME::API");
+        auto * log = &Poco::Logger::get("ACME::API");
 
         LOG_TEST(log, "Requesting URL: {}", url.toString());
 
@@ -257,9 +257,11 @@ std::string API::pullCertificate(const Poco::URI & certificate_url) const
     return readURLUntilEOF(certificate_url);
 }
 
-bool API::finalizeOrder(const Poco::URI & finalize_url, const Domains & domains, const std::string & pkey) const
+bool API::finalizeOrder(const Poco::URI & finalize_url, const Domains & domains, const KeyPair & pkey) const
 {
-    std::string csr = generateCSR(domains, pkey);
+    EVP_PKEY * key = static_cast<EVP_PKEY *>(pkey);
+
+    std::string csr = generateCSR(domains, key);
     auto payload = R"({"csr":")" + csr + R"("})";
 
     doJWSRequest(finalize_url, payload, nullptr);

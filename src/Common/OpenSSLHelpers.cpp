@@ -2,19 +2,22 @@
 
 #if USE_SSL
 #include <Common/OpenSSLHelpers.h>
-#include <base/scope_guard.h>
+
+#include <Common/Base64.h>
+#include <Common/Exception.h>
+#include <Common/Crypto/KeyPair.h>
 
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 #include <openssl/kdf.h>
 #include <openssl/core_names.h>
-
+#include <openssl/obj_mac.h>
 #include <openssl/pem.h>
 #include <openssl/x509v3.h>
-#include <Common/Base64.h>
-#include <Common/Exception.h>
-#include <Common/Crypto/KeyPair.h>
+
+#include <base/scope_guard.h>
+
 
 namespace DB
 {
@@ -147,13 +150,11 @@ std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::str
     std::vector<uint8_t> result(EVP_MAX_MD_SIZE);
     size_t out_len = 0;
 
-    using MacPtr = std::unique_ptr<EVP_MAC, decltype(&EVP_MAC_free)>;
-    MacPtr mac(EVP_MAC_fetch(nullptr, "HMAC", nullptr), &EVP_MAC_free);
+    EVP_MAC_ptr mac(EVP_MAC_fetch(nullptr, "HMAC", nullptr), &EVP_MAC_free);
     if (!mac)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MAC_fetch failed: {}", getOpenSSLErrors());
 
-    using CtxPtr = std::unique_ptr<EVP_MAC_CTX, decltype(&EVP_MAC_CTX_free)>;
-    CtxPtr ctx(EVP_MAC_CTX_new(mac.get()), &EVP_MAC_CTX_free);
+    EVP_MAC_CTX_ptr ctx(EVP_MAC_CTX_new(mac.get()), &EVP_MAC_CTX_free);
     if (!ctx)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MAC_CTX_new failed: {}", getOpenSSLErrors());
 
@@ -177,8 +178,6 @@ std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::str
 
 std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations)
 {
-    using EVP_KDF_ptr = std::unique_ptr<EVP_KDF, decltype(&EVP_KDF_free)>;
-    using EVP_KDF_CTX_ptr = std::unique_ptr<EVP_KDF_CTX, decltype(&EVP_KDF_CTX_free)>;
 
     EVP_KDF_ptr kdf(EVP_KDF_fetch(nullptr, "PBKDF2", nullptr), &EVP_KDF_free);
     if (!kdf)
@@ -204,83 +203,88 @@ std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<u
     return derived_key;
 }
 
-std::string generateCSR(std::vector<std::string> domain_names, std::string pkey)
+std::string generateCSR(const std::vector<std::string> domain_names, EVP_PKEY * key)
 {
     if (domain_names.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No domain names provided");
 
-    auto name = domain_names.front();
-
-    /// Convert private key to EVP_PKEY
-    EVP_PKEY * key = EVP_PKEY_new();
-    BIO * pkey_bio(BIO_new_mem_buf(pkey.c_str(), -1));
-    if (PEM_read_bio_PrivateKey(pkey_bio, &key, nullptr, nullptr) == nullptr)
-    {
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error reading private key: {}", getOpenSSLErrors());
-    }
+    if (!key)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No private key provided");
 
     /// Create X509 object and set subject name
-    X509_REQ * req(X509_REQ_new());
-    X509_NAME * cn = X509_REQ_get_subject_name(req);
-    if (!X509_NAME_add_entry_by_txt(cn, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char *>(name.c_str()), -1, -1, 0))
-    {
+    X509_REQ_ptr req(X509_REQ_new(), X509_REQ_free);
+    if (!req)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error creating X509_REQ: {}", getOpenSSLErrors());
+
+    /// Owned by X509_REQ, does not need to be freed.
+    X509_NAME * subject_name = X509_REQ_get_subject_name(req.get());
+    if (!subject_name)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error getting subject name from X509_REQ: {}", getOpenSSLErrors());
+
+    if (!X509_NAME_add_entry_by_NID(
+        /*name=*/ subject_name,
+        /*nid=*/ NID_commonName,
+        /*type=*/ MBSTRING_ASC,
+        /*bytes=*/ reinterpret_cast<const unsigned char *>(domain_names.front().c_str()),
+        /*len=*/ -1,
+        /*loc=*/ -1,
+        /*set=*/ 0
+    ))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Error adding CN to X509_NAME: {}", getOpenSSLErrors());
-    }
 
     /// Add Subject Alternative Names
     if (domain_names.size() > 1)
     {
-        X509_EXTENSIONS * extensions(sk_X509_EXTENSION_new_null());
-
-        std::string other_domain_names;
-        for (auto it = domain_names.begin() + 1; it != domain_names.end(); ++it)
+        std::string san_entries;
+        for (size_t i = 1; i < domain_names.size(); ++i)
         {
-            if (it->empty())
-                continue;
-            other_domain_names += fmt::format("DNS:{}, ", *it);
+            if (!domain_names[i].empty())
+                san_entries += "DNS:" + domain_names[i] + ",";
         }
+        if (!san_entries.empty() && san_entries.back() == ',')
+            san_entries.pop_back();
 
-        /// Add Subject Alternative Name extension
-        auto * nid = X509V3_EXT_conf_nid(nullptr, nullptr, NID_subject_alt_name, other_domain_names.c_str());
+        /// Add Subject Alternative Name extension.
+        /// Everything in this stack and the stack itself will be freed by smart pointer.
+        X509_EXTENSIONS_ptr extensions(sk_X509_EXTENSION_new_null());
+        if (!extensions)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to create extensions stack for Subject Alternative Name {}", getOpenSSLErrors());
 
-        int ret = OPENSSL_sk_push(reinterpret_cast<OPENSSL_STACK *>(extensions), static_cast<const void *>(nid));
-        if (!ret)
-        {
+        auto * san_extension = X509V3_EXT_conf_nid(nullptr, nullptr, NID_subject_alt_name, san_entries.c_str());
+        if (!san_extension)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to create Subject Alternative Name extension {}", getOpenSSLErrors());
+
+        if (!OPENSSL_sk_push(
+            reinterpret_cast<OPENSSL_STACK *>(extensions.get()),
+            reinterpret_cast<void *>(san_extension)
+        ))
             throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to add Subject Alternative Name to extensions {}", getOpenSSLErrors());
-        }
 
         // And tie it to the X509
-        if (X509_REQ_add_extensions(req, extensions) != 1)
-        {
+        if (!X509_REQ_add_extensions(req.get(), extensions.get()))
             throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to add Subject Alternative Names to CSR {}", getOpenSSLErrors());
-        }
     }
 
-    if (!X509_REQ_set_pubkey(req, key))
-    {
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in X509_REQ_set_pubkey");
-    }
+    if (!X509_REQ_set_pubkey(req.get(), key))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in X509_REQ_set_pubkey: {}", getOpenSSLErrors());
 
-    if (!X509_REQ_sign(req, key, EVP_sha256()))
-    {
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in X509_REQ_sign");
-    }
+    if (!X509_REQ_sign(req.get(), key, EVP_sha256()))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in X509_REQ_sign: {}", getOpenSSLErrors());
 
     /// And our CSR is ready
-    BIO * req_bio(BIO_new(BIO_s_mem()));
-    if (i2d_X509_REQ_bio(req_bio, req) < 0)
-    {
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in i2d_X509_REQ_bio");
-    }
+    BIO_ptr req_bio(BIO_new(BIO_s_mem()), BIO_free);
+    if (i2d_X509_REQ_bio(req_bio.get(), req.get()) < 0)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in i2d_X509_REQ_bio: {}", getOpenSSLErrors());
 
     /// Convert CSR to string
-    std::string csr;
-    char buffer[1024];
-    int bytes_read;
-    while ((bytes_read = BIO_read(req_bio, buffer, sizeof(buffer))) > 0)
-    {
-        csr.append(buffer, bytes_read);
-    }
+    int csr_len = BIO_ctrl_pending(req_bio.get());
+    if (csr_len <= 0)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in BIO_ctrl_pending: {}", getOpenSSLErrors());
+
+    std::string csr(csr_len, '\0');
+    if (BIO_read(req_bio.get(), csr.data(), csr_len) != csr_len)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in BIO_read: {}", getOpenSSLErrors());
+
     csr = base64Encode(csr, /*url_encoding*/ true, /*no_padding*/ true);
 
     return csr;

@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 namespace
@@ -182,7 +183,7 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     if (config.has("acme") && prefix == Poco::Net::SSLManager::CFG_SERVER_PREFIX)
     {
         if (!new_cert_path.empty() || !new_key_path.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Static TLS keys and ACME provider are enabled at the same time.");
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Static TLS keys and ACME provider are enabled at the same time.");
 
         tryLoadACMECertificate(ctx, prefix);
 

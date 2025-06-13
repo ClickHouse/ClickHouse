@@ -102,7 +102,7 @@ public:
     std::string order(const Domains &, OrderCallback) const;
     Order describeOrder(const Poco::URI &) const;
     std::string pullCertificate(const Poco::URI &) const;
-    bool finalizeOrder(const Poco::URI &, const Domains &, const std::string &) const;
+    bool finalizeOrder(const Poco::URI &, const Domains &, const KeyPair &) const;
     void processAuthorization(const Poco::URI &, OrderCallback) const;
 
 private:

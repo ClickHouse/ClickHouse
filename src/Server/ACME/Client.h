@@ -69,7 +69,7 @@ private:
     std::string acme_hostname;
     std::string contact_email;
 
-    std::shared_ptr<KeyPair> private_acme_key;
+    std::shared_ptr<KeyPair> private_acme_key TSA_GUARDED_BY(private_acme_key_mutex);
     std::mutex private_acme_key_mutex;
 
     BackgroundSchedulePoolTaskHolder authentication_task;
