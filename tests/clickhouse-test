@@ -2054,37 +2054,40 @@ class TestCase:
                 # to avoid breaking CSV parser
                 result.description = result.description.replace("\0", "")
             else:
-                with SharedEngineReplacer(
-                    args,
-                    self.case_file,
-                    args.replace_replicated_with_shared,
-                    args.replace_non_replicated_with_shared,
-                    False,
-                    args.cloud,
-                ):
-                    with SharedEngineReplacer(
+                with (
+                    SharedEngineReplacer(
                         args,
-                        self.reference_file,
+                        self.case_file,
                         args.replace_replicated_with_shared,
                         args.replace_non_replicated_with_shared,
+                        False,
+                        args.cloud,
+                    ),
+                    SharedEngineReplacer(
+                        args,
+                        self.reference_file,
+                        # cloud_mode_engine=2 in cloud, expect all engines to be Shared*
+                        args.replace_replicated_with_shared or args.cloud,
+                        args.replace_non_replicated_with_shared or args.cloud,
                         True,
                         args.cloud,
-                    ):
-                        (
-                            proc,
-                            total_time,
-                        ) = self.run_single_test(server_logs_level, client_options)
+                    ),
+                ):
+                    (
+                        proc,
+                        total_time,
+                    ) = self.run_single_test(server_logs_level, client_options)
 
-                        result = self.process_result_impl(proc, total_time)
+                    result = self.process_result_impl(proc, total_time)
 
-                        result.check_if_need_retry(
-                            args,
-                            result.description,
-                            result.description,
-                            self.runs_count,
-                        )
-                        # to avoid breaking CSV parser
-                        result.description = result.description.replace("\0", "")
+                    result.check_if_need_retry(
+                        args,
+                        result.description,
+                        result.description,
+                        self.runs_count,
+                    )
+                    # to avoid breaking CSV parser
+                    result.description = result.description.replace("\0", "")
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
 
