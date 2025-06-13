@@ -68,7 +68,7 @@ public:
 
     std::map<std::string, ExtendedChannelPtrPair> channels;
     std::weak_ptr<DB::TextLogQueue> text_log;
-    std::atomic<int> text_log_max_priority = -1;
+    std::atomic<int> text_log_max_priority = 0;
 };
 
 struct OwnRunnableForChannel;
