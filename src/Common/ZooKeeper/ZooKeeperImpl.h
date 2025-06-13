@@ -9,9 +9,8 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ShuffleHost.h>
 #include <Coordination/KeeperConstants.h>
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Coordination/KeeperFeatureFlags.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -26,10 +25,13 @@
 #include <map>
 #include <mutex>
 #include <chrono>
+#include <vector>
 #include <memory>
+#include <thread>
 #include <atomic>
 #include <cstdint>
 #include <optional>
+#include <functional>
 #include <random>
 
 
@@ -117,7 +119,7 @@ public:
 
     std::optional<int8_t> getConnectedNodeIdx() const override;
     String getConnectedHostPort() const override;
-    int64_t getConnectionXid() const override;
+    int32_t getConnectionXid() const override;
 
     String tryGetAvailabilityZone() override;
 
@@ -143,11 +145,6 @@ public:
         const String & path,
         int32_t version,
         RemoveCallback callback) override;
-
-    void removeRecursive(
-        const String &path,
-        uint32_t remove_nodes_limit,
-        RemoveRecursiveCallback callback) override;
 
     void exists(
         const String & path,
@@ -245,9 +242,6 @@ private:
     std::optional<CompressedWriteBuffer> compressed_out;
 
     bool use_compression = false;
-    bool use_xid_64 = false;
-
-    int64_t close_xid = CLOSE_XID;
 
     int64_t session_id = 0;
 
@@ -336,7 +330,6 @@ private:
 
     WriteBuffer & getWriteBuffer();
     void flushWriteBuffer();
-    void cancelWriteBuffer() noexcept;
     ReadBuffer & getReadBuffer();
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);

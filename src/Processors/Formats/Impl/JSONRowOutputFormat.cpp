@@ -1,8 +1,6 @@
-#include <Core/Block.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONRowOutputFormat.h>
-#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 
@@ -19,8 +17,6 @@ JSONRowOutputFormat::JSONRowOutputFormat(
 {
     names = JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, true);
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
-    settings.json.pretty_print_indent = '\t';
-    settings.json.pretty_print_indent_multiplier = 1;
 }
 
 
@@ -35,7 +31,7 @@ void JSONRowOutputFormat::writePrefix()
 
 void JSONRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr, names[field_number], 3, " ", settings.json.pretty_print);
+    JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr, names[field_number], 3);
     ++field_number;
 }
 
@@ -146,6 +142,13 @@ void JSONRowOutputFormat::resetFormatterImpl()
     statistics = Statistics();
 }
 
+
+void JSONRowOutputFormat::onProgress(const Progress & value)
+{
+    statistics.progress.incrementPiecewiseAtomically(value);
+}
+
+
 void registerOutputFormatJSON(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSON", [](
@@ -158,7 +161,6 @@ void registerOutputFormatJSON(FormatFactory & factory)
 
     factory.markOutputFormatSupportsParallelFormatting("JSON");
     factory.markFormatHasNoAppendSupport("JSON");
-    factory.setContentType("JSON", "application/json; charset=UTF-8");
 
     factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
@@ -170,7 +172,6 @@ void registerOutputFormatJSON(FormatFactory & factory)
 
     factory.markOutputFormatSupportsParallelFormatting("JSONStrings");
     factory.markFormatHasNoAppendSupport("JSONStrings");
-    factory.setContentType("JSONStrings", "application/json; charset=UTF-8");
 }
 
 }

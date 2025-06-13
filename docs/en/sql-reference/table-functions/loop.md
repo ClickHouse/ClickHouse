@@ -1,46 +1,39 @@
----
-description: 'The loop table function in ClickHouse is used to return query results
-  in an infinite loop.'
-slug: /sql-reference/table-functions/loop
-title: 'loop'
----
+# loop
 
-# loop Table Function
+**Syntax**
 
-## Syntax {#syntax}
-
-```sql
+``` sql
 SELECT ... FROM loop(database, table);
 SELECT ... FROM loop(database.table);
 SELECT ... FROM loop(table);
 SELECT ... FROM loop(other_table_function(...));
 ```
 
-## Arguments {#arguments}
+**Parameters**
 
-| Argument                    | Description                                                                                                          |
-|-----------------------------|----------------------------------------------------------------------------------------------------------------------|
-| `database`                  | database name.                                                                                                       |
-| `table`                     | table name.                                                                                                          |
-| `other_table_function(...)` | other table function. Example: `SELECT * FROM loop(numbers(10));` `other_table_function(...)` here is `numbers(10)`. |
+- `database` — database name.
+- `table` — table name.
+- `other_table_function(...)` — other table function.
+  Example: `SELECT * FROM loop(numbers(10));`
+  `other_table_function(...)` here is `numbers(10)`.
 
-## Returned values {#returned_values}
+**Returned Value**
 
 Infinite loop to return query results.
 
-## Examples {#examples}
+**Examples**
 
 Selecting data from ClickHouse:
 
-```sql
+``` sql
 SELECT * FROM loop(test_database, test_table);
 SELECT * FROM loop(test_database.test_table);
 SELECT * FROM loop(test_table);
 ```
 
-Or using other table functions:
+Or using other table function:
 
-```sql
+``` sql
 SELECT * FROM loop(numbers(3)) LIMIT 7;
    ┌─number─┐
 1. │      0 │
@@ -56,7 +49,7 @@ SELECT * FROM loop(numbers(3)) LIMIT 7;
 7. │      0 │
    └────────┘
 ``` 
-```sql
+``` sql
 SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
 ...
 ```

@@ -17,8 +17,7 @@ namespace ErrorCodes
 
 RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, bool async_query_sending_)
     : ISource(executor->getHeader(), false)
-    , add_aggregation_info(add_aggregation_info_)
-    , query_executor(std::move(executor))
+    , add_aggregation_info(add_aggregation_info_), query_executor(std::move(executor))
     , async_read(async_read_)
     , async_query_sending(async_query_sending_)
 {
@@ -78,14 +77,6 @@ ISource::Status RemoteSource::prepare()
         return Status::Finished;
     }
 
-#if defined(OS_LINUX)
-    if (async_query_sending && !was_query_sent && fd < 0)
-    {
-        startup_event_fd.write();
-        return Status::Async;
-    }
-#endif
-
     if (is_async_state)
         return Status::Async;
 
@@ -103,15 +94,6 @@ ISource::Status RemoteSource::prepare()
     }
 
     return status;
-}
-
-int RemoteSource::schedule()
-{
-#if defined(OS_LINUX)
-    return (fd < 0 ? startup_event_fd.fd : fd);
-#else
-    return fd;
-#endif
 }
 
 void RemoteSource::work()
@@ -137,7 +119,7 @@ void RemoteSource::work()
 
 void RemoteSource::onAsyncJobReady()
 {
-    chassert(async_read || async_query_sending);
+    chassert(async_read);
 
     if (!was_query_sent)
         return;
@@ -291,11 +273,7 @@ Chunk RemoteExtremesSource::generate()
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info,
-    bool add_totals,
-    bool add_extremes,
-    bool async_read,
-    bool async_query_sending)
+    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, bool async_query_sending)
 {
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
 

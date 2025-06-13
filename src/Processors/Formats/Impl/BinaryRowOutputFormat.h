@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Core/Block.h>
+
 
 namespace DB
 {
 
-class Block;
 class IColumn;
 class IDataType;
 class WriteBuffer;
@@ -19,6 +20,8 @@ public:
     BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
     String getName() const override { return "BinaryRowOutputFormat"; }
+
+    String getContentType() const override { return "application/octet-stream"; }
 
 private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

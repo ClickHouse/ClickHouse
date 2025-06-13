@@ -1,10 +1,12 @@
 import os
+import pytest
+import socket
+from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import time
 
-import pytest
 
-import helpers.keeper_utils as keeper_utils
-from helpers.cluster import ClickHouseCluster
+from kazoo.client import KazooClient, KazooRetry
 
 CLUSTER_SIZE = 5
 QUORUM_SIZE = CLUSTER_SIZE // 2 + 1
@@ -47,7 +49,15 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181",
+        timeout=timeout,
+        connection_retry=KazooRetry(max_tries=10),
+        command_retry=KazooRetry(max_tries=10),
+    )
+
+    _fake_zk_instance.start()
+    return _fake_zk_instance
 
 
 def wait_and_assert_data(zk, path, data):

@@ -9,6 +9,7 @@
 
 namespace DB
 {
+class DB;
 class ProtobufSerializer;
 class ProtobufWriter;
 class WriteBuffer;
@@ -35,6 +36,8 @@ public:
         bool with_length_delimiter_);
 
     String getName() const override { return "ProtobufRowOutputFormat"; }
+
+    std::string getContentType() const override { return "application/octet-stream"; }
 
 private:
     void write(const Columns & columns, size_t row_num) override;

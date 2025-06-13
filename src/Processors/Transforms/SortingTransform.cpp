@@ -319,27 +319,29 @@ IProcessor::Status SortingTransform::prepareGenerate()
         output.push(std::move(generated_chunk));
         return Status::PortFull;
     }
-
-    auto & input = inputs.back();
-
-    if (generated_chunk)
-        output.push(std::move(generated_chunk));
-
-    if (input.isFinished())
+    else
     {
-        output.finish();
-        return Status::Finished;
+        auto & input = inputs.back();
+
+        if (generated_chunk)
+            output.push(std::move(generated_chunk));
+
+        if (input.isFinished())
+        {
+            output.finish();
+            return Status::Finished;
+        }
+
+        input.setNeeded();
+
+        if (!input.hasData())
+            return Status::NeedData;
+
+        auto chunk = input.pull();
+        enrichChunkWithConstants(chunk);
+        output.push(std::move(chunk));
+        return Status::PortFull;
     }
-
-    input.setNeeded();
-
-    if (!input.hasData())
-        return Status::NeedData;
-
-    auto chunk = input.pull();
-    enrichChunkWithConstants(chunk);
-    output.push(std::move(chunk));
-    return Status::PortFull;
 }
 
 void SortingTransform::work()

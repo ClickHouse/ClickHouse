@@ -1,27 +1,16 @@
 #include <Access/ContextAccessParams.h>
 #include <Core/Settings.h>
-#include <IO/Operators.h>
 #include <Common/typeid_cast.h>
-
-#include <Poco/Net/SocketAddress.h>
-#include <Poco/Net/IPAddress.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_ddl;
-    extern const SettingsBool allow_introspection_functions;
-    extern const SettingsUInt64 readonly;
-}
 
 ContextAccessParams::ContextAccessParams(
     std::optional<UUID> user_id_,
     bool full_access_,
     bool use_default_roles_,
     const std::shared_ptr<const std::vector<UUID>> & current_roles_,
-    const std::shared_ptr<const std::vector<UUID>> & external_roles_,
     const Settings & settings_,
     const String & current_database_,
     const ClientInfo & client_info_)
@@ -29,15 +18,14 @@ ContextAccessParams::ContextAccessParams(
     , full_access(full_access_)
     , use_default_roles(use_default_roles_)
     , current_roles(current_roles_)
-    , external_roles(external_roles_)
-    , readonly(settings_[Setting::readonly])
-    , allow_ddl(settings_[Setting::allow_ddl])
-    , allow_introspection(settings_[Setting::allow_introspection_functions])
+    , readonly(settings_.readonly)
+    , allow_ddl(settings_.allow_ddl)
+    , allow_introspection(settings_.allow_introspection_functions)
     , current_database(current_database_)
     , interface(client_info_.interface)
     , http_method(client_info_.http_method)
-    , address(std::make_shared<Poco::Net::IPAddress>(client_info_.current_address->host()))
-    , forwarded_address(client_info_.getLastForwardedForHost())
+    , address(client_info_.current_address.host())
+    , forwarded_address(client_info_.getLastForwardedFor())
     , quota_key(client_info_.quota_key)
     , initial_user((client_info_.initial_user != client_info_.current_user) ? client_info_.initial_user : "")
 {
@@ -64,17 +52,6 @@ String ContextAccessParams::toString() const
         }
         out << "]";
     }
-    if (external_roles && !external_roles->empty())
-    {
-        out << separator() << "external_roles = [";
-        for (size_t i = 0; i != external_roles->size(); ++i)
-        {
-            if (i)
-                out << ", ";
-            out << (*external_roles)[i];
-        }
-        out << "]";
-    }
     if (readonly)
         out << separator() << "readonly = " << readonly;
     if (allow_ddl)
@@ -86,8 +63,8 @@ String ContextAccessParams::toString() const
     out << separator() << "interface = " << magic_enum::enum_name(interface);
     if (http_method != ClientInfo::HTTPMethod::UNKNOWN)
         out << separator() << "http_method = " << magic_enum::enum_name(http_method);
-    if (!address->isWildcard())
-        out << separator() << "address = " << address->toString();
+    if (!address.isWildcard())
+        out << separator() << "address = " << address.toString();
     if (!forwarded_address.empty())
         out << separator() << "forwarded_address = " << forwarded_address;
     if (!quota_key.empty())
@@ -105,9 +82,10 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
         {
             if (!x)
                 return !y;
-            if (!y)
+            else if (!y)
                 return false;
-            return *x == *y;
+            else
+                return *x == *y;
         }
         else
         {
@@ -123,7 +101,6 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
     CONTEXT_ACCESS_PARAMS_EQUALS(full_access)
     CONTEXT_ACCESS_PARAMS_EQUALS(use_default_roles)
     CONTEXT_ACCESS_PARAMS_EQUALS(current_roles)
-    CONTEXT_ACCESS_PARAMS_EQUALS(external_roles)
     CONTEXT_ACCESS_PARAMS_EQUALS(readonly)
     CONTEXT_ACCESS_PARAMS_EQUALS(allow_ddl)
     CONTEXT_ACCESS_PARAMS_EQUALS(allow_introspection)
@@ -148,21 +125,23 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
         {
             if (!x)
                 return y ? -1 : 0;
-            if (!y)
+            else if (!y)
                 return 1;
-            if (*x == *y)
+            else if (*x == *y)
                 return 0;
-            if (*x < *y)
+            else if (*x < *y)
                 return -1;
-            return 1;
+            else
+                return 1;
         }
         else
         {
             if (x == y)
                 return 0;
-            if (x < y)
+            else if (x < y)
                 return -1;
-            return 1;
+            else
+                return 1;
         }
     };
 
@@ -174,7 +153,6 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
     CONTEXT_ACCESS_PARAMS_LESS(full_access)
     CONTEXT_ACCESS_PARAMS_LESS(use_default_roles)
     CONTEXT_ACCESS_PARAMS_LESS(current_roles)
-    CONTEXT_ACCESS_PARAMS_LESS(external_roles)
     CONTEXT_ACCESS_PARAMS_LESS(readonly)
     CONTEXT_ACCESS_PARAMS_LESS(allow_ddl)
     CONTEXT_ACCESS_PARAMS_LESS(allow_introspection)
