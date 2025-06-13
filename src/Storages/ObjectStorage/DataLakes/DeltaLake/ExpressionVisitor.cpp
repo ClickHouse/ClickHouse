@@ -1,4 +1,5 @@
 #include "ExpressionVisitor.h"
+#include "Functions/FunctionFactory.h"
 
 #if USE_DELTA_KERNEL_RS
 
@@ -18,6 +19,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/SetSerialization.h>
+#include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Chunk.h>
 
@@ -96,9 +98,15 @@ private:
     /// First exception thrown from visitor functions.
     std::exception_ptr visitor_exception;
 
+    DB::ContextPtr context; /// TODO: pass query context
+
 public:
     /// `schema` is the expression schema of result expression.
-    explicit ExpressionVisitorData(const DB::NamesAndTypesList & schema_) : schema(schema_) {}
+    explicit ExpressionVisitorData(const DB::NamesAndTypesList & schema_)
+        : schema(schema_),
+          context(DB::Context::getGlobalContextInstance()) {}
+
+    DB::ContextPtr getContext() const { return context; }
 
     /// Get result of a parsed expression.
     DB::ActionsDAG getResult()
@@ -337,13 +345,6 @@ private:
         MULTIPLY,
         DIVIDE,
     };
-    enum Function
-    {
-        OR,
-        IS_NULL,
-        AND,
-        NOT,
-    };
     static ffi::EngineExpressionVisitor createVisitor(ExpressionVisitorData & data)
     {
         ffi::EngineExpressionVisitor visitor;
@@ -372,11 +373,11 @@ private:
         visitor.visit_column = &visitColumnExpression;
         visitor.visit_struct_expr = &visitStructExpression;
 
-        visitor.visit_or = &visitFunction<OR, DB::FunctionOr>;
-        visitor.visit_and = &visitFunction<AND, DB::FunctionAnd>;
-        visitor.visit_not = &visitFunction<NOT, DB::FunctionNot>;
+        visitor.visit_or = &visitFunction<DB::FunctionOr>;
+        visitor.visit_and = &visitFunction<DB::FunctionAnd>;
+        visitor.visit_not = &visitFunction<DB::FunctionNot>;
 
-        visitor.visit_is_null = &visitFunction<IS_NULL, DB::FunctionIsNull>;
+        visitor.visit_is_null = &visitFunction<DB::FunctionIsNull>;
 
         visitor.visit_lt = &throwNotImplemented<LT>;
         //visitor.visit_le = &throwNotImplemented<LE>;
@@ -435,7 +436,7 @@ private:
         });
     }
 
-    template <Function func_id, typename Func>
+    template <typename Func>
     static void visitFunction(
         void * data,
         uintptr_t sibling_list_id,
@@ -444,29 +445,12 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            const std::string func_name(magic_enum::enum_name(func_id));
             LOG_TEST(
                 state->logger(),
                 "List id: {}, child list id: {}, type: Function {}",
-                sibling_list_id, child_list_id, func_name);
+                sibling_list_id, child_list_id, Func::name);
 
-            DB::FunctionOverloadResolverPtr function;
-            switch (func_id)
-            {
-                case OR:
-                    function = std::make_unique<DB::FunctionToOverloadResolverAdaptor>(std::make_shared<DB::FunctionOr>());
-                    break;
-                case AND:
-                    function = std::make_unique<DB::FunctionToOverloadResolverAdaptor>(std::make_shared<DB::FunctionAnd>());
-                    break;
-                case NOT:
-                    function = std::make_unique<DB::FunctionToOverloadResolverAdaptor>(std::make_shared<DB::FunctionNot>());
-                    break;
-                case IS_NULL:
-                    function = std::make_unique<DB::FunctionToOverloadResolverAdaptor>(std::make_shared<DB::FunctionIsNull>(true));
-                    break;
-            }
-
+            DB::FunctionOverloadResolverPtr function = DB::FunctionFactory::instance().get(Func::name, state->getContext());
             state->addFunction(sibling_list_id, child_list_id, std::move(function));
         });
     }
