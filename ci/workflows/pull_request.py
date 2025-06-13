@@ -34,6 +34,7 @@ workflow = Workflow.Config(
             job.set_dependency(REGULAR_BUILD_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
+        *JobConfigs.nix_build_job,
         *JobConfigs.unittest_jobs,
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
