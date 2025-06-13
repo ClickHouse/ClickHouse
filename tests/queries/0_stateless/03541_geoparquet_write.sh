@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-
+# Tags: no-fasttest
+#       ^ no Parquet support in fasttest
 # set -x
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
