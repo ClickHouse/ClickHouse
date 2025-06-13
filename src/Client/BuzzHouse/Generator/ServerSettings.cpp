@@ -1027,7 +1027,15 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"low_cardinality_allow_in_native_format", trueOrFalseSettingNoOracle},
          {"output_format_binary_encode_types_in_binary_format", trueOrFalseSettingNoOracle},
          {"output_format_csv_crlf_end_of_line", trueOrFalseSettingNoOracle},
-         {"output_format_msgpack_uuid_representation", CHSetting(nastyStrings, {}, false)},
+         {"output_format_msgpack_uuid_representation",
+          CHSetting(
+              [](RandomGenerator & rg)
+              {
+                  const DB::Strings & choices = {"'ext'", "'str'", "'bin'"};
+                  return rg.pickRandomly(choices);
+              },
+              {},
+              false)},
          /// {"output_format_native_encode_types_in_binary_format", trueOrFalseSettingNoOracle}, may block the client
          {"output_format_tsv_crlf_end_of_line", trueOrFalseSettingNoOracle}});
 }
