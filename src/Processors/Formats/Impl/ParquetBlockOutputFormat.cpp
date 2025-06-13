@@ -241,7 +241,8 @@ void ParquetBlockOutputFormat::finalizeImpl()
             base_offset = out.count();
             writeFileHeader(file_state, out);
         }
-        writeFileFooter(file_state, schema, options, out);
+        Block header = materializeBlock(getPort(PortKind::Main).getHeader());
+        writeFileFooter(file_state, schema, options, out, header);
         chassert(out.count() - base_offset == file_state.offset);
     }
     else

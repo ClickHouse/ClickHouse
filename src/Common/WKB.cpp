@@ -1,6 +1,9 @@
+#include <bit>
 #include <variant>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Core/Field.h>
 #include <Functions/geometryConverters.h>
 #include <base/types.h>
@@ -156,6 +159,147 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
             return readMultiPolygonWKB(in_buffer, endian_to_read);
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geometry type {}", geom_type);
+}
+
+String WKBPointTransform::dumpObject(const Field & geo_object)
+{
+    constexpr std::endian endian = std::endian::little; 
+
+    const auto & point = geo_object.safeGet<Tuple>();
+    const auto & x = point[0].safeGet<Float64>();
+    const auto & y = point[1].safeGet<Float64>();
+
+    String result;
+    WriteBufferFromString out_buffer(result);
+
+    out_buffer.write(static_cast<UInt8>(endian == std::endian::little));
+    UInt32 geom_type = static_cast<UInt32>(WKBGeometry::Point);
+    writeBinaryEndian<endian>(geom_type, out_buffer);
+
+    writeBinaryEndian<endian>(x, out_buffer);
+    writeBinaryEndian<endian>(y, out_buffer);
+
+    return result;
+}
+
+String WKBLineStringTransform::dumpObject(const Field & geo_object)
+{
+    constexpr std::endian endian = std::endian::little;
+
+    const auto & linestring = geo_object.safeGet<Array>();
+
+    String result;
+    WriteBufferFromString out_buffer(result);
+
+    out_buffer.write(static_cast<UInt8>(endian == std::endian::little));
+    UInt32 geom_type = static_cast<UInt32>(WKBGeometry::LineString);
+    writeBinaryEndian<endian>(geom_type, out_buffer);
+
+    UInt32 num_points = static_cast<UInt32>(linestring.size());
+    writeBinaryEndian<endian>(num_points, out_buffer);
+
+    for (const auto & field_point : linestring)
+    {
+        const auto & point = field_point.safeGet<Tuple>();
+        const auto & x = point[0].safeGet<Float64>();
+        const auto & y = point[1].safeGet<Float64>();
+
+        writeBinaryEndian<endian>(x, out_buffer);
+        writeBinaryEndian<endian>(y, out_buffer);
+    }
+
+    return result;
+}
+
+String WKBPolygonTransform::dumpObject(const Field & geo_object)
+{
+    constexpr std::endian endian = std::endian::little;
+
+    const auto & polygon = geo_object.safeGet<Array>();
+
+    String result;
+    WriteBufferFromString out_buffer(result);
+
+    out_buffer.write(static_cast<UInt8>(endian == std::endian::little));
+    UInt32 geom_type = static_cast<UInt32>(WKBGeometry::Polygon);
+    writeBinaryEndian<endian>(geom_type, out_buffer);
+
+    UInt32 num_rings = static_cast<UInt32>(polygon.size());
+    writeBinaryEndian<endian>(num_rings, out_buffer);
+
+    for (const auto & field_ring : polygon)
+    {
+        const auto & ring = field_ring.safeGet<Array>();
+
+        UInt32 num_points = static_cast<UInt32>(ring.size());
+        writeBinaryEndian<endian>(num_points, out_buffer);
+
+        for (const auto & field_point : ring)
+        {
+            const auto & point = field_point.safeGet<Tuple>();
+            const auto & x = point[0].safeGet<Float64>();
+            const auto & y = point[1].safeGet<Float64>();
+
+            writeBinaryEndian<endian>(x, out_buffer);
+            writeBinaryEndian<endian>(y, out_buffer);
+        }
+    }
+
+    return result;
+}
+
+String WKBMultiLineStringTransform::dumpObject(const Field & geo_object)
+{
+    constexpr std::endian endian = std::endian::little;
+
+    const auto & multilinestring = geo_object.safeGet<Array>();
+
+    String result;
+    WriteBufferFromString out_buffer(result);
+
+    out_buffer.write(static_cast<UInt8>(endian == std::endian::little));
+    UInt32 geom_type = static_cast<UInt32>(WKBGeometry::MultiLineString);
+    writeBinaryEndian<endian>(geom_type, out_buffer);
+
+    UInt32 num_linestrings = static_cast<UInt32>(multilinestring.size());
+    writeBinaryEndian<endian>(num_linestrings, out_buffer);
+
+    auto transform = WKBLineStringTransform();
+    for (const auto & linestring : multilinestring)
+    {
+        auto transformed_linestring = transform.dumpObject(linestring);
+        for (auto byte : transformed_linestring)
+            out_buffer.write(byte);
+    }
+
+    return result;
+}
+
+String WKBMultiPolygonTransform::dumpObject(const Field & geo_object)
+{
+    constexpr std::endian endian = std::endian::little;
+
+    const auto & multipolygon = geo_object.safeGet<Array>();
+
+    String result;
+    WriteBufferFromString out_buffer(result);
+
+    out_buffer.write(static_cast<UInt8>(endian == std::endian::little));
+    UInt32 geom_type = static_cast<UInt32>(WKBGeometry::MultiPolygon);
+    writeBinaryEndian<endian>(geom_type, out_buffer);
+
+    UInt32 num_polygons = static_cast<UInt32>(multipolygon.size());
+    writeBinaryEndian<endian>(num_polygons, out_buffer);
+
+    auto transform = WKBPolygonTransform();
+    for (const auto & polygon : multipolygon)
+    {
+        auto transformed_linestring = transform.dumpObject(polygon);
+        for (auto byte : transformed_linestring)
+            out_buffer.write(byte);
+    }
+
+    return result;
 }
 
 }

@@ -179,6 +179,10 @@ void finalizeColumnChunkAndWriteFooter(
 
 void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions & options, WriteBuffer & out);
 
-void writeFileFooter(FileWriteState & file, SchemaElements schema, const WriteOptions & options, WriteBuffer & out);
+void writeFileFooter(FileWriteState & file,
+    SchemaElements schema,
+    const WriteOptions & options,
+    WriteBuffer & out,
+    const Block & header);
 
 }

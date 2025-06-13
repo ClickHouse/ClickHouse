@@ -1,9 +1,12 @@
 #include "Processors/Formats/Impl/Parquet/Write.h"
 #include "Processors/Formats/Impl/Parquet/ThriftUtil.h"
+#include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
 #include <arrow/util/rle_encoding.h>
 #include <lz4.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
 #include <xxhash.h>
 #include <DataTypes/DataTypeObject.h>
 #include <Columns/MaskOperations.h>
@@ -18,6 +21,8 @@
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
+#include <Core/Block.h>
+#include <DataTypes/DataTypeCustom.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -1196,7 +1201,11 @@ static void writePageIndex(FileWriteState & file, WriteBuffer & out)
     }
 }
 
-void writeFileFooter(FileWriteState & file, SchemaElements schema, const WriteOptions & options, WriteBuffer & out)
+void writeFileFooter(FileWriteState & file,
+    SchemaElements schema,
+    const WriteOptions & options,
+    WriteBuffer & out,
+    const Block & header)
 {
     chassert(file.offset != 0);
     chassert(file.current_row_group.row_group.columns.empty());
@@ -1226,6 +1235,60 @@ void writeFileFooter(FileWriteState & file, SchemaElements schema, const WriteOp
                 meta.column_orders.emplace_back();
         for (auto & c : meta.column_orders)
             c.__set_TYPE_ORDER({});
+    }
+
+    std::vector<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
+    for (const auto & [column_name, type] : header.getNamesAndTypesList())
+    {
+        if (type->getCustomName() &&
+            (type->getCustomName()->getName() == "Point" ||
+            type->getCustomName()->getName() == "LineString" ||
+            type->getCustomName()->getName() == "Polygon" ||
+            type->getCustomName()->getName() == "MultiLineString" ||
+            type->getCustomName()->getName() == "MultiPolygon"))
+        {
+            Poco::JSON::Object::Ptr geom_meta = new Poco::JSON::Object;
+            geom_meta->set("encoding", "WKB");
+
+            Poco::JSON::Array::Ptr geom_types = new Poco::JSON::Array;
+            geom_types->add(type->getCustomName()->getName());
+            geom_meta->set("geometry_types", geom_types);
+            geom_meta->set("crs", "EPSG:4326");
+
+            geo_columns_metadata.push_back({column_name, geom_meta});
+
+            if (type->getCustomName()->getName() == "Polygon" ||
+                type->getCustomName()->getName() == "MultiPolygon")
+            {
+                geom_meta->set("edges", "planar");
+                geom_meta->set("orientation", "counterclockwise");
+            }
+            geo_columns_metadata.push_back({column_name, geom_meta});
+        }
+    }
+
+    if (!geo_columns_metadata.empty())
+    {
+        Poco::JSON::Object::Ptr columns = new Poco::JSON::Object;
+        for (const auto & [column_name, column_type] : geo_columns_metadata)
+        {
+            columns->set(column_name, column_type);
+        }
+
+        Poco::JSON::Object::Ptr geo = new Poco::JSON::Object;
+        geo->set("version", "1.0.0");
+        geo->set("columns", columns);
+        geo->set("primary_column", geo_columns_metadata[0].first);
+
+        std::ostringstream oss;
+        Poco::JSON::Stringifier::stringify(geo, oss, 4);
+
+        parquet::format::KeyValue key_value;
+        key_value.__set_key("geo");
+        key_value.__set_value(oss.str());
+
+        meta.key_value_metadata.push_back(std::move(key_value));
+        meta.__isset.key_value_metadata = true;
     }
 
     size_t footer_size = serializeThriftStruct(meta, out);
