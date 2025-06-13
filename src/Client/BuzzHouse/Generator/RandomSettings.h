@@ -93,20 +93,6 @@ const std::unordered_map<String, CHSetting> fileTableSettings
             {},
             false)}};
 
-const std::unordered_map<String, CHSetting> s3QueueTableSettings
-    = {{"after_processing",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                const DB::Strings & choices = {"''", "'keep'", "'delete'"};
-                return rg.pickRandomly(choices);
-            },
-            {},
-            false)},
-       {"enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
-       {"parallel_inserts", CHSetting(trueOrFalse, {}, false)},
-       {"processing_threads_num", threadSetting}};
-
 const std::unordered_map<String, CHSetting> distributedTableSettings
     = {{"background_insert_batch", CHSetting(trueOrFalse, {}, false)},
        {"background_insert_split_batch_on_failure", CHSetting(trueOrFalse, {}, false)},
@@ -147,7 +133,9 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
        {S3, {}},
        {S3Queue, {}},
        {Hudi, {}},
-       {DeltaLake, {}},
+       {DeltaLakeS3, {}},
+       {DeltaLakeAzure, {}},
+       {DeltaLakeLocal, {}},
        {IcebergS3, {}},
        {IcebergAzure, {}},
        {IcebergLocal, {}},
