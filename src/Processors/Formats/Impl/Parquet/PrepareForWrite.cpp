@@ -682,7 +682,7 @@ void prepareGeoColumns(ColumnPtr & column, DataTypePtr & type)
         transform = std::make_shared<WKBMultiPolygonTransform>();
 
     if (!transform)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Geometry type {} is not supported to write into geo parquet", type->getCustomName()->getName());
+        return;
 
     auto transformed_column = ColumnString::create();
     for (size_t i = 0; i < column->size(); ++i)
