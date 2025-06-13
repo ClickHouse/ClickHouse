@@ -70,8 +70,6 @@ namespace Net
         ~HTTPChunkedIOS();
         HTTPChunkedStreamBuf * rdbuf();
 
-        //bool isComplete() { return _buf.isComplete(); }
-
     protected:
         HTTPChunkedStreamBuf _buf;
     };
@@ -84,7 +82,7 @@ namespace Net
         HTTPChunkedInputStream(HTTPSession & session);
         ~HTTPChunkedInputStream();
 
-        bool isComplete() { return _buf.isComplete(); }
+        bool isComplete() { return _buf.isComplete(/*read_from_device_to_check_eof*/ true); }
     };
 
 
@@ -95,7 +93,7 @@ namespace Net
         HTTPChunkedOutputStream(HTTPSession & session);
         ~HTTPChunkedOutputStream();
 
-        bool isComplete() { return _buf.isComplete(/*read_from_device_to_check_eof*/ true); }
+        bool isComplete() { return _buf.isComplete(); }
     };
 
 
