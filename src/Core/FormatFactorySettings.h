@@ -1332,7 +1332,6 @@ Allow to write information about geo columns in parquet metadata and encode colu
 )", 0) \
 
 
-
 // End of FORMAT_FACTORY_SETTINGS
 
 #define OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
