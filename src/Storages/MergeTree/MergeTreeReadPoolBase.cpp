@@ -141,17 +141,15 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         MergeTreeReadTaskInfo read_task_info;
 
         read_task_info.data_part = part_with_ranges.data_part;
+        read_task_info.parent_part = part_with_ranges.parent_part;
 
-        const auto & data_part = read_task_info.data_part;
-        if (data_part->isProjectionPart())
+        if (read_task_info.data_part->isProjectionPart() && !read_task_info.parent_part)
         {
-            read_task_info.parent_part = data_part->storage.getPartIfExists(
-                data_part->getParentPartName(),
-                {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
-
-            if (!read_task_info.parent_part)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Did not find parent part {} for projection part {}",
-                            data_part->getParentPartName(), data_part->getDataPartStorage().getFullPath());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Did not find parent part {} for projection part {}",
+                read_task_info.data_part->getParentPartName(),
+                read_task_info.data_part->getDataPartStorage().getFullPath());
         }
 
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
@@ -174,7 +172,8 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
                 .withSubcolumns();
 
             auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
-            auto mutation_steps = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list, storage_snapshot->metadata, getContext());
+            auto mutation_steps
+                = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list, storage_snapshot->metadata, getContext());
             std::move(mutation_steps.begin(), mutation_steps.end(), std::back_inserter(read_task_info.mutation_steps));
         }
 

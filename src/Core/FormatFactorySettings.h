@@ -179,6 +179,9 @@ When reading Parquet files, skip whole row groups based on the WHERE expressions
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
 When reading Parquet files, to use native reader instead of arrow reader.
 )", 0) \
+DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
+  When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
+  )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.
 
@@ -574,6 +577,9 @@ Write data types in binary format instead of type names in Native output format
 )", 0) \
     DECLARE(Bool, output_format_native_write_json_as_string, false, R"(
 Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [String](../../sql-reference/data-types/string.md) column containing JSON strings instead of default native JSON serialization.
+)", 0) \
+    DECLARE(Bool, output_format_native_use_flattened_dynamic_and_json_serialization, false, R"(
+Write data of [JSON](../../sql-reference/data-types/newjson.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) columns in a flattened format (all types/paths as separate subcolumns).
 )", 0) \
     \
     DECLARE(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, R"(
