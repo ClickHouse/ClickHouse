@@ -146,7 +146,7 @@
     contrib-fastops = { url = "github:ClickHouse/fastops/1460583af7d13c0e980ce46aec8ee9400314669a"; flake = false; };
     contrib-orc = { url = "github:ClickHouse/orc/1892a6539e655280d38a8d0669214dbb9b1d0919"; flake = false; };
     contrib-sparsehash-c11 = { url = "github:sparsehash/sparsehash-c11/cf0bffaa456f23bc4174462a789b90f8b6f5f42f"; flake = false; };
-    contrib-grpc = { url = "github:ClickHouse/grpc/62e871c36fa93c0af939bd31762845265214fe3d"; flake = false; };
+    contrib-grpc = { url = "github:ClickHouse/grpc/fb3ee40ec8383f0c83b110d3d422f4a25c6f28ce"; flake = false; };
     contrib-aws = { url = "github:ClickHouse/aws-sdk-cpp/a86b913abc2795ee23941b24dd51e862214ec6b0"; flake = false; };
     contrib-aws-c-event-stream = { url = "github:awslabs/aws-c-event-stream/08f24e384e5be20bcffa42b49213d24dad7881ae"; flake = false; };
     contrib-aws-c-common = { url = "github:awslabs/aws-c-common/80f21b3cac5ac51c6b8a62c7d2a5ef58a75195ee"; flake = false; };
@@ -186,7 +186,7 @@
     contrib-bzip2 = { url = "github:ClickHouse/bzip2/bf905ea2251191ff9911ae7ec0cfc35d41f9f7f6"; flake = false; };
     contrib-magic_enum = { url = "github:Neargye/magic_enum/1a1824df7ac798177a521eed952720681b0bf482"; flake = false; };
     contrib-libprotobuf-mutator = { url = "github:google/libprotobuf-mutator/b922c8ab9004ef9944982e4f165e2747b13223fa"; flake = false; };
-    contrib-sysroot = { url = "github:ClickHouse/sysroot/f03e1b77e57e32e0aed60a546d4b57d10f74f171"; flake = false; };
+    contrib-sysroot = { url = "github:ClickHouse/sysroot/265c3be3412eda7abd00bbf55095f0af2f3f57a0"; flake = false; };
     contrib-nlp-data = { url = "github:ClickHouse/nlp-data/5591f91f5e748cba8fb9ef81564176feae774853"; flake = false; };
     contrib-hive-metastore = { url = "github:ClickHouse/hive-metastore/809a77d435ce218d9b000733f19489c606fc567b"; flake = false; };
     contrib-azure = { url = "github:ClickHouse/azure-sdk-for-cpp/67272b7ee0adff6b69921b26eb071ba1a353062c"; flake = false; };
@@ -232,14 +232,14 @@
     contrib-sqids-cpp = { url = "github:sqids/sqids-cpp/a471f53672e98d49223f598528a533b07b085c61"; flake = false; };
     contrib-idna = { url = "github:ada-url/idna/3c8be01d42b75649f1ac9b697d0ef757eebfe667"; flake = false; };
     contrib-google-cloud-cpp = { url = "github:ClickHouse/google-cloud-cpp/83f30caadb8613fb5c408d8c2fd545291596b53f"; flake = false; };
-    contrib-rust_vendor = { url = "github:ClickHouse/rust_vendor/3f5cbcac0698db449b5174236dfd7040a5ca1a4d"; flake = false; };
+    contrib-rust_vendor = { url = "github:ClickHouse/rust_vendor/f2d7604c8857ea1faa68d7220c67687a2ae84720"; flake = false; };
     contrib-openssl = { url = "github:ClickHouse/openssl/2aa34c68d677b447fb85c55167d8d1ab98ba4def"; flake = false; };
     contrib-double-conversion = { url = "github:ClickHouse/double-conversion/4f7a25d8ced8c7cf6eee6fd09d6788eaa23c9afe"; flake = false; };
     contrib-mongo-cxx-driver = { url = "github:ClickHouse/mongo-cxx-driver/3166bdb49b717ce1bc30f46cc2b274ab1de7005b"; flake = false; };
-    contrib-mongo-c-driver = { url = "github:ClickHouse/mongo-c-driver/d55410c69183c90d18fd3b3f1d9db3d224fc8d52"; flake = false; };
+    contrib-mongo-c-driver = { url = "github:ClickHouse/mongo-c-driver/aabf2f86682aab0a7329160929b8f6654a18216a"; flake = false; };
     contrib-numactl = { url = "github:ClickHouse/numactl/ff32c618d63ca7ac48cce366c5a04bb3563683a0"; flake = false; };
     contrib-postgres = { url = "github:ClickHouse/postgres/9da0420d861df7542b92058342afd4723e95ef4c"; flake = false; };
-    contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/1ee29c80f31547ea3cee2fc453c12b618ef35882"; flake = false; };
+    contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/beb2eb808e8c7ae6992c99809331b7cc2ed85278"; flake = false; };
     contrib-SHA3IUF = { url = "github:brainhub/SHA3IUF/fc8504750a5c2174a1874094dd05e6a0d8797753"; flake = false; };
     contrib-chdig = { url = "github:azat/chdig/e5d3cfdb163c6fdb2c9f1359eda8d22d0db38a0e"; flake = false; };
   };
