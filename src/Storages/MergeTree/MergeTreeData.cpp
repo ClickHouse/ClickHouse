@@ -8822,10 +8822,12 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
             {
                 throw_exception(mutation_name, "drop", "projection", command.projection_name);
             }
-            else if (command.type == AlterCommand::DROP_COLUMN)
+            else if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
             {
+                const std::string action = (command.type == AlterCommand::DROP_COLUMN) ? "drop" : "rename";
+
                 if (mutation_command.column_name == command.column_name)
-                    throw_exception(mutation_name, "drop", "column", command.column_name);
+                    throw_exception(mutation_name, action, "column", command.column_name);
 
                 if (mutation_command.predicate)
                 {
@@ -8833,18 +8835,18 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
                     if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, "drop", "column", command.column_name);
+                        throw_exception(mutation_name, action, "column", command.column_name);
                 }
 
                 for (const auto & [name, expr] : mutation_command.column_to_update_expression)
                 {
                     if (name == command.column_name)
-                        throw_exception(mutation_name, "drop", "column", command.column_name);
+                        throw_exception(mutation_name, action, "column", command.column_name);
 
                     auto query_tree = buildQueryTree(expr, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
                     if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, "drop", "column", command.column_name);
+                        throw_exception(mutation_name, action, "column", command.column_name);
                 }
             }
             else if (command.type == AlterCommand::DROP_STATISTICS)
@@ -8853,11 +8855,6 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     for (const auto & stats_col2 : mutation_command.statistics_columns)
                         if (stats_col1 == stats_col2)
                             throw_exception(mutation_name, "drop", "statistics", stats_col1);
-            }
-            else if (command.type == AlterCommand::RENAME_COLUMN)
-            {
-                if (mutation_command.column_name == command.column_name)
-                    throw_exception(mutation_name, "rename", "column", command.column_name);
             }
         }
     }
