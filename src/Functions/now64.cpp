@@ -176,7 +176,40 @@ private:
 
 REGISTER_FUNCTION(Now64)
 {
-    factory.registerFunction<Now64OverloadResolver>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description_now64 = R"(
+Returns the current date and time with sub-second precision at the moment of query analysis. The function is a constant expression.
+    )";
+    FunctionDocumentation::Syntax syntax_now64 = R"(
+now64([scale], [timezone])
+    )";
+    FunctionDocumentation::Arguments arguments_now64 = {
+        {"scale", "Optional. Tick size (precision): 10^-precision seconds. Valid range: [0 : 9]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds)."},
+        {"timezone", "Optional. Timezone name for the returned value. [`String`](../data-types/string.md)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_now64 = "Returns current date and time with sub-second precision. [`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::Examples examples_now64 = {
+        {"Query with default and custom precision", R"(
+SELECT now64(), now64(9, 'Asia/Istanbul')
+        )",
+        R"(
+┌─────────────────now64()─┬─────now64(9, 'Asia/Istanbul')─┐
+│ 2022-08-21 19:34:26.196 │ 2022-08-21 22:34:26.196542766 │
+└─────────────────────────┴───────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_now64 = {20, 1};
+    FunctionDocumentation::Category category_now64 = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_now64 = {
+        description_now64,
+        syntax_now64,
+        arguments_now64,
+        returned_value_now64,
+        examples_now64,
+        introduced_in_now64,
+        category_now64
+    };
+
+    factory.registerFunction<Now64OverloadResolver>(documentation_now64, FunctionFactory::Case::Insensitive);
 }
 
 }

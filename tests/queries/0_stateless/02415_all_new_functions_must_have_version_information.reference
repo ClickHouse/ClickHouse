@@ -61,7 +61,6 @@ MACStringToOUI
 URLHash
 URLHierarchy
 URLPathHierarchy
-UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
 UUIDToNum
@@ -112,12 +111,6 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-changeDay
-changeHour
-changeMinute
-changeMonth
-changeSecond
-changeYear
 char
 cityHash64
 coalesce
@@ -157,8 +150,6 @@ cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 damerauLevenshteinDistance
-dateDiff
-dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
@@ -281,9 +272,6 @@ formatRowNoNewline
 fragment
 fromDaysSinceYearZero
 fromDaysSinceYearZero32
-fromModifiedJulianDay
-fromModifiedJulianDayOrNull
-fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
@@ -406,7 +394,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-monthName
 mortonDecode
 mortonEncode
 multiFuzzyMatchAllIndices
@@ -471,9 +458,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-now
-now64
-nowInBlock
 nullIf
 nullIn
 nullInIgnoreSet
@@ -687,8 +671,6 @@ tgamma
 throwIf
 tid
 timeDiff
-timeSlot
-timeSlots
 toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
@@ -787,8 +769,6 @@ toIntervalYear
 toJSONString
 toLastDayOfWeek
 toLowCardinality
-toModifiedJulianDay
-toModifiedJulianDayOrNull
 toNullable
 toRelativeDayNum
 toRelativeHourNum
@@ -838,7 +818,6 @@ toUInt8
 toUInt8OrDefault
 toUInt8OrNull
 toUInt8OrZero
-toUTCTimestamp
 toUUID
 toUUIDOrDefault
 toUUIDOrNull
@@ -849,9 +828,6 @@ toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
 toWeek
-toYYYYMM
-toYYYYMMDD
-toYYYYMMDDhhmmss
 toYearWeek
 today
 tokens
@@ -919,5 +895,4 @@ xor
 xxHash32
 xxHash64
 xxh3
-yesterday
 zookeeperSessionUptime

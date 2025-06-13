@@ -94,7 +94,49 @@ private:
 
 REGISTER_FUNCTION(NowInBlock)
 {
-    factory.registerFunction<FunctionNowInBlock>();
+    FunctionDocumentation::Description description_nowInBlock = R"(
+Returns the current date and time at the moment of processing of each block of data. In contrast to the function [`now`](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+
+It makes sense to use this function to generate the current time in long-running `INSERT SELECT` queries.
+    )";
+    FunctionDocumentation::Syntax syntax_nowInBlock = R"(
+nowInBlock([timezone])
+    )";
+    FunctionDocumentation::Arguments arguments_nowInBlock = {
+        {"timezone", "Optional. Timezone name for the returned value. [`String`](../data-types/string.md)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_nowInBlock = "Returns the current date and time at the moment of processing of each block of data. [`DateTime`](../data-types/datetime.md).";
+    FunctionDocumentation::Examples examples_nowInBlock = {
+        {"Difference with the now() function", R"(
+SELECT
+    now(),
+    nowInBlock(),
+    sleep(1)
+FROM numbers(3)
+SETTINGS max_block_size = 1
+FORMAT PrettyCompactMonoBlock
+        )",
+        R"(
+┌───────────────now()─┬────────nowInBlock()─┬─sleep(1)─┐
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:19 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:20 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:21 │        0 │
+└─────────────────────┴─────────────────────┴──────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_nowInBlock = {22, 8};
+    FunctionDocumentation::Category category_nowInBlock = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_nowInBlock = {
+        description_nowInBlock,
+        syntax_nowInBlock,
+        arguments_nowInBlock,
+        returned_value_nowInBlock,
+        examples_nowInBlock,
+        introduced_in_nowInBlock,
+        category_nowInBlock
+    };
+
+    factory.registerFunction<FunctionNowInBlock>(documentation_nowInBlock);
 }
 
 }
