@@ -1735,6 +1735,7 @@ absl_cc_library(
     absl::errno_saver
     absl::examine_stack
     absl::inlined_vector
+    absl::leak_check
     absl::log_internal_append_truncated
     absl::log_internal_format
     absl::log_internal_globals
