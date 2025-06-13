@@ -13,7 +13,6 @@
 
 
 #include "Poco/Message.h"
-#include "Poco/Exception.h"
 #include "Poco/Process.h"
 #include "Poco/Thread.h"
 #include <algorithm>
@@ -25,7 +24,6 @@ namespace Poco {
 Message::Message()
     : _prio(PRIO_FATAL)
     , _tid(0)
-    , _file("")
     , _line(0)
 {
 	init();
@@ -37,7 +35,6 @@ Message::Message(const std::string & source, const std::string & text, Priority 
     , _text(text)
     , _prio(prio)
     , _tid(0)
-    , _file("")
     , _line(0)
 {
 	init();

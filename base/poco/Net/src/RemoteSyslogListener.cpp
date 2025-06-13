@@ -493,7 +493,6 @@ const std::string RemoteSyslogListener::PROP_THREADS("threads");
 
 const std::string RemoteSyslogListener::LOG_PROP_APP("app");
 const std::string RemoteSyslogListener::LOG_PROP_HOST("host");
-const std::string RemoteSyslogListener::LOG_PROP_STRUCTURED_DATA("structured-data");
 
 
 RemoteSyslogListener::RemoteSyslogListener():
