@@ -35,7 +35,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curl_gssapi.c"
     "${LIBRARY_DIR}/lib/curl_memrchr.c"
     "${LIBRARY_DIR}/lib/curl_ntlm_core.c"
-    "${LIBRARY_DIR}/lib/curl_path.c"
     "${LIBRARY_DIR}/lib/curl_range.c"
     "${LIBRARY_DIR}/lib/curl_rtmp.c"
     "${LIBRARY_DIR}/lib/curl_sasl.c"
