@@ -657,7 +657,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     }
 
     if (!impl)
-        impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), modified_read_settings);
+        impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), nested_buffer_read_settings);
 
     if (!use_async_buffer)
         return impl;
