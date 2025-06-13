@@ -246,7 +246,7 @@ void StatementGenerator::setTableRemote(
             }
             else
             {
-                sfunc->set_fname(S3Func_FName::S3Func_FName_s3);
+                sfunc->set_fname(rg.nextBool() ? S3Func_FName::S3Func_FName_s3 : S3Func_FName::S3Func_FName_gcs);
             }
             sfunc->set_resource(
                 "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)

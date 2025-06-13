@@ -2528,7 +2528,8 @@ message SQLiteFunc {
 message S3Func {
     enum FName {
         s3 = 1;
-        s3Cluster = 2;
+        gcs = 2;
+        s3Cluster = 3;
     }
     required FName fname = 1;
     optional Cluster cluster = 2;
