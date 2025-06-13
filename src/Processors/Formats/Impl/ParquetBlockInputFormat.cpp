@@ -43,13 +43,13 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
-    extern const Metric ParquetDecoderThreads;
-    extern const Metric ParquetDecoderThreadsActive;
-    extern const Metric ParquetDecoderThreadsScheduled;
+    extern const Metric IOThreads;
+    extern const Metric IOThreadsActive;
+    extern const Metric IOThreadsScheduled;
 
-    extern const Metric ParquetDecoderIOThreads;
-    extern const Metric ParquetDecoderIOThreadsActive;
-    extern const Metric ParquetDecoderIOThreadsScheduled;
+    extern const Metric FormatParsingThreads;
+    extern const Metric FormatParsingThreadsActive;
+    extern const Metric FormatParsingThreadsScheduled;
 }
 
 namespace DB
@@ -585,11 +585,11 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
 {
     size_t max_decoding_threads = parser_group->getParsingThreadsPerReader();
     if (max_decoding_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, CurrentMetrics::ParquetDecoderThreadsScheduled, max_decoding_threads);
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::FormatParsingThreads, CurrentMetrics::FormatParsingThreadsActive, CurrentMetrics::FormatParsingThreadsScheduled, max_decoding_threads);
 
     size_t max_io_threads = parser_group->getIOThreadsPerReader();
     if (supportPrefetch(max_decoding_threads, max_io_threads))
-        io_pool = std::make_shared<ThreadPool>(CurrentMetrics::ParquetDecoderIOThreads, CurrentMetrics::ParquetDecoderIOThreadsActive, CurrentMetrics::ParquetDecoderIOThreadsScheduled, max_io_threads);
+        io_pool = std::make_shared<ThreadPool>(CurrentMetrics::IOThreads, CurrentMetrics::IOThreadsActive, CurrentMetrics::IOThreadsScheduled, max_io_threads);
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
