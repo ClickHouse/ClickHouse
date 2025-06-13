@@ -16,7 +16,6 @@
 #include <queue>
 #include <type_traits>
 #include <typeinfo>
-#include <iostream>
 
 namespace DB
 {
@@ -204,12 +203,6 @@ struct HasForEachMapped : std::false_type {};
 template <typename T>
 struct HasForEachMapped<T, std::void_t<decltype(std::declval<const T&>().forEachMapped())>> : std::true_type {};
 
-template <typename T, typename = void>
-struct HasKey : std::false_type {};
-
-template <typename T>
-struct HasKey<T, std::void_t<decltype(std::declval<const T&>().key)>> : std::true_type {};
-
 template <typename T, typename ArgType, typename = void>
 struct HasErase : std::false_type {};
 
@@ -289,7 +282,7 @@ public:
         return emplaceImpl(key_holder, data);
     }
 
-    template <typename Data, typename... Args>
+    template <typename Data>
     ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimization(
         Data & data,
         size_t row,
