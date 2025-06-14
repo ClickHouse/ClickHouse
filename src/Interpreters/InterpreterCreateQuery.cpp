@@ -731,9 +731,19 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
         res.flattenNested();
 
+    bool hasPhysicalColumns = false;
+    bool hasInsertableColumns = false;
+    for (const auto & column : res)
+    {
+        hasPhysicalColumns |= column.default_desc.kind == ColumnDefaultKind::Default || column.default_desc.kind == ColumnDefaultKind::Materialized;
+        hasInsertableColumns |= column.default_desc.kind == ColumnDefaultKind::Default || column.default_desc.kind == ColumnDefaultKind::Ephemeral;
+    }
 
-    if (res.getAllPhysical().empty())
+    if (!hasPhysicalColumns)
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
+
+    if (!hasInsertableColumns)
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     return res;
 }
