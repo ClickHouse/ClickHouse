@@ -274,6 +274,9 @@
     M(LoadedMarksFiles, "Number of mark files loaded.", ValueType::Number) \
     M(LoadedMarksCount, "Number of marks loaded (total across columns).", ValueType::Number) \
     M(LoadedMarksMemoryBytes, "Size of in-memory representations of loaded marks.", ValueType::Bytes) \
+    M(MarkCacheEvictedBytes, "Number of bytes evicted from the mark cache.", ValueType::Bytes) \
+    M(MarkCacheEvictedMarks, "Number of marks evicted from the mark cache.", ValueType::Number) \
+    M(MarkCacheEvictedFiles, "Number of mark files evicted from the mark cache.", ValueType::Number) \
     M(LoadedPrimaryIndexFiles, "Number of primary index files loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexRows, "Number of rows of primary key loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexBytes, "Number of rows of primary key loaded.", ValueType::Bytes) \
