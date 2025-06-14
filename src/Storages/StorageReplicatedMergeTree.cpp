@@ -4001,12 +4001,14 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
             }, common_assignee_trigger, getStorageID()));
         return true;
     }
+
     if (job_type == LogEntry::MERGE_PARTS)
     {
         auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry, *this, common_assignee_trigger);
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
+
     if (job_type == LogEntry::MUTATE_PART)
     {
         auto task = std::make_shared<MutateFromLogEntryTask>(selected_entry, *this, common_assignee_trigger);
@@ -4143,6 +4145,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
         bool can_assign_merge = max_source_parts_size_for_merge > 0;
         PartitionIdsHint partitions_to_merge_in;
+
         if (can_assign_merge)
         {
             auto local_merge_pred = std::make_shared<ReplicatedMergeTreeLocalMergePredicate>(queue);

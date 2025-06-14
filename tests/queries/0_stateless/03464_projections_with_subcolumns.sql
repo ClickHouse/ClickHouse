@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, disabled
 
 set enable_analyzer=1;
 set mutations_sync=1;

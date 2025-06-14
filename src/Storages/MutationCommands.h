@@ -65,6 +65,7 @@ struct MutationCommand
     /// For reads, drops and etc.
     String column_name = {};
     DataTypePtr data_type = {}; /// Maybe empty if we just want to drop column
+    bool readonly = false;
 
     /// We need just clear column, not drop from metadata.
     bool clear = false;
@@ -77,6 +78,7 @@ struct MutationCommand
 
     /// This command shouldn't stick with other commands
     bool isBarrierCommand() const;
+    bool isDeleteCommand() const;
 };
 
 /// Multiple mutation commands, possible from different ALTER queries
