@@ -76,8 +76,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
         // Check same type
         slice.elements->structureEquals(sink.elements)
         // insertRangeFrom casts numeric types if they are different, so it can insert them.
-        || (sink.elements.lowCardinality() && slice.elements->lowCardinality() && sink.elements.isNumeric() && slice.elements->isNumeric()
-            && slice.elements->isNumeric());
+        || (sink.elements.lowCardinality() && slice.elements->lowCardinality() && sink.elements.isNumeric() && slice.elements->isNumeric());
 
     if (can_insert)
     {
