@@ -249,6 +249,7 @@ void StorageNATS::initializeConsumersFunc()
     }
     catch (...)
     {
+        LOG_WARNING(log, "Cannot initialize consumers: {}", getCurrentExceptionMessage(false));
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
     }
