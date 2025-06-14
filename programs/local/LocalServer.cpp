@@ -1084,6 +1084,8 @@ void LocalServer::createClientContext()
 
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
+    if (options.count("path"))
+        getClientConfiguration().setString("path", options["path"].as<std::string>());
     if (options.count("table"))
         getClientConfiguration().setString("table-name", options["table"].as<std::string>());
     if (options.count("file"))
