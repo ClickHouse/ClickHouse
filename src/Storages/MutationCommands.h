@@ -95,6 +95,9 @@ public:
     /// to be executed without issues on the creation state.
     bool containBarrierCommand() const;
     NameSet getAllUpdatedColumns() const;
+
+    /// For ALTER TABLE MODIFY COLUMNS, check which column is changed.
+    NameSet getModifiedColumnsForAlterModifyColumn();
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
