@@ -320,7 +320,7 @@ Block NativeReader::read()
 
     if (rows && header)
     {
-        /// Allow to skip columns. Fill them with default values.
+        /// Allow to skip columns. We will fill them with default values later.
         Block tmp_res;
 
         for (size_t column_i = 0; column_i != header.columns(); ++column_i)

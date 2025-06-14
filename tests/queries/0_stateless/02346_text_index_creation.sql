@@ -34,13 +34,13 @@ DROP TABLE tab;
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'noop')
+    INDEX idx str TYPE text(tokenizer = 'no_op')
 )
 ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
-SELECT '-- tokenizer must be default, ngram or noop.';
+SELECT '-- tokenizer must be default, ngram or no_op.';
 
 CREATE TABLE tab
 (

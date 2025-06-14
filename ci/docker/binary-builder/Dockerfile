@@ -5,7 +5,7 @@ ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:4670e95dde3de689f103 /cctools /cctools
+COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /cctools /cctools
 
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN apt-get update \

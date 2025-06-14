@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/memory.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
@@ -110,8 +111,8 @@ ThreadGroup::ThreadGroup()
     , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
 {}
 
-ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
-    : thread_id{getThreadId()}, check_current_thread_on_destruction(check_current_thread_on_destruction_)
+ThreadStatus::ThreadStatus()
+    : thread_id(getThreadId())
 {
     chassert(!current_thread);
 
@@ -240,6 +241,7 @@ void ThreadStatus::flushUntrackedMemory()
     if (untracked_memory == 0)
         return;
 
+    MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
     memory_tracker.adjustWithUntrackedMemory(untracked_memory);
     untracked_memory = 0;
 }
@@ -274,7 +276,7 @@ ThreadStatus::~ThreadStatus()
     if (deleter)
         deleter();
 
-    chassert(!check_current_thread_on_destruction || current_thread == this);
+    chassert(current_thread == this);
 
     /// Flush untracked_memory **right before** switching the current_thread to avoid losing untracked_memory in deleter (detachFromGroup)
     flushUntrackedMemory();
@@ -283,8 +285,8 @@ ThreadStatus::~ThreadStatus()
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
     if (current_thread == this)
         current_thread = nullptr;
-    else if (check_current_thread_on_destruction)
-        LOG_ERROR(log, "current_thread contains invalid address");
+    else
+        LOG_FATAL(log, "current_thread contains invalid address");
 }
 
 void ThreadStatus::updatePerformanceCounters()
