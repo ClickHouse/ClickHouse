@@ -25,7 +25,7 @@ if (ENABLE_TESTS)
 endif ()
 
 if (ENABLE_LEXER_TEST)
-    set(LEXER_STANDALONE_BUILD ON)
+    set(LEXER_STANDALONE_BUILD ON CACHE BOOL "Enable standalone lexer build")
 endif ()
 
 # Lexer standalone library
