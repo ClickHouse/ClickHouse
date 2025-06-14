@@ -1953,6 +1953,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     return result_matched_column_nodes_with_names;
 }
 
+QueryTreeNodePtr createProjectionForUsing(QueryTreeNodes arguments, const DataTypePtr & result_type, JoinKind join_kind, IdentifierResolveScope & scope);
+
 /// Resolve non qualified matcher, using scope join tree node.
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
@@ -2115,6 +2117,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                       */
                     auto is_column_from_parent_scope = [&scope](const QueryTreeNodePtr & using_node_from_table)
                     {
+                        if (using_node_from_table->getNodeType() != QueryTreeNodeType::COLUMN)
+                            return false;
                         const auto & using_column_from_table = using_node_from_table->as<ColumnNode &>();
                         auto table_expression_data_it = scope.table_expression_node_to_data.find(using_column_from_table.getColumnSource());
                         if (table_expression_data_it != scope.table_expression_node_to_data.end())
@@ -2130,18 +2134,12 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         is_column_from_parent_scope(join_using_column_nodes.at(1)))
                         continue;
 
-                    QueryTreeNodePtr matched_column_node;
+                    QueryTreeNodePtr matched_column_node = createProjectionForUsing(
+                        join_using_column_nodes, join_using_column_node.getResultType(), join_node->getKind(), scope);
+                    matched_column_node->setAlias(join_using_column_name);
 
-                    if (isRight(join_node->getKind()))
-                        matched_column_node = join_using_column_nodes.at(1);
-                    else
-                        matched_column_node = join_using_column_nodes.at(0);
-
-                    matched_column_node = matched_column_node->clone();
-                    matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
-                    correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
-                    if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
-                        scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
+                    // if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
+                    //     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
 
                     table_expression_column_names_to_skip.insert(join_using_column_name);
                     matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), join_using_column_name);
@@ -2206,7 +2204,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             table_expression_columns,
             scope);
 
-        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, table_expression, scope);
+        // updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, table_expression, scope);
 
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }
@@ -2255,7 +2253,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             {
                 auto join_identifier_side = getColumnSideFromJoinTree(node, *nearest_scope_join_node);
                 auto projection_name_it = node_to_projection_name.find(node);
-                auto nullable_node = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(node, nearest_scope_join_node->getKind(), join_identifier_side, scope);
+                auto nullable_node = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(node, node->getResultType(), nearest_scope_join_node->getKind(), join_identifier_side, scope);
                 if (nullable_node)
                 {
                     node = nullable_node;
@@ -5359,6 +5357,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 return nullptr;
             };
 
+            QueryTreeNodes result_table_expressions;
+
             QueryTreeNodePtr result_left_table_expression = nullptr;
             /** With `analyzer_compatibility_join_using_top_level_identifier` alias in projection has higher priority than column from left table.
               * But if aliased expression cannot be resolved from left table, we get UNKNOW_IDENTIFIER error,
@@ -5410,11 +5410,33 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             }
 
             if (result_left_table_expression->getNodeType() != QueryTreeNodeType::COLUMN)
+            {
+                if (result_left_table_expression->getNodeType() == QueryTreeNodeType::FUNCTION)
+                {
+                    const auto & function_node = result_left_table_expression->as<FunctionNode &>();
+                    auto is_column_node = [](const auto & argument) { return argument->getNodeType() == QueryTreeNodeType::COLUMN; };
+                    if (function_node.getFunctionName() == "firstTruthy" && std::ranges::all_of(function_node.getArguments().getNodes(), is_column_node))
+                    {
+                        // result_table_expressions.push_back(result_left_table_expression);
+                        for (const auto & argument : function_node.getArguments().getNodes())
+                        {
+                            result_table_expressions.push_back(argument);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                result_table_expressions.push_back(result_left_table_expression);
+            }
+
+            if (result_table_expressions.empty())
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "JOIN {} using identifier '{}' must be resolved into column node from left table expression. In scope {}",
                     join_node_typed.formatASTForErrorMessage(),
                     identifier_full_name,
                     scope.scope_node->formatASTForErrorMessage());
+
 
             /// Here we allow syntax 'USING (a AS b)' which means that 'a' is taken from left and 'b' is taken from right.
             /// See 03449_join_using_allow_alias.sql and the comment in JoinNode.cpp
@@ -5447,8 +5469,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     right_name,
                     scope.scope_node->formatASTForErrorMessage());
 
+            result_table_expressions.push_back(result_right_table_expression);
+
             NameAndTypePair join_using_column(identifier_full_name, common_type);
-            ListNodePtr join_using_expression = std::make_shared<ListNode>(QueryTreeNodes{result_left_table_expression, result_right_table_expression});
+            ListNodePtr join_using_expression = std::make_shared<ListNode>(result_table_expressions);
             auto join_using_column_node = std::make_shared<ColumnNode>(std::move(join_using_column), std::move(join_using_expression), join_node);
             join_using_node = std::move(join_using_column_node);
         }
