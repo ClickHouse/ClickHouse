@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-debug
 
 set -e
 
@@ -8,51 +7,85 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT <<EOF
-DROP TABLE IF EXISTS src_123;
-DROP TABLE IF EXISTS mv_123;
+DROP TABLE IF EXISTS src_a;
+DROP TABLE IF EXISTS src_b;
 
-CREATE TABLE src_123 (v UInt64) ENGINE = Null;
-CREATE MATERIALIZED VIEW mv_123 (v UInt8) Engine = MergeTree() ORDER BY v AS SELECT v FROM src_123;
+DROP TABLE IF EXISTS mv;
+
+CREATE TABLE src_a (v UInt64) ENGINE = Null;
+CREATE TABLE src_b (v UInt64) ENGINE = Null;
+
+CREATE MATERIALIZED VIEW mv (test UInt8, case UInt8)
+Engine = MergeTree()
+ORDER BY test AS
+SELECT v == 1 as test, v as case FROM src_a;
 EOF
 
-# Test that ALTER doesn't cause data loss or duplication.
-#
-# Idea for future:
-#
-#    null
-#  /      \
-# mv1    mv2
-#  \      /
-#   \    /
-#   mv_123 sink
-#
-# Insert N times into null while altering sink query and switching it from mv1 to mv2.
+# The purpose of this test is to ensure that MV query A is always used against source table A. Same for query/table B.
+# Also, helps detect data races.
 
-function alter_thread()
-{
-    trap 'exit' INT
+function insert_thread() {
+    # Always wait for all background INSERTs to finish to catch stuck queries.
+    trap 'wait; exit;' INT
 
-    ALTERS[0]="ALTER TABLE mv_123 MODIFY QUERY SELECT v FROM src_123;"
-    ALTERS[1]="ALTER TABLE mv_123 MODIFY QUERY SELECT v * 2 as v FROM src_123;"
+    INSERT[0]="INSERT INTO TABLE src_a VALUES (1);"
+    INSERT[1]="INSERT INTO TABLE src_b VALUES (2);"
 
     while true; do
-        $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTERS[$RANDOM % 2]}"
-        sleep "$(echo 0.$RANDOM)";
+        # trigger 50 concurrent inserts at a time
+        for _ in {0..50}; do
+            # ignore `Possible deadlock avoided. Client should retry`
+            $CLICKHOUSE_CLIENT -q "${INSERT[$RANDOM % 2]}" 2>/dev/null &
+        done
+        wait
+
+        is_done=$($CLICKHOUSE_CLIENT -q "SELECT countIf(case = 1) > 0 AND countIf(case = 2) > 0 FROM mv;")
+
+        if [ "$is_done" -eq "1" ]; then
+            break
+        fi
     done
 }
 
-export -f alter_thread;
-timeout 10 bash -c alter_thread &
+function alter_thread() {
+    trap 'exit' INT
 
-for _ in {1..100}; do
-    # Retry (hopefully retriable (deadlock avoided)) errors.
-    while true; do
-        $CLICKHOUSE_CLIENT -q "INSERT INTO src_123 VALUES (1);" 2>/dev/null && break
+    # Generate random ALTERs, but make sure that at least one of them is for each source table.
+    for i in {0..5}; do
+        ALTER[$i]="ALTER TABLE mv MODIFY QUERY SELECT v == 1 as test, v as case FROM src_a;"
     done
-done
+    # Insert 3 ALTERs to src_b randomly in each third of array.
+    ALTER[$RANDOM % 2]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
+    ALTER[$RANDOM % 2 + 2]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
+    ALTER[$RANDOM % 2 + 4]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
 
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM mv_123;"
+    i=0
+    while true; do
+        $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTER[$i % 6]}"
+        ((i=i+1))
+
+        sleep "0.0$RANDOM"
+
+        is_done=$($CLICKHOUSE_CLIENT -q "SELECT countIf(case = 1) > 0 AND countIf(case = 2) > 0 FROM mv;")
+
+        if [ "$is_done" -eq "1" ]; then
+            break
+        fi
+    done
+}
+
+export -f insert_thread;
+export -f alter_thread;
+
+# finishes much faster with all builds, except debug with coverage
+timeout 120 bash -c insert_thread &
+timeout 120 bash -c alter_thread &
+
 wait
 
-$CLICKHOUSE_CLIENT -q "DROP VIEW mv_123"
-$CLICKHOUSE_CLIENT -q "DROP TABLE src_123"
+$CLICKHOUSE_CLIENT -q "SELECT countIf(case = 1) > 0 AND countIf(case = 2) > 0 FROM mv LIMIT 1;"
+$CLICKHOUSE_CLIENT -q "SELECT 'inconsistencies', count() FROM mv WHERE test == 0;"
+
+$CLICKHOUSE_CLIENT -q "DROP VIEW mv"
+$CLICKHOUSE_CLIENT -q "DROP TABLE src_a"
+$CLICKHOUSE_CLIENT -q "DROP TABLE src_b"
