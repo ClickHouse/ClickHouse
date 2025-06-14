@@ -11,7 +11,7 @@ set (CLICKHOUSE_KEEPER_LINK
         clickhouse_common_zookeeper
         daemon
         clickhouse-keeper-converter-lib
-        clickhouse-keeper-client-lib
+#        clickhouse-keeper-client-lib
         clickhouse_functions
         dbms
 )
