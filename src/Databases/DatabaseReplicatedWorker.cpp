@@ -201,6 +201,25 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 }
 
+void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
+{
+    if (reinitialized || !active_node_holder_zookeeper || active_node_holder_zookeeper->expired())
+    {
+        auto zookeeper = getAndSetZooKeeper();
+
+        String active_path = fs::path(database->replica_path) / "active";
+        String active_id = toString(ServerUUID::get());
+        zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
+        if (active_node_holder)
+            active_node_holder->setAlreadyRemoved();
+        active_node_holder.reset();
+
+        zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
+        active_node_holder_zookeeper = zookeeper;
+        active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
+    }
+}
+
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &)
 {
     auto zookeeper = getAndSetZooKeeper();
