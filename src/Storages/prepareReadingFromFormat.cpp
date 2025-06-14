@@ -30,8 +30,8 @@ ReadFromFormatInfo prepareReadingFromFormat(
     {
         if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
-        else if (hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column_name))
-            info.hive_partition_columns_to_read_from_file_path.emplace_back(hive_parameters.hive_partition_columns_to_read_from_file_path_map.at(column_name));
+        else if (auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(column_name); it != hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+            info.hive_partition_columns_to_read_from_file_path.emplace_back(it->second);
         else
             columns_to_read.push_back(column_name);
     }
@@ -42,8 +42,8 @@ ReadFromFormatInfo prepareReadingFromFormat(
     for (const auto & requested_virtual_column : info.requested_virtual_columns)
         info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
 
-    for (const auto & column_from_filepath : info.hive_partition_columns_to_read_from_file_path)
-        info.source_header.insert({column_from_filepath.type->createColumn(), column_from_filepath.type, column_from_filepath.name});
+    for (const auto & column_from_file_path : info.hive_partition_columns_to_read_from_file_path)
+        info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
 
     /// Set requested columns that should be read from data.
     info.requested_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), columns_to_read);

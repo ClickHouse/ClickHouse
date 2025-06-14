@@ -16,8 +16,6 @@
 
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
-#include <Parsers/ASTInsertQuery.h>
-
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>

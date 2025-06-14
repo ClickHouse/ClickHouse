@@ -15,7 +15,6 @@ namespace DB
 {
 
 class Context;
-class ASTInsertQuery;
 
 /** Interface for table functions.
   *
@@ -83,7 +82,7 @@ public:
 
     // INSERT INTO TABLE FUNCTION ... PARTITION BY
     // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
-    virtual void setPartitionBy(const ASTPtr & /**/) {}
+    virtual void setPartitionBy(const ASTPtr &) {}
 
     /// Create storage according to the query.
     StoragePtr

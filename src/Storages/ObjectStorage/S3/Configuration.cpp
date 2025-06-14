@@ -401,7 +401,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
         }
     }
-    /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method)
+    /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, partition_columns_in_data_file)
     else if (with_structure && count == 9)
     {
         engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}, {"partition_columns_in_data_file", 8}};

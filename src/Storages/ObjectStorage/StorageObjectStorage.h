@@ -311,9 +311,8 @@ public:
     String compression_method = "auto";
     String structure = "auto";
     std::string partition_strategy_name = "wildcard";
-    /*
-     * Only supported by hive partitioning style for now
-     */
+    /// Whether partition column values are contained in the actual data.
+    /// And alternative is with hive partitioning, when they are contained in file path.
     bool partition_columns_in_data_file = true;
     std::shared_ptr<PartitionStrategy> partition_strategy;
 

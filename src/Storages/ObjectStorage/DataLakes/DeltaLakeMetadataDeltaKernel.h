@@ -29,8 +29,6 @@ public:
         ObjectStoragePtr object_storage_,
         ConfigurationObserverPtr configuration_);
 
-    DeltaLakeMetadataDeltaKernel(const DeltaLakeMetadataDeltaKernel & other) : log(other.log), table_snapshot(other.table_snapshot) {}
-
     bool supportsUpdate() const override { return true; }
 
     bool update(const ContextPtr & context) override;
