@@ -8,6 +8,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
 #include <arrow/api.h>
 #include <arrow/io/api.h>
@@ -34,6 +35,7 @@
 #include <Processors/Formats/Impl/Parquet/ColumnFilterHelper.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
+#include <shared_mutex>
 #include <boost/algorithm/string/case_conv.hpp>
 
 namespace ProfileEvents
@@ -45,13 +47,9 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
-    extern const Metric ParquetDecoderThreads;
-    extern const Metric ParquetDecoderThreadsActive;
-    extern const Metric ParquetDecoderThreadsScheduled;
-
-    extern const Metric ParquetDecoderIOThreads;
-    extern const Metric ParquetDecoderIOThreadsActive;
-    extern const Metric ParquetDecoderIOThreadsScheduled;
+    extern const Metric IOThreads;
+    extern const Metric IOThreadsActive;
+    extern const Metric IOThreadsScheduled;
 }
 
 namespace DB
@@ -586,19 +584,23 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
     , previous_block_missing_values(getPort().getHeader().columns())
 {
-    size_t max_decoding_threads = parser_group->getParsingThreadsPerReader();
-    if (max_decoding_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, CurrentMetrics::ParquetDecoderThreadsScheduled, max_decoding_threads);
-    size_t max_io_threads = parser_group->getIOThreadsPerReader();
-    if (supportPrefetch(max_decoding_threads, max_io_threads) || format_settings.parquet.use_native_reader_with_filter_push_down)
-        io_pool = std::make_shared<ThreadPool>(CurrentMetrics::ParquetDecoderIOThreads, CurrentMetrics::ParquetDecoderIOThreadsActive, CurrentMetrics::ParquetDecoderIOThreadsScheduled, max_io_threads);
+    use_thread_pool = parser_group->max_parsing_threads > 1;
+
+    bool row_group_prefetch =
+        !use_thread_pool && parser_group->max_io_threads > 0 &&
+        format_settings.parquet.enable_row_group_prefetch &&
+        !format_settings.parquet.use_native_reader;
+    if (row_group_prefetch || format_settings.parquet.use_native_reader_with_filter_push_down)
+        io_pool = std::make_shared<ThreadPool>(
+            CurrentMetrics::IOThreads, CurrentMetrics::IOThreadsActive, CurrentMetrics::IOThreadsScheduled,
+            parser_group->getIOThreadsPerReader());
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
 {
     is_stopped = true;
-    if (pool)
-        pool->wait();
+    if (use_thread_pool)
+        shutdown->shutdown();
     if (io_pool)
         io_pool->wait();
 }
@@ -611,6 +613,10 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     std::call_once(parser_group->init_flag, [&]
         {
             parser_group->initKeyCondition(getPort().getHeader());
+
+            if (use_thread_pool)
+                parser_group->parsing_runner.initThreadPool(
+                    getFormatParsingThreadPool().get(), parser_group->max_parsing_threads, "ParquetDecoder", CurrentThread::getGroup());
         });
 
     // Create arrow file adapter.
@@ -909,11 +915,14 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
         row_group_batch.arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
             getPort().getHeader(),
             "Parquet",
+            format_settings,
             format_settings.parquet.allow_missing_columns,
             format_settings.null_as_default,
             format_settings.date_time_overflow_behavior,
             format_settings.parquet.allow_geoparquet_parser,
-            format_settings.parquet.case_insensitive_column_matching);
+            format_settings.parquet.case_insensitive_column_matching,
+            false, /* is_stream_ */
+            format_settings.parquet.enable_json_parsing);
     }
 }
 
@@ -926,13 +935,15 @@ void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_batch_idx)
 
     status = RowGroupBatchState::Status::Running;
 
-    pool->scheduleOrThrowOnError(
-        [this, row_group_batch_idx, thread_group = CurrentThread::getGroup()]()
+    parser_group->parsing_runner(
+        [this, row_group_batch_idx, shutdown_ = shutdown]()
         {
+            std::shared_lock shutdown_lock(*shutdown_, std::try_to_lock);
+            if (!shutdown_lock.owns_lock())
+                return;
+
             try
             {
-                ThreadGroupSwitcher switcher(thread_group, "ParquetDecoder");
-
                 threadFunction(row_group_batch_idx);
             }
             catch (...)
@@ -965,11 +976,6 @@ void ParquetBlockInputFormat::threadFunction(size_t row_group_batch_idx)
             return;
     }
 }
-bool ParquetBlockInputFormat::supportPrefetch(size_t max_decoding_threads, size_t max_io_threads) const
-{
-    return max_decoding_threads == 1 && max_io_threads > 0 && format_settings.parquet.enable_row_group_prefetch && !format_settings.parquet.use_native_reader;
-}
-
 std::shared_ptr<arrow::RecordBatchReader> ParquetBlockInputFormat::RowGroupPrefetchIterator::nextRowGroupReader()
 {
     if (prefetched_row_groups.empty()) return nullptr;
@@ -1119,7 +1125,7 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
         ++row_group_batches_completed;
     }
 
-    if (pool)
+    if (use_thread_pool)
     {
         size_t max_decoding_threads = parser_group->getParsingThreadsPerReader();
         while (row_group_batches_started - row_group_batches_completed < max_decoding_threads &&
@@ -1182,7 +1188,7 @@ Chunk ParquetBlockInputFormat::read()
         if (row_group_batches_completed == row_group_batches.size())
             return {};
 
-        if (pool)
+        if (use_thread_pool)
             condvar.wait(lock);
         else
             decodeOneChunk(row_group_batches_completed, lock);
@@ -1192,8 +1198,11 @@ Chunk ParquetBlockInputFormat::read()
 void ParquetBlockInputFormat::resetParser()
 {
     is_stopped = true;
-    if (pool)
-        pool->wait();
+    if (use_thread_pool)
+    {
+        shutdown->shutdown();
+        shutdown = std::make_shared<ShutdownHelper>();
+    }
     if (io_pool)
         io_pool->wait();
 
@@ -1242,14 +1251,40 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
 
+    /// When Parquet's schema is converted to Arrow's schema, logical types are lost (at least in
+    /// the currently used Arrow 11 version). Therefore, we manually add the logical types as metadata
+    /// to Arrow's schema. Logical types are useful for determining which ClickHouse column type to convert to.
+    std::vector<std::shared_ptr<arrow::Field>> new_fields;
+    new_fields.reserve(schema->num_fields());
+
+    for (int i = 0; i < schema->num_fields(); ++i)
+    {
+        auto field = schema->field(i);
+        const auto * parquet_node = metadata->schema()->Column(i);
+        const auto * lt = parquet_node->logical_type().get();
+
+        if (lt and !lt->is_invalid())
+        {
+            std::shared_ptr<arrow::KeyValueMetadata> kv = field->HasMetadata() ? field->metadata()->Copy() : arrow::key_value_metadata({}, {});
+            THROW_ARROW_NOT_OK(kv->Set("PARQUET:logical_type", lt->ToString()));
+
+            field = field->WithMetadata(std::move(kv));
+        }
+        new_fields.emplace_back(std::move(field));
+    }
+
+    schema = arrow::schema(std::move(new_fields));
+
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema,
         metadata->key_value_metadata(),
         "Parquet",
+        format_settings,
         format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0,
         format_settings.parquet.case_insensitive_column_matching,
-        format_settings.parquet.allow_geoparquet_parser);
+        format_settings.parquet.allow_geoparquet_parser,
+        format_settings.parquet.enable_json_parsing);
     if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
@@ -1294,10 +1329,15 @@ void registerParquetSchemaReader(FormatFactory & factory)
         }
         );
 
-    factory.registerAdditionalInfoForSchemaCacheGetter("Parquet", [](const FormatSettings & settings)
-    {
-        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
-    });
+    factory.registerAdditionalInfoForSchemaCacheGetter(
+        "Parquet",
+        [](const FormatSettings & settings)
+        {
+            return fmt::format(
+                "schema_inference_make_columns_nullable={};enable_json_parsing={}",
+                settings.schema_inference_make_columns_nullable,
+                settings.parquet.enable_json_parsing);
+        });
 }
 
 }

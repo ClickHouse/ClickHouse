@@ -169,6 +169,24 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
 endif ()
 
+if (ENABLE_CHDIG)
+    message(STATUS "Adding chdig to clickhouse-bundle")
+    list(APPEND CLICKHOUSE_BUNDLE chdig)
+    # NOTE: we need to do this here, since contrib has EXCLUDE_FROM_ALL
+    corrosion_install(TARGETS chdig RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+else ()
+    # Dummy target mostly for sanitizers build to avoid breaking packages
+    # (nfpm do not have options to ignore non existing files)
+    set(CHDIG_PATH ${CMAKE_BINARY_DIR}/chdig)
+    file(GENERATE OUTPUT ${CHDIG_PATH} CONTENT "#!/usr/bin/env sh\necho chdig is not enabled in this ClickHouse build >&2 && exit 1\n")
+    install(FILES ${CHDIG_PATH}
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+        PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                    GROUP_READ GROUP_EXECUTE
+                    WORLD_READ WORLD_EXECUTE
+    )
+endif ()
+
 clickhouse_program_install(clickhouse-benchmark benchmark)
 clickhouse_program_install(clickhouse-check-marks check-marks)
 clickhouse_program_install(clickhouse-checksum-for-compressed-block checksum-for-compressed-block)

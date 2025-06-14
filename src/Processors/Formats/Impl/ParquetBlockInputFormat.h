@@ -93,8 +93,6 @@ private:
 
     void threadFunction(size_t row_group_batch_idx);
 
-    inline bool supportPrefetch(size_t max_decoding_threads, size_t max_io_threads) const;
-
     // Data layout in the file:
     //
     // row group 0
@@ -332,7 +330,8 @@ private:
 
     // These are only used when max_decoding_threads > 1.
     size_t row_group_batches_started = 0;
-    std::unique_ptr<ThreadPool> pool;
+    bool use_thread_pool = false;
+    std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();
     std::shared_ptr<ThreadPool> io_pool;
 
     BlockMissingValues previous_block_missing_values;

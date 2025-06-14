@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3283 
+personal_ws-1.1 en 3283
 AArch
 ACLs
 ALTERs
@@ -183,6 +183,7 @@ CloudAvailableBadge
 CloudDetails
 CloudNotSupportedBadge
 CloudStorage
+CoalescingMergeTree
 CodeBlock
 CodeLLDB
 Codecs
@@ -799,8 +800,6 @@ PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
-ParallelParsingInputFormatThreads
-ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
 ParquetCompression
 ParquetMetadata
@@ -2026,6 +2025,7 @@ iTerm
 icebergCluster
 icosahedron
 icudata
+idelta
 idempotency
 idnaDecode
 idnaEncode
@@ -2063,6 +2063,7 @@ intervalLengthSum
 invalidCertificateHandler
 invariants
 invertedindexes
+irate
 isConstant
 isDecimalOverflow
 isFinite
@@ -2633,6 +2634,11 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKBLineString
+readWKBMultiLineString
+readWKBMultiPolygon
+readWKBPoint
+readWKBPolygon
 readWKTLineString
 readWKTMultiLineString
 readWKTMultiPolygon
@@ -2979,7 +2985,13 @@ throwIf
 throwif
 timeDiff
 timeSeriesData
+timeSeriesDeltaToGrid
 timeSeriesMetrics
+timeSeriesInstantDeltaToGrid
+timeSeriesInstantRateToGrid
+timeSeriesLastTwoSamples
+timeSeriesRateToGrid
+timeSeriesResampleToGridWithStaleness
 timeSeriesTags
 timeSlot
 timeSlots
@@ -3085,6 +3097,7 @@ toYear
 toYearWeek
 tokenbf
 tokenization
+tokenize
 tokenized
 tokenizer
 toml

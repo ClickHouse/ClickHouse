@@ -1203,6 +1203,26 @@ def replace_in_file(filename, what, with_what):
         f.write(data.replace(what.encode(), with_what.encode()))
 
 
+def is_old_analyzer_used():
+    use_old_analyzer_env = os.environ.get("USE_OLD_ANALYZER")
+    if (
+        use_old_analyzer_env is not None
+        and use_old_analyzer_env != "0"
+        and use_old_analyzer_env.lower() != "false"
+    ):
+        return True
+
+    client_options = os.environ.get("CLICKHOUSE_CLIENT_OPT", "").split()
+    for client_option in client_options:
+        if client_option.startswith(
+            "--allow_experimental_analyzer="
+        ) or client_option.startswith("--enable_analyzer="):
+            value = client_option.split("=")[1]
+            if value in ("0", "false"):
+                return True
+    return False
+
+
 class TestResult:
     def __init__(
         self,
@@ -1243,9 +1263,13 @@ class TestCase:
         """
         Returns reference file name for specified test
         """
-
         name = removesuffix(name, ".gen")
-        for ext in [".reference", ".gen.reference"]:
+
+        file_extentions = [".reference", ".gen.reference"]
+        if is_old_analyzer_used():
+            file_extentions = [".oldanalyzer.reference", *file_extentions]
+
+        for ext in file_extentions:
             reference_file = os.path.join(suite_dir, name) + ext
             if os.path.isfile(reference_file):
                 return reference_file
@@ -1923,7 +1947,8 @@ class TestCase:
         pattern = "{test} > {stdout} 2> {stderr}"
 
         tests_env = os.environ.copy()
-        tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
+        if args.trace:
+            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
 
         if self.ext == ".sql" and args.cloud:
             # Get at least some logs, because we don't have access to system.text_log and pods...
@@ -3875,6 +3900,7 @@ def parse_args():
         action="store_true",
         help="Capture stacktraces from clickhouse-client/local on errors",
     )
+    parser.add_argument("--trace", action="store_true", help="Capture various tracing info")
 
     return parser.parse_args()
 

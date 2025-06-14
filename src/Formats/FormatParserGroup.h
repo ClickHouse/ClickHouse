@@ -49,6 +49,8 @@ struct FormatParserGroup
 
     static FormatParserGroupPtr singleThreaded(const Settings & settings);
 
+    bool hasFilter() const;
+
     void finishStream();
 
     size_t getParsingThreadsPerReader() const;
