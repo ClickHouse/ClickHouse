@@ -253,6 +253,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
+    extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
+    extern const MergeTreeSettingsBool load_existing_rows_count_for_old_parts;
 }
 
 namespace ServerSetting
@@ -7787,7 +7789,10 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         for (const auto & part : real_parts)
         {
             auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
-            insert(column, part->rows_count);
+            if ((*getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && (*getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts] && part->existing_rows_count.has_value())
+                insert(column, part->existing_rows_count.value());
+            else
+                insert(column, part->rows_count);
         }
     }
 
