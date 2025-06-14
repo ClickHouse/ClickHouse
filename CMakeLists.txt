@@ -576,11 +576,11 @@ option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files afte
 
 add_subdirectory (base)
 add_subdirectory (src)
-add_subdirectory (programs)
-add_subdirectory (utils)
 if (LEXER_STANDALONE_BUILD)
     add_subdirectory(tests/lexer)
 endif ()
+add_subdirectory (programs)
+add_subdirectory (utils)
 
 if (FUZZER)
     # Bundle fuzzers target
