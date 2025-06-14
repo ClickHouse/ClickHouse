@@ -345,6 +345,9 @@ void Client::initialize(Poco::Util::Application & self)
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
+    /// For memory tracking
+    MainThreadStatus::getInstance();
+
     setupSignalHandler();
 
     output_stream << std::fixed << std::setprecision(3);
