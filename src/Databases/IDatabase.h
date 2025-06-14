@@ -177,6 +177,8 @@ public:
 
     virtual bool canContainDistributedTables() const { return true; }
 
+    virtual bool canContainRocksDBTables() const { return true; }
+
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT
