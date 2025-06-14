@@ -34,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
+from functools import cache
 import urllib.parse
 
 # for crc32
@@ -1202,24 +1203,9 @@ def replace_in_file(filename, what, with_what):
         f.write(data.replace(what.encode(), with_what.encode()))
 
 
+@cache
 def is_old_analyzer_used():
-    use_old_analyzer_env = os.environ.get("USE_OLD_ANALYZER")
-    if (
-        use_old_analyzer_env is not None
-        and use_old_analyzer_env != "0"
-        and use_old_analyzer_env.lower() != "false"
-    ):
-        return True
-
-    client_options = os.environ.get("CLICKHOUSE_CLIENT_OPT", "").split()
-    for client_option in client_options:
-        if client_option.startswith(
-            "--allow_experimental_analyzer="
-        ) or client_option.startswith("--enable_analyzer="):
-            value = client_option.split("=")[1]
-            if value in ("0", "false"):
-                return True
-    return False
+    return clickhouse_execute(args, "SELECT getSetting('enable_analyzer')").strip() == b"false"
 
 
 class TestResult:
