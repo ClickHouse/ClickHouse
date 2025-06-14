@@ -286,7 +286,7 @@ class SharedEngineReplacer:
     ):
         self.args = args
         self.file_name = file_name
-        self.temp_file_path = get_temp_file_path()
+        self.temp_file_path = "{0}.{2}{1}".format(*os.path.splitext(file_name), os.getpid())
         self.replace_replicated = replace_replicated
         self.replace_non_replicated = replace_non_replicated
         self.reference_file = reference_file
@@ -374,12 +374,6 @@ class SharedEngineReplacer:
         if not self._need_to_replace_something():
             return self.file_name
         return self.temp_file_path
-
-
-def get_temp_file_path():
-    return os.path.join(
-        tempfile._get_default_tempdir(), next(tempfile._get_candidate_names())
-    )
 
 
 def stringhash(s: str) -> int:
