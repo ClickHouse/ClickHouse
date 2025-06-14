@@ -17,8 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
-extern const int UNKNOWN_EXCEPTION;
 extern const int ARROWFLIGHT_CONNECTION_FAILURE;
 extern const int ARROWFLIGHT_FETCH_SCHEMA_ERROR;
 extern const int ARROWFLIGHT_INTERNAL_ERROR;

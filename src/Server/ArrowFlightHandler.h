@@ -2,13 +2,11 @@
 
 #include <atomic>
 #include <memory>
-#include <Core/Settings.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/parseQuery.h>

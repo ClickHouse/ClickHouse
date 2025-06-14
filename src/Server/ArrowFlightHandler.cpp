@@ -150,7 +150,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNKNOWN_EXCEPTION;
-extern const int CANNOT_CONVERT_TYPE;
 }
 
 ArrowFlightHandler::ArrowFlightHandler(IServer & server_, const Poco::Net::SocketAddress & address_to_listen_)

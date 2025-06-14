@@ -60,14 +60,6 @@ for batch in reader:
     print(batch.to_pandas())
 ```
 
-## Arrow Format Settings
-
-The following settings affect Arrow input/output:
-
-* `input_format_arrow_allow_missing_columns` — allow missing columns when reading
-* `input_format_arrow_case_insensitive_column_matching` — match column names ignoring case
-* `output_format_arrow_low_cardinality_as_dictionary` — encode LowCardinality as Arrow dictionary
-
 ## Compatibility
 
 The Arrow Flight interface is compatible with tools that support Arrow Flight SQL including custom applications built with:
