@@ -40,13 +40,16 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         auto metadata_storage = MetadataStorageFactory::instance().create(
             name, config, config_prefix, object_storage, compatibility_metadata_type_hint);
 
+        bool use_fake_transaction = config.getBool(config_prefix + ".use_fake_transaction", true);
+
         DiskObjectStoragePtr disk = std::make_shared<DiskObjectStorage>(
             name,
             object_storage->getCommonKeyPrefix(),
             std::move(metadata_storage),
             std::move(object_storage),
             config,
-            config_prefix);
+            config_prefix,
+            use_fake_transaction);
 
         disk->startup(context, skip_access_check);
         return disk;
