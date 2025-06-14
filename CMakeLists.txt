@@ -578,7 +578,9 @@ add_subdirectory (base)
 add_subdirectory (src)
 add_subdirectory (programs)
 add_subdirectory (utils)
-add_subdirectory(tests/lexer)
+if (LEXER_STANDALONE_BUILD)
+    add_subdirectory(tests/lexer)
+endif ()
 
 if (FUZZER)
     # Bundle fuzzers target

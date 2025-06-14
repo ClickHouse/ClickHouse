@@ -440,7 +440,7 @@ class ArtifactConfigs:
     lexer_test = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/tests/lexer/lexer_test",
+        path=f"{TEMP_DIR}/build/programs/lexer_test",
     ).parametrize(
         names=[
             ArtifactNames.LEXER_AMD_DEBUG,
