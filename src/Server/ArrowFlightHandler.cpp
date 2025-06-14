@@ -25,6 +25,9 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ParserInsertQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -147,7 +150,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNKNOWN_EXCEPTION;
-extern const int CANNOT_CONVERT_TYPE;
 }
 
 ArrowFlightHandler::ArrowFlightHandler(IServer & server_, const Poco::Net::SocketAddress & address_to_listen_)
@@ -295,10 +297,19 @@ arrow::Status ArrowFlightHandler::DoGet(
         setThreadName("ArrowFlight");
 
         DB::QueryFlags flags;
-        auto [_, io] = DB::executeQuery(sql, query_ctx, flags, DB::QueryProcessingStage::Complete);
+        auto [ast, io] = DB::executeQuery(sql, query_ctx, flags, DB::QueryProcessingStage::Complete);
         if (!io.pipeline.pulling())
         {
             return arrow::Status::ExecutionError("DoGet failed: pipeline is not in pulling state");
+        }
+        const auto * ast_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(ast.get());
+        if (!ast_with_output)
+        {
+            return arrow::Status::ExecutionError("DoGet failed: unsupported query type (expected SELECT)");
+        }
+        if (ast_with_output->format_ast)
+        {
+            return arrow::Status::ExecutionError("FORMAT clause not supported by Arrow Flight");
         }
         auto executor = std::make_unique<DB::PullingPipelineExecutor>(io.pipeline);
 
@@ -395,7 +406,18 @@ arrow::Status ArrowFlightHandler::DoPut(
 
             std::string sql = descriptor.cmd;
             DB::QueryFlags flags;
-            auto [_, io] = DB::executeQuery(sql, insert_context, flags, DB::QueryProcessingStage::Complete);
+            auto [ast, io] = DB::executeQuery(sql, insert_context, flags, DB::QueryProcessingStage::Complete);
+
+            auto * insert = dynamic_cast<DB::ASTInsertQuery *>(ast.get());
+            if (!insert)
+            {
+                return arrow::Status::Invalid("DoPut failed: only INSERT is allowed");
+            }
+
+            if (!insert->format.empty() && insert->format != "Arrow")
+            {
+                return arrow::Status::Invalid("DoPut failed: invalid format value, only 'Arrow' custom format supported");
+            }
             if (io.pipeline.completed())
             {
                 CompletedPipelineExecutor executor(io.pipeline);

@@ -83,9 +83,9 @@ StorageArrowFlight::StorageArrowFlight(
 
 std::string buildArrowFlightQueryString(const std::vector<std::string> & column_names, const std::string & dataset_name)
 {
-    std::ostringstream oss;
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss << "{";
-    oss << "\"dataset\": \"" << dataset_name << "\", ";
+    oss << R"("dataset": ")" << dataset_name << R"(", )";
     oss << "\"columns\": [";
 
     for (size_t i = 0; i < column_names.size(); ++i)
@@ -197,7 +197,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot combine chunks: {}", maybe_combined_table.status().ToString());
         }
 
-        auto combined_table = maybe_combined_table.ValueOrDie();
+        auto combined_table = std::move(maybe_combined_table).ValueOrDie();
         arrow::TableBatchReader reader(combined_table);
 
         std::shared_ptr<arrow::RecordBatch> batch;

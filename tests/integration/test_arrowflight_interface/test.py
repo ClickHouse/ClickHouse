@@ -347,22 +347,37 @@ def test_doget_format_json():
     
     client, options = get_client()
 
-    # Testing a query with the FORMAT JSON section
-    real_ticket = flight.Ticket(b"SELECT * FROM doget_test_format_json FORMAT JSON")
-    reader = client.do_get(real_ticket, options)
-    actual = reader.read_all()
+    # Format JSON and other custom format options are forbidden
+    # For DoPut only Arrow and default format are allowed
 
-    expected_schema = pa.schema([
-        pa.field("id",   pa.int64(),  nullable=False),
-        pa.field("name", pa.string(), nullable=False),
-    ])
-    expected_ids   = pa.chunked_array([pa.array([10, 20],          type=pa.int64())])
-    expected_names = pa.chunked_array([pa.array(["abc", "cde"],    type=pa.string())])
+    try:
+        real_ticket = flight.Ticket(b"SELECT * FROM doget_test_format_json FORMAT JSON")
+        reader = client.do_get(real_ticket, options)
+        reader.read_all()
+    except Exception as e:
+        assert "FORMAT clause not supported by Arrow Flight" in str(e)
+    else:
+        assert False, "Expected a query with FORMAT JSON clause to be failed"
 
-    assert actual.schema == expected_schema
-
-    assert actual.column("id").equals(expected_ids)
-    assert actual.column("name").equals(expected_names)
+    try:
+        schema = pa.schema([
+            ("id",   pa.int64()),
+            ("name", pa.string()),
+        ])
+        batch = pa.record_batch([
+            pa.array([1, 2, 3], type=pa.int64()),
+            pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
+        ], schema=schema)
+        descriptor = flight.FlightDescriptor.for_command(
+        "INSERT INTO doget_test_format_json FORMAT JSON"
+        )
+        writer, _ = client.do_put(descriptor, schema, options)
+        writer.write_batch(batch)
+        writer.close()
+    except Exception as e:
+        assert "DoPut failed: invalid format value" in str(e)
+    else:
+        assert False, "Expected a query with FORMAT JSON clause to be failed"
 
     node.query("DROP TABLE IF EXISTS doget_test_format_json SYNC")
 
