@@ -231,6 +231,11 @@ public:
     void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
 
+    /// Special stuff for vector search ----
+    void replaceVectorColumnWithDistanceColumn(const String & vector_column);
+    bool isVectorColumnReplaced() const;
+    /// ----
+
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
