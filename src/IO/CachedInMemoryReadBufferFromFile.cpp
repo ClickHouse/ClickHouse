@@ -2,6 +2,12 @@
 #include <IO/SwapHelper.h>
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event PageCacheReadBytes;
+}
 
 namespace DB
 {
@@ -199,7 +205,9 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
         nextimpl_working_buffer_offset = 0;
     }
 
-    file_offset_of_buffer_end += available();
+    size_t size = available();
+    file_offset_of_buffer_end += size;
+    ProfileEvents::increment(ProfileEvents::PageCacheReadBytes, size);
 
     return true;
 }
