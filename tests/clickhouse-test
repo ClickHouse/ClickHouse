@@ -297,7 +297,7 @@ class SharedEngineReplacer:
         if not self._need_to_replace_something():
             return
 
-        shutil.copyfile(self.file_name, self.temp_file_path)
+        shutil.copy2(self.file_name, self.temp_file_path)
 
         with (
             open(self.file_name, "r", newline="", encoding="utf-8") as source,
