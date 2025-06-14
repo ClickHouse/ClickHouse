@@ -334,6 +334,60 @@ void AccessRightsElement::replaceDeprecated()
     }
 }
 
+void AccessRightsElement::makeBackwardCompatible()
+{
+    static const std::unordered_map<std::string, AccessType> string_to_accessType = {
+        {"FILE", AccessType::FILE},
+        {"URL", AccessType::URL},
+        {"REMOTE", AccessType::REMOTE},
+        {"MONGO", AccessType::MONGO},
+        {"REDIS", AccessType::REDIS},
+        {"MYSQL", AccessType::MYSQL},
+        {"POSTGRES", AccessType::POSTGRES},
+        {"SQLITE", AccessType::SQLITE},
+        {"ODBC", AccessType::ODBC},
+        {"JDBC", AccessType::JDBC},
+        {"HDFS", AccessType::HDFS},
+        {"S3", AccessType::S3},
+        {"HIVE", AccessType::HIVE},
+        {"AZURE", AccessType::AZURE},
+        {"KAFKA", AccessType::KAFKA},
+        {"NATS", AccessType::NATS},
+        {"RABBITMQ", AccessType::RABBITMQ},
+    };
+
+    auto is_enabled_read_write_grants = true;
+    if (const auto context = Context::getGlobalContextInstance())
+    {
+        const auto & access_control = context->getAccessControl();
+        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
+    }
+
+    if (!is_enabled_read_write_grants)
+    {
+        if ((access_flags & AccessType::READ) || (access_flags & AccessType::WRITE))
+        {
+            if (anyParameter())
+            {
+                access_flags = AccessType::SOURCES;
+            }
+            else
+            {
+                auto it = string_to_accessType.find(parameter);
+                if (it != string_to_accessType.end())
+                {
+                    access_flags = it->second;
+                    parameter.clear();
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown parameter for sources grant: {}", parameter);
+                }
+            }
+        }
+    }
+}
+
 String AccessRightsElement::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElement::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
@@ -389,7 +443,9 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bo
     bool no_output = true;
     for (size_t i = 0; i != size(); ++i)
     {
-        const auto & element = (*this)[i];
+        auto element = (*this)[i];
+        element.makeBackwardCompatible();
+
         auto keywords = element.access_flags.toKeywords();
         if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
             continue;

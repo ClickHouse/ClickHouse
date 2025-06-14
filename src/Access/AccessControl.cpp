@@ -784,6 +784,16 @@ bool AccessControl::isEnabledUserNameAccessType() const
     return enable_user_name_access_type;
 }
 
+void AccessControl::setEnableReadWriteGrants(bool enable_read_write_grants_)
+{
+    enable_read_write_grants = enable_read_write_grants_;
+}
+
+bool AccessControl::isEnabledReadWriteGrants() const
+{
+    return enable_read_write_grants;
+}
+
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const
 {
     return context_access_cache->getContextAccess(params);
