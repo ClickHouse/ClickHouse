@@ -602,7 +602,9 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     ReadSettings nested_buffer_read_settings;
     if (use_prefetch || use_cache)
     {
-        nested_buffer_read_settings = modified_read_settings.withNestedBuffer();
+        //nested_buffer_read_settings = modified_read_settings.withNestedBuffer();
+        nested_buffer_read_settings.remote_read_buffer_use_external_buffer = true;
+
         /// FIXME: Use async buffer if use_cache,
         /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
         use_async_buffer = true;
