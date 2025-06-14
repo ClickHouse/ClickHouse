@@ -28,6 +28,7 @@ common_ft_job_config = Job.Config(
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/functional_tests.py",
+            "./ci/jobs/scripts/clickhouse_proc.py",
             "./tests/queries",
             "./tests/clickhouse-test",
             "./tests/config",
