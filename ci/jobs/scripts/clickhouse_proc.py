@@ -967,6 +967,8 @@ quit
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
         command_args += " --only-system-tables --stacktrace"
+        # we need disk definitions for S3 configurations, but it is OK to always use server config
+        command_args += " --config-file=/etc/clickhouse-server/config.xml"
         # FIXME: Hack for s3_with_keeper (note, that we don't need the disk,
         # the problem is that whenever we need disks all disks will be
         # initialized [1])
