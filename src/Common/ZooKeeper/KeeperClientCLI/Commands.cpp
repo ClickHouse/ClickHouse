@@ -274,7 +274,7 @@ public:
     /// Called when getChildren request returns
     void onGetChildren(Ctx & ctx, const Coordination::ListResponse & response)
     {
-        const bool traverse_children = ctx.user_ctx.onListChildren(path, response.names);
+        const bool traverse_children = ctx.user_ctx.onListChildren(path, response.names, ctx.client);
 
         if (traverse_children)
         {
@@ -387,10 +387,10 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClientBase * cl
 
     struct
     {
-        bool onListChildren(const fs::path & path, const Strings & children) const
+        bool onListChildren(const fs::path & path, const Strings & children, const KeeperClientBase * client_) const
         {
             if (children.size() >= threshold)
-                client->cout << static_cast<String>(path) << "\t" << children.size() << "\n";
+                client_->cout << static_cast<String>(path) << "\t" << children.size() << "\n";
             return true;
         }
 
@@ -473,7 +473,7 @@ void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClientBase * cli
     {
         std::vector<std::tuple<Int64, String>> result;
 
-        bool onListChildren(const fs::path &, const Strings &) const { return true; }
+        bool onListChildren(const fs::path &, const Strings &, const KeeperClientBase *) const { return true; }
 
         void onFinishChildrenTraversal(const fs::path & path, Int64 nodes_in_subtree)
         {
