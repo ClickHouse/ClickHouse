@@ -221,7 +221,7 @@ public:
     ResourceLink read_resource_link;
     ResourceLink write_resource_link;
 
-private:
+protected:
     /// Group of threads, to which this thread attached
     ThreadGroupPtr thread_group;
 
