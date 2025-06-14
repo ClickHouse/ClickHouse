@@ -48,8 +48,7 @@ namespace
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateUserQuery>();
-        query->names = std::make_shared<ASTUserNamesWithHost>();
-        query->names->push_back(user.getName());
+        query->names = std::make_shared<ASTUserNamesWithHost>(user.getName());
         query->attach = attach_mode;
 
         if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
