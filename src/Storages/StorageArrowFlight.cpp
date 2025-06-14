@@ -83,7 +83,7 @@ StorageArrowFlight::StorageArrowFlight(
 
 std::string buildArrowFlightQueryString(const std::vector<std::string> & column_names, const std::string & dataset_name)
 {
-    std::ostringstream oss;
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss << "{";
     oss << "\"dataset\": \"" << dataset_name << "\", ";
     oss << "\"columns\": [";
