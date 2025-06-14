@@ -81,7 +81,11 @@ Specifying the `sharding_key` is necessary for the following:
 
 #### skip_unavailable_shards {#skip_unavailable_shards}
 
-`skip_unavailable_shards` - If true, ClickHouse silently skips unavailable shards. Shard is marked as unavailable when: 1) The shard cannot be reached due to a connection failure. 2) Shard is unresolvable through DNS. 3) Table does not exist on the shard. Default false.
+`skip_unavailable_shards` - If true, ClickHouse silently skips unavailable shards. The behavior of this setting is controlled by the `skip_unavailable_shards_mode` parameter. Default false.
+
+#### skip_unavailable_shards_mode {#skip_unavailable_shards_mode}
+
+`skip_unavailable_shards_mode` - If set to `unavailable`, connection-related exceptions are ignored, whereas `unavailable_or_exception` ignores all exceptions from remote instances. Default `unavailable`.
 
 #### bytes_to_throw_insert {#bytes_to_throw_insert}
 

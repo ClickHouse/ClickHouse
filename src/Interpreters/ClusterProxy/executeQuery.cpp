@@ -70,6 +70,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode_leaf;
     extern const SettingsBool use_hedged_requests;
@@ -81,6 +82,7 @@ namespace Setting
 namespace DistributedSetting
 {
     extern const DistributedSettingsBool skip_unavailable_shards;
+    extern const DistributedSettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
 
 namespace ErrorCodes
@@ -175,6 +177,12 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     {
         new_settings[Setting::skip_unavailable_shards] = (*distributed_settings)[DistributedSetting::skip_unavailable_shards].value;
         new_settings[Setting::skip_unavailable_shards].changed = true;
+    }
+
+    if (!settings[Setting::skip_unavailable_shards_mode].changed && distributed_settings)
+    {
+        new_settings[Setting::skip_unavailable_shards_mode] = (*distributed_settings)[DistributedSetting::skip_unavailable_shards_mode].value;
+        new_settings[Setting::skip_unavailable_shards_mode].changed = true;
     }
 
     if (settings[Setting::offset])
