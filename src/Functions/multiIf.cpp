@@ -10,6 +10,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -19,9 +20,10 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
-
 
 namespace DB
 {
@@ -81,6 +83,7 @@ public:
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForNothing() const override { return false; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
@@ -93,10 +96,9 @@ public:
         return args;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
     {
         /// Arguments are the following: cond1, then1, cond2, then2, ... condN, thenN, else.
-
         auto for_conditions = [&args](auto && f)
         {
             size_t conditions_end = args.size() - 1;
@@ -115,34 +117,52 @@ public:
         if (!(args.size() >= 3 && args.size() % 2 == 1))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Invalid number of arguments for function {}", getName());
 
-        for_conditions([&](const DataTypePtr & arg)
+        size_t const_branches_count = 0;
+        size_t string_branches_count = 0;
+        size_t only_null_branches_count = 0;
+
+        for_conditions([&](const ColumnWithTypeAndName & arg)
         {
+            const auto& arg_type = recursiveRemoveLowCardinality(arg.type);
             const IDataType * nested_type;
-            if (arg->isNullable())
+            if (arg_type->isNullable())
             {
-                if (arg->onlyNull())
+                if (arg_type->onlyNull())
                     return;
 
-                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
+                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg_type);
                 nested_type = nullable_type.getNestedType().get();
             }
             else
             {
-                nested_type = arg.get();
+                nested_type = arg_type.get();
             }
 
             if (!WhichDataType(nested_type).isUInt8())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument (condition) of function {}. "
-                    "Must be UInt8.", arg->getName(), getName());
+                    "Must be UInt8.", arg_type->getName(), getName());
         });
 
         DataTypes types_of_branches;
         types_of_branches.reserve(args.size() / 2 + 1);
 
-        for_branches([&](const DataTypePtr & arg)
+        for_branches([&](const ColumnWithTypeAndName & arg)
         {
-            types_of_branches.emplace_back(arg);
+            const_branches_count += arg.column && isColumnConst(*arg.column);
+            string_branches_count += isString(arg.type);
+            only_null_branches_count += arg.type->onlyNull();
+            types_of_branches.emplace_back(arg.type);
         });
+
+        auto const num_branches = types_of_branches.size();
+
+        if (const_branches_count == num_branches)
+        {
+            if (string_branches_count == num_branches)
+                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            else if ((only_null_branches_count + string_branches_count) == num_branches)
+                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+        }
 
         if (allow_experimental_variant_type && use_variant_as_common_type)
             return getLeastSupertypeOrVariant(types_of_branches);
