@@ -269,7 +269,7 @@ void KeeperOverDispatcher::multi(
     std::span<const RequestPtr> requests,
     MultiCallback callback)
 {
-    const auto request = std::shared_ptr<ZooKeeperMultiRequest>(new ZooKeeperMultiRequest(requests, {}));
+    const auto request = std::shared_ptr<ZooKeeperMultiRequest>(new ZooKeeperMultiRequest(requests, {}));  // NOLINT(modernize-make-shared)
 
     const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
 
