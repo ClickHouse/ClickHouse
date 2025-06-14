@@ -1,12 +1,12 @@
 ---
 description: 'Allows to perform queries on data exposed via an Apache Arrow Flight server.'
-sidebar\_label: 'arrowFlight'
+sidebar\_label: 'Arrow Flight'
 sidebar\_position: 186
-slug: /sql-reference/table-functions/arrowflight
-title: 'arrowFlight'
+slug: /sql-reference/table-functions/arrow-flight
+title: 'Arrow Flight'
 --------------------
 
-# arrowFlight Table Function
+# Arrow Flight Table Function
 
 Allows to perform queries on data exposed via an [Apache Arrow Flight](../../interfaces/arrow-flight.md) server.
 
@@ -45,5 +45,5 @@ Result:
 
 **See Also**
 
-* [ArrowFlight](../../engines/table-engines/integrations/arrowflight.md) table engine
+* [Arrow Flight](../../engines/table-engines/integrations/arrowflight.md) table engine
 * [Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
