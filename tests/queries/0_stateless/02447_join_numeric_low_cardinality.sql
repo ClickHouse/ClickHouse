@@ -5,8 +5,6 @@ SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS arrays_test;
 
-SET allow_suspicious_low_cardinality_types = 1;
-
 CREATE TABLE arrays_test
 (
     `s` String,
