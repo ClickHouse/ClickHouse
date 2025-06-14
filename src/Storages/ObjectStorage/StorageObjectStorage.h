@@ -189,8 +189,9 @@ public:
     struct Path
     {
         Path() = default;
-        Path(const std::string & path_) : path(path_) {} /// NOLINT(google-explicit-constructor)
-        Path(const std::string & path_, bool allow_partial_prefix_) : path(path_), allow_partial_prefix(allow_partial_prefix_) {}
+        /// A partial prefix is a prefix that does not represent an actual object (directory or file), usually strings that do not end with a slash character.
+        /// Example: `table_root/year=20`. AWS S3 supports partial prefixes, but HDFS does not.
+        Path(const std::string & path_, bool allow_partial_prefix_ = true) : path(path_), allow_partial_prefix(allow_partial_prefix_) {} /// NOLINT(google-explicit-constructor)
 
         std::string path;
 
@@ -200,7 +201,7 @@ public:
         std::string getWithoutGlobs() const;
 
     private:
-        bool allow_partial_prefix = true;
+        bool allow_partial_prefix;
     };
 
     using Paths = std::vector<Path>;
@@ -224,13 +225,13 @@ public:
     // Path provided by the user in the query
     virtual Path getRawPath() const = 0;
     // Path used for reading, it is usually a globbed path like `'table_root/**.parquet'
-    Path getReadingPath() const;
+    Path getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
-    Path getWritingPath(const std::string & partition_id = "") const;
+    Path getPathForWrite(const std::string & partition_id = "") const;
 
     virtual void setRawPath(const Path & path) = 0;
 
-    // todo
+    // todo arthur
     // it apparently is a list of paths that were used during write so the writer does not lose track of the counter..
     virtual const Paths & getPaths() const = 0;
     virtual void setPaths(const Paths & paths) = 0;

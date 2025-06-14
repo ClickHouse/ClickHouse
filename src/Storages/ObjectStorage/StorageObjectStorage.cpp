@@ -788,7 +788,7 @@ void StorageObjectStorage::Configuration::check(ContextPtr) const
     FormatFactory::instance().checkFormatName(format);
 }
 
-StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getReadingPath() const
+StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getPathForRead() const
 {
     auto raw_path = getRawPath();
 
@@ -797,10 +797,10 @@ StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::g
         return raw_path;
     }
 
-    return Path {partition_strategy->getReadingPath(raw_path.path)};
+    return Path {partition_strategy->getPathForRead(raw_path.path)};
 }
 
-StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getWritingPath(const std::string & partition_id) const
+StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getPathForWrite(const std::string & partition_id) const
 {
     auto raw_path = getRawPath();
 
@@ -809,7 +809,7 @@ StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::g
         return raw_path;
     }
 
-    return Path {partition_strategy->getWritingPath(raw_path.path, partition_id)};
+    return Path {partition_strategy->getPathForWrite(raw_path.path, partition_id)};
 }
 
 bool StorageObjectStorage::Configuration::Path::withPartitionWildcard() const

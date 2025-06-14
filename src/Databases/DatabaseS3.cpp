@@ -19,7 +19,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Parsers/ASTInsertQuery.h>
 
 #include <boost/algorithm/string.hpp>
 #include <filesystem>

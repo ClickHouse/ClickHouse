@@ -226,13 +226,13 @@ ColumnPtr StringifiedPartitionStrategy::computePartitionKey(const Chunk & chunk)
     return block_with_partition_by_expr.getByName(actions_with_column_name.column_name).column;
 }
 
-std::string StringifiedPartitionStrategy::getReadingPath(
+std::string StringifiedPartitionStrategy::getPathForRead(
     const std::string & prefix)
 {
     return prefix;
 }
 
-std::string StringifiedPartitionStrategy::getWritingPath(
+std::string StringifiedPartitionStrategy::getPathForWrite(
     const std::string & prefix,
     const std::string & partition_key)
 {
@@ -257,12 +257,12 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     block_without_partition_columns = buildBlockWithoutPartitionColumns(sample_block, partition_columns_name_set);
 }
 
-std::string HiveStylePartitionStrategy::getReadingPath(const std::string & prefix)
+std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefix)
 {
     return prefix + "**." + Poco::toLower(file_format);
 }
 
-std::string HiveStylePartitionStrategy::getWritingPath(
+std::string HiveStylePartitionStrategy::getPathForWrite(
     const std::string & prefix,
     const std::string & partition_key)
 {

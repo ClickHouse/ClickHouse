@@ -148,7 +148,7 @@ struct Data
 
 }
 
-uint64_t generateSnowflakeID()
+UInt64 generateSnowflakeID()
 {
     Data data;
     SnowflakeId snowflake_id = data.reserveRange(getMachineId(), 1);

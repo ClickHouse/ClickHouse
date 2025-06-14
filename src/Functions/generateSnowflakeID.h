@@ -1,10 +1,10 @@
 #pragma once
 
-#include <cstdint>
+#include <Core/Types.h>
 
 namespace DB
 {
 
-uint64_t generateSnowflakeID();
+UInt64 generateSnowflakeID();
 
 }

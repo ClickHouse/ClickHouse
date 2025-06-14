@@ -8,6 +8,13 @@
 namespace DB
 {
 
+/*
+ * Class responsible for computing and generating a partition key for object storage.
+ * As of now, there are two possible implementations: hive and stringfied.
+ *
+ * It also offers some helper APIs like `getFormatChunk` and `getFormatHeader`. Required mostly because of `hive` strategy
+ * since the default behavior is not to write partition columns in the files and rely only on the filepath.
+ */
 struct PartitionStrategy
 {
     struct PartitionExpressionActionsAndColumnName
@@ -24,8 +31,8 @@ struct PartitionStrategy
 
     virtual ColumnPtr computePartitionKey(const Chunk & chunk) = 0;
 
-    virtual std::string getReadingPath(const std::string & prefix) = 0;
-    virtual std::string getWritingPath(const std::string & prefix, const std::string & partition_key) = 0;
+    virtual std::string getPathForRead(const std::string & prefix) = 0;
+    virtual std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) = 0;
 
     virtual Chunk getFormatChunk(const Chunk & chunk) { return chunk.clone(); }
 
@@ -61,13 +68,17 @@ struct PartitionStrategyFactory
         bool partition_columns_in_data_file);
 };
 
+/*
+ * It is the previous & existing implementation for object storage partitioned writes.
+ * It simply wraps the partition expression with a `toString` function call
+ */
 struct StringifiedPartitionStrategy : PartitionStrategy
 {
     StringifiedPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_);
 
     ColumnPtr computePartitionKey(const Chunk & chunk) override;
-    std::string getReadingPath(const std::string & prefix) override;
-    std::string getWritingPath(const std::string & prefix, const std::string & partition_key) override;
+    std::string getPathForRead(const std::string & prefix) override;
+    std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) override;
 
 private:
     PartitionExpressionActionsAndColumnName actions_with_column_name;
@@ -83,8 +94,8 @@ struct HiveStylePartitionStrategy : PartitionStrategy
         bool partition_columns_in_data_file_);
 
     ColumnPtr computePartitionKey(const Chunk & chunk) override;
-    std::string getReadingPath(const std::string & prefix) override;
-    std::string getWritingPath(const std::string & prefix, const std::string & partition_key) override;
+    std::string getPathForRead(const std::string & prefix) override;
+    std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) override;
 
     Chunk getFormatChunk(const Chunk & chunk) override;
     Block getFormatHeader() override;

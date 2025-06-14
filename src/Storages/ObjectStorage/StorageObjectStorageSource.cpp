@@ -151,7 +151,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
 
     std::unique_ptr<IObjectIterator> iterator;
-    const auto reading_path = configuration->getReadingPath();
+    const auto reading_path = configuration->getPathForRead();
     if (reading_path.withGlobs())
     {
         if (hasExactlyOneBracketsExpansion(reading_path.path))
@@ -266,7 +266,7 @@ Chunk StorageObjectStorageSource::generate()
             const auto & filename = object_info->getFileName();
             std::string full_path = object_info->getPath();
 
-            const auto reading_path = configuration->getReadingPath().path;
+            const auto reading_path = configuration->getPathForRead().path;
 
             if (!full_path.starts_with(reading_path))
                 full_path = fs::path(reading_path) / object_info->getPath();
@@ -740,7 +740,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , local_context(context_)
     , file_progress_callback(file_progress_callback_)
 {
-    const auto reading_path = configuration->getReadingPath();
+    const auto reading_path = configuration->getPathForRead();
     if (reading_path.withGlobs())
     {
         const auto & key_with_globs = reading_path;
@@ -791,7 +791,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
     {
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
                         "Can not match any files with path {}",
-                        configuration->getReadingPath().path);
+                        configuration->getPathForRead().path);
     }
     first_iteration = false;
     return object_info;

@@ -1987,7 +1987,7 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        std::string filepath = partition_strategy->getWritingPath(path, partition_id);
+        std::string filepath = partition_strategy->getPathForWrite(path, partition_id);
 
         fs::create_directories(fs::path(filepath).parent_path());
 
