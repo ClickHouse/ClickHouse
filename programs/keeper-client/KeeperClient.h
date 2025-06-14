@@ -56,7 +56,7 @@ protected:
 
     void loadCommands(std::vector<Command> && new_commands);
 
-    std::vector<String> getCompletions(const String & prefix) const;
+    std::vector<String> getCompletions(String prefix) const;
 
     String history_file;
     UInt32 history_max_entries; /// Maximum number of entries in the history file.
