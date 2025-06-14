@@ -750,7 +750,7 @@ class JobConfigs:
     performance_comparison_with_prev_release_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
-        command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
+        command="python3 ./ci/jobs/performance_tests.py --test-options \"{PARAMETER}\"",
         # TODO: switch to stateless-test image
         run_in_docker="clickhouse/performance-comparison",
         digest_config=Job.CacheDigestConfig(
