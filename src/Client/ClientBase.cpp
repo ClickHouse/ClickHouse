@@ -73,6 +73,7 @@
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
 #include <filesystem>
