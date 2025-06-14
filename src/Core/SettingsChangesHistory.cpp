@@ -78,6 +78,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
             {"optimize_use_projection_filtering", true, true, "New setting"},
             {"input_format_parquet_enable_json_parsing", true, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
+            {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
             {"use_skip_indexes_if_final", 0, 1, "Change in default value of setting"},
             {"use_skip_indexes_if_final_exact_mode", 0, 1, "Change in default value of setting"},
             {"allow_experimental_time_series_aggregate_functions", false, false, "New setting to enable experimental timeSeries* aggregate functions."},
