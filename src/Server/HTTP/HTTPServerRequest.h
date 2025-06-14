@@ -47,7 +47,13 @@ public:
     X509Certificate peerCertificate() const;
 #endif
 
-    std::string toStringForLogging() const;
+    bool canKeepAlive() const
+    {
+        if (stream && stream_is_bounded)
+            return stream->eof();
+
+        return false;
+    }
 
 private:
     /// Limits for basic sanity checks when reading a header
@@ -67,6 +73,7 @@ private:
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;
 
+    bool stream_is_bounded = false;
     bool secure;
 
     void readRequest(ReadBuffer & in);

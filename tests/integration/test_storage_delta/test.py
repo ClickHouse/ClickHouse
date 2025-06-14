@@ -1332,7 +1332,7 @@ def test_session_token(started_cluster):
     )
 
     assert (
-        "Received DeltaLake kernel error ReqwestError: Error interacting with object store"
+        "Received DeltaLake kernel error ObjectStoreError: Error interacting with object store"
         in instance2.query_and_get_error(
             f"""
     SELECT count() FROM deltaLake(
