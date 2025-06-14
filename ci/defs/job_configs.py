@@ -172,6 +172,7 @@ class JobConfigs:
             [
                 ArtifactNames.CH_AMD_DEBUG,
                 ArtifactNames.DEB_AMD_DEBUG,
+                ArtifactNames.LEXER_AMD_DEBUG,
             ],
             [
                 ArtifactNames.CH_AMD_RELEASE,
@@ -183,21 +184,25 @@ class JobConfigs:
                 ArtifactNames.CH_AMD_ASAN,
                 ArtifactNames.DEB_AMD_ASAN,
                 ArtifactNames.UNITTEST_AMD_ASAN,
+                ArtifactNames.LEXER_AMD_ASAN,
             ],
             [
                 ArtifactNames.CH_AMD_TSAN,
                 ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.UNITTEST_AMD_TSAN,
+                ArtifactNames.LEXER_AMD_TSAN,
             ],
             [
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.DEB_AMD_MSAM,
                 ArtifactNames.UNITTEST_AMD_MSAN,
+                ArtifactNames.LEXER_AMD_MSAN,
             ],
             [
                 ArtifactNames.CH_AMD_UBSAN,
                 ArtifactNames.DEB_AMD_UBSAN,
                 ArtifactNames.UNITTEST_AMD_UBSAN,
+                ArtifactNames.LEXER_AMD_UBSAN,
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
@@ -211,6 +216,7 @@ class JobConfigs:
             [
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
+                ArtifactNames.LEXER_ARM_ASAN,
             ],
             [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
             [ArtifactNames.CH_ARM_BIN],
