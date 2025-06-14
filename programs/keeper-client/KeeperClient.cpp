@@ -19,6 +19,29 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+String KeeperClient::executeFourLetterCommand(const String & command)
+{
+    /// We need to create a new socket every time because ZooKeeper forcefully shuts down the connection after a four-letter-word command.
+    Poco::Net::StreamSocket socket;
+    socket.connect(Poco::Net::SocketAddress{zk_args.hosts[0]}, zk_args.connection_timeout_ms * 1000);
+
+    socket.setReceiveTimeout(zk_args.operation_timeout_ms * 1000);
+    socket.setSendTimeout(zk_args.operation_timeout_ms * 1000);
+    socket.setNoDelay(true);
+
+    ReadBufferFromPocoSocket in(socket);
+    WriteBufferFromPocoSocket out(socket);
+
+    out.write(command.data(), command.size());
+    out.next();
+    out.finalize();
+
+    String result;
+    readStringUntilEOF(result, in);
+    in.next();
+    return result;
+}
+
 void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
 {
     Poco::Util::Application::defineOptions(options);
@@ -130,6 +153,48 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
 
     EventNotifier::init();
+}
+
+std::vector<String> KeeperClient::getCompletions(const String & prefix) const
+{
+    Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    if (pos->type != TokenType::BareWord)
+        return registered_commands_and_four_letter_words;
+
+    ++pos;
+    if (pos->isEnd())
+        return registered_commands_and_four_letter_words;
+
+    ParserToken{TokenType::Whitespace}.ignore(pos);
+
+    std::vector<String> result;
+    String string_path;
+    Expected expected;
+    if (!parseKeeperPath(pos, expected, string_path))
+        string_path = cwd;
+
+    if (!pos->isEnd())
+        return result;
+
+    fs::path path = string_path;
+    String parent_path;
+    if (string_path.ends_with("/"))
+        parent_path = getAbsolutePath(string_path);
+    else
+        parent_path = getAbsolutePath(path.parent_path());
+
+    try
+    {
+        for (const auto & child : zookeeper->getChildren(parent_path))
+            result.push_back(child);
+    }
+    catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
+
+    std::sort(result.begin(), result.end());
+
+    return result;
 }
 
 void KeeperClient::runInteractiveReplxx()

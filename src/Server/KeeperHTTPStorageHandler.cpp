@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int TIMEOUT_EXCEEDED;
 }
 
 Poco::JSON::Object statToJSON(const Coordination::Stat & stat)

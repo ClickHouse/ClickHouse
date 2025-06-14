@@ -67,7 +67,7 @@ void CDCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client)
 
     auto new_path = client->getAbsolutePath(query->args[0].safeGet<String>());
     if (!client->zookeeper->exists(new_path))
-        std::cerr << "Path " << new_path << " does not exist\n";
+        client->cerr << "Path " << new_path << " does not exist\n";
     else
         client->cwd = new_path;
 }
@@ -188,7 +188,7 @@ bool ExistsCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
 
 void ExistsCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClientBase * client) const
 {
-    std::cout << client->zookeeper->exists(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
+    client->cout << client->zookeeper->exists(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
 bool GetStatCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -212,17 +212,17 @@ void GetStatCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * cl
 
     client->zookeeper->get(path, &stat);
 
-    std::cout << "cZxid = " << stat.czxid << "\n";
-    std::cout << "mZxid = " << stat.mzxid << "\n";
-    std::cout << "pZxid = " << stat.pzxid << "\n";
-    std::cout << "ctime = " << stat.ctime << "\n";
-    std::cout << "mtime = " << stat.mtime << "\n";
-    std::cout << "version = " << stat.version << "\n";
-    std::cout << "cversion = " << stat.cversion << "\n";
-    std::cout << "aversion = " << stat.aversion << "\n";
-    std::cout << "ephemeralOwner = " << stat.ephemeralOwner << "\n";
-    std::cout << "dataLength = " << stat.dataLength << "\n";
-    std::cout << "numChildren = " << stat.numChildren << "\n";
+    client->cout << "cZxid = " << stat.czxid << "\n";
+    client->cout << "mZxid = " << stat.mzxid << "\n";
+    client->cout << "pZxid = " << stat.pzxid << "\n";
+    client->cout << "ctime = " << stat.ctime << "\n";
+    client->cout << "mtime = " << stat.mtime << "\n";
+    client->cout << "version = " << stat.version << "\n";
+    client->cout << "cversion = " << stat.cversion << "\n";
+    client->cout << "aversion = " << stat.aversion << "\n";
+    client->cout << "ephemeralOwner = " << stat.ephemeralOwner << "\n";
+    client->cout << "dataLength = " << stat.dataLength << "\n";
+    client->cout << "numChildren = " << stat.numChildren << "\n";
 }
 
 namespace
@@ -390,7 +390,7 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClientBase * cl
         bool onListChildren(const fs::path & path, const Strings & children) const
         {
             if (children.size() >= threshold)
-                std::cout << static_cast<String>(path) << "\t" << children.size() << "\n";
+                client->cout << static_cast<String>(path) << "\t" << children.size() << "\n";
             return true;
         }
 
@@ -420,7 +420,7 @@ void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClien
             for (const auto & child : backups)
             {
                 auto backup_path = backup_root / child;
-                std::cout << "Found backup " << backup_path << ", checking if it's active\n";
+                client->cout << "Found backup " << backup_path << ", checking if it's active\n";
 
                 String stage_path = backup_path / "stage";
                 auto stages = client->zookeeper->getChildren(stage_path);
