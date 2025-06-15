@@ -17,7 +17,7 @@ public:
         ConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         const StorageID & table_id_,
-        const ColumnsDescription & columns_,
+        const ColumnsDescription & columns_in_table_or_function_definition,
         const ConstraintsDescription & constraints_,
         ContextPtr context_);
 
@@ -26,7 +26,7 @@ public:
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate, const ContextPtr & context, size_t number_of_replicas) const override;
 
-    String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
+    String getPathSample(ContextPtr context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
@@ -41,6 +41,7 @@ private:
     const StorageObjectStorage::ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
 }

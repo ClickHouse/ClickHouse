@@ -57,8 +57,8 @@ public:
     std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
-    Path getPath() const override { return blob_path; }
-    void setPath(const Path & path) override { blob_path = path; }
+    Path getRawPath() const override { return blob_path; }
+    void setRawPath(const Path & path) override { blob_path = path; }
 
     const Paths & getPaths() const override { return blobs_paths; }
     void setPaths(const Paths & paths) override { blobs_paths = paths; }
@@ -82,8 +82,8 @@ protected:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
-    std::string blob_path;
-    std::vector<String> blobs_paths;
+    Path blob_path;
+    Paths blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
 };
 
