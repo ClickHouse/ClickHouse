@@ -206,6 +206,7 @@ class JobConfigs:
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
+                ArtifactNames.LEXER_AMD_BINARY,
             ],
             [
                 ArtifactNames.CH_ARM_RELEASE,
@@ -360,13 +361,13 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            [ArtifactNames.CH_AMD_ASAN],
-            [ArtifactNames.CH_AMD_ASAN],
-            [ArtifactNames.CH_AMD_BINARY],
-            [ArtifactNames.CH_AMD_BINARY],
-            [ArtifactNames.CH_AMD_BINARY],
-            [ArtifactNames.CH_AMD_BINARY],
-            [ArtifactNames.CH_AMD_DEBUG],
+            [ArtifactNames.CH_AMD_ASAN, ArtifactNames.LEXER_AMD_ASAN],
+            [ArtifactNames.CH_AMD_ASAN, ArtifactNames.LEXER_AMD_ASAN],
+            [ArtifactNames.CH_AMD_BINARY, ArtifactNames.LEXER_AMD_BINARY],
+            [ArtifactNames.CH_AMD_BINARY, ArtifactNames.LEXER_AMD_BINARY],
+            [ArtifactNames.CH_AMD_BINARY, ArtifactNames.LEXER_AMD_BINARY],
+            [ArtifactNames.CH_AMD_BINARY, ArtifactNames.LEXER_AMD_BINARY],
+            [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.LEXER_AMD_DEBUG],
         ],
     )
     functional_tests_jobs_coverage = common_ft_job_config.set_allow_merge_on_failure(

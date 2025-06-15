@@ -360,6 +360,7 @@ class ArtifactNames:
     LEXER_AMD_TSAN = "LEXER_AMD_TSAN"
     LEXER_AMD_MSAN = "LEXER_AMD_MSAN"
     LEXER_AMD_UBSAN = "LEXER_AMD_UBSAN"
+    LEXER_AMD_BINARY = "LEXER_AMD_BINARY"
     LEXER_ARM_ASAN = "LEXER_ARM_ASAN"
 
     FAST_TEST = "FAST_TEST"
@@ -442,6 +443,7 @@ class ArtifactConfigs:
             ArtifactNames.LEXER_AMD_TSAN,
             ArtifactNames.LEXER_AMD_MSAN,
             ArtifactNames.LEXER_AMD_UBSAN,
+            ArtifactNames.LEXER_AMD_BINARY,
             ArtifactNames.LEXER_ARM_ASAN,
         ]
     )
