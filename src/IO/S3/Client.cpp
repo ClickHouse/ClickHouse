@@ -31,8 +31,8 @@
 #include <Core/Settings.h>
 
 #include <base/sleep.h>
-#include <pcg_random.hpp>
-
+#include <Common/thread_local_rng.h>
+#include <random>
 
 namespace ProfileEvents
 {
@@ -770,11 +770,9 @@ void Client::slowDownAfterNetworkError() const
         return;
 
     /// Wait until `next_time_to_retry_after_network_error`.
-    std::optional<pcg32_fast> rng;
     for (;;)
     {
-        auto now = std::chrono::steady_clock::now();
-        UInt64 current_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        UInt64 current_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         UInt64 next_time_ms = next_time_to_retry_after_network_error.load();
         if (current_time_ms >= next_time_ms)
             break;
@@ -782,10 +780,9 @@ void Client::slowDownAfterNetworkError() const
 
         /// Adds jitter: a random factor in the range [100%, 110%] to the delay.
         /// This prevents synchronized retries, reducing the risk of overwhelming the S3 server.
-        if (!rng)
-            rng.emplace(now.time_since_epoch().count());
-        auto jitter = (rng.value()() % 10) + 100;
-        sleep_ms = (jitter * sleep_ms) / 100;
+        std::uniform_real_distribution<double> dist(1.0, 1.1);
+        double jitter = dist(thread_local_rng);
+        sleep_ms = static_cast<UInt64>(jitter * sleep_ms);
 
         LOG_WARNING(log, "Some request failed, now waiting {} ms before executing a request", sleep_ms);
         sleepForMilliseconds(sleep_ms);
