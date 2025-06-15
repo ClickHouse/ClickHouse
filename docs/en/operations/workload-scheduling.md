@@ -287,6 +287,8 @@ Workload setting `max_concurrent_queries` limits the number of concurrent querie
 
 Workload settings `max_queries_per_second` and `max_burst_queries` limits number of queries for the workload with a token bucket throttler. It guarantees that during any time interval `T` no more than `max_queries_per_second * T + max_burst_queries` new queries will start execution.
 
+Workload settings `max_waiting_queries` limits number of waiting queries for the workload. When the limit is reached, the server returns an error `SERVER_OVERLOADED`
+
 :::note
 Blocked queries will wait indefinitely and not appear in `SHOW PROCESSLIST` until all constraints are satisfied.
 :::
