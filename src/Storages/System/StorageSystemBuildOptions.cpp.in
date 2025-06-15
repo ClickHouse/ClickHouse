@@ -58,7 +58,6 @@ const char * auto_config_build[]
     "USE_SENTRY", "@USE_SENTRY@",
     "USE_DATASKETCHES", "@USE_DATASKETCHES@",
     "USE_AVRO", "@USE_AVRO@",
-    "USE_ARROW", "@USE_ARROW@",
     "USE_ORC", "@USE_ORC@",
     "USE_MSGPACK", "@USE_MSGPACK@",
     "USE_QPL", "@USE_QPL@",

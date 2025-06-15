@@ -131,10 +131,7 @@ void registerStorages()
     registerStorageLoop(factory);
     registerStorageFuzzQuery(factory);
     registerStorageTimeSeries(factory);
-
-#if USE_ARROWFLIGHT
     registerStorageArrowFlight(factory);
-#endif
 
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);

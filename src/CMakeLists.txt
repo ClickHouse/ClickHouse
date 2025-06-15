@@ -680,9 +680,7 @@ if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
 endif()
 
-if (TARGET ch_contrib::arrow)
-    dbms_target_link_libraries(PUBLIC ch_contrib::arrow)
-endif()
+dbms_target_link_libraries(PUBLIC ch_contrib::arrow)
 
 if (ENABLE_BUZZHOUSE)
     dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)

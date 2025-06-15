@@ -2,7 +2,6 @@
 
 #pragma once
 
-#cmakedefine01 USE_ARROWFLIGHT
 #cmakedefine01 CLICKHOUSE_CLOUD
 #cmakedefine01 USE_CPUID
 #cmakedefine01 USE_BASE64
@@ -41,7 +40,6 @@
 #cmakedefine01 USE_CAPNP
 #cmakedefine01 USE_PARQUET
 #cmakedefine01 USE_ORC
-#cmakedefine01 USE_ARROW
 #cmakedefine01 USE_PROTOBUF
 #cmakedefine01 USE_MSGPACK
 #cmakedefine01 USE_ICU

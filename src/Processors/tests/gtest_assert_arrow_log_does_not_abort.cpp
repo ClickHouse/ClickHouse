@@ -1,7 +1,5 @@
 #include "config.h"
 
-#if USE_ARROW || USE_PARQUET
-
 #include <gtest/gtest.h>
 #include <arrow/chunked_array.h>
 #include <vector>
@@ -23,5 +21,3 @@ TEST(ArrowLog, FatalLogShouldThrow)
 }
 
 }
-
-#endif
