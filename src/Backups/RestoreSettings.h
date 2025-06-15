@@ -128,6 +128,9 @@ struct RestoreSettings
     /// If not set, then S3 native copy will be allowed only if the source and destination credentials are the same.
     std::optional<bool> allow_s3_native_copy;
 
+    /// Whether native copy is allowed for AzureBlobStorage
+    bool allow_azure_native_copy = true;
+
     /// Whether base backup from S3 should inherit credentials from the RESTORE query.
     bool use_same_s3_credentials_for_base_backup = false;
 
