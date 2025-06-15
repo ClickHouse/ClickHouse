@@ -19,6 +19,7 @@
 
 #include <boost/algorithm/string.hpp>
 
+#include "base/types.h"
 #include "config.h"
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -161,6 +162,9 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     initializeFeatureFlags(config);
     initializeDisks(config);
 
+    s3_experimental_changelog = config.getBool("keeper_server.coordination_settings.s3_experimental_changelog", false);
+    s3_flush_interval = config.getUInt64("keeper_server.coordination_settings.s3_flush_interval", 500);
+
     #if USE_ROCKSDB
     if (config.getBool("keeper_server.coordination_settings.experimental_use_rocksdb", false))
     {
@@ -174,6 +178,14 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 
     if (config.has("keeper_server.precommit_sleep_probability_for_testing"))
         precommit_sleep_probability_for_testing = config.getDouble("keeper_server.precommit_sleep_probability_for_testing");
+}
+
+bool KeeperContext::isS3ExperimentalChangelog() const {
+    return s3_experimental_changelog;
+}
+
+Int64 KeeperContext::getS3FlushInterval() const {
+    return s3_flush_interval;
 }
 
 namespace
