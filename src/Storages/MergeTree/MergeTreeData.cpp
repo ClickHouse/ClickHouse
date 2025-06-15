@@ -252,6 +252,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
+    extern const MergeTreeSettingsAlterModifyColumnSecondaryIndexMode alter_modify_column_secondary_index_mode;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
 }
 
@@ -3963,7 +3964,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (columns_in_keys.contains(command.column_name))
             {
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                "Trying to ALTER RENAME key {} column which is a part of key expression",
+                                "Trying to ALTER RENAME key column {} which is a part of key expression",
                                 backQuoteIfNeed(command.column_name));
             }
 
@@ -3973,7 +3974,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             {
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER RENAME {} column which is a part of projection {}",
+                    "Trying to ALTER RENAME column {} which is a part of projection {}",
                     backQuoteIfNeed(command.column_name),
                     it->second);
             }
@@ -3983,7 +3984,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (columns_in_keys.contains(command.column_name))
             {
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP key {} column which is a part of key expression", backQuoteIfNeed(command.column_name));
+                    "Trying to ALTER DROP key column {} which is a part of key expression", backQuoteIfNeed(command.column_name));
             }
 
             /// Don't check columns in indices or projections here. If required columns of indices
@@ -4036,11 +4037,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
             if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
             {
-                throw Exception(
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER {} column which is a part of index {}",
-                    backQuoteIfNeed(command.column_name),
-                    it->second);
+                if ((*settings_from_storage)[MergeTreeSetting::alter_modify_column_secondary_index_mode] == AlterModifyColumnSecondaryIndexMode::THROW)
+                {
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Trying to ALTER column {} which is a part of index {}",
+                        backQuoteIfNeed(command.column_name),
+                        it->second);
+                }
             }
 
             /// Don't check columns in projections here. If required columns of projections get

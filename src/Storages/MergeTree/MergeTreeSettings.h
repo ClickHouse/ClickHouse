@@ -38,16 +38,17 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CleanDeletedRows) \
     M(CLASS_NAME, DeduplicateMergeProjectionMode) \
+    M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, Int64) \
-    M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, MaxThreads) \
     M(CLASS_NAME, MergeSelectorAlgorithm) \
     M(CLASS_NAME, Milliseconds) \
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
-    M(CLASS_NAME, UInt64)
+    M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, AlterModifyColumnSecondaryIndexMode)
 
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_TRAIT)
 
