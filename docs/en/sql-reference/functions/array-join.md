@@ -37,7 +37,7 @@ The `arrayJoin` function affects all sections of the query, including the `WHERE
 SELECT sum(1) AS impressions
 FROM
 (
-    SELECT ['Istanbul', 'Berlin', 'Bobruisk'] AS cities
+    SELECT ['Istanbul', 'Berlin', 'Babruysk'] AS cities
 )
 WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 ```
@@ -59,7 +59,7 @@ SELECT
 FROM
 (
     SELECT
-        ['Istanbul', 'Berlin', 'Bobruisk'] AS cities,
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
         ['Firefox', 'Chrome', 'Chrome'] AS browsers
 )
 GROUP BY
@@ -73,8 +73,8 @@ GROUP BY
 │           1 │ Istanbul │ Firefox │
 │           2 │ Berlin   │ Chrome  │
 │           1 │ Berlin   │ Firefox │
-│           2 │ Bobruisk │ Chrome  │
-│           1 │ Bobruisk │ Firefox │
+│           2 │ Babruysk │ Chrome  │
+│           1 │ Babruysk │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -108,7 +108,7 @@ SELECT
 FROM
 (
     SELECT
-        ['Istanbul', 'Berlin', 'Bobruisk'] AS cities,
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
         ['Firefox', 'Chrome', 'Chrome'] AS browsers
 )
 ARRAY JOIN
@@ -123,7 +123,7 @@ GROUP BY
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
-│           1 │ Bobruisk │ Chrome  │
+│           1 │ Babruysk │ Chrome  │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -139,7 +139,7 @@ SELECT
 FROM
 (
     SELECT
-        ['Istanbul', 'Berlin', 'Bobruisk'] AS cities,
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
         ['Firefox', 'Chrome', 'Chrome'] AS browsers
 )
 GROUP BY
@@ -151,7 +151,7 @@ GROUP BY
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
-│           1 │ Bobruisk │ Chrome  │
+│           1 │ Babruysk │ Chrome  │
 └─────────────┴──────────┴─────────┘
 ```
 
