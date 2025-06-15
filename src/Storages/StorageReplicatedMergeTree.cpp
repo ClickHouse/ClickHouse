@@ -416,6 +416,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_fetches_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_fetches_network_bandwidth], getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
 {
+    parts_mover = MergeTreePartsMoverFactory::get(this);
+
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
     /// We create and deactivate all tasks for consistency.
     /// They all will be scheduled and activated by the restarting thread.
@@ -5661,7 +5663,7 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
         /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
         fetcher.blocker.cancelForever();
         merger_mutator.merges_blocker.cancelForever();
-        parts_mover.moves_blocker.cancelForever();
+        parts_mover->moves_blocker.cancelForever();
         stopBeingLeader();
 
         if (attach_thread)
@@ -5708,7 +5710,7 @@ void StorageReplicatedMergeTree::partialShutdown()
     {
         auto fetch_lock = fetcher.blocker.cancel();
         auto merge_lock = merger_mutator.merges_blocker.cancel();
-        auto move_lock = parts_mover.moves_blocker.cancel();
+        auto move_lock = parts_mover->moves_blocker.cancel();
         background_operations_assignee.finish();
     }
 
@@ -9277,7 +9279,7 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
         return queue.actions_blocker.cancel();
 
     if (action_type == ActionLocks::PartsMove)
-        return parts_mover.moves_blocker.cancel();
+        return parts_mover->moves_blocker.cancel();
 
     if (action_type == ActionLocks::PullReplicationLog)
         return queue.pull_log_blocker.cancel();
