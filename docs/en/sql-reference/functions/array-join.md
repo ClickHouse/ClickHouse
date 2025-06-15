@@ -8,7 +8,7 @@ title: 'arrayJoin function'
 
 # arrayJoin function
 
-This is a very unusual function. The name `arrayJoin` in ClickHouse comes from its conceptual similarity to the JOIN operation, but applied to arrays within a single row. While traditional JOINs combine rows from different tables, `arrayJoin` "joins" each element of an array in a row, producing multiple rows - one for each array element - while duplicating the other column values. ClickHouse also provides the [`ARRAY JOIN`](/sql-reference/statements/select/array-join) clause syntax, which makes this relationship to traditional JOIN operations even more explicit by using familiar SQL JOIN terminology. This process is also referred to as "unfolding" the array, but the term "join" is used in both the function name and clause because it resembles joining the table with the array elements, effectively expanding the dataset in a way similar to a JOIN operation.
+This is a very unusual function.
 
 Normal functions do not change a set of rows, but just change the values in each row (map).
 Aggregate functions compress a set of rows (fold or reduce).
@@ -154,3 +154,5 @@ GROUP BY
 │           1 │ Bobruisk │ Chrome  │
 └─────────────┴──────────┴─────────┘
 ```
+
+The name `arrayJoin` in ClickHouse comes from its conceptual similarity to the JOIN operation, but applied to arrays within a single row. While traditional JOINs combine rows from different tables, `arrayJoin` "joins" each element of an array in a row, producing multiple rows - one for each array element - while duplicating the other column values. ClickHouse also provides the [`ARRAY JOIN`](/sql-reference/statements/select/array-join) clause syntax, which makes this relationship to traditional JOIN operations even more explicit by using familiar SQL JOIN terminology. This process is also referred to as "unfolding" the array, but the term "join" is used in both the function name and clause because it resembles joining the table with the array elements, effectively expanding the dataset in a way similar to a JOIN operation.
