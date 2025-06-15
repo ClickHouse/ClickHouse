@@ -166,7 +166,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
 
-    docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
+    docker_image = pull_image(get_docker_image("clickhouse/stateless-test"))
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)

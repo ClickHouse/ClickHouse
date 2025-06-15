@@ -53,7 +53,7 @@ configure
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 )
 
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || ( echo "Failed §to create log export config" && exit 1 )
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || ( echo "Failed to create log export config" && exit 1 )
 
 start_server || (echo "Failed to start server" && exit 1)
 
