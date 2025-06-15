@@ -75,6 +75,9 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
     factory.markOutputFormatNotTTYFriendly("RowBinary");
     factory.markOutputFormatNotTTYFriendly("RowBinaryWithNames");
     factory.markOutputFormatNotTTYFriendly("RowBinaryWithNamesAndTypes");
+    factory.setContentType("RowBinary", "application/octet-stream");
+    factory.setContentType("RowBinaryWithNames", "application/octet-stream");
+    factory.setContentType("RowBinaryWithNamesAndTypes", "application/octet-stream");
 }
 
 }

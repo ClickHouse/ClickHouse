@@ -71,7 +71,6 @@ public:
     Block getSampleBlock(const Names &) const override;
 
 private:
-    StorageID table_id;
     RedisConfiguration configuration;
 
     LoggerPtr log;

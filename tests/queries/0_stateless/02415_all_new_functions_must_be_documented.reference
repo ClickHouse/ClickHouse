@@ -70,17 +70,6 @@ accurateCastOrNull
 acos
 acosh
 addDate
-addDays
-addHours
-addMicroseconds
-addMilliseconds
-addMinutes
-addMonths
-addNanoseconds
-addQuarters
-addSeconds
-addWeeks
-addYears
 addressToLine
 addressToLineWithInlines
 addressToSymbol
@@ -112,7 +101,6 @@ cbrt
 ceil
 char
 cityHash64
-clamp
 coalesce
 concat
 concatAssumeInjective
@@ -160,7 +148,6 @@ encodeURLComponent
 encodeURLFormComponent
 encodeXMLComponent
 endsWith
-equals
 erf
 erfc
 errorCodeToName
@@ -229,9 +216,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greater
-greaterOrEquals
-greatest
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -246,7 +230,6 @@ hopStart
 hostName
 hypot
 identity
-if
 ifNull
 ignore
 ilike
@@ -279,14 +262,11 @@ joinGetOrNull
 jumpConsistentHash
 kafkaMurmurHash
 kostikConsistentHash
-least
 left
 leftPad
 leftPadUTF8
 leftUTF8
 lengthUTF8
-less
-lessOrEquals
 lgamma
 like
 log
@@ -313,7 +293,6 @@ monthName
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
-multiIf
 multiMatchAllIndices
 multiMatchAny
 multiMatchAnyIndex
@@ -365,7 +344,6 @@ normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
 not
-notEquals
 notILike
 notIn
 notInIgnoreSet
@@ -534,17 +512,6 @@ substring
 substringIndex
 substringIndexUTF8
 substringUTF8
-subtractDays
-subtractHours
-subtractMicroseconds
-subtractMilliseconds
-subtractMinutes
-subtractMonths
-subtractNanoseconds
-subtractQuarters
-subtractSeconds
-subtractWeeks
-subtractYears
 svg
 tan
 tanh
@@ -554,8 +521,6 @@ throwIf
 tid
 timeSlot
 timeSlots
-timezoneOf
-timezoneOffset
 toBool
 toColumnTypeName
 toDate
@@ -575,9 +540,6 @@ toDateTime64OrZero
 toDateTimeOrDefault
 toDateTimeOrNull
 toDateTimeOrZero
-toDayOfMonth
-toDayOfWeek
-toDayOfYear
 toDecimal128
 toDecimal128OrDefault
 toDecimal128OrNull
@@ -603,7 +565,6 @@ toFloat64
 toFloat64OrDefault
 toFloat64OrNull
 toFloat64OrZero
-toHour
 toIPv4
 toIPv4OrDefault
 toIPv4OrNull
@@ -652,12 +613,9 @@ toIntervalYear
 toJSONString
 toLastDayOfWeek
 toLowCardinality
-toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
-toMonth
 toNullable
-toQuarter
 toRelativeDayNum
 toRelativeHourNum
 toRelativeMinuteNum
@@ -666,7 +624,6 @@ toRelativeQuarterNum
 toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
-toSecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -682,7 +639,6 @@ toStartOfWeek
 toString
 toStringCutToZero
 toTime
-toTimezone
 toTypeName
 toUInt128
 toUInt128OrNull
@@ -721,7 +677,6 @@ toWeek
 toYYYYMM
 toYYYYMMDD
 toYYYYMMDDhhmmss
-toYear
 toYearWeek
 today
 transactionID
