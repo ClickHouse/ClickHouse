@@ -1,6 +1,7 @@
-# docker build -t clickhouse/libfuzzer .
+# rebuild in #33610
+# docker build -t clickhouse/fuzzer .
 ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM clickhouse/test-util:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="https://archive.ubuntu.com"
@@ -9,6 +10,8 @@ RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive
 ENV LANG=C.UTF-8
 ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+ENV PYTHONPATH=/repo:/repo/ci:.
 
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \
@@ -36,7 +39,12 @@ RUN apt-get update \
 COPY requirements.txt /
 RUN pip3 install --no-cache-dir -r /requirements.txt
 
-SHELL ["/bin/bash", "-c"]
+COPY * /
 
-# docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/libfuzzer
+SHELL ["/bin/bash", "-c"]
+CMD set -o pipefail \
+    && cd /workspace \
+    && timeout --verbose --signal 9 1h /run-fuzzer.sh 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee main.log
+
+# docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/fuzzer
 

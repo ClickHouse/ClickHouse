@@ -16,9 +16,7 @@ workflow = Workflow.Config(
         *JobConfigs.tidy_build_jobs,
         *JobConfigs.build_jobs,
         *[
-            job.set_dependency(
-                REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_jobs[0].name]
-            )
+            job.set_requires(REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_jobs[0].name])
             for job in JobConfigs.special_build_jobs
         ],
         *JobConfigs.unittest_jobs,
@@ -32,7 +30,7 @@ workflow = Workflow.Config(
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
         *[
-            job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
+            job.set_requires(REQUIRED_STATELESS_TESTS_JOB_NAMES)
             for job in JobConfigs.functional_tests_jobs_coverage
         ],
         *JobConfigs.stress_test_jobs,

@@ -9,7 +9,7 @@ from build_download_helper import read_build_urls
 from ci_config import CI
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPORT_PATH, TEMP_PATH
+from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
 from pr_info import PRInfo
 from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult
 from stopwatch import Stopwatch
@@ -46,6 +46,7 @@ def get_run_command(
         f"{ci_logs_args}"
         "--tmpfs /tmp/clickhouse "
         f"--volume={workspace_path}:/workspace "
+        f"--volume={REPO_COPY}:/repo "
         f"{env_str} "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
         f"{image}"

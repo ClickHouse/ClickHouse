@@ -154,7 +154,7 @@ class Job:
             """
             return copy.deepcopy(self)
 
-        def set_dependency(self, job, reset=False):
+        def set_requires(self, job, reset=False):
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
                 job = [job]
@@ -200,6 +200,15 @@ class Job:
                 if artifact_keyword.lower() not in artifact.lower():
                     provides_res.append(artifact)
             res.provides = provides_res
+            return res
+
+        def set_post_hooks(self, post_hooks, reset=False):
+            res = copy.deepcopy(self)
+            if not (isinstance(post_hooks, list) or isinstance(post_hooks, tuple)):
+                post_hooks = [post_hooks]
+            if reset:
+                res.post_hooks = []
+            res.post_hooks = post_hooks
             return res
 
         def set_allow_merge_on_failure(self, value):

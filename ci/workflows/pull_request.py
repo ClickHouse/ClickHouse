@@ -19,9 +19,12 @@ workflow = Workflow.Config(
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_jobs,
-        *JobConfigs.tidy_arm_build_jobs,
         *[
-            job.set_dependency(
+            job.set_requires(JobConfigs.tidy_build_jobs[0].name)
+            for job in JobConfigs.tidy_arm_build_jobs
+        ],
+        *[
+            job.set_requires(
                 [
                     JobNames.STYLE_CHECK,
                     JobNames.FAST_TEST,
@@ -31,7 +34,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.build_jobs
         ],
         *[
-            job.set_dependency(REGULAR_BUILD_NAMES)
+            job.set_requires(REGULAR_BUILD_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
         *JobConfigs.unittest_jobs,
@@ -42,10 +45,10 @@ workflow = Workflow.Config(
         *JobConfigs.functional_tests_jobs_required,
         *JobConfigs.functional_tests_jobs_non_required,
         *[
-            job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
+            job.set_requires(REQUIRED_STATELESS_TESTS_JOB_NAMES)
             for job in JobConfigs.functional_tests_jobs_coverage
         ],
-        JobConfigs.bugfix_validation_it_job.set_dependency(
+        JobConfigs.bugfix_validation_it_job.set_requires(
             [
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
@@ -56,7 +59,7 @@ workflow = Workflow.Config(
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
-        JobConfigs.integration_test_asan_flaky_pr_job,
+        *JobConfigs.integration_test_asan_flaky_pr_jobs,
         *JobConfigs.stress_test_jobs,
         *JobConfigs.upgrade_test_jobs,
         *JobConfigs.ast_fuzzer_jobs,
