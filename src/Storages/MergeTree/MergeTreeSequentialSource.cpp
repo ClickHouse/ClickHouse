@@ -17,7 +17,7 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/checkDataPart.h>
-
+#include <Common/ThrottlerArray.h>
 
 namespace DB
 {
@@ -135,14 +135,14 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     switch (type)
     {
         case Mutation:
-            read_settings.local_throttler = context->getMutationsThrottler();
+            addThrottler(read_settings.remote_throttler, context->getMutationsThrottler());
+            addThrottler(read_settings.local_throttler, context->getMutationsThrottler());
             break;
         case Merge:
-            read_settings.local_throttler = context->getMergesThrottler();
+            addThrottler(read_settings.remote_throttler, context->getMergesThrottler());
+            addThrottler(read_settings.local_throttler, context->getMergesThrottler());
             break;
     }
-
-    read_settings.remote_throttler = read_settings.local_throttler;
 
     MergeTreeReaderSettings reader_settings =
     {
