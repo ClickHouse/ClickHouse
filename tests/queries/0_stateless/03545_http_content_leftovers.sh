@@ -6,4 +6,4 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CURL} -v -sS "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/js/lz-string.js" 2>&1 | grep -P 'Leftovers after chunking|var LZString'
+${CLICKHOUSE_CURL} -v -sS "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/js/lz-string.js" 2>&1 | grep -o -P 'Leftovers after chunking|left intact'
