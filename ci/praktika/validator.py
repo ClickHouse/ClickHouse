@@ -265,7 +265,7 @@ class Validator:
                         message += "\n  If requirements needs to be installed - add requirements file (Settings.INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS):"
                         message += "\n      echo jwt==1.3.1 > ./ci/requirements.txt"
                         message += (
-                            "\n      echo requests==2.32.3 >> ./ci/requirements.txt"
+                            "\n      echo requests==2.32.4 >> ./ci/requirements.txt"
                         )
                         message += "\n      echo https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl >> ./ci/requirements.txt"
                     cls.evaluate_check(path.is_file(), message, job.name, workflow.name)
