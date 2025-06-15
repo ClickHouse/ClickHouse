@@ -76,6 +76,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 cache_hits_threshold;
     extern const FileCacheSettingsBool enable_filesystem_query_cache_limit;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
+    extern const FileCacheSettingsBool use_real_disk_size;
 }
 
 namespace
@@ -125,7 +126,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , metadata(settings[FileCacheSetting::path],
                settings[FileCacheSetting::background_download_queue_size_limit],
                settings[FileCacheSetting::background_download_threads],
-               write_cache_per_user_directory)
+               write_cache_per_user_directory, settings[FileCacheSetting::use_real_disk_size])
 {
     switch (settings[FileCacheSetting::cache_policy].value)
     {
@@ -228,6 +229,7 @@ void FileCache::initialize()
             if (!need_to_load_metadata)
                 fs::create_directories(getBasePath());
 
+            metadata.fillStatVFS();
             auto fs_info = std::filesystem::space(getBasePath());
             const size_t size_limit = main_priority->getSizeLimit(lockCache());
             if (fs_info.capacity < size_limit)
@@ -996,10 +998,33 @@ bool FileCache::tryReserve(
         chassert(file_segment.getReservedSize() == 0);
     }
 
-    /// If it is the first space reservatiob attempt for a file segment
+    /// If it is the first space reservation attempt for a file segment
     /// we need to make space for 1 element in cache,
     /// otherwise space is already taken and we need 0 elements to free.
     size_t required_elements_num = queue_iterator ? 0 : 1;
+
+    /// If it is the first space reservation attempt for a file segment
+    /// we need to align the file size,
+    /// otherwise we need to get aligned difference(might be 0, if aligned space if enough)
+    size_t size_to_reserve = 0;
+    {
+        auto key_metadata = file_segment.getKeyMetadata();
+        if (key_metadata->useRealDiskSize())
+        {
+            if (queue_iterator)
+            {
+                size_to_reserve = key_metadata->alignFileSize(file_segment.getReservedSize() + size) - file_segment.getSize(FileSegment::SizeAlignment::NOT_ALIGNED);
+            }
+            else
+            {
+                size_to_reserve = key_metadata->alignFileSize(size);
+            }
+        }
+        else
+        {
+            size_to_reserve = size;
+        }
+    }
 
     EvictionCandidates eviction_candidates;
 
@@ -1008,7 +1033,7 @@ bool FileCache::tryReserve(
     if (query_priority)
     {
         if (!query_priority->collectCandidatesForEviction(
-                size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
+                size_to_reserve, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
         {
             const auto & stat = reserve_stat.total_stat;
             failure_reason = fmt::format(
@@ -1029,7 +1054,7 @@ bool FileCache::tryReserve(
     }
 
     if (!main_priority->collectCandidatesForEviction(
-            size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
+            size_to_reserve, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
     {
         const auto & stat = reserve_stat.total_stat;
         failure_reason = fmt::format(
@@ -1078,13 +1103,13 @@ bool FileCache::tryReserve(
         /// Invalidate and remove queue entries and execute finalize func.
         eviction_candidates.finalize(query_context.get(), cache_lock);
     }
-    else if (!main_priority->canFit(size, required_elements_num, cache_lock, queue_iterator))
+    else if (!main_priority->canFit(size_to_reserve, required_elements_num, cache_lock, queue_iterator))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Cannot fit {} in cache, but collection of eviction candidates succeeded with no candidates. "
             "This is a bug. Queue entry type: {}. Cache info: {}",
-            size, queue_iterator ? queue_iterator->getType() : FileCacheQueueEntryType::None,
+            size_to_reserve, queue_iterator ? queue_iterator->getType() : FileCacheQueueEntryType::None,
             main_priority->getStateInfoForLog(cache_lock));
     }
 
@@ -1112,7 +1137,7 @@ bool FileCache::tryReserve(
     }
 
     file_segment.reserved_size += size;
-    chassert(file_segment.reserved_size == queue_iterator->getEntry()->size);
+    chassert(file_segment.reserved_size == queue_iterator->getEntry()->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED));
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");

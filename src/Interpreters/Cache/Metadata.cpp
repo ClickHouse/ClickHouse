@@ -2,7 +2,8 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Context.h>
-#include "Common/ProfileEvents.h"
+#include <Common/filesystemHelpers.h>
+#include <Interpreters/Cache/FileCacheUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -56,10 +57,11 @@ FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
     }
 }
 
-size_t FileSegmentMetadata::size() const
+size_t FileSegmentMetadata::size(FileSegment::SizeAlignment alignment) const
 {
-    return file_segment->getReservedSize();
+    return file_segment->getSize(alignment);
 }
+
 
 KeyMetadata::KeyMetadata(
     const Key & key_,
@@ -174,19 +176,52 @@ LoggerPtr KeyMetadata::logger() const
     return cache_metadata->log;
 }
 
+size_t KeyMetadata::alignFileSize(size_t file_size) const
+{
+    return cache_metadata->alignFileSize(file_size);
+}
+
+bool KeyMetadata::useRealDiskSize() const
+{
+    return cache_metadata->useRealDiskSize();
+}
+
 CacheMetadata::CacheMetadata(
     const std::string & path_,
     size_t background_download_queue_size_limit_,
     size_t background_download_threads_,
-    bool write_cache_per_user_directory_)
+    bool write_cache_per_user_directory_,
+    bool use_real_disk_size_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
     , write_cache_per_user_directory(write_cache_per_user_directory_)
+    , use_real_disk_size(use_real_disk_size_)
     , log(getLogger("CacheMetadata"))
     , download_threads_num(background_download_threads_)
 {
+
 }
+
+size_t CacheMetadata::alignFileSize(size_t file_size) const
+{
+    if (!path_stat.has_value())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to align file size with empty statvfs of path {}", path);
+    }
+    return FileCacheUtils::roundUpToMultiple(file_size, path_stat->f_bsize);
+}
+
+bool CacheMetadata::useRealDiskSize() const
+{
+    return use_real_disk_size;
+}
+
+void CacheMetadata::fillStatVFS()
+{
+    path_stat = getStatVFS(path);
+}
+
 
 String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
 {
@@ -1089,6 +1124,11 @@ std::string LockedKey::toString() const
     return result;
 }
 
+
+bool LockedKey::useRealDiskSize() const
+{
+    return key_metadata->useRealDiskSize();
+}
 
 std::vector<FileSegment::Info> LockedKey::sync()
 {
