@@ -81,6 +81,7 @@ JoinStep::JoinStep(
     const Header & right_header_,
     JoinPtr join_,
     size_t max_block_size_,
+    size_t min_block_size_rows_,
     size_t min_block_size_bytes_,
     size_t max_streams_,
     NameSet required_output_,
@@ -88,6 +89,7 @@ JoinStep::JoinStep(
     bool use_new_analyzer_)
     : join(std::move(join_))
     , max_block_size(max_block_size_)
+    , min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
     , max_streams(max_streams_)
     , required_output(std::move(required_output_))
@@ -125,6 +127,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 join,
                 join_algorithm_header,
                 max_block_size,
+                min_block_size_rows,
                 min_block_size_bytes,
                 max_streams,
                 keep_left_read_in_order,
@@ -164,8 +167,9 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->supportParallelJoin())
     {
-        joined_pipeline->addSimpleTransform([&](const Block & header)
-                                            { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+        joined_pipeline->addSimpleTransform(
+            [&](const Block & header)
+            { return std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes); });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
