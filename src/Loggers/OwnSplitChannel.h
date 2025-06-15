@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Loggers/ExtendedLogChannel.h>
-#include <base/defines.h>
 
 #include <atomic>
 #include <map>
@@ -101,10 +100,12 @@ public:
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
     void setLevel(const std::string & name, int level) override;
 
-    void flushTextLogs() const;
+    void flushTextLogs();
 
 private:
     std::atomic<bool> is_open = false;
+    std::atomic<bool> closing = false;
+
     /// Each channel has a different queue, and each one a single thread handling it
     std::map<std::string, ExtendedChannelPtrPair> name_to_channels;
     std::vector<ExtendedChannelPtrPair> channels;
@@ -118,6 +119,7 @@ private:
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = 0;
+    std::atomic<bool> flush_text_logs = false;
 };
 
 

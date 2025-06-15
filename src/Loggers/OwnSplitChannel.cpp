@@ -219,6 +219,7 @@ OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
 
 void OwnAsyncSplitChannel::open()
 {
+    closing = false;
     is_open = true;
     if (text_log_max_priority && text_log_thread && !text_log_thread->isRunning())
         text_log_thread->start(*text_log_runnable);
@@ -232,11 +233,9 @@ void OwnAsyncSplitChannel::close()
 {
     try
     {
+        closing = true;
         if (text_log_thread && text_log_thread->isRunning())
         {
-            while (!text_log_queue.empty())
-                Poco::Thread::sleep(100);
-
             do
             {
                 text_log_queue.wakeUpAll();
@@ -247,9 +246,6 @@ void OwnAsyncSplitChannel::close()
         {
             if (threads[i]->isRunning())
             {
-                while (!queues[i]->empty())
-                    Poco::Thread::sleep(100);
-
                 do
                 {
                     queues[i]->wakeUpAll();
@@ -333,16 +329,24 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
     }
 }
 
-void OwnAsyncSplitChannel::flushTextLogs() const
+void OwnAsyncSplitChannel::flushTextLogs()
 {
     auto text_log_locked = text_log.lock();
     if (!text_log_locked)
         return;
 
-    /// TODO: Improve this to avoid blocking infinitely
-    /// Block flushing thread, get the queue and replace it with an empty one, flush the old queue completely, enable flushing thread
-    while (!text_log_queue.empty())
-        Poco::Thread::sleep(10);
+    /// If there is a query flushing already we must wait until it's done. Otherwise we will receive the notification to wake up
+    /// once the previous flush is finished, which is not what we need
+    /// This is not ideal and we could use some kind of flush id to wait only until the point when you entered this function
+    /// But notice that even if you call in many threads, they will all wait and be processed together in the same block once this is unlocked
+    flush_text_logs.wait(true, std::memory_order_seq_cst);
+
+    /// We need to send an empty notification to wake up the thread if necessary
+    flush_text_logs = true;
+    text_log_queue.wakeUpAll();
+
+    /// Now we simply wait for the async thread to notify it has finished flushing
+    flush_text_logs.wait(true, std::memory_order_seq_cst);
 }
 
 void OwnAsyncSplitChannel::runChannel(size_t i)
@@ -350,8 +354,10 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
     setThreadName("AsyncLog");
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     Poco::AutoPtr<Poco::Notification> notification = queues[i]->waitDequeueNotification();
-    while (notification)
+    while (!closing)
     {
+        if (!notification)
+            continue;
         const OwnMessageNotification * own_notification = dynamic_cast<const OwnMessageNotification *>(notification.get());
         {
             if (own_notification)
@@ -369,19 +375,45 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 void OwnAsyncSplitChannel::runTextLog()
 {
     setThreadName("AsyncTextLog", true);
-    Poco::AutoPtr<Poco::Notification> notification = text_log_queue.waitDequeueNotification();
-    while (notification)
+
+    auto log_notification = [](Poco::Notification * message, const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {
-        const OwnMessageNotification * own_notification = dynamic_cast<const OwnMessageNotification *>(notification.get());
+        if (const auto * own_notification = dynamic_cast<const OwnMessageNotification *>(message))
+            logToSystemTextLogQueue(text_log_locked, own_notification->msg_ext, own_notification->msg_thread_name);
+    };
+
+    Poco::AutoPtr<Poco::Notification> notification = text_log_queue.waitDequeueNotification();
+    while (!closing)
+    {
+        if (flush_text_logs)
         {
-            if (own_notification)
+            auto text_log_locked = text_log.lock();
+            if (!text_log_locked)
+                return;
+
+            if (notification)
+                log_notification(notification, text_log_locked);
+
+            /// We want to process only what's currently in the queue and not block other logging
+            auto queue = text_log_queue.getCurrentQueueAndClear();
+            while (!queue.empty())
             {
-                auto text_log_locked = text_log.lock();
-                if (!text_log_locked)
-                    return;
-                logToSystemTextLogQueue(text_log_locked, own_notification->msg_ext, own_notification->msg_thread_name);
+                auto notif = queue.front();
+                queue.pop_front();
+                if (notif)
+                    log_notification(notif, text_log_locked);
             }
+            flush_text_logs = false;
+            flush_text_logs.notify_all();
         }
+        else if (notification)
+        {
+            auto text_log_locked = text_log.lock();
+            if (!text_log_locked)
+                return;
+            log_notification(notification, text_log_locked);
+        }
+
         notification = text_log_queue.waitDequeueNotification();
     }
 }
