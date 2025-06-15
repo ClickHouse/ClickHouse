@@ -22,7 +22,9 @@ query_id_4=$RANDOM$RANDOM
 
 client_opts=(
   --max_block_size 65409
-  --max_threads    8
+  --max_threads    1
+  --max_insert_threads 1
+  --optimize_on_insert 0
 )
 
 ${CLICKHOUSE_CLIENT} "${client_opts[@]}" --query_id "$query_id_1" -q "
