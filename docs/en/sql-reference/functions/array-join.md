@@ -8,7 +8,7 @@ title: 'arrayJoin function'
 
 # arrayJoin function
 
-This is a very unusual function.
+The name `arrayJoin` in ClickHouse comes from its conceptual similarity to the JOIN operation, but applied to arrays within a single row. While traditional JOINs combine rows from different tables, `arrayJoin` "joins" each element of an array in a row, producing multiple rows—one for each array element—while duplicating the other column values. This process is also referred to as "unfolding" the array, but the term "join" is used because it resembles joining the table with the array elements, effectively expanding the dataset in a way similar to a JOIN operation.
 
 Normal functions do not change a set of rows, but just change the values in each row (map).
 Aggregate functions compress a set of rows (fold or reduce).
