@@ -184,6 +184,23 @@ def main():
 
     stages = list(JobStages)
 
+    tests = []
+    if is_flaky_check or is_bugfix_validation:
+        if info.is_local_run:
+            assert (
+                args.test
+            ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
+            tests = [args.test]
+        else:
+            tests = get_changed_tests(info)
+        if tests:
+            print(f"Test list: [{tests}]")
+        else:
+            # early exit
+            Result.create_from(
+                status=Result.Status.SKIPPED, info="No tests to run"
+            ).complete_job()
+
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
     if stage:
         assert stage in JobStages, f"--param must be one of [{list(JobStages)}]"
@@ -329,18 +346,8 @@ def main():
                 extra_args=runner_options,
             )
         else:
-            # Flaky or Bugfix Validation check
-            if info.is_local_run:
-                assert (
-                    args.test
-                ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
-                tests = [args.test]
-            else:
-                tests = get_changed_tests(info)
-            if tests:
-                run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1)
-            else:
-                print("WARNING: No tests to run")
+            run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1)
+
         if not info.is_local_run:
             CH.stop_log_exports()
         results.append(FTResultsProcessor(wd=temp_dir).run())
