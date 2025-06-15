@@ -58,7 +58,7 @@ namespace
         else if (query.new_name)
             user.setName(*query.new_name);
         else if (query.names->size() == 1)
-            user.setName(query.names->front()->toString());
+            user.setName(query.names->toStrings().at(0));
 
         if (!query.attach && !query.alter && authentication_methods.empty() && !allow_implicit_no_password)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -142,10 +142,10 @@ namespace
             }
         }
 
-        if (override_name && !override_name->host_pattern.empty())
+        if (override_name && !override_name->getHostPattern().empty())
         {
             user.allowed_client_hosts = AllowedClientHosts{};
-            user.allowed_client_hosts.addLikePattern(override_name->host_pattern);
+            user.allowed_client_hosts.addLikePattern(override_name->getHostPattern());
         }
         else if (query.hosts)
             user.allowed_client_hosts = *query.hosts;
@@ -193,8 +193,8 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
 
-    for (const auto & name : *query.names)
-        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name->toString());
+    for (const auto & name : query.names->toStrings())
+        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name);
 
     if (query.new_name && !query.alter)
         access->checkAccess(AccessType::CREATE_USER, *query.new_name);
@@ -280,8 +280,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
+            const auto & name_with_host = typeid_cast<std::shared_ptr<ASTUserNameWithHost>>(name);
             updateUserFromQueryImpl(
-                *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
+                *new_user, query, authentication_methods, name_with_host, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
