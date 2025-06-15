@@ -8,7 +8,7 @@ title: 'arrayJoin function'
 
 # arrayJoin function
 
-The name `arrayJoin` in ClickHouse comes from its conceptual similarity to the JOIN operation, but applied to arrays within a single row. While traditional JOINs combine rows from different tables, `arrayJoin` "joins" each element of an array in a row, producing multiple rows—one for each array element—while duplicating the other column values. This process is also referred to as "unfolding" the array, but the term "join" is used because it resembles joining the table with the array elements, effectively expanding the dataset in a way similar to a JOIN operation.
+This is a very unusual function. The name `arrayJoin` in ClickHouse comes from its conceptual similarity to the JOIN operation, but applied to arrays within a single row. While traditional JOINs combine rows from different tables, `arrayJoin` "joins" each element of an array in a row, producing multiple rows - one for each array element - while duplicating the other column values. ClickHouse also provides the [`ARRAY JOIN`](/sql-reference/statements/select/array-join) clause syntax, which makes this relationship to traditional JOIN operations even more explicit by using familiar SQL JOIN terminology. This process is also referred to as "unfolding" the array, but the term "join" is used in both the function name and clause because it resembles joining the table with the array elements, effectively expanding the dataset in a way similar to a JOIN operation.
 
 Normal functions do not change a set of rows, but just change the values in each row (map).
 Aggregate functions compress a set of rows (fold or reduce).
@@ -17,13 +17,13 @@ The `arrayJoin` function takes each row and generates a set of rows (unfold).
 This function takes an array as an argument, and propagates the source row to multiple rows for the number of elements in the array.
 All the values in columns are simply copied, except the values in the column where this function is applied; it is replaced with the corresponding array value.
 
-Example:
+For example:
 
-```sql
+```sql title="Query"
 SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
-```text
+```text title="Response"
 ┌─dst─┬─\'Hello\'─┬─src─────┐
 │   1 │ Hello     │ [1,2,3] │
 │   2 │ Hello     │ [1,2,3] │
@@ -31,11 +31,9 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 └─────┴───────────┴─────────┘
 ```
 
-The `arrayJoin` function affects all sections of the query, including the `WHERE` section. Notice the result 2, even though the subquery returned 1 row.
+The `arrayJoin` function affects all sections of the query, including the `WHERE` section. Notice in that the result of the query below is `2`, even though the subquery returned 1 row.
 
-Example:
-
-```sql
+```sql title="Query"
 SELECT sum(1) AS impressions
 FROM
 (
@@ -44,17 +42,16 @@ FROM
 WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 ```
 
-```text
+```text title="Response"
 ┌─impressions─┐
 │           2 │
 └─────────────┘
 ```
 
 A query can use multiple `arrayJoin` functions. In this case, the transformation is performed multiple times and the rows are multiplied.
+For example:
 
-Example:
-
-```sql
+```sql title="Query"
 SELECT
     sum(1) AS impressions,
     arrayJoin(cities) AS city,
@@ -70,7 +67,7 @@ GROUP BY
     3
 ```
 
-```text
+```text title="Response"
 ┌─impressions─┬─city─────┬─browser─┐
 │           2 │ Istanbul │ Chrome  │
 │           1 │ Istanbul │ Firefox │
@@ -80,11 +77,14 @@ GROUP BY
 │           1 │ Bobruisk │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
-### Important note! {#important-note}
-Using multiple `arrayJoin` with same expression may not produce expected results due to optimizations.
-For that cases, consider modifying repeated array expression with extra operations that do not affect join result - e.g. `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`
+
+### Best practice {#important-note}
+
+Using multiple `arrayJoin` with same expression may not produce expected results due to the elimination of common subexpressions.
+In those cases, consider modifying repeated array expressions with extra operations that do not affect the join result. For example,  `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`
 
 Example:
+
 ```sql
 SELECT
     arrayJoin(dice) as first_throw,
@@ -95,9 +95,7 @@ FROM (
 );
 ```
 
-
-
-Note the [ARRAY JOIN](../statements/select/array-join.md) syntax in the SELECT query, which provides broader possibilities.
+Note the [`ARRAY JOIN`](../statements/select/array-join.md) syntax in the SELECT query, which provides broader possibilities.
 `ARRAY JOIN` allows you to convert multiple arrays with the same number of elements at a time.
 
 Example:
@@ -129,11 +127,11 @@ GROUP BY
 └─────────────┴──────────┴─────────┘
 ```
 
-Or you can use [Tuple](../data-types/tuple.md)
+Or you can use [`Tuple`](../data-types/tuple.md)
 
 Example:
 
-```sql
+```sql title="Query"
 SELECT
     sum(1) AS impressions,
     (arrayJoin(arrayZip(cities, browsers)) AS t).1 AS city,
@@ -149,7 +147,7 @@ GROUP BY
     3
 ```
 
-```text
+```text title="Row"
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
