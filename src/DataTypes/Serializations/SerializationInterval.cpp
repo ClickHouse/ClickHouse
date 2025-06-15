@@ -71,4 +71,34 @@ void SerializationInterval::serializeTextJSON(const IColumn & column, size_t row
     }
 }
 
+void SerializationInterval::serializeTextCSV(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    switch (settings.interval_output_format)
+    {
+        case FormatSettings::IntervalOutputFormat::Numeric:
+            Base::serializeTextCSV(column, row, ostr, settings);
+            return;
+        case FormatSettings::IntervalOutputFormat::Kusto:
+            ostr.write('"');
+            serializeTextKusto(interval_kind, column, row, ostr, settings);
+            ostr.write('"');
+            return;
+    }
+}
+
+void SerializationInterval::serializeTextQuoted(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    switch (settings.interval_output_format)
+    {
+        case FormatSettings::IntervalOutputFormat::Numeric:
+            Base::serializeTextQuoted(column, row, ostr, settings);
+            return;
+        case FormatSettings::IntervalOutputFormat::Kusto:
+            ostr.write('\'');
+            serializeTextKusto(interval_kind, column, row, ostr, settings);
+            ostr.write('\'');
+            return;
+    }
+}
+
 }
