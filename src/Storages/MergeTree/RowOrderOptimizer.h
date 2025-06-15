@@ -6,7 +6,7 @@ namespace DB
 {
 
 class Block;
-using IColumnPermutation = PaddedPODArray<size_t>;
+using IColumnPermutation = PaddedPODArray<UInt32>;
 class SortDescription;
 
 class RowOrderOptimizer
