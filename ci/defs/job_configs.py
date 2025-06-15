@@ -97,7 +97,7 @@ class JobConfigs:
         name=JobNames.BUILD,
         runs_on=["...from params..."],
         requires=[],
-        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+        command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 4,
         digest_config=Job.CacheDigestConfig(
@@ -127,7 +127,7 @@ class JobConfigs:
         name=JobNames.BUILD,
         runs_on=["...from params..."],
         requires=["Build (amd_tidy)"],
-        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+        command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 4,
@@ -145,7 +145,7 @@ class JobConfigs:
         name=JobNames.BUILD,
         runs_on=["...from params..."],
         requires=[],
-        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+        command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 2,
@@ -233,7 +233,7 @@ class JobConfigs:
         name=JobNames.BUILD,
         runs_on=["...from params..."],
         requires=[],
-        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+        command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 2,
@@ -750,7 +750,7 @@ class JobConfigs:
     performance_comparison_with_prev_release_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
-        command="python3 ./ci/jobs/performance_tests.py --test-options \"{PARAMETER}\"",
+        command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
         run_in_docker="clickhouse/performance-comparison",
         digest_config=Job.CacheDigestConfig(
@@ -778,7 +778,7 @@ class JobConfigs:
     performance_comparison_with_master_head_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
-        command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
+        command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
         run_in_docker="clickhouse/performance-comparison",
         digest_config=Job.CacheDigestConfig(
