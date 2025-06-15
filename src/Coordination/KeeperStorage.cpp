@@ -7,6 +7,7 @@
 #include <Poco/SHA1Engine.h>
 
 #include <Common/Base64.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -56,6 +57,11 @@ namespace CoordinationSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char keeper_leader_sets_invalid_digest[];
 }
 
 namespace
@@ -1566,7 +1572,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     auto parent_path = parentNodePath(zk_request.path);
     auto parent_node = storage.uncommitted_state.getNode(parent_path);
     if (parent_node == nullptr)
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
 
     if (parent_node->stats.isEphemeral())
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOCHILDRENFOREPHEMERALS}};
@@ -1575,7 +1581,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     if (zk_request.is_sequential)
     {
         if (zk_request.not_exists)
-            return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
         auto seq_num = parent_node->stats.seqNum();
 
@@ -1591,7 +1597,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         auto error_msg = fmt::format("Trying to create a node inside the internal Keeper path ({}) which is not allowed. Path: {}", keeper_system_path, path_created);
 
         handleSystemNodeModification(keeper_context, error_msg);
-        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
     }
 
     if (storage.uncommitted_state.getNode(path_created))
@@ -1599,15 +1605,15 @@ std::list<KeeperStorageBase::Delta> preprocess(
         if (zk_request.getOpNum() == Coordination::OpNum::CreateIfNotExists)
             return new_deltas;
 
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
     }
 
     if (getBaseNodeName(path_created).size == 0)
-        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
     Coordination::ACLs node_acls;
     if (!fixupACL(zk_request.acls, session_id, storage.uncommitted_state, node_acls))
-        return {typename Storage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
     if (zk_request.is_ephemeral)
         storage.uncommitted_state.ephemerals[session_id].emplace(path_created);
@@ -1711,7 +1717,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         return {};
 
     if (!storage.uncommitted_state.getNode(zk_request.path))
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
 
     return {};
 }
@@ -1810,7 +1816,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", zk_request.path);
 
         handleSystemNodeModification(keeper_context, error_msg);
-        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
     }
 
     auto parent_path = parentNodePath(zk_request.path);
@@ -1962,7 +1968,7 @@ public:
         return CollectStatus::Ok;
     }
 
-    std::list<typename Storage::Delta> extractDeltas()
+    std::list<KeeperStorageBase::Delta> extractDeltas()
     {
         return std::move(deltas);
     }
@@ -2109,7 +2115,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", zk_request.path);
 
         handleSystemNodeModification(keeper_context, error_msg);
-        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
     }
 
     auto node = storage.uncommitted_state.getNode(zk_request.path);
@@ -2150,17 +2156,17 @@ std::list<KeeperStorageBase::Delta> preprocess(
             add_parent_update_delta();
         }
 
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
 
     ToDeleteTreeCollector<Storage> collector(storage, zxid, session_id, zk_request.remove_nodes_limit);
     auto collect_status = collector.collect(zk_request.path, *node);
 
     if (collect_status == ToDeleteTreeCollector<Storage>::CollectStatus::NoAuth)
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNOAUTH}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOAUTH}};
 
     if (collect_status == ToDeleteTreeCollector<Storage>::CollectStatus::LimitExceeded)
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNOTEMPTY}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOTEMPTY}};
 
     if (zk_request.restored_from_zookeeper_log)
     {
@@ -2214,7 +2220,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     ProfileEvents::increment(ProfileEvents::KeeperExistsRequest);
 
     if (!storage.uncommitted_state.getNode(zk_request.path))
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
 
     return {};
 }
@@ -2303,11 +2309,11 @@ std::list<KeeperStorageBase::Delta> preprocess(
         auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", zk_request.path);
 
         handleSystemNodeModification(keeper_context, error_msg);
-        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
     }
 
     if (!storage.uncommitted_state.getNode(zk_request.path))
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
 
     auto node = storage.uncommitted_state.getNode(zk_request.path);
 
@@ -2381,7 +2387,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     ProfileEvents::increment(ProfileEvents::KeeperListRequest);
 
     if (!storage.uncommitted_state.getNode(zk_request.path))
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
 
     return {};
 }
@@ -2535,7 +2541,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     else
     {
         if (!node)
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
 
         if (zk_request.version != -1 && zk_request.version != node->stats.version)
             return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
@@ -2794,7 +2800,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     const KeeperContext & /*keeper_context*/)
 {
     if (zk_request.scheme != "digest" || std::count(zk_request.data.begin(), zk_request.data.end(), ':') != 1)
-        return {typename Storage::Delta{zxid, Coordination::Error::ZAUTHFAILED}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZAUTHFAILED}};
 
     std::list<KeeperStorageBase::Delta> new_deltas;
     auto auth_digest = Storage::generateDigest(zk_request.data);
@@ -2860,12 +2866,12 @@ std::list<KeeperStorageBase::Delta> preprocess(
         auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", zk_request.path);
 
         handleSystemNodeModification(keeper_context, error_msg);
-        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
     }
 
     auto & uncommitted_state = storage.uncommitted_state;
     if (!uncommitted_state.getNode(zk_request.path))
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
 
     auto node = uncommitted_state.getNode(zk_request.path);
 
@@ -2875,7 +2881,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
     Coordination::ACLs node_acls;
     if (!fixupACL(zk_request.acls, session_id, uncommitted_state, node_acls))
-        return {typename Storage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
     UpdateNodeStatDelta update_stat_delta(*node);
     ++update_stat_delta.new_stats.aversion;
@@ -2926,7 +2932,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     const KeeperContext & /*keeper_context*/)
 {
     if (!storage.uncommitted_state.getNode(zk_request.path))
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
 
     return {};
 }
@@ -3070,16 +3076,23 @@ void KeeperStorage<Container>::preprocessRequest(
         uncommitted_state.applyDeltas(new_deltas, keeper_context->digestEnabled() ? &new_digest : nullptr);
         uncommitted_state.addDeltas(std::move(new_deltas));
 
-        if (keeper_context->digestEnabled())
-            new_digest = uncommitted_state.updateNodesDigest(new_digest, new_last_zxid);
+        if (zk_request->getOpNum() == Coordination::OpNum::Create)
+        {
+            fiu_do_on(FailPoints::keeper_leader_sets_invalid_digest, new_digest = 42);
+        }
 
         if (keeper_context->digestEnabled())
+        {
+            new_digest = uncommitted_state.updateNodesDigest(new_digest, new_last_zxid);
             // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
             // and just check the digest on the commit
             // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
             transaction->nodes_digest = KeeperDigest{KEEPER_CURRENT_DIGEST_VERSION, new_digest};
+        }
         else
+        {
             transaction->nodes_digest = KeeperDigest{KeeperDigestVersion::NO_DIGEST};
+        }
 
         uncommitted_state.cleanup(getZXID());
     });
@@ -3246,6 +3259,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
         for (; it != uncommitted_state.deltas.end() && it->zxid == commit_zxid; ++it)
             ;
 
+        chassert(it == uncommitted_state.deltas.end() || it->zxid > commit_zxid);
         deltas.splice(deltas.end(), uncommitted_state.deltas, uncommitted_state.deltas.begin(), it);
     }
 
