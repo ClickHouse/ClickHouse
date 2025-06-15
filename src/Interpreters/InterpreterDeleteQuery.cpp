@@ -14,9 +14,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/CommonParsers.h>
-#include <Parsers/ParserDropQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
@@ -81,38 +78,6 @@ BlockIO InterpreterDeleteQuery::execute()
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
-    }
-
-    /// DELETE FROM ... WHERE 1 should be executed as truncate
-    if ((table->supportsDelete() || table->supportsLightweightDelete()) && isAlwaysTruePredicate(delete_query.predicate))
-    {
-        auto context = getContext();
-        context->checkAccess(AccessType::TRUNCATE, table_id);
-        table->checkTableCanBeDropped(context);
-
-        TableExclusiveLockHolder table_excl_lock;
-        /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
-        /// For the rest of tables types exclusive lock is needed
-        if (!std::dynamic_pointer_cast<MergeTreeData>(table))
-            table_excl_lock = table->lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-
-        String truncate_query = "TRUNCATE TABLE " + table->getStorageID().getFullTableName()
-            + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster));
-
-        ParserDropQuery parser;
-        auto current_query_ptr = parseQuery(
-            parser,
-            truncate_query.data(),
-            truncate_query.data() + truncate_query.size(),
-            "ALTER query",
-            0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH,
-            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-        auto metadata_snapshot = table->getInMemoryMetadataPtr();
-        /// Drop table data, don't touch metadata
-        table->truncate(current_query_ptr, metadata_snapshot, context, table_excl_lock);
-        return {};
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);

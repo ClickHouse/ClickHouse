@@ -252,7 +252,7 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-    DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
+    DECLARE(Bool, write_marks_for_substreams_in_compact_parts, false, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
     )", 0) \
@@ -267,7 +267,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Merge settings. */ \
-    DECLARE(UInt64, merge_max_block_size, 8192, R"(
+    DECLARE(NonZeroUInt64, merge_max_block_size, 8192, R"(
     The number of rows that are read from the merged parts into memory.
 
     Possible values:
@@ -1594,6 +1594,10 @@ namespace ErrorCodes
     When enabled, allows summing columns in a SummingMergeTree table to be used in
     the partition or sorting key.
     )", 0) \
+    DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
+    When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
+    the partition or sorting key.
+    )", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, R"(
@@ -1633,6 +1637,13 @@ namespace ErrorCodes
     - [ignore_cold_parts_seconds](/operations/settings/settings#ignore_cold_parts_seconds)
     - [prefer_warmed_unmerged_parts_seconds](/operations/settings/settings#prefer_warmed_unmerged_parts_seconds)
     - [cache_warmer_threads](/operations/settings/settings#cache_warmer_threads)
+    )", 0) \
+    DECLARE(String, cache_populated_by_fetch_filename_regexp, "", R"(
+    :::note
+    This setting applies only to ClickHouse Cloud.
+    :::
+
+    If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
     )", 0) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, R"(
     Allow experimental CLEANUP merges for ReplacingMergeTree with `is_deleted`
@@ -1697,28 +1708,28 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
     Number of merge entries that coordinator should prepare and distribute across workers
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
     How often merge coordinator should sync with zookeeper to take fresh metadata
     )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
     Number of merges that coordinator can request from MergerMutator at once
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
     Time between runs of merge coordinator election thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
     Minimum time between runs of merge coordinator thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
     Maximum time between runs of merge coordinator thread
     )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_factor, 2, R"(
     Time changing factor for delay of coordinator thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
     Timeout that merge worker thread will use if it is needed to update it's state after immediate action
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
     Time between runs of merge worker thread
     )", EXPERIMENTAL) \
     \
@@ -2281,16 +2292,17 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        res_columns[0]->insert(setting_name);
-        res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.getDefaultValueString());
-        res_columns[3]->insert(setting.isValueChanged());
-        res_columns[4]->insert(setting.getDescription());
-
+        size_t col = 0;
+        res_columns[col++]->insert(setting_name);
+        res_columns[col++]->insert(setting.getValueString());
+        res_columns[col++]->insert(setting.getDefaultValueString());
+        res_columns[col++]->insert(setting.isValueChanged());
+        res_columns[col++]->insert(setting.getDescription());
         Field min;
         Field max;
+        std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        constraints.get(*this, setting_name, min, max, writability);
+        constraints.get(*this, setting_name, min, max, disallowed_values, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -2298,12 +2310,17 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         if (!max.isNull())
             max = MergeTreeSettings::valueToStringUtil(setting_name, max);
 
-        res_columns[5]->insert(min);
-        res_columns[6]->insert(max);
-        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[8]->insert(setting.getTypeName());
-        res_columns[9]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[10]->insert(setting.getTier());
+        Array disallowed_array;
+        for (const auto & value : disallowed_values)
+                disallowed_array.emplace_back(MergeTreeSettings::valueToStringUtil(setting_name, value));
+
+        res_columns[col++]->insert(min);
+        res_columns[col++]->insert(max);
+        res_columns[col++]->insert(disallowed_array);
+        res_columns[col++]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[col++]->insert(setting.getTypeName());
+        res_columns[col++]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[col++]->insert(setting.getTier());
     }
 }
 

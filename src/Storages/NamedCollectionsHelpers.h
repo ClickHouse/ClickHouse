@@ -1,6 +1,7 @@
 #pragma once
 #include <Parsers/IAST_fwd.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>

@@ -296,6 +296,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (res->type == Type::SYNC_REPLICA)
             {
+                if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
+                    res->if_exists = true;
+
                 if (ParserKeyword{Keyword::STRICT}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::STRICT;
                 else if (ParserKeyword{Keyword::LIGHTWEIGHT}.ignore(pos, expected))

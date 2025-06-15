@@ -9,9 +9,9 @@ export CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:="test"}
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}
 
 # Unique zookeeper path (based on test name and current database) to avoid overlaps
-# NOTE: does not work for *.expect tests
 export CLICKHOUSE_TEST_PATH="${BASH_SOURCE[1]}"
-CLICKHOUSE_TEST_NAME="$(basename "$CLICKHOUSE_TEST_PATH" .sh)"
+CLICKHOUSE_TEST_NAME="$(basename "$CLICKHOUSE_TEST_PATH")"
+CLICKHOUSE_TEST_NAME="${CLICKHOUSE_TEST_NAME%%.*}"
 export CLICKHOUSE_TEST_NAME
 export CLICKHOUSE_TEST_ZOOKEEPER_PREFIX="${CLICKHOUSE_TEST_NAME}_${CLICKHOUSE_DATABASE}"
 export CLICKHOUSE_TEST_UNIQUE_NAME="${CLICKHOUSE_TEST_NAME}_${CLICKHOUSE_DATABASE}"
@@ -215,7 +215,7 @@ function run_with_error()
 }
 
 # BASH_XTRACEFD is supported only since 4.1
-if [[ -n $CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
+if [[ -v CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
     exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
     # It will be also nice to have stderr in the tracing output, but:
     # - exec 2>&3

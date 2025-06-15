@@ -3,6 +3,7 @@
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -40,6 +41,11 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsSeconds timeout_before_checking_execution_speed;
     extern const SettingsOverflowMode timeout_overflow_mode;
+}
+
+IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
+    : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
+{
 }
 
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(

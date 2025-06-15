@@ -33,6 +33,7 @@
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -165,6 +166,7 @@ namespace DB::ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
     extern const int INCORRECT_DATA;
+    extern const int UNKNOWN_TABLE;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -1072,6 +1074,8 @@ void TCPHandler::startInsertQuery(QueryState & state)
             if (!table_id.empty())
             {
                 auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, state.query_context);
+                if (!storage_ptr)
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs());
                 sendTableColumns(state, storage_ptr->getInMemoryMetadataPtr()->getColumns());
             }
         }
@@ -1115,7 +1119,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     Chunk result_chunk = Squashing::squash(squashing.flush());
     if (!result_chunk)
     {
-        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader(), state.query_context);
+        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader().cloneWithoutColumns(), state.query_context);
     }
 
     auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
@@ -2121,8 +2125,8 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
         }
         else
         {
-            // In a cluster, query originator may have an access to the external auth provider (like LDAP server),
-            // that grants specific roles to the user. We want these roles to be granted to the user on other nodes of cluster when
+            // In a cluster, query originator may have an access to the external auth provider with role mapping (like LDAP server),
+            // that grants specific roles to the user. We want these roles to be granted to the effective user on other nodes of cluster when
             // query is executed.
             Strings external_roles;
             if (!received_extra_roles.empty())

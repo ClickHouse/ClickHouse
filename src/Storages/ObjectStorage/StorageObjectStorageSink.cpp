@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -21,17 +22,17 @@ namespace ErrorCodes
 }
 
 StorageObjectStorageSink::StorageObjectStorageSink(
+    const std::string & path_,
     ObjectStoragePtr object_storage,
     ConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings_,
     const Block & sample_block_,
-    ContextPtr context,
-    const std::string & blob_path)
+    ContextPtr context)
     : SinkToStorage(sample_block_)
+    , path(path_)
     , sample_block(sample_block_)
 {
     const auto & settings = context->getSettingsRef();
-    const auto path = blob_path.empty() ? configuration->getPaths().back() : blob_path;
     const auto chosen_compression_method = chooseCompressionMethod(path, configuration->compression_method);
 
     auto buffer = object_storage->writeObject(
@@ -136,12 +137,12 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     }
 
     return std::make_shared<StorageObjectStorageSink>(
+        partition_key,
         object_storage,
         configuration,
         format_settings,
         sample_block,
-        context,
-        partition_key
+        context
     );
 }
 

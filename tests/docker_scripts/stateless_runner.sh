@@ -335,6 +335,7 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--no-parallel-replicas')
         ADDITIONAL_OPTIONS+=('--no-zookeeper')
         ADDITIONAL_OPTIONS+=('--no-shard')
+        ADDITIONAL_OPTIONS+=('--replace-log-memory-with-mergetree')
     else
         ADDITIONAL_OPTIONS+=('--zookeeper')
         ADDITIONAL_OPTIONS+=('--shard')
@@ -362,6 +363,7 @@ function run_tests()
         --check-zookeeper-session
         --hung-check
         --capture-client-stacktrace
+        --trace
         --queries "/repo/tests/queries"
         --test-runs "$NUM_TRIES"
         "${ADDITIONAL_OPTIONS[@]}"

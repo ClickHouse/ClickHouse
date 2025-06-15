@@ -33,10 +33,11 @@ function in_array()
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
     grep -vP $EXCLUDE |
+    grep -v 'src/Storages/System/StorageSystemDashboards.cpp' |
     grep -vP $EXCLUDE_DOCS |
     xargs grep $@ -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
-    grep -v -P '(//|:\s+\*|\$\(\()| \)"'
+    grep -v -P '(//|:\s+\*|\$\(\()| \)"' && echo "{ should be a new line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
 
 # Tabs
@@ -45,9 +46,14 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     xargs grep $@ -F $'\t' && echo '^ tabs are not allowed'
 
 # // namespace comments are unneeded
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
+result=$(find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
     grep -vP $EXCLUDE |
-    xargs grep $@ -P '}\s*//+\s*namespace\s*'
+    xargs grep $@ -P '}\s*//+\s*namespace\s*' 2>/dev/null)
+
+if [ -n "$result" ]; then
+    echo "$result"
+    echo "^ Found unnecessary namespace comments"
+fi
 
 # Broken symlinks
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
@@ -341,3 +347,32 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -
 do
     echo "Found the usage of std::format in '${file}'. Please use fmt::format instead"
 done
+
+# Context.h (and a few similar headers) is included in many parts of the
+# codebase, so any modifications to it trigger a large-scale recompilation.
+# Therefore, it is crucial to avoid unnecessary inclusion of Context.h in
+# headers.
+#
+# In most cases, we can include Context_fwd.h instead, as we usually do not
+# need the full definition of the Context structure in headers - only declaration.
+CONTEXT_H_EXCLUDES=(
+    # For now we have few exceptions (somewhere due to templated code, in other
+    # places just because for now it does not worth it, i.e. the header is not
+    # too generic):
+    --exclude "$ROOT_PATH/src/BridgeHelper/XDBCBridgeHelper.h"
+    --exclude "$ROOT_PATH/src/Interpreters/AddDefaultDatabaseVisitor.h"
+    --exclude "$ROOT_PATH/src/TableFunctions/ITableFunctionCluster.h"
+    --exclude "$ROOT_PATH/src/Core/PostgreSQLProtocol.h"
+    --exclude "$ROOT_PATH/src/Client/ClientBase.h"
+    --exclude "$ROOT_PATH/src/Common/tests/gtest_global_context.h"
+    --exclude "$ROOT_PATH/src/Analyzer/InDepthQueryTreeVisitor.h"
+
+    # For functions we allow it for regular functions (due to lots of
+    # templates), but forbid it in interface (IFunction) part.
+    --exclude "$ROOT_PATH/src/Functions/*"
+    --include "$ROOT_PATH/src/Functions/IFunction*"
+)
+find $ROOT_PATH/src -name '*.h' -print0 | xargs -0 grep -P '#include[\s]*(<|")Interpreters/Context.h(>|")' "${CONTEXT_H_EXCLUDES[@]}" | \
+    grep . && echo '^ Too broad Context.h usage. Consider using Context_fwd.h and Context.h out from .h into .cpp'
+
+exit 0
