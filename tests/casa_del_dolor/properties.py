@@ -22,10 +22,10 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
     return gen
 
 
-def file_size_value():
+def file_size_value(max_val: int):
     def gen():
-        return str(threshold_generator(0.05, 0.3, 1, 100)()) + random.choice(
-            ["ki", "Mi", "Gi"]
+        return str(threshold_generator(0.2, 0.2, 1, max_val)()) + random.choice(
+            ["ki", "ki", "Mi", "Gi"] # Increased probability
         )
 
     return gen
@@ -234,7 +234,7 @@ cache_storage_properties = {
     "load_metadata_asynchronously": lambda: random.randint(0, 1),
     "load_metadata_threads": lambda: random.randint(0, multiprocessing.cpu_count()),
     "max_elements": threshold_generator(0.2, 0.2, 1, 10000000),
-    "max_file_segment_size": file_size_value(),
+    "max_file_segment_size": file_size_value(100),
     # "max_size_ratio_to_total_space": threshold_generator(0.2, 0.2, 0.0, 1.0), cannot be specified with `max_size` at the same time
     "slru_size_ratio": threshold_generator(0.2, 0.2, 0.01, 0.99),
     "write_cache_per_user_id_directory": lambda: random.randint(0, 1),
@@ -431,7 +431,7 @@ def add_single_disk(
 
         if disk_type == "cache":
             max_size_xml = ET.SubElement(next_disk, "max_size")
-            max_size_xml.text = file_size_value()()
+            max_size_xml.text = file_size_value(100)()
 
             # Add random settings
             if random.randint(1, 100) <= 70:
@@ -452,6 +452,17 @@ def add_single_disk(
                     else f"{i % 10}09105c600c12066f82f1a4dbb41a08e4A4348C8387ADB6AB827410C4EF71CA5"
                 )
     return (prev_disk, final_type)
+
+
+def add_single_cache(i: int, next_cache: ET.Element):
+    max_size_xml = ET.SubElement(next_cache, "max_size")
+    max_size_xml.text = file_size_value(10)()
+    path_xml = ET.SubElement(next_cache, "path")
+    path_xml.text = f"fcache{i}"
+
+    # Add random settings
+    if random.randint(1, 100) <= 70:
+        add_settings_from_dict(cache_storage_properties, next_cache)
 
 
 def add_ssl_settings(next_ssl: ET.Element):
@@ -632,6 +643,18 @@ def modify_server_settings(
         allowed_path_xml1.text = "/var/lib/clickhouse/"
         allowed_path_xml2 = ET.SubElement(backups_element, "allowed_path")
         allowed_path_xml2.text = "/var/lib/clickhouse/user_files/"
+
+    # Add filesystem caches
+    if (
+        root.find("filesystem_caches") is None
+        and random.randint(1, 100) <= args.add_filesystem_caches_prob
+    ):
+        modified = True
+        filesystem_caches_config = ET.SubElement(root, "filesystem_caches")
+
+        number_caches = random.randint(args.min_caches, args.max_caches)
+        for i in range(0, number_caches):
+            add_single_cache(i, ET.SubElement(filesystem_caches_config, f"fcache{i}"))
 
     # Add keeper_map_path_prefix
     if args.add_keeper_map_prefix:

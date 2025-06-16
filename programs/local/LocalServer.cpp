@@ -967,6 +967,18 @@ void LocalServer::processConfig()
         attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+
+        /// Create background tasks necessary for DDL operations like DROP VIEW SYNC,
+        /// even in temporary mode (--path not set) without persistent storage
+        DatabaseCatalog::instance().createBackgroundTasks();
+        DatabaseCatalog::instance().startupBackgroundTasks();
+    }
+    else
+    {
+        /// Similarly, for other cases, create background tasks for DDL operations like
+        /// DROP VIEW SYNC in temporaty mode (--path not set) without persistent storage
+        DatabaseCatalog::instance().createBackgroundTasks();
+        DatabaseCatalog::instance().startupBackgroundTasks();
     }
 
     std::string default_database = getClientConfiguration().getString("database", server_default_database);
@@ -1072,6 +1084,8 @@ void LocalServer::createClientContext()
 
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
+    if (options.count("path"))
+        getClientConfiguration().setString("path", options["path"].as<std::string>());
     if (options.count("table"))
         getClientConfiguration().setString("table-name", options["table"].as<std::string>());
     if (options.count("file"))
