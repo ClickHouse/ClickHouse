@@ -69,7 +69,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addDate
 addDays
 addHours
 addMicroseconds
@@ -84,7 +83,6 @@ addYears
 addressToLine
 addressToLineWithInlines
 addressToSymbol
-age
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -135,6 +133,7 @@ cutQueryString
 cutQueryStringAndFragment
 cutURLParameter
 cutWWW
+dateDiff
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
@@ -191,12 +190,10 @@ formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
-fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
-fromUnixTimestampInJodaSyntax
 fuzzBits
 gccMurmurHash
 generateUUIDv4
@@ -507,7 +504,6 @@ splitByString
 splitByWhitespace
 sqrt
 startsWith
-subDate
 substring
 substringIndex
 substringIndexUTF8

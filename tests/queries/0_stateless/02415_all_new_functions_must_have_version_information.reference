@@ -78,7 +78,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addDate
 addDays
 addHours
 addInterval
@@ -95,7 +94,6 @@ addYears
 addressToLine
 addressToLineWithInlines
 addressToSymbol
-age
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -163,6 +161,7 @@ cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 damerauLevenshteinDistance
+dateDiff
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
@@ -270,8 +269,6 @@ firstSignificantSubdomainRFC
 flattenTuple
 floor
 format
-formatDateTime
-formatDateTimeInJodaSyntax
 formatQuery
 formatQueryOrNull
 formatQuerySingleLine
@@ -285,12 +282,10 @@ formatRowNoNewline
 fragment
 fromDaysSinceYearZero
 fromDaysSinceYearZero32
-fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
-fromUnixTimestampInJodaSyntax
 fuzzBits
 gccMurmurHash
 generateRandomStructure
@@ -671,7 +666,6 @@ stringJaccardIndex
 stringJaccardIndexUTF8
 structureToCapnProtoSchema
 structureToProtobufSchema
-subDate
 substring
 substringIndex
 substringIndexUTF8
@@ -696,7 +690,6 @@ tcpPort
 tgamma
 throwIf
 tid
-timeDiff
 toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
