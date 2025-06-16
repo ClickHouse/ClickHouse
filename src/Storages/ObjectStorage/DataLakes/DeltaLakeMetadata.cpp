@@ -301,7 +301,7 @@ struct DeltaLakeMetadataImpl
             }
 
             auto configuration_ptr = configuration.lock();
-            const auto reading_path_string = configuration_ptr->getPathForRead().path;
+            const auto raw_path_string = configuration_ptr->getRawPath().path;
 
             if (object->has("add"))
             {
@@ -310,7 +310,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
                 auto path = add_object->getValue<String>("path");
-                auto full_path = fs::path(reading_path_string) / path;
+                auto full_path = fs::path(raw_path_string) / path;
                 result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
@@ -355,7 +355,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
                 auto path = remove_object->getValue<String>("path");
-                result.erase(fs::path(reading_path_string) / path);
+                result.erase(fs::path(raw_path_string) / path);
             }
         }
     }
