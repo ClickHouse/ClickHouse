@@ -3462,7 +3462,7 @@ CONV_FN(Delete, del)
         SinglePartitionExprToString(ret, del.single_partition());
         ret += " ";
     }
-    ret += "WHERE ";
+    ret += " WHERE ";
     WhereStatementToString(ret, del.where());
 }
 
