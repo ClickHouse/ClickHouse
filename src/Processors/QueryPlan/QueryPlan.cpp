@@ -725,14 +725,10 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
     nodes.splice(nodes.end(), std::move(plan->nodes));
 
     node->step = std::move(plan->getRootNode()->step);
-    node->children = plan->getRootNode()->children;
+    node->children = std::move(plan->getRootNode()->children);
 
     max_threads = std::max(max_threads, plan->max_threads);
     resources = std::move(plan->resources);
 }
 
-void QueryPlan::mergeExpressions()
-{
-    QueryPlanOptimizations::tryMergeExpressions(getRootNode(), nodes, {});
-}
 }
