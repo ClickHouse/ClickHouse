@@ -106,7 +106,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
-    extern const MergeTreeSettingsUInt64 merge_max_block_size;
+    extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;

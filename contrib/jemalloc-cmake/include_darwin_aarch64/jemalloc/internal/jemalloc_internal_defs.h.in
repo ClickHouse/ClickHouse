@@ -253,7 +253,7 @@
  * If defined, explicitly attempt to more uniformly distribute large allocation
  * pointer alignments across all cache indices.
  */
-#define JEMALLOC_CACHE_OBLIVIOUS
+#undef JEMALLOC_CACHE_OBLIVIOUS
 
 /*
  * If defined, enable logging facilities.  We make this a configure option to

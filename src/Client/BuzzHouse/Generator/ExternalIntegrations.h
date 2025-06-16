@@ -22,6 +22,7 @@
 #    include <mongocxx/client.hpp>
 #    include <mongocxx/collection.hpp>
 #    include <mongocxx/database.hpp>
+#    include <mongocxx/exception/exception.hpp>
 #endif
 
 #if USE_LIBPQXX

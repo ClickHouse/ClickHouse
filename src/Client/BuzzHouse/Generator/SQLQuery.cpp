@@ -227,14 +227,14 @@ void StatementGenerator::setTableRemote(
         sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
         sfunc->set_rtable("t" + std::to_string(t.tname));
     }
-    else if (table_engine && (t.isS3Engine() || t.isURLEngine() || t.isAzureEngine()) && rg.nextSmallNumber() < 7)
+    else if (table_engine && (t.isAnyS3Engine() || t.isURLEngine() || t.isAnyAzureEngine()) && rg.nextSmallNumber() < 7)
     {
         String buf;
         bool first = true;
         Expr * structure = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
-        if (t.isS3Engine())
+        if (t.isAnyS3Engine())
         {
             S3Func * sfunc = tfunc->mutable_s3();
             const ServerCredentials & sc = fc.minio_server.value();
@@ -246,7 +246,7 @@ void StatementGenerator::setTableRemote(
             }
             else
             {
-                sfunc->set_fname(S3Func_FName::S3Func_FName_s3);
+                sfunc->set_fname(rg.nextBool() ? S3Func_FName::S3Func_FName_s3 : S3Func_FName::S3Func_FName_gcs);
             }
             sfunc->set_resource(
                 "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
@@ -479,7 +479,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t values_udf = 3 * static_cast<uint32_t>(can_recurse);
     const uint32_t random_data_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf);
     const uint32_t dictionary = 15 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
-    const uint32_t url_encoded_table = 5 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
+    const uint32_t url_encoded_table = 2 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
     const uint32_t prob_space = derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf
         + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -913,7 +913,7 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
         }
-        url += "http://" + fc.host + ":" + std::to_string(fc.http_port) + "/?query=SELECT+";
+        url += fc.getHTTPURL(rg.nextSmallNumber() < 4) + "/?query=SELECT+";
         flatTableColumnPath(to_remote_entries, tt.cols, [](const SQLColumn &) { return true; });
         std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
         for (const auto & entry : this->remote_entries)
