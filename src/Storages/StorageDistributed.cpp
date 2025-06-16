@@ -834,8 +834,21 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
     replase_alias_columns_visitor.visit(query_tree_to_modify);
 
-    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
-}
+    const auto & settings = query_context->getSettingsRef();
+
+    if (settings[Setting::prefer_global_in_and_join])
+    {
+        auto & query_node = query_tree_to_modify->as<QueryNode&>();
+        if (query_node.hasWhere())
+        {
+            RewriteInToGlobalInVisitor visitor(query_context);
+            visitor.visit(query_node.getWhere());
+        }
+
+        rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTree());
+    }
+
+    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
 
 }
 

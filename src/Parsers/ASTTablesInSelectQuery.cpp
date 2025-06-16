@@ -5,7 +5,6 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 
-
 namespace DB
 {
 
@@ -252,6 +251,10 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
     {
         ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
         ostr << "(";
+        /// We should always print alias for 'USING (a AS b)' syntax (supported with analyzer only).
+        /// Otherwise query like 'SELECT a AS b FROM t1 JOIN t2 USING (a AS b)' will be broken.
+        /// See 03448_analyzer_array_join_alias_in_join_using_bug.sql
+        frame.ignore_printed_asts_with_alias = true;
         using_expression_list->format(ostr, settings, state, frame);
         ostr << ")";
     }
