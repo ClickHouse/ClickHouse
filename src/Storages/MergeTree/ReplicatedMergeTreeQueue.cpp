@@ -1720,6 +1720,19 @@ Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersion(
     return it->first;
 }
 
+Int64 ReplicatedMergeTreeQueue::getNextMutationVersion(
+    const String & partition_id, Int64 data_version) const
+{
+    auto in_partition = mutations_by_partition.find(partition_id);
+    if (in_partition == mutations_by_partition.end())
+        return 0;
+
+    auto it = in_partition->second.upper_bound(data_version);
+    if (it == in_partition->second.end())
+        return 0;
+
+    return it->first;
+}
 
 ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(
     const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_, std::unique_lock<std::mutex> & /* state_lock */)
@@ -1955,7 +1968,9 @@ std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> ReplicatedMergeTreeQ
 
 MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
-    auto in_partition = mutations_by_partition.find(part->info.getPartitionId());
+    auto partition_id = part->info.getOriginalPartitionId();
+    auto in_partition = mutations_by_partition.find(partition_id);
+
     if (in_partition == mutations_by_partition.end())
         return {};
 
@@ -1964,7 +1979,8 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCo
 
     MutationCommands result;
 
-    bool seen_all_data_mutations = !hasDataMutations() && !hasAlterMutations();
+    /// Patch parts can have only RENAME commands to apply on-fly.
+    bool seen_all_data_mutations = (!hasDataMutations() && !hasAlterMutations()) || part->info.isPatch();
     bool seen_all_metadata_mutations = part_metadata_version >= params.metadata_version;
 
     if (seen_all_data_mutations && seen_all_metadata_mutations)
@@ -1987,14 +2003,14 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCo
 
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
-                addSupportedCommands(entry->commands, result);
+                addSupportedCommands(entry->commands, mutation_version, result);
             else
                 seen_all_metadata_mutations = true;
         }
         else if (!seen_all_data_mutations)
         {
             if (mutation_version > part_data_version)
-                addSupportedCommands(entry->commands, result);
+                addSupportedCommands(entry->commands, mutation_version, result);
             else
                 seen_all_data_mutations = true;
         }
@@ -2006,7 +2022,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCo
 
 NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() const
 {
-    NameSet res;
+    NameSet res = getColumnsUpdatedInPatches();
     if (!hasDataMutations())
         return res;
 
@@ -2023,23 +2039,33 @@ NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() cons
 
 MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapshot(const MutationsSnapshot::Params & params) const
 {
-    std::lock_guard lock(state_mutex);
+    DataPartsVector patch_parts;
+    if (params.need_patch_parts)
+        patch_parts = storage.getPatchPartsVectorForInternalUsage();
 
-    auto res = std::make_shared<MutationsSnapshot>(params, mutation_counters);
+    std::lock_guard lock(state_mutex);
+    auto res = std::make_shared<MutationsSnapshot>(params, mutation_counters, std::move(patch_parts));
     if (!res->hasAnyMutations())
         return res;
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)
     {
+        if (partition_id.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
+            continue;
+
         auto & in_partition = res->mutations_by_partition[partition_id];
 
         bool seen_all_data_mutations = !res->hasDataMutations() && !res->hasAlterMutations();
         bool seen_all_metadata_mutations = !res->hasMetadataMutations();
+        Int64 max_block_number = res->getMaxBlockForPartition(partition_id);
 
         for (const auto & [mutation_version, status] : mutations | std::views::reverse)
         {
             if (seen_all_data_mutations && seen_all_metadata_mutations)
                 break;
+
+            if (mutation_version > max_block_number)
+                continue;
 
             auto alter_version = status->entry->alter_version;
 

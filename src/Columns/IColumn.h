@@ -552,6 +552,40 @@ public:
     /// Used to create full column from sparse.
     [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const;
 
+    using Version = UInt64;
+    using Versions = PaddedPODArray<Version>;
+
+    struct Patch
+    {
+        struct Source
+        {
+            const IColumn & column;
+            const Versions & versions;
+        };
+
+        std::vector<Source> sources;
+
+        /// Can be omitted in case of one source.
+        const Offsets * src_col_indices = nullptr;
+        const Offsets & src_row_indices;
+        const Offsets & dst_row_indices;
+
+        /// Versions of the values. Value (and dst version) is updated only
+        /// if source version is greater than destination version for the value.
+        Versions & dst_versions;
+    };
+
+    /// Updates value at dst_pos from src[src_pos].
+    /// Implemented only for columns for which isFixedAndContiguous returns true.
+    virtual void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos);
+
+    /// Creates a copy of column with updated values according to patch.
+    virtual Ptr updateFrom(const Patch & patch) const = 0;
+
+    /// Updates values in column inplace according to patch.
+    /// Implementation uses updateAt method.
+    virtual void updateInplaceFrom(const Patch & patch) = 0;
+
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
     /// The flag `force_compression` indicates that compression should be performed even if it's not efficient (if only compression factor < 1).
@@ -811,6 +845,12 @@ private:
 
     /// Devirtualize byteSizeAt.
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+
+     /// Devirtualize insertFrom.
+    ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
+
+    /// Devirtualize updateAt.
+    void updateInplaceFrom(const IColumn::Patch & patch) override;
 
     /// Fills column values from RowRefList
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows

@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Core/UUID.h>
 
 #include <optional>
@@ -10,6 +9,12 @@
 
 namespace DB
 {
+
+class IMergeTreeDataPart;
+using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 struct PartProperties
 {

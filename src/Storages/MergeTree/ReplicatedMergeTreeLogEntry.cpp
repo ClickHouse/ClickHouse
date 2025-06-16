@@ -1,3 +1,4 @@
+#include "Common/logger_useful.h"
 #include <Common/ZooKeeper/Types.h>
 #include "Access/IAccessEntity.h"
 
@@ -122,6 +123,12 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             if (cleanup)
                 out << "\ncleanup: " << cleanup;
 
+            if (!patch_parts.empty())
+            {
+                out << "\npatches: " << patch_parts.size();
+                for (const auto & s : patch_parts)
+                    out << "\n" << s;
+            }
             break;
 
         case DROP_RANGE:
@@ -280,7 +287,9 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
                     merge_type = checkAndGetMergeType(value);
                 }
                 else if (checkString("into_uuid: ", in))
+                {
                     in >> new_part_uuid;
+                }
                 else if (checkString("deduplicate_by_columns: ", in))
                 {
                     Strings new_deduplicate_by_columns;
@@ -296,9 +305,29 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
                     deduplicate_by_columns = std::move(new_deduplicate_by_columns);
                 }
                 else if (checkString("cleanup: ", in))
+                {
                     in >> cleanup;
+                }
+                else if (checkString("patches:", in))
+                {
+                    size_t num_patches;
+                    in >> " " >> num_patches >> "\n";
+                    LOG_DEBUG(getLogger("KEK"), "num_patches: {}", num_patches);
+
+                    for (size_t i = 0; i < num_patches; ++i)
+                    {
+                        String patch_name;
+                        in >> patch_name;
+                        patch_parts.push_back(std::move(patch_name));
+
+                        if (i + 1 != num_patches)
+                            in >> "\n";
+                    }
+                }
                 else
+                {
                     trailing_newline_found = true;
+                }
             }
         }
 

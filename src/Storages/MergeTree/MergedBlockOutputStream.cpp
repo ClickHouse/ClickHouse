@@ -334,6 +334,15 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         }
     }
 
+    const auto & source_parts = new_part->getSourcePartsSet();
+    if (!source_parts.empty())
+    {
+        write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
+        {
+            source_parts.writeBinary(buffer);
+        });
+    }
+
     write_hashed_file("count.txt", [&](auto & buffer)
     {
         writeIntText(rows_count, buffer);

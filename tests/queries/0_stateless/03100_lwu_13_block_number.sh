@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+set -e
+
+function wait_for_block_allocated()
+{
+    path="$1"
+    block_number="$2"
+
+    for _ in {0..50}; do
+        sleep 0.1
+        res=`$CLICKHOUSE_CLIENT --query "
+            SELECT count() FROM system.zookeeper
+            WHERE path = '$path' AND name = '$block_number'
+        "`
+        if [[ "$res" -eq "1" ]]; then
+            break
+        fi
+    done
+}
+
+$CLICKHOUSE_CLIENT --query "
+    SET insert_keeper_fault_injection_probability = 0.0;
+    DROP TABLE IF EXISTS t_lwu_block_number SYNC;
+
+    CREATE TABLE t_lwu_block_number (id UInt64, s String)
+    ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_block_number/', '1')
+    ORDER BY id
+    SETTINGS
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1;
+
+    INSERT INTO t_lwu_block_number SELECT number, number FROM numbers(1000);
+    SYSTEM ENABLE FAILPOINT smt_lightweight_update_sleep_after_block_allocation;
+"
+
+$CLICKHOUSE_CLIENT --query "UPDATE t_lwu_block_number SET s = 'foo' WHERE id >= 500" --allow_experimental_lightweight_update 1 &
+
+wait_for_block_allocated "/zookeeper/$CLICKHOUSE_DATABASE/t_lwu_block_number/block_numbers/all" "block-0000000001"
+
+$CLICKHOUSE_CLIENT --query "INSERT INTO t_lwu_block_number SELECT number, number FROM numbers(1000, 1000)"
+
+wait
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT count() FROM t_lwu_block_number WHERE s = 'foo' SETTINGS apply_patch_parts = 1;
+    SELECT sum(rows) FROM system.parts WHERE database = currentDatabase() AND table = 't_lwu_block_number' AND startsWith(name, 'patch');
+    DROP TABLE t_lwu_block_number SYNC;
+"

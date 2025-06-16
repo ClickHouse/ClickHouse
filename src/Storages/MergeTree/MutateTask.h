@@ -23,6 +23,8 @@ struct MutationContext;
 class MutateTask
 {
 public:
+    static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_mutate_";
+
     MutateTask(
         FutureMergedMutatedPartPtr future_part_,
         StorageMetadataPtr metadata_snapshot_,

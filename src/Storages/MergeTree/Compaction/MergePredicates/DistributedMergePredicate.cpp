@@ -21,9 +21,24 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
     /// so without hint it can do a few thousands requests (if not using MultiRead).
     Strings partitions;
     if (!partition_ids_hint)
+    {
         partitions = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
+    }
     else
-        std::copy(partition_ids_hint->begin(), partition_ids_hint->end(), std::back_inserter(partitions));
+    {
+        NameSet partitions_set = *partition_ids_hint;
+
+        /// We need to get committing blocks for original partitions of patch parts
+        /// because the corretness of merge of patch parts depends on them.
+        for (const auto & partition_id : *partition_ids_hint)
+        {
+            if (isPatchPartitionId(partition_id))
+                partitions_set.insert(getOriginalPartitionIdOfPatch(partition_id));
+        }
+
+        partitions.reserve(partitions_set.size());
+        std::move(partitions_set.begin(), partitions_set.end(), std::back_inserter(partitions));
+    }
 
     std::vector<std::string> paths;
     paths.reserve(partitions.size());
@@ -52,7 +67,7 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
                 continue;
 
             Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
-            committing_blocks[partitions[i]].insert(block_number);
+            committing_blocks[partitions[i]].insert(CommittingBlock(CommittingBlock::Op::Unknown, block_number));
         }
     }
 

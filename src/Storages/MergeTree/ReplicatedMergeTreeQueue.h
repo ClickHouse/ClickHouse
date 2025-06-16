@@ -5,6 +5,7 @@
 #include <expected>
 
 #include <Common/ActionBlocker.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
@@ -17,10 +18,7 @@
 #include <Storages/MergeTree/DropPartsRanges.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
-
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include "Storages/MergeTree/AlterConversions.h"
-
+#include <Storages/MergeTree/AlterConversions.h>
 
 namespace DB
 {
@@ -230,6 +228,7 @@ private:
     /// was created after the mutation).
     /// If there is no such mutation or it has already been executed and deleted, return 0.
     Int64 getCurrentMutationVersion(const String & partition_id, Int64 data_version) const;
+    Int64 getNextMutationVersion(const String & partition_id, int64_t data_version) const;
 
     /** Check that part isn't in currently generating parts and isn't covered by them.
       * Should be called under state_mutex.
@@ -425,7 +424,7 @@ public:
     {
     public:
         MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, MutationCounters counters_) : MutationsSnapshotBase(std::move(params_), std::move(counters_)) {}
+        MutationsSnapshot(Params params_, MutationCounters counters_, DataPartsVector patches_) : MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_)) {}
 
         using Params = MergeTreeData::IMutationsSnapshot::Params;
         using MutationsByPartititon = std::unordered_map<String, std::map<Int64, ReplicatedMergeTreeMutationEntryPtr>>;
@@ -442,7 +441,6 @@ public:
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
-
     MutationCounters getMutationCounters() const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
