@@ -26,8 +26,8 @@ toRelativeWeekNum(date)
     {
         {"Get relative week numbers", R"(
 SELECT
-  toRelativeWeekNum(toDate('2000-02-29')) AS w1,
-  toRelativeWeekNum(toDate('2001-01-12')) AS w2
+toRelativeWeekNum(toDate('2000-02-29')) AS w1,
+toRelativeWeekNum(toDate('2001-01-12')) AS w2
         )",
         R"(
 ┌───w1─┬───w2─┐

@@ -26,8 +26,8 @@ toRelativeSecondNum(date)
     {
         {"Get relative second numbers", R"(
 SELECT
-  toRelativeSecondNum(toDateTime('1993-10-05 05:20:36')) AS s1,
-  toRelativeSecondNum(toDateTime('2000-09-20 14:11:29')) AS s2
+toRelativeSecondNum(toDateTime('1993-10-05 05:20:36')) AS s1,
+toRelativeSecondNum(toDateTime('2000-09-20 14:11:29')) AS s2
         )",
         R"(
 ┌────────s1─┬────────s2─┐

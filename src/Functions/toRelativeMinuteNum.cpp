@@ -26,8 +26,8 @@ toRelativeMinuteNum(date)
     {
         {"Get relative minute numbers", R"(
 SELECT
-  toRelativeMinuteNum(toDateTime('1993-10-05 05:20:36')) AS m1,
-  toRelativeMinuteNum(toDateTime('2000-09-20 14:11:29')) AS m2
+toRelativeMinuteNum(toDateTime('1993-10-05 05:20:36')) AS m1,
+toRelativeMinuteNum(toDateTime('2000-09-20 14:11:29')) AS m2
         )",
         R"(
 ┌───────m1─┬───────m2─┐

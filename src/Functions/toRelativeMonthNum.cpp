@@ -26,8 +26,8 @@ toRelativeMonthNum(date)
     {
         {"Get relative month numbers", R"(
 SELECT
-  toRelativeMonthNum(toDate('2001-04-25')) AS m1,
-  toRelativeMonthNum(toDate('2009-07-08')) AS m2
+toRelativeMonthNum(toDate('2001-04-25')) AS m1,
+toRelativeMonthNum(toDate('2009-07-08')) AS m2
         )",
         R"(
 ┌────m1─┬────m2─┐

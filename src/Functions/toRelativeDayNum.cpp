@@ -26,8 +26,8 @@ toRelativeDayNum(date)
     {
         {"Get relative day numbers", R"(
 SELECT
-  toRelativeDayNum(toDate('1993-10-05')) AS d1,
-  toRelativeDayNum(toDate('2000-09-20')) AS d2
+toRelativeDayNum(toDate('1993-10-05')) AS d1,
+toRelativeDayNum(toDate('2000-09-20')) AS d2
         )",
         R"(
 ┌───d1─┬────d2─┐

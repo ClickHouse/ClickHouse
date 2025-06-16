@@ -26,8 +26,8 @@ toRelativeQuarterNum(date)
     {
         {"Get relative quarter numbers", R"(
 SELECT
-  toRelativeQuarterNum(toDate('1993-11-25')) AS q1,
-  toRelativeQuarterNum(toDate('2005-01-05')) AS q2
+toRelativeQuarterNum(toDate('1993-11-25')) AS q1,
+toRelativeQuarterNum(toDate('2005-01-05')) AS q2
         )",
         R"(
 ┌───q1─┬───q2─┐

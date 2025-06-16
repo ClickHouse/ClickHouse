@@ -24,8 +24,8 @@ toRelativeHourNum(date)
     FunctionDocumentation::Examples examples_toRelativeHourNum = {
         {"Get relative hour numbers", R"(
 SELECT
-  toRelativeHourNum(toDateTime('1993-10-05 05:20:36')) AS h1,
-  toRelativeHourNum(toDateTime('2000-09-20 14:11:29')) AS h2
+toRelativeHourNum(toDateTime('1993-10-05 05:20:36')) AS h1,
+toRelativeHourNum(toDateTime('2000-09-20 14:11:29')) AS h2
         )",
         R"(
 ┌─────h1─┬─────h2─┐
