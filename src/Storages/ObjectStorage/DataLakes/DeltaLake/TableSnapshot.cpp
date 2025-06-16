@@ -294,7 +294,7 @@ public:
         if (expression)
         {
             object->data_lake_metadata.emplace();
-            object->data_lake_metadata->transform = expression->dag;
+            object->data_lake_metadata->transform = expression->getTransform();
             object->data_lake_metadata->partition_values = expression->getConstValues(context->partition_columns);
         }
 

@@ -31,15 +31,10 @@ public:
     /// This is used, for example, to get partition values.
     std::vector<DB::Field> getConstValues(const DB::Names & columns) const;
 
-    /// Apply parsed expression to the chunk.
-    /// `columns` is the "requested columns" -
-    /// a subset of table schema columns, which the query needs,
-    /// e.g. we might not need to apply the while parsed expression,
-    /// but only a part of it.
-    void apply(DB::Chunk & chunk, const DB::NamesAndTypesList & chunk_schema, const DB::Names & columns);
+    std::shared_ptr<DB::ActionsDAG> getTransform() const { return dag; }
 
-    const std::shared_ptr<DB::ActionsDAG> dag;
 private:
+    std::shared_ptr<DB::ActionsDAG> dag;
     const DB::NamesAndTypesList schema;
 };
 
