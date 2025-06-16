@@ -230,7 +230,6 @@ hopStart
 hostName
 hypot
 identity
-if
 ifNull
 ignore
 ilike
@@ -621,7 +620,6 @@ toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
 toStartOfHour
-toStartOfISOYear
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute

@@ -794,7 +794,6 @@ toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
 toStartOfHour
-toStartOfInterval
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
