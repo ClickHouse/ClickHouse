@@ -351,8 +351,6 @@ Result:
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols.
 
-This function is equivalent to function [tokens](#tokens) with the `ngram` tokenizer.
-
 **Syntax**
 
 ```sql
