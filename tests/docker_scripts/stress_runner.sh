@@ -86,7 +86,7 @@ if [ "$cache_policy" = "SLRU" ]; then
 fi
 
 # Randomize use_real_disk_size in cache
-use_real_disk_size= $((RANDOM % 2))
+use_real_disk_size=$((RANDOM % 2))
 
 echo "use_real_disk_size: $use_real_disk_size"
 sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
