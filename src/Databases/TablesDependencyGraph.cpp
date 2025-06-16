@@ -552,6 +552,51 @@ bool TablesDependencyGraph::hasCyclicDependencies() const
     return !nodes_sorted_by_level.empty() && (nodes_sorted_by_level.back()->level == CYCLIC_LEVEL);
 }
 
+bool TablesDependencyGraph::wouldCreateCycle(
+    const StorageID & table_id,
+    const TableNamesSet & new_dependencies) const
+{
+    auto *start_node = findNode(table_id);
+    if (!start_node)
+        return false;
+
+    std::unordered_set<Node *> global_visited;
+
+    std::function<bool(Node *)> dfs = [&](Node * node) -> bool
+    {
+        if (node == start_node)
+            return true;
+        if (!global_visited.insert(node).second)
+            return false;
+        if (node->level < start_node->level)
+            return false;
+
+        for (Node * dep : node->dependencies)
+            if (dfs(dep))
+                return true;
+
+        return false;
+    };
+
+    for (const auto & dep : new_dependencies)
+    {
+        if (table_id == StorageID(dep))
+            return true;
+
+        auto *dep_node = findNode(StorageID(dep));
+        if (!dep_node)
+            continue;
+
+        if (start_node->level < dep_node->level)
+            continue; // Adding edge from higher to lower level: no cycle possible
+
+        if (dfs(dep_node))
+            return true;
+    }
+
+    return false;
+}
+
 
 std::vector<StorageID> TablesDependencyGraph::getTablesWithCyclicDependencies() const
 {
@@ -735,6 +780,7 @@ void TablesDependencyGraph::log() const
         LOG_TRACE(getLogger(), "Table {} has {} ({})", node->storage_id, dependencies_desc, level_desc);
     }
 }
+
 
 
 LoggerPtr TablesDependencyGraph::getLogger() const

@@ -35,6 +35,10 @@ using LoggerPtr = std::shared_ptr<Poco::Logger>;
 /// WARNING: This class doesn't have an embedded mutex, so it must be synchronized outside.
 class TablesDependencyGraph
 {
+private:
+	// Forward declaration
+    struct Node;
+
 public:
     explicit TablesDependencyGraph(const String & name_for_logging_);
 
@@ -104,6 +108,8 @@ public:
     /// Cyclic dependencies are dependencies like "A->A" or "A->B->C->D->A".
     void checkNoCyclicDependencies() const;
     bool hasCyclicDependencies() const;
+    /// Checks if adding new dependencies would create a cycle
+    bool wouldCreateCycle(const StorageID & table_id, const TableNamesSet & new_dependencies) const;
     String describeCyclicDependencies() const;
     std::vector<StorageID> getTablesWithCyclicDependencies() const;
 
