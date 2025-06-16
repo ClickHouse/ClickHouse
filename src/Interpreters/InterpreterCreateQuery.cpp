@@ -1320,7 +1320,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         /// Null table engine.
         else if (getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
         {
-            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type != AccessType::NONE)
+            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type)
             {
                 setNullTableEngine(*create.storage);
             }
