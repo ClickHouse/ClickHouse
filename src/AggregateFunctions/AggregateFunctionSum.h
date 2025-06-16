@@ -487,6 +487,8 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
+        if (!place)
+            return;
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
     }
@@ -499,6 +501,8 @@ public:
         Arena *,
         ssize_t if_argument_pos) const override
     {
+        if (!place)
+            return;
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         if (if_argument_pos >= 0)
         {
@@ -521,6 +525,8 @@ public:
         ssize_t if_argument_pos)
         const override
     {
+        if (!place)
+            return;
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         if (if_argument_pos >= 0)
         {
@@ -562,26 +568,35 @@ public:
         size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
 
         for (size_t i = from; i < to; ++i)
-            add(places[offsets[i]] + place_offset, &values, i + 1, arena);
+            if (places[offsets[i]])
+                add(places[offsets[i]] + place_offset, &values, i + 1, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
+        if (!place)
+            return;
         this->data(place).merge(this->data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
+        if (!place)
+            return;
         this->data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
+        if (!place)
+            return;
         this->data(place).read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
+        if (!place)
+            return;
         castColumnToResult(to).getData().push_back(this->data(place).get());
     }
 
