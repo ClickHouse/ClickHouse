@@ -544,6 +544,7 @@ SELECT dateDiff('day', toDate('2021-01-01'), toDate('2021-01-15'))
         syntax_dateDiff_implementation,
         arguments_dateDiff_implementation,
         returned_value_dateDiff_implementation,
+        examples_dateDiff_documentation,
         introduced_in_dateDiff_implementation,
         category_dateDiff_implementation
     };
