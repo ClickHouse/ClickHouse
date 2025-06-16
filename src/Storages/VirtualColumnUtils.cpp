@@ -69,6 +69,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace VirtualColumnUtils
@@ -181,6 +182,35 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
     }
 
     return key_values;
+}
+
+std::string_view findHivePartitioningInPath(const String & path)
+{
+    auto key_values = parseHivePartitioningKeysAndValues(path);
+
+    if (key_values.empty())
+        return std::string_view();
+
+    // All keys and values are string_view over 'path', so starts and ends must be inside 'path'
+    auto kv = key_values.begin();
+    const auto * start = kv->first.data();
+    const auto * end = kv->second.data() + kv->second.size();
+    ++kv;
+    while (kv != key_values.end())
+    {
+        start = std::min(kv->first.data(), start);
+        end = std::max(kv->second.data() + kv->second.size(), end);
+        ++kv;
+    }
+
+    if (start < path.data() || start > path.data() + path.size()
+            || end < path.data() || end > path.data() + path.size()
+            || end < start)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "String views are not inside initial string");
+    }
+
+    return std::string_view(start, end - start);
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
