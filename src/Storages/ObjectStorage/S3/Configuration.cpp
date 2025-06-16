@@ -157,6 +157,12 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     const auto & config = context->getConfigRef();
     s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, settings[Setting::s3_validate_request_settings]);
 
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
+    {
+        s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+        s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+    }
+
     s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
     s3_settings->auth_settings[S3AuthSetting::use_environment_credentials] = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
@@ -176,11 +182,6 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
     keys = {url.key};
 
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
-    {
-        s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
 }
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
@@ -195,8 +196,6 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 
     const auto & config = context->getConfigRef();
     s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
-
-    s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     std::unordered_map<std::string_view, size_t> engine_args_to_idx;
     bool no_sign_request = false;
@@ -360,6 +359,14 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     /// This argument is always the first
     url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef()[Setting::allow_archive_path_syntax]);
 
+    s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, context->getSettingsRef()[Setting::s3_validate_request_settings]);
+
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
+    {
+        s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+        s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+    }
+
     if (engine_args_to_idx.contains("format"))
     {
         format = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["format"]], "format");
@@ -375,6 +382,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     if (engine_args_to_idx.contains("compression_method"))
         compression_method = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["compression_method"]], "compression_method");
 
+
     if (engine_args_to_idx.contains("access_key_id"))
         s3_settings->auth_settings[S3AuthSetting::access_key_id] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");
 
@@ -389,13 +397,6 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty() || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
     s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
-
-
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
-    {
-        s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
 
     keys = {url.key};
 }
