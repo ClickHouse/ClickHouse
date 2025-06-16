@@ -38,6 +38,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LeaderElection.h>
@@ -89,6 +90,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/Expect404ResponseScope.h>
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -2212,50 +2214,101 @@ String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataP
         (*getSettings())[MergeTreeSetting::use_minimalistic_checksums_in_zookeeper]);
 }
 
-MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry & entry) const
+MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry & entry, PartsTemporaryRename & rename_parts) const
 {
     if (format_version != MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         return {};
 
+    auto detached_parts = getDetachedParts();
+
     const MergeTreePartInfo actual_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
-
-    for (const DiskPtr & disk : getStoragePolicy()->getDisks())
+    auto partition_id = actual_part_info.getPartitionId();
+    std::erase_if(detached_parts, [&partition_id](const DetachedPartInfo & detached_part_info)
     {
-        for (const auto it = disk->iterateDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME); it->isValid(); it->next())
+        return !detached_part_info.valid_name || !detached_part_info.prefix.empty() || (!partition_id.empty() && detached_part_info.getPartitionId() != partition_id);
+    });
+
+    std::erase_if(detached_parts, [&](const DetachedPartInfo & detached_part_info)
+    {
+        const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
+        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / detached_part_info.dir_name, getReadSettings())
+                    .withPartFormatFromDisk()
+                    .build();
+
+        try
         {
-            const auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version);
-
-            if (!part_info || part_info->getPartitionId() != actual_part_info.getPartitionId())
-                continue;
-
-            const auto part_old_name = part_info->getPartNameV1();
-            const auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
-
-            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name, getReadSettings())
-                .withPartFormatFromDisk()
-                .build();
-
-            try
-            {
-                part->loadColumnsChecksumsIndexes(
-                    /* require_columns_checksums = */ true, /* check_consistency = */ true, /* load_metadata_version = */ false);
-            }
-            catch (const Exception&)
-            {
-                /// This method throws if the part data is corrupted or partly missing. In this case, we simply don't
-                /// process the part.
-                continue;
-            }
-
-            if (entry.part_checksum == part->checksums.getTotalChecksumHex())
-            {
-                auto metadata_version = getInMemoryMetadataPtr()->getMetadataVersion();
-                part->writeMetadataVersion(getContext(), metadata_version, (*getSettings())[MergeTreeSetting::fsync_after_insert]);
-                part->setMetadataVersion(metadata_version);
-                part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
-                return part;
-            }
+            Expect404ResponseScope scope; // 404 is not an error
+            part->loadChecksums(true);
         }
+        catch (...)
+        {
+            tryLogCurrentException(log,
+                fmt::format("data race is possible when reading checksums.txt from detached part or part does not have a file checksums.txt, part {} is ignored", detached_part_info.dir_name));
+            return true;
+        }
+
+        return entry.part_checksum != part->checksums.getTotalChecksumHex();
+    });
+
+    if (detached_parts.empty())
+        return {};
+
+    for (auto & detached_part_info : detached_parts)
+    {
+        chassert(rename_parts.old_and_new_names.empty());
+        rename_parts.addPart(detached_part_info.dir_name, "attaching_" + detached_part_info.dir_name, detached_part_info.disk);
+
+        try
+        {
+            rename_parts.tryRenameAll();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("data race is possible when moving detached part, part {} is ignored", detached_part_info.dir_name));
+            rename_parts.rollBackAll();
+            continue;
+        }
+
+        const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
+        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_name, getReadSettings())
+            .withPartFormatFromDisk()
+            .build();
+
+        try
+        {
+            loadPartAndFixMetadataImpl(part, getContext());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("part is broken, part {} is ignored", detached_part_info.dir_name));
+
+            if (isRetryableException(std::current_exception()))
+            {
+                tryLogCurrentException(log, fmt::format("unable to load part {}, however it does not look as broken, ignore it", detached_part_info.dir_name));
+            }
+            else
+            {
+                tryLogCurrentException(log, fmt::format("part {} is broken, try to rename it as broken and ignore", detached_part_info.dir_name));
+                try
+                {
+                    part->renameToDetached("broken", /* ignore_error*/ false);
+                    rename_parts.old_and_new_names.front().old_name.clear();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("fail to rename part {} with broken prefix", detached_part_info.dir_name));
+                }
+            }
+
+            // if isRetryableException(std::current_exception()) = true then we move part just back to previous place
+            // if isRetryableException(std::current_exception()) = false then we move part with prefix broken_ to exclude it from next attempts
+            // if part is moved with prefix broken_ successfully than rollBackAll is no op
+            // otherwise try to move it back, more likely the same exception would be thrown, that exception would be propagated
+            rename_parts.rollBackAll();
+            continue;
+        }
+
+        return part;
     }
 
     return {};
@@ -2313,7 +2366,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     {
         ProfileEventsScope profile_events_scope;
 
-        if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry))
+        PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
+        if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry, renamed_parts))
         {
             LOG_TRACE(log, "Found valid local part for {}, preparing the transaction", part->name);
 
@@ -2323,6 +2377,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
             transaction.renameParts();
             checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
+
+            chassert(renamed_parts.renamed && renamed_parts.old_and_new_names.size() == 1);
+            renamed_parts.old_and_new_names.front().old_name.clear();
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
@@ -6814,11 +6871,12 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
     return true;
 }
 
-void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info)
+void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
+    const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach)
 {
     LOG_INFO(log, "Restoring replica metadata");
 
-    if (!initialization_done)
+    if (!is_called_during_attach && !initialization_done)
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
 
     if (!is_readonly)
@@ -6874,9 +6932,12 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(const ZooKeeperRetri
         for (const String& part_name : active_parts_names)
             attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
 
-    LOG_INFO(log, "Attached all partitions, starting table");
-
-    startupImpl(/* from_attach_thread */ false, zookeeper_retries_info);
+    if (!is_called_during_attach)
+    {
+        /// Attach will continue with its own startup call, so we don't need to call it here
+        LOG_INFO(log, "Attached all partitions, starting table");
+        startupImpl(/* from_attach_thread */ false, zookeeper_retries_info);
+    }
 }
 
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)

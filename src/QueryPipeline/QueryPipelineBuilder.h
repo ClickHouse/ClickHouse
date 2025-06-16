@@ -97,7 +97,7 @@ public:
     void addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors);
 
     /// Changes the number of output ports if needed. Adds ResizeTransform.
-    void resize(size_t num_streams, bool strict = false);
+    void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
 
     /// Concat some ports to have no more then size outputs.
     /// This method is needed for Merge table engine in case of reading from many tables.

@@ -90,6 +90,10 @@ public:
     virtual void describeIndexes(JSONBuilder::JSONMap & /*map*/) const {}
     virtual void describeIndexes(FormatSettings & /*settings*/) const {}
 
+    /// Get detailed description of read-from-storage step projections (if any). Shown in with options `projections = 1`.
+    virtual void describeProjections(JSONBuilder::JSONMap & /*map*/) const {}
+    virtual void describeProjections(FormatSettings & /*settings*/) const {}
+
     /// Get description of the distributed plan. Shown in with options `distributed = 1
     virtual void describeDistributedPlan(FormatSettings & /*settings*/, const ExplainPlanOptions & /*options*/) {}
 

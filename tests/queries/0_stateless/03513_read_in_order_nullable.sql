@@ -52,3 +52,16 @@ SELECT '--- table desc, query asc, last';
 SELECT * FROM f1 ORDER BY c0 ASC NULLS LAST;
 SELECT '--- table desc, query asc, first';
 SELECT * FROM f1 ORDER BY c0 ASC NULLS FIRST;
+
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE lct0 (c0 LowCardinality(Nullable(Int64))) ENGINE = MergeTree() ORDER BY c0 SETTINGS allow_nullable_key=1;
+INSERT INTO TABLE lct0 VALUES (0);
+INSERT INTO TABLE lct0 VALUES (NULL), (1);
+SELECT '--- table asc, query desc, last';
+SELECT * FROM lct0 ORDER BY c0 DESC NULLS LAST;
+SELECT '--- table asc, query desc, first';
+SELECT * FROM lct0 ORDER BY c0 DESC NULLS FIRST;
+SELECT '--- table asc, query asc, last';
+SELECT * FROM lct0 ORDER BY c0 ASC NULLS LAST;
+SELECT '--- table asc, query asc, first';
+SELECT * FROM lct0 ORDER BY c0 ASC NULLS FIRST;
