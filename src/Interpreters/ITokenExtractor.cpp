@@ -104,7 +104,7 @@ bool NgramTokenExtractor::nextInStringLike(const char * data, size_t length, siz
     return false;
 }
 
-bool SplitTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool DefaultTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     *token_start = *pos;
     *token_length = 0;
@@ -129,7 +129,7 @@ bool SplitTokenExtractor::nextInString(const char * data, size_t length, size_t 
     return *token_length > 0;
 }
 
-bool SplitTokenExtractor::nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool DefaultTokenExtractor::nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     *token_start = *pos;
     *token_length = 0;
@@ -220,7 +220,7 @@ bool SplitTokenExtractor::nextInStringPadded(const char * data, size_t length, s
     return *token_length > 0;
 }
 
-bool SplitTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
+bool DefaultTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
 {
     token.clear();
     bool bad_token = false; // % or _ before token
@@ -263,7 +263,7 @@ bool SplitTokenExtractor::nextInStringLike(const char * data, size_t length, siz
     return !bad_token && !token.empty();
 }
 
-void SplitTokenExtractor::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+void DefaultTokenExtractor::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -277,7 +277,7 @@ void SplitTokenExtractor::substringToBloomFilter(const char * data, size_t lengt
             bloom_filter.add(data + token_start, token_len);
 }
 
-void SplitTokenExtractor::substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const
+void DefaultTokenExtractor::substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const
 {
     gin_filter.setQueryString(data, length);
 

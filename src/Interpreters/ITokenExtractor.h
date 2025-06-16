@@ -170,7 +170,7 @@ private:
 };
 
 /// Parser extracting tokens which consist of alphanumeric ASCII characters or Unicode characters (not necessarily alphanumeric)
-struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtractor>
+struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenExtractor>
 {
     static const char * getName() { return "tokenbf_v1"; }
     static const char * getExternalName() { return "default"; }

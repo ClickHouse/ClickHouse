@@ -76,12 +76,12 @@ public:
 
         std::unique_ptr<ITokenExtractor> token_extractor;
 
-        const auto tokenizer_arg = arguments.size() < 2 ? SplitTokenExtractor::getExternalName()
+        const auto tokenizer_arg = arguments.size() < 2 ? DefaultTokenExtractor::getExternalName()
                                                         : arguments[arg_tokenizer].column->getDataAt(0).toView();
 
-        if (tokenizer_arg == SplitTokenExtractor::getExternalName())
+        if (tokenizer_arg == DefaultTokenExtractor::getExternalName())
         {
-            token_extractor = std::make_unique<SplitTokenExtractor>();
+            token_extractor = std::make_unique<DefaultTokenExtractor>();
         }
         else if (tokenizer_arg == StringTokenExtractor::getExternalName())
         {

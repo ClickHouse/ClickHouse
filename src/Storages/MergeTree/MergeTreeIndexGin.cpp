@@ -827,8 +827,8 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
     String tokenizer = getOption<String>(options, ARGUMENT_TOKENIZER).value();
 
     std::unique_ptr<ITokenExtractor> token_extractor;
-    if (tokenizer == SplitTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<SplitTokenExtractor>();
+    if (tokenizer == DefaultTokenExtractor::getExternalName())
+        token_extractor = std::make_unique<DefaultTokenExtractor>();
     else if (tokenizer == NoOpTokenExtractor::getExternalName())
         token_extractor = std::make_unique<NoOpTokenExtractor>();
     else if (tokenizer == StringTokenExtractor::getExternalName())
@@ -859,7 +859,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!tokenizer)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index must have an '{}' argument", ARGUMENT_TOKENIZER);
 
-    const bool is_supported_tokenizer = (tokenizer.value() == SplitTokenExtractor::getExternalName()
+    const bool is_supported_tokenizer = (tokenizer.value() == DefaultTokenExtractor::getExternalName()
                                       || tokenizer.value() == NgramTokenExtractor::getExternalName()
                                       || tokenizer.value() == StringTokenExtractor::getExternalName()
                                       || tokenizer.value() == NoOpTokenExtractor::getExternalName());
