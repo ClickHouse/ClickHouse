@@ -74,8 +74,14 @@ The ngram size can be specified via the `ngram_size` parameter. This is an optio
 
 The separators can be specified via the `separators` parameter. This is an optional parameter and only relevant when tokenizer is set to `split`. The following variants exist:
 
-- `separators = []`: A list of strings, e.g. `separators = ['\n', '\\']`.
+- `separators = []`: A list of strings, e.g. `separators = [', ', '; ', '\n', '\\']`.
 - If not specified: Use a default separator which is a space (`[' ']`).
+
+:::note
+In case of the `split` tokenizer: if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
+To do so, pass the separators in order of descending length.
+For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
+:::
 
 The maximum rows per postings list can be specified via an optional `max_rows_per_postings_list`. This parameter can be used to control postings list sizes to avoid generating huge postings list files. The following variants exist:
 
