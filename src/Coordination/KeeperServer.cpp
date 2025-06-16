@@ -854,8 +854,15 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (req.log_entries().empty())
                     break;
 
+                /// we need to rollback some local logs so we set last_log_idx_on_disk
+                /// to the last common log index from leader
                 if (req.get_last_log_idx() < last_log_idx_on_disk)
                     last_log_idx_on_disk = req.get_last_log_idx();
+
+                /// if local logs detects invalid entry from leader we don't want to allow
+                /// leader to continue committing new logs
+                /// so we clear all new log entries until all local logs are processed
+                req.log_entries().clear();
 
                 break;
             }
