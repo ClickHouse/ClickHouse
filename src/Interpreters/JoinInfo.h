@@ -7,12 +7,13 @@
 #include <optional>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Core/Settings.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
+
+struct Settings;
 
 enum class PredicateOperator : UInt8
 {

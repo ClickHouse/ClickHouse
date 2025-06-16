@@ -291,3 +291,38 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     else:
         assert ntz_data[1] == "2024-10-01 00:12:00.000000"
         assert ntz_data[2] == "2024-10-01 00:12:00.000000"
+
+def test_no_permission_and_list_tables(started_cluster):
+    # this test supposed to test "SHOW TABLES" query when we have no permissions for some table
+    # unfortunately Unity catalog open source (or integration with spark) doesn't fully supports grants
+    # So this query fails and the test doesn't check anything :(
+    pytest.skip("Skipping test because it doesn't check anything")
+    node1 = started_cluster.instances["node1"]
+    node1.query("drop database if exists schema_with_permissions")
+
+    schema_name = f"schema_with_permissions"
+    execute_spark_query(
+        node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True
+    )
+    table_name_1 = f"table_granted"
+    table_name_2 = f"table_not_granted"
+
+    create_query_1 = f"CREATE TABLE {schema_name}.{table_name_1} (id INT) using Delta location '/tmp/{schema_name}/{table_name_1}'"
+    create_query_2 = f"CREATE TABLE {schema_name}.{table_name_2} (id INT) using Delta location '/tmp/{schema_name}/{table_name_2}'"
+
+    execute_multiple_spark_queries(node1, [create_query_2, create_query_1], True)
+
+    execute_spark_query(node1, f"REVOKE ALL PRIVILEGES ON TABLE {schema_name}.{table_name_1} FROM PUBLIC;", ignore_exit_code=True)
+
+    node1.query(
+        f"""
+drop database if exists {schema_name};
+create database {schema_name}
+engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=True
+        """,
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    # This query will fail if bug exists
+    print(node1.query(f"SHOW TABLES FROM {schema_name}"))

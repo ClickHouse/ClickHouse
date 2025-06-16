@@ -20,8 +20,6 @@ public:
 
     String getName() const override { return "NpyOutputFormat"; }
 
-    String getContentType() const override { return "application/octet-stream"; }
-
 private:
     String shapeStr() const;
 

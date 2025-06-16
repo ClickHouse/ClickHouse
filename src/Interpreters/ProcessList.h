@@ -7,6 +7,7 @@
 #include <Interpreters/QueryPriorities.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/QuerySlot.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Storages/IStorage_fwd.h>
@@ -97,6 +98,9 @@ protected:
     String query;
     UInt64 normalized_query_hash;
     ClientInfo client_info;
+
+    /// Query slot scheduling for workloads
+    QuerySlotPtr query_slot;
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -193,6 +197,7 @@ public:
         UInt64 normalized_query_hash_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
+        QuerySlotPtr && query_slot_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         const Settings & query_settings_,

@@ -36,8 +36,6 @@ public:
 
     String getName() const override { return "ProtobufRowOutputFormat"; }
 
-    std::string getContentType() const override { return "application/octet-stream"; }
-
 private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override {}

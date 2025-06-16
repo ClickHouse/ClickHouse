@@ -3,7 +3,7 @@
 namespace BuzzHouse
 {
 
-static DB::Strings storagePolicies, disks;
+static DB::Strings storagePolicies, disks, caches;
 
 static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg)
@@ -15,27 +15,23 @@ static const auto compressSetting = CHSetting(
     {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
     false);
 
-static const auto trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
-
 static const auto bytesRangeSetting = CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false);
 
 static const auto highRangeSetting = CHSetting(highRange, {"0", "4", "8", "32", "64", "1024", "4096", "16384", "'10M'"}, false);
 
 static const auto rowsRangeSetting = CHSetting(rowsRange, {"0", "4", "8", "32", "64", "4096", "16384", "'10M'"}, false);
 
-static const auto probRangeSetting = CHSetting(probRange, {"0", "0.1", "0.5", "0.99", "1.0"}, false);
-
 static std::unordered_map<String, CHSetting> mergeTreeTableSettings
     = {{"adaptive_write_buffer_initial_size", bytesRangeSetting},
        {"add_implicit_sign_column_constraint_for_collapsing_engine", trueOrFalseSetting},
        {"add_minmax_index_for_numeric_columns", trueOrFalseSetting},
        {"add_minmax_index_for_string_columns", trueOrFalseSetting},
-       {"allow_experimental_block_number_column", CHSetting(trueOrFalse, {}, true)},
+       {"allow_experimental_block_number_column", trueOrFalseSettingNoOracle},
        {"allow_experimental_replacing_merge_with_cleanup", trueOrFalseSetting},
-       {"allow_floating_point_partition_key", CHSetting(trueOrFalse, {}, true)},
+       {"allow_floating_point_partition_key", trueOrFalseSettingNoOracle},
        {"allow_reduce_blocking_parts_task", trueOrFalseSetting},
        {"allow_remote_fs_zero_copy_replication", trueOrFalseSetting},
-       {"allow_suspicious_indices", CHSetting(trueOrFalse, {}, true)},
+       {"allow_suspicious_indices", trueOrFalseSettingNoOracle},
        {"allow_vertical_merges_from_compact_to_wide_parts", trueOrFalseSetting},
        {"always_fetch_merged_part", trueOrFalseSetting},
        {"always_use_copy_instead_of_hardlinks", trueOrFalseSetting},
@@ -66,19 +62,18 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
         CHSetting(
             [](RandomGenerator & rg)
             {
-                const DB::Strings & choices
-                    = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'Delta'", "'T64'", "'AES_128_GCM_SIV'"};
+                const DB::Strings & choices = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'T64'", "'AES_128_GCM_SIV'"};
                 return rg.pickRandomly(choices);
             },
-            {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'Delta'", "'T64'", "'AES_128_GCM_SIV'"},
+            {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'T64'", "'AES_128_GCM_SIV'"},
             false)},
        {"detach_not_byte_identical_parts", trueOrFalseSetting},
        {"detach_old_local_parts_when_cloning_replica", trueOrFalseSetting},
        {"disable_detach_partition_for_zero_copy_replication", trueOrFalseSetting},
        {"disable_fetch_partition_for_zero_copy_replication", trueOrFalseSetting},
        {"disable_freeze_partition_for_zero_copy_replication", trueOrFalseSetting},
-       {"enable_block_number_column", CHSetting(trueOrFalse, {}, true)},
-       {"enable_block_offset_column", CHSetting(trueOrFalse, {}, true)},
+       {"enable_block_number_column", trueOrFalseSettingNoOracle},
+       {"enable_block_offset_column", trueOrFalseSettingNoOracle},
        {"enable_index_granularity_compression", trueOrFalseSetting},
        {"enable_max_bytes_limit_for_min_age_to_force_merge", trueOrFalseSetting},
        {"enable_mixed_granularity_parts", trueOrFalseSetting},
@@ -217,7 +212,8 @@ static std::unordered_map<String, CHSetting> logTableSettings = {};
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 std::unordered_map<String, CHSetting> restoreSettings
-    = {{"allow_different_database_def", CHSetting(trueOrFalse, {}, false)},
+    = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
+       {"allow_different_database_def", CHSetting(trueOrFalse, {}, false)},
        {"allow_different_table_def", CHSetting(trueOrFalse, {}, false)},
        {"allow_non_empty_tables", CHSetting(trueOrFalse, {}, false)},
        {"allow_s3_native_copy", CHSetting(trueOrFalse, {}, false)},
@@ -277,6 +273,11 @@ std::unordered_map<String, CHSetting> ipTreeLayoutSettings = {{"ACCESS_TO_KEY_FR
 
 void loadFuzzerTableSettings(const FuzzConfig & fc)
 {
+    std::unordered_map<String, CHSetting> s3Settings;
+    std::unordered_map<String, CHSetting> s3QueueTableSettings;
+    std::unordered_map<String, CHSetting> azureBlobStorageSettings;
+    std::unordered_map<String, CHSetting> azureQueueSettings;
+
     if (!fc.storage_policies.empty())
     {
         storagePolicies.insert(storagePolicies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
@@ -293,9 +294,46 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         mergeTreeTableSettings.insert({{"disk", disk_setting}});
         logTableSettings.insert({{"disk", disk_setting}});
     }
+    if (!fc.caches.empty())
+    {
+        caches.insert(caches.end(), fc.caches.begin(), fc.caches.end());
+        const auto & cache_setting
+            = CHSetting([&](RandomGenerator & rg) { return "1, filesystem_cache_name = '" + rg.pickRandomly(caches) + "'"; }, {}, false);
+
+        s3Settings.insert({{"enable_filesystem_cache", cache_setting}});
+        azureBlobStorageSettings.insert({{"enable_filesystem_cache", cache_setting}});
+    }
+
+    s3QueueTableSettings.insert(s3Settings.begin(), s3Settings.end());
+    azureQueueSettings.insert(azureBlobStorageSettings.begin(), azureBlobStorageSettings.end());
+    s3QueueTableSettings.insert(
+        {{"after_processing",
+          CHSetting(
+              [](RandomGenerator & rg)
+              {
+                  const DB::Strings & choices = {"'keep'", "'delete'"};
+                  return rg.pickRandomly(choices);
+              },
+              {},
+              false)},
+         {"enable_hash_ring_filtering", CHSetting(trueOrFalse, {}, false)},
+         {"list_objects_batch_size",
+          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.8, 0, 3000)); }, {}, false)},
+         {"max_processed_bytes_before_commit", CHSetting(bytesRange, {}, false)},
+         {"max_processed_files_before_commit", CHSetting(rowsRange, {}, false)},
+         {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
+         {"mode", CHSetting([](RandomGenerator & rg) { return fmt::format("'{}orderded'", rg.nextBool() ? "un" : ""); }, {}, false)},
+         {"parallel_inserts", CHSetting(trueOrFalse, {}, false)},
+         {"s3queue_buckets",
+          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.8, 0, 16)); }, {}, false)},
+         {"s3queue_enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
+         {"s3queue_processing_threads_num", threadSetting},
+         {"s3queue_tracked_files_limit", CHSetting(rowsRange, {}, false)}});
+
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
          {ReplacingMergeTree, mergeTreeTableSettings},
+         {CoalescingMergeTree, mergeTreeTableSettings},
          {SummingMergeTree, mergeTreeTableSettings},
          {AggregatingMergeTree, mergeTreeTableSettings},
          {CollapsingMergeTree, mergeTreeTableSettings},
@@ -315,15 +353,25 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {SQLite, {}},
          {MongoDB, {}},
          {Redis, {}},
-         {S3, {}},
+         {S3, s3Settings},
          {S3Queue, s3QueueTableSettings},
          {Hudi, {}},
-         {DeltaLake, {}},
+         {DeltaLakeS3, {}},
+         {DeltaLakeAzure, {}},
+         {DeltaLakeLocal, {}},
          {IcebergS3, {}},
+         {IcebergAzure, {}},
+         {IcebergLocal, {}},
          {Merge, {}},
          {Distributed, distributedTableSettings},
          {Dictionary, {}},
-         {GenerateRandom, {}}});
+         {GenerateRandom, {}},
+         {AzureBlobStorage, azureBlobStorageSettings},
+         {AzureQueue, azureQueueSettings},
+         {URL, {}},
+         {KeeperMap, {}},
+         {ExternalDistributed, {}},
+         {MaterializedPostgreSQL, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},
