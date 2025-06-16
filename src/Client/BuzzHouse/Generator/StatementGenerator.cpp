@@ -181,6 +181,13 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     {
         cd->set_comment(nextComment(rg));
     }
+    if ((next.isAtomicDatabase() || next.isOrdinaryDatabase()) && !fc.disks.empty() && rg.nextSmallNumber() < 4)
+    {
+        SetValue * sv = cd->mutable_setting_values()->mutable_set_value();
+
+        sv->set_property("disk");
+        sv->set_value("'" + rg.pickRandomly(fc.disks) + "'");
+    }
     this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
 }
 

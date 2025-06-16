@@ -2788,6 +2788,11 @@ CONV_FN(CreateDatabase, create_database)
         ret += " COMMENT ";
         ret += create_database.comment();
     }
+    if (create_database.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, create_database.setting_values());
+    }
 }
 
 CONV_FN(CreateFunction, create_function)

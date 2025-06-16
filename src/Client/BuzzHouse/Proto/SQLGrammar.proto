@@ -2832,6 +2832,7 @@ message CreateDatabase {
     optional Cluster cluster = 3;
     required DatabaseEngine dengine = 4;
     optional string comment = 5;
+    optional SettingValues setting_values = 6;
 }
 
 message CreateFunction {
