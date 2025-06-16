@@ -2136,13 +2136,15 @@ It can be called in two ways:
 fromUnixTimestamp(timestamp)
 fromUnixTimestamp(timestamp[, format[, timezone]])
     )";
-    FunctionDocumentation::Arguments arguments_fromUnixTimestamp = {
+    FunctionDocumentation::Arguments arguments_fromUnixTimestamp =
+    {
         {"timestamp", "Unix timestamp or date/date with time value. [`Integer`](../data-types/int-uint.md)/[`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"format", "Optional. Constant format string for output formatting. [`String`](../data-types/string.md)."},
         {"timezone", "Optional. Constant time zone string. [`String`](../data-types/string.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_fromUnixTimestamp = "Returns [`DateTime`](../data-types/datetime.md) when called with one argument, or [`String`](../data-types/string.md) when called with two or three arguments.";
-    FunctionDocumentation::Examples examples_fromUnixTimestamp = {
+    FunctionDocumentation::Examples examples_fromUnixTimestamp =
+    {
         {"Convert Unix timestamp to DateTime", R"(
 SELECT fromUnixTimestamp(423543535)
         )",
@@ -2162,7 +2164,8 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromUnixTimestamp = {20, 8};
     FunctionDocumentation::Category category_fromUnixTimestamp = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_fromUnixTimestamp = {
+    FunctionDocumentation documentation_fromUnixTimestamp =
+    {
         description_fromUnixTimestamp,
         syntax_fromUnixTimestamp,
         arguments_fromUnixTimestamp,
@@ -2213,13 +2216,15 @@ Using replacement fields, you can define a pattern for the resulting string.
     FunctionDocumentation::Syntax syntax_formatDateTimeInJodaSyntax = R"(
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
     )";
-    FunctionDocumentation::Arguments arguments_formatDateTimeInJodaSyntax = {
+    FunctionDocumentation::Arguments arguments_formatDateTimeInJodaSyntax =
+    {
         {"datetime", "A date or date time to format. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"format", "Format string with Joda-style replacement fields. [`String`](../data-types/string.md)."},
         {"timezone", "Optional. Timezone name for the formatted time. [`String`](../data-types/string.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_formatDateTimeInJodaSyntax = "Returns time and date values according to the determined format. [`String`](../data-types/string.md).";
-    FunctionDocumentation::Examples examples_formatDateTimeInJodaSyntax = {
+    FunctionDocumentation::Examples examples_formatDateTimeInJodaSyntax =
+    {
         {"Format datetime using Joda syntax", R"(
 SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')
         )",
@@ -2231,7 +2236,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
     };
     FunctionDocumentation::IntroducedIn introduced_in_formatDateTimeInJodaSyntax = {20, 1};
     FunctionDocumentation::Category category_formatDateTimeInJodaSyntax = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_formatDateTimeInJodaSyntax = {
+    FunctionDocumentation documentation_formatDateTimeInJodaSyntax =
+    {
         description_formatDateTimeInJodaSyntax,
         syntax_formatDateTimeInJodaSyntax,
         arguments_formatDateTimeInJodaSyntax,
@@ -2256,13 +2262,15 @@ When given two or three arguments where the first argument is a value of type [`
 fromUnixTimestampInJodaSyntax(timestamp)
 fromUnixTimestampInJodaSyntax(timestamp, format[, timezone])
     )";
-    FunctionDocumentation::Arguments arguments_fromUnixTimestampInJodaSyntax = {
+    FunctionDocumentation::Arguments arguments_fromUnixTimestampInJodaSyntax =
+    {
         {"timestamp", "Unix timestamp or date/time value. [`Integer`](../data-types/int-uint.md)/[`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"format", "Optional. Constant format string using Joda syntax for output formatting. [`String`](../data-types/string.md)."},
         {"timezone", "Optional. Constant time zone string. [`String`](../data-types/string.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_fromUnixTimestampInJodaSyntax = "Returns [`DateTime`](../data-types/datetime.md) when called with one argument, or [`String`](../data-types/string.md) when called with two or three arguments.";
-    FunctionDocumentation::Examples examples_fromUnixTimestampInJodaSyntax = {
+    FunctionDocumentation::Examples examples_fromUnixTimestampInJodaSyntax =
+    {
         {"Convert Unix timestamp with Joda format", R"(
 SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') AS DateTime
         )",
@@ -2274,7 +2282,8 @@ SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') A
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromUnixTimestampInJodaSyntax = {23, 1};
     FunctionDocumentation::Category category_fromUnixTimestampInJodaSyntax = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_fromUnixTimestampInJodaSyntax = {
+    FunctionDocumentation documentation_fromUnixTimestampInJodaSyntax =
+    {
         description_fromUnixTimestampInJodaSyntax,
         syntax_fromUnixTimestampInJodaSyntax,
         arguments_fromUnixTimestampInJodaSyntax,
