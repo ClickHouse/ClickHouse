@@ -25,7 +25,7 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
 def file_size_value(max_val: int):
     def gen():
         return str(threshold_generator(0.2, 0.2, 1, max_val)()) + random.choice(
-            ["ki", "ki", "Mi", "Gi"] # Increased probability
+            ["ki", "ki", "Mi", "Gi"]  # Increased probability
         )
 
     return gen
