@@ -681,6 +681,8 @@ if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
 endif()
 
+dbms_target_link_libraries(PUBLIC ch_contrib::arrow)
+
 if (ENABLE_BUZZHOUSE)
     dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
 endif()

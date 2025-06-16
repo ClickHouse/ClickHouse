@@ -1,8 +1,6 @@
 #pragma once
 #include "config.h"
 
-#if USE_ARROW
-
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include "ArrowBufferedStreams.h"
@@ -37,5 +35,3 @@ private:
 };
 
 }
-
-#endif

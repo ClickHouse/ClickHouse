@@ -1,8 +1,6 @@
 #pragma once
 #include "config.h"
 
-#if USE_ARROW
-
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -78,5 +76,3 @@ private:
 };
 
 }
-
-#endif

@@ -1,7 +1,6 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include "ArrowBufferedStreams.h"
-#if USE_ARROW || USE_ORC || USE_PARQUET
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
@@ -360,5 +359,3 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFileLoadIntoMemory(
 }
 
 }
-
-#endif

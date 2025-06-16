@@ -1,8 +1,6 @@
 #pragma once
 #include "config.h"
 
-#if USE_ARROW || USE_PARQUET
-
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/Chunk.h>
 
@@ -55,5 +53,3 @@ private:
 };
 
 }
-
-#endif
