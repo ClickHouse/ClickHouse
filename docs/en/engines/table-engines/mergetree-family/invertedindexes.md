@@ -72,7 +72,7 @@ The ngram size can be specified via the `ngram_size` parameter. This is an optio
 - `ngram_size = N`: with `N` between 2 and 8 sets the tokenizer to "tokens('ngram', N)".
 - If not specified: Use a default ngram size which is 3.
 
-The seprators can be specified via the `separators` parameter. This is an optional parameter and only relevant when tokenizer is set to `split`. The following variants exist:
+The separators can be specified via the `separators` parameter. This is an optional parameter and only relevant when tokenizer is set to `split`. The following variants exist:
 
 - `separators = []`: A list of strings, e.g. `separators = ['\n', '\\']`.
 - If not specified: Use a default separator which is a space (`[' ']`).
