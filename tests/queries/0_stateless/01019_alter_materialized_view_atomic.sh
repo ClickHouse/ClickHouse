@@ -28,21 +28,31 @@ EOF
 #
 # Insert N times into null while altering sink query and switching it from mv1 to mv2.
 
+# The SIGNAL
+INSERT_DONE=0
+
 function alter_thread()
 {
-    trap 'exit' INT
+    # When INSERT done, we got signal
+    trap 'INSERT_DONE=1' SIGINT SIGTERM
 
     ALTERS[0]="ALTER TABLE mv MODIFY QUERY SELECT v FROM src;"
     ALTERS[1]="ALTER TABLE mv MODIFY QUERY SELECT v * 2 as v FROM src;"
 
+    # Loop to make the ALTER run concurrently with INSERT
     while true; do
+        [[ $INSERT_DONE -ne 0 ]] && break
         $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTERS[$RANDOM % 2]}"
-        sleep "$(echo 0.$RANDOM)";
+        sleep 0.$RANDOM
     done
+
+    # Insert done, DROP the tables
+    $CLICKHOUSE_CLIENT -q "DROP VIEW mv"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE src"
 }
 
-export -f alter_thread;
-timeout 10 bash -c alter_thread &
+alter_thread &
+ALTER_DROP_PID=$!
 
 for _ in {1..100}; do
     # Retry (hopefully retriable (deadlock avoided)) errors.
@@ -52,7 +62,9 @@ for _ in {1..100}; do
 done
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM mv;"
-wait
 
-$CLICKHOUSE_CLIENT -q "DROP VIEW mv"
-$CLICKHOUSE_CLIENT -q "DROP TABLE src"
+# After INSERT is done, notify the alter thread to stop and then we could drop tables
+kill -SIGINT $ALTER_DROP_PID
+
+# Wait until alter and drop finish
+wait $ALTER_DROP_PID
