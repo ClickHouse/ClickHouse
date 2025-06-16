@@ -126,15 +126,13 @@ void StatementGenerator::flatColumnPath(const uint32_t flags, const std::unorder
     }
 }
 
-SQLRelation StatementGenerator::createTableRelation(
-    RandomGenerator & rg, const bool all_cols, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
+SQLRelation
+StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
 {
     SQLRelation rel(rel_name);
 
     flatTableColumnPath(
-        flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated,
-        t.cols,
-        [&all_cols](const SQLColumn & c) { return all_cols || !c.dmod.has_value() || c.dmod.value() != DModifier::DEF_EPHEMERAL; });
+        flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, t.cols, [](const SQLColumn &) { return true; });
     for (const auto & entry : this->table_entries)
     {
         DB::Strings names;
@@ -199,7 +197,7 @@ SQLRelation StatementGenerator::createTableRelation(
 
 void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
 {
-    const SQLRelation rel = createTableRelation(rg, false, allow_internal_cols, rel_name, t);
+    const SQLRelation rel = createTableRelation(rg, allow_internal_cols, rel_name, t);
 
     if (rel_name.empty())
     {
@@ -1080,7 +1078,7 @@ void StatementGenerator::generateEngineDetails(
         }
         connections.createExternalDatabaseTable(rg, next, b, entries, te);
     }
-    else if (te->has_engine() && (b.isAnyS3Engine() || b.isHudiEngine() || b.isDeltaLakeEngine() || b.isIcebergS3Engine()))
+    else if (te->has_engine() && (b.isAnyS3Engine() || b.isHudiEngine() || b.isDeltaLakeS3Engine() || b.isIcebergS3Engine()))
     {
         connections.createExternalDatabaseTable(rg, IntegrationCall::MinIO, b, entries, te);
         if (b.isAnyS3Engine() || b.isIcebergS3Engine())
@@ -1094,7 +1092,7 @@ void StatementGenerator::generateEngineDetails(
                 b.file_comp = rg.pickRandomly(S3Compress);
                 te->add_params()->set_svalue(b.file_comp);
             }
-            if (b.isAnyS3Engine() && rg.nextSmallNumber() < 5)
+            if (b.isS3Engine() && rg.nextSmallNumber() < 5)
             {
                 generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
             }
@@ -1209,7 +1207,7 @@ void StatementGenerator::generateEngineDetails(
             b.file_comp = rg.pickRandomly(AzureCompress);
             te->add_params()->set_svalue(b.file_comp);
         }
-        if (rg.nextSmallNumber() < 5)
+        if (b.isAzureEngine() && rg.nextSmallNumber() < 5)
         {
             generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
         }
@@ -1274,13 +1272,6 @@ void StatementGenerator::generateEngineDetails(
 
                 sv->set_property("input_format_with_names_use_header");
                 sv->set_value("0");
-                if (b.isS3QueueEngine())
-                {
-                    SetValue * sv2 = svs->add_other_values();
-
-                    sv2->set_property("mode");
-                    sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
-                }
             }
             else if (
                 b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
@@ -1532,7 +1523,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     if (!expr->has_comp_expr())
     {
         flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-        colRefOrExpression(rg, createTableRelation(rg, true, true, "", t), Null, rg.pickRandomly(this->entries), expr);
+        colRefOrExpression(rg, createTableRelation(rg, true, "", t), Null, rg.pickRandomly(this->entries), expr);
         this->entries.clear();
     }
     switch (itpe)
@@ -1784,10 +1775,12 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         if (connections.hasMinIOConnection())
         {
             this->ids.emplace_back(S3);
+            this->ids.emplace_back(S3Queue);
         }
         if (connections.hasAzuriteConnection())
         {
             this->ids.emplace_back(AzureBlobStorage);
+            this->ids.emplace_back(AzureQueue);
         }
         if (connections.hasHTTPConnection())
         {
@@ -2000,7 +1993,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
 
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
     chassert(!next.cols.empty());
-    generateEngineDetails(rg, createTableRelation(rg, true, true, "", next), next, !added_pkey, te);
+    generateEngineDetails(rg, createTableRelation(rg, true, "", next), next, !added_pkey, te);
     this->entries.clear();
 
     if (next.cluster.has_value())
