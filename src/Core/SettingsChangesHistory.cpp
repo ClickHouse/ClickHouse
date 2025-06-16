@@ -786,6 +786,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             /// RELEASE CLOSED
             {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
             {"allow_coalescing_columns_in_partition_or_order_key", false, false, "New setting to allow coalescing of partition or sorting key columns."},
+            /// RELEASE CLOSED
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
