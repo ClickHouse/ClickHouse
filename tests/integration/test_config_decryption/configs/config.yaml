@@ -5,8 +5,8 @@ encryption_codecs:
     key_hex: 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
 
 max_table_size_to_drop:
-  '@encrypted_by': AES_128_GCM_SIV
   '#text': 96260000000B0000000000E8FE3C087CED2205A5071078B29FD5C3B97F824911DED3217E980C
+  '@encrypted_by': AES_128_GCM_SIV
 
 max_partition_size_to_drop:
   '@encrypted_by': AES_256_GCM_SIV

@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Common/FST.h>
+#include <Core/Block.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-
 #include <roaring.hh>
 #include <array>
 #include <mutex>
@@ -161,7 +161,6 @@ public:
 
     /// Do last segment writing
     void finalize();
-    void cancel() noexcept;
 
     /// Method for writing segment data to Gin index files
     void writeSegment();
@@ -174,16 +173,8 @@ private:
     /// Initialize all indexing files for this store
     void initFileStreams();
 
-    /// Initialize segment ID by either reading from file .gin_sid or setting to default value
-    void initSegmentId();
-
-    /// Stores segment id into disk
-    void writeSegmentId();
-
-    /// Get a range of next available segment IDs
-    UInt32 getNextSegmentIDRange(size_t n);
-
-    void verifyFormatVersionIsSupported(size_t version);
+    /// Get a range of next available segment IDs by updating file .gin_sid
+    UInt32 getNextSegmentIDRange(const String & file_name, size_t n);
 
     String name;
     DataPartStoragePtr storage;
@@ -192,9 +183,6 @@ private:
     UInt32 cached_segment_num = 0;
 
     std::mutex mutex;
-
-    /// Not thread-safe, protected by mutex
-    UInt32 next_available_segment_id = 0;
 
     /// Dictionaries indexed by segment ID
     using GinSegmentDictionaries = std::unordered_map<UInt32, GinSegmentDictionaryPtr>;

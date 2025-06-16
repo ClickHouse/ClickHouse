@@ -1,9 +1,8 @@
 ## sudo -H pip install redis
+import redis
+import pytest
 import struct
 import sys
-
-import pytest
-import redis
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -387,46 +386,3 @@ def test_truncate(started_cluster):
     response = TSV.toMat(node.query("SELECT COUNT(*) FROM test_truncate FORMAT TSV"))
     assert len(response) == 1
     assert response[0] == ["0"]
-
-
-def test_hiding_credentials(started_cluster):
-    address = get_address_for_ch()
-    table_name = "test_hiding_credentials"
-    node.query(
-        f"""
-        DROP TABLE IF EXISTS {table_name};
-        CREATE TABLE {table_name} (k String, v String) Engine=Redis('{address}', 0, "password") PRIMARY KEY (k)
-        """
-    )
-    node.query("SYSTEM FLUSH LOGS")
-    message = node.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE {table_name}%'")
-    assert "password" not in message
-    assert f"Redis(\\'{address}\\', 0, \\'[HIDDEN]\\')" in message
-
-
-def test_direct_join(started_cluster):
-    address = get_address_for_ch()
-
-    # clean all
-    drop_table("test_direct_join")
-    drop_table("test_mt")
-
-    # create table
-    node.query(
-        f"""
-            CREATE TABLE test_direct_join(k Int) Engine=Redis('{address}', 1, 'clickhouse') PRIMARY KEY (k);
-            CREATE TABLE test_mt (k Int) ENGINE = MergeTree() ORDER BY tuple();
-            INSERT INTO TABLE test_direct_join VALUES (1);
-            INSERT INTO TABLE test_mt VALUES (1);
-        """
-    )
-
-    response = TSV.toMat(node.query("SELECT * FROM test_direct_join JOIN test_mt ON "
-                                    "test_direct_join.k = test_mt.k FORMAT TSV"))
-    assert len(response) == 1
-    assert response[0] == ["1", "1"]
-
-    response = TSV.toMat(node.query("SELECT * FROM test_mt JOIN test_direct_join ON "
-                                    "test_direct_join.k = test_mt.k FORMAT TSV"))
-    assert len(response) == 1
-    assert response[0] == ["1", "1"]

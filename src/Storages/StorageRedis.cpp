@@ -1,14 +1,12 @@
+#include <unordered_set>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -21,7 +19,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Common/Exception.h>
-#include <Common/RemoteHostFilter.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
@@ -207,6 +204,7 @@ StorageRedis::StorageRedis(
     const String & primary_key_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , table_id(table_id_)
     , configuration(configuration_)
     , log(getLogger("StorageRedis"))
     , primary_key(primary_key_)
@@ -238,30 +236,32 @@ Pipe StorageRedis::read(
     {
         return Pipe(std::make_shared<RedisDataSource>(*this, header, max_block_size));
     }
-
-    if (keys->empty())
-        return {};
-
-    Pipes pipes;
-
-    ::sort(keys->begin(), keys->end());
-    keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
-
-    size_t num_keys = keys->size();
-    size_t num_threads = std::min<size_t>(num_streams, keys->size());
-
-    num_threads = std::min<size_t>(num_threads, configuration.pool_size);
-    assert(num_keys <= std::numeric_limits<uint32_t>::max());
-
-    for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
+    else
     {
-        size_t begin = num_keys * thread_idx / num_threads;
-        size_t end = num_keys * (thread_idx + 1) / num_threads;
+        if (keys->empty())
+            return {};
 
-        pipes.emplace_back(
-            std::make_shared<RedisDataSource>(*this, header, keys, keys->begin() + begin, keys->begin() + end, max_block_size));
+        Pipes pipes;
+
+        ::sort(keys->begin(), keys->end());
+        keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
+
+        size_t num_keys = keys->size();
+        size_t num_threads = std::min<size_t>(num_streams, keys->size());
+
+        num_threads = std::min<size_t>(num_threads, configuration.pool_size);
+        assert(num_keys <= std::numeric_limits<uint32_t>::max());
+
+        for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
+        {
+            size_t begin = num_keys * thread_idx / num_threads;
+            size_t end = num_keys * (thread_idx + 1) / num_threads;
+
+            pipes.emplace_back(
+                std::make_shared<RedisDataSource>(*this, header, keys, keys->begin() + begin, keys->begin() + end, max_block_size));
+        }
+        return Pipe::unitePipes(std::move(pipes));
     }
-    return Pipe::unitePipes(std::move(pipes));
 }
 
 namespace
@@ -356,7 +356,7 @@ Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<
 
     RedisArray values = multiGet(keys);
     if (values.isNull() || values.size() == 0)
-        return Chunk(std::move(columns), 0);
+        return {};
 
     if (null_map)
     {
@@ -404,9 +404,6 @@ std::pair<RedisIterator, RedisArray> StorageRedis::scan(RedisIterator iterator, 
 
 RedisArray StorageRedis::multiGet(const RedisArray & keys) const
 {
-    if (keys.isNull() || keys.size() == 0)
-        return {};
-
     auto connection = getRedisConnection(pool, configuration);
 
     RedisCommand cmd_mget("MGET");
@@ -426,7 +423,7 @@ void StorageRedis::multiSet(const RedisArray & data) const
 
     auto ret = connection->client->execute<RedisSimpleString>(cmd_mget);
     if (ret != "OK")
-        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to write to redis table {}, for {}", getStorageID().getFullNameNotQuoted(), ret);
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to write to redis table {}, for {}", table_id.getFullNameNotQuoted(), ret);
 }
 
 RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
@@ -444,7 +441,7 @@ RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
             "Try to delete {} rows but actually deleted {} rows from redis table {}.",
             keys.size(),
             ret,
-            getStorageID().getFullNameNotQuoted());
+            table_id.getFullNameNotQuoted());
 
     return ret;
 }
@@ -490,7 +487,7 @@ void StorageRedis::truncate(const ASTPtr & query, const StorageMetadataPtr &, Co
     auto ret = connection->client->execute<RedisSimpleString>(cmd_flush_db);
 
     if (ret != "OK")
-        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to truncate redis table {}, for {}", getStorageID().getFullNameNotQuoted(), ret);
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to truncate redis table {}, for {}", table_id.getFullNameNotQuoted(), ret);
 }
 
 void StorageRedis::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const

@@ -8,7 +8,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
 #include <DataTypes/IDataType.h>
-#include <Core/Block_fwd.h>
+#include <Core/Block.h>
 
 #include "DictionaryStructure.h"
 #include "IDictionary.h"

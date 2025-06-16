@@ -1,12 +1,12 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
-
-#include <Columns/IColumn.h>
-#include <IO/ReadHelpers.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
-
+#include <IO/ReadHelpers.h>
 #include <numeric>
+
+#include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {
@@ -15,19 +15,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
-}
-
-Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
-{
-    return index.expression->getRequiredColumns();
-}
-
-MergeTreeIndexFormat
-IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
-{
-    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
-        return {1, ".idx"};
-    return {0 /*unknown*/, ""};
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
@@ -56,7 +43,8 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                         {
                             if (left.empty())
                                 return right.first;
-                            return left + ", " + right.first;
+                            else
+                                return left + ", " + right.first;
                         })
                 );
     }
@@ -110,7 +98,8 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
                     {
                         if (left.empty())
                             return right.first;
-                        return left + ", " + right.first;
+                        else
+                            return left + ", " + right.first;
                     })
             );
     }
@@ -143,24 +132,26 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("vector_similarity", vectorSimilarityIndexCreator);
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
+    /// ------
+    /// TODO: remove this block at the end of 2024.
+    /// Index types 'annoy' and 'usearch' are no longer supported as of June 2024. Their successor is index type 'vector_similarity'.
+    /// To support loading tables with old indexes during a transition period, register dummy indexes which allow load/attaching but
+    /// throw an exception when the user attempts to use them.
+    registerCreator("annoy", legacyVectorSimilarityIndexCreator);
+    registerValidator("annoy", legacyVectorSimilarityIndexValidator);
+    registerCreator("usearch", legacyVectorSimilarityIndexCreator);
+    registerValidator("usearch", legacyVectorSimilarityIndexValidator);
+    /// ------
 
-    registerCreator("text", ginIndexCreator);
-    registerValidator("text", ginIndexValidator);
+    registerCreator("inverted", fullTextIndexCreator);
+    registerValidator("inverted", fullTextIndexValidator);
 
     /// ------
+    /// TODO: remove this block at the end of 2024.
     /// Index type 'inverted' was renamed to 'full_text' in May 2024.
-    /// Index type 'full_text' was renamed to 'gin' in April 2025.
-    /// Index type 'gin' was renamed to 'text' in May 2025.
-    ///
-    /// To support loading tables with old indexes during a transition period, register these legacy indexes.
-    ///
-    /// TODO: remove this block one year after text indexes became GA.
-    registerCreator("full_text", ginIndexCreator);
-    registerValidator("full_text", ginIndexValidator);
-    registerCreator("inverted", ginIndexCreator);
-    registerValidator("inverted", ginIndexValidator);
-    registerCreator("gin", ginIndexCreator);
-    registerValidator("gin", ginIndexValidator);
+    /// To support loading tables with old indexes during a transition period, register full-text indexes under their old name.
+    registerCreator("full_text", fullTextIndexCreator);
+    registerValidator("full_text", fullTextIndexValidator);
     /// ------
 }
 

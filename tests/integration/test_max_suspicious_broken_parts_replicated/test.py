@@ -4,10 +4,9 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-import os
-
 import pytest
 
+import os
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -25,32 +24,19 @@ def start_cluster():
 
 
 def break_part(table, part_name):
-    data_path = node.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table}'"
-    ).strip()
     node.exec_in_container(
         [
             "bash",
             "-c",
-            f"mv {data_path}/{part_name}/columns.txt {data_path}/{part_name}/columns.txt.broken",
-        ]
-    )
-
-def correct_part(data_path, part_name):
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"mv {data_path}/{part_name}/columns.txt.broken {data_path}/{part_name}/columns.txt",
+            f"rm /var/lib/clickhouse/data/default/{table}/{part_name}/columns.txt",
         ]
     )
 
 
 def remove_part(table, part_name):
-    data_path = node.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table}'"
-    ).strip()
-    node.exec_in_container(["bash", "-c", f"rm -r {data_path}/{part_name}"])
+    node.exec_in_container(
+        ["bash", "-c", f"rm -r /var/lib/clickhouse/data/default/{table}/{part_name}"]
+    )
 
 
 def get_count(table):
@@ -71,7 +57,6 @@ def remove_part_from_zookeeper(replica_path, part_name):
 
 
 def test_unexpected_uncommitted_merge():
-    node.query("DROP TABLE IF EXISTS broken_table SYNC")
     node.query(
         """
     CREATE TABLE broken_table (key Int) ENGINE = ReplicatedMergeTree('/tables/broken', '1') ORDER BY tuple()
@@ -107,11 +92,8 @@ def test_unexpected_uncommitted_merge():
         == "all_0_0_0\nall_1_1_0\nall_2_2_0\n"
     )
 
-    node.query("DROP TABLE broken_table SYNC")
-
 
 def test_unexpected_uncommitted_mutation():
-    node.query("DROP TABLE IF EXISTS broken_table0 SYNC")
     node.query(
         """
     CREATE TABLE broken_table0 (key Int) ENGINE = ReplicatedMergeTree('/tables/broken0', '1') ORDER BY tuple()
@@ -146,11 +128,8 @@ def test_unexpected_uncommitted_mutation():
         "SELECT name FROM system.detached_parts where table = 'broken_table0'"
     )
 
-    node.query("DROP TABLE broken_table0 SYNC")
-
 
 def test_corrupted_random_part():
-    node.query("DROP TABLE IF EXISTS broken_table_1 SYNC")
     node.query(
         """
     CREATE TABLE broken_table_1 (key Int) ENGINE = ReplicatedMergeTree('/tables/broken_1', '1') ORDER BY tuple()
@@ -168,22 +147,14 @@ def test_corrupted_random_part():
         == "all_0_0_0\nall_1_1_0\n"
     )
 
-    data_path = node.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='broken_table_1'"
-    ).strip()
     break_part("broken_table_1", "all_0_0_0")
 
     detach_table("broken_table_1")
     with pytest.raises(QueryRuntimeException):
         attach_table("broken_table_1")
 
-    correct_part(data_path, "all_0_0_0")
-    attach_table("broken_table_1")
-
-    node.query("DROP TABLE broken_table_1 SYNC")
 
 def test_corrupted_unexpected_part():
-    node.query("DROP TABLE IF EXISTS broken_table_2 SYNC")
     node.query(
         """
     CREATE TABLE broken_table_2 (key Int) ENGINE = ReplicatedMergeTree('/tables/broken_2', '1') ORDER BY tuple()
@@ -217,11 +188,8 @@ def test_corrupted_unexpected_part():
         == "all_0_1_1\n"
     )
 
-    node.query("DROP TABLE broken_table_2 SYNC")
-
 
 def test_corrupted_unexpected_part_ultimate():
-    node.query("DROP TABLE IF EXISTS broken_table_3 SYNC")
     node.query(
         """
     CREATE TABLE broken_table_3 (key Int) ENGINE = ReplicatedMergeTree('/tables/broken_3', '1') ORDER BY tuple()
@@ -256,5 +224,3 @@ def test_corrupted_unexpected_part_ultimate():
     )
 
     assert node.query("SELECT sum(key) FROM broken_table_3") == "145\n"
-
-    node.query("DROP TABLE broken_table_3 SYNC")

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <type_traits>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -175,8 +176,6 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return !Impl::specialImplementationForNulls(); }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
-
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -246,8 +245,6 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

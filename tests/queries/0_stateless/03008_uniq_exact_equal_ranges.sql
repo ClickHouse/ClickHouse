@@ -6,7 +6,6 @@ SET group_by_two_level_threshold_bytes = 1;
 SET group_by_two_level_threshold = 1;
 SET max_threads = 4;
 SET max_bytes_before_external_group_by = 0;
-SET max_bytes_ratio_before_external_group_by = 0;
 SET optimize_aggregation_in_order = 0;
 
 INSERT INTO t_uniq_exact SELECT 0, randomPrintableASCII(5), rand() FROM numbers(300000);

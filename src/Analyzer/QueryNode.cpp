@@ -1,4 +1,3 @@
-#include <memory>
 #include <Analyzer/QueryNode.h>
 
 #include <fmt/core.h>
@@ -8,9 +7,6 @@
 #include <Common/FieldVisitorToString.h>
 
 #include <Core/NamesAndTypes.h>
-
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/IDataType.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -24,10 +20,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/InterpolateNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/UnionNode.h>
 
 namespace DB
 {
@@ -35,8 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
@@ -50,7 +42,6 @@ QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_change
     children[window_child_index] = std::make_shared<ListNode>();
     children[order_by_child_index] = std::make_shared<ListNode>();
     children[limit_by_child_index] = std::make_shared<ListNode>();
-    children[correlated_columns_list_index] = std::make_shared<ListNode>();
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_)
@@ -59,21 +50,30 @@ QueryNode::QueryNode(ContextMutablePtr context_)
 
 void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
 {
+    if (projection_columns_value.size() != getProjection().getNodes().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected projection columns size to match projection nodes size");
 
-    // Ensure the number of aliases matches the number of projection columns
-    if (!this->projection_aliases_to_override.empty())
-    {
-        if (this->projection_aliases_to_override.size() != projection_columns_value.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Number of aliases does not match number of projection columns. "
-                "Expected {}, got {}",
-                projection_columns_value.size(),
-                this->projection_aliases_to_override.size());
-
-        for (size_t i = 0; i < projection_columns_value.size(); ++i)
-            projection_columns_value[i].name = this->projection_aliases_to_override[i];
-    }
     projection_columns = std::move(projection_columns_value);
+}
+
+void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns)
+{
+    auto & projection_nodes = getProjection().getNodes();
+    size_t projection_columns_size = projection_columns.size();
+    size_t write_index = 0;
+
+    for (size_t i = 0; i < projection_columns_size; ++i)
+    {
+        if (!used_projection_columns.contains(projection_columns[i].name))
+            continue;
+
+        projection_nodes[write_index] = projection_nodes[i];
+        projection_columns[write_index] = projection_columns[i];
+        ++write_index;
+    }
+
+    projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
+    projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
 }
 
 void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
@@ -94,81 +94,6 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
     projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
     projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
-
-    if (hasInterpolate())
-    {
-        std::unordered_set<String> used_projection_columns;
-        for (const auto & projection : projection_columns)
-            used_projection_columns.insert(projection.name);
-
-        auto & interpolate_node = getInterpolate();
-        auto & interpolate_list_nodes = interpolate_node->as<ListNode &>().getNodes();
-        std::erase_if(
-            interpolate_list_nodes,
-            [&used_projection_columns](const QueryTreeNodePtr & interpolate)
-            { return !used_projection_columns.contains(interpolate->as<InterpolateNode &>().getExpressionName()); });
-
-        if (interpolate_list_nodes.empty())
-            interpolate_node = nullptr;
-    }
-}
-
-ColumnNodePtrWithHashSet QueryNode::getCorrelatedColumnsSet() const
-{
-    ColumnNodePtrWithHashSet result;
-
-    const auto & correlated_columns = getCorrelatedColumns().getNodes();
-    result.reserve(correlated_columns.size());
-
-    for (const auto & column : correlated_columns)
-    {
-        result.insert(std::static_pointer_cast<ColumnNode>(column));
-    }
-    return result;
-}
-
-void QueryNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
-{
-    auto & correlated_columns = getCorrelatedColumns().getNodes();
-    for (const auto & column : correlated_columns)
-    {
-        if (column->isEqual(*correlated_column))
-            return;
-    }
-    correlated_columns.push_back(correlated_column);
-}
-
-DataTypePtr QueryNode::getResultType() const
-{
-    if (isCorrelated())
-    {
-        if (projection_columns.size() == 1)
-        {
-            /// Scalar correlated subquery must return nullable result,
-            /// because it must return NULL value if subquery produces an empty result set.
-            ///
-            /// Example:
-            ///
-            /// SELECT
-            ///     *
-            /// FROM partsupp as ps
-            /// WHERE ps.ps_availqty > (
-            ///         SELECT 0.5 * sum(l.l_quantity)
-            ///         FROM lineitem as l
-            ///         WHERE (l.l_partkey = ps.ps_partkey) AND (l.l_suppkey = ps.ps_suppkey)
-            ///     )
-            ///
-            /// In this case, if the subquery returns a non-nullable value, it'll be evaluate to `0` for empty result set.
-            /// It will lead to incorrect result, because the condition `ps.ps_availqty > 0` will be true.
-            /// To avoid this, we return Null value here and the condition will evaluate to false.
-            return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
-        }
-        else
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Method getResultType is supported only for correlated query node with 1 column, but got {}",
-                projection_columns.size());
-    }
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");
 }
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -215,12 +140,6 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
-
-    if (isCorrelated())
-    {
-        buffer << ", is_correlated: 1\n" << std::string(indent + 2, ' ') << "CORRELATED COLUMNS\n";
-        getCorrelatedColumns().dumpTreeImpl(buffer, format_state, indent + 4);
-    }
 
     if (hasWith())
     {
@@ -339,12 +258,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     }
 }
 
-bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const
+bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
     return is_subquery == rhs_typed.is_subquery &&
-        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name)) &&
+        is_cte == rhs_typed.is_cte &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -354,26 +273,18 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
+        cte_name == rhs_typed.cte_name &&
         projection_columns == rhs_typed.projection_columns &&
         settings_changes == rhs_typed.settings_changes;
 }
 
-void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) const
+void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(is_subquery);
+    state.update(is_cte);
 
-    if (options.ignore_cte)
-    {
-        state.update(false);
-        state.update(size_t(0));
-        state.update(std::string());
-    }
-    else
-    {
-        state.update(is_cte);
-        state.update(cte_name.size());
-        state.update(cte_name);
-    }
+    state.update(cte_name.size());
+    state.update(cte_name);
 
     state.update(projection_columns.size());
     for (const auto & projection_column : projection_columns)
@@ -384,12 +295,6 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         auto projection_column_type_name = projection_column.type->getName();
         state.update(projection_column_type_name.size());
         state.update(projection_column_type_name);
-    }
-
-    for (const auto & projection_alias : projection_aliases_to_override)
-    {
-        state.update(projection_alias.size());
-        state.update(projection_alias);
     }
 
     state.update(is_recursive_with);
@@ -433,7 +338,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
-    result_query_node->projection_aliases_to_override = projection_aliases_to_override;
 
     return result_query_node;
 }
@@ -570,8 +474,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (is_subquery)
     {
         auto subquery = std::make_shared<ASTSubquery>(std::move(result_select_query));
-        if (options.set_subquery_cte_name)
-            subquery->cte_name = cte_name;
+        subquery->cte_name = cte_name;
         return subquery;
     }
 
