@@ -133,7 +133,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_min_ms_,
     size_t cleanup_interval_max_ms_,
     size_t keeper_multiread_batch_size_,
-    bool path_with_hive_partitioning_)
+    bool is_path_with_hive_partitioning_)
     : table_metadata(table_metadata_)
     , storage_type(storage_type_)
     , mode(table_metadata.getMode())
@@ -144,7 +144,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
-    , path_with_hive_partitioning(path_with_hive_partitioning_)
+    , is_path_with_hive_partitioning(is_path_with_hive_partitioning_)
 {
     LOG_TRACE(
         log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
@@ -210,7 +210,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 buckets_num,
                 table_metadata.loading_retries,
                 *metadata_ref_count,
-                path_with_hive_partitioning,
+                is_path_with_hive_partitioning,
                 log);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
@@ -391,7 +391,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const std::string & format,
     const ContextPtr & context,
     bool is_attach,
-    bool path_with_hive_partitioning,
+    bool is_path_with_hive_partitioning,
     LoggerPtr log)
 {
     ObjectStorageQueueTableMetadata table_metadata(settings, columns, format);
@@ -477,7 +477,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 buckets_num,
                 table_metadata.loading_retries,
                 noop,
-                path_with_hive_partitioning,
+                is_path_with_hive_partitioning,
                 log).prepareProcessedAtStartRequests(requests, zookeeper);
         }
 

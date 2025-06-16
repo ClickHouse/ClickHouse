@@ -22,6 +22,7 @@ public:
         std::string bucket_lock_id_path;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
+    using LastProcessedFileInfo = ObjectStorageQueueIFileMetadata::LastProcessedFileInfo;
 
     explicit ObjectStorageQueueOrderedFileMetadata(
         const std::filesystem::path & zk_path_,
@@ -31,7 +32,7 @@ public:
         size_t buckets_num_,
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
-        bool path_with_hive_partitioning,
+        bool is_path_with_hive_partitioning,
         LoggerPtr log_);
 
     struct BucketHolder;
@@ -57,7 +58,7 @@ public:
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
-        bool path_with_hive_partitioning,
+        bool is_path_with_hive_partitioning,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(
@@ -69,11 +70,12 @@ private:
     const std::string zk_path;
     const BucketInfoPtr bucket_info;
 
-    bool path_with_hive_partitioning = false;
+    bool is_path_with_hive_partitioning = false;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 
-    void prepareProcessedRequestsImpl(Coordination::Requests & requests) override;
+    void prepareProcessedRequestsImpl(Coordination::Requests & requests,
+        LastProcessedFileInfoMapPtr created_nodes) override;
 
     bool getMaxProcessedFile(
         NodeMetadata & result,
@@ -95,11 +97,17 @@ private:
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client,
         const std::string & processed_node_path_,
-        bool ignore_if_exists);
+        bool ignore_if_exists,
+        LastProcessedFileInfoMapPtr created_nodes = nullptr);
 
     void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & file_map) override;
 
+    /// Return hive part of path
+    /// For path `/table/path/date=2025-01-01/city=New_Orlean/data.parquet` returns `date=2025-01-01/city=New_Orlean`
     static std::string getHivePart(const std::string & file_path);
+    /// Normalize hive part to use as node in zookeeper path
+    /// `date=2025-01-01/city=New_Orlean` changes to `date=2025-01-01_city=New__Orlean`
+    static void normalizeHivePart(std::string & hive_part);
 };
 
 struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::noncopyable

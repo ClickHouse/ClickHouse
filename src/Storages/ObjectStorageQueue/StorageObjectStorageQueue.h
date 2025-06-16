@@ -73,6 +73,8 @@ private:
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
     using ProcessingProgress = ObjectStorageQueueSource::ProcessingProgress;
     using ProcessingProgressPtr = ObjectStorageQueueSource::ProcessingProgressPtr;
+    using LastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMap;
+    using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
     ObjectStorageType type;
     const std::string engine_name;

@@ -57,7 +57,6 @@ namespace Setting
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool use_hive_partitioning;
 }
 
 namespace FailPoints
@@ -94,6 +93,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
     extern const ObjectStorageQueueSettingsUInt64 list_objects_batch_size;
     extern const ObjectStorageQueueSettingsBool enable_hash_ring_filtering;
+    extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -246,17 +246,17 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
-    bool path_with_hive_partitioning = false;
+    bool is_path_with_hive_partitioning = false;
 
-    if (getContext()->getSettingsRef()[Setting::use_hive_partitioning])
+    if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
     {
         auto key_values = VirtualColumnUtils::parseHivePartitioningKeysAndValues(configuration->getPath());
         if (!key_values.empty())
-            path_with_hive_partitioning = true;
+            is_path_with_hive_partitioning = true;
     }
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, path_with_hive_partitioning, log);
+        zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, is_path_with_hive_partitioning, log);
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
@@ -267,7 +267,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
-        path_with_hive_partitioning);
+        is_path_with_hive_partitioning);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -698,8 +698,11 @@ void StorageObjectStorageQueue::commit(
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
+    ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap file_map;
+    LastProcessedFileInfoMapPtr created_nodes = std::make_shared<LastProcessedFileInfoMap>();
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message, error_code);
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
+    ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
 
     if (requests.empty())
     {

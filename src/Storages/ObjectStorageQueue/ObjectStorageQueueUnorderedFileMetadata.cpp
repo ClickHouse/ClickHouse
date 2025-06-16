@@ -120,7 +120,8 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     }
 }
 
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
+void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests,
+    LastProcessedFileInfoMapPtr /* created_nodes */)
 {
     if (processing_id_version.has_value())
     {
