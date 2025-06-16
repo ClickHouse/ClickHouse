@@ -322,7 +322,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greatest
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -739,7 +738,6 @@ toFloat64
 toFloat64OrDefault
 toFloat64OrNull
 toFloat64OrZero
-toHour
 toIPv4
 toIPv4OrDefault
 toIPv4OrNull
@@ -799,6 +797,8 @@ toRelativeQuarterNum
 toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
+toStartOfInterval
+toStartOfMillisecond
 toString
 toStringCutToZero
 toTime

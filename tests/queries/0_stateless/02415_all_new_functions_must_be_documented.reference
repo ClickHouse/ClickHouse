@@ -624,6 +624,7 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toStartOfInterval
+toStartOfMillisecond
 toString
 toStringCutToZero
 toTime
