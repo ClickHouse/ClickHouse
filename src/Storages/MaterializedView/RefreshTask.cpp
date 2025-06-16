@@ -364,7 +364,7 @@ void RefreshTask::wait()
     std::unique_lock lock(mutex);
     refresh_cv.wait(lock, [&] {
         return state != RefreshState::Running && state != RefreshState::Scheduling &&
-            state != RefreshState::RunningOnAnotherReplica && !scheduling.out_of_schedule_refresh_requested;
+            state != RefreshState::RunningOnAnotherReplica && (state == RefreshState::Disabled || !scheduling.out_of_schedule_refresh_requested);
     });
     throw_if_error();
 
@@ -630,6 +630,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     execution.progress.reset();
 
     ContextMutablePtr refresh_context;
+    ProcessList::EntryPtr process_list_entry;
     std::optional<StorageID> table_to_drop;
     auto new_table_id = StorageID::createEmpty();
 
@@ -650,8 +651,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             if (root_znode_version != -1)
                 refresh_context->setDDLAdditionalChecksOnEnqueue({zkutil::makeCheckRequest(coordination.path, root_znode_version)});
         }
-
-        ProcessList::EntryPtr process_list_entry;
 
         {
             /// Create a table.
@@ -726,7 +725,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/false);
             query_log_elem = std::nullopt;
             query_span = nullptr;
-            process_list_entry.reset(); // otherwise it needs to be alive for logQueryException
         }
 
         /// Exchange tables.
