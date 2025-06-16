@@ -38,6 +38,7 @@ namespace ErrorCodes
 
 static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_NGRAM_SIZE = "ngram_size";
+static const String ARGUMENT_SEPARATORS = "separators";
 static const String ARGUMENT_MAX_ROWS = "max_rows_per_postings_list";
 
 MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(
@@ -850,9 +851,22 @@ std::optional<Type> getOption(const std::unordered_map<String, Field> & options,
                 value.getTypeName());
         return value.safeGet<Type>();
     }
-    return std::nullopt;
+    return {};
 }
 
+template <typename... Args>
+std::optional<std::vector<String>> getOptionAsStringArray(Args &&... args)
+{
+    auto array = getOption<Array>(std::forward<Args>(args)...);
+    if (array.has_value())
+    {
+        std::vector<String> values;
+        for (const auto & entry : array.value())
+            values.emplace_back(entry.template safeGet<String>());
+        return values;
+    }
+    return {};
+}
 }
 
 MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
@@ -863,10 +877,15 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
 
     std::unique_ptr<ITokenExtractor> token_extractor;
     std::optional<UInt64> ngram_size;
-    if (tokenizer == SplitTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<SplitTokenExtractor>();
+    if (tokenizer == DefaultTokenExtractor::getExternalName())
+        token_extractor = std::make_unique<DefaultTokenExtractor>();
     else if (tokenizer == NoOpTokenExtractor::getExternalName())
         token_extractor = std::make_unique<NoOpTokenExtractor>();
+    else if (tokenizer == SplitTokenExtractor::getExternalName())
+    {
+        std::vector<String> separators = getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "});
+        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
+    }
     else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
         ngram_size = getOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
@@ -890,13 +909,14 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!tokenizer)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index must have an '{}' argument", ARGUMENT_TOKENIZER);
 
-    const bool is_supported_tokenizer = (tokenizer.value() == SplitTokenExtractor::getExternalName()
-                                      || tokenizer.value() == NoOpTokenExtractor::getExternalName()
-                                      || tokenizer.value() == NgramTokenExtractor::getExternalName());
+    const bool is_supported_tokenizer = (tokenizer.value() == DefaultTokenExtractor::getExternalName()
+                                      || tokenizer.value() == NgramTokenExtractor::getExternalName()
+                                      || tokenizer.value() == SplitTokenExtractor::getExternalName()
+                                      || tokenizer.value() == NoOpTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index '{}' argument supports only 'default', 'ngram', and 'noop', but got {}",
+            "Text index '{}' argument supports only 'default', 'ngram', 'split', and 'no_op', but got {}",
             ARGUMENT_TOKENIZER,
             tokenizer.value());
 
@@ -910,6 +930,20 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
                 "Text index '{}' argument must be between 2 and 8, but got {}",
                 ARGUMENT_NGRAM_SIZE,
                 *ngram_size);
+    }
+    else if (tokenizer.value() == SplitTokenExtractor::getExternalName())
+    {
+        std::optional<DB::FieldVector> separators = getOption<Array>(options, ARGUMENT_SEPARATORS);
+        if (separators.has_value())
+        {
+            for (const auto & separator : separators.value())
+                if (separator.getType() != Field::Types::String)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_QUERY,
+                        "Element of text index argument {} expected to be String, but got {}",
+                        ARGUMENT_SEPARATORS,
+                        separator.getTypeName());
+        }
     }
 
     /// Check that max_rows_per_postings_list is valid (if present)
