@@ -837,17 +837,17 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     {
         connection_str += fmt::format("{}{}@", scc.user, scc.password.empty() ? "" : (":" + scc.password));
     }
-    connection_str += fmt::format("{}={}", scc.hostname, scc.port);
+    connection_str += fmt::format("{}:{}", scc.hostname, scc.port);
 
     try
     {
         bool db_exists = false;
-        mongocxx::client client = mongocxx::client(mongocxx::uri(std::move(connection_str)));
-        auto databases = client.list_databases();
+        mongocxx::client client(mongocxx::uri(std::move(connection_str)));
+        auto databases = client.list_database_names();
 
         for (const auto & db : databases)
         {
-            if (db["name"].get_utf8().value == scc.database)
+            if (db == scc.database)
             {
                 db_exists = true;
                 break;
@@ -859,11 +859,21 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
             client[scc.database].drop();
         }
 
-        mongocxx::database db = client[scc.database];
-        db.create_collection("test");
+        auto db = client[scc.database];
+        auto collection = db["example"];
+        /// Create a dummy document to force database creation
+        auto doc = bsoncxx::builder::stream::document{} << "created" << bsoncxx::types::b_date(std::chrono::system_clock::now())
+                                                        << bsoncxx::builder::stream::finalize;
+        collection.insert_one(doc.view());
+        collection.drop();
 
         LOG_INFO(fcc.log, "Connected to MongoDB");
         return std::make_unique<MongoDBIntegration>(fcc, scc, client, db);
+    }
+    catch (const mongocxx::exception & e)
+    {
+        LOG_ERROR(fcc.log, "MongoDB connection error: {}", e.what());
+        return nullptr;
     }
     catch (const std::exception & e)
     {
