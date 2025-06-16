@@ -1869,7 +1869,8 @@ try
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
     /// and thus this object must be created after the SCOPE_EXIT object where shared
     /// context is destroyed.
-    /// In addition this object has to be created before the loading of the tables.
+    /// In addition this object has to be created before any scenario that requires
+    /// DNS resolution (e.g. the loading of tables and clusters config).
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
     if (server_settings[ServerSetting::disable_internal_dns_cache])
     {
