@@ -1,3 +1,5 @@
+-- Tags: no-asan, no-msan, no-tsan, no-ubsan
+
 drop table if exists local_table_1;
 drop table if exists local_table_2;
 drop table if exists distributed_table_1;
