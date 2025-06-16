@@ -53,7 +53,7 @@ TEST_F(DeltaKernelTest, ExpressionVisitor)
     catch (DB::Exception & e)
     {
         const std::string & message = e.message();
-        if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED && message == "Method IN not implemented")
+        if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED && message == "Method DIVIDE not implemented")
         {
             /// Implementation is not full at this moment, but
             /// there is a lot of staff before we get to IN method,

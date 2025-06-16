@@ -24,7 +24,7 @@ namespace DeltaLake
 class ParsedExpression
 {
 public:
-    explicit ParsedExpression(DB::ActionsDAG && dag_, const DB::NamesAndTypesList & schema_);
+    explicit ParsedExpression(std::shared_ptr<DB::ActionsDAG> dag_, const DB::NamesAndTypesList & schema_);
 
     /// Get values for the `columns` considering that
     /// they contain literal (constant) values.
@@ -38,8 +38,8 @@ public:
     /// but only a part of it.
     void apply(DB::Chunk & chunk, const DB::NamesAndTypesList & chunk_schema, const DB::Names & columns);
 
+    const std::shared_ptr<DB::ActionsDAG> dag;
 private:
-    const DB::ActionsDAG dag;
     const DB::NamesAndTypesList schema;
 };
 
@@ -48,7 +48,9 @@ std::unique_ptr<ParsedExpression> visitExpression(
     const DB::NamesAndTypesList & expression_schema);
 
 /// A method used in unit test.
-DB::ActionsDAG visitExpression(ffi::SharedExpression * expression, const DB::NamesAndTypesList & expression_schema);
+std::shared_ptr<DB::ActionsDAG> visitExpression(
+    ffi::SharedExpression * expression,
+    const DB::NamesAndTypesList & expression_schema);
 
 }
 

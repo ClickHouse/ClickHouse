@@ -19,7 +19,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
@@ -271,20 +270,12 @@ Chunk StorageObjectStorageSource::generate()
 
             if (chunk_size && chunk.hasColumns())
             {
-                const auto * object_with_partition_columns_info = dynamic_cast<const ObjectInfoWithPartitionColumns *>(object_info.get());
-                if (object_with_partition_columns_info)
-                {
-                    const auto requested_columns = read_from_format_info.requested_columns.getNames();
-                    const auto chunk_schema = read_from_format_info.format_header.getNamesAndTypesList().filter(requested_columns);
-
-                    object_with_partition_columns_info->apply(chunk, chunk_schema, requested_columns);
-                }
-                else
+                /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
+                if (dynamic_cast<const DeltaLakeMetadata *>(configuration.get()))
                 {
 #if USE_PARQUET && USE_AWS_S3
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
-                    /// By release 25.3.
                     /// (Because it does not make sense to support it in a nice way
                     /// because the code will be removed ASAP anyway)
                     if (configuration->isDataLakeConfiguration())
@@ -507,7 +498,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        if (auto transformer = configuration->getSchemaTransformer(object_info->getPath()))
+        std::shared_ptr<const ActionsDAG> transformer;
+        if (object_info->data_lake_metadata)
+            transformer = object_info->data_lake_metadata->transform;
+        else
+            transformer = configuration->getSchemaTransformer(object_info->getPath());
+
+        if (transformer)
         {
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
             builder.addSimpleTransform([&](const Block & header)
@@ -515,7 +512,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
             });
         }
-
 
         if (read_from_format_info.columns_description.hasDefaults())
         {

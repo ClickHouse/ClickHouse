@@ -3,7 +3,6 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Types.h>
@@ -214,16 +213,12 @@ public:
             }
 
             chassert(object);
-            if (pruner.has_value())
+            if (pruner.has_value() && pruner->canBePruned(*object))
             {
-                const auto * object_with_partition_info = dynamic_cast<const DB::ObjectInfoWithPartitionColumns *>(object.get());
-                if (object_with_partition_info && pruner->canBePruned(*object_with_partition_info))
-                {
-                    ProfileEvents::increment(ProfileEvents::DeltaLakePartitionPrunedFiles);
+                ProfileEvents::increment(ProfileEvents::DeltaLakePartitionPrunedFiles);
 
-                    LOG_TEST(log, "Skipping file {} according to partition pruning", object->getPath());
-                    continue;
-                }
+                LOG_TEST(log, "Skipping file {} according to partition pruning", object->getPath());
+                continue;
             }
 
             object->metadata = object_storage->getObjectMetadata(object->getPath());
@@ -295,17 +290,12 @@ public:
             "Scanned file: {}, size: {}, num records: {}",
             full_path, size, stats ? DB::toString(stats->num_records) : "Unknown");
 
-        DB::ObjectInfoPtr object;
+        auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
         if (expression)
         {
-            object = std::make_shared<DB::ObjectInfoWithPartitionColumns>(
-                std::move(expression),
-                context->partition_columns,
-                std::move(full_path));
-        }
-        else
-        {
-            object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
+            object->data_lake_metadata.emplace();
+            object->data_lake_metadata->transform = expression->dag;
+            object->data_lake_metadata->partition_values = expression->getConstValues(context->partition_columns);
         }
 
         {

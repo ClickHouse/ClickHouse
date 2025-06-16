@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeMap.h>
 
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
@@ -26,6 +27,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
 #include <Common/logger_useful.h>
+#include <Columns/ColumnNullable.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -92,7 +94,7 @@ private:
     const DB::NamesAndTypesList & schema;
 
     /// Final parsing result.
-    DB::ActionsDAG dag;
+    std::shared_ptr<DB::ActionsDAG> dag;
     /// Intermediate parsing result.
     std::map<size_t, DB::ActionsDAG::NodeRawConstPtrs> node_lists;
     /// First exception thrown from visitor functions.
@@ -103,13 +105,16 @@ private:
 public:
     /// `schema` is the expression schema of result expression.
     explicit ExpressionVisitorData(const DB::NamesAndTypesList & schema_)
-        : schema(schema_),
-          context(DB::Context::getGlobalContextInstance()) {}
+        : schema(schema_)
+        , dag(std::make_shared<DB::ActionsDAG>())
+        , context(DB::Context::getGlobalContextInstance())
+    {
+    }
 
     DB::ContextPtr getContext() const { return context; }
 
     /// Get result of a parsed expression.
-    DB::ActionsDAG getResult()
+    std::shared_ptr<DB::ActionsDAG> getResult()
     {
         /// In the process of parsing `node_lists` can have size > 1,
         /// but once parsing is finished -
@@ -152,16 +157,24 @@ public:
             /// So we substitute constant column names here.
             if (node->type == DB::ActionsDAG::ActionType::COLUMN)
             {
-                const_cast<DB::ActionsDAG::Node *>(node)->result_name = schema_it->name;
+                auto * current_node = const_cast<DB::ActionsDAG::Node *>(node);
+                current_node->result_name = schema_it->name;
+                if (schema_it->type->isNullable())
+                {
+                    current_node->result_type = DB::makeNullable(node->result_type);
+                    current_node->column = DB::makeNullable(current_node->column->convertToFullColumnIfConst());
+                }
+                else
+                    current_node->column = current_node->column->convertToFullColumnIfConst();
             }
 
             /// Form the outputs.
-            dag.addOrReplaceInOutputs(*node);
+            dag->addOrReplaceInOutputs(*node);
             LOG_TEST(log, "Added output: {}", node->result_name);
 
             ++schema_it;
         }
-        return std::move(dag);
+        return dag;
     }
 
     const LoggerPtr & logger() const { return log; }
@@ -197,7 +210,7 @@ public:
             type,
             /* name */"const_" + DB::toString(literal_counter++));
 
-        const auto & node = dag.addColumn(std::move(column));
+        const auto & node = dag->addColumn(std::move(column));
 
         node_lists[list_id].push_back(&node);
         LOG_TEST(log, "Added list id {}", list_id);
@@ -226,7 +239,7 @@ public:
             name_and_type->type,
             name_and_type->name);
 
-        const auto & node = dag.addInput(std::move(column));
+        const auto & node = dag->addInput(std::move(column));
 
         node_lists[list_id].push_back(&node);
         LOG_TEST(log, "Added list id {}", list_id);
@@ -246,7 +259,7 @@ public:
                 "Cannot find child list id {}", child_list_id);
         }
 
-        const auto & node = dag.addFunction(function, std::move(it->second), {});
+        const auto & node = dag->addFunction(function, std::move(it->second), {});
 
         node_lists.erase(child_list_id);
         LOG_TEST(log, "Removed list id {}", child_list_id);
@@ -369,6 +382,7 @@ private:
         visitor.visit_literal_null = &visitNullLiteral;
         visitor.visit_literal_array = &visitArrayLiteral;
         visitor.visit_literal_struct = &visitStructLiteral;
+        visitor.visit_literal_map = &visitMapLiteral;
 
         visitor.visit_column = &visitColumnExpression;
         visitor.visit_struct_expr = &visitStructExpression;
@@ -644,16 +658,57 @@ private:
             state->addLiteral(sibling_list_id, values, std::make_shared<DB::DataTypeTuple>(types));
         });
     }
+
+    static void visitMapLiteral(
+        void * data,
+        uintptr_t sibling_list_id,
+        uintptr_t key_list_id,
+        uintptr_t value_list_id)
+    {
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            LOG_TEST(
+                state->logger(),
+                "List id: {}, key list id: {}, value list id: {}, type: Map",
+                sibling_list_id, key_list_id, value_list_id);
+
+            auto [keys, key_types] = state->extractLiteralList<DB::Tuple>(key_list_id);
+            chassert(keys.size() == key_types.size());
+
+            auto [values, value_types] = state->extractLiteralList<DB::Tuple>(value_list_id);
+            chassert(values.size() == value_types.size());
+
+            if (keys.empty())
+                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot have empty keys");
+
+            if (keys.size() != values.size())
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::LOGICAL_ERROR,
+                    "Keys size does not equal values size. Keys: {}, values: {}",
+                    keys.size(), values.size());
+            }
+
+            DB::Map map;
+            map.reserve(keys.size());
+            for (size_t i = 0; i < keys.size(); ++i)
+            {
+                map.emplace_back(DB::Tuple({keys[i], values[i]}));
+            }
+            state->addLiteral(sibling_list_id, map, std::make_shared<DB::DataTypeMap>(key_types[0], value_types[0]));
+        });
+    }
 };
 
-ParsedExpression::ParsedExpression(DB::ActionsDAG && dag_, const DB::NamesAndTypesList & schema_)
-    : dag(std::move(dag_)), schema(schema_)
+ParsedExpression::ParsedExpression(std::shared_ptr<DB::ActionsDAG> dag_, const DB::NamesAndTypesList & schema_)
+    : dag(dag_), schema(schema_)
 {
 }
 
 std::vector<DB::Field> ParsedExpression::getConstValues(const DB::Names & columns) const
 {
-    auto nodes = dag.findInOutputs(columns);
+    auto nodes = dag->findInOutputs(columns);
     std::vector<DB::Field> values;
     for (const auto & node : nodes)
     {
@@ -679,7 +734,7 @@ void ParsedExpression::apply(
 {
     LoggerPtr log = getLogger("DeltaLakeParsedExpression");
 
-    auto nodes = dag.findInOutputs(columns);
+    auto nodes = dag->findInOutputs(columns);
     LOG_TEST(log, "Nodes number: {}", nodes.size());
 
     size_t current_chunk_pos = 0;
@@ -730,7 +785,7 @@ void ParsedExpression::apply(
                         node->result_name, pos, current_chunk_pos,
                         fmt::join(columns, ", "),
                         fmt::join(chunk_schema.getNames(), ", "), fmt::join(schema.getNames(), ", "),
-                        dag.dumpDAG());
+                        dag->dumpDAG());
                 }
                 break;
             }
@@ -753,7 +808,7 @@ std::unique_ptr<ParsedExpression> visitExpression(
     return std::make_unique<ParsedExpression>(data.getResult(), expression_schema);
 }
 
-DB::ActionsDAG visitExpression(
+std::shared_ptr<DB::ActionsDAG> visitExpression(
     ffi::SharedExpression * expression,
     const DB::NamesAndTypesList & expression_schema)
 {
