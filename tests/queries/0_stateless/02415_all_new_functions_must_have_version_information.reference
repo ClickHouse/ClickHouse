@@ -80,19 +80,6 @@ accurateCastOrNull
 acos
 acosh
 addDate
-addDays
-addHours
-addInterval
-addMicroseconds
-addMilliseconds
-addMinutes
-addMonths
-addNanoseconds
-addQuarters
-addSeconds
-addTupleOfIntervals
-addWeeks
-addYears
 addressToLine
 addressToLineWithInlines
 addressToSymbol
@@ -133,7 +120,6 @@ changeSecond
 changeYear
 char
 cityHash64
-clamp
 coalesce
 compareSubstrings
 concat
@@ -336,7 +322,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greatest
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -357,7 +342,6 @@ hopStart
 hostName
 hypot
 identity
-if
 ifNull
 ignore
 ilike
@@ -395,7 +379,6 @@ joinGetOrNull
 jumpConsistentHash
 kafkaMurmurHash
 kostikConsistentHash
-least
 left
 leftPad
 leftPadUTF8
@@ -429,7 +412,6 @@ mortonEncode
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
-multiIf
 multiMatchAllIndices
 multiMatchAny
 multiMatchAnyIndex
@@ -649,7 +631,6 @@ runningDifference
 runningDifferenceStartingWithFirstValue
 seriesDecomposeSTL
 seriesOutliersDetectTukey
-serverTimezone
 serverUUID
 shardCount
 shardNum
@@ -698,19 +679,6 @@ substring
 substringIndex
 substringIndexUTF8
 substringUTF8
-subtractDays
-subtractHours
-subtractInterval
-subtractMicroseconds
-subtractMilliseconds
-subtractMinutes
-subtractMonths
-subtractNanoseconds
-subtractQuarters
-subtractSeconds
-subtractTupleOfIntervals
-subtractWeeks
-subtractYears
 svg
 tan
 tanh
@@ -721,10 +689,6 @@ tid
 timeDiff
 timeSlot
 timeSlots
-timestamp
-timezone
-timezoneOf
-timezoneOffset
 toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
@@ -747,9 +711,6 @@ toDateTime64OrZero
 toDateTimeOrDefault
 toDateTimeOrNull
 toDateTimeOrZero
-toDayOfMonth
-toDayOfWeek
-toDayOfYear
 toDaysSinceYearZero
 toDecimal128
 toDecimal128OrDefault
@@ -777,7 +738,6 @@ toFloat64
 toFloat64OrDefault
 toFloat64OrNull
 toFloat64OrZero
-toHour
 toIPv4
 toIPv4OrDefault
 toIPv4OrNull
@@ -827,23 +787,14 @@ toIntervalYear
 toJSONString
 toLastDayOfWeek
 toLowCardinality
-toMillisecond
-toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
-toMonth
 toNullable
-toQuarter
-toSecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
 toStartOfHour
-<<<<<<< HEAD
-toStartOfISOYear
-=======
 toStartOfInterval
->>>>>>> 83b3f837cc83e092f5ca18305c0fe7628f42c048
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
@@ -853,7 +804,6 @@ toStartOfTenMinutes
 toStartOfWeek
 toString
 toStringCutToZero
-toTimezone
 toTypeName
 toUInt128
 toUInt128OrDefault
@@ -893,7 +843,6 @@ toWeek
 toYYYYMM
 toYYYYMMDD
 toYYYYMMDDhhmmss
-toYear
 toYearWeek
 today
 tokens
