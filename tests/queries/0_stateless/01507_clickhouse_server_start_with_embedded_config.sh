@@ -52,7 +52,8 @@ kill $PID
 # Dump server.log in case wait hangs
 function trace()
 {
-    cat "${CLICKHOUSE_TMP}/server.log"
+    # clickhouse-test prints only stderr on timeouts
+    cat "${CLICKHOUSE_TMP}/server.log" >&2
 }
 trap trace EXIT
 wait
