@@ -30,7 +30,7 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsDouble sampling_proportion;
+extern const SettingsDouble index_advisor_sampling_proportion;
 }
 namespace
 {
@@ -110,7 +110,7 @@ void createTableQuery(ContextMutablePtr context, const String & table, const Str
 void insertSample(const String & table, const String & estimation_table, ContextMutablePtr context)
 {
     LOG_INFO(getLogger("TableManager"), "Inserting sample for table {}", table);
-    UInt64 sample_size = static_cast<UInt64>(context->getSettingsRef()[Setting::sampling_proportion] * 1000);
+    UInt64 sample_size = static_cast<UInt64>(context->getSettingsRef()[Setting::index_advisor_sampling_proportion] * 1000);
     String hash_expr = "rand() % 1000 < " + std::to_string(sample_size);
 
     auto settings = context->getSettingsRef();

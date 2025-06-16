@@ -26,8 +26,8 @@ String makePKExpr(const Strings & columns)
 
 namespace Setting
 {
-extern const SettingsUInt64 max_pk_columns_count;
-extern const SettingsUInt64 advise_index_columns_count;
+extern const SettingsUInt64 max_index_advisor_pk_columns_count;
+extern const SettingsUInt64 max_index_advise_index_columns_count;
 }
 
 
@@ -53,16 +53,16 @@ IndexTypes IndexAdvisor::getBestMinMaxIndexForTable(const String & table)
     if (estimations.empty())
         return {};
 
-    auto advise_index_columns_count = context->getSettingsRef()[Setting::advise_index_columns_count];
+    auto max_index_advise_index_columns_count = context->getSettingsRef()[Setting::max_index_advise_index_columns_count];
     std::vector<std::pair<String, String>> result;
     for (const auto & [estimation, indexed_columns] : estimations) {
         for (const auto & column : indexed_columns) {
-            if (result.size() >= advise_index_columns_count)
+            if (result.size() >= max_index_advise_index_columns_count)
                 break;
             result.push_back(column);
             // LOG_INFO(getLogger("IndexAdvisor"), "Adding index: column: {} type: {} estimation: {}", column.first, column.second, estimation);
         }
-        if (result.size() >= advise_index_columns_count)
+        if (result.size() >= max_index_advise_index_columns_count)
             break;
     }
     return result;
@@ -81,7 +81,7 @@ std::pair<Strings, UInt64> IndexAdvisor::getBestPKColumnsForTable(const String &
 {
     TableManager table_manager(context, workload, table);
     auto columns = table_manager.getColumns();
-    const size_t max_columns_in_pk = context->getSettingsRef()[Setting::max_pk_columns_count];
+    const size_t max_columns_in_pk = context->getSettingsRef()[Setting::max_index_advisor_pk_columns_count];
 
     std::vector<Strings> all_solutions;
     std::vector<Strings> current_best_solutions = {{}};

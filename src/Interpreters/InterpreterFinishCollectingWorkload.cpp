@@ -15,8 +15,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString collection_file_path;
-    extern const SettingsBool find_best_pk_for_tables;
-    extern const SettingsBool find_best_minmax_index_for_tables;
+    extern const SettingsBool index_advisor_find_best_index;
+    extern const SettingsBool index_advisor_find_best_pk;
 }
 
 BlockIO InterpreterFinishCollectingWorkload::execute()
@@ -32,8 +32,7 @@ BlockIO InterpreterFinishCollectingWorkload::execute()
 
     bool have_some_indexes = false;
 
-    // LOG_INFO(getLogger("InterpreterFinishCollectingWorkload"), "find_best_pk_for_tables: {}", (context->getSettingsRef()[Setting::find_best_pk_for_tables] ? "true" : "false"));
-    if (context->getSettingsRef()[Setting::find_best_pk_for_tables]) {
+    if (context->getSettingsRef()[Setting::index_advisor_find_best_pk]) {
         auto res = index_advisor.getBestPKColumns();
     
         for (const auto & [table_name, table_data] : res)
@@ -49,8 +48,7 @@ BlockIO InterpreterFinishCollectingWorkload::execute()
         }
     }
 
-    // LOG_INFO(getLogger("InterpreterFinishCollectingWorkload"), "find_best_minmax_index_for_tables: {}", (context->getSettingsRef()[Setting::find_best_minmax_index_for_tables] ? "true" : "false"));
-    if (context->getSettingsRef()[Setting::find_best_minmax_index_for_tables]) {
+    if (context->getSettingsRef()[Setting::index_advisor_find_best_index]) {
         auto res = index_advisor.getBestMinMaxIndexForTables();
         for (const auto & [table_name, minmax_index_columns] : res)
         {

@@ -6852,22 +6852,22 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
         0 - collect workload for all queries disabled
         1 - collect workload for all queries enabled
     )", EXPERIMENTAL) \
-    DECLARE(Double, sampling_proportion, 0.01, R"(
-Proportion of data to sample for analysis (0.0 to 1.0). This setting controls how much data is used for sampling operations.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, max_pk_columns_count, 5, R"(
-The maximum number of columns that can be used in the primary key.
-)", EXPERIMENTAL) \
     DECLARE(String, collection_file_path, "/tmp/workload_collection.txt", R"(
 The path to the file where the workload will be collected.
-)", EXPERIMENTAL)
-    DECLARE(UInt64, advise_index_columns_count, 3, R"(
-The number of columns that will be advised for the minmax index.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, find_best_pk_for_tables, false, R"(
+    DECLARE(Double, index_advisor_sampling_proportion, 0.01, R"(
+Proportion of data to sample for analysis (0.0 to 1.0). This setting controls how much data is used for sampling operations.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, max_index_advisor_pk_columns_count, 5, R"(
+The maximum number of columns that can be used in the primary key.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, max_index_advise_index_columns_count, 3, R"(
+The number of columns that will be advised for the index.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, index_advisor_find_best_pk, false, R"(
 Find the best primary key for the table for saved workload.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, find_best_minmax_index_for_tables, false, R"(
+    DECLARE(Bool, index_advisor_find_best_index, false, R"(
 Find the best columns for the minmax index for the table for saved workload.
 )", EXPERIMENTAL) \
     \
@@ -6963,7 +6963,7 @@ Find the best columns for the minmax index for the table for saved workload.
     COMMON_SETTINGS(M, ALIAS)          \
     OBSOLETE_SETTINGS(M, ALIAS)        \
     FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
-    OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
+    OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
 
 // clang-format on
 
@@ -7019,7 +7019,7 @@ void SettingsImpl::setProfile(const String & profile_name, const Poco::Util::Abs
     {
         if (key == "constraints")
             continue;
-        if (key == "profile" || key.starts_with("profile[")) /// Inheritance of profiles from the current one.
+        if (key == "profile" || key.starts_with("profile["))/// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             set(key, config.getString(elem + "." + key));
