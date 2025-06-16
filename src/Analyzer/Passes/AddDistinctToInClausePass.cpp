@@ -6,16 +6,16 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageDistributed.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool enable_add_distinct_to_in_subqueries;
+extern const SettingsBool enable_add_distinct_to_in_subqueries;
 }
 namespace
 {
@@ -58,7 +58,6 @@ public:
             }
         }
     }
-
 };
 }
 
@@ -66,6 +65,5 @@ void AddDistinctToInClausePass::run(QueryTreeNodePtr & query_tree_node, ContextP
 {
     AddDistinctToInClauseVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
-
 }
 }
