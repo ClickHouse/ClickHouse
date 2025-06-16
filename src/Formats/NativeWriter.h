@@ -33,8 +33,6 @@ public:
     size_t write(const Block & block);
     void flush();
 
-    static String getContentType() { return "application/octet-stream"; }
-
     static void writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, const std::optional<FormatSettings> & format_settings, UInt64 offset, UInt64 limit, UInt64 client_revision);
 
 private:

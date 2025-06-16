@@ -1019,6 +1019,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         chassert(local_pipeline);
 
         local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
+        chassert(local_replica_index.has_value());
 
         /// while building local pipeline
         /// - the coordinator is created
@@ -1033,10 +1034,10 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
             std::swap(connection_pools[local_replica_index.value()], connection_pools[snapshot_replica_num.value()]);
             local_replica_index = snapshot_replica_num;
         }
+
+        LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
     }
     connection_pools.resize(max_replicas_to_use);
-
-    LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 
     String formatted_query;
     {
@@ -1055,7 +1056,6 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         formatted_query = buf.str();
     }
 
-    const bool skip_local_replica = local_pipeline.has_value();
     QueryPipeline pipeline;
     if (local_pipeline)
     {
@@ -1068,7 +1068,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
     for (size_t i = 0; i < connection_pools.size(); ++i)
     {
-        if (skip_local_replica && i == *local_replica_index)
+        if (local_replica_index && i == *local_replica_index)
             continue;
 
         IConnections::ReplicaInfo replica_info{

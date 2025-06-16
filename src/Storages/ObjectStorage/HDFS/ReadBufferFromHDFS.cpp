@@ -8,8 +8,8 @@
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadSettings.h>
 #include <hdfs/hdfs.h>
-#include <mutex>
 
 
 namespace ProfileEvents

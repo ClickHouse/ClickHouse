@@ -144,7 +144,7 @@ BaseDaemon::~BaseDaemon()
         tryLogCurrentException(&logger());
     }
 
-    disableLogging();
+    stopLogging();
 }
 
 
@@ -504,24 +504,17 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
 
 void BaseDaemon::handleSignal(int signal_id)
 {
-    if (signal_id == SIGINT ||
+    if (!(signal_id == SIGINT ||
         signal_id == SIGQUIT ||
-        signal_id == SIGTERM)
-    {
-        std::lock_guard lock(signal_handler_mutex);
-        {
-            ++terminate_signals_counter;
-            signal_event.notify_all();
-        }
-
-        onInterruptSignals(signal_id);
-    }
-    else
+        signal_id == SIGTERM))
         throw Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-}
 
-void BaseDaemon::onInterruptSignals(int signal_id)
-{
+    std::lock_guard lock(signal_handler_mutex);
+    {
+        ++terminate_signals_counter;
+        signal_event.notify_all();
+    }
+
     is_cancelled = true;
     LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
@@ -533,7 +526,6 @@ void BaseDaemon::onInterruptSignals(int signal_id)
         _exit(128 + signal_id);
     }
 }
-
 
 void BaseDaemon::waitForTerminationRequest()
 {
@@ -569,7 +561,14 @@ void BaseDaemon::setupWatchdog()
         Poco::Pipe notify_sync;
 
         static pid_t pid = -1;
+        /// Temporarily close the logging thread and open it in each process later
+        auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
+        if (async_channel)
+            async_channel->close();
         pid = fork();
+
+        if (async_channel)
+            async_channel->open();
 
         if (-1 == pid)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork");
@@ -632,7 +631,12 @@ void BaseDaemon::setupWatchdog()
 
         /// Concurrent writing logs to the same file from two threads is questionable on its own,
         /// but rotating them from two threads is disastrous.
-        if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
+        if (async_channel)
+        {
+            async_channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
+            async_channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
+        }
+        else if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
         {
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");

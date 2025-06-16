@@ -34,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
+from functools import cache
 import urllib.parse
 
 # for crc32
@@ -204,9 +205,13 @@ class SharedEngineReplacer:
 
     def _need_to_replace_something(self):
         return (
-            (self.replace_replicated or self.replace_non_replicated)
-            and "shared_merge_tree" not in self.file_name
-        ) or self.cloud
+            (
+                (self.replace_replicated or self.replace_non_replicated)
+                and "shared_merge_tree" not in self.file_name
+            )
+            or self.cloud
+            or self.args.replace_log_memory_with_mergetree
+        )
 
     def _has_show_create_table(self):
         with open(self.file_name, "r", encoding="utf-8") as f:
@@ -230,9 +235,12 @@ class SharedEngineReplacer:
         data_engines = r"(Engine\s*=?\s*)(Log|TinyLog|StripeLog|Memory)\(?\)?"
         # Replace them with SMT
         replace_with = f"{replace_engine}() ORDER BY tuple()"
+        if self.reference_file and not self.with_echo:
+            replace_with = f"{replace_engine}\\nORDER BY tuple()\\nSETTINGS index_granularity = 8192"
+
         if (
             re.search(data_engines, line, flags=re.IGNORECASE)
-            and "CREATE DATABASE" not in line
+            and "CREATE DATABASE" not in line.upper()
         ):
             modified_statement = re.sub(
                 data_engines,
@@ -279,28 +287,36 @@ class SharedEngineReplacer:
     ):
         self.args = args
         self.file_name = file_name
-        self.temp_file_path = get_temp_file_path()
+        self.temp_file_path = "{0}.{2}{1}".format(*os.path.splitext(file_name), os.getpid())
         self.replace_replicated = replace_replicated
         self.replace_non_replicated = replace_non_replicated
         self.reference_file = reference_file
         self.cloud = cloud
+        self.with_echo = False
         use_random_path = not reference_file and not self._has_show_create_table()
 
         if not self._need_to_replace_something():
             return
 
-        shutil.copyfile(self.file_name, self.temp_file_path)
-        shutil.copymode(self.file_name, self.temp_file_path)
+        shutil.copy2(self.file_name, self.temp_file_path)
 
         with (
-            open(self.file_name, "w", newline="", encoding="utf-8") as modified,
-            open(self.temp_file_path, "r", newline="", encoding="utf-8") as source,
+            open(self.file_name, "r", newline="", encoding="utf-8") as source,
+            open(self.temp_file_path, "w", newline="", encoding="utf-8") as modified,
         ):
             for line in source:
                 # Replace table engines if echo enabled to match changed reference
-                if self.cloud and line.startswith("-- { echo"):
+                if (
+                    self.cloud or self.args.replace_log_memory_with_mergetree
+                ) and re.match("-- ?{ ?echo.*", line):
+                    self.with_echo = True
+
+                if self.cloud and self.with_echo:
                     self.replace_replicated = True
                     self.replace_non_replicated = True
+
+                if self.args.replace_log_memory_with_mergetree:
+                    line = self._replace_data_engines(line, replace_engine="MergeTree")
 
                 if (
                     self._is_select_line(line)
@@ -353,13 +369,12 @@ class SharedEngineReplacer:
     def __exit__(self, exc_type, exc_value, exc_tb):
         if not self._need_to_replace_something():
             return
-        shutil.move(self.temp_file_path, self.file_name)
+        os.unlink(self.temp_file_path)
 
-
-def get_temp_file_path():
-    return os.path.join(
-        tempfile._get_default_tempdir(), next(tempfile._get_candidate_names())
-    )
+    def get_path(self):
+        if not self._need_to_replace_something():
+            return self.file_name
+        return self.temp_file_path
 
 
 def stringhash(s: str) -> int:
@@ -1186,6 +1201,11 @@ def replace_in_file(filename, what, with_what):
         f.write(data.replace(what.encode(), with_what.encode()))
 
 
+@cache
+def is_old_analyzer_used():
+    return clickhouse_execute(args, "SELECT getSetting('enable_analyzer')").strip() == b"false"
+
+
 class TestResult:
     def __init__(
         self,
@@ -1226,9 +1246,13 @@ class TestCase:
         """
         Returns reference file name for specified test
         """
-
         name = removesuffix(name, ".gen")
-        for ext in [".reference", ".gen.reference"]:
+
+        file_extentions = [".reference", ".gen.reference"]
+        if is_old_analyzer_used():
+            file_extentions = [".oldanalyzer.reference", *file_extentions]
+
+        for ext in file_extentions:
             reference_file = os.path.join(suite_dir, name) + ext
             if os.path.isfile(reference_file):
                 return reference_file
@@ -1456,6 +1480,12 @@ class TestCase:
 
         if "no-async-insert" in tags and args.no_async_insert:
             return FailureReason.NO_ASYNC_INSERT
+
+        # Do not run *Log and Memory engine-specific tests
+        if (
+            "memory-engine" in tags or "log-engine" in tags
+        ) and args.replace_log_memory_with_mergetree:
+            return FailureReason.NOT_SUPPORTED
 
         if args.skip and any(s in self.name for s in args.skip):
             return FailureReason.SKIP
@@ -1900,7 +1930,8 @@ class TestCase:
         pattern = "{test} > {stdout} 2> {stderr}"
 
         tests_env = os.environ.copy()
-        tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
+        if args.trace:
+            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
 
         if self.ext == ".sql" and args.cloud:
             # Get at least some logs, because we don't have access to system.text_log and pods...
@@ -2031,37 +2062,43 @@ class TestCase:
                 # to avoid breaking CSV parser
                 result.description = result.description.replace("\0", "")
             else:
-                with SharedEngineReplacer(
-                    args,
-                    self.case_file,
-                    args.replace_replicated_with_shared,
-                    args.replace_non_replicated_with_shared,
-                    False,
-                    args.cloud,
-                ):
-                    with SharedEngineReplacer(
+                with (
+                    SharedEngineReplacer(
                         args,
-                        self.reference_file,
+                        self.case_file,
                         args.replace_replicated_with_shared,
                         args.replace_non_replicated_with_shared,
+                        False,
+                        args.cloud,
+                    ) as test_replacer,
+                    SharedEngineReplacer(
+                        args,
+                        self.reference_file,
+                        # cloud_mode_engine=2 in cloud, expect all engines to be Shared*
+                        args.replace_replicated_with_shared or args.cloud,
+                        args.replace_non_replicated_with_shared or args.cloud,
                         True,
                         args.cloud,
-                    ):
-                        (
-                            proc,
-                            total_time,
-                        ) = self.run_single_test(server_logs_level, client_options)
+                    ) as reference_replacer,
+                ):
+                    self.case_file = test_replacer.get_path()
+                    self.reference_file = reference_replacer.get_path()
 
-                        result = self.process_result_impl(proc, total_time)
+                    (
+                        proc,
+                        total_time,
+                    ) = self.run_single_test(server_logs_level, client_options)
 
-                        result.check_if_need_retry(
-                            args,
-                            result.description,
-                            result.description,
-                            self.runs_count,
-                        )
-                        # to avoid breaking CSV parser
-                        result.description = result.description.replace("\0", "")
+                    result = self.process_result_impl(proc, total_time)
+
+                    result.check_if_need_retry(
+                        args,
+                        result.description,
+                        result.description,
+                        self.runs_count,
+                    )
+                    # to avoid breaking CSV parser
+                    result.description = result.description.replace("\0", "")
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
 
@@ -3835,6 +3872,12 @@ def parse_args():
         default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
+    parser.add_argument(
+        "--replace-log-memory-with-mergetree",
+        action="store_true",
+        default=os.environ.get("REPLACE_LOG_MEM_WITH_MT", False),
+        help="Replace *Log and Memory engines with MergeTree",
+    )
 
     parser.add_argument(
         "--client-log",
@@ -3846,6 +3889,7 @@ def parse_args():
         action="store_true",
         help="Capture stacktraces from clickhouse-client/local on errors",
     )
+    parser.add_argument("--trace", action="store_true", help="Capture various tracing info")
 
     return parser.parse_args()
 

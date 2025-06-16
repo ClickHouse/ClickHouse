@@ -1,4 +1,4 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, log-engine
 -- Tag no-replicated-database: Different query_id
 
 SET prefer_localhost_replica = 1;
