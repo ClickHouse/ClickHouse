@@ -676,6 +676,7 @@ public:
         SKIPPING_CONDITION_QUERY,
         THREAD_FUZZER_IS_ENABLED,
         MAYBE_BROKEN_TABLES,
+        OBSOLETE_MONGO_TABLE_DEFINITION,
     };
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;

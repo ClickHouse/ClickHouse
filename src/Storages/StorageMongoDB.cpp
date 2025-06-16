@@ -106,7 +106,7 @@ Pipe StorageMongoDB::read(
         std::move(options), sample_block, max_block_size));
 }
 
-MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
+static MongoDBConfiguration getConfigurationImpl(const StorageID & table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
 {
     MongoDBConfiguration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
@@ -156,7 +156,26 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
             Poco::URI::encode(checkAndGetLiteralArgument<String>(engine_args[4], "password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
             if (!user.empty())
                 auth_string = fmt::format("{}:{}@", user, escaped_password);
-            auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(engine_args[0], "host:port"), 27017);
+
+            auto host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
+
+            if (allow_excessive_path_in_host)
+            {
+                auto pos = host_port.find('/');
+                if (pos != String::npos)
+                {
+                    context->addOrUpdateWarningMessage(
+                        Context::WarningType::OBSOLETE_MONGO_TABLE_DEFINITION,
+                        PreformattedMessage::create(
+                            "The first argument in '{}' table definition with MongoDB engine contains a path which was ignored. "
+                            "To fix this, either use a complete MongoDB connection string with schema and database name as the first argument, "
+                            "or use only host:port format and specify database name and other parameters separately in the table engine definition.",
+                            table_id ? table_id.getNameForLogs() : ""
+                        ));
+                    host_port = host_port.substr(0, pos);
+                }
+            }
+            auto parsed_host_port = parseAddress(host_port, 27017);
             configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                               auth_string,
                                                               parsed_host_port.first,
@@ -184,6 +203,11 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
     configuration.checkHosts(context);
 
     return configuration;
+}
+
+MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
+{
+    return getConfigurationImpl(StorageID("", ""), std::move(engine_args), context, false);
 }
 
 static std::string mongoFuncName(const std::string & func)
@@ -562,9 +586,10 @@ void registerStorageMongoDB(StorageFactory & factory)
 {
     factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args)
     {
+        bool allow_excessive_path_in_host = args.mode > LoadingStrictnessLevel::CREATE;
         return std::make_shared<StorageMongoDB>(
             args.table_id,
-            StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext()),
+            getConfigurationImpl(args.table_id, args.engine_args, args.getLocalContext(), allow_excessive_path_in_host),
             args.columns,
             args.constraints,
             args.comment);
