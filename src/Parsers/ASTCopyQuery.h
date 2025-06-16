@@ -24,6 +24,12 @@ public:
     } type;
 
     String table_name;
+    enum class Formats : uint8_t
+    {
+        TSV,
+        CSV,
+        Binary
+    } format = Formats::TSV;
 
     String getID(char) const override { return "CopyQuery"; }
 

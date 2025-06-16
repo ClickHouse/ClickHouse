@@ -25,6 +25,7 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
 
+#include <algorithm>
 #include <memory>
 
 namespace DB
@@ -76,10 +77,10 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        while (!pos->isEnd())
-            ++pos;
+        if (pos->isEnd())
+            return true;
 
-        return true;
+        return parseOptions(pos, copy_element, expected);
     }
 
     pos = saved_pos;
@@ -97,6 +98,40 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
     {
         return false;
+    }
+
+    if (pos->isEnd())
+        return true;
+
+    return parseOptions(pos, copy_element, expected);
+}
+
+bool ParserCopyQuery::parseOptions(Pos & pos, std::shared_ptr<ASTCopyQuery> node, Expected & expected)
+{
+    ParserIdentifier s_output_identifier;
+    ASTPtr output_name;
+    if (!s_output_identifier.parse(pos, output_name, expected))
+        return false;
+
+    ParserKeyword s_with(Keyword::WITH);
+    ParserKeyword s_format(Keyword::FORMAT);
+
+    if (!s_with.ignore(pos, expected))
+        return false;
+
+    if (s_format.ignore(pos, expected))
+    {
+        ParserIdentifier s_format_identifier;
+        ASTPtr format;
+        if (!s_format_identifier.parse(pos, format, expected))
+            return false;
+
+        String format_name = format->as<ASTIdentifier>()->full_name;
+        std::transform(format_name.begin(), format_name.end(), format_name.begin(), [](char c){ return std::tolower(c); });
+        if (format->as<ASTIdentifier>()->full_name == "csv")
+            node->format = ASTCopyQuery::Formats::CSV;
+        else if (format->as<ASTIdentifier>()->full_name == "binary")
+            node->format = ASTCopyQuery::Formats::Binary;
     }
 
     while (!pos->isEnd())

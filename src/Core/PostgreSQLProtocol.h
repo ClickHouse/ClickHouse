@@ -1140,15 +1140,34 @@ public:
     void deserialize(ReadBuffer & in) override
     {
         Int32 sz;
-        Int16 ending;
         readBinaryBigEndian(sz, in);
-        readNullTerminated(query, in);
-        readBinaryBigEndian(ending, in);
+        query.reserve(sz - sizeof(Int32));
+        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
+        {
+            char byte;
+            readBinary(byte, in);
+            query.push_back(byte);
+        }
     }
 
     MessageType getMessageType() const override
     {
         return MessageType::COPY_DATA;
+    }
+};
+
+class CopyDone : FrontMessage
+{
+public:
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        readBinaryBigEndian(sz, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DONE;
     }
 };
 
@@ -1177,8 +1196,6 @@ public:
     {
         return MessageType::COPY_DATA;
     }
-
-
 };
 
 class CopyDataResponse : BackendMessage

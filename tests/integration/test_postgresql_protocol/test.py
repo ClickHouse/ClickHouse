@@ -277,9 +277,9 @@ def test_copy_command(started_cluster):
     cur.execute("select * from test order by x;")
     assert cur.fetchall() == [(42,), (43,), (44,), (45,)]
 
-    with open(f"out_{file_index}.csv", "w") as f:
+    with open(f"out_{file_index}.tsv", "w") as f:
         cur.copy_to(file=f, table="test")
-    with open(f"out_{file_index}.csv", "r") as f:
+    with open(f"out_{file_index}.tsv", "r") as f:
         assert f.read() == "42\n43\n44\n45\n"
 
     cur.execute("create table test_recreated (x UInt32) engine=Memory();")
@@ -299,13 +299,13 @@ def test_copy_command(started_cluster):
 
     assert cur.fetchall() == [(42, "a"), (43, "b"), (44, "c"), (45, "d")]
 
-    with open(f"out_{file_index + 1}.csv", "w") as f:
+    with open(f"out_{file_index + 1}.tsv", "w") as f:
         cur.copy_to(file=f, table="test")
-    with open(f"out_{file_index + 1}.csv", "r") as f:
-        assert f.read() == '42,"a"\n43,"b"\n44,"c"\n45,"d"\n'
+    with open(f"out_{file_index + 1}.tsv", "r") as f:
+        assert f.read() == '42\ta\n43\tb\n44\tc\n45\td\n'
 
     cur.execute("create table test_recreated (x UInt32, y String) engine=Memory();")
-    data_to_copy = "1,'a'\n2,'b'\n3,'c'\n"
+    data_to_copy = "1\ta\n2\tb\n3\tc\n"
     cur.copy_from(StringIO(data_to_copy), "test_recreated", columns=("x",))
     cur.execute("select * from test_recreated order by x;")
 

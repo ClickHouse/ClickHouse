@@ -31,7 +31,7 @@ public:
     PostgreSQLHandler(
         const Poco::Net::StreamSocket & socket_,
 #if USE_SSL
-        const std::string & prefix_,
+        const String & prefix_,
 #endif
         IServer & server_,
         TCPServer & tcp_server_,
@@ -55,7 +55,7 @@ private:
     bool extended_verification = false;
     bool prefer_server_ciphers = false;
     const Poco::Util::LayeredConfiguration & config [[maybe_unused]];
-    std::string prefix [[maybe_unused]];
+    String prefix [[maybe_unused]];
 #endif
 
     IServer & server;
@@ -108,8 +108,7 @@ private:
     void processSyncQuery();
 
     static bool isEmptyQuery(const String & query);
-
-    static std::string ConvertPGDataToCH(const String & initial_data);
+    static Int32 parseNumberColumns(const std::vector<char> & output);
 };
 
 }
