@@ -1271,7 +1271,7 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     else /// Use left operand's type
         common_type = in_first_argument->getResultType();
 
-    bool has_null = std::any_of(tuple_args.begin(), tuple_args.end(), 
+    bool has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
         [](const auto & arg) { return isNullConstant(arg); });
 
     if ((has_null || !scope.context->getSettingsRef()[Setting::transform_null_in]) && !common_type->isNullable())
@@ -1305,7 +1305,7 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
     cast_args->getNodes().push_back(
         std::make_shared<ConstantNode>(target_type->getName(), std::make_shared<DataTypeString>()));
     cast_node->getArgumentsNode() = cast_args;
-    
+
     QueryTreeNodePtr result = cast_node;
     resolveFunction(result, scope);
     return result;
@@ -3306,13 +3306,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// special handling for NULL IN (tuple) with transform_null_in enabled
                     if (left_is_null && scope.context->getSettingsRef()[Setting::transform_null_in])
                     {
-                        return handleNullInTuple(tuple_args, function_name, 
-                                            parameters_projection_names, 
+                        return handleNullInTuple(tuple_args, function_name,
+                                            parameters_projection_names,
                                             arguments_projection_names, scope, node);
                     }
 
                     // convert tuple to array with proper type handling
-                    in_second_argument = convertTupleToArray(tuple_args, in_first_argument, 
+                    in_second_argument = convertTupleToArray(tuple_args, in_first_argument,
                                                             left_is_null, scope);
 
                     /// convert to has() and handle null-safety
