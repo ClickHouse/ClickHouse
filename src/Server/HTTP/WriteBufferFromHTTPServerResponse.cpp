@@ -52,7 +52,7 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
     setResponseDefaultHeaders(response);
 
     std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    response.beginWrite(header);
+    response.writeStatus(header);
     auto header_str = header.str();
     socketSendBytes(header_str.data(), header_str.size());
 }
@@ -112,10 +112,12 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
     writeHeaderSummary();
     writeExceptionCode();
 
-    headers_finished_sending = true;
+    std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    response.writeHeaders(header);
+    auto header_str = header.str();
+    socketSendBytes(header_str.data(), header_str.size());
 
-    /// Send end of headers delimiter.
-    socketSendBytes("\r\n", 2);
+    headers_finished_sending = true;
 }
 
 
