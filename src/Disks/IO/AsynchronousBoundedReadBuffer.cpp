@@ -40,6 +40,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
 }
 
 AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
@@ -67,6 +68,9 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     , prefetches_log(prefetches_log_)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
+
+    if (buffer_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Buffer size cannot be zero");
 }
 
 String AsynchronousBoundedReadBuffer::getInfoForLog()
