@@ -97,7 +97,7 @@ def run_specific_tests(tests, runs=1):
     test_output_file = f"{temp_dir}/test_result.txt"
     nproc = int(Utils.cpu_count() / 2)
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
+    command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --trace \
         --capture-client-stacktrace --queries ./tests/queries --test-runs {runs} \
         --jobs {nproc} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
@@ -211,6 +211,7 @@ def main():
 
     res = True
     results = []
+    debug_files = []
 
     Utils.add_to_PATH(f"{ch_path}:tests")
     CH = ClickHouseProc(
@@ -350,7 +351,9 @@ def main():
 
         if not info.is_local_run:
             CH.stop_log_exports()
-        results.append(FTResultsProcessor(wd=temp_dir).run())
+        ft_res_processor = FTResultsProcessor(wd=temp_dir)
+        results.append(ft_res_processor.run())
+        debug_files += ft_res_processor.debug_files
         test_result = results[-1]
 
         # invert result status for bugfix validation
@@ -408,7 +411,10 @@ def main():
         results[-1].results = CH.extra_tests_results
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=CH.logs, info=job_info
+        results=results,
+        stopwatch=stop_watch,
+        files=CH.logs + debug_files,
+        info=job_info,
     ).complete_job()
 
 

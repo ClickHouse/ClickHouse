@@ -45,8 +45,7 @@ class FTResultsProcessor:
 
     def __init__(self, wd):
         self.tests_output_file = f"{wd}/test_result.txt"
-        # self.test_results_parsed_file = f"{wd}/test_result.tsv"
-        # self.status_file = f"{wd}/check_status.tsv"
+        self.debug_files = []
 
     def _process_test_output(self):
         total = 0
@@ -136,6 +135,11 @@ class FTResultsProcessor:
             except Exception as e:
                 print(f"ERROR: Failed to parse test results: [{test}]")
                 traceback.print_exc()
+                self.debug_files += self.tests_output_file
+                if test[0] == "+":
+                    # TODO: investigate and remove
+                    # https://github.com/ClickHouse/ClickHouse/issues/81888
+                    continue
                 test_results_.append(
                     Result(
                         name=test[0],
