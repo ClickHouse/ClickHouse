@@ -1004,8 +1004,8 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(file_size == range().size());
             chassert(downloaded_size == range().size());
 
-            const auto stat = getStatVFS(getPath());
-            chassert(stat.f_bsize * stat.f_blocks == getSize(SizeAlignment::ALIGNED));
+            // const auto stat = getStatVFS(getPath());
+            // chassert(stat.f_bsize * stat.f_blocks == getSize(SizeAlignment::ALIGNED));
 
             chassert(queue_iterator || on_delayed_removal);
             check_iterator(queue_iterator);

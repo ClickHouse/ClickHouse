@@ -2,6 +2,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Context.h>
+#include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
 #include <Interpreters/Cache/FileCacheUtils.h>
 #include <Common/logger_useful.h>
