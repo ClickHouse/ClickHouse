@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database, no-shared-catalog
+# Tag no-replicated-database -- modify on-disk metadata that may lead to "Digest does not match" in case Replicated database
+# Tag no-shared-catalog -- same
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

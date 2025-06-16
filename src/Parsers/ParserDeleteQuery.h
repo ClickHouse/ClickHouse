@@ -12,7 +12,7 @@ namespace DB
 class ParserDeleteQuery : public IParserBase
 {
 protected:
-    const char * getName() const  override{ return "Delete query"; }
+    const char * getName() const override { return "Delete query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

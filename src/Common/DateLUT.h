@@ -11,12 +11,6 @@
 #include <mutex>
 #include <unordered_map>
 
-namespace DB
-{
-class Context;
-using ContextPtr = std::shared_ptr<const Context>;
-}
-
 class DateLUTImpl;
 
 

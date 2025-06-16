@@ -43,6 +43,23 @@ Features:
 
 [ChartDB Source Code](https://github.com/chartdb/chartdb).
 
+### ClickHouse Schema Flow Visualizer {#clickhouse-schemaflow-visualizer}
+
+[ClickHouse Schema Flow Visualizer](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer) is a powerful open-source web application for visualizing ClickHouse table relationships using Mermaid.js diagrams. Browse databases and tables with an intuitive interface, explore table metadata with optional row counts and size information, and export interactive schema diagrams.
+
+Features:
+
+- Browse ClickHouse databases and tables with an intuitive interface
+- Visualize table relationships with Mermaid.js diagrams
+- Color-coded icons matching table types for better visualization
+- View direction of data flow between tables
+- Export diagrams as standalone HTML files
+- Toggle metadata visibility (table rows and size information)
+- Secure connection to ClickHouse with TLS support
+- Responsive web interface for all devices
+
+[ClickHouse Schema Flow Visualizer - source code](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer)
+
 ### Tabix {#tabix}
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
@@ -152,6 +169,10 @@ Features:
 ### clickhouse-plantuml {#clickhouse-plantuml}
 
 [cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) is a script to generate [PlantUML](https://plantuml.com/) diagram of tables' schemes.
+
+### ClickHouse table graph {#clickhouse-table-graph}
+
+[ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph) is a simple CLI tool for visualizing dependencies between ClickHouse tables. This tool retrieves connections between tables from `system.tables` table and builds dependencies flowchart in [mermaid](https://mermaid.js.org/syntax/flowchart.html) format.  With this tool you can easily visualize table dependencies and understand the data flow in your ClickHouse database. Thanks to mermaid, the resulting flowchart looks attractive and can be easily added to your markdown documentation.
 
 ### xeus-clickhouse {#xeus-clickhouse}
 

@@ -683,19 +683,100 @@ void Pipe::addChains(std::vector<Chain> chains)
     max_parallel_streams = std::max(max_parallel_streams, max_parallel_streams_for_chains);
 }
 
-void Pipe::resize(size_t num_streams, bool strict)
+void Pipe::addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per_resize_after_split, bool strict)
+{
+    OutputPortRawPtrs resize_output_ports(num_streams);
+
+    size_t groups = std::min<size_t>(numOutputPorts(), num_streams / min_outstreams_per_resize_after_split);
+    size_t instream_per_group = (numOutputPorts() + groups - 1) / groups;
+    size_t groups_with_extra_instream = numOutputPorts() % groups;
+    size_t outstreams_per_group = (num_streams + groups - 1) / groups;
+    size_t groups_with_extra_outstream = num_streams % groups;
+
+    chassert(groups > 1);
+
+    for (size_t i = 0, next_input = 0, next_output = 0; i < groups; ++i)
+    {
+        ProcessorPtr resize;
+        if (strict)
+            resize = std::make_shared<StrictResizeProcessor>(getHeader(), instream_per_group, outstreams_per_group);
+        else
+            resize = std::make_shared<ResizeProcessor>(getHeader(), instream_per_group, outstreams_per_group);
+
+        for (auto it = resize->getInputs().begin(); it != resize->getInputs().end(); ++it)
+        {
+            if (std::next(it) != resize->getInputs().end() || groups_with_extra_instream == 0 || i < groups_with_extra_instream)
+            {
+                connect(*output_ports[next_input], *it);
+                ++next_input;
+            }
+            else
+            {
+                auto null_source = std::make_shared<NullSource>(getHeader());
+                connect(null_source->getPort(), *it);
+                processors->emplace_back(std::move(null_source));
+            }
+        }
+
+        for (auto it = resize->getOutputs().begin(); it != resize->getOutputs().end(); ++it)
+        {
+            if (std::next(it) != resize->getOutputs().end() || groups_with_extra_outstream == 0 || i < groups_with_extra_outstream)
+            {
+                resize_output_ports[next_output] = &*it;
+                ++next_output;
+            }
+            else
+            {
+                auto null_sink = std::make_shared<NullSink>(getHeader());
+                connect(*it, null_sink->getPort());
+                processors->emplace_back(std::move(null_sink));
+            }
+        }
+
+        if (collected_processors)
+            collected_processors->emplace_back(resize);
+        processors->emplace_back(std::move(resize));
+    }
+
+    output_ports = std::move(resize_output_ports);
+
+    header = output_ports.front()->getHeader();
+    for (size_t i = 1; i < output_ports.size(); ++i)
+        assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipes");
+
+    max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
+}
+
+void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_resize_after_split)
 {
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resize an empty Pipe");
-
-    if (strict && num_streams == numOutputPorts())
-        return;
 
     /// We need to not add the resize in case of 1-1 because in case
     /// it is not force resize and we have n outputs (look at the code above),
     /// and one of the outputs is dead, we can push all data to n-1 outputs,
     /// which doesn't make sense for 1-1 scenario
     if (numOutputPorts() == 1 && num_streams == 1)
+        return;
+
+    /// Performance bottleneck identified: Severe lock contention for ExecutingGraph::Node::status_mutex.
+    /// Issues observed:
+    /// 1. Increased latency of ExecutingGraph::updateNode, lengthening overall query latency.
+    /// 2. Unnecessary CPU cycle consumption in native_queued_spin_lock_slowpath (kernel).
+    /// 3. Decreased CPU utilization.
+    ///
+    /// Proposed solution: Split ResizeProcessor when multiple threads are allocated to execute a query.
+    /// Benefits:
+    /// 1. Mitigates lock contention.
+    /// 2. Maintains ResizeProcessor's benefit of balancing data flow among multiple streams.
+    ///
+    /// Disable this optimization when min_outstreams_per_resize_after_split is 0
+    if (output_ports.size() > 1 && min_outstreams_per_resize_after_split != 0 && num_streams / min_outstreams_per_resize_after_split > 1)
+    {
+        addSplitResizeTransform(num_streams, min_outstreams_per_resize_after_split, strict);
+        return;
+    }
+    if (strict && num_streams == numOutputPorts())
         return;
 
     ProcessorPtr resize;

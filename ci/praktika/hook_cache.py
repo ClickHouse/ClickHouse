@@ -20,10 +20,15 @@ class CacheRunnerHooks:
         ), f"Outdated yaml pipelines or BUG. Configuration must be run only for workflow with enabled cache, workflow [{workflow.name}]"
         artifact_digest_map = {}
         job_digest_map = {}
+        artifact_name_config_map = {}
+        for a in workflow.artifacts:
+            artifact_name_config_map[a.name] = a
 
         for job in workflow.jobs:
             digest = cache.digest.calc_job_digest(
-                job_config=job, docker_digests=docker_digests
+                job_config=job,
+                docker_digests=docker_digests,
+                artifact_configs=artifact_name_config_map,
             )
             job_digest_map[job.name] = digest
             if job.provides:

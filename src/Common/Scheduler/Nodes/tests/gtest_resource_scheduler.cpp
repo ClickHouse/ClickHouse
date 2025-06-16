@@ -18,7 +18,7 @@ struct ResourceTest : public ResourceTestBase
 
     ResourceTest()
     {
-        scheduler.start();
+        scheduler.start("Sch.Test");
     }
 
     ~ResourceTest()

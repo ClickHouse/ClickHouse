@@ -1,19 +1,20 @@
+#include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterExplainQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageValues.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/InterpreterExplainQuery.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -166,9 +167,6 @@ Block executeMonoBlock(QueryPipeline & pipeline)
             break;
     }
 
-    if (blocks.size() == 1)
-        return blocks[0];
-
     return concatenateBlocks(blocks);
 }
 
@@ -192,7 +190,7 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
     if (!query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' requires a explain query argument", getName());
 
-    return InterpreterExplainQuery(query, context);
+    return InterpreterExplainQuery(query, context, SelectQueryOptions{});
 }
 
 }
@@ -207,7 +205,8 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
                 Example:
                 [example:1]
                 )",
-            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
+            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
         }});
 }
 

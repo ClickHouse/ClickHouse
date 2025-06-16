@@ -1,3 +1,4 @@
+#include <Common/CurrentThread.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <chrono>
@@ -623,6 +624,8 @@
     M(742, DELTA_KERNEL_ERROR) \
     M(743, ICEBERG_SPECIFICATION_VIOLATION) \
     M(744, SESSION_ID_EMPTY) \
+    M(745, SERVER_OVERLOADED) \
+    M(746, DEPENDENCIES_NOT_FOUND) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -634,6 +637,7 @@
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
     M(1003, SSH_EXCEPTION) \
+    M(1004, STARTUP_SCRIPTS_ERROR) \
 /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -650,7 +654,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1003;
+    constexpr ErrorCode END = 1004;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
@@ -666,7 +670,7 @@ namespace ErrorCodes
 
     std::string_view getName(ErrorCode error_code)
     {
-        if (error_code < 0 || error_code >= END)
+        if (error_code < 0 || error_code > END)
             return std::string_view();
         return error_codes_names.names[error_code];
     }
@@ -723,6 +727,7 @@ namespace ErrorCodes
         error.message = message;
         error.trace = trace;
         error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        error.query_id = CurrentThread::getQueryId();
 
         return error_index;
     }

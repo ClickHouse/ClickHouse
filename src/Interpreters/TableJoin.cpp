@@ -576,7 +576,7 @@ bool TableJoin::sameStrictnessAndKind(JoinStrictness strictness_, JoinKind kind_
 
 bool TableJoin::oneDisjunct() const
 {
-    return clauses.size() == 1;
+    return clauses.size() == 1 && !clauses.front().isEmpty();
 }
 
 bool TableJoin::needStreamWithNonJoinedRows() const
@@ -1117,7 +1117,7 @@ size_t TableJoin::getMaxMemoryUsage() const
 
 void TableJoin::swapSides()
 {
-    assertEnableEnalyzer();
+    assertEnableAnalyzer();
 
     std::swap(key_asts_left, key_asts_right);
     std::swap(left_type_map, right_type_map);
@@ -1135,7 +1135,7 @@ void TableJoin::swapSides()
     setKind(updated_kind);
 }
 
-void TableJoin::assertEnableEnalyzer() const
+void TableJoin::assertEnableAnalyzer() const
 {
     if (!enable_analyzer)
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");

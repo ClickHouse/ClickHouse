@@ -88,6 +88,7 @@ def started_cluster():
             stay_alive=True,
             user_configs=[
                 "configs/users.xml",
+                "configs/compatibility.xml",
             ],
             main_configs=[
                 "configs/s3queue_log.xml",
@@ -104,6 +105,7 @@ def started_cluster():
             stay_alive=True,
             user_configs=[
                 "configs/users.xml",
+                "configs/compatibility.xml",
             ],
             main_configs=[
                 "configs/s3queue_log.xml",

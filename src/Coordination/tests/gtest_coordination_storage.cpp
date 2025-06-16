@@ -879,11 +879,11 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
     storage.preprocessRequest(create_request, 0, 0, 1);
     storage.preprocessRequest(create_request, 0, 0, 2);
 
-    ASSERT_FALSE(get_committed_data());
+    ASSERT_EQ(get_committed_data(), std::nullopt);
 
     const auto after_create_get = preprocess_get(3);
 
-    ASSERT_FALSE(get_committed_data());
+    ASSERT_EQ(get_committed_data(), std::nullopt);
 
     const auto set_request = std::make_shared<ZooKeeperSetRequest>();
     set_request->path = path;
@@ -892,7 +892,7 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
 
     const auto after_set_get = preprocess_get(5);
 
-    ASSERT_FALSE(get_committed_data());
+    ASSERT_EQ(get_committed_data(), std::nullopt);
 
     const auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
     remove_request->path = path;
@@ -901,7 +901,7 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
 
     const auto after_remove_get = preprocess_get(8);
 
-    ASSERT_FALSE(get_committed_data());
+    ASSERT_EQ(get_committed_data(), std::nullopt);
 
     {
         const auto responses = storage.processRequest(create_request, 0, 1);
@@ -957,7 +957,7 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
         ASSERT_EQ(get_response.error, Error::ZNONODE);
     }
 
-    ASSERT_FALSE(get_committed_data());
+    ASSERT_EQ(get_committed_data(), std::nullopt);
 }
 
 #endif

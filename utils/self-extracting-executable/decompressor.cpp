@@ -492,7 +492,7 @@ int main(int/* argc*/, char* argv[])
 
         /// size 1 of lock file indicates that another decompressor has found active executable
         if (lock_info.st_size == 1)
-            execv(self, argv);
+            execv(self, argv);  // NOLINT(clang-analyzer-optin.taint.GenericTaint)
 
         printf("No target executable - decompression only was performed.\n"); // NOLINT(modernize-use-std-print)
         return 0;
@@ -576,7 +576,7 @@ int main(int/* argc*/, char* argv[])
             /// execution should be performed
             write(lock, "1", 1);
 #endif
-            execv(self, argv);
+            execv(self, argv); // NOLINT(clang-analyzer-optin.taint.GenericTaint)
 
             /// This part of code will be reached only if error happened
             perror("execv");

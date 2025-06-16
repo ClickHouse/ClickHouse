@@ -13,6 +13,7 @@
 #include <Common/PageCache.h>
 #include <Common/HostResolvePool.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -46,6 +47,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/DatabaseReplicated.h>
+#include <DataTypes/DataTypeString.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -384,6 +386,14 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearMarkCache();
             break;
+        case Type::DROP_ICEBERG_METADATA_CACHE:
+#if USE_AVRO
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
+            system_context->clearIcebergMetadataFilesCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
+#endif
         case Type::DROP_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -709,6 +719,14 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_VIEWS:
             startStopAction(ActionLocks::ViewRefresh, false);
             break;
+        case Type::START_REPLICATED_VIEW:
+            for (const auto & task : getRefreshTasks())
+                task->startReplicated();
+            break;
+        case Type::STOP_REPLICATED_VIEW:
+            for (const auto & task : getRefreshTasks())
+                task->stopReplicated("SYSTEM STOP REPLICATED VIEW");
+            break;
         case Type::REFRESH_VIEW:
             for (const auto & task : getRefreshTasks())
                 task->run();
@@ -893,10 +911,12 @@ void InterpreterSystemQuery::restoreReplica()
     const auto & settings = getContext()->getSettingsRef();
 
     table_replicated_ptr->restoreMetadataInZooKeeper(
-        ZooKeeperRetriesInfo{settings[Setting::keeper_max_retries],
-                             settings[Setting::keeper_retry_initial_backoff_ms],
-                             settings[Setting::keeper_retry_max_backoff_ms],
-                             getContext()->getProcessListElementSafe()});
+        ZooKeeperRetriesInfo{
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            getContext()->getProcessListElementSafe()},
+        false);
 }
 
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
@@ -1251,7 +1271,19 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    StoragePtr table;
+
+    if (query.if_exists)
+    {
+        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+        if (!table)
+            return;
+    }
+    else
+    {
+        table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    }
+
     std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
     if (!trySyncReplica(table, query.sync_replica_mode, replicas, getContext()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
@@ -1449,6 +1481,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DNS_CACHE:
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
+        case Type::DROP_ICEBERG_METADATA_CACHE:
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CONDITION_CACHE:
@@ -1615,8 +1648,10 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::START_VIEWS:
+        case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
+        case Type::STOP_REPLICATED_VIEW:
         case Type::CANCEL_VIEW:
         case Type::TEST_VIEW:
         {

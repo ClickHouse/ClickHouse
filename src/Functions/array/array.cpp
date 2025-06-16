@@ -287,7 +287,42 @@ private:
 
 REGISTER_FUNCTION(Array)
 {
-    factory.registerFunction<FunctionArray>();
+    FunctionDocumentation::Description description = R"(
+Creates an array from the function arguments.
+
+The arguments should be constants and have types that share a common supertype.
+At least one argument must be passed, because otherwise it isn't clear which type of array to create.
+This means that you can't use this function to create an empty array. To do so, use the `emptyArray*` function.
+
+Use the `[ ]` operator for the same functionality.
+    )";
+    FunctionDocumentation::Syntax syntax = "array(x1 [, x2, ..., xN])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x1", "Constant value of any type T. If only this argument is provided, the array will be of type T."},
+        {"[, x2, ..., xN]", "Additional N constant values sharing a common supertype with `x1`"},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an 'Array(T)' type result, where 'T' is the smallest common type out of the passed arguments.";
+    FunctionDocumentation::Examples examples = {{"Valid usage", R"(
+SELECT array(toInt32(1), toUInt16(2), toInt8(3)) AS a, toTypeName(a)
+    )",
+    R"(
+┌─a───────┬─toTypeName(a)─┐
+│ [1,2,3] │ Array(Int32)  │
+└─────────┴───────────────┘
+    )"},
+    {"Invalid usage", R"(
+SELECT array(toInt32(5), toDateTime('1998-06-16'), toInt8(5)) AS a, toTypeName(a)
+    )",
+R"(
+Received exception from server (version 25.4.3):
+Code: 386. DB::Exception: Received from localhost:9000. DB::Exception:
+There is no supertype for types Int32, DateTime, Int8 ...
+    )"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArray>(documentation);
 }
 
 }

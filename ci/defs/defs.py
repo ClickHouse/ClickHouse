@@ -94,22 +94,18 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    # new images
-    # Docker.Config(
-    #     name="clickhouse/stateless-test",
-    #     path="./ci/docker/stateless-test",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
-    # TODO: fix build failure:
-    # 7 58.76 In file included from ./../code-sign-blobs/superblob.h:7:
-    # 7 58.76 ./../code-sign-blobs/blob.h:185:60: error: no member named 'clone' in 'Security::BlobCore'
-    # Docker.Config(
-    #     name="clickhouse/cctools",
-    #     path="./docker/packager/cctools",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/fasttest"],
-    # ),
+    Docker.Config(
+        name="clickhouse/stateless-test",
+        path="./ci/docker/stateless-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/cctools",
+        path="./ci/docker/cctools",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/fasttest"],
+    ),
     Docker.Config(
         name="clickhouse/test-util",
         path="./docker/test/util",
@@ -121,12 +117,6 @@ DOCKERS = [
         path="./docker/test/base",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-util"],
-    ),
-    Docker.Config(
-        name="clickhouse/stateless-test",
-        path="./docker/test/stateless",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/stress-test",
@@ -250,8 +240,8 @@ DOCKERS = [
     ),
     Docker.Config(
         name="clickhouse/docs-builder",
-        path="./docker/docs/builder",
-        platforms=[Docker.Platforms.AMD],
+        path="./ci/docker/docs-builder",
+        platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
@@ -286,9 +276,10 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_RELEASE = "arm_release"
     ARM_ASAN = "arm_asan"
 
-    AMD_COVERAGE = "amd_coverage"
+    ARM_COVERAGE = "arm_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
+    ARM_TIDY = "arm_tidy"
     AMD_DARWIN = "amd_darwin"
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"
@@ -310,7 +301,6 @@ class JobNames:
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
-    BUGFIX_VALIDATION = "Bugfix validation"
     STATEFUL = "Stateful tests"
     INTEGRATION = "Integration tests"
     STRESS = "Stress test"
@@ -328,6 +318,8 @@ class JobNames:
     BUZZHOUSE = "BuzzHouse"
     BUILDOCKER = "BuildDockers"
     BUGFIX_VALIDATE = "Bugfix validation"
+    BUGFIX_VALIDATE_IT = "Bugfix validation (integration tests)"
+    BUGFIX_VALIDATE_FT = "Bugfix validation (functional tests)"
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
@@ -473,6 +465,7 @@ class ArtifactConfigs:
         name="...",
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/src/unit_tests_dbms",
+        compress_zst=True,
     ).parametrize(
         names=[
             ArtifactNames.UNITTEST_AMD_ASAN,
@@ -515,81 +508,6 @@ class ArtifactConfigs:
 
 
 class Jobs:
-    stateless_tests_jobs = Job.Config(
-        name=JobNames.STATELESS,
-        runs_on=["..params.."],
-        command="python3 ./ci/jobs/functional_stateless_tests.py --test-options {PARAMETER}",
-        # many tests expect to see "/var/lib/clickhouse" in various output lines - add mount for now, consider creating this dir in docker file
-        run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/functional_stateless_tests.py",
-            ],
-        ),
-    ).parametrize(
-        parameter=[
-            "amd_debug,parallel",
-            "amd_debug,non-parallel",
-            # "amd_release,parallel",
-            # "amd_release,non-parallel",
-            # "arm_asan,parallel",
-            # "arm_asan,non-parallel",
-        ],
-        runs_on=[
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            # RunnerLabels.FUNC_TESTER_AMD,
-            # RunnerLabels.FUNC_TESTER_AMD,
-            # RunnerLabels.FUNC_TESTER_ARM,
-            # RunnerLabels.FUNC_TESTER_ARM,
-        ],
-        requires=[
-            [ArtifactNames.CH_AMD_DEBUG],
-            [ArtifactNames.CH_AMD_DEBUG],
-            # [ArtifactNames.CH_AMD_RELEASE],
-            # [ArtifactNames.CH_AMD_RELEASE],
-            # [ArtifactNames.CH_ARM_ASAN],
-            # [ArtifactNames.CH_ARM_ASAN],
-        ],
-    )
-
-    stateful_tests_jobs = Job.Config(
-        name=JobNames.STATEFUL,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
-        command="python3 ./ci/jobs/functional_stateful_tests.py --test-options {PARAMETER}",
-        run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/functional_stateful_tests.py",
-            ],
-        ),
-    ).parametrize(
-        parameter=[
-            BuildTypes.ARM_RELEASE,
-            BuildTypes.AMD_ASAN,
-            BuildTypes.AMD_TSAN,
-            BuildTypes.AMD_MSAN,
-            BuildTypes.AMD_UBSAN,
-            BuildTypes.AMD_DEBUG,
-        ],
-        runs_on=[
-            RunnerLabels.FUNC_TESTER_ARM,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-        ],
-        requires=[
-            [ArtifactNames.CH_ARM_RELEASE],
-            [ArtifactNames.CH_AMD_ASAN],
-            [ArtifactNames.CH_AMD_TSAN],
-            [ArtifactNames.CH_AMD_MSAN],
-            [ArtifactNames.CH_AMD_UBSAN],
-            [ArtifactNames.CH_AMD_DEBUG],
-        ],
-    )
-
     # TODO: refactor job to be aligned with praktika style (remove wrappers, run in docker)
     integration_test_jobs = Job.Config(
         name=JobNames.INTEGRATION,

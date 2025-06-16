@@ -7,8 +7,6 @@ set -x
 
 # Avoid overlaps with previous runs
 dmesg --clear
-# shellcheck disable=SC1091
-source /setup_export_logs.sh
 
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 
@@ -53,13 +51,13 @@ export ZOOKEEPER_FAULT_INJECTION=1
 # available for dump via clickhouse-local
 configure
 
-/repo/tests/docker_scripts/setup_minio.sh stateless # to have a proper environment
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 )
 
-config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || ( echo "Failed §to create log export config" && exit 1 )
 
-start_server
+start_server || (echo "Failed to start server" && exit 1)
 
-setup_logs_replication
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start || ( echo "Failed to start log exports" && exit 1 )
 
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < /repo/tests/docker_scripts/create.sql
@@ -207,9 +205,9 @@ clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDat
     ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
     SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
 
-clickhouse-client --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 
 clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
@@ -258,12 +256,12 @@ if [ "$cache_policy" = "SLRU" ]; then
 fi
 
 # Randomize async_load_databases
-if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
-    sudo echo "<clickhouse><async_load_databases>true</async_load_databases></clickhouse>" \
+if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
+    sudo echo "<clickhouse><async_load_databases>false</async_load_databases></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
-start_server
+start_server || (echo "Failed to start server" && exit 1)
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
 python3 /repo/tests/ci/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \

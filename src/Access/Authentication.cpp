@@ -4,12 +4,12 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
-#include <Poco/SHA1Engine.h>
 #include <Common/Base64.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
-#include <Access/Common/SSLCertificateSubjects.h>
+#include <Poco/SHA1Engine.h>
 
 #include <base/types.h>
 #include "config.h"
@@ -225,6 +225,7 @@ namespace
         return false;
     }
 
+#if USE_SSL
     bool checkSSLCertificateAuthentication(
         const SSLCertificateCredentials * ssl_certificate_credentials,
         const AuthenticationData & authentication_method)
@@ -234,7 +235,7 @@ namespace
             return false;
         }
 
-        for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
+        for (X509Certificate::Subjects::Type type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
         {
             for (const auto & subject : authentication_method.getSSLCertificateSubjects().at(type))
             {
@@ -264,6 +265,7 @@ namespace
 
         return false;
     }
+#endif
 
 #if USE_SSH
     bool checkSshAuthentication(
@@ -319,10 +321,12 @@ bool Authentication::areCredentialsValid(
         return checkScramSHA256Authentication(scram_shh256_credentials, authentication_method);
     }
 
+#if USE_SSL
     if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))
     {
         return checkSSLCertificateAuthentication(ssl_certificate_credentials, authentication_method);
     }
+#endif
 
 #if USE_SSH
     if (const auto * ssh_credentials = typeid_cast<const SshCredentials *>(&credentials))

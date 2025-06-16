@@ -19,6 +19,7 @@ workflow = Workflow.Config(
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_jobs,
+        *JobConfigs.tidy_arm_build_jobs,
         *[
             job.set_dependency(
                 [
@@ -44,7 +45,14 @@ workflow = Workflow.Config(
             job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
             for job in JobConfigs.functional_tests_jobs_coverage
         ],
-        JobConfigs.bugfix_validation_job,
+        JobConfigs.bugfix_validation_it_job.set_dependency(
+            [
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                JobConfigs.tidy_build_jobs[0].name,
+            ]
+        ),
+        JobConfigs.bugfix_validation_ft_pr_job,
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
@@ -67,10 +75,12 @@ workflow = Workflow.Config(
     ],
     dockers=DOCKERS,
     secrets=SECRETS,
+    enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,
     enable_merge_ready_status=True,
+    enable_gh_summary_comment=True,
     enable_commit_status_on_failure=True,
     pre_hooks=[
         can_be_trusted,
@@ -78,6 +88,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[

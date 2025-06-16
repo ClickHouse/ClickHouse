@@ -338,14 +338,14 @@ protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
 
-    /// Customize this DataType
-    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
-
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable SerializationPtr custom_serialization;
 
 public:
+    /// Customize this DataType
+    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
+
     bool hasCustomName() const { return static_cast<bool>(custom_name.get()); }
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
@@ -362,7 +362,7 @@ protected:
         bool throw_if_null) const
     {
         if (throw_if_null)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData() is not implemented for type {}", getName());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData is not implemented for type {}", getName());
         return nullptr;
     }
 };

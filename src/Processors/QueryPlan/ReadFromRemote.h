@@ -45,7 +45,9 @@ public:
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder();
+    void enforceAggregationInOrder(const SortDescription & sort_description);
+
+    bool hasSerializedPlan() const;
 
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
@@ -63,8 +65,18 @@ private:
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
     Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header);
-    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
-    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
+
+    void addLazyPipe(
+        Pipes & pipes,
+        const ClusterProxy::SelectStreamFactory::Shard & shard,
+        const Header & out_header,
+        size_t parallel_marshalling_threads);
+
+    void addPipe(
+        Pipes & pipes,
+        const ClusterProxy::SelectStreamFactory::Shard & shard,
+        const Header & out_header,
+        size_t parallel_marshalling_threads);
 };
 
 
@@ -95,13 +107,16 @@ public:
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder();
+    void enforceAggregationInOrder(const SortDescription & sort_description);
 
     StorageID getStorageID() const { return storage_id; }
+    ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
 private:
     Pipes addPipes(ASTPtr ast, const Header & out_header);
-    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header);
+
+    Pipe createPipeForSingeReplica(const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header,
+                                   size_t parallel_marshalling_threads);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
