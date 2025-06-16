@@ -115,6 +115,41 @@ SELECT groupArray(id) from tab where searchAll(message, 'efgh cdef defg');
 
 DROP TABLE tab;
 
+SELECT 'Split tokenizer';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(`message`) TYPE text(tokenizer = 'split', separators = ['()', '\\']),
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab
+VALUES
+(1, '  a  bc d'),
+(2, '()()a()bc()d'),
+(3, ',()a(),bc,(),d,'),
+(4, '\\a\n\\bc\\d\n'),
+(5, '\na\n\\bc\\d\\');
+
+SELECT groupArray(id) from tab where searchAny(message, 'a');
+SELECT groupArray(id) from tab where searchAny(message, 'bc');
+SELECT groupArray(id) from tab where searchAny(message, 'd');
+SELECT groupArray(id) from tab where searchAny(message, 'a bc');
+SELECT groupArray(id) from tab where searchAny(message, 'a d');
+SELECT groupArray(id) from tab where searchAny(message, 'bc d');
+
+SELECT groupArray(id) from tab where searchAll(message, 'a');
+SELECT groupArray(id) from tab where searchAll(message, 'bc');
+SELECT groupArray(id) from tab where searchAll(message, 'd');
+SELECT groupArray(id) from tab where searchAll(message, 'a bc');
+SELECT groupArray(id) from tab where searchAll(message, 'a d');
+SELECT groupArray(id) from tab where searchAll(message, 'bc d');
+
+DROP TABLE tab;
+
 SELECT 'NoOp tokenizer';
 
 CREATE TABLE tab
