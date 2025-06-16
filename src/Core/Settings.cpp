@@ -38,10 +38,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int THERE_IS_NO_PROFILE;
-extern const int NO_ELEMENTS_IN_CONFIG;
-extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-extern const int BAD_ARGUMENTS;
+    extern const int THERE_IS_NO_PROFILE;
+    extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
 }
 
 /** List of settings: type, name, default value, description, flags
@@ -7019,7 +7019,7 @@ void SettingsImpl::setProfile(const String & profile_name, const Poco::Util::Abs
     {
         if (key == "constraints")
             continue;
-        if (key == "profile" || key.starts_with("profile["))  /// Inheritance of profiles from the current one.
+        if (key == "profile" || key.starts_with("profile["))   /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             set(key, config.getString(elem + "." + key));
@@ -7399,7 +7399,7 @@ void Settings::addToProgramOptionsAsMultitokens(boost::program_options::options_
     addProgramOptionsAsMultitokens(*impl, options);
 }
 
-void Settings::addToClientOptions(Poco::Util::LayeredConfiguration & config, const boost::program_options::variables_map & options, bool repeated_settings) const
+void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, const boost::program_options::variables_map &options, bool repeated_settings) const
 {
     for (const auto & setting : impl->all())
     {
