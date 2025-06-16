@@ -363,6 +363,7 @@ class ArtifactNames:
     LEXER_AMD_BINARY = "LEXER_AMD_BINARY"
     LEXER_ARM_ASAN = "LEXER_ARM_ASAN"
     LEXER_ARM_BIN = "LEXER_ARM_BIN"
+    LEXER_COV_BIN = "LEXER_COV_BIN"
 
     FAST_TEST = "FAST_TEST"
     UNITTEST_AMD_ASAN = "UNITTEST_AMD_ASAN"
@@ -447,6 +448,7 @@ class ArtifactConfigs:
             ArtifactNames.LEXER_AMD_BINARY,
             ArtifactNames.LEXER_ARM_ASAN,
             ArtifactNames.LEXER_ARM_BIN,
+            ArtifactNames.LEXER_COV_BIN,
         ]
     )
     clickhouse_debians = Artifact.Config(

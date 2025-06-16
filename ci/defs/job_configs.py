@@ -219,7 +219,7 @@ class JobConfigs:
                 ArtifactNames.DEB_ARM_ASAN,
                 ArtifactNames.LEXER_ARM_ASAN,
             ],
-            [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
+            [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN, ArtifactNames.LEXER_COV_BIN],
             [ArtifactNames.CH_ARM_BIN, ArtifactNames.LEXER_ARM_BIN],
         ],
         runs_on=[
@@ -375,7 +375,7 @@ class JobConfigs:
     ).parametrize(
         parameter=[f"amd_coverage,{i}/6" for i in range(1, 7)],
         runs_on=[RunnerLabels.FUNC_TESTER_ARM for _ in range(6)],
-        requires=[[ArtifactNames.CH_COV_BIN] for _ in range(6)],
+        requires=[[ArtifactNames.CH_COV_BIN, ArtifactNames.LEXER_COV_BIN] for _ in range(6)],
     )
     functional_tests_jobs_non_required = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
