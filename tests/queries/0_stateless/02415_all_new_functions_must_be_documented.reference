@@ -611,7 +611,6 @@ toIntervalSecond
 toIntervalWeek
 toIntervalYear
 toJSONString
-toLastDayOfWeek
 toLowCardinality
 toModifiedJulianDay
 toModifiedJulianDayOrNull
@@ -624,7 +623,6 @@ toRelativeQuarterNum
 toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
-toStartOfDay
 toStartOfInterval
 toString
 toStringCutToZero

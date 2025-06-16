@@ -785,7 +785,6 @@ toIntervalSecond
 toIntervalWeek
 toIntervalYear
 toJSONString
-toLastDayOfWeek
 toLowCardinality
 toModifiedJulianDay
 toModifiedJulianDayOrNull
@@ -798,26 +797,7 @@ toRelativeQuarterNum
 toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
-toStartOfDay
-<<<<<<< HEAD
-toStartOfISOYear
 toStartOfInterval
-toStartOfMonth
-toStartOfQuarter
-toStartOfYear
-=======
-toStartOfFifteenMinutes
-toStartOfFiveMinutes
-toStartOfHour
-toStartOfInterval
-toStartOfMicrosecond
-toStartOfMillisecond
-toStartOfMinute
-toStartOfNanosecond
-toStartOfSecond
-toStartOfTenMinutes
-toStartOfWeek
->>>>>>> 83b3f837cc83e092f5ca18305c0fe7628f42c048
 toString
 toStringCutToZero
 toTime
