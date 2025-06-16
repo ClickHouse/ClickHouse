@@ -21,8 +21,8 @@ static inline constexpr UInt64 DEFAULT_MAX_ROWS_PER_POSTINGS_LIST = 64 * 1024;
 
 enum class GinSearchMode : uint8_t
 {
-    ANY,
-    ALL
+    Any,
+    All
 };
 
 struct GinFilterParameters
@@ -71,7 +71,7 @@ public:
 
     /// Check if the filter (built from query string) contains any rows in given filter by using
     /// given postings list cache
-    bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::ALL) const;
+    bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
 
     /// Set the query string of the filter
     void setQueryString(const char * data, size_t len)

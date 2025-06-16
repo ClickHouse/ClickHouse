@@ -264,12 +264,12 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         else if (element.function == RPNElement::FUNCTION_SEARCH_ANY)
         {
             rpn_stack.emplace_back(
-                granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store, GinSearchMode::ANY), true);
+                granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store, GinSearchMode::Any), true);
         }
         else if (element.function == RPNElement::FUNCTION_SEARCH_ALL)
         {
             rpn_stack.emplace_back(
-                granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store, GinSearchMode::ALL), true);
+                granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store, GinSearchMode::All), true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS
@@ -591,13 +591,13 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             chassert(adaptor != nullptr);
             if (function_name == "searchAny")
             {
-                auto * search_function = typeid_cast<FunctionSearchImpl<details::SearchAnyProps> *>(adaptor->getFunction().get());
+                auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAnyTraits> *>(adaptor->getFunction().get());
                 chassert(search_function != nullptr);
                 search_function->setGinFilterParameters(gin_filter_params);
             }
             else
             {
-                auto * search_function = typeid_cast<FunctionSearchImpl<details::SearchAllProps> *>(adaptor->getFunction().get());
+                auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAllTraits> *>(adaptor->getFunction().get());
                 chassert(search_function != nullptr);
                 search_function->setGinFilterParameters(gin_filter_params);
             }

@@ -160,10 +160,10 @@ bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const Gin
 {
     if (hasEmptyPostingsList(postings_cache))
     {
-        if constexpr (search_mode == GinSearchMode::ALL)
+        if constexpr (search_mode == GinSearchMode::All)
             /// Definitely no match in ALL search mode when any of terms does not exists in FST.
             return false;
-        else if constexpr (search_mode == GinSearchMode::ANY)
+        else if constexpr (search_mode == GinSearchMode::Any)
             if (postings_cache.size() == 1)
                 /// Definitely no match when there is a single term in ANY search mode and the term does not exists in FST.
                 return false;
@@ -172,12 +172,12 @@ bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const Gin
     /// Check for each row ID ranges
     for (const auto & rowid_range : rowid_ranges)
     {
-        if constexpr (search_mode == GinSearchMode::ALL)
+        if constexpr (search_mode == GinSearchMode::All)
         {
             if (matchAllInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
                 return true;
         }
-        else if constexpr (search_mode == GinSearchMode::ANY)
+        else if constexpr (search_mode == GinSearchMode::Any)
         {
             if (matchAnyInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
                 return true;
@@ -201,8 +201,8 @@ bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache
         cache_store.cache[filter.getQueryString()] = postings_cache;
     }
 
-    return search_mode == GinSearchMode::ANY ? matchInRange<GinSearchMode::ANY>(rowid_ranges, *postings_cache)
-                                             : matchInRange<GinSearchMode::ALL>(rowid_ranges, *postings_cache);
+    return search_mode == GinSearchMode::Any ? matchInRange<GinSearchMode::Any>(rowid_ranges, *postings_cache)
+                                             : matchInRange<GinSearchMode::All>(rowid_ranges, *postings_cache);
 }
 
 }
