@@ -220,7 +220,7 @@ class JobConfigs:
                 ArtifactNames.LEXER_ARM_ASAN,
             ],
             [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
-            [ArtifactNames.CH_ARM_BIN],
+            [ArtifactNames.CH_ARM_BIN, ArtifactNames.LEXER_ARM_BIN],
         ],
         runs_on=[
             RunnerLabels.BUILDER_AMD,
