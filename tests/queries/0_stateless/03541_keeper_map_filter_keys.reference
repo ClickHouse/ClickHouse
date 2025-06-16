@@ -1,7 +1,10 @@
-    (ReadFromKeeperMap (FullScan))
+    ReadFromKeeperMap
+    ReadType: FullScan
 1
 "rows_read":1,
-    (ReadFromKeeperMap (GetKeys))
+    ReadFromKeeperMap
+    ReadType: GetKeys
+    Keys: 1
 2
 "rows_read":2,
 1
@@ -10,7 +13,9 @@
 "rows_read":2,
 1
 "rows_read":1,
-    (ReadFromKeeperMap (GetKeys))
+    ReadFromKeeperMap
+    ReadType: GetKeys
+    Keys: 1
 2
 "rows_read":2,
 1

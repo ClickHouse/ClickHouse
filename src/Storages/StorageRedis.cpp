@@ -28,6 +28,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -221,14 +222,11 @@ StorageRedis::StorageRedis(
 class ReadFromRedis : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override
-    {
-        if (!keys || keys->empty())
-            return "ReadFromRedis (FullScan)";
-        return "ReadFromRedis (GetKeys)";
-    }
+    std::string getName() const override { return "ReadFromRedis"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void describeActions(FormatSettings & format_settings) const override;
+    void describeActions(JSONBuilder::JSONMap & map) const override;
 
     ReadFromRedis(
         const Names & column_names_,
@@ -326,6 +324,28 @@ void ReadFromRedis::applyFilters(ActionDAGNodes added_filter_nodes)
     const auto & sample_block = getOutputHeader();
     auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
     std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
+}
+
+void ReadFromRedis::describeActions(FormatSettings & format_settings) const {
+    std::string prefix(format_settings.offset, format_settings.indent_char);
+    if (!all_scan)
+    {
+        format_settings.out << prefix << "ReadType: GetKeys\n";
+        format_settings.out << prefix << "Keys: " << keys->size() << '\n';
+    }
+    else
+        format_settings.out << prefix << "ReadType: FullScan\n";
+}
+
+void ReadFromRedis::describeActions(JSONBuilder::JSONMap & map) const
+{
+    if (!all_scan)
+    {
+        map.add("Read Type", "GetKeys");
+        map.add("Keys", keys->size());
+    }
+    else
+        map.add("Read Type", "FullScan");
 }
 
 namespace

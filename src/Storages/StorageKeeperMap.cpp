@@ -47,6 +47,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/JSONBuilder.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>
@@ -599,14 +600,11 @@ StorageKeeperMap::StorageKeeperMap(
 class ReadFromKeeperMap : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override
-    {
-        if (!keys || keys->empty())
-            return "ReadFromKeeperMap (FullScan)";
-        return "ReadFromKeeperMap (GetKeys)";
-    }
+    std::string getName() const override { return "ReadFromKeeperMap"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void describeActions(FormatSettings & format_settings) const override;
+    void describeActions(JSONBuilder::JSONMap & map) const override;
 
     ReadFromKeeperMap(
         const Names & column_names_,
@@ -747,6 +745,28 @@ Strings ReadFromKeeperMap::getAllKeys() const
     });
 
     return children;
+}
+
+void ReadFromKeeperMap::describeActions(FormatSettings & format_settings) const {
+    std::string prefix(format_settings.offset, format_settings.indent_char);
+    if (!all_scan)
+    {
+        format_settings.out << prefix << "ReadType: GetKeys\n";
+        format_settings.out << prefix << "Keys: " << keys->size() << '\n';
+    }
+    else
+        format_settings.out << prefix << "ReadType: FullScan\n";
+}
+
+void ReadFromKeeperMap::describeActions(JSONBuilder::JSONMap & map) const
+{
+    if (!all_scan)
+    {
+        map.add("Read Type", "GetKeys");
+        map.add("Keys", keys->size());
+    }
+    else
+        map.add("Read Type", "FullScan");
 }
 
 SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
