@@ -14,3 +14,10 @@ SELECT * FROM t1;
 
 DROP TABLE t1;
 DROP DATABASE d1;
+
+CREATE DATABASE IF NOT EXISTS database;
+
+USE DATABASE database;
+USE database;
+
+DROP DATABASE database;
