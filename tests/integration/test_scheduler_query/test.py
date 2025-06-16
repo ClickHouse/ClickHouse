@@ -229,7 +229,7 @@ def test_under_max_waiting_queries_limit() -> None:
         """
     )
 
-    pool_all = QueryPool(6, "all")
+    pool_all = QueryPool(7, "all")
 
     pool_all.start()
     ensure_total_concurrency(1)
