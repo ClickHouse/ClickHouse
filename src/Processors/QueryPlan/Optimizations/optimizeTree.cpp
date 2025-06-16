@@ -188,6 +188,7 @@ void optimizeTreeSecondPass(
     }
 
     // find ReadFromLocalParallelReplicaStep and replace with optimized local plan
+    bool read_from_local_parallel_replica_plan = false;
     stack.push_back({.node = &root});
     while (!stack.empty())
     {
@@ -203,6 +204,8 @@ void optimizeTreeSecondPass(
         }
         if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep*>(frame.node->step.get()))
         {
+            read_from_local_parallel_replica_plan = true;
+
             auto local_plan = read_from_local->extractQueryPlan();
             local_plan->optimize(optimization_settings);
             // after applying optimize() we still can have several expression in a row,
@@ -215,6 +218,8 @@ void optimizeTreeSecondPass(
 
         stack.pop_back();
     }
+    if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
+        tryRemoveRedundantSorting(&root);
 
 
     stack.push_back({.node = &root});
