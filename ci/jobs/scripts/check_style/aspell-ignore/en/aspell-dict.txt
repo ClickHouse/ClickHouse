@@ -2756,6 +2756,8 @@ satisfiable
 scala
 sccache
 schemas
+searchAny
+searchAll
 seekable
 seektable
 sequenceCount

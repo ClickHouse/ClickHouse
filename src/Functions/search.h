@@ -39,15 +39,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    void setGinFilterParameters(GinFilterParameters params)
-    {
-        /// Index parameters can be set multiple times.
-        /// This happens exactly in a case that same searchAny/searchAll query is used again.
-        /// This is fine because the parameters would be same.
-        if (parameters.has_value() && params != parameters.value())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}': Different index parameters are set.", getName());
-        parameters = std::move(params);
-    }
+    void setGinFilterParameters(GinFilterParameters params);
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
