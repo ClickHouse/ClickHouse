@@ -339,6 +339,8 @@ void MergeTreeRangeReader::ReadResult::clear()
     num_rows = 0;
     columns.clear();
     additional_columns.clear();
+    /// Clear granule tracking state for new read operation
+    already_counted_skipped_granules.clear();
 }
 
 void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns, const NumRows & rows_per_granule_previous) const
@@ -510,7 +512,14 @@ size_t MergeTreeRangeReader::ReadResult::countSkippedGranules(const FilterWithCa
             [](UInt8 value) { return value != 0; });
 
         if (!has_any_rows_passing_filter && num_rows_in_granule > 0)
-            ++skipped_granules;
+        {
+            /// Only count this granule if we haven't already counted it in a previous PREWHERE step
+            if (already_counted_skipped_granules.find(row_offset) == already_counted_skipped_granules.end())
+            {
+                already_counted_skipped_granules.insert(row_offset);
+                ++skipped_granules;
+            }
+        }
 
         row_offset += num_rows_in_granule;
     }

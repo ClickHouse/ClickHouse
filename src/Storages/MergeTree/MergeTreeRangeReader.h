@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -287,6 +288,7 @@ public:
         void applyFilter(const FilterWithCachedCount & filter);
 
         /// Counts the number of granules that were skipped by the filter to estimate the performance of prewhere readers.
+        /// Prevents double-counting across multiple PREWHERE steps.
         size_t countSkippedGranules(const FilterWithCachedCount & filter) const;
 
         /// Verifies that columns and filter sizes match.
@@ -311,6 +313,10 @@ public:
         size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.
         size_t num_bytes_read = 0;
+
+        /// Track which granules have already been counted as skipped to prevent double-counting
+        /// across multiple PREWHERE steps. Key: granule_start_row, Value: true if already counted
+        mutable std::unordered_set<size_t> already_counted_skipped_granules;
 
         /// This filter has the size of total_rows_per_granule. This means that it can be applied to newly read columns.
         /// The result of applying this filter is that only rows that pass all previous filtering steps will remain.
