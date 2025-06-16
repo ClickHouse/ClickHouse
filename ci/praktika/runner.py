@@ -14,6 +14,7 @@ from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
+from .native_jobs import _is_praktika_job
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
@@ -24,19 +25,23 @@ from .utils import Shell, TeePopen, Utils
 
 class Runner:
     @staticmethod
-    def generate_local_run_environment(workflow, job, pr=None, sha=None):
+    def generate_local_run_environment(workflow, job, pr=None, sha=None, branch=None):
         print("WARNING: Generate dummy env for local test")
         Shell.check(f"mkdir -p {Settings.TEMP_DIR}", strict=True)
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
+        assert (bool(pr) ^ bool(branch)) or (not pr and not branch)
+        pr = pr or -1
+        if branch:
+            pr = 0
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
             REPOSITORY="",
-            BRANCH="branch_name",
+            BRANCH=branch,
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
-            PR_NUMBER=pr or -1,
-            EVENT_TYPE="",
+            PR_NUMBER=pr if not branch else 0,
+            EVENT_TYPE=workflow.event,
             JOB_OUTPUT_STREAM="",
             EVENT_FILE_PATH="",
             CHANGE_URL="",
@@ -119,12 +124,7 @@ class Runner:
                 print("Update Job and Workflow Report")
                 HtmlRunnerHooks.pre_run(workflow, job)
 
-        if job.requires and job.name not in (
-            Settings.CI_CONFIG_JOB_NAME,
-            Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
-            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-            Settings.FINISH_WORKFLOW_JOB_NAME,
-        ):
+        if job.requires and not _is_praktika_job(job.name):
             print("Download required artifacts")
             required_artifacts = []
             # praktika service jobs do not require any of artifacts and excluded in if to not upload "hacky" artifact report.
@@ -140,18 +140,7 @@ class Runner:
                 else:
                     if (
                         requires_artifact_name
-                        in [
-                            job.name
-                            for job in workflow.jobs
-                            if job.name
-                            not in (
-                                Settings.CI_CONFIG_JOB_NAME,
-                                Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
-                                Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-                                Settings.FINISH_WORKFLOW_JOB_NAME,
-                            )
-                            and job.provides
-                        ]
+                        in [job.name for job in workflow.jobs if job.provides]
                         and Settings.ENABLE_ARTIFACTS_REPORT
                     ):
                         print(
@@ -247,8 +236,27 @@ class Runner:
                     job.run_in_docker,
                     RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
                 )
+                if Utils.is_arm():
+                    docker_tag += "_arm"
+                elif Utils.is_amd():
+                    docker_tag += "_amd"
+                else:
+                    raise RuntimeError("Unsupported CPU architecture")
+
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            for setting in settings:
+                if setting.startswith("--volume"):
+                    volume = setting.removeprefix("--volume=").split(":")[0]
+                    if not Path(volume).exists():
+                        print(
+                            "WARNING: Create mount dir point in advance to have the same owner"
+                        )
+                        Shell.check(f"mkdir -p {volume}", verbose=True, strict=True)
+            Shell.check(
+                "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
+                verbose=True,
+            )
             cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
@@ -358,8 +366,13 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
-        elif not result.is_ok and job.allow_merge_on_failure:
-            result.set_not_required_label()
+        elif (
+            not result.is_ok()
+            and workflow.enable_merge_ready_status
+            and not job.allow_merge_on_failure
+        ):
+            print("set required label")
+            result.set_required_label()
 
         result.update_duration()
         # if result.is_error():
@@ -373,9 +386,7 @@ class Runner:
                     name = check.__name__
                 else:
                     name = str(check)
-                results_.append(
-                    Result.from_commands_run(name=name, command=check, with_info=True)
-                )
+                results_.append(Result.from_commands_run(name=name, command=check))
             result.results.append(
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )
@@ -405,7 +416,7 @@ class Runner:
                                 "TODO: globe is not supported with comress = True"
                             )
                         print(f"Compress artifact file [{artifact.path}]")
-                        artifact.path = Utils.compress_file_zst(artifact.path)
+                        artifact.path = Utils.compress_zst(artifact.path)
 
                     if isinstance(artifact.path, (tuple, list)):
                         artifact_paths = artifact.path
@@ -472,9 +483,22 @@ class Runner:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
+        workflow_result = Result.from_fs(workflow.name)
+        if workflow.enable_gh_summary_comment:
+            try:
+                summary_body = GH.ResultSummaryForGH.from_result(
+                    workflow_result
+                ).to_markdown()
+                if not GH.post_updateable_comment(
+                    comment_tags_and_bodies={"summary": summary_body},
+                ):
+                    print(f"ERROR: failed to post CI summary")
+            except Exception as e:
+                print(f"ERROR: failed to post CI summary, ex: {e}")
+                traceback.print_exc()
+
         if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
             # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
-            workflow_result = Result.from_fs(workflow.name)
             workflow_storage_usage = StorageUsage.from_dict(
                 workflow_result.ext.get("storage_usage", {})
             )
@@ -508,7 +532,8 @@ class Runner:
                 description=result.info.splitlines()[0] if result.info else "",
                 url=report_url,
             ):
-                print(f"ERROR: Failed to post failed commit status for the job")
+                env.add_info("Failed to post GH commit status for the job")
+                print(f"ERROR: Failed to post commit status for the job")
 
         if workflow.enable_report:
             # to make it visible in GH Actions annotations
@@ -552,7 +577,9 @@ class Runner:
                 Info().store_traceback()
             print(f"=== Setup env finished ===\n\n")
         else:
-            self.generate_local_run_environment(workflow, job, pr=pr, sha=sha)
+            self.generate_local_run_environment(
+                workflow, job, pr=pr, sha=sha, branch=branch
+            )
 
         if res and (not local_run or pr or sha or branch):
             res = False

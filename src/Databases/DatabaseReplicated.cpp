@@ -24,6 +24,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -66,6 +67,7 @@ namespace Setting
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+    extern const SettingsSetOperationMode union_default_mode;
 }
 
 namespace ServerSetting
@@ -107,11 +109,9 @@ namespace FailPoints
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
 static constexpr const char * DROPPED_MARK = "DROPPED";
-static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
-static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
 
-zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
+ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
     return getContext()->getZooKeeper();
 }
@@ -355,6 +355,9 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         String hostname = unescapeForFileName(host_port);
         shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
     }
+
+    if (shards.empty())
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No active replicas");
 
     UInt16 default_port;
     if (cluster_auth_info.cluster_secure_connection)
@@ -1429,7 +1432,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// And QualifiedTableName::parseFromString doesn't handle this.
         auto qualified_name = QualifiedTableName{.database = getDatabaseName(), .table = table_name};
         auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
-        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ast, getContext()->getCurrentDatabase()));
+        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ast, getContext()->getCurrentDatabase()).dependencies);
     }
 
     tables_dependencies.checkNoCyclicDependencies();
@@ -1463,8 +1466,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 }
 
                 auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
-
                 auto create_query_context = make_query_context();
+
+                NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
+
                 /// Check larger comment in DatabaseOnDisk::createTableFromAST
                 /// TL;DR applySettingsFromQuery will move the settings from engine to query level
                 /// making it possible to overcome a backward incompatible change.
@@ -1495,11 +1501,17 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         for (UInt32 ptr = first_entry_to_mark_finished; ptr <= max_log_ptr; ++ptr)
         {
             auto entry_name = DDLTaskBase::getLogEntryName(ptr);
-            auto path = fs::path(zookeeper_path) / "log" / entry_name / "finished" / getFullReplicaName();
+
+            auto finished = fs::path(zookeeper_path) / "log" / entry_name / "finished" / getFullReplicaName();
+            auto synced = fs::path(zookeeper_path) / "log" / entry_name / "synced" / getFullReplicaName();
+
             auto status = ExecutionStatus(0).serializeText();
-            auto res = current_zookeeper->tryCreate(path, status, zkutil::CreateMode::Persistent);
-            if (res == Coordination::Error::ZOK)
+            auto res_finished = current_zookeeper->tryCreate(finished, status, zkutil::CreateMode::Persistent);
+            auto res_synced = current_zookeeper->tryCreate(synced, status, zkutil::CreateMode::Persistent);
+            if (res_finished == Coordination::Error::ZOK && res_synced == Coordination::Error::ZOK)
                 LOG_INFO(log, "Marked recovered {} as finished", entry_name);
+            else
+                LOG_INFO(log, "Failed to marked {} as finished (finished={}, synced={}). Ignoring.", entry_name, res_finished, res_synced);
         }
     }
 
@@ -1611,6 +1623,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataOnDisk(const String & table_nam
 {
     auto file_path = getObjectMetadataPath(table_name);
     String description = fmt::format("in metadata {}", file_path);
+    auto db_disk = getDisk();
     String query = DB::readMetadataFile(db_disk, file_path);
     return parseQueryFromMetadata(table_name, query, description);
 }
@@ -1958,6 +1971,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
+    auto db_disk = getDisk();
     auto file_path = getObjectMetadataPath(table_name);
     return DB::readMetadataFile(db_disk, file_path);
 }
@@ -1988,14 +2002,13 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
 
         StoragePtr storage;
         if (create.uuid != UUIDHelpers::Nil)
-        {
             storage = DatabaseCatalog::instance().tryGetByUUID(create.uuid).second;
-            if (storage)
-                storage->adjustCreateQueryForBackup(create_table_query);
-        }
 
-        /// `storage` is allowed to be null here. In this case it means that this storage exists on other replicas
-        /// but it has not been created on this replica yet.
+        /// Pointer `storage` is allowed to be null here (that means that this storage exists on other replicas
+        /// but it has not been created on this replica yet).
+
+        /// There is no need to call `storage->applyMetadataChangesToCreateQueryForBackup()` here
+        /// because a consistent metadata snapshot contains table definitions with already applied metadata changes.
 
         res.emplace_back(create_table_query, storage);
     }

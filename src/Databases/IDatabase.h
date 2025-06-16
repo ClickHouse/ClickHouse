@@ -2,6 +2,7 @@
 
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/QueryFlags.h>
 #include <Parsers/IAST_fwd.h>
@@ -176,6 +177,8 @@ public:
 
     virtual bool canContainDistributedTables() const { return true; }
 
+    virtual bool canContainRocksDBTables() const { return true; }
+
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT
@@ -245,6 +248,8 @@ public:
     /// Throws exception when table exists.
     virtual void checkMetadataFilenameAvailability(const String & /*table_name*/) const {}
 
+    /// Check if the table name exceeds the max allowed length
+    virtual void checkTableNameLength(const String & /*table_name*/) const {}
 
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
@@ -422,6 +427,9 @@ public:
 
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
+
+    /// Get the disk storing metedata files of the tables
+    virtual DiskPtr getDisk() const;
 
     virtual ~IDatabase();
 

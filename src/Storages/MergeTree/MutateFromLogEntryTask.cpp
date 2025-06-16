@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>

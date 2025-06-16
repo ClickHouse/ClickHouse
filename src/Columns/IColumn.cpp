@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
@@ -379,7 +380,7 @@ bool IColumnHelper<Derived, Parent>::hasEqualValues() const
     size_t num_rows = self.size();
     for (size_t i = 1; i < num_rows; ++i)
     {
-        if (self.compareAt(i, 0, self, 0) != 0)
+        if (self.compareAt(i, 0, self, 1) != 0)
             return false;
     }
     return true;
@@ -669,6 +670,7 @@ template class IColumnHelper<ColumnObject, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;
 
+template class IColumnHelper<ColumnBLOB, IColumn>;
 
 void intrusive_ptr_add_ref(const IColumn * c)
 {
@@ -681,4 +683,5 @@ void intrusive_ptr_release(const IColumn * c)
     BOOST_ASSERT(c != nullptr);
     boost::sp_adl_block::intrusive_ptr_release(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
 }
+
 }

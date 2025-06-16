@@ -157,6 +157,7 @@ public:
     std::vector<String> tryGetCachePaths(const Key & key);
 
     size_t getUsedCacheSize() const;
+    size_t getMaxCacheSize() const;
 
     size_t getFileSegmentsNum() const;
 

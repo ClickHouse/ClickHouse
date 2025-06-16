@@ -533,6 +533,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (const DataTypeVariant * type_variant = typeid_cast<const DataTypeVariant *>(&type))
     {
+        if (src.isNull())
+            return src;
+
         /// If we have type hint and Variant contains such type, no need to convert field.
         if (from_type_hint && type_variant->tryGetVariantDiscriminator(from_type_hint->getName()))
             return src;
@@ -542,6 +545,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         auto col = type_variant->createColumn();
         if (col->tryInsert(src))
             return src;
+
+        /// Otherwise try to convert field to any variant.
+        for (const auto & variant : type_variant->getVariants())
+        {
+            auto res = tryConvertFieldToType(src, *variant, from_type_hint, format_settings);
+            if (!res.isNull())
+                return res;
+        }
     }
     else if (isDynamic(type))
     {

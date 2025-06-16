@@ -82,6 +82,7 @@ enum class Error : int32_t
     ZOPERATIONTIMEOUT = -7,     /// Operation timeout
     ZBADARGUMENTS = -8,         /// Invalid arguments
     ZINVALIDSTATE = -9,         /// Invalid zhandle state
+    ZOUTOFMEMORY = -10,         /// Keeper has reached soft memory limit
 
     /** API errors.
         * This is never thrown by the server, it shouldn't be used other than

@@ -10,11 +10,16 @@ class ISourceStep : public IQueryPlanStep
 public:
     explicit ISourceStep(Header output_header_);
 
+    ISourceStep(const ISourceStep &) = default;
+    ISourceStep(ISourceStep &&) = default;
+
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     virtual void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
     void describePipeline(FormatSettings & settings) const override;
+
+    bool hasCorrelatedExpressions() const override { return false; }
 
 protected:
     void updateOutputHeader() override {}

@@ -78,7 +78,8 @@ Requires a boolean parameter, but it is ignored actually. It is required just fo
 )",
             .examples{
              {"common", "SELECT current_schemas(true);", "['default']"}
-        }
+        },
+             .category = FunctionDocumentation::Category::Other
         },
         FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_schemas", FunctionCurrentSchemas::name, FunctionFactory::Case::Insensitive);

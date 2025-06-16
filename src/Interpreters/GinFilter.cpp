@@ -11,27 +11,17 @@
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
-#include <string>
-#include <algorithm>
 #include <city.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-GinFilterParameters::GinFilterParameters(size_t ngrams_, UInt64 max_rows_per_postings_list_)
-    : ngrams(ngrams_)
+GinFilterParameters::GinFilterParameters(String tokenizer_, UInt64 max_rows_per_postings_list_)
+    : tokenizer(std::move(tokenizer_))
     , max_rows_per_postings_list(max_rows_per_postings_list_)
 {
     if (max_rows_per_postings_list == UNLIMITED_ROWS_PER_POSTINGS_LIST)
         max_rows_per_postings_list = std::numeric_limits<UInt64>::max();
-
-    if (ngrams > 8)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of full-text index filter cannot be greater than 8");
 }
 
 GinFilter::GinFilter(const GinFilterParameters & params_)

@@ -237,7 +237,7 @@ CPU time is consumed by threads when they are not blocked and work on CPU-intens
 * Master thread — the first thread that starts working on a query or background activity like a merge or a mutation.
 * Worker thread — the additional threads that master can spawn to work on CPU-intensive tasks.
 
-It may be desirable to use separate resources for master and worker threads to achieve better responsiveness. A high number of worker threads can easily monopolize CPU resource when high `max_thread` query setting values are used. Then incoming queries should block and wait a CPU slot for its master thread to start execution. To avoid this the following configuration could be used:
+It may be desirable to use separate resources for master and worker threads to achieve better responsiveness. A high number of worker threads can easily monopolize CPU resource when high `max_threads` query setting values are used. Then incoming queries should block and wait a CPU slot for its master thread to start execution. To avoid this the following configuration could be used:
 
 ```sql
 CREATE RESOURCE worker_cpu (WORKER THREAD)
@@ -274,10 +274,29 @@ Slot scheduling provides a way to control [query concurrency](/operations/settin
 Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload. To achieve the previous behavior create only WORKER THREAD resource, set `max_concurrent_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting. This configuration corresponds to [`concurrent_threads_scheduler`](server-configuration-parameters/settings.md#concurrent_threads_scheduler) setting set "fair_round_robin" value.
 :::
 
+## Query slot scheduling {#query_scheduling}
+
+To enable query slot scheduling for workloads create QUERY resource and set a limit for the number of concurrent queries or queries per second:
+
+```sql
+CREATE RESOURCE query (QUERY)
+CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_second = 10, max_burst_queries = 20
+```
+
+Workload setting `max_concurrent_queries` limits the number of concurrent queries that could run simultaneously for a given workload. This is analog of query [`max_concurrent_queries_for_all_users`](/operations/settings/settings#max_concurrent_queries_for_all_users) and server [max_concurrent_queries](/operations/server-configuration-parameters/settings#max_concurrent_queries) settings. Async insert queries and some specific queries like KILL are not counted towards the limit.
+
+Workload settings `max_queries_per_second` and `max_burst_queries` limits number of queries for the workload with a token bucket throttler. It guarantees that during any time interval `T` no more than `max_queries_per_second * T + max_burst_queries` new queries will start execution.
+
+:::note
+Blocked queries will wait indefinitely and not appear in `SHOW PROCESSLIST` until all constraints are satisfied.
+:::
+
 ## Workloads and resources storage {#workload_entity_storage}
+
 Definitions of all workloads and resources in the form of `CREATE WORKLOAD` and `CREATE RESOURCE` queries are stored persistently either on disk at `workload_path` or in ZooKeeper at `workload_zookeeper_path`. ZooKeeper storage is recommended to achieve consistency between nodes. Alternatively `ON CLUSTER` clause could be used along with disk storage.
 
 ## Strict resource access {#strict_resource_access}
+
 To enforce all queries to follow resource scheduling policies there is a server setting `throw_on_unknown_workload`. If it is set to `true` then every query is required to use valid `workload` query setting, otherwise `RESOURCE_ACCESS_DENIED` exception is thrown. If it is set to `false` then such a query does not use resource scheduler, i.e. it will get unlimited access to any `RESOURCE`.
 
 :::note

@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <optional>
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
 
@@ -38,10 +40,6 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
-
-#include <algorithm>
-#include <numeric>
-#include <optional>
 
 namespace ProfileEvents
 {
@@ -140,7 +138,7 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     std::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
-    DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
+    DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size}, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
@@ -3102,6 +3100,9 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                 if (bucket > max_bucket)
                     break;
 
+                if (!bucket_to_blocks.contains(bucket))
+                    continue;
+
                 if (is_cancelled.load())
                     return;
 
@@ -3136,14 +3137,13 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                     Arena * aggregates_pool = result.aggregates_pools.back().get();
                     runner([&merge_bucket, aggregates_pool]() { merge_bucket(aggregates_pool); });
                 }
-
-                runner.waitForAllToFinishAndRethrowFirstError();
             }
             catch (...)
             {
                 is_cancelled.store(true);
-                runner.waitForAllToFinishAndRethrowFirstError();
+                throw;
             }
+            runner.waitForAllToFinishAndRethrowFirstError();
         }
         else
         {
