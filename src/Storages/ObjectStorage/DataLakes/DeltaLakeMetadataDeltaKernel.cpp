@@ -14,12 +14,14 @@ namespace ErrorCodes
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     ObjectStoragePtr object_storage,
-    ConfigurationObserverPtr configuration_)
+    ConfigurationObserverPtr configuration_,
+    bool read_schema_same_as_table_schema_)
     : log(getLogger("DeltaLakeMetadata"))
     , table_snapshot(
         std::make_shared<DeltaLake::TableSnapshot>(
             getKernelHelper(configuration_.lock(), object_storage),
             object_storage,
+            read_schema_same_as_table_schema_,
             log))
 {
 }
@@ -47,13 +49,6 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema() const
 {
     return table_snapshot->getTableSchema();
-}
-
-void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_settings) const
-{
-    /// There can be missing columns because of ALTER ADD/DROP COLUMN.
-    /// So to support reading from such tables it is enough to turn on this setting.
-    format_settings.parquet.allow_missing_columns = true;
 }
 
 DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(

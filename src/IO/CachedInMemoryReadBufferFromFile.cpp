@@ -2,12 +2,6 @@
 #include <IO/SwapHelper.h>
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
-
-namespace ProfileEvents
-{
-    extern const Event PageCacheReadBytes;
-}
 
 namespace DB
 {
@@ -22,7 +16,8 @@ namespace ErrorCodes
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
     PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_)
     : ReadBufferFromFileBase(0, nullptr, 0, in_->getFileSize()), cache_key(cache_key_), cache(cache_)
-    , settings(settings_)
+    , block_size(cache->defaultBlockSize())
+    , lookahead_blocks(std::max(cache->defaultLookaheadBlocks(), size_t(1))), settings(settings_)
     , in(std::move(in_)), read_until_position(file_size.value())
     , inner_read_until_position(read_until_position)
 {
@@ -108,8 +103,6 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
     if (file_offset_of_buffer_end >= read_until_position)
         return false;
 
-    size_t block_size = settings.page_cache_block_size;
-
     if (chunk != nullptr && file_offset_of_buffer_end >= cache_key.offset + block_size)
     {
         chassert(file_offset_of_buffer_end == cache_key.offset + block_size);
@@ -142,7 +135,7 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                     /// nontrivial seek or setReadUntilPosition call).
                     /// Use aligned groups of blocks (rather than sliding window) to work better
                     /// with distributed cache.
-                    size_t lookahead_bytes = block_size * std::max<size_t>(1, settings.page_cache_lookahead_blocks);
+                    size_t lookahead_bytes = block_size * lookahead_blocks;
                     size_t lookahead_block_end = std::min({
                         file_size.value(),
                         (cache_key.offset / lookahead_bytes + 1) * lookahead_bytes,
@@ -206,9 +199,7 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
         nextimpl_working_buffer_offset = 0;
     }
 
-    size_t size = available();
-    file_offset_of_buffer_end += size;
-    ProfileEvents::increment(ProfileEvents::PageCacheReadBytes, size);
+    file_offset_of_buffer_end += available();
 
     return true;
 }

@@ -108,11 +108,6 @@ QueryTreeNodePtr TableNode::cloneImpl() const
 
 ASTPtr TableNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
-    return toASTIdentifier();
-}
-
-std::shared_ptr<ASTTableIdentifier> TableNode::toASTIdentifier() const
-{
     if (!temporary_table_name.empty())
         return std::make_shared<ASTTableIdentifier>(temporary_table_name);
 

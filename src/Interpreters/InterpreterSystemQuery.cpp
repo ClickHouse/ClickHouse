@@ -13,7 +13,6 @@
 #include <Common/PageCache.h>
 #include <Common/HostResolvePool.h>
 #include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -911,12 +910,10 @@ void InterpreterSystemQuery::restoreReplica()
     const auto & settings = getContext()->getSettingsRef();
 
     table_replicated_ptr->restoreMetadataInZooKeeper(
-        ZooKeeperRetriesInfo{
-            settings[Setting::keeper_max_retries],
-            settings[Setting::keeper_retry_initial_backoff_ms],
-            settings[Setting::keeper_retry_max_backoff_ms],
-            getContext()->getProcessListElementSafe()},
-        false);
+        ZooKeeperRetriesInfo{settings[Setting::keeper_max_retries],
+                             settings[Setting::keeper_retry_initial_backoff_ms],
+                             settings[Setting::keeper_retry_max_backoff_ms],
+                             getContext()->getProcessListElementSafe()});
 }
 
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
@@ -1271,19 +1268,7 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
-    StoragePtr table;
-
-    if (query.if_exists)
-    {
-        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-        if (!table)
-            return;
-    }
-    else
-    {
-        table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    }
-
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
     if (!trySyncReplica(table, query.sync_replica_mode, replicas, getContext()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
