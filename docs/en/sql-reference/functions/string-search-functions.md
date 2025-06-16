@@ -755,6 +755,104 @@ Result:
 1
 ```
 
+## searchAny {#searchany}
+
+Returns 1, if at least one string needle<sub>i</sub> matches the `input` column and 0 otherwise.
+
+**Syntax**
+
+```sql
+searchAny(input, 'needle1 needle2 ... needleN')
+```
+
+**Parameters**
+
+- `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `needles` — tokens to be searched. [const String](../data-types/string.md).
+
+:::note
+This function must be used only with a [full-text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
+The input data is tokenized by the tokenizer from the index definition.
+:::
+
+**Returned value**
+
+- 1, if there was at least one match.
+- 0, otherwise.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE `text_table` (
+    `id` UInt32,
+    `msg` String,
+    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT into `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() from `text_table` where searchAny(msg, 'a d');
+```
+
+Result:
+
+```response
+3
+```
+
+## searchAll {#searchall}
+
+Like [searchAny](#searchany), but returns 1 only if all string needle<sub>i</sub> matches the `input` column and 0 otherwise.
+
+**Syntax**
+
+```sql
+searchAll(input, 'needle1 needle2 ... needleN')
+```
+
+**Parameters**
+
+- `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `needles` — tokens to be searched. [const String](../data-types/string.md).
+
+:::note
+This function must be used only with a [full-text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
+The input data is tokenized by the tokenizer from the index definition.
+:::
+
+**Returned value**
+
+- 1, if all needles match.
+- 0, otherwise.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE `text_table` (
+    `id` UInt32,
+    `msg` String,
+    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT into `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() from `text_table` where searchAll(msg, 'a d');
+```
+
+Result:
+
+```response
+1
+```
+
 ## match {#match}
 
 Returns whether string `haystack` matches the regular expression `pattern` in [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax).
