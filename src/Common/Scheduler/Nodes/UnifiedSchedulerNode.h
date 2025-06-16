@@ -264,7 +264,7 @@ private:
         }
 
         // Should be called after constructor, before any other methods
-        [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_, const WorkloadSettings& settings_)
+        [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_, const WorkloadSettings & settings_)
         {
             settings = settings_;
             createQueue(event_queue_);
