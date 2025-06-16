@@ -487,7 +487,8 @@ For an alternative to [`date_diff`](#date_diff), see function [`age`](#age).
     FunctionDocumentation::Syntax syntax_date_diff = R"(
 date_diff(unit, startdate, enddate, [timezone])
     )";
-    FunctionDocumentation::Arguments arguments_date_diff = {
+    FunctionDocumentation::Arguments arguments_date_diff =
+    {
         {"unit", R"(The type of interval for result.
 
 | Unit | Possible values |
@@ -509,7 +510,8 @@ date_diff(unit, startdate, enddate, [timezone])
         {"timezone", "Optional. Timezone name. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [`String`](../data-types/string.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_date_diff = "Returns the difference between `enddate` and `startdate` expressed in `unit`. [`Int64`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_date_diff = {
+    FunctionDocumentation::Examples examples_date_diff =
+    {
         {"Calculate date difference in hours", R"(
 SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
         )",
@@ -534,16 +536,15 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_date_diff = {23, 4};
     FunctionDocumentation::Category category_date_diff = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation::Aliases aliases_date_diff = {"dateDiff", "DATE_DIFF", "timestampDiff", "timestamp_diff", "TIMESTAMP_DIFF"};
-    FunctionDocumentation documentation_date_diff = {
+    FunctionDocumentation documentation_date_diff =
+    {
         description_date_diff,
         syntax_date_diff,
         arguments_date_diff,
         returned_value_date_diff,
         examples_date_diff,
         introduced_in_date_diff,
-        category_date_diff,
-        aliases_date_diff
+        category_date_diff
     };
 
     factory.registerFunction<FunctionTimeDiff>(documentation_date_diff, FunctionFactory::Case::Insensitive);
@@ -563,7 +564,8 @@ For an alternative to age, see function [`date_diff`](#date_diff).
     FunctionDocumentation::Syntax syntax_age = R"(
 age('unit', startdate, enddate, [timezone])
     )";
-    FunctionDocumentation::Arguments arguments_age = {
+    FunctionDocumentation::Arguments arguments_age =
+    {
         {"unit", R"(The type of interval for result.
 
 | Unit | Possible values |
@@ -585,7 +587,8 @@ age('unit', startdate, enddate, [timezone])
         {"timezone", "Optional. Timezone name. If specified, it is applied to both startdate and enddate. If not specified, timezones of startdate and enddate are used. If they are not the same, the result is unspecified. [`String`](../data-types/string.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_age = "Returns the difference between enddate and startdate expressed in unit. [`Int`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_age = {
+    FunctionDocumentation::Examples examples_age =
+    {
         {"Calculate age in hours", R"(
 SELECT age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'))
         )",
@@ -610,7 +613,8 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_age = {23, 1};
     FunctionDocumentation::Category category_age = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_age = {
+    FunctionDocumentation documentation_age =
+    {
         description_age,
         syntax_age,
         arguments_age,

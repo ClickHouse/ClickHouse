@@ -24,8 +24,8 @@ toISOYear(datetime)
     FunctionDocumentation::Examples examples_toISOYear = {
         {"Get ISO year from date values", R"(
 SELECT
-  toISOYear(toDate('2024/10/02')) as year1,
-  toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
+toISOYear(toDate('2024/10/02')) as year1,
+toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
         )",
         R"(
 ┌─week1─┬─week2─┐

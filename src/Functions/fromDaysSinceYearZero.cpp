@@ -117,11 +117,13 @@ The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is 
     FunctionDocumentation::Syntax syntax_fromDaysSinceYearZero = R"(
 fromDaysSinceYearZero(days)
     )";
-    FunctionDocumentation::Arguments arguments_fromDaysSinceYearZero = {
+    FunctionDocumentation::Arguments arguments_fromDaysSinceYearZero =
+    {
         {"days", "The number of days passed since year zero. [`UInt32`](../data-types/int-uint.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_fromDaysSinceYearZero = "Returns the date corresponding to the number of days passed since year zero. [`Date`](../data-types/date.md).";
-    FunctionDocumentation::Examples examples_fromDaysSinceYearZero = {
+    FunctionDocumentation::Examples examples_fromDaysSinceYearZero =
+    {
         {"Convert days since year zero to dates", R"(
 SELECT
   fromDaysSinceYearZero(739136) AS date1,
@@ -135,7 +137,8 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromDaysSinceYearZero = {23, 11};
     FunctionDocumentation::Category category_fromDaysSinceYearZero = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_fromDaysSinceYearZero = {
+    FunctionDocumentation documentation_fromDaysSinceYearZero =
+    {
         description_fromDaysSinceYearZero,
         syntax_fromDaysSinceYearZero,
         arguments_fromDaysSinceYearZero,
@@ -153,11 +156,13 @@ The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is 
     FunctionDocumentation::Syntax syntax_fromDaysSinceYearZero32 = R"(
 fromDaysSinceYearZero32(days)
     )";
-    FunctionDocumentation::Arguments arguments_fromDaysSinceYearZero32 = {
+    FunctionDocumentation::Arguments arguments_fromDaysSinceYearZero32 =
+    {
         {"days", "The number of days passed since year zero. [`UInt32`](../data-types/int-uint.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_fromDaysSinceYearZero32 = "Returns the date corresponding to the number of days passed since year zero. [`Date32`](../data-types/date32.md).";
-    FunctionDocumentation::Examples examples_fromDaysSinceYearZero32 = {
+    FunctionDocumentation::Examples examples_fromDaysSinceYearZero32 =
+    {
         {"Convert days since year zero to dates", R"(
 SELECT
   fromDaysSinceYearZero32(739136) AS date1,
@@ -171,7 +176,8 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromDaysSinceYearZero32 = {23, 11};
     FunctionDocumentation::Category category_fromDaysSinceYearZero32 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_fromDaysSinceYearZero32 = {
+    FunctionDocumentation documentation_fromDaysSinceYearZero32 =
+    {
         description_fromDaysSinceYearZero32,
         syntax_fromDaysSinceYearZero32,
         arguments_fromDaysSinceYearZero32,
