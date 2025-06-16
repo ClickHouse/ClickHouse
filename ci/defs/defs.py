@@ -98,7 +98,7 @@ DOCKERS = [
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-util"],
     ),
     Docker.Config(
         name="clickhouse/cctools",

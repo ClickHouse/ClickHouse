@@ -83,6 +83,15 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+# Install ODBC Bridge and Library Bridge, which are separately built components.
+RUN BRIDGE_VERSION='25.1.5.31' \
+    && ARCH=$(dpkg --print-architecture) \
+    && cd /tmp \
+    && wget "https://packages.clickhouse.com/deb/pool/main/c/clickhouse/clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb" \
+    && wget "https://packages.clickhouse.com/deb/pool/main/c/clickhouse/clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb" \
+    && dpkg -i clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb \
+    && rm clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb
+
 COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
@@ -90,5 +99,68 @@ COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \
-  \
   /etc/ssl/
+
+# Additional packages from test-base
+RUN apt-get update \
+    && apt-get install \
+        bsdutils \
+        default-jre \
+        g++ \
+        iproute2 \
+        krb5-user \
+        libicu-dev \
+        libsqlite3-dev \
+        libsqliteodbc \
+        lsof \
+        lz4 \
+        odbc-postgresql \
+        odbcinst \
+        python3-pip \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        rpm2cpio \
+        sqlite3 \
+        tar \
+        unixodbc \
+        --yes --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+# Install Python requirements
+COPY requirements.txt /
+RUN pip3 install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
+
+# Install MySQL ODBC driver from RHEL rpm
+ARG TARGETARCH
+RUN arch=${TARGETARCH:-amd64} \
+  && case $arch in \
+      amd64) rarch=x86_64 ;; \
+      arm64) rarch=aarch64 ;; \
+    esac \
+  && cd /tmp \
+  && curl -o mysql-odbc.rpm "https://cdn.mysql.com/archives/mysql-connector-odbc-8.0/mysql-connector-odbc-8.0.32-1.el9.${rarch}.rpm" \
+  && rpm2archive mysql-odbc.rpm \
+  && tar xf mysql-odbc.rpm.tgz -C / ./usr/lib64/ \
+  && rm mysql-odbc.rpm mysql-odbc.rpm.tgz \
+  && ODBC_DIR=$(dpkg -L odbc-postgresql | grep -E '^/usr/lib/.+-linux-gnu/odbc$') \
+  && ln -s /usr/lib64/libmyodbc8a.so "$ODBC_DIR" \
+  && ln -s /usr/lib64/libmyodbc8a.so "$ODBC_DIR"/libmyodbc.so
+
+# ZooKeeper installation
+ENV ZOOKEEPER_VERSION='3.6.3'
+RUN curl "https://archive.apache.org/dist/zookeeper/zookeeper-${ZOOKEEPER_VERSION}/apache-zookeeper-${ZOOKEEPER_VERSION}-bin.tar.gz" | \
+      tar -C opt -zxv && \
+  mv /opt/apache-zookeeper-${ZOOKEEPER_VERSION}-bin /opt/zookeeper && \
+  chmod -R 777 /opt/zookeeper && \
+  echo $'tickTime=2500 \n\
+tickTime=2500 \n\
+dataDir=/zookeeper \n\
+clientPort=2181 \n\
+maxClientCnxns=80' > /opt/zookeeper/conf/zoo.cfg && \
+  mkdir /zookeeper && \
+  chmod -R 777 /zookeeper
+
+# Timezone configuration
+ENV TZ=Etc/UTC
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
