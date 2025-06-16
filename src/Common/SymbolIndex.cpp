@@ -206,10 +206,10 @@ void collectSymbolsFromProgramHeaders(
                         continue;
 
                     SymbolIndex::Symbol symbol;
-                    symbol.address_begin = reinterpret_cast<const void *>(
-                        info->dlpi_addr + elf_sym[sym_index].st_value);
-                    symbol.address_end = reinterpret_cast<const void *>(
-                        info->dlpi_addr + elf_sym[sym_index].st_value + elf_sym[sym_index].st_size);
+                    symbol.offset_begin = reinterpret_cast<const void *>(
+                        elf_sym[sym_index].st_value);
+                    symbol.offset_end = reinterpret_cast<const void *>(
+                        elf_sym[sym_index].st_value + elf_sym[sym_index].st_size);
                     symbol.name = sym_name;
 
                     /// We are not interested in empty symbols.
@@ -248,7 +248,6 @@ String getBuildIDFromProgramHeaders(dl_phdr_info * info)
 
 
 void collectSymbolsFromELFSymbolTable(
-    dl_phdr_info * info,
     const Elf & elf,
     const Elf::Section & symbol_table,
     const Elf::Section & string_table,
@@ -274,10 +273,10 @@ void collectSymbolsFromELFSymbolTable(
             continue;
 
         SymbolIndex::Symbol symbol;
-        symbol.address_begin = reinterpret_cast<const void *>(
-            info->dlpi_addr + symbol_table_entry->st_value);
-        symbol.address_end = reinterpret_cast<const void *>(
-            info->dlpi_addr + symbol_table_entry->st_value + symbol_table_entry->st_size);
+        symbol.offset_begin = reinterpret_cast<const void *>(
+            symbol_table_entry->st_value);
+        symbol.offset_end = reinterpret_cast<const void *>(
+            symbol_table_entry->st_value + symbol_table_entry->st_size);
         symbol.name = symbol_name;
 
         if (symbol_table_entry->st_size)
@@ -287,7 +286,6 @@ void collectSymbolsFromELFSymbolTable(
 
 
 bool searchAndCollectSymbolsFromELFSymbolTable(
-    dl_phdr_info * info,
     const Elf & elf,
     unsigned section_header_type,
     const char * string_table_name,
@@ -309,7 +307,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
         return false;
     }
 
-    collectSymbolsFromELFSymbolTable(info, elf, *symbol_table, *string_table, symbols);
+    collectSymbolsFromELFSymbolTable(elf, *symbol_table, *string_table, symbols);
     return true;
 }
 
@@ -431,11 +429,11 @@ void collectSymbolsFromELF(
     object.name = object_name;
     objects.push_back(std::move(object));
 
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SHT_SYMTAB, ".strtab", symbols);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SHT_DYNSYM, ".dynstr", symbols);
 #endif
 }
 
@@ -456,13 +454,28 @@ int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
 }
 
 
-template <typename T>
-const T * find(const void * address, const std::vector<T> & vec)
+const SymbolIndex::Symbol * find(const void * offset, const std::vector<SymbolIndex::Symbol> & vec)
+{
+    /// First range that has left boundary greater than address.
+
+    auto it = std::lower_bound(vec.begin(), vec.end(), offset,
+        [](const SymbolIndex::Symbol & symbol, const void * addr) { return symbol.offset_begin <= addr; });
+
+    if (it == vec.begin())
+        return nullptr;
+    --it; /// Last range that has left boundary less or equals than address.
+
+    if (offset >= it->offset_begin && offset < it->offset_end)
+        return &*it;
+    return nullptr;
+}
+
+const SymbolIndex::Object * find(const void * address, const std::vector<SymbolIndex::Object> & vec)
 {
     /// First range that has left boundary greater than address.
 
     auto it = std::lower_bound(vec.begin(), vec.end(), address,
-        [](const T & symbol, const void * addr) { return symbol.address_begin <= addr; });
+        [](const SymbolIndex::Object & object, const void * addr) { return object.address_begin <= addr; });
 
     if (it == vec.begin())
         return nullptr;
@@ -481,12 +494,12 @@ void SymbolIndex::load()
     dl_iterate_phdr(collectSymbols, &data);
 
     ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
-    ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.address_begin < b.address_begin; });
+    ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.offset_begin < b.offset_begin; });
 
     /// We found symbols both from loaded program headers and from ELF symbol tables.
     data.symbols.erase(std::unique(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b)
     {
-        return a.address_begin == b.address_begin && a.address_end == b.address_end;
+        return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end;
     }), data.symbols.end());
 }
 
