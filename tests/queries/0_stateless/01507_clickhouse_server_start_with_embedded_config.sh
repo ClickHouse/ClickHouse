@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 echo "Starting clickhouse-server"
 
-$CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "${CLICKHOUSE_TMP}/" > server.log 2>&1 &
+$CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "${CLICKHOUSE_TMP}/" > "${CLICKHOUSE_TMP}/server.log" 2>&1 &
 PID=$!
 
 function finish()
@@ -26,7 +26,7 @@ for i in {1..30}; do
     sleep 1
     $CLICKHOUSE_CLIENT --query "SELECT 1" 2>/dev/null && break
     if [[ $i == 30 ]]; then
-        cat server.log
+        cat "${CLICKHOUSE_TMP}/server.log"
         exit 1
     fi
 done
@@ -52,7 +52,7 @@ kill $PID
 # Dump server.log in case wait hangs
 function trace()
 {
-    cat server.log
+    cat "${CLICKHOUSE_TMP}/server.log"
 }
 trap trace EXIT
 wait
