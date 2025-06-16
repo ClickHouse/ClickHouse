@@ -1,21 +1,21 @@
 ---
-description: 'Documentation for Exact and Approximate Nearest Neighbor Search'
-keywords: ['vector similarity search', 'ann', 'knn', 'hnsw', 'indices', 'index', 'nearest neighbor']
-sidebar_label: 'Exact and Approximate Nearest Neighbor Search'
+description: 'Documentation for Exact and Approximate Vector Search'
+keywords: ['vector similarity search', 'ann', 'knn', 'hnsw', 'indices', 'index', 'nearest neighbor', 'vector search']
+sidebar_label: 'Exact and Approximate Vector Search'
 slug: /engines/table-engines/mergetree-family/annindexes
-title: 'Exact and Approximate Nearest Neighbor Search'
+title: 'Exact and Approximate Vector Search'
 ---
 
 import BetaBadge from '@theme/badges/BetaBadge';
 
-# Exact and Approximate Nearest Neighbor Search
+# Exact and Approximate Vector Search
 
-The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search).
-Two general approaches exist for solving nearest neighbor search:
-- Exact nearest neighbor search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact nearest neighbor search can be too slow for real-world use.
-- Approximate nearest neighbor search refers to a group of techniques (e.g., special data structures like graphs and random forests) which compute results much faster than exact nearest neighbor search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the result accuracy and the search time.
+The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, shorter, vector search.
+Two general approaches exist for solving vector search:
+- Exact vector search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact vector search can be too slow for real-world use.
+- Approximate vector search refers to a group of techniques (e.g., special data structures like graphs and random forests) which compute results much faster than exact vector search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the result accuracy and the search time.
 
-A nearest neighbor search (exact or approximate) can be written in SQL as follows:
+A vector search (exact or approximate) can be written in SQL as follows:
 
 ```sql
 WITH [...] AS reference_vector
@@ -32,13 +32,13 @@ The reference vector is a constant array and given as a common table expression.
 Any of the available [distance function](/sql-reference/functions/distance-functions) can be used for that.
 `<N>` specifies how many neighbors should be returned.
 
-## Exact Nearest Neighbor Search {#exact-nearest-neighbor-search}
+## Exact Vector Search {#exact-nearest-neighbor-search}
 
-An exact nearest neighbor search can be performed using above SELECT query as is.
+An exact vector search can be performed using above SELECT query as is.
 The runtime of such queries is generally proportional to the number of stored vectors and their dimension, i.e. the number of array elements.
 Also, since ClickHouse performs a brute-force scan of all vectors, the runtime depends also on the number of threads by the query (see setting [max_threads](../../../operations/settings/settings.md#max_threads)).
 
-One common approach to speed up exact nearest neighbor search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
+One common approach to speed up exact vector search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
 For example, if the vectors are stored as `Array(BFloat16)` instead of `Array(Float32)`, then the data size is cut in half, and the query runtimes are expected to go down by half as well.
 This method is know as quantization and it might reduce the result accuracy despite an exhaustive scan of all vectors.
 If the precision loss is acceptable depends on the use case and typically requires experimentation.
@@ -67,11 +67,11 @@ returns
    └────┴─────────┘
 ```
 
-## Approximate Nearest Neighbor Search {#approximate-nearest-neighbor-search}
+## Approximate Vector Search {#approximate-nearest-neighbor-search}
 
 <BetaBadge/>
 
-ClickHouse provides a special "vector similarity" index to perform approximate nearest neighbor search.
+ClickHouse provides a special "vector similarity" index to perform approximate vector search.
 
 :::note
 Vector similarity indexes are currently experimental.
