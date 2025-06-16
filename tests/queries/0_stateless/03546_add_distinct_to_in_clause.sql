@@ -1,4 +1,4 @@
--- Tags: no-asan, no-msan, no-tsan, no-ubsan
+-- Tags: no-asan, no-msan, no-tsan, no-ubsan, no-parallel, no-parallel-replicas
 
 drop table if exists local_table_1;
 drop table if exists local_table_2;
