@@ -52,6 +52,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
 }
 
@@ -430,9 +431,9 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                 message_transport->receive<PostgreSQLProtocol::Messaging::CopyDone>();
                 break;
             }
-            else 
+            else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Recieved incorrect message type - expected {} or {}, got {}", PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA, PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION, message_type);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Received incorrect message type - expected {} or {}, got {}", PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA, PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION, message_type);
             }
         }
 
