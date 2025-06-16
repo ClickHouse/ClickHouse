@@ -23,8 +23,6 @@ struct PartitionStrategy
         std::string column_name;
     };
 
-    static std::unordered_map<std::string, bool> partition_strategy_to_wildcard_acceptance;
-
     PartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_);
 
     virtual ~PartitionStrategy() = default;
@@ -47,24 +45,34 @@ protected:
     NamesAndTypesList partition_columns;
 };
 
+/*
+ * Tries to create a partition strategy given a strategy name.
+ * Performs validation on required arguments by each strategy. Example: Partition strategy hive can not be used without a PARTITION BY expression
+ */
 struct PartitionStrategyFactory
 {
+    enum class StrategyType
+    {
+        WILDCARD,
+        HIVE
+    };
+
     static std::shared_ptr<PartitionStrategy> get(
+        StrategyType strategy,
         ASTPtr partition_by,
         const Block & sample_block,
         ContextPtr context,
         const std::string & file_format,
         bool globbed_path,
-        const std::string & partition_strategy,
         bool partition_columns_in_data_file);
 
     static std::shared_ptr<PartitionStrategy> get(
+        StrategyType strategy,
         ASTPtr partition_by,
         const NamesAndTypesList & partition_columns,
         ContextPtr context,
         const std::string & file_format,
         bool globbed_path,
-        const std::string & partition_strategy,
         bool partition_columns_in_data_file);
 };
 

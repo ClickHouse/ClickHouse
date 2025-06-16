@@ -23,6 +23,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/PartitionStrategy.h>
 
+#include "Formats/NumpyDataTypes.h"
+
 namespace DB
 {
 namespace Setting
@@ -167,8 +169,17 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     else
         url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
 
-    partition_strategy_name = collection.getOrDefault<String>("partition_strategy", "wildcard");
-    partition_columns_in_data_file = collection.getOrDefault<bool>("partition_columns_in_data_file", partition_strategy_name != "hive");
+    static const auto default_partition_strategy_name = std::string(magic_enum::enum_name(PartitionStrategyFactory::StrategyType::WILDCARD));
+    const auto partition_strategy_name = collection.getOrDefault<std::string>("partition_strategy", default_partition_strategy_name);
+    const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+    if (!partition_strategy_type_opt)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} is not supported", partition_strategy_name);
+    }
+
+    partition_strategy_type = partition_strategy_type_opt.value();
+    partition_columns_in_data_file = collection.getOrDefault<bool>("partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
 
     auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
@@ -362,7 +373,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            if (PartitionStrategy::partition_strategy_to_wildcard_acceptance.contains(sixth_arg))
+            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}};
             }
@@ -387,7 +398,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            if (PartitionStrategy::partition_strategy_to_wildcard_acceptance.contains(sixth_arg))
+            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
             }
@@ -426,12 +437,22 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         compression_method = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["compression_method"]], "compression_method");
 
     if (engine_args_to_idx.contains("partition_strategy"))
-        partition_strategy_name = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["partition_strategy"]], "partition_strategy");
+    {
+        const auto partition_strategy_name = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["partition_strategy"]], "partition_strategy");
+        const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+        if (!partition_strategy_type_opt)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} is not supported", partition_strategy_name);
+        }
+
+        partition_strategy_type = partition_strategy_type_opt.value();
+    }
 
     if (engine_args_to_idx.contains("partition_columns_in_data_file"))
         partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(args[engine_args_to_idx["partition_columns_in_data_file"]], "partition_columns_in_data_file");
     else
-        partition_columns_in_data_file = partition_strategy_name != "hive";
+        partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
 
     if (engine_args_to_idx.contains("access_key_id"))
         auth_settings[S3AuthSetting::access_key_id] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");

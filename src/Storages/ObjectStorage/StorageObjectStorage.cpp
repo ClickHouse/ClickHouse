@@ -180,7 +180,7 @@ StorageObjectStorage::StorageObjectStorage(
      * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
      * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
      */
-    if (configuration->partition_strategy && configuration->partition_strategy_name == "hive")
+    if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
     {
         hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
     }
@@ -342,12 +342,12 @@ void StorageObjectStorage::Configuration::initPartitionStrategy(ASTPtr partition
 {
 
     partition_strategy = PartitionStrategyFactory::get(
+        partition_strategy_type,
         partition_by,
         columns.getOrdinary(),
         context,
         format,
         getRawPath().withGlobs(),
-        partition_strategy_name,
         partition_columns_in_data_file);
 }
 
@@ -508,7 +508,7 @@ void StorageObjectStorage::read(
             /* check_consistent_with_previous_metadata */true);
     }
 
-    if (configuration->partition_strategy && configuration->partition_strategy_name != "hive")
+    if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Reading from a partitioned {} storage is not implemented yet",

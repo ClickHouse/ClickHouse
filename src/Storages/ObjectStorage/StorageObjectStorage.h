@@ -16,6 +16,8 @@
 
 #include <memory>
 
+#include "Storages/PartitionStrategy.h"
+
 namespace DB
 {
 class ReadBufferIterator;
@@ -311,7 +313,7 @@ public:
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
-    std::string partition_strategy_name = "wildcard";
+    PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
     /// Whether partition column values are contained in the actual data.
     /// And alternative is with hive partitioning, when they are contained in file path.
     bool partition_columns_in_data_file = true;

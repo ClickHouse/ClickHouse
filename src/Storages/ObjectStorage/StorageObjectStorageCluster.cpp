@@ -101,7 +101,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     }
     else
     {
-        if (configuration->partition_strategy && configuration->partition_strategy_name == "hive")
+        if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
         {
             hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
         }
