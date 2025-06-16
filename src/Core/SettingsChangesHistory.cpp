@@ -777,6 +777,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     std::call_once(initialized_flag, [&]
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
+        {
+
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
         {
