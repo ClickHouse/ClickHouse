@@ -8,7 +8,7 @@ Ngram tokenizer
 ['abc','bc ','c d',' de','def']
 ['abc','bc ','c d',' de','def']
 ['abc def']
-String tokenizer
+Split tokenizer
 []
 ['  a  bc d']
 ['a','bc','d']
