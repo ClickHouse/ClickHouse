@@ -3737,7 +3737,11 @@ static const std::vector<ExplainOptValues> explainSettings{
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_keep_logical_steps, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_actions, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_header, trueOrFalseInt),
-    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact, trueOrFalseInt)};
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_run_query_tree_passes, trueOrFalseInt),
+    ExplainOptValues(
+        ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_query_tree_passes,
+        [](RandomGenerator & rg) { return rg.randomInt<uint32_t>(0, 32); })};
 
 void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq)
 {
@@ -3759,35 +3763,20 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
             switch (val.value())
             {
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_AST:
-                    this->ids.emplace_back(0);
-                    this->ids.emplace_back(1);
+                    this->ids.insert(this->ids.end(), {0, 1});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_SYNTAX:
-                    this->ids.emplace_back(2);
+                    this->ids.insert(this->ids.end(), {2, 17, 18});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
-                    this->ids.emplace_back(3);
-                    this->ids.emplace_back(4);
-                    this->ids.emplace_back(5);
-                    this->ids.emplace_back(6);
-                    this->ids.emplace_back(7);
+                    this->ids.insert(this->ids.end(), {3, 4, 5, 6, 7});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_ESTIMATE:
-                    this->ids.emplace_back(1);
-                    this->ids.emplace_back(8);
-                    this->ids.emplace_back(9);
-                    this->ids.emplace_back(10);
-                    this->ids.emplace_back(11);
-                    this->ids.emplace_back(12);
-                    this->ids.emplace_back(13);
-                    this->ids.emplace_back(14);
-                    this->ids.emplace_back(15);
+                    this->ids.insert(this->ids.end(), {1, 8, 9, 10, 11, 12, 13, 14, 15});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
-                    this->ids.emplace_back(0);
-                    this->ids.emplace_back(15);
-                    this->ids.emplace_back(16);
+                    this->ids.insert(this->ids.end(), {0, 15, 16});
                     break;
                 default:
                     break;
@@ -3795,14 +3784,7 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
         }
         else
         {
-            this->ids.emplace_back(1);
-            this->ids.emplace_back(9);
-            this->ids.emplace_back(10);
-            this->ids.emplace_back(11);
-            this->ids.emplace_back(12);
-            this->ids.emplace_back(13);
-            this->ids.emplace_back(14);
-            this->ids.emplace_back(15);
+            this->ids.insert(this->ids.end(), {1, 9, 10, 11, 12, 13, 14, 15});
         }
         if (!this->ids.empty())
         {
