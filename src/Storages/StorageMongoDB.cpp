@@ -31,6 +31,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <bsoncxx/json.hpp>
+#include <mongocxx/exception/logic_error.hpp>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -158,30 +159,36 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID & table_id, AST
                 auth_string = fmt::format("{}:{}@", user, escaped_password);
 
             auto host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
-
-            if (allow_excessive_path_in_host)
+            auto database_name = checkAndGetLiteralArgument<String>(engine_args[1], "database");
+            auto parsed_host_port = parseAddress(host_port, 27017);
+            try
+            {
+                configuration.uri = std::make_unique<mongocxx::uri>(
+                    fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options));
+            }
+            catch (const mongocxx::logic_error & e)
             {
                 auto pos = host_port.find('/');
-                if (pos != String::npos)
-                {
-                    context->addOrUpdateWarningMessage(
-                        Context::WarningType::OBSOLETE_MONGO_TABLE_DEFINITION,
-                        PreformattedMessage::create(
-                            "The first argument in '{}' table definition with MongoDB engine contains a path which was ignored. "
-                            "To fix this, either use a complete MongoDB connection string with schema and database name as the first argument, "
-                            "or use only host:port format and specify database name and other parameters separately in the table engine definition.",
-                            table_id ? table_id.getNameForLogs() : ""
-                        ));
-                    host_port = host_port.substr(0, pos);
-                }
+                if (!allow_excessive_path_in_host || pos == String::npos)
+                    throw;
+
+                LOG_WARNING(getLogger("StorageMongoDB"), "Failed to parse MongoDB connection string: '{}', trying to remove everything after slash from the hostname", e.what());
+
+                host_port = host_port.substr(0, pos);
+                parsed_host_port = parseAddress(host_port, 27017);
+
+                configuration.uri = std::make_unique<mongocxx::uri>(
+                    fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options));
+
+                context->addOrUpdateWarningMessage(
+                    Context::WarningType::OBSOLETE_MONGO_TABLE_DEFINITION,
+                    PreformattedMessage::create(
+                        "The first argument in '{}' table definition with MongoDB engine contains a path which was ignored. "
+                        "To fix this, either use a complete MongoDB connection string with schema and database name as the first argument, "
+                        "or use only host:port format and specify database name and other parameters separately in the table engine definition.",
+                        table_id ? table_id.getNameForLogs() : ""));
             }
-            auto parsed_host_port = parseAddress(host_port, 27017);
-            configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
-                                                              auth_string,
-                                                              parsed_host_port.first,
-                                                              parsed_host_port.second,
-                                                              checkAndGetLiteralArgument<String>(engine_args[1], "database"),
-                                                              options));
+
             if (engine_args.size() == 7)
                 boost::split(configuration.oid_fields,
                     checkAndGetLiteralArgument<String>(engine_args[6], "oid_columns"), boost::is_any_of(","));
