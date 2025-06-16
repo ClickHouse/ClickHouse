@@ -126,8 +126,8 @@ fromDaysSinceYearZero(days)
     {
         {"Convert days since year zero to dates", R"(
 SELECT
-  fromDaysSinceYearZero(739136) AS date1,
-  fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08'))) AS date2
+fromDaysSinceYearZero(739136) AS date1,
+fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08'))) AS date2
         )",
         R"(
 ┌──────date1─┬──────date2─┐
