@@ -180,6 +180,23 @@ select arrayJoin([
 
 with
 (
+    select groupNumericIndexedVectorStateIf('BSI', 32, 0)(uin, value, ds = '2023-12-26')
+    from uin_value_details
+) as vec_1,
+(
+    select groupNumericIndexedVectorStateIf('BSI', 24, 0)(uin, value, ds = '2023-12-27')
+    from uin_value_details
+) as vec_2
+select arrayJoin([
+    numericIndexedVectorShortDebugString(vec_1)
+    , numericIndexedVectorShortDebugString(vec_2)
+    , numericIndexedVectorShortDebugString(numericIndexedVectorPointwiseDivide(vec_1, vec_2))
+    , numericIndexedVectorShortDebugString(numericIndexedVectorPointwiseDivide(vec_1, 2))
+    , numericIndexedVectorShortDebugString(numericIndexedVectorPointwiseDivide(vec_2, 0))
+]);
+
+with
+(
     select groupNumericIndexedVectorStateIf('BSI', 0, 0)(uin, value, ds = '2023-12-28')
     from uin_value_details
 ) as vec_1,
