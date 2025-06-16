@@ -78,7 +78,15 @@ void collectColumnPaths(
     {
         for (const auto & entry : ntp->subtypes)
         {
-            collectColumnPaths("c" + std::to_string(entry.cname), entry.subtype, flags, next, paths);
+            const String nsub = "c" + std::to_string(entry.cname);
+
+            collectColumnPaths(nsub, entry.subtype, flags, next, paths);
+            /// The size entry also exists for nested cols
+            next.path.emplace_back(ColumnPathChainEntry(nsub, entry.subtype));
+            next.path.emplace_back(ColumnPathChainEntry("size0", &(*size_tp)));
+            paths.push_back(next);
+            next.path.pop_back();
+            next.path.pop_back();
         }
     }
     else if ((flags & flat_json) != 0 && (jt = dynamic_cast<JSONType *>(tp)))
