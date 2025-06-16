@@ -8,9 +8,19 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/Throttler.h>
 #include <Common/formatReadable.h>
+#include <Common/ProfileEvents.h>
 
 #include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event S3GetRequestThrottlerCount;
+    extern const Event S3GetRequestThrottlerSleepMicroseconds;
+    extern const Event S3PutRequestThrottlerCount;
+    extern const Event S3PutRequestThrottlerSleepMicroseconds;
+}
 
 namespace DB
 {
@@ -271,14 +281,14 @@ void S3RequestSettings::finishInit(const DB::Settings & settings, bool validate_
             = settings[Setting::s3_max_get_burst] ? settings[Setting::s3_max_get_burst] : (Throttler::default_burst_seconds * max_get_rps);
 
         size_t max_get_burst = impl->isChanged("max_get_burst") ? impl->get("max_get_burst").safeGet<UInt64>() : default_max_get_burst;
-        get_request_throttler = std::make_shared<Throttler>(max_get_rps, max_get_burst);
+        get_request_throttler = std::make_shared<Throttler>(max_get_rps, max_get_burst, ProfileEvents::S3GetRequestThrottlerCount, ProfileEvents::S3GetRequestThrottlerSleepMicroseconds);
     }
     if (UInt64 max_put_rps = impl->isChanged("max_put_rps") ? impl->get("max_put_rps").safeGet<UInt64>() : settings[Setting::s3_max_put_rps])
     {
         size_t default_max_put_burst
             = settings[Setting::s3_max_put_burst] ? settings[Setting::s3_max_put_burst] : (Throttler::default_burst_seconds * max_put_rps);
         size_t max_put_burst = impl->isChanged("max_put_burst") ? impl->get("max_put_burst").safeGet<UInt64>() : default_max_put_burst;
-        put_request_throttler = std::make_shared<Throttler>(max_put_rps, max_put_burst);
+        put_request_throttler = std::make_shared<Throttler>(max_put_rps, max_put_burst, ProfileEvents::S3PutRequestThrottlerCount, ProfileEvents::S3PutRequestThrottlerSleepMicroseconds);
     }
 }
 

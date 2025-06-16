@@ -1,5 +1,5 @@
 #include "DiskLocal.h"
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 #include <Common/createHardLink.h>
 #include "DiskFactory.h"
 

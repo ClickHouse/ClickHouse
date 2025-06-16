@@ -5,7 +5,7 @@
 #include <optional>
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 
 #include <IO/S3Common.h>
 #include <IO/S3AuthSettings.h>
