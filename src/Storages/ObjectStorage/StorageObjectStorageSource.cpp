@@ -268,12 +268,12 @@ Chunk StorageObjectStorageSource::generate()
                  .etag = &(object_info->metadata->etag)},
                 read_context);
 
+#if USE_PARQUET && USE_AWS_S3
             if (chunk_size && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
                 if (dynamic_cast<const DeltaLakeMetadata *>(configuration.get()))
                 {
-#if USE_PARQUET && USE_AWS_S3
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
                     /// (Because it does not make sense to support it in a nice way
@@ -314,9 +314,9 @@ Chunk StorageObjectStorageSource::generate()
                         }
 
                     }
-#endif
                 }
             }
+#endif
 
             return chunk;
         }
