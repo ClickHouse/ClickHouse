@@ -83,7 +83,6 @@ addDate
 addressToLine
 addressToLineWithInlines
 addressToSymbol
-age
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -157,6 +156,7 @@ cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 damerauLevenshteinDistance
+dateDiff
 dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
@@ -277,6 +277,7 @@ formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
+fromDaysSinceYearZero32
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
 fromUTCTimestamp
@@ -318,7 +319,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greatest
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -339,7 +339,6 @@ hopStart
 hostName
 hypot
 identity
-if
 ifNull
 ignore
 ilike
@@ -684,7 +683,6 @@ tcpPort
 tgamma
 throwIf
 tid
-timeDiff
 timeSlot
 timeSlots
 toBFloat16

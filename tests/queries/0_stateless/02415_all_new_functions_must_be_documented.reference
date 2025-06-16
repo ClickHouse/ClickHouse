@@ -73,7 +73,6 @@ addDate
 addressToLine
 addressToLineWithInlines
 addressToSymbol
-age
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -124,6 +123,7 @@ cutQueryString
 cutQueryStringAndFragment
 cutURLParameter
 cutWWW
+dateDiff
 dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
@@ -182,6 +182,7 @@ formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
+fromDaysSinceYearZero32
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
 fromUTCTimestamp
