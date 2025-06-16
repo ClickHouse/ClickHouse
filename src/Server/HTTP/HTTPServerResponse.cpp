@@ -85,7 +85,7 @@ void HTTPServerResponse::writeHeaders(std::ostream & ostr)
 {
     allowKeepAliveIFFRequestIsFullyRead();
 
-    Poco::Net::HTTPMessage::write(ostr);
+    Poco::Net::HTTPMessage::write(ostr); // NOLINT (bugprone-parent-virtual-call)
     ostr << "\r\n";
     ostr.flush();
 
