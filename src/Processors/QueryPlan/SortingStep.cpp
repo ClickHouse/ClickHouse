@@ -30,7 +30,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_sort;
     extern const SettingsDouble max_bytes_ratio_before_external_sort;
     extern const SettingsUInt64 max_bytes_before_remerge_sort;
@@ -471,15 +471,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
-        if (need_finish_sorting)
-            finishSorting(pipeline, prefix_description, result_description, limit);
-
-        return;
-    }
-
-    if (type == Type::PartitionedFinishSorting)
-    {
-        bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 

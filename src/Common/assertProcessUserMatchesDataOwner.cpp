@@ -1,4 +1,5 @@
 #include <Common/assertProcessUserMatchesDataOwner.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <sys/stat.h>
 #include <unistd.h>

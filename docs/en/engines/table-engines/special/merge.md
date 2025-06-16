@@ -15,8 +15,8 @@ Reading is automatically parallelized. Writing to a table is not supported. When
 
 ## Creating a Table {#creating-a-table}
 
-```sql
-CREATE TABLE ... Engine=Merge(db_name, tables_regexp [, table_to_write])
+``` sql
+CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
 ## Engine Parameters {#engine-parameters}
@@ -35,14 +35,6 @@ CREATE TABLE ... Engine=Merge(db_name, tables_regexp [, table_to_write])
 Regular expressions — [re2](https://github.com/google/re2) (supports a subset of PCRE), case-sensitive.
 See the notes about escaping symbols in regular expressions in the "match" section.
 
-### table_to_write {#table_to_write}
-
-`table_to_write` - Table name to write during inserts into `Merge` table.
-Possible values:
-    - `'db_name.table_name'` - insert into the specific table in the specific database.
-    - `'table_name'` - insert into table `db_name.table_name`. Allowed only when the first parameter `db_name` is not a regular expression.
-    - `auto` - insert into the last table passed to `tables_regexp` in lexicographical order. Allowed only when the first parameter `db_name` is not a regular expression.
-
 ## Usage {#usage}
 
 When selecting tables to read, the `Merge` table itself is not selected, even if it matches the regex. This is to avoid loops.
@@ -56,7 +48,7 @@ The typical way to use the `Merge` engine is for working with a large number of 
 
 Consider two databases `ABC_corporate_site` and `ABC_store`. The `all_visitors` table will contain IDs from the tables `visitors` in both databases.
 
-```sql
+``` sql
 CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
 ```
 
@@ -64,7 +56,7 @@ CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
 
 Let's say you have an old table `WatchLog_old` and decided to change partitioning without moving data to a new table `WatchLog_new`, and you need to see data from both tables.
 
-```sql
+``` sql
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)
     ENGINE=MergeTree(date, (UserId, EventType), 8192);
 INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
@@ -73,33 +65,17 @@ CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64)
     ENGINE=MergeTree PARTITION BY date ORDER BY (UserId, EventType) SETTINGS index_granularity=8192;
 INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
 
-CREATE TABLE WatchLog as WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog', 'WatchLog_new');
+CREATE TABLE WatchLog as WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
 
 SELECT * FROM WatchLog;
 ```
 
-```text
+``` text
 ┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
 │ 2018-01-01 │      1 │ hit       │   3 │
 └────────────┴────────┴───────────┴─────┘
 ┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
 │ 2018-01-02 │      2 │ hit       │   3 │
-└────────────┴────────┴───────────┴─────┘
-```
-
-Insert to table `WatchLog` is going into table `WatchLog_new`
-```sql
-INSERT INTO WatchLog VALUES ('2018-01-03', 3, 'hit', 3);
-
-SELECT * FROM WatchLog_New;
-```
-
-```text
-┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
-│ 2018-01-02 │      2 │ hit       │   3 │
-└────────────┴────────┴───────────┴─────┘
-┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
-│ 2018-01-03 │      3 │ hit       │   3 │
 └────────────┴────────┴───────────┴─────┘
 ```
 

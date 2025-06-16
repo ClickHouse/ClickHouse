@@ -87,9 +87,7 @@ static struct InitFiu
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
-    PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
-    ONCE(parallel_replicas_wait_for_unused_replicas) \
 
 
 namespace FailPoints

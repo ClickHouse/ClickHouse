@@ -3,22 +3,22 @@ description: 'System table containing information about resources residing on th
   local server with one row for every resource.'
 keywords: ['system table', 'resources']
 slug: /operations/system-tables/resources
-title: 'system.resources'
+title: 'system.system.resources'
 ---
 
-# system.resources
+# system.system.resources
 
 Contains information about [resources](/operations/workload-scheduling.md#workload_entity_storage) residing on the local server. The table contains a row for every resource.
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.resources
 FORMAT Vertical
 ```
 
-```text
+``` text
 Row 1:
 ──────
 name:         io_read
