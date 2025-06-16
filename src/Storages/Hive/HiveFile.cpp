@@ -20,6 +20,7 @@
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

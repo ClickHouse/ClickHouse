@@ -13,9 +13,11 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
 #include "getSchemaFromSnapshot.h"
 #include "PartitionPruner.h"
 #include "KernelUtils.h"
+#include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 
 namespace fs = std::filesystem;
@@ -341,7 +343,6 @@ private:
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
-    bool,
     LoggerPtr log_)
     : helper(helper_)
     , object_storage(object_storage_)
@@ -386,13 +387,13 @@ void TableSnapshot::initSnapshotImpl() const
     LOG_TRACE(log, "Snapshot version: {}", snapshot_version);
 
     scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
-    scan_state = ffi::get_global_scan_state(scan.get());
+
     LOG_TRACE(log, "Initialized scan state");
 
     std::tie(table_schema, physical_names_map) = getTableSchemaFromSnapshot(snapshot.get());
     LOG_TRACE(log, "Table logical schema: {}", fmt::join(table_schema.getNames(), ", "));
 
-    read_schema = getReadSchemaFromSnapshot(scan_state.get());
+    read_schema = getReadSchemaFromSnapshot(scan.get());
     LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));
 
     partition_columns = getPartitionColumnsFromSnapshot(snapshot.get());

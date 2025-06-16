@@ -17,6 +17,7 @@
 #include <Common/logger_useful.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -37,6 +38,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MREMAP;
+    extern const int POTENTIALLY_BROKEN_DATA_PART;
 }
 
 void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size)
@@ -263,11 +265,27 @@ void Exception::clearThreadFramePointers()
         thread_frame_pointers.frame_pointers.clear();
 }
 
+bool Exception::isErrorCodeImportant() const
+{
+    const int error_code = code();
+    return error_code == ErrorCodes::LOGICAL_ERROR
+        || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART;
+}
+
+Exception::~Exception()
+try
+{
+    if (logged != nullptr && !logged->load(std::memory_order_relaxed) && isErrorCodeImportant())
+    {
+        LOG_ERROR(getLogger("ForcedCriticalErrorsLogger"), "{}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
+    }
+}
+catch (...) // NOLINT(bugprone-empty-catch)
+{
+}
+
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
 {
-    if (!isLoggingEnabled())
-        return;
-
     try
     {
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
@@ -290,13 +308,23 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
     catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
+
+    /// Mark the exception as logged.
+    try
+    {
+        throw;
+    }
+    catch (Exception & e)
+    {
+        e.markAsLogged();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
 }
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message, LogsLevel level)
 {
-    if (!isLoggingEnabled())
-        return;
-
     /// Under high memory pressure, new allocations throw a
     /// MEMORY_LIMIT_EXCEEDED exception.
     ///
@@ -612,6 +640,12 @@ void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const st
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
+    return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).text;
+}
+
+std::string getExceptionMessageForLogging(Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
+{
+    e.markAsLogged();
     return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).text;
 }
 

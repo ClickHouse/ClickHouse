@@ -4,11 +4,6 @@
 
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
-#include <Storages/TableLockHolder.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/CommonParsers.h>
-#include <Parsers/ParserDropQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseFactory.h>
@@ -142,6 +137,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     if (modify_query)
     {
@@ -157,9 +153,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
-    bool is_truncate = false;
-    bool forbid_truncate = false;
-
     for (const auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
@@ -173,15 +166,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         else if (auto mut_command = MutationCommand::parse(command_ast))
         {
-            /// ALTER TABLE ... DELETE WHERE 1 should be executed as truncate
-            if (mut_command->type == MutationCommand::DELETE && isAlwaysTruePredicate(mut_command->predicate))
+            if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
             {
-                is_truncate = true;
-            }
-            else if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
-            {
-                forbid_truncate = true;
-
                 /// TODO: add a check for result query size.
                 auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, getContext());
                 if (rewritten_command_ast)
@@ -206,45 +192,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is now disabled. Turn on allow_experimental_statistics");
     }
 
-    if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
-    {
-        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
-            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
-    }
-
-    if (is_truncate && !forbid_truncate)
-    {
-        auto context = getContext();
-        context->checkAccess(AccessType::TRUNCATE, table_id);
-        table->checkTableCanBeDropped(context);
-
-        auto metadata_snapshot = table->getInMemoryMetadataPtr();
-
-        TableExclusiveLockHolder table_excl_lock;
-        /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
-        /// For the rest of tables types exclusive lock is needed
-        if (!std::dynamic_pointer_cast<MergeTreeData>(table))
-            table_excl_lock = table->lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-        String truncate_query = "TRUNCATE TABLE " + table->getStorageID().getFullTableName()
-            + (alter.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(alter.cluster));
-
-        ParserDropQuery parser;
-        auto current_query_ptr = parseQuery(
-            parser,
-            truncate_query.data(),
-            truncate_query.data() + truncate_query.size(),
-            "ALTER query",
-            0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH,
-            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-        /// Drop table data, don't touch metadata
-        table->truncate(current_query_ptr, metadata_snapshot, context, table_excl_lock);
-        return {};
-    }
-
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-
     if (typeid_cast<DatabaseReplicated *>(database.get()))
     {
         int command_types_count = !mutation_commands.empty() + !partition_commands.empty() + !alter_commands.empty();
@@ -252,6 +199,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (1 < command_types_count || mixed_settings_amd_metadata_alter)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "For Replicated databases it's not allowed "
                                                          "to execute ALTERs of different types (replicated and non replicated) in single query");
+    }
+
+    if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
+    {
+        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
     }
 
     if (!alter_commands.empty())

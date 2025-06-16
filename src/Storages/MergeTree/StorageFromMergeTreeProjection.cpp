@@ -39,7 +39,10 @@ void StorageFromMergeTreeProjection::read(
         const auto & created_projections = part.data_part->getProjectionParts();
         auto it = created_projections.find(projection->name);
         if (it != created_projections.end())
-            projection_parts.push_back(RangesInDataPart(it->second, part.part_index_in_query, part.part_starting_offset_in_query));
+        {
+            projection_parts.push_back(
+                RangesInDataPart(it->second, part.data_part, part.part_index_in_query, part.part_starting_offset_in_query));
+        }
     }
 
     auto step = MergeTreeDataSelectExecutor(merge_tree)

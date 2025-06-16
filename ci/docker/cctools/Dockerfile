@@ -23,7 +23,6 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 986-ld64
     && apt-get update \
     && apt-get install --yes \
         make \
-    && apt-get clean \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
@@ -48,9 +47,7 @@ RUN apt-get update \
     && apt-get install --yes \
         libgmp-dev \
         libmpfr-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-RUN wget https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
+    && wget https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
     && tar -xvf gdb-$GDB_VERSION.tar.gz \
     && cd gdb-$GDB_VERSION \
     && ./configure --prefix=/opt/gdb --with-separate-debug-dir=/usr/lib/debug \
@@ -61,8 +58,85 @@ RUN wget https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
 # just in case
 RUN /opt/gdb/bin/gdb --version
 
+#
+# OpenSSL FIPS
+#
+# Three things are required to set OpenSSL in FIPS-permissive mode:
+# - /usr/lib/x86_64-linux-gnu/ossl-modules/fips.so
+# - /etc/ssl/fipsmodule.cnf
+# - Modifications to /etc/ssl/openssl.conf
+# FIPS provider status may be verified with the output of `openssl list -providers`:
+#
+#  Providers:
+#    fips
+#      name: OpenSSL Default Provider
+#      version: 3.1.2
+#      status: active
+#
+# Version 3.1.2 is special, it passed FIPS 140-3 certification
+# and can produce a fips.so provider module.
+# Provider can be loaded by any OpenSSL version >= 3.1.
+# https://openssl-library.org/post/2025-03-11-fips-140-3/
+ENV OPENSSL_VERSION=3.1.2
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    wget \
+    perl \
+    python3 \
+    make \
+    git \
+    ca-certificates
+
+WORKDIR /tmp
+RUN wget https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz && \
+    tar xzf openssl-${OPENSSL_VERSION}.tar.gz && \
+    cd openssl-${OPENSSL_VERSION} && \
+    ./Configure enable-fips && \
+    make -j$(nproc) && \
+    mkdir -p /opt/openssl-fips && \
+    mv "apps/openssl.cnf" "/opt/openssl-fips/openssl.cnf" && \
+    mv "providers/fips.so" "/opt/openssl-fips/fips.so" && \
+    mv "providers/fipsmodule.cnf" "/opt/openssl-fips/fipsmodule.cnf"
+
+# Patching fipsmodule.cnf with a custom module location.
+RUN cat >> /opt/openssl-fips/fipsmodule.cnf <<EOF
+install-version = 1
+module = /etc/ssl/fips.so
+EOF
+
+# Patching openssl.cnf to enable FIPS provider.
+# Although documentation mentions setting "default_properties = fips=yes",
+# we don't want to set it, as it will force FIPS mode
+# for any OpenSSL usage in system (things will break).
+#
+# We will put fipsmodule.cnf to /etc/ssl in target containers
+RUN cat >> /opt/openssl-fips/openssl.cnf <<EOF
+
+.include /etc/ssl/fipsmodule.cnf
+
+[openssl_init]
+providers = provider_sect
+ssl_conf = ssl_sect
+
+[ssl_sect]
+system_default = system_default_sect
+
+[system_default_sect]
+CipherString = DEFAULT:@SECLEVEL=2
+
+[provider_sect]
+fips = fips_sect
+default = default_sect
+
+[default_sect]
+activate = 1
+
+EOF
+
 FROM scratch
 COPY --from=builder /cctools /cctools
 COPY --from=builder /opt/gdb /opt/gdb
+COPY --from=builder /opt/openssl-fips /opt/openssl-fips
 
 # NOTE: this file should be kept in sync with other docker images, since they use COPY from this image

@@ -338,6 +338,8 @@ public:
         /// Renames part from old_name to new_name
         void tryRenameAll();
 
+        void rollBackAll();
+
         /// Renames all added parts from new_name to old_name if old name is not empty
         ~PartsTemporaryRename();
 
@@ -368,6 +370,7 @@ public:
             Replacing           = 5,
             Graphite            = 6,
             VersionedCollapsing = 7,
+            Coalescing          = 8,
         };
 
         Mode mode;
@@ -813,7 +816,7 @@ public:
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
     /// - all type conversions can be done.
-    /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
+    /// - columns corresponding to primary key, indices, sign, sampling expression, summed columns, and date are not affected.
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
@@ -973,6 +976,8 @@ public:
     {
         return storage_settings.get();
     }
+
+    StorageMetadataPtr getInMemoryMetadataPtr() const override;
 
     String getRelativeDataPath() const { return relative_data_path; }
 
@@ -1160,7 +1165,7 @@ public:
     /// Overridden in StorageReplicatedMergeTree
     virtual MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
-    /// Check shared data usage on other replicas for detached/freezed part
+    /// Check shared data usage on other replicas for detached/frozen part
     /// Remove local files and remote files if needed
     virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name);
 
@@ -1242,6 +1247,8 @@ private:
     mutable IndexSizeByName secondary_index_sizes;
 
 protected:
+    void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
+
     void resetColumnSizes()
     {
         column_sizes.clear();
@@ -1758,6 +1765,9 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
+
+    StorageSnapshotPtr
+    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

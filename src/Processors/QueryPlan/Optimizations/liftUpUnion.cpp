@@ -89,6 +89,8 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
                 distinct->getLimitHint(),
                 distinct->getColumnNames(),
                 distinct->isPreliminary());
+
+            distinct_node.step->setStepDescription(distinct->getStepDescription());
         }
 
         ///       - Distinct - Something

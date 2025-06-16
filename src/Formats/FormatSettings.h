@@ -84,10 +84,7 @@ struct FormatSettings
         Numeric
     };
 
-    struct
-    {
-        IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
-    } interval{};
+    IntervalOutputFormat interval_output_format = IntervalOutputFormat::Numeric;
 
     enum class DateTimeOverflowBehavior : uint8_t
     {
@@ -283,6 +280,7 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         bool use_native_reader = false;
+        bool enable_json_parsing = true;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool output_datetime_as_uint32 = false;
@@ -507,6 +505,7 @@ struct FormatSettings
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
         bool write_json_as_string = false;
+        bool use_flattened_dynamic_and_json_serialization = false;
     } native{};
 
     struct
