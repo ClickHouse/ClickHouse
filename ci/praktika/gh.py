@@ -372,7 +372,9 @@ class GH:
 
             if self.failed_results:
                 if len(self.failed_results) > 15:
-                    body += f"    *15 failures out of {len(self.failed_results)} shown*:\n"
+                    body += (
+                        f"    *15 failures out of {len(self.failed_results)} shown*:\n"
+                    )
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"
