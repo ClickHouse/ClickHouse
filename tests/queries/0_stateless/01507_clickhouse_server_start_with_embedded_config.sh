@@ -13,7 +13,8 @@ echo "Starting clickhouse-server"
 $CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "${CLICKHOUSE_TMP}/" > server.log 2>&1 &
 PID=$!
 
-function finish {
+function finish()
+{
     kill $PID
     wait
 }
@@ -45,4 +46,14 @@ $CLICKHOUSE_CLIENT --query "
     CREATE TEMPORARY TABLE t (s String);
     INSERT INTO t VALUES ('World');
     SELECT * FROM t;
-";
+"
+
+kill $PID
+# Dump server.log in case wait hangs
+function trace()
+{
+    cat server.log
+}
+trap trace EXIT
+wait
+trap '' EXIT
