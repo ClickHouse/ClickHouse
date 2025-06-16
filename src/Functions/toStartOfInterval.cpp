@@ -503,7 +503,6 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
         arguments_toStartOfInterval,
         returned_value_toStartOfInterval,
         examples_toStartOfInterval,
-        aliases_toStartOfInterval,
         introduced_in_toStartOfInterval,
         category_toStartOfInterval
     };
