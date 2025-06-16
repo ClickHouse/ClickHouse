@@ -75,51 +75,6 @@ namespace
 
 using BlockHashes = std::vector<UInt8>;
 
-class DeduplicateNullStream : public IBlocksStream
-{
-public:
-    explicit DeduplicateNullStream(IBlocksStreamPtr source_) : source(std::move(source_)) {}
-
-    Block nextImpl() override
-    {
-        while (true)
-        {
-            Block block = source->next();
-            if (!block)
-                return {};
-
-            /// If the block is empty, continue to next block
-            if (block.rows() == 0)
-                continue;
-
-            /// Create a filter to keep all rows
-            auto filter_column = ColumnUInt8::create(block.rows(), 1);
-            auto & filter_data = filter_column->getData();
-
-            /// we want to keep all rows from the right table
-            /// that have NULL keys or weren't joined
-            for (size_t i = 0; i < block.rows(); ++i)
-            {
-                /// keep all rows, we don't need to deduplicate NULLs
-                filter_data[i] = 1;
-            }
-
-            /// Apply the filter
-            for (size_t i = 0; i < block.columns(); ++i)
-            {
-                auto & column = block.getByPosition(i).column;
-                column = column->filter(filter_data, -1);
-            }
-
-            if (block.rows() > 0)
-                return block;
-        }
-    }
-
-private:
-    IBlocksStreamPtr source;
-};
-
 void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams & params)
 {
     if (!params.isCollectionAndUseEnabled())
@@ -546,18 +501,15 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         for (const auto & hash_join : hash_joins)
         {
             std::lock_guard lock(hash_join->mutex);
-            bool had_non_joined = hash_join->data->hasNonJoinedRows()
-                                || hash_join->has_non_joined_rows.load(std::memory_order_relaxed);
-            if (!had_non_joined)
-                continue;
-
-            /// get non-joined blocks and deduplicate NULL values
-            if (auto s = hash_join->data->getNonJoinedBlocks(
-                    left_sample_block, result_sample_block, max_block_size))
+            
+            if (hash_join->data->hasNonJoinedRows() || 
+                hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
             {
-                /// wrapper stream that deduplicates NULL values
-                auto dedup_stream = std::make_shared<DeduplicateNullStream>(std::move(s));
-                streams.push_back(std::move(dedup_stream));
+                if (auto s = hash_join->data->getNonJoinedBlocks(
+                        left_sample_block, result_sample_block, max_block_size))
+                {
+                    streams.push_back(std::move(s));
+                }
             }
         }
     }
