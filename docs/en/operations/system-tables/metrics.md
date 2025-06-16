@@ -25,11 +25,11 @@ You can find all supported metrics in source file [src/Common/CurrentMetrics.cpp
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.metrics LIMIT 10
 ```
 
-```text
+``` text
 ┌─metric───────────────────────────────┬─value─┬─description────────────────────────────────────────────────────────────┐
 │ Query                                │     1 │ Number of executing queries                                            │
 │ Merge                                │     0 │ Number of executing background merges                                  │
@@ -273,40 +273,6 @@ Number of active cache buffers
 ### FilesystemCacheSize {#filesystemcachesize}
 
 Filesystem cache size in bytes
-
-### QueryCacheBytes {#querycachebytes}
-
-Total size of the query cache in bytes.
-
-### QueryCacheEntries {#querycacheentries}
-
-Total number of entries in the query cache.
-
-### UncompressedCacheBytes {#uncompressedcachebytes}
-
-Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided.
-
-### UncompressedCacheCells {#uncompressedcachecells}
-
-### CompiledExpressionCacheBytes {#compiledexpressioncachebytes}
-
-Total bytes used for the cache of JIT-compiled code.
-
-### CompiledExpressionCacheCount {#compiledexpressioncachecount}
-
-Total entries in the cache of JIT-compiled code.
-
-### MMapCacheCells {#mmapcachecells}
-
-The number of files opened with `mmap` (mapped in memory). This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`. The files opened with `mmap` are kept in the cache to avoid costly TLB flushes.
-
-### MarkCacheBytes {#markcachebytes}
-
-Total size of mark cache in bytes
-
-### MarkCacheFiles {#markcachefiles}
-
-Total number of mark files cached in the mark cache
 
 ### GlobalThread {#globalthread}
 

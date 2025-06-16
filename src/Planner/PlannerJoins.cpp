@@ -245,10 +245,8 @@ const ActionsDAG::Node * appendExpression(
     const PlannerContextPtr & planner_context,
     const JoinNode & join_node)
 {
-    ColumnNodePtrWithHashSet empty_correlated_columns_set;
-    PlannerActionsVisitor join_expression_visitor(planner_context, empty_correlated_columns_set);
-    auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(dag, expression);
-    correlated_subtrees.assertEmpty("in JOINs");
+    PlannerActionsVisitor join_expression_visitor(planner_context);
+    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(dag, expression);
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "JOIN {} ON clause contains multiple expressions",
@@ -916,10 +914,8 @@ JoinClausesAndActions buildJoinClausesAndActions(
         if (result.join_clauses.size() > 1)
         {
             ActionsDAG residual_join_expressions_actions(result_relation_columns);
-            ColumnNodePtrWithHashSet empty_correlated_columns_set;
-            PlannerActionsVisitor join_expression_visitor(planner_context, empty_correlated_columns_set);
-            auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(residual_join_expressions_actions, join_expression);
-            correlated_subtrees.assertEmpty("in JOIN condition");
+            PlannerActionsVisitor join_expression_visitor(planner_context);
+            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(residual_join_expressions_actions, join_expression);
             if (join_expression_dag_node_raw_pointers.size() != 1)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "JOIN {} ON clause contains multiple expressions", join_node.formatASTForErrorMessage());

@@ -49,6 +49,7 @@ def start_cluster():
 def test_query():
     with start_cluster() as cluster:
         node1 = cluster.instances["node1"]
+
         # For now, serialize_query_plan is disabled, because all the tables must exist on initiator.
         assert TSV(node1.query("SELECT count() FROM default.test settings serialize_query_plan = 0")) == TSV("20")
 

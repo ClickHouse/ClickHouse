@@ -119,7 +119,7 @@ UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
     return access_control.getID<User>(*definer);
 }
 
-ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info) const
+ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context) const
 {
     if (!sql_security_type)
         return Context::createCopy(context);
@@ -128,10 +128,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         return Context::createCopy(context);
 
     auto new_context = Context::createCopy(context->getGlobalContext());
-    if (client_info)
-        new_context->setClientInfo(*client_info);
-    else
-        new_context->setClientInfo(context->getClientInfo());
+    new_context->setClientInfo(context->getClientInfo());
     new_context->makeQueryContext();
 
     const auto & database = context->getCurrentDatabase();
@@ -159,7 +156,6 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
-    new_context->setSetting("allow_ddl", 1);
 
     return new_context;
 }

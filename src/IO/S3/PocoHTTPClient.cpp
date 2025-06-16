@@ -1,6 +1,5 @@
 #include <Poco/Timespan.h>
 #include <Common/LatencyBuckets.h>
-#include <Common/NetException.h>
 #include <Common/config_version.h>
 #include "config.h"
 
@@ -16,7 +15,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
-#include <IO/Expect404ResponseScope.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -106,7 +104,6 @@ namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_REDIRECTS;
-    extern const int DNS_ERROR;
 }
 
 namespace DB::S3
@@ -118,7 +115,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
         unsigned int s3_retry_attempts_,
-        bool s3_slow_all_threads_after_network_error_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         bool s3_use_adaptive_timeouts_,
@@ -130,7 +126,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
     , s3_retry_attempts(s3_retry_attempts_)
-    , s3_slow_all_threads_after_network_error(s3_slow_all_threads_after_network_error_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
     , get_request_throttler(get_request_throttler_)
@@ -591,10 +586,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
             }
-            else if (Poco::Net::HTTPResponse::HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())
+            else
             {
                 /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.
-                LOG_ERROR(log, "Response status: {}, {}", status_code, poco_response.getReason());
+                LOG_INFO(log, "Response status: {}, {}", status_code, poco_response.getReason());
             }
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
@@ -672,22 +667,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
             return;
         }
         throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", request.GetUri().GetURIString());
-    }
-    catch (const NetException & e)
-    {
-        if (!latency_recorded)
-        {
-            addLatency(request, S3LatencyType::Connect, connect_time);
-            addLatency(request, first_byte_latency_type, first_byte_time);
-        }
-        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
-        error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
-        LOG_INFO(log, error_message);
-
-        response->SetClientErrorType(e.code() == ErrorCodes::DNS_ERROR ? Aws::Client::CoreErrors::ENDPOINT_RESOLUTION_FAILURE : Aws::Client::CoreErrors::NETWORK_CONNECTION);
-        response->SetClientErrorMessage(getCurrentExceptionMessage(false));
-
-        addMetric(request, S3MetricType::Errors);
     }
     catch (...)
     {

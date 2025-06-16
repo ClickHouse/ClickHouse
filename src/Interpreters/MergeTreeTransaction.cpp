@@ -127,8 +127,6 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         {
             transaction_context.part_name = covered->name;
             covered->version.lockRemovalTID(tid, transaction_context);
-            if (covered->wasInvolvedInTransaction())
-                covered->appendRemovalTIDToVersionMetadata();
         }
     }
 }

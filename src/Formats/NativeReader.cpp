@@ -6,8 +6,6 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <Columns/ColumnLazy.h>
-#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
@@ -84,7 +82,7 @@ void NativeReader::resetParser()
     use_index = false;
 }
 
-void NativeReader::readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const std::optional<FormatSettings> & format_settings, size_t rows, double avg_value_size_hint)
+static void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const std::optional<FormatSettings> & format_settings, size_t rows, double avg_value_size_hint)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
@@ -96,7 +94,7 @@ void NativeReader::readData(const ISerialization & serialization, ColumnPtr & co
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
     serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state, nullptr);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
     if (column->size() != rows)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
@@ -183,31 +181,7 @@ Block NativeReader::read()
         setVersionToAggregateFunctions(column.type, true, server_revision);
 
         SerializationPtr serialization;
-        ColumnPtr read_column;
-        const ColumnLazy * column_lazy = nullptr;
-        bool skip_reading = false;
-
-        if (const auto * tmp_header_column = header.findByName(column.name))
-            column_lazy = checkAndGetColumn<ColumnLazy>(tmp_header_column->column.get());
-
-        if (column_lazy)
-        {
-            if (!column_lazy->getColumns().empty())
-            {
-                serialization = column_lazy->getDefaultSerialization();
-                const auto & tmp_columns = column_lazy->getColumns();
-
-                auto new_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
-                new_column->reserve(rows);
-                read_column = std::move(new_column);
-            }
-            else
-            {
-                read_column = ColumnLazy::create(rows);
-                skip_reading = true;
-            }
-        }
-        else if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             auto info = column.type->createSerializationInfo({});
 
@@ -217,32 +191,27 @@ Block NativeReader::read()
                 info->deserializeFromKindsBinary(istr);
 
             serialization = column.type->getSerialization(*info);
-            auto new_column = column.type->createColumn(*serialization);
-            new_column->reserve(rows);
-            read_column = std::move(new_column);
         }
         else
         {
             serialization = column.type->getDefaultSerialization();
-            auto new_column = column.type->createColumn(*serialization);
-            new_column->reserve(rows);
-            read_column = std::move(new_column);
         }
 
         if (use_index)
         {
             /// Index allows to do more checks.
             if (index_column_it->name != column.name)
-                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to a column with a wrong name ({} instead of {}): corrupted index or data", index_column_it->name, column.name);
-            /// Note: we can't compare data types as strings, compatible data types may differ in parameters.
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong name: corrupted index or data");
+            if (index_column_it->type != type_name)
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong type: corrupted index or data");
         }
 
-        /// If no rows, nothing to read.
-        if (!skip_reading && rows)
-        {
-            double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
+        /// Data
+        ColumnPtr read_column = column.type->createColumn(*serialization);
+
+        double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
+        if (rows)    /// If no rows, nothing to read.
             readData(*serialization, read_column, istr, format_settings, rows, avg_value_size_hint);
-        }
 
         column.column = std::move(read_column);
 
@@ -255,16 +224,6 @@ Block NativeReader::read()
 
                 if (format_settings && format_settings->null_as_default)
                     insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
-
-                if (!skip_reading && column_lazy)
-                {
-                    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.column.get()))
-                        column.column = ColumnLazy::create(column_tuple->getColumns());
-                    else
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} and data type {} found while reading data in Native format",
-                                        column.name,
-                                        column.column->getDataType());
-                }
 
                 if (!header_column.type->equals(*column.type))
                 {
@@ -320,7 +279,7 @@ Block NativeReader::read()
 
     if (rows && header)
     {
-        /// Allow to skip columns. We will fill them with default values later.
+        /// Allow to skip columns. Fill them with default values.
         Block tmp_res;
 
         for (size_t column_i = 0; column_i != header.columns(); ++column_i)

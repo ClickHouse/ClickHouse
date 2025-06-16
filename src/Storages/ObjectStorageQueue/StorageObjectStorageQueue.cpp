@@ -8,7 +8,6 @@
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -84,7 +83,6 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 polling_max_timeout_ms;
     extern const ObjectStorageQueueSettingsUInt64 polling_backoff_ms;
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
-    extern const ObjectStorageQueueSettingsBool parallel_inserts;
     extern const ObjectStorageQueueSettingsUInt64 buckets;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
@@ -258,13 +256,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
-    size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
-    for (size_t i = 0; i < task_count; ++i)
-    {
-        auto task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
-        streaming_tasks.emplace_back(std::move(task));
-    }
-
+    task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 }
 
 void StorageObjectStorageQueue::startup()
@@ -275,16 +267,14 @@ void StorageObjectStorageQueue::startup()
     try
     {
         files_metadata->startup();
-        for (auto & task : streaming_tasks)
+        if (task)
             task->activateAndSchedule();
     }
     catch (...)
     {
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), /*remove_metadata_if_no_registered=*/true);
-        files_metadata.reset();
+        files_metadata->shutdown();
         throw;
     }
-    startup_finished = true;
 }
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)
@@ -292,11 +282,11 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     table_is_being_dropped = is_drop;
     shutdown_called = true;
 
-    Stopwatch watch;
-    LOG_TRACE(log, "Waiting for streaming to finish...");
-    for (auto & task : streaming_tasks)
+    LOG_TRACE(log, "Shutting down storage...");
+    if (task)
+    {
         task->deactivate();
-    LOG_TRACE(log, "Streaming finished (took: {} ms)", watch.elapsedMilliseconds());
+    }
 
     if (files_metadata)
     {
@@ -309,10 +299,15 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
             tryLogCurrentException(log);
         }
 
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop);
+        files_metadata->shutdown();
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
+}
+
+void StorageObjectStorageQueue::drop()
+{
+    ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -496,11 +491,8 @@ size_t StorageObjectStorageQueue::getDependencies() const
     return view_ids.size();
 }
 
-void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
+void StorageObjectStorageQueue::threadFunc()
 {
-    chassert(streaming_tasks_index < streaming_tasks.size());
-    auto & task = streaming_tasks[streaming_tasks_index];
-
     if (shutdown_called)
         return;
 
@@ -517,7 +509,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
             files_metadata->registerIfNot(storage_id, /* active */true);
 
-            if (streamToViews(streaming_tasks_index))
+            if (streamToViews())
             {
                 /// Reset the reschedule interval.
                 std::lock_guard lock(mutex);
@@ -544,16 +536,10 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     if (!shutdown_called)
     {
-        UInt64 reschedule_interval_ms;
-        {
-            std::lock_guard lock(mutex);
-            reschedule_interval_ms = reschedule_processing_interval_ms;
-        }
+        LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_processing_interval_ms);
+        task->scheduleAfter(reschedule_processing_interval_ms);
 
-        LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_interval_ms);
-        task->scheduleAfter(reschedule_interval_ms);
-
-        if (reschedule_interval_ms > 5000) /// TODO: Add a setting
+        if (reschedule_processing_interval_ms > 5000) /// TODO: Add a setting
         {
             try
             {
@@ -567,7 +553,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     }
 }
 
-bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
+bool StorageObjectStorageQueue::streamToViews()
 {
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
@@ -584,23 +570,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
 
-    std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator;
-    {
-        std::lock_guard streaming_lock(streaming_mutex);
-        if (!streaming_file_iterator || streaming_file_iterator->isFinished())
-        {
-            streaming_file_iterator = createFileIterator(queue_context, nullptr);
-        }
-        file_iterator = streaming_file_iterator;
-    }
+    auto file_iterator = createFileIterator(queue_context, nullptr);
     size_t total_rows = 0;
-
     const size_t processing_threads_num = getTableMetadata().processing_threads_num;
-    const bool parallel_inserts = getTableMetadata().parallel_inserts;
-    const size_t threads = parallel_inserts ? 1 : processing_threads_num;
 
-    LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {})",
-        threads, processing_threads_num, parallel_inserts);
+    LOG_TEST(log, "Using {} processing threads", processing_threads_num);
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
@@ -611,10 +585,10 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         InterpreterInsertQuery interpreter(
             insert,
             queue_context,
-            /*allow_materialized_=*/ false,
-            /*no_squash_=*/ true,
-            /*no_destination=*/ true,
-            /*async_insert_=*/ false);
+            /* allow_materialized */ false,
+            /* no_squash */ true,
+            /* no_destination */ true,
+            /* async_isnert */ false);
         auto block_io = interpreter.execute();
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),
@@ -625,21 +599,20 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
 
-        pipes.reserve(threads);
-        sources.reserve(threads);
+        pipes.reserve(processing_threads_num);
+        sources.reserve(processing_threads_num);
 
         auto processing_progress = std::make_shared<ProcessingProgress>();
-        for (size_t i = 0; i < threads; ++i)
+        for (size_t i = 0; i < processing_threads_num; ++i)
         {
-            size_t processor_id = i * (streaming_tasks_index + 1);
             auto source = createSource(
-                processor_id,
+                i/* processor_id */,
                 read_from_format_info,
                 processing_progress,
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 queue_context,
-                /*commit_once_processed=*/ false);
+                false/* commit_once_processed */);
 
             pipes.emplace_back(source);
             sources.emplace_back(source);
@@ -647,7 +620,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         auto pipe = Pipe::unitePipes(std::move(pipes));
 
         block_io.pipeline.complete(std::move(pipe));
-        block_io.pipeline.setNumThreads(threads);
+        block_io.pipeline.setNumThreads(processing_threads_num);
         block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef()[Setting::use_concurrency_control]);
 
         std::atomic_size_t rows = 0;
@@ -662,12 +635,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         }
         catch (...)
         {
-            commit(/*insert_succeeded=*/ false, rows, sources, getCurrentExceptionMessage(true), getCurrentExceptionCode());
+            commit(/* insert_succeeded */false, rows, sources, getCurrentExceptionMessage(true));
             file_iterator->releaseFinishedBuckets();
             throw;
         }
 
-        commit(/*insert_succeeded=*/ true, rows, sources);
+        commit(/* insert_succeeded */true, rows, sources);
         file_iterator->releaseFinishedBuckets();
         total_rows += rows;
     }
@@ -680,15 +653,14 @@ void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
     size_t inserted_rows,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-    const std::string & exception_message,
-    int error_code) const
+    const std::string & exception_message) const
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedRows, inserted_rows);
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message, error_code);
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
 
     if (requests.empty())
     {
@@ -734,8 +706,6 @@ void StorageObjectStorageQueue::commit(
 static const std::unordered_set<std::string_view> changeable_settings_unordered_mode
 {
     "processing_threads_num",
-    /// Is not allowed to change on fly:
-    /// "parallel_inserts",
     "loading_retries",
     "after_processing",
     "tracked_files_limit",
@@ -1039,13 +1009,6 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
-const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetadata() const
-{
-    if (!files_metadata)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Files metadata is empty");
-    return files_metadata->getTableMetadata();
-}
-
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
@@ -1082,17 +1045,12 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
-    /// If startup() for a table was not called, just use the default queue settings
-    if (!startup_finished)
-        return settings;
-
     const auto & table_metadata = getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     settings[ObjectStorageQueueSetting::keeper_path] = zk_path;
     settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
     settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
-    settings[ObjectStorageQueueSetting::parallel_inserts] = table_metadata.parallel_inserts;
     settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] = enable_logging_to_queue_log;
     settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
     settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
