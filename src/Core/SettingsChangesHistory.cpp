@@ -97,6 +97,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
             /// RELEASE CLOSED
+            {"count_distinct_optimization", false, true, ""},
+            {"optimize_trivial_group_by_limit_query", true, true, "New setting"},
+            {"query_plan_push_down_order_by_limit", true, true, "New setting"},
+            {"max_limit_to_push_down_topn_predicate", 100, 100, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
