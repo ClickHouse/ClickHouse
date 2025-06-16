@@ -30,7 +30,7 @@ public:
     {
         if (auto * query_node = node->as<QueryNode>())
         {
-            if(!query_node->isDistinct())
+            if (!query_node->isDistinct())
             {
                 query_node->setIsDistinct(true);
             }
