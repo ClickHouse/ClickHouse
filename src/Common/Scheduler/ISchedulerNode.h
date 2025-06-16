@@ -86,7 +86,7 @@ struct SchedulerNodeInfo
         if (value <= 0)
             throw Exception(
                 ErrorCodes::INVALID_SCHEDULER_NODE,
-                "Zero, negative and non-finite node queue_size are not allowed: {}",
+                "Workload setting `max_waiting_queries` value must be positive, got: {}",
                 value);
         queue_size = value;
     }
