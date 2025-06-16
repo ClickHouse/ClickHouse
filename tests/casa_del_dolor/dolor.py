@@ -373,50 +373,69 @@ atexit.register(dolor_cleanup)
 time.sleep(3)
 
 # This is the main loop, run while client and server are running
-while True:
-    if client.process.poll() is not None:
-        logger.info("Load generator finished")
-        break
-    for server in servers:
-        try:
-            server.query("SELECT 1;")
-        except:
-            logger.info(f"The server {server.name} is not running")
-            break
+all_running = True
+lower_bound, upper_bound = args.time_between_shutdowns
+while all_running:
+    start = time.time()
+    finish = start + random.randint(lower_bound, upper_bound)
 
-    lower_bound, upper_bound = args.time_between_shutdowns
-    time.sleep(random.randint(lower_bound, upper_bound))
+    while all_running and start < finish:
+        interval = 1
+        if client.process.poll() is not None:
+            logger.info("Load generator finished")
+            all_running = False
+        for server in servers:
+            try:
+                server.query("SELECT 1;")
+            except:
+                logger.info(f"The server {server.name} is not running")
+                all_running = False
+        time.sleep(interval)
+        start += interval
+
+    if not all_running:
+        break
 
     # Pick one of the servers to restart
-    next_pick = random.choice(servers)
-    kill_server = random.randint(1, 100) <= args.kill_server_prob
-    logger.info(
-        f"Restart the server {next_pick.name} with {"kill" if kill_server else "manual shutdown"}"
-    )
+    what_to_restart = random.choice(["ClickHouse", "Zookeeper"])
+    if what_to_restart == "ClickHouse":
+        next_pick = random.choice(servers)
+        kill_server = random.randint(1, 100) <= args.kill_server_prob
+        logger.info(
+            f"Restarting the server {next_pick.name} with {"kill" if kill_server else "manual shutdown"}"
+        )
 
-    next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
-    # Replace server binary, using a new temporary symlink, then replace the old one
-    if (
-        len(args.server_binaries) > 1
-        and random.randint(1, 100) <= args.change_server_version_prob
-    ):
-        if len(servers) == 1 and len(args.server_binaries) == 2:
-            current_server = (
-                args.server_binaries[0]
-                if current_server == args.server_binaries[1]
-                else args.server_binaries[1]
-            )
-        else:
-            current_server = random.choice(args.server_binaries)
-        logger.info(f"Using the server binary {current_server} after restart")
-        new_temp_server_path = os.path.join(tempfile.gettempdir(), "clickhousetemp")
-        try:
-            os.unlink(new_temp_server_path)
-        except FileNotFoundError:
-            pass
-        os.symlink(current_server, new_temp_server_path)
-        os.rename(new_temp_server_path, server_path)
-    time.sleep(15)  # Let the zookeeper session expire
-    next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
+        next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
+        # Replace server binary, using a new temporary symlink, then replace the old one
+        if (
+            len(args.server_binaries) > 1
+            and random.randint(1, 100) <= args.change_server_version_prob
+        ):
+            if len(servers) == 1 and len(args.server_binaries) == 2:
+                current_server = (
+                    args.server_binaries[0]
+                    if current_server == args.server_binaries[1]
+                    else args.server_binaries[1]
+                )
+            else:
+                current_server = random.choice(args.server_binaries)
+            logger.info(f"Using the server binary {current_server} after restart")
+            new_temp_server_path = os.path.join(tempfile.gettempdir(), "clickhousetemp")
+            try:
+                os.unlink(new_temp_server_path)
+            except FileNotFoundError:
+                pass
+            os.symlink(current_server, new_temp_server_path)
+            os.rename(new_temp_server_path, server_path)
+        time.sleep(15)  # Let the zookeeper session expire
+        next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
+    elif what_to_restart == "Zookeeper":
+        keeper_choices = ["zoo1", "zoo2", "zoo3"]
+        number_servers = random.randint(1, len(keeper_choices))
+
+        random.shuffle(keeper_choices)
+        logger.info(f"Restarting the keeper servers {','.join(keeper_choices)}")
+        cluster.kill_zookeeper_nodes(keeper_choices)
+        cluster.start_zookeeper_nodes(keeper_choices)
 
 cluster.shutdown()
