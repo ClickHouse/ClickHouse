@@ -33,7 +33,7 @@ public:
 
     auto buildWithEscaping() const
     {
-        auto configuration = extractKV::ConfigurationFactory::createWithEscaping(key_value_delimiter, quoting_character, item_delimiters);
+        auto configuration = extractKV::ConfigurationFactory::createWithEscaping(key_value_delimiter, quoting_character, item_delimiters, unexpected_quoting_character_strategy);
 
         return KeyValuePairExtractorInlineEscaping(configuration, max_number_of_pairs);
     }
@@ -50,7 +50,9 @@ private:
     char quoting_character = '"';
     std::vector<char> item_delimiters = {' ', ',', ';'};
     uint64_t max_number_of_pairs = std::numeric_limits<uint64_t>::max();
-    extractKV::Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy = extractKV::Configuration::UnexpectedQuotingCharacterStrategy::INVALID;
+
+    /// The ideal default behavior should be `UnexpectedQuotingCharacterStrategy::INVALID`, but to make it backwards compatible, we are leaving it as `PROMOTE`
+    extractKV::Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy = extractKV::Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE;
 };
 
 }
