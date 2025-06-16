@@ -394,14 +394,10 @@ private:
         visitor.visit_is_null = &visitFunction<DB::FunctionIsNull>;
 
         visitor.visit_lt = &throwNotImplemented<LT>;
-        //visitor.visit_le = &throwNotImplemented<LE>;
         visitor.visit_gt = &throwNotImplemented<GT>;
-        //visitor.visit_ge = &throwNotImplemented<GE>;
         visitor.visit_eq = &throwNotImplemented<EQ>;
-        //visitor.visit_ne = &throwNotImplemented<NE>;
         visitor.visit_distinct = &throwNotImplemented<DISTINCT>;
         visitor.visit_in = &throwNotImplemented<IN>;
-        //visitor.visit_not_in = &throwNotImplemented<NOT_IN>;
         visitor.visit_add = &throwNotImplemented<ADD>;
         visitor.visit_minus = &throwNotImplemented<MINUS>;
         visitor.visit_multiply = &throwNotImplemented<MULTIPLY>;
