@@ -25,6 +25,12 @@ SELECT tokens('a', 'string', toInt8(-1)); -- { serverError ILLEGAL_TYPE_OF_ARGUM
 SELECT tokens('a', 'string', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'string', materialize(['c'])); -- { serverError ILLEGAL_COLUMN }
 SELECT tokens('a', 'string', [1, 2]); -- { serverError BAD_GET }
+--    const Array (for "pattern")
+SELECT tokens('a', 'pattern', 'c'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('a', 'pattern', toInt8(-1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('a', 'pattern', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('a', 'pattern', materialize(['c'])); -- { serverError ILLEGAL_COLUMN }
+SELECT tokens('a', 'pattern', [1, 2]); -- { serverError BAD_GET }
 
 SELECT 'Default tokenizer';
 
@@ -47,6 +53,23 @@ SELECT tokens('  a  bc d', 'string', [' ']);
 SELECT tokens('()()a()bc()d', 'string', ['()']);
 SELECT tokens(',()a(),bc,(),d,', 'string', ['()', ',']);
 SELECT tokens('\\a\n\\bc\\d\n', 'string', ['\n', '\\']);
+
+SELECT 'Pattern tokenizer';
+
+SELECT 'Unset or empty patterns behave as default tokenizer';
+SELECT tokens('', 'pattern') AS tokenized;
+SELECT tokens('abc def', 'pattern') AS tokenized;
+SELECT tokens('abc def', 'pattern', []) AS tokenized;
+
+SELECT tokens('abc def', 'pattern', ['']) AS tokenized;
+SELECT tokens('hello world', 'pattern', ['\w']) AS tokenized;
+SELECT tokens('hello world', 'pattern', ['\w+']) AS tokenized;
+SELECT tokens('hello world 123 456', 'pattern', ['\d']) AS tokenized;
+SELECT tokens('hello world 123 456', 'pattern', ['\d+']) AS tokenized;
+
+SELECT tokens('hello world 123 456', 'pattern', ['[a-zA-Z]*']) AS tokenized;
+SELECT tokens('hello world 123 456', 'pattern', ['[a-zA-Z]*', '\d+']) AS tokenized;
+SELECT tokens('hello world 123 456', 'pattern', ['[a-zA-Z]*', 'hello']) AS tokenized;
 
 SELECT 'No-op tokenizer';
 
