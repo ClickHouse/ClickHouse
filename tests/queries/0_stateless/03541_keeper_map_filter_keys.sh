@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS keeper_map_with_filter;"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE keeper_map_with_filter (key String, value String) ENGINE=KeeperMap('test') PRIMARY KEY key;"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE keeper_map_with_filter (key String, value String) ENGINE=KeeperMap(concat(currentDatabase(), '_simple')) PRIMARY KEY key;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO keeper_map_with_filter (*) SELECT n.number, n.number*10 FROM numbers(10000) n;"
 
 $CLICKHOUSE_CLIENT --query "EXPLAIN actions=1 SELECT value FROM keeper_map_with_filter LIMIT 1" | grep -A 2 "ReadFromKeeperMap"
@@ -29,7 +29,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE keeper_map_with_filter;"
 
 # Same test, but with complex key
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS keeper_map_with_filter_and_complex_key;"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE keeper_map_with_filter_and_complex_key (key String, value String) ENGINE=KeeperMap('test_complex') PRIMARY KEY hex(toFloat32(key));"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE keeper_map_with_filter_and_complex_key (key String, value String) ENGINE=KeeperMap(concat(currentDatabase(), '_complex')) PRIMARY KEY hex(toFloat32(key));"
 $CLICKHOUSE_CLIENT --query="INSERT INTO keeper_map_with_filter_and_complex_key (*) SELECT n.number, n.number*10 FROM numbers(10000) n;"
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM keeper_map_with_filter_and_complex_key WHERE key = '5000'"
