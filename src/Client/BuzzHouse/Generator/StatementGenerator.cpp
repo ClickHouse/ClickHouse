@@ -3748,7 +3748,8 @@ static const std::vector<ExplainOptValues> explainSettings{
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_run_query_tree_passes, trueOrFalseInt),
     ExplainOptValues(
         ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_query_tree_passes,
-        [](RandomGenerator & rg) { return rg.randomInt<uint32_t>(0, 32); })};
+        [](RandomGenerator & rg) { return rg.randomInt<uint32_t>(0, 32); }),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_projections, trueOrFalseInt)};
 
 void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq)
 {
@@ -3780,7 +3781,7 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_ESTIMATE:
-                    this->ids.insert(this->ids.end(), {1, 8, 9, 10, 11, 12, 13, 14, 15});
+                    this->ids.insert(this->ids.end(), {1, 8, 9, 10, 11, 12, 13, 14, 15, 19});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
                     this->ids.insert(this->ids.end(), {0, 15, 16});
@@ -3791,7 +3792,7 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
         }
         else
         {
-            this->ids.insert(this->ids.end(), {1, 9, 10, 11, 12, 13, 14, 15});
+            this->ids.insert(this->ids.end(), {1, 9, 10, 11, 12, 13, 14, 15, 19});
         }
         if (!this->ids.empty())
         {

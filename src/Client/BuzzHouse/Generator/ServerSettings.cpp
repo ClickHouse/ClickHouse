@@ -131,6 +131,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_uniq_to_count", trueOrFalseSetting},
        {"optimize_use_implicit_projections", trueOrFalseSetting},
        {"optimize_use_projections", trueOrFalseSetting},
+       {"optimize_use_projection_filtering", trueOrFalseSetting},
        /// {"optimize_using_constraints", trueOrFalseSetting},
        {"os_thread_priority",
         CHSetting(

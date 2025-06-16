@@ -3938,6 +3938,7 @@ message ExplainOption {
         compact = 17;
         run_query_tree_passes = 18;
         query_tree_passes = 19;
+        projections = 20;
     }
     required ExplainOpt opt = 1;
     required uint32 val = 2;
