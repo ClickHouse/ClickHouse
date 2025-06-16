@@ -20,6 +20,8 @@ const auto zeroToThree = [](RandomGenerator & rg) { return std::to_string(rg.ran
 
 const auto probRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
 
+const auto probRangeNoZero = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.01, 0.99)); };
+
 const auto highRange = [](RandomGenerator & rg)
 {
     const auto val = rg.randomInt<uint32_t>(0, 25);
@@ -37,6 +39,8 @@ const auto threadSetting = CHSetting(
     false);
 
 const auto probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);
+
+const auto probRangeNoZeroSetting = CHSetting(probRangeNoZero, {"0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999"}, false);
 
 const auto trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
 
@@ -89,20 +93,6 @@ const std::unordered_map<String, CHSetting> fileTableSettings
             {},
             false)}};
 
-const std::unordered_map<String, CHSetting> s3QueueTableSettings
-    = {{"after_processing",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                const DB::Strings & choices = {"''", "'keep'", "'delete'"};
-                return rg.pickRandomly(choices);
-            },
-            {},
-            false)},
-       {"enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
-       {"parallel_inserts", CHSetting(trueOrFalse, {}, false)},
-       {"processing_threads_num", threadSetting}};
-
 const std::unordered_map<String, CHSetting> distributedTableSettings
     = {{"background_insert_batch", CHSetting(trueOrFalse, {}, false)},
        {"background_insert_split_batch_on_failure", CHSetting(trueOrFalse, {}, false)},
@@ -143,7 +133,9 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
        {S3, {}},
        {S3Queue, {}},
        {Hudi, {}},
-       {DeltaLake, {}},
+       {DeltaLakeS3, {}},
+       {DeltaLakeAzure, {}},
+       {DeltaLakeLocal, {}},
        {IcebergS3, {}},
        {IcebergAzure, {}},
        {IcebergLocal, {}},

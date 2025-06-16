@@ -48,7 +48,14 @@ Chunk ArrowBlockInputFormat::read()
 
         batch_result = stream_reader->Next();
         if (batch_result.ok() && !(*batch_result))
+        {
+            /// Make sure we try to read past the end to fully drain the ReadBuffer (e.g. read
+            /// compression frame footer or HTTP chunked encoding's final empty chunk).
+            /// This is needed for HTTP keepalive.
+            in->eof();
+
             return res;
+        }
 
         if (need_only_count && batch_result.ok())
             return getChunkForCount((*batch_result)->num_rows());
@@ -62,7 +69,10 @@ Chunk ArrowBlockInputFormat::read()
             return {};
 
         if (record_batch_current >= record_batch_total)
+        {
+            in->eof();
             return res;
+        }
 
         if (need_only_count)
         {

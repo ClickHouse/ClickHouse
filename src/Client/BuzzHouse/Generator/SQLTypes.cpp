@@ -1392,7 +1392,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         }
         else
         {
-            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextSmallNumber() : (rg.nextRandomUInt32() % 100));
+            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextMediumNumber() : ((rg.nextRandomUInt32() % 1009) + 1));
             if (tp)
             {
                 tp->set_fixed_string(swidth.value());

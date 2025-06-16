@@ -70,17 +70,6 @@ accurateCastOrNull
 acos
 acosh
 addDate
-addDays
-addHours
-addMicroseconds
-addMilliseconds
-addMinutes
-addMonths
-addNanoseconds
-addQuarters
-addSeconds
-addWeeks
-addYears
 addressToLine
 addressToLineWithInlines
 addressToSymbol
@@ -112,7 +101,6 @@ cbrt
 ceil
 char
 cityHash64
-clamp
 coalesce
 concat
 concatAssumeInjective
@@ -226,7 +214,6 @@ globalNullInIgnoreSet
 globalVariable
 greatCircleAngle
 greatCircleDistance
-greatest
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -241,7 +228,6 @@ hopStart
 hostName
 hypot
 identity
-if
 ifNull
 ignore
 ilike
@@ -274,7 +260,6 @@ joinGetOrNull
 jumpConsistentHash
 kafkaMurmurHash
 kostikConsistentHash
-least
 left
 leftPad
 leftPadUTF8
@@ -306,7 +291,6 @@ monthName
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
-multiIf
 multiMatchAllIndices
 multiMatchAny
 multiMatchAnyIndex
@@ -526,17 +510,6 @@ substring
 substringIndex
 substringIndexUTF8
 substringUTF8
-subtractDays
-subtractHours
-subtractMicroseconds
-subtractMilliseconds
-subtractMinutes
-subtractMonths
-subtractNanoseconds
-subtractQuarters
-subtractSeconds
-subtractWeeks
-subtractYears
 svg
 tan
 tanh
@@ -546,8 +519,6 @@ throwIf
 tid
 timeSlot
 timeSlots
-timezoneOf
-timezoneOffset
 toBool
 toColumnTypeName
 toDate
@@ -567,9 +538,6 @@ toDateTime64OrZero
 toDateTimeOrDefault
 toDateTimeOrNull
 toDateTimeOrZero
-toDayOfMonth
-toDayOfWeek
-toDayOfYear
 toDecimal128
 toDecimal128OrDefault
 toDecimal128OrNull
@@ -595,7 +563,6 @@ toFloat64
 toFloat64OrDefault
 toFloat64OrNull
 toFloat64OrZero
-toHour
 toIPv4
 toIPv4OrDefault
 toIPv4OrNull
@@ -643,12 +610,9 @@ toIntervalYear
 toJSONString
 toLastDayOfWeek
 toLowCardinality
-toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
-toMonth
 toNullable
-toQuarter
 toRelativeDayNum
 toRelativeHourNum
 toRelativeMinuteNum
@@ -657,7 +621,6 @@ toRelativeQuarterNum
 toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
-toSecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -673,7 +636,6 @@ toStartOfWeek
 toString
 toStringCutToZero
 toTime
-toTimezone
 toTypeName
 toUInt128
 toUInt128OrNull
@@ -711,7 +673,6 @@ toValidUTF8
 toYYYYMM
 toYYYYMMDD
 toYYYYMMDDhhmmss
-toYear
 today
 transactionID
 transactionLatestSnapshot

@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 class FunctionTokens : public IFunction
@@ -22,6 +23,7 @@ class FunctionTokens : public IFunction
     static constexpr size_t arg_value = 0;
     static constexpr size_t arg_tokenizer = 1;
     static constexpr size_t arg_ngrams = 2;
+    static constexpr size_t arg_separators = 2;
 
 public:
     static constexpr auto name = "tokens";
@@ -52,7 +54,9 @@ public:
                 const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
 
                 if (tokenizer == NgramTokenExtractor::getExternalName())
-                    optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
+                    optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+                else if (tokenizer == StringTokenExtractor::getExternalName())
+                    optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
             }
         }
 
@@ -76,13 +80,47 @@ public:
                                                         : arguments[arg_tokenizer].column->getDataAt(0).toView();
 
         if (tokenizer_arg == SplitTokenExtractor::getExternalName())
+        {
             token_extractor = std::make_unique<SplitTokenExtractor>();
+        }
+        else if (tokenizer_arg == StringTokenExtractor::getExternalName())
+        {
+            std::vector<String> separators;
+            if (arguments.size() < 3)
+                separators = {" "};
+            else
+            {
+                const ColumnArray * col_separators_non_const = checkAndGetColumn<ColumnArray>(arguments[arg_separators].column.get());
+                const ColumnConst * col_separators_const = checkAndGetColumnConst<ColumnArray>(arguments[arg_separators].column.get());
+
+                if (col_separators_const)
+                {
+                    const Array & separators_array = col_separators_const->getValue<Array>();
+                    for (const auto & separator : separators_array)
+                        separators.emplace_back(separator.safeGet<String>());
+                }
+                else if (col_separators_non_const)
+                {
+                    Field separator_field;
+                    col_separators_non_const->get(0, separator_field);
+                    Array & separator_array = separator_field.safeGet<Array>();
+                    for (const auto & separator : separator_array)
+                        separators.emplace_back(separator.safeGet<String>());
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "3rd argument of function {} should be Array(String), got: {}", name, arguments[arg_separators].column->getFamilyName());
+                }
+            }
+            token_extractor = std::make_unique<StringTokenExtractor>(separators);
+        }
         else if (tokenizer_arg == NoOpTokenExtractor::getExternalName())
+        {
             token_extractor = std::make_unique<NoOpTokenExtractor>();
+        }
         else if (tokenizer_arg == NgramTokenExtractor::getExternalName())
         {
-            auto ngrams = arguments.size() < 3 ? 3
-                                               : arguments[arg_ngrams].column->getUInt(0);
+            auto ngrams = (arguments.size() < 3) ? 3 : arguments[arg_ngrams].column->getUInt(0);
             if (ngrams < 2 || ngrams > 8)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function {} should be between 2 and 8, got: {}", name, ngrams);
             token_extractor = std::make_unique<NgramTokenExtractor>(ngrams);
@@ -91,7 +129,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Function '{}' supports only tokenizers 'default', 'ngram', and 'noop'", name);
+                "Function '{}' supports only tokenizers 'default', 'string', 'ngram', and 'no_op'", name);
         }
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
@@ -108,15 +146,15 @@ private:
         std::unique_ptr<ITokenExtractor> token_extractor,
         const StringColumnType & column_input,
         ColumnArray::ColumnOffsets & column_offsets_input,
-        size_t rows_count_input,
+        size_t input_rows_count,
         ColumnString & column_result) const
     {
         auto & offsets_data = column_offsets_input.getData();
-        offsets_data.resize(rows_count_input);
+        offsets_data.resize(input_rows_count);
 
         std::vector<String> tokens;
         size_t tokens_count = 0;
-        for (size_t i = 0; i < rows_count_input; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string_view input = column_input.getDataAt(i).toView();
             tokens = token_extractor->getTokens(input.data(), input.size());

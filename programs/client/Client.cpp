@@ -80,7 +80,7 @@ void Client::processError(std::string_view query) const
             stderr,
             "Received exception from server (version {}):\n{}\n",
             server_version,
-            getExceptionMessage(*server_exception, print_stack_trace, true));
+            getExceptionMessageForLogging(*server_exception, print_stack_trace, true));
 
         if (server_exception->code() == ErrorCodes::USER_EXPIRED)
         {
@@ -345,7 +345,9 @@ void Client::initialize(Poco::Util::Application & self)
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
-    auto & thread_status = MainThreadStatus::getInstance();
+    /// For memory tracking
+    MainThreadStatus::getInstance();
+
     setupSignalHandler();
 
     output_stream << std::fixed << std::setprecision(3);
@@ -360,14 +362,6 @@ try
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
-
-    {
-        // All that just to set DB::CurrentThread::get().getGlobalContext()
-        // which is required for client timezone (pushed from server) to work.
-        auto thread_group = std::make_shared<ThreadGroup>();
-        const_cast<ContextWeakPtr &>(thread_group->global_context) = global_context;
-        thread_status.attachToGroup(thread_group, false);
-    }
 
     /// Includes delayed_interactive.
     if (is_interactive)
@@ -432,10 +426,10 @@ try
 
     return 0;
 }
-catch (const Exception & e)
+catch (Exception & e)
 {
     bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
-    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl << std::endl;
+    std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return static_cast<UInt8>(e.code()) ? e.code() : -1;
 }
@@ -500,7 +494,7 @@ void Client::connect()
 
             break;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// This problem can't be fixed with reconnection so it is not attempted
             if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
@@ -513,7 +507,7 @@ void Client::connect()
             {
                 std::cerr << "Connection attempt to database at " << connection_parameters.host << ":" << connection_parameters.port
                           << " resulted in failure" << std::endl
-                          << getExceptionMessage(e, false) << std::endl
+                          << getExceptionMessageForLogging(e, false) << std::endl
                           << "Attempting connection to the next provided address" << std::endl;
             }
         }
@@ -761,9 +755,9 @@ void Client::processOptions(
             if (number_of_external_tables_with_stdin_source > 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more external tables has stdin (-) set as --file field");
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            std::cerr << getExceptionMessage(e, false) << std::endl;
+            std::cerr << getExceptionMessageForLogging(e, false) << std::endl;
             std::cerr << "Table №" << i << std::endl << std::endl;
             /// Avoid the case when error exit code can possibly overflow to normal (zero).
             auto exit_code = e.code() % 256;
@@ -1144,9 +1138,9 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         client.init(argc, argv);
         return client.run();
     }
-    catch (const DB::Exception & e)
+    catch (DB::Exception & e)
     {
-        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        std::cerr << DB::getExceptionMessageForLogging(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }
