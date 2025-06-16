@@ -218,7 +218,7 @@ def test_max_waiting_queries_reached() -> None:
     ensure_total_concurrency(1)
     ensure_workload_concurrency("all", 1)
     pool_all.stop()
-    assert "Queue limit has been reached" in pool_all.last_error
+    assert "Workload limit `max_waiting_queries` has been reached: 1 of 1" in pool_all.last_error
 
 
 def test_under_max_waiting_queries_limit() -> None:
