@@ -192,7 +192,8 @@ void analyzeChangelogs(const std::string & log_path, const std::string & specifi
                     LogEntryStorage entry_storage{LogFileSettings{}, std::make_shared<KeeperContext>(true, settings)};
                     Changelog::readChangelog(desc, entry_storage);
 
-                    for (uint64_t i = desc->from_log_index; i <= desc->to_log_index; ++i)
+                    auto last_log_index = desc->from_log_index + entry_storage.size();
+                    for (uint64_t i = desc->from_log_index; i < last_log_index; ++i)
                     {
                         auto entry = entry_storage.getEntry(i);
                         std::cout << "    Entry: " << i << " Term: " << entry->get_term() << "\n";
