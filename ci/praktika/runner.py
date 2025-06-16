@@ -25,18 +25,22 @@ from .utils import Shell, TeePopen, Utils
 
 class Runner:
     @staticmethod
-    def generate_local_run_environment(workflow, job, pr=None, sha=None):
+    def generate_local_run_environment(workflow, job, pr=None, sha=None, branch=None):
         print("WARNING: Generate dummy env for local test")
         Shell.check(f"mkdir -p {Settings.TEMP_DIR}", strict=True)
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
+        assert (bool(pr) ^ bool(branch)) or (not pr and not branch)
+        pr = pr or -1
+        if branch:
+            pr = 0
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
             REPOSITORY="",
-            BRANCH="branch_name",
+            BRANCH=branch,
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
-            PR_NUMBER=pr or -1,
+            PR_NUMBER=pr if not branch else 0,
             EVENT_TYPE=workflow.event,
             JOB_OUTPUT_STREAM="",
             EVENT_FILE_PATH="",
@@ -238,8 +242,17 @@ class Runner:
                     docker_tag += "_amd"
                 else:
                     raise RuntimeError("Unsupported CPU architecture")
+
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            for setting in settings:
+                if setting.startswith("--volume"):
+                    volume = setting.removeprefix("--volume=").split(":")[0]
+                    if not Path(volume).exists():
+                        print(
+                            "WARNING: Create mount dir point in advance to have the same owner"
+                        )
+                        Shell.check(f"mkdir -p {volume}", verbose=True, strict=True)
             Shell.check(
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
@@ -353,8 +366,13 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
-        elif not result.is_ok and job.allow_merge_on_failure:
-            result.set_not_required_label()
+        elif (
+            not result.is_ok()
+            and workflow.enable_merge_ready_status
+            and not job.allow_merge_on_failure
+        ):
+            print("set required label")
+            result.set_required_label()
 
         result.update_duration()
         # if result.is_error():
@@ -398,7 +416,7 @@ class Runner:
                                 "TODO: globe is not supported with comress = True"
                             )
                         print(f"Compress artifact file [{artifact.path}]")
-                        artifact.path = Utils.compress_file_zst(artifact.path)
+                        artifact.path = Utils.compress_zst(artifact.path)
 
                     if isinstance(artifact.path, (tuple, list)):
                         artifact_paths = artifact.path
@@ -465,9 +483,22 @@ class Runner:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
+        workflow_result = Result.from_fs(workflow.name)
+        if workflow.enable_gh_summary_comment:
+            try:
+                summary_body = GH.ResultSummaryForGH.from_result(
+                    workflow_result
+                ).to_markdown()
+                if not GH.post_updateable_comment(
+                    comment_tags_and_bodies={"summary": summary_body},
+                ):
+                    print(f"ERROR: failed to post CI summary")
+            except Exception as e:
+                print(f"ERROR: failed to post CI summary, ex: {e}")
+                traceback.print_exc()
+
         if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
             # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
-            workflow_result = Result.from_fs(workflow.name)
             workflow_storage_usage = StorageUsage.from_dict(
                 workflow_result.ext.get("storage_usage", {})
             )
@@ -546,7 +577,9 @@ class Runner:
                 Info().store_traceback()
             print(f"=== Setup env finished ===\n\n")
         else:
-            self.generate_local_run_environment(workflow, job, pr=pr, sha=sha)
+            self.generate_local_run_environment(
+                workflow, job, pr=pr, sha=sha, branch=branch
+            )
 
         if res and (not local_run or pr or sha or branch):
             res = False
