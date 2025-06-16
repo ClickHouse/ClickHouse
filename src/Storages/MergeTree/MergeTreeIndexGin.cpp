@@ -608,8 +608,8 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
-        std::unique_ptr<ITokenExtractor> split_token_extractor = std::make_unique<SplitTokenExtractor>();
-        split_token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
+        std::unique_ptr<ITokenExtractor> default_token_extractor = std::make_unique<DefaultTokenExtractor>();
+        default_token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
@@ -877,14 +877,15 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
 
     std::unique_ptr<ITokenExtractor> token_extractor;
     std::optional<UInt64> ngram_size;
+    std::optional<std::vector<String>> separators;
     if (tokenizer == DefaultTokenExtractor::getExternalName())
         token_extractor = std::make_unique<DefaultTokenExtractor>();
     else if (tokenizer == NoOpTokenExtractor::getExternalName())
         token_extractor = std::make_unique<NoOpTokenExtractor>();
     else if (tokenizer == SplitTokenExtractor::getExternalName())
     {
-        std::vector<String> separators = getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "});
-        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
+        separators = getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "});
+        token_extractor = std::make_unique<SplitTokenExtractor>(separators.value());
     }
     else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
@@ -896,7 +897,7 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
 
     UInt64 max_rows_per_postings_list = getOption<UInt64>(options, ARGUMENT_MAX_ROWS).value_or(DEFAULT_MAX_ROWS_PER_POSTINGS_LIST);
 
-    GinFilterParameters params(tokenizer, max_rows_per_postings_list, ngram_size);
+    GinFilterParameters params(tokenizer, max_rows_per_postings_list, ngram_size, separators);
     return std::make_shared<MergeTreeIndexGin>(index, params, std::move(token_extractor));
 }
 
@@ -953,7 +954,11 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
             ErrorCodes::INCORRECT_QUERY,
             "Text index '{}' should not be less than {}", ARGUMENT_MAX_ROWS, MIN_ROWS_PER_POSTINGS_LIST);
 
-    GinFilterParameters gin_filter_params(tokenizer.value(), max_rows_per_postings_list, ngram_size); /// Just validate
+    GinFilterParameters gin_filter_params(
+        tokenizer.value(),
+        max_rows_per_postings_list,
+        ngram_size,
+        getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "})); /// Just validate
 
     /// Check that the index is created on a single column
     if (index.column_names.size() != 1 || index.data_types.size() != 1)

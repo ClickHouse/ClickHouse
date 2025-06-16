@@ -27,11 +27,16 @@ enum class GinSearchMode : uint8_t
 
 struct GinFilterParameters
 {
-    GinFilterParameters(String tokenizer_, UInt64 max_rows_per_postings_list_, std::optional<UInt64> ngram_size_);
+    GinFilterParameters(
+        String tokenizer_,
+        UInt64 max_rows_per_postings_list_,
+        std::optional<UInt64> ngram_size_,
+        std::optional<std::vector<String>> separators_);
 
     String tokenizer;
     UInt64 max_rows_per_postings_list;
     std::optional<UInt64> ngram_size;
+    std::optional<std::vector<String>> separators;
 
     bool operator<=>(const GinFilterParameters& other) const = default;
 };

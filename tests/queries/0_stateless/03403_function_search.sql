@@ -121,7 +121,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = 'noop'),
+    INDEX idx(`message`) TYPE text(tokenizer = 'no_op'),
 )
 ENGINE = MergeTree
 ORDER BY (id);

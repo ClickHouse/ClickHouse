@@ -128,10 +128,15 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     auto col_result = ColumnVector<UInt8>::create();
 
     std::unique_ptr<ITokenExtractor> token_extractor;
-    if (parameters->tokenizer == SplitTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<SplitTokenExtractor>();
+    if (parameters->tokenizer == DefaultTokenExtractor::getExternalName())
+        token_extractor = std::make_unique<DefaultTokenExtractor>();
     else if (parameters->tokenizer == NoOpTokenExtractor::getExternalName())
         token_extractor = std::make_unique<NoOpTokenExtractor>();
+    else if (parameters->tokenizer == SplitTokenExtractor::getExternalName())
+    {
+        const auto& separators = parameters->separators.value_or(std::vector<String>{" "});
+        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
+    }
     else if (parameters->tokenizer == NgramTokenExtractor::getExternalName())
     {
         auto ngrams = parameters->ngram_size.value_or(DEFAULT_NGRAM_SIZE);
@@ -141,12 +146,10 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
         token_extractor = std::make_unique<NgramTokenExtractor>(ngrams);
     }
     else
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', and 'noop'", name);
-    }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
 
     const auto & col_needles_tokens = col_needles->getDataAt(0);
-    std::vector<String> needles = SplitTokenExtractor().getTokens(col_needles_tokens.data, col_needles_tokens.size);
+    std::vector<String> needles = DefaultTokenExtractor().getTokens(col_needles_tokens.data, col_needles_tokens.size);
 
     if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
         execute<SearchTraits>(std::move(token_extractor), *column_string, input_rows_count, needles, col_result->getData());

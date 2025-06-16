@@ -16,10 +16,15 @@
 namespace DB
 {
 
-GinFilterParameters::GinFilterParameters(String tokenizer_, UInt64 max_rows_per_postings_list_, std::optional<UInt64> ngram_size_)
+GinFilterParameters::GinFilterParameters(
+    String tokenizer_,
+    UInt64 max_rows_per_postings_list_,
+    std::optional<UInt64> ngram_size_,
+    std::optional<std::vector<String>> separators_)
     : tokenizer(std::move(tokenizer_))
     , max_rows_per_postings_list(max_rows_per_postings_list_)
     , ngram_size(ngram_size_)
+    , separators(separators_)
 {
     if (max_rows_per_postings_list == UNLIMITED_ROWS_PER_POSTINGS_LIST)
         max_rows_per_postings_list = std::numeric_limits<UInt64>::max();
