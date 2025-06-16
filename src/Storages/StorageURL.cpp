@@ -91,6 +91,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int INCORRECT_DATA;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -204,6 +205,13 @@ IStorageURLBase::IStorageURLBase(
                     storage_columns.add({name, type});
                 }
             }
+        }
+
+        if (hive_partition_columns_to_read_from_file_path.size() == storage_columns.size())
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
         }
     }
 

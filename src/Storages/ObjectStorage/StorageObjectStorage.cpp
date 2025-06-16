@@ -200,6 +200,13 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
+    if (hive_partition_columns_to_read_from_file_path.size() == columns.size())
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "A hive partitioned file can't contain only partition columns. Try reading it with `partition_strategy=wildcard` and `use_hive_partitioning=0`");
+    }
+
     if (configuration->partition_columns_in_data_file)
     {
         file_columns = columns;

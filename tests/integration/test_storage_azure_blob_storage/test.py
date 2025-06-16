@@ -1644,6 +1644,36 @@ def test_hive_partitioning_with_one_parameter(cluster):
     ).splitlines() == ["Gordon"]
 
 
+def test_hive_partitioning_with_all_parameters(cluster):
+    # type: (ClickHouseCluster) -> None
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 String, column2 String"
+    values_1 = f"('Elizabeth', 'Gordon')"
+    values_2 = f"('Emilia', 'Gregor')"
+    path = "a/column1=Elizabeth/column2=Gordon/sample.csv"
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": 0,
+        },
+    )
+
+    query = (
+        f"SELECT column1, column2, _file, _path FROM azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
+    )
+
+    pattern = r"DB::Exception: A hive partitioned file can't contain only partition columns"
+
+    with pytest.raises(Exception, match=pattern):
+        azure_query(node, query, settings={"use_hive_partitioning": 1})
+
+
 def test_hive_partitioning_without_setting(cluster):
     # type: (ClickHouseCluster) -> None
     node = cluster.instances["node"]  # type: ClickHouseInstance

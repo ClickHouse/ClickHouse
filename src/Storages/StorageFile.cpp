@@ -1165,6 +1165,13 @@ void StorageFile::setStorageMetadata(CommonArguments args)
                 }
             }
         }
+
+        if (hive_partition_columns_to_read_from_file_path.size() == storage_columns.size())
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
+        }
     }
 
     // todo arthur change once argument is properly implemented
