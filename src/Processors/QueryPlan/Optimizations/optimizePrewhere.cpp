@@ -215,6 +215,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         filter_node->step = std::make_unique<ExpressionStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr));
+        filter_node->step->setStepDescription(filter_step->getStepDescription());
     }
 }
 
