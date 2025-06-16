@@ -233,8 +233,11 @@ public:
 
     virtual void setRawPath(const Path & path) = 0;
 
-    // todo arthur
-    // it apparently is a list of paths that were used during write so the writer does not lose track of the counter..
+    /*
+     * When using `s3_create_new_file_on_insert`, each new file path generated will be appended to the path list.
+     * This list is used to determine the next file name and the set of files that shall be read from remote storage.
+     * This is not ideal, there are much better ways to implement reads and writes. It should be eventually removed
+     */
     virtual const Paths & getPaths() const = 0;
     virtual void setPaths(const Paths & paths) = 0;
 
