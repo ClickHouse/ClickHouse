@@ -67,8 +67,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.7",
+        {
+
+        });
         addSettingsChanges(settings_changes_history, "25.6",
         {
+            /// RELEASE CLOSED
             {"output_format_native_use_flattened_dynamic_and_json_serialization", false, false, "Add flattened Dynamic/JSON serializations to Native format"},
             {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
@@ -83,7 +88,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_time_series_aggregate_functions", false, false, "New setting to enable experimental timeSeries* aggregate functions."},
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
-
+            /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -772,10 +777,16 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.7",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
         {
+            /// RELEASE CLOSED
             {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
             {"allow_coalescing_columns_in_partition_or_order_key", true, false, "New setting to allow coalescing of partition or sorting key columns."},
+            /// RELEASE CLOSED
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
