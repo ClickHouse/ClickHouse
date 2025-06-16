@@ -238,9 +238,9 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
         serializeOffsets(offsets_data, *stream, offset, end);
     }
 
+    settings.path.back() = Substream::SparseElements;
     if (!offsets_data.empty())
     {
-        settings.path.back() = Substream::SparseElements;
         if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
         {
             const auto & values = column_sparse->getValuesColumn();
@@ -253,6 +253,11 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
             auto values = column.index(*offsets_column, 0);
             nested->serializeBinaryBulkWithMultipleStreams(*values, 0, values->size(), settings, state);
         }
+    }
+    else
+    {
+        auto empty_column = column.cloneEmpty()->convertToFullColumnIfSparse();
+        nested->serializeBinaryBulkWithMultipleStreams(*empty_column, 0, 0, settings, state);
     }
 
     settings.path.pop_back();

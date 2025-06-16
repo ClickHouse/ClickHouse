@@ -306,6 +306,9 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
 
+    /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
+    setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
+
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
     role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
@@ -771,6 +774,15 @@ int AccessControl::getBcryptWorkfactor() const
     return bcrypt_workfactor;
 }
 
+void AccessControl::setEnableUserNameAccessType(bool enable_user_name_access_type_)
+{
+    enable_user_name_access_type = enable_user_name_access_type_;
+}
+
+bool AccessControl::isEnabledUserNameAccessType() const
+{
+    return enable_user_name_access_type;
+}
 
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const
 {

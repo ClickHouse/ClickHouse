@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 offset;
     extern const SettingsBool optimize_skip_unused_shards;
@@ -748,7 +749,7 @@ void executeQueryWithParallelReplicas(
 {
     QueryTreeNodePtr modified_query_tree = query_tree->clone();
     rewriteJoinToGlobalJoin(modified_query_tree, context);
-    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
+    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
 
     auto header
         = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
@@ -1018,6 +1019,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         chassert(local_pipeline);
 
         local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
+        chassert(local_replica_index.has_value());
 
         /// while building local pipeline
         /// - the coordinator is created
@@ -1032,10 +1034,10 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
             std::swap(connection_pools[local_replica_index.value()], connection_pools[snapshot_replica_num.value()]);
             local_replica_index = snapshot_replica_num;
         }
+
+        LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
     }
     connection_pools.resize(max_replicas_to_use);
-
-    LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 
     String formatted_query;
     {
@@ -1054,7 +1056,6 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         formatted_query = buf.str();
     }
 
-    const bool skip_local_replica = local_pipeline.has_value();
     QueryPipeline pipeline;
     if (local_pipeline)
     {
@@ -1067,7 +1068,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
     for (size_t i = 0; i < connection_pools.size(); ++i)
     {
-        if (skip_local_replica && i == *local_replica_index)
+        if (local_replica_index && i == *local_replica_index)
             continue;
 
         IConnections::ReplicaInfo replica_info{
@@ -1095,6 +1096,9 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
         pipeline.addCompletedPipeline(std::move(remote_pipeline));
     }
+
+    /// Otherwise CompletedPipelineExecutor uses 1 thread by default
+    pipeline.setNumThreads(settings[Setting::max_threads]);
 
     return pipeline;
 }

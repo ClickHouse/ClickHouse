@@ -93,7 +93,7 @@ private:
 
     std::optional<RemoteQueryExecutor::Extension> extension;
 
-    void createExtension(const ActionsDAG::Node * predicate);
+    void createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas);
     ContextPtr updateSettings(const Settings & settings);
 };
 
@@ -105,15 +105,19 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    createExtension(predicate);
+    auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
+    if (context->getSettingsRef()[Setting::max_parallel_replicas] > 1)
+        max_replicas_to_use = std::min(max_replicas_to_use, context->getSettingsRef()[Setting::max_parallel_replicas].value);
+
+    createExtension(predicate, max_replicas_to_use);
 }
 
-void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
+void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas)
 {
     if (extension)
         return;
 
-    extension = storage->getTaskIteratorExtension(predicate, context);
+    extension = storage->getTaskIteratorExtension(predicate, context, number_of_replicas);
 }
 
 /// The code executes on initiator
@@ -179,8 +183,6 @@ void IStorageCluster::read(
 
 void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    createExtension(nullptr);
-
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
@@ -189,9 +191,12 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
+    size_t replica_index = 0;
     auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
     if (current_settings[Setting::max_parallel_replicas] > 1)
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
+
+    createExtension(nullptr, max_replicas_to_use);
 
     for (const auto & shard_info : cluster->getShardsInfo())
     {
@@ -210,6 +215,8 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         if (try_results.empty())
             continue;
 
+        IConnections::ReplicaInfo replica_info{ .number_of_current_replica = replica_index++ };
+
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::vector<IConnectionPool::Entry>{try_results.front()},
             query_to_send->formatWithSecretsOneLine(),
@@ -220,7 +227,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             Tables(),
             processed_stage,
             nullptr,
-            extension);
+            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
 
         remote_query_executor->setLogger(log);
         pipes.emplace_back(std::make_shared<RemoteSource>(

@@ -112,6 +112,8 @@ struct FormatSettings
 
     size_t max_threads = 1;
 
+    size_t max_block_size_bytes = 0;
+
     enum class ArrowCompression : uint8_t
     {
         NONE,
@@ -281,6 +283,7 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         bool use_native_reader = false;
+        bool enable_json_parsing = true;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool output_datetime_as_uint32 = false;
@@ -302,6 +305,7 @@ struct FormatSettings
         size_t local_read_min_bytes_for_seek = 8192;
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
+        bool allow_geoparquet_parser = true;
     } parquet{};
 
     struct Pretty
@@ -504,6 +508,7 @@ struct FormatSettings
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
         bool write_json_as_string = false;
+        bool use_flattened_dynamic_and_json_serialization = false;
     } native{};
 
     struct

@@ -6,7 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/SymbolIndex.h>
 #include <Daemon/BaseDaemon.h>
-#include <Daemon/SentryWriter.h>
+#include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
 #include <base/getThreadId.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -578,8 +578,7 @@ try
     {
         if (daemon)
         {
-            if (auto * sentry = SentryWriter::getInstance())
-                sentry->onSignal(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
+            CrashWriter::onSignal(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
         }
 
         /// Advice the user to send it manually.

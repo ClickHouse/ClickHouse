@@ -1075,10 +1075,14 @@ absl_cc_library(
     "${DIR}/internal/address_is_readable.h"
     "${DIR}/internal/elf_mem_image.h"
     "${DIR}/internal/vdso_support.h"
+    "${DIR}/internal/decode_rust_punycode.h"
+    "${DIR}/internal/utf8_for_code_point.h"
   SRCS
     "${DIR}/internal/address_is_readable.cc"
     "${DIR}/internal/elf_mem_image.cc"
     "${DIR}/internal/vdso_support.cc"
+    "${DIR}/internal/decode_rust_punycode.cc"
+    "${DIR}/internal/utf8_for_code_point.cc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -1729,25 +1733,28 @@ absl_cc_library(
     absl::config
     absl::core_headers
     absl::errno_saver
-    absl::inlined_vector
     absl::examine_stack
+    absl::inlined_vector
+    absl::leak_check
     absl::log_internal_append_truncated
     absl::log_internal_format
     absl::log_internal_globals
     absl::log_internal_proto
     absl::log_internal_log_sink_set
     absl::log_internal_nullguard
+    absl::log_internal_structured_proto
     absl::log_globals
     absl::log_entry
     absl::log_severity
     absl::log_sink
     absl::log_sink_registry
     absl::memory
+    absl::nullability
     absl::raw_logging_internal
-    absl::strings
-    absl::strerror
-    absl::time
     absl::span
+    absl::strerror
+    absl::strings
+    absl::time
 )
 
 absl_cc_library(
@@ -2104,8 +2111,11 @@ absl_cc_library(
   LINKOPTS
     ${ABSL_DEFAULT_LINKOPTS}
   DEPS
+    absl::any_invocable
     absl::config
+    absl::core_headers
     absl::log_internal_message
+    absl::log_internal_structured_proto
     absl::strings
 )
 
@@ -2122,6 +2132,26 @@ absl_cc_library(
     absl::config
     absl::log_internal_structured
     absl::strings
+  PUBLIC
+)
+
+absl_cc_library(
+  NAME
+    log_internal_structured_proto
+  SRCS
+    "${DIR}/internal/structured_proto.cc"
+  HDRS
+    "${DIR}/internal/structured_proto.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  LINKOPTS
+    ${ABSL_DEFAULT_LINKOPTS}
+  DEPS
+    absl::log_internal_proto
+    absl::config
+    absl::span
+    absl::strings
+    absl::variant
   PUBLIC
 )
 
@@ -2909,10 +2939,8 @@ absl_cc_library(
     "${DIR}/ascii.h"
     "${DIR}/charconv.h"
     "${DIR}/escaping.h"
-    "${DIR}/has_absl_stringify.h"
     "${DIR}/internal/damerau_levenshtein_distance.h"
     "${DIR}/internal/string_constant.h"
-    "${DIR}/internal/has_absl_stringify.h"
     "${DIR}/match.h"
     "${DIR}/numbers.h"
     "${DIR}/str_cat.h"

@@ -10,7 +10,6 @@ TRUSTED_CONTRIBUTORS = {
         "den-crane",  # Documentation contributor
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
-        "tonickkozlov",  # Cloudflare
         "canhld94",
     ]
 }

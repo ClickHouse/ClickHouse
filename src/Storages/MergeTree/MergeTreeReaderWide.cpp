@@ -380,7 +380,7 @@ void MergeTreeReaderWide::deserializePrefix(
                 return;
 
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
-            if (!streams.contains(*stream_name))
+            if (stream_name && !streams.contains(*stream_name))
                 addStream(substream_path, *stream_name);
         };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);

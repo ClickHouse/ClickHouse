@@ -1,4 +1,4 @@
-#include "CompressedReadBufferBase.h"
+#include <Compression/CompressedReadBufferBase.h>
 
 #include <bit>
 #include <cstring>
@@ -179,8 +179,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     UInt8 header_size = ICompressionCodec::getHeaderSize();
     own_compressed_buffer.resize(header_size + sizeof(Checksum));
-
     compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
+    own_compressed_buffer_header_init = true;
 
     readHeaderAndGetCodecAndSize(
         own_compressed_buffer.data() + sizeof(Checksum),
@@ -233,6 +233,7 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
 
     own_compressed_buffer.resize(header_size + sizeof(Checksum));
     compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
+    own_compressed_buffer_header_init = true;
 
     readHeaderAndGetCodecAndSize(
         own_compressed_buffer.data() + sizeof(Checksum),
@@ -337,7 +338,9 @@ void CompressedReadBufferBase::addDiagnostics(Exception & e) const
     if (auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(compressed_in))
         current_pos = seekable_in->tryGetPosition();
     UInt8 header_size = ICompressionCodec::getHeaderSize();
-    String header_hex = hexString(own_compressed_buffer.data(), std::min(own_compressed_buffer.size(), sizeof(Checksum) + header_size));
+    String header_hex = own_compressed_buffer_header_init ?
+        hexString(own_compressed_buffer.data(), std::min(own_compressed_buffer.size(), sizeof(Checksum) + header_size)) :
+        String("<uninitialized>"); // We do not print uninitialized memory because it's a security vulnerability and triggers msan
 
     e.addMessage("While reading or decompressing {} (position: {}, typename: {}, compressed data header: {})",
                  getFileNameFromReadBuffer(*compressed_in),

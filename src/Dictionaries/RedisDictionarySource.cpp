@@ -23,7 +23,8 @@ namespace DB
 
     void registerDictionarySourceRedis(DictionarySourceFactory & factory)
     {
-        auto create_table_source = [=](const DictionaryStructure & dict_struct,
+        auto create_table_source = [=](const String & /*name*/,
+                                    const DictionaryStructure & dict_struct,
                                     const Poco::Util::AbstractConfiguration & config,
                                     const String & config_prefix,
                                     Block & sample_block,

@@ -91,7 +91,7 @@ Returns the current value of server setting.
         .examples = {
             {"getServerSetting", "SELECT getSetting('page_cache_size_ratio');", "SRLU"},
         },
-        .category{"Other"}}, FunctionFactory::Case::Sensitive);
+        .category = FunctionDocumentation::Category::Other}, FunctionFactory::Case::Sensitive);
 }
 
 }

@@ -31,7 +31,23 @@ using FunctionIntDivOrZero = BinaryArithmeticOverloadResolver<DivideIntegralOrZe
 
 REGISTER_FUNCTION(IntDivOrZero)
 {
-    factory.registerFunction<FunctionIntDivOrZero>();
+    FunctionDocumentation::Description description = R"(
+Same as `intDiv` but returns zero when dividing by zero or when dividing a
+minimal negative number by minus one.
+    )";
+    FunctionDocumentation::Syntax syntax = "intDivOrZero(a, b)";
+    FunctionDocumentation::Argument argument1 = {"a", "Left hand operand."};
+    FunctionDocumentation::Argument argument2 = {"b", "Right hand operand."};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = "Result of integer division of a and b, or zero.";
+    FunctionDocumentation::Example example1 = {"Integer division by zero", "SELECT intDivOrZero(1, 0)","0"};
+    FunctionDocumentation::Example example2 = {"Dividing a minimal negative number by minus 1", "SELECT intDivOrZero(0.05, -1)","0"};
+    FunctionDocumentation::Examples examples = {example1, example2};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+
+    factory.registerFunction<FunctionIntDivOrZero>(documentation);
 }
 
 }

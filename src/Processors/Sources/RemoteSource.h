@@ -60,7 +60,9 @@ private:
     size_t rows = 0;
     bool manually_add_rows_before_limit_counter = false;
     std::atomic_bool preprocessed_packet = false;
+#if defined(OS_LINUX)
     EventFD startup_event_fd;
+#endif
 };
 
 /// Totals source from RemoteQueryExecutor.
