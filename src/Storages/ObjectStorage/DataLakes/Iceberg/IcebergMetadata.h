@@ -91,7 +91,8 @@ protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
-        size_t list_batch_size) const override;
+        size_t list_batch_size,
+        ContextPtr local_context) const override;
 
 private:
     const ObjectStoragePtr object_storage;
@@ -106,7 +107,9 @@ private:
     Int32 last_metadata_version;
     Int32 format_version;
 
+    mutable std::atomic<bool> schema_id_by_data_file_initialized{false};
     mutable std::unordered_map<String, Int32> schema_id_by_data_file;
+    mutable std::mutex schema_id_by_data_file_mutex;
 
 
     Int32 relevant_snapshot_schema_id;
@@ -118,7 +121,7 @@ private:
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed);
 
-    Strings getDataFiles(const ActionsDAG * filter_dag) const;
+    Strings getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
 
     void updateSnapshot(Poco::JSON::Object::Ptr metadata_object);
 
@@ -129,13 +132,13 @@ private:
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
-    void initializeSchemasFromManifestFile(ManifestFileCacheKeys manifest_list_ptr) const;
+    void initializeSchemasFromManifestList(ManifestFileCacheKeys manifest_list_ptr) const;
+
+    void initializeSchemasFromManifestFile(Iceberg::ManifestFilePtr manifest_file_ptr) const;
 
     Iceberg::ManifestFilePtr getManifestFile(const String & filename, Int64 inherited_sequence_number) const;
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
-
-    Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 };
