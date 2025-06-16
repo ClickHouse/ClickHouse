@@ -831,10 +831,10 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
         token_extractor = std::make_unique<DefaultTokenExtractor>();
     else if (tokenizer == NoOpTokenExtractor::getExternalName())
         token_extractor = std::make_unique<NoOpTokenExtractor>();
-    else if (tokenizer == StringTokenExtractor::getExternalName())
+    else if (tokenizer == SplitTokenExtractor::getExternalName())
     {
         std::vector<String> separators = getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "});
-        token_extractor = std::make_unique<StringTokenExtractor>(separators);
+        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
     }
     else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
@@ -861,12 +861,12 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     const bool is_supported_tokenizer = (tokenizer.value() == DefaultTokenExtractor::getExternalName()
                                       || tokenizer.value() == NgramTokenExtractor::getExternalName()
-                                      || tokenizer.value() == StringTokenExtractor::getExternalName()
+                                      || tokenizer.value() == SplitTokenExtractor::getExternalName()
                                       || tokenizer.value() == NoOpTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index '{}' argument supports only 'default', 'ngram', and 'noop', but got {}",
+            "Text index '{}' argument supports only 'default', 'ngram', 'split', and 'no_op', but got {}",
             ARGUMENT_TOKENIZER,
             tokenizer.value());
 
@@ -878,7 +878,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
                 ErrorCodes::INCORRECT_QUERY,
                 "Text index '{}' argument must be between 2 and 8, but got {}", ARGUMENT_NGRAM_SIZE, ngram_size);
     }
-    else if (tokenizer.value() == StringTokenExtractor::getExternalName())
+    else if (tokenizer.value() == SplitTokenExtractor::getExternalName())
     {
         std::optional<DB::FieldVector> separators = getOption<Array>(options, ARGUMENT_SEPARATORS);
         if (separators.has_value())

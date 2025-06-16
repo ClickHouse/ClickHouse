@@ -293,7 +293,7 @@ void DefaultTokenExtractor::substringToGinFilter(const char * data, size_t lengt
             gin_filter.addTerm(data + token_start, token_len);
 }
 
-StringTokenExtractor::StringTokenExtractor(const std::vector<String> & separators_)
+SplitTokenExtractor::SplitTokenExtractor(const std::vector<String> & separators_)
     : separators(separators_)
 {
 }
@@ -317,7 +317,7 @@ bool startsWithSeparator(const char * data, size_t length, size_t pos, const std
 
 }
 
-bool StringTokenExtractor::nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
+bool SplitTokenExtractor::nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
 {
     size_t i = *pos;
     std::string matched_separators;
@@ -344,7 +344,7 @@ bool StringTokenExtractor::nextInString(const char * data, size_t length, size_t
     return true;
 }
 
-bool StringTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
+bool SplitTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
