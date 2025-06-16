@@ -161,6 +161,48 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
+    if (engine_args.size() < 2 || engine_args.size() > getMaxNumberOfArguments(with_structure))
+    {
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage AzureBlobStorage requires 2 to {} arguments. All supported signatures:\n{}",
+            getMaxNumberOfArguments(with_structure),
+            getSignatures(with_structure));
+    }
+
+    if (engine_args.size() == 2)
+    {
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+        String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
+        String sas_token = checkAndGetLiteralArgument<String>(engine_args[1], "sas_token");
+        String container_name;
+        std::optional<String> account_name;
+        std::optional<String> account_key;
+
+        auto pos_container = connection_url.find(".net");
+
+        if (pos_container != std::string::npos)
+        {
+            String container_blob_path = connection_url.substr(pos_container+5,connection_url.size());
+            connection_url = connection_url.substr(0,pos_container+4);
+            container_name = connection_url.substr(pos_container+4, connection_url.size());
+            auto pos_blob_path = container_blob_path.find('/');
+
+            if (pos_blob_path != std::string::npos)
+            {
+                container_name = container_blob_path.substr(0, pos_blob_path);
+                blob_path = container_blob_path.substr(pos_blob_path,container_blob_path.size());
+            }
+        }
+
+        blobs_paths = {blob_path};
+        connection_params = getConnectionParams(connection_url+"?"+sas_token, container_name, account_name, account_key, context);
+        connection_params.endpoint.sas_auth = sas_token;
+
+        return;
+    }
+
     if (engine_args.size() < 3 || engine_args.size() > getMaxNumberOfArguments(with_structure))
     {
         throw Exception(
