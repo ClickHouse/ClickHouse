@@ -169,10 +169,10 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
-Minimum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
+Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, min_joined_block_size_bytes, 524288, R"(
-Minimum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
+Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
