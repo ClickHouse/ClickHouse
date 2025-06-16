@@ -17,11 +17,13 @@ Converts a date or date with time to the number of quarters elapsed since a cert
     FunctionDocumentation::Syntax syntax_toRelativeQuarterNum = R"(
 toRelativeQuarterNum(date)
     )";
-    FunctionDocumentation::Arguments arguments_toRelativeQuarterNum = {
+    FunctionDocumentation::Arguments arguments_toRelativeQuarterNum =
+    {
         {"date", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_toRelativeQuarterNum = "Returns the number of quarters from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_toRelativeQuarterNum = {
+    FunctionDocumentation::Examples examples_toRelativeQuarterNum =
+    {
         {"Get relative quarter numbers", R"(
 SELECT
   toRelativeQuarterNum(toDate('1993-11-25')) AS q1,
@@ -35,7 +37,8 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_toRelativeQuarterNum = {1, 1};
     FunctionDocumentation::Category category_toRelativeQuarterNum = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toRelativeQuarterNum = {
+    FunctionDocumentation documentation_toRelativeQuarterNum =
+    {
         description_toRelativeQuarterNum,
         syntax_toRelativeQuarterNum,
         arguments_toRelativeQuarterNum,

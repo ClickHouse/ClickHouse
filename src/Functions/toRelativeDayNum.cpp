@@ -17,11 +17,13 @@ Converts a date or date with time to the number of days elapsed since a certain 
     FunctionDocumentation::Syntax syntax_toRelativeDayNum = R"(
 toRelativeDayNum(date)
     )";
-    FunctionDocumentation::Arguments arguments_toRelativeDayNum = {
+    FunctionDocumentation::Arguments arguments_toRelativeDayNum =
+    {
         {"date", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_toRelativeDayNum = "Returns the number of days from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_toRelativeDayNum = {
+    FunctionDocumentation::Examples examples_toRelativeDayNum =
+    {
         {"Get relative day numbers", R"(
 SELECT
   toRelativeDayNum(toDate('1993-10-05')) AS d1,
@@ -35,7 +37,8 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_toRelativeDayNum = {1, 1};
     FunctionDocumentation::Category category_toRelativeDayNum = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toRelativeDayNum = {
+    FunctionDocumentation documentation_toRelativeDayNum =
+    {
         description_toRelativeDayNum,
         syntax_toRelativeDayNum,
         arguments_toRelativeDayNum,

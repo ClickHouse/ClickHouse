@@ -17,11 +17,13 @@ Converts a date or date with time to the number of minutes elapsed since a certa
     FunctionDocumentation::Syntax syntax_toRelativeMinuteNum = R"(
 toRelativeMinuteNum(date)
     )";
-    FunctionDocumentation::Arguments arguments_toRelativeMinuteNum = {
+    FunctionDocumentation::Arguments arguments_toRelativeMinuteNum =
+    {
         {"date", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_toRelativeMinuteNum = "Returns the number of minutes from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_toRelativeMinuteNum = {
+    FunctionDocumentation::Examples examples_toRelativeMinuteNum =
+    {
         {"Get relative minute numbers", R"(
 SELECT
   toRelativeMinuteNum(toDateTime('1993-10-05 05:20:36')) AS m1,
@@ -35,7 +37,8 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_toRelativeMinuteNum = {1, 1};
     FunctionDocumentation::Category category_toRelativeMinuteNum = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toRelativeMinuteNum = {
+    FunctionDocumentation documentation_toRelativeMinuteNum =
+    {
         description_toRelativeMinuteNum,
         syntax_toRelativeMinuteNum,
         arguments_toRelativeMinuteNum,
