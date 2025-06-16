@@ -10,7 +10,7 @@ import time
 import sys
 
 sys.path.append("..")
-from integration.helpers.cluster import is_port_free
+from integration.helpers.cluster import is_port_free, ZOOKEEPER_CONTAINERS
 
 
 # Needs to get free ports before importing ClickHouseCluster
@@ -372,6 +372,22 @@ def dolor_cleanup():
 atexit.register(dolor_cleanup)
 time.sleep(3)
 
+integrations = ["zookeeper", "zookeeper"]
+if args.with_minio:
+    integrations.append("minio")
+if args.with_nginx:
+    integrations.append("nginx")
+if args.with_azurite:
+    integrations.append("azurite")
+if args.with_postgresql:
+    integrations.append("postgres")
+if args.with_mysql:
+    integrations.append("mysql8")
+if args.with_mongodb:
+    integrations.append("mongo")
+if args.with_redis:
+    integrations.append("redis")
+
 # This is the main loop, run while client and server are running
 all_running = True
 lower_bound, upper_bound = args.time_between_shutdowns
@@ -396,11 +412,11 @@ while all_running:
     if not all_running:
         break
 
+    kill_server = random.randint(1, 100) <= args.kill_server_prob
     # Pick one of the servers to restart
-    what_to_restart = random.choice(["ClickHouse", "Zookeeper"])
-    if what_to_restart == "ClickHouse":
+    # 50% chance to restart ClickHouse
+    if len(integrations) == 0 or random.randint(1, 2) == 1:
         next_pick = random.choice(servers)
-        kill_server = random.randint(1, 100) <= args.kill_server_prob
         logger.info(
             f"Restarting the server {next_pick.name} with {"kill" if kill_server else "manual shutdown"}"
         )
@@ -429,15 +445,39 @@ while all_running:
             os.rename(new_temp_server_path, server_path)
         time.sleep(15)  # Let the zookeeper session expire
         next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
-    elif what_to_restart == "Zookeeper":
-        choosen_keepers = []
-        keeper_choices = ["zoo1", "zoo2", "zoo3"]
+    else:
+        # 50% chance to restart any other integration
+        next_pick = random.choice(integrations)
+        choosen_instances = []
+        restart_choices = []
 
-        random.shuffle(keeper_choices)
-        for i in range(0, random.randint(1, len(keeper_choices))):
-            choosen_keepers.append(keeper_choices[i])
-        logger.info(f"Restarting the keeper servers {', '.join(choosen_keepers)}")
-        cluster.kill_zookeeper_nodes(choosen_keepers)
-        cluster.start_zookeeper_nodes(choosen_keepers)
+        if next_pick == "zookeeper":
+            restart_choices = list(ZOOKEEPER_CONTAINERS)
+        elif next_pick == "minio":
+            restart_choices = ["minio1"]
+        elif next_pick == "nginx":
+            restart_choices = ["nginx"]
+        elif next_pick == "azurite":
+            restart_choices = ["azurite1"]
+        elif next_pick == "postgres":
+            restart_choices = ["postgres1"]
+        elif next_pick == "mysql8":
+            restart_choices = ["mysql80"]
+        elif next_pick == "mongo":
+            restart_choices = ["mongo1", "mongo_no_cred", "mongo_secure"]
+        elif next_pick == "redis":
+            restart_choices = ["redis1"]
+
+        random.shuffle(restart_choices)
+        for i in range(0, random.randint(1, len(restart_choices))):
+            choosen_instances.append(restart_choices[i])
+        logger.info(
+            f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {"kill" if kill_server else "manual shutdown"}"
+        )
+
+        cluster.process_integration_nodes(
+            next_pick, choosen_instances, "kill" if kill_server else "stop"
+        )
+        cluster.process_integration_nodes(next_pick, choosen_instances, "start")
 
 cluster.shutdown()
