@@ -84,10 +84,7 @@ struct FormatSettings
         Numeric
     };
 
-    struct
-    {
-        IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
-    } interval{};
+    IntervalOutputFormat interval_output_format = IntervalOutputFormat::Numeric;
 
     enum class DateTimeOverflowBehavior : uint8_t
     {
