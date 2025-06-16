@@ -82,23 +82,8 @@ namespace
 
         return result;
     }
-}
 
-PartitionStrategy::PartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
-: partition_by(partition_by_), sample_block(sample_block_), context(context_)
-{
-    auto key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context);
-    partition_columns = key_description.sample_block.getNamesAndTypesList();
-}
-
-const NamesAndTypesList & PartitionStrategy::getPartitionColumns() const
-{
-    return partition_columns;
-}
-
-struct HivePartitionStrategyFactory
-{
-    static std::shared_ptr<PartitionStrategy> get(
+    std::shared_ptr<PartitionStrategy> createHivePartitionStrategy(
         ASTPtr partition_by,
         const Block & sample_block,
         ContextPtr context,
@@ -128,11 +113,8 @@ struct HivePartitionStrategyFactory
             file_format,
             partition_columns_in_data_file);
     }
-};
 
-struct WildcardPartitionStrategyFactory
-{
-    static std::shared_ptr<PartitionStrategy> get(
+    std::shared_ptr<PartitionStrategy> createWildcardPartitionStrategy(
         ASTPtr partition_by,
         const Block & sample_block,
         ContextPtr context,
@@ -151,9 +133,21 @@ struct WildcardPartitionStrategyFactory
         // in theory, we should not accept wildcard partition strategy without a wildcard in the path
         // but it has been made that way by default, it just won't include the partition id in the filepath
 
-        return std::make_shared<StringifiedPartitionStrategy>(partition_by, sample_block, context);
+        return std::make_shared<WildcardPartitionStrategy>(partition_by, sample_block, context);
     }
-};
+}
+
+PartitionStrategy::PartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
+: partition_by(partition_by_), sample_block(sample_block_), context(context_)
+{
+    auto key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context);
+    partition_columns = key_description.sample_block.getNamesAndTypesList();
+}
+
+const NamesAndTypesList & PartitionStrategy::getPartitionColumns() const
+{
+    return partition_columns;
+}
 
 std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
                                                                  ASTPtr partition_by,
@@ -165,7 +159,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType st
 {
     if (strategy == StrategyType::HIVE)
     {
-        return HivePartitionStrategyFactory::get(
+        return createHivePartitionStrategy(
             partition_by,
             sample_block,
             context,
@@ -176,7 +170,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType st
 
     if (strategy == StrategyType::WILDCARD)
     {
-        return WildcardPartitionStrategyFactory::get(partition_by, sample_block, context, partition_columns_in_data_file);
+        return createWildcardPartitionStrategy(partition_by, sample_block, context, partition_columns_in_data_file);
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -201,7 +195,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType st
     return get(strategy, partition_by, block, context, file_format, globbed_path, partition_columns_in_data_file);
 }
 
-StringifiedPartitionStrategy::StringifiedPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
+WildcardPartitionStrategy::WildcardPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
     : PartitionStrategy(partition_by_, sample_block_, context_)
 {
     ASTs arguments(1, partition_by);
@@ -211,7 +205,7 @@ StringifiedPartitionStrategy::StringifiedPartitionStrategy(ASTPtr partition_by_,
     actions_with_column_name.column_name = partition_by_string->getColumnName();
 }
 
-ColumnPtr StringifiedPartitionStrategy::computePartitionKey(const Chunk & chunk)
+ColumnPtr WildcardPartitionStrategy::computePartitionKey(const Chunk & chunk)
 {
     Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
     block_with_partition_by_expr.setColumns(chunk.getColumns());
@@ -220,13 +214,13 @@ ColumnPtr StringifiedPartitionStrategy::computePartitionKey(const Chunk & chunk)
     return block_with_partition_by_expr.getByName(actions_with_column_name.column_name).column;
 }
 
-std::string StringifiedPartitionStrategy::getPathForRead(
+std::string WildcardPartitionStrategy::getPathForRead(
     const std::string & prefix)
 {
     return prefix;
 }
 
-std::string StringifiedPartitionStrategy::getPathForWrite(
+std::string WildcardPartitionStrategy::getPathForWrite(
     const std::string & prefix,
     const std::string & partition_key)
 {

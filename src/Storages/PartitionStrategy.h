@@ -10,7 +10,7 @@ namespace DB
 
 /*
  * Class responsible for computing and generating a partition key for object storage.
- * As of now, there are two possible implementations: hive and stringfied.
+ * As of now, there are two possible implementations: hive and wildcard.
  *
  * It also offers some helper APIs like `getFormatChunk` and `getFormatHeader`. Required mostly because of `hive` strategy
  * since the default behavior is not to write partition columns in the files and rely only on the filepath.
@@ -80,9 +80,9 @@ struct PartitionStrategyFactory
  * It is the previous & existing implementation for object storage partitioned writes.
  * It simply wraps the partition expression with a `toString` function call
  */
-struct StringifiedPartitionStrategy : PartitionStrategy
+struct WildcardPartitionStrategy : PartitionStrategy
 {
-    StringifiedPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_);
+    WildcardPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_);
 
     ColumnPtr computePartitionKey(const Chunk & chunk) override;
     std::string getPathForRead(const std::string & prefix) override;
