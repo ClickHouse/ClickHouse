@@ -101,6 +101,7 @@ public:
     NameSet getNameSet() const;
     DataTypes getTypes() const;
 
+    /// Creates a mapping from name to the actual name and type pair
     std::unordered_map<std::string, NameAndTypePair> getNameToPairMap() const;
 
     /// Remove columns which names are not in the `names`.
