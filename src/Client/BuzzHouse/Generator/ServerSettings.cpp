@@ -333,6 +333,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_reads_from_query_cache", trueOrFalseSetting},
     {"enable_s3_requests_logging", trueOrFalseSettingNoOracle},
     {"enable_scalar_subquery_optimization", trueOrFalseSetting},
+    {"enable_shared_storage_snapshot_in_query", trueOrFalseSetting},
     {"enable_sharing_sets_for_mutations", trueOrFalseSetting},
     {"enable_software_prefetch_in_aggregation", trueOrFalseSetting},
     {"enable_unaligned_array_join", trueOrFalseSetting},
