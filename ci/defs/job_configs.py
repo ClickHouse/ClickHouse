@@ -321,7 +321,7 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            [ArtifactNames.CH_AMD_ASAN],
+            [ArtifactNames.CH_AMD_ASAN, ArtifactNames.LEXER_AMD_ASAN],
         ],
     )
     bugfix_validation_ft_pr_job = Job.Config(
