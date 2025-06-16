@@ -430,12 +430,14 @@ while all_running:
         time.sleep(15)  # Let the zookeeper session expire
         next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
     elif what_to_restart == "Zookeeper":
+        choosen_keepers = []
         keeper_choices = ["zoo1", "zoo2", "zoo3"]
-        number_servers = random.randint(1, len(keeper_choices))
 
         random.shuffle(keeper_choices)
-        logger.info(f"Restarting the keeper servers {','.join(keeper_choices)}")
-        cluster.kill_zookeeper_nodes(keeper_choices)
-        cluster.start_zookeeper_nodes(keeper_choices)
+        for i in range(0, random.randint(1, len(keeper_choices))):
+            choosen_keepers.append(keeper_choices[i])
+        logger.info(f"Restarting the keeper servers {', '.join(choosen_keepers)}")
+        cluster.kill_zookeeper_nodes(choosen_keepers)
+        cluster.start_zookeeper_nodes(choosen_keepers)
 
 cluster.shutdown()
