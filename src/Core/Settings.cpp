@@ -3113,7 +3113,7 @@ from `String` and `Array` arguments:
 Memory consumption is also restricted by the parameters [`max_memory_usage_for_user`](/operations/settings/settings#max_memory_usage_for_user)
 and [`max_server_memory_usage`](/operations/server-configuration-parameters/settings#max_server_memory_usage).
 )", 0) \
-    DECLARE(UInt64, memory_overcommit_ratio_denominator, 100000_GiB, R"(
+    DECLARE(UInt64, memory_overcommit_ratio_denominator, 1_GiB, R"(
 It represents the soft memory limit when the hard limit is reached on the global level.
 This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
@@ -3138,7 +3138,7 @@ You can verify it worked by logging out of your client, logging back in, then us
 SELECT getSetting('max_memory_usage_for_user');
 ```
 )", 0) \
-    DECLARE(UInt64, memory_overcommit_ratio_denominator_for_user, 100000_GiB, R"(
+    DECLARE(UInt64, memory_overcommit_ratio_denominator_for_user, 1_GiB, R"(
 It represents the soft memory limit when the hard limit is reached on the user level.
 This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
@@ -3174,7 +3174,7 @@ Possible values:
 - 0 — Tracing of profile events disabled.
 )", 0) \
     \
-    DECLARE(UInt64, memory_usage_overcommit_max_wait_microseconds, 5'000'000'000'000'000, R"(
+    DECLARE(UInt64, memory_usage_overcommit_max_wait_microseconds, 5'000'000, R"(
 Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
 If the timeout is reached and memory is not freed, an exception is thrown.
 Read more about [memory overcommit](memory-overcommit.md).
@@ -7019,7 +7019,7 @@ void SettingsImpl::setProfile(const String & profile_name, const Poco::Util::Abs
     {
         if (key == "constraints")
             continue;
-        if (key == "profile" || key.starts_with("profile["))/// Inheritance of profiles from the current one.
+        if (key == "profile" || key.starts_with("profile["))  /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             set(key, config.getString(elem + "." + key));
@@ -7076,15 +7076,12 @@ void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfi
         bool should_skip_check = name == "max_table_size_to_drop" || name == "max_partition_size_to_drop";
         if (config.has(name) && (setting.getTier() != SettingsTierType::OBSOLETE) && !should_skip_check)
         {
-            throw Exception(
-                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-                "A setting '{}' appeared at top level in config {}."
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
                 " You can add it to <profiles><default> if you want to change default value of this setting."
                 " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
                 " in the main configuration file.",
-                name,
-                config_path);
+                name, config_path);
         }
     }
 }
@@ -7102,10 +7099,7 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     if (name == "compatibility")
     {
         if (value.getType() != Field::Types::Which::String)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected type of value for setting 'compatibility'. Expected String, got {}",
-                value.getTypeName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'compatibility'. Expected String, got {}", value.getTypeName());
         applyCompatibilitySetting(value.safeGet<String>());
     }
     /// If we change setting that was changed by compatibility setting before
@@ -7158,29 +7152,27 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
     }
 }
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) Settings##TYPE NAME = &SettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    Settings ## TYPE NAME = & SettingsImpl :: NAME;
 
 namespace Setting
 {
-LIST_OF_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN) /// NOLINT (misc-use-internal-linkage)
+    LIST_OF_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)  /// NOLINT (misc-use-internal-linkage)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
 
 Settings::Settings()
     : impl(std::make_unique<SettingsImpl>())
-{
-}
+{}
 
 Settings::Settings(const Settings & settings)
     : impl(std::make_unique<SettingsImpl>(*settings.impl))
-{
-}
+{}
 
 Settings::Settings(Settings && settings) noexcept
     : impl(std::make_unique<SettingsImpl>(std::move(*settings.impl)))
-{
-}
+{}
 
 Settings::~Settings() = default;
 
@@ -7393,13 +7385,13 @@ void Settings::addToProgramOptions(std::string_view setting_name, boost::program
     const auto & accessor = SettingsImpl::Traits::Accessor::instance();
     size_t index = accessor.find(setting_name);
     chassert(index != static_cast<size_t>(-1));
-    auto on_program_option
-        = boost::function1<void, const std::string &>([this, setting_name](const std::string & value) { this->set(setting_name, value); });
-    options.add(
-        boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-            setting_name.data(),
-            boost::program_options::value<std::string>()->composing()->notifier(on_program_option),
-            accessor.getDescription(index)))); // NOLINT
+    auto on_program_option = boost::function1<void, const std::string &>(
+            [this, setting_name](const std::string & value)
+            {
+                this->set(setting_name, value);
+            });
+    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+            setting_name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), accessor.getDescription(index)))); // NOLINT
 }
 
 void Settings::addToProgramOptionsAsMultitokens(boost::program_options::options_description & options) const
@@ -7407,8 +7399,7 @@ void Settings::addToProgramOptionsAsMultitokens(boost::program_options::options_
     addProgramOptionsAsMultitokens(*impl, options);
 }
 
-void Settings::addToClientOptions(
-    Poco::Util::LayeredConfiguration & config, const boost::program_options::variables_map & options, bool repeated_settings) const
+void Settings::addToClientOptions(Poco::Util::LayeredConfiguration & config, const boost::program_options::variables_map & options, bool repeated_settings) const
 {
     for (const auto & setting : impl->all())
     {
