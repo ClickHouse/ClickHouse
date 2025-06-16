@@ -34,8 +34,8 @@ Constructs a NumericIndexedVector from two data columns and returns the sum of a
 **Syntax**
 
 ```sql
-groupNumericIndexedVector(col1, col2)
-groupNumericIndexedVector(type, integer_bit_num, fraction_bit_num)(col1, col2)
+groupNumericIndexedVectorState(col1, col2)
+groupNumericIndexedVectorState(type, integer_bit_num, fraction_bit_num)(col1, col2)
 ```
 
 **Parameters**
@@ -79,6 +79,11 @@ SELECT groupNumericIndexedVectorStateIf(UserID, PlayTime, day = '2025-04-22') as
 ┌─res─┬─toTypeName(res)────────────────────────────────────────────┬─numericIndexedVectorAllValueSum(res)──┐
 │     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │ 30                                    │
 └─────┴────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
+
+SELECT groupNumericIndexedVectorStateIf('BSI', 32, 0)(UserID, PlayTime, day = '2025-04-22') as res, toTypeName(res), numericIndexedVectorAllValueSum(res) FROM t;
+┌─res─┬─toTypeName(res)──────────────────────────────────────────────────────────┬─numericIndexedVectorAllValueSum(res)──┐
+│     │ AggregateFunction('BSI', 32, 0)(groupNumericIndexedVector, UInt8, UInt8) │ 30                                    │
+└─────┴──────────────────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
 ## numericIndexedVectorBuild {#numeric-indexed-vector-build}
