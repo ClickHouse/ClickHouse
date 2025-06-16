@@ -6,8 +6,9 @@ EXCEPTION_CODE_HEADER = "X-ClickHouse-Exception-Code"
 TRANSFER_ENCODING_HEADER = "Transfer-Encoding"
 CONNECTION_HEADER = "Connection"
 HTTP_STATUS_STRING = "HTTP status string"
+CLIENT_EXCEPTION = "client exception"
 
-INTERESTING_SET = set((EXCEPTION_CODE_HEADER, TRANSFER_ENCODING_HEADER, CONNECTION_HEADER, HTTP_STATUS_STRING))
+INTERESTING_SET = set((EXCEPTION_CODE_HEADER, TRANSFER_ENCODING_HEADER, CONNECTION_HEADER, HTTP_STATUS_STRING, CLIENT_EXCEPTION))
 
 
 def main():
@@ -27,32 +28,37 @@ def main():
     s += "X" * 100000
     sock.sendall(s.encode())
     data = ""
+
+    extraction = []
+
     while 1:
-        data_part = sock.recv(10000).decode()
-        if not data_part:
+        try:
+            piece = sock.recv(10000).decode()
+        except ConnectionResetError as e:
+            extraction.append((CLIENT_EXCEPTION, str(e)))
             break
-        data += data_part
+        if not piece:
+            break
+        data += piece
     sock.close()
 
     lines = data.splitlines()
 
-
-    headers = []
     for x in lines:
         x = x.strip()
         if not x:
             continue
 
         if x.startswith("HTTP/1.1"):
-            headers.append(("HTTP status string", x))
+            extraction.append(("HTTP status string", x))
 
         tokens = x.split(":", 1)
         if len(tokens) < 2:
             continue
         key, val = tokens
-        headers.append((key.strip(), val.strip()))
+        extraction.append((key.strip(), val.strip()))
 
-    for k, v in headers:
+    for k, v in extraction:
         if k in INTERESTING_SET:
             print(k, ":", v)
 

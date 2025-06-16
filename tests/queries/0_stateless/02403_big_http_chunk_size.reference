@@ -1,6 +1,5 @@
+client exception : [Errno 104] Connection reset by peer
 HTTP status string : HTTP/1.1 500 Internal Server Error
-Connection : Keep-Alive
+Connection : Close
 Transfer-Encoding : chunked
 X-ClickHouse-Exception-Code : 69
-HTTP status string : HTTP/1.1 400 Bad Request
-Connection : Close
