@@ -134,6 +134,7 @@ namespace ErrorCodes
     extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
+    extern const int INCORRECT_DATA;
 }
 
 using String = std::string;
