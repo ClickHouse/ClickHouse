@@ -670,7 +670,8 @@ void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
     std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
 }
 
-void ReadFromEmbeddedRocksDB::describeActions(FormatSettings & format_settings) const {
+void ReadFromEmbeddedRocksDB::describeActions(FormatSettings & format_settings) const
+{
     std::string prefix(format_settings.offset, format_settings.indent_char);
     if (!all_scan)
     {

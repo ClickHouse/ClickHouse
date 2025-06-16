@@ -747,7 +747,8 @@ Strings ReadFromKeeperMap::getAllKeys() const
     return children;
 }
 
-void ReadFromKeeperMap::describeActions(FormatSettings & format_settings) const {
+void ReadFromKeeperMap::describeActions(FormatSettings & format_settings) const
+{
     std::string prefix(format_settings.offset, format_settings.indent_char);
     if (!all_scan)
     {
