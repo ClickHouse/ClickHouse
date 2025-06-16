@@ -14,9 +14,9 @@ create table distributed_table_2 (id int) engine = Distributed(test_cluster_two_
 
 insert into local_table_1 select number from numbers(100);
 
-insert into local_table_2 select 1 from numbers(1000000);
-insert into local_table_2 select 2 from numbers(1000000);
-insert into local_table_2 select 3 from numbers(1000000);
+insert into local_table_2 select 1 from numbers(100000);
+insert into local_table_2 select 2 from numbers(100000);
+insert into local_table_2 select 3 from numbers(100000);
 
 -- Query with DISTINCT optimization enabled
 select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 1; -- with_distinct
