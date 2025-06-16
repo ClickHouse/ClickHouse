@@ -345,7 +345,8 @@ class ClickHouseProc:
             self.minio_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
+            self.minio_proc.wait()
+        print(f"Started setup_minio.sh with PID {self.minio_proc.pid}")
         return True
 
     def start_azurite(self):
@@ -356,7 +357,8 @@ class ClickHouseProc:
             self.azurite_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
-        print(f"Started azurite asynchronously with PID {self.azurite_proc.pid}")
+            self.azurite_proc.wait()
+        print(f"Started azurite with PID {self.azurite_proc.pid}")
         return True
 
     @staticmethod
