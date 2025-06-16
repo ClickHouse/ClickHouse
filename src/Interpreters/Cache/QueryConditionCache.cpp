@@ -1,6 +1,5 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
@@ -9,19 +8,13 @@ namespace ProfileEvents
 {
     extern const Event QueryConditionCacheHits;
     extern const Event QueryConditionCacheMisses;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric QueryConditionCacheBytes;
-    extern const Metric QueryConditionCacheEntries;
-}
+};
 
 namespace DB
 {
 
 QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-    : cache(cache_policy, CurrentMetrics::QueryConditionCacheBytes, CurrentMetrics::QueryConditionCacheEntries, max_size_in_bytes, 0, size_ratio)
+    : cache(cache_policy, max_size_in_bytes, 0, size_ratio)
 {
 }
 

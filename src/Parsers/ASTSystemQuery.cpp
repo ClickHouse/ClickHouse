@@ -115,10 +115,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         chassert(table);
         table->format(ostr, settings, state, frame);
-
-        if (if_exists)
-            print_keyword(" IF EXISTS");
-
         return ostr;
     };
 

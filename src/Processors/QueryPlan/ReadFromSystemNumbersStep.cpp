@@ -4,7 +4,6 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Sources/NullSource.h>

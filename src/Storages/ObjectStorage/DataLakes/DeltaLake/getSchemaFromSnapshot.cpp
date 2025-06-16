@@ -137,6 +137,8 @@ private:
     const LoggerPtr log = getLogger("SchemaVisitor");
 
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
+    using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
+
 };
 
 /**
@@ -159,10 +161,10 @@ public:
     }
 
     static void visitReadSchema(
-        ffi::SharedScan * scan,
+        ffi::SharedGlobalScanState * scan_state,
         SchemaVisitorData & data)
     {
-        KernelSharedSchema schema(ffi::scan_physical_schema(scan));
+        KernelSharedSchema schema(ffi::get_global_read_schema(scan_state));
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
@@ -473,10 +475,10 @@ std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(f
     return {result.names_and_types, result.physical_names_map};
 }
 
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan)
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedGlobalScanState * scan_state)
 {
     SchemaVisitorData data;
-    SchemaVisitor::visitReadSchema(scan, data);
+    SchemaVisitor::visitReadSchema(scan_state, data);
     return data.getSchemaResult().names_and_types;
 }
 

@@ -35,6 +35,8 @@ public:
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
+    String getContentType() const override { return "application/octet-stream"; }
+
 private:
     struct MemoryToken
     {

@@ -8,7 +8,6 @@
 
 #include <Core/Block.h>
 #include <Core/Protocol.h>
-#include <Core/Settings.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/MemoryTracker.h>
@@ -59,7 +58,6 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -344,8 +342,6 @@ ClientBase::ClientBase(
     : stdin_fd(in_fd_)
     , stdout_fd(out_fd_)
     , stderr_fd(err_fd_)
-    , cmd_settings(std::make_unique<Settings>())
-    , cmd_merge_tree_settings(std::make_unique<MergeTreeSettings>())
     , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
     , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
     , progress_indication(output_stream_, in_fd_, err_fd_)
@@ -1981,7 +1977,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     sendDataFromPipe(std::move(pipe), parsed_query, have_more_data);
 }
 
-void ClientBase::sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_more_data)
+void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_more_data)
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
@@ -2584,7 +2580,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 if (query_fuzzer_runs)
                 {
-                    if (!processWithASTFuzzer(full_query))
+                    if (!processWithFuzzing(full_query))
                         return false;
 
                     this_query_begin = this_query_end;
@@ -2795,7 +2791,7 @@ bool ClientBase::processQueryText(const String & text)
 
     if (query_fuzzer_runs)
     {
-        processWithASTFuzzer(text);
+        processWithFuzzing(text);
         return true;
     }
 
@@ -2837,7 +2833,7 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
         || !ast_create.storage->engine->name.contains("MergeTree"))
         return false;
 
-    auto all_changed = cmd_merge_tree_settings->changes();
+    auto all_changed = cmd_merge_tree_settings.changes();
     if (all_changed.begin() == all_changed.end())
         return false;
 
@@ -2985,14 +2981,14 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 void ClientBase::addSettingsToProgramOptionsAndSubscribeToChanges(OptionsDescription & options_description)
 {
     if (allow_repeated_settings)
-        cmd_settings->addToProgramOptionsAsMultitokens(options_description.main_description.value());
+        cmd_settings.addToProgramOptionsAsMultitokens(options_description.main_description.value());
     else
-        cmd_settings->addToProgramOptions(options_description.main_description.value());
+        cmd_settings.addToProgramOptions(options_description.main_description.value());
 
     if (allow_merge_tree_settings)
     {
         auto & main_options = options_description.main_description.value();
-        cmd_merge_tree_settings->addToProgramOptionsIfNotPresent(main_options, allow_repeated_settings);
+        cmd_merge_tree_settings.addToProgramOptionsIfNotPresent(main_options, allow_repeated_settings);
     }
 }
 
@@ -3434,7 +3430,7 @@ void ClientBase::runNonInteractive()
         {
             if (query_fuzzer_runs)
             {
-                if (!processWithASTFuzzer(query))
+                if (!processWithFuzzing(query))
                     return;
             }
             else
@@ -3452,7 +3448,7 @@ void ClientBase::runNonInteractive()
         String text;
         readStringUntilEOF(text, in);
         if (query_fuzzer_runs)
-            processWithASTFuzzer(text);
+            processWithFuzzing(text);
         else
             processQueryText(text);
     }

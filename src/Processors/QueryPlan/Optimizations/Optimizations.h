@@ -135,7 +135,7 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-bool optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, size_t max_limit_for_lazy_materialization);
+void optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, size_t max_limit_for_lazy_materialization);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);

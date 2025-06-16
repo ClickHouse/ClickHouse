@@ -121,12 +121,6 @@ public:
                 "Left keys: [{}] Right keys [{}] Condition columns: '{}', '{}'",
                  fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "), left_cond, right_cond);
         }
-
-        bool isEmpty() const
-        {
-            return key_names_left.empty() && key_names_right.empty() && !on_filter_condition_left && !on_filter_condition_right
-                && analyzer_left_filter_condition_column_name.empty() && analyzer_right_filter_condition_column_name.empty();
-        }
     };
 
     using Clauses = std::vector<JoinOnClause>;

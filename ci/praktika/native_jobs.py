@@ -35,26 +35,15 @@ _workflow_config_job = Job.Config(
     timeout=600,
 )
 
-_docker_build_manifest_job = Job.Config(
-    name=Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
-    runs_on=Settings.DOCKER_MERGE_RUNS_ON,
+_docker_build_job = Job.Config(
+    name=Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+    runs_on=Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
     job_requirements=Job.Requirements(
         python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
         python_requirements_txt="",
     ),
     timeout=int(5.5 * 3600),
-    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_MANIFEST_JOB_NAME}'",
-)
-
-_docker_build_amd_linux_job = Job.Config(
-    name=Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
-    runs_on=Settings.DOCKER_BUILD_AMD_RUNS_ON,
-    job_requirements=Job.Requirements(
-        python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
-        python_requirements_txt="",
-    ),
-    timeout=int(5.5 * 3600),
-    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME}'",
+    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME}'",
 )
 
 _docker_build_arm_linux_job = Job.Config(
@@ -83,9 +72,8 @@ _final_job = Job.Config(
 def _is_praktika_job(job_name):
     if job_name in (
         Settings.CI_CONFIG_JOB_NAME,
-        Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
+        Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
         Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
-        Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         Settings.FINISH_WORKFLOW_JOB_NAME,
     ):
         return True
@@ -136,10 +124,7 @@ def _build_dockers(workflow, job_name):
             job_status = Result.Status.FAILED
             job_info = "Failed to login to dockerhub"
 
-    if (
-        job_status == Result.Status.SUCCESS
-        and job_name != Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
-    ):
+    if job_status == Result.Status.SUCCESS:
         for docker in dockers:
             if amd_only and Docker.Platforms.AMD not in docker.platforms:
                 continue
@@ -159,6 +144,7 @@ def _build_dockers(workflow, job_name):
                     digests=docker_digests,
                     amd_only=amd_only,
                     arm_only=arm_only,
+                    with_log=True,
                 )
             )
             if results[-1].is_ok():
@@ -169,7 +155,7 @@ def _build_dockers(workflow, job_name):
 
     if (
         job_status == Result.Status.SUCCESS
-        and job_name == Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
+        and job_name == Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME
     ):
         print("Start docker manifest merge")
         for docker in dockers:
@@ -178,7 +164,7 @@ def _build_dockers(workflow, job_name):
                     config=docker,
                     digests=docker_digests,
                     with_log=True,
-                    add_latest=workflow.set_latest_for_docker_merged_manifest,
+                    add_latest=workflow.set_latest_in_dockers_build,
                 )
             )
 
@@ -379,7 +365,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
             for job in workflow.jobs:
                 # Skip native Praktika jobs
-                if _is_praktika_job(job.name):
+                if job.name in (
+                    Settings.CI_CONFIG_JOB_NAME,
+                    Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+                    Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+                    Settings.FINISH_WORKFLOW_JOB_NAME,
+                ):
                     continue
 
                 is_affected = False
@@ -511,7 +502,7 @@ def _finish_workflow(workflow, job_name):
     ready_for_merge_status = Result.Status.SUCCESS
     ready_for_merge_description = ""
     failed_results = []
-    dropped_results = []
+    skipped_results = []
 
     if results and any(not result.is_ok() for result in results):
         failed_results.append("Workflow Post Hook")
@@ -522,9 +513,11 @@ def _finish_workflow(workflow, job_name):
         if result.status == Result.Status.SUCCESS:
             continue
         if result.status == Result.Status.SKIPPED:
-            continue
-        if result.status == Result.Status.DROPPED:
-            dropped_results.append(result.name)
+            if ResultInfo.SKIPPED_DUE_TO_PREVIOUS_FAILURE in result.info:
+                skipped_results.append(result.name)
+            else:
+                # legally skipped job
+                continue
         if not result.is_completed():
             print(
                 f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
@@ -544,15 +537,15 @@ def _finish_workflow(workflow, job_name):
             )
             failed_results.append(result.name)
 
-    if failed_results or dropped_results:
+    if failed_results or skipped_results:
         ready_for_merge_status = Result.Status.FAILED
         failed_jobs_csv = ",".join(failed_results)
         if failed_jobs_csv and len(failed_jobs_csv) < 80:
             ready_for_merge_description = f"Failed: {failed_jobs_csv}"
         else:
             ready_for_merge_description = f"Failed: {len(failed_results)}"
-        if dropped_results:
-            ready_for_merge_description += f", Dropped: {len(dropped_results)}"
+        if skipped_results:
+            ready_for_merge_description += f", Skipped: {len(skipped_results)}"
 
     if workflow.enable_merge_ready_status:
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
@@ -586,9 +579,8 @@ if __name__ == "__main__":
     try:
         workflow = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
         if job_name in (
-            Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
+            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
             Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
-            Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         ):
             result = _build_dockers(workflow, job_name)
         elif job_name == Settings.CI_CONFIG_JOB_NAME:

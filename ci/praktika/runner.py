@@ -14,7 +14,6 @@ from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
-from .native_jobs import _is_praktika_job
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
@@ -25,22 +24,18 @@ from .utils import Shell, TeePopen, Utils
 
 class Runner:
     @staticmethod
-    def generate_local_run_environment(workflow, job, pr=None, sha=None, branch=None):
+    def generate_local_run_environment(workflow, job, pr=None, sha=None):
         print("WARNING: Generate dummy env for local test")
         Shell.check(f"mkdir -p {Settings.TEMP_DIR}", strict=True)
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
-        assert (bool(pr) ^ bool(branch)) or (not pr and not branch)
-        pr = pr or -1
-        if branch:
-            pr = 0
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
             REPOSITORY="",
-            BRANCH=branch,
+            BRANCH="branch_name",
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
-            PR_NUMBER=pr if not branch else 0,
+            PR_NUMBER=pr or -1,
             EVENT_TYPE=workflow.event,
             JOB_OUTPUT_STREAM="",
             EVENT_FILE_PATH="",
@@ -124,7 +119,12 @@ class Runner:
                 print("Update Job and Workflow Report")
                 HtmlRunnerHooks.pre_run(workflow, job)
 
-        if job.requires and not _is_praktika_job(job.name):
+        if job.requires and job.name not in (
+            Settings.CI_CONFIG_JOB_NAME,
+            Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+            Settings.FINISH_WORKFLOW_JOB_NAME,
+        ):
             print("Download required artifacts")
             required_artifacts = []
             # praktika service jobs do not require any of artifacts and excluded in if to not upload "hacky" artifact report.
@@ -140,7 +140,18 @@ class Runner:
                 else:
                     if (
                         requires_artifact_name
-                        in [job.name for job in workflow.jobs if job.provides]
+                        in [
+                            job.name
+                            for job in workflow.jobs
+                            if job.name
+                            not in (
+                                Settings.CI_CONFIG_JOB_NAME,
+                                Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+                                Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+                                Settings.FINISH_WORKFLOW_JOB_NAME,
+                            )
+                            and job.provides
+                        ]
                         and Settings.ENABLE_ARTIFACTS_REPORT
                     ):
                         print(
@@ -236,23 +247,8 @@ class Runner:
                     job.run_in_docker,
                     RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
                 )
-                if Utils.is_arm():
-                    docker_tag += "_arm"
-                elif Utils.is_amd():
-                    docker_tag += "_amd"
-                else:
-                    raise RuntimeError("Unsupported CPU architecture")
-
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
-            for setting in settings:
-                if setting.startswith("--volume"):
-                    volume = setting.removeprefix("--volume=").split(":")[0]
-                    if not Path(volume).exists():
-                        print(
-                            "WARNING: Create mount dir point in advance to have the same owner"
-                        )
-                        Shell.check(f"mkdir -p {volume}", verbose=True, strict=True)
             Shell.check(
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
@@ -366,13 +362,8 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
-        elif (
-            not result.is_ok()
-            and workflow.enable_merge_ready_status
-            and not job.allow_merge_on_failure
-        ):
-            print("set required label")
-            result.set_required_label()
+        elif not result.is_ok and job.allow_merge_on_failure:
+            result.set_not_required_label()
 
         result.update_duration()
         # if result.is_error():
@@ -416,7 +407,7 @@ class Runner:
                                 "TODO: globe is not supported with comress = True"
                             )
                         print(f"Compress artifact file [{artifact.path}]")
-                        artifact.path = Utils.compress_zst(artifact.path)
+                        artifact.path = Utils.compress_file_zst(artifact.path)
 
                     if isinstance(artifact.path, (tuple, list)):
                         artifact_paths = artifact.path
@@ -519,8 +510,7 @@ class Runner:
                 description=result.info.splitlines()[0] if result.info else "",
                 url=report_url,
             ):
-                env.add_info("Failed to post GH commit status for the job")
-                print(f"ERROR: Failed to post commit status for the job")
+                print(f"ERROR: Failed to post failed commit status for the job")
 
         if workflow.enable_report:
             # to make it visible in GH Actions annotations
@@ -564,9 +554,7 @@ class Runner:
                 Info().store_traceback()
             print(f"=== Setup env finished ===\n\n")
         else:
-            self.generate_local_run_environment(
-                workflow, job, pr=pr, sha=sha, branch=branch
-            )
+            self.generate_local_run_environment(workflow, job, pr=pr, sha=sha)
 
         if res and (not local_run or pr or sha or branch):
             res = False

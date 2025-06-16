@@ -14,12 +14,14 @@ namespace ErrorCodes
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     ObjectStoragePtr object_storage,
-    ConfigurationObserverPtr configuration_)
+    ConfigurationObserverPtr configuration_,
+    bool read_schema_same_as_table_schema_)
     : log(getLogger("DeltaLakeMetadata"))
     , table_snapshot(
         std::make_shared<DeltaLake::TableSnapshot>(
             getKernelHelper(configuration_.lock(), object_storage),
             object_storage,
+            read_schema_same_as_table_schema_,
             log))
 {
 }
@@ -38,8 +40,7 @@ bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr &)
 ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
-    size_t list_batch_size,
-    ContextPtr /* context  */) const
+    size_t list_batch_size) const
 {
     return table_snapshot->iterate(filter_dag, callback, list_batch_size);
 }

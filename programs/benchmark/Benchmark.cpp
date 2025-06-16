@@ -622,10 +622,9 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         if (env_quota_key != nullptr)
             env_quota_key_str.emplace(std::string(env_quota_key));
 
-        boost::program_options::options_description options_description = createOptionsDescription("Allowed options", getTerminalWidth());
-        options_description.add_options()
-            ("help", "Print usage summary and exit; combine with --verbose to display all options")
-            ("verbose", "Increase output verbosity")
+        boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
+        desc.add_options()
+            ("help",                                                            "produce help message")
             ("query,q",       value<std::string>()->default_value(""),          "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
@@ -653,11 +652,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         ;
 
         Settings settings;
-        auto options_description_non_verbose = options_description;
-        settings.addToProgramOptions(options_description);
+        settings.addToProgramOptions(desc);
 
         boost::program_options::variables_map options;
-        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, options_description), options);
+        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         boost::program_options::notify(options);
 
         clearPasswordFromCommandLine(argc, argv);
@@ -665,10 +663,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         if (options.contains("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
-            if (options.contains("verbose"))
-                std::cout << options_description << "\n";
-            else
-                std::cout << options_description_non_verbose << "\n";
+            std::cout << desc << "\n";
             std::cout << "\nSee also: https://clickhouse.com/docs/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }

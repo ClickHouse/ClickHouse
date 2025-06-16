@@ -19,18 +19,12 @@ SELECT tokens('a', 'ngram', materialize(1)); -- { serverError ILLEGAL_COLUMN }
 -- If 2nd arg is "ngram", then the 3rd arg must be between 2 and 8
 SELECT tokens('a', 'ngram', 1); -- { serverError BAD_ARGUMENTS}
 SELECT tokens('a', 'ngram', 9); -- { serverError BAD_ARGUMENTS}
---    const Array (for "string")
-SELECT tokens('a', 'string', 'c'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT tokens('a', 'string', toInt8(-1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT tokens('a', 'string', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT tokens('a', 'string', materialize(['c'])); -- { serverError ILLEGAL_COLUMN }
-SELECT tokens('a', 'string', [1, 2]); -- { serverError BAD_GET }
 
 SELECT 'Default tokenizer';
 
 SELECT tokens('');
-SELECT tokens('abc+ def- foo! bar? baz= code; hello: world/ xäöüx');
-SELECT tokens('abc+ def- foo! bar? baz= code; hello: world/ xäöüx', 'default');
+SELECT tokens('abc+ def- foo! bar? baz= code; hello: world/');
+SELECT tokens('abc+ def- foo! bar? baz= code; hello: world/', 'default');
 
 SELECT 'Ngram tokenizer';
 
@@ -39,19 +33,10 @@ SELECT tokens('abc def', 'ngram') AS tokenized;
 SELECT tokens('abc def', 'ngram', 3) AS tokenized;
 SELECT tokens('abc def', 'ngram', 8) AS tokenized;
 
-SELECT 'String tokenizer';
+SELECT 'NoOp tokenizer';
 
-SELECT tokens('', 'string');
-SELECT tokens('  a  bc d', 'string', []);
-SELECT tokens('  a  bc d', 'string', [' ']);
-SELECT tokens('()()a()bc()d', 'string', ['()']);
-SELECT tokens(',()a(),bc,(),d,', 'string', ['()', ',']);
-SELECT tokens('\\a\n\\bc\\d\n', 'string', ['\n', '\\']);
-
-SELECT 'No-op tokenizer';
-
-SELECT tokens('', 'no_op') AS tokenized;
-SELECT tokens('abc def', 'no_op') AS tokenized;
+SELECT tokens('', 'noop') AS tokenized;
+SELECT tokens('abc def', 'noop') AS tokenized;
 
 SELECT 'Special cases (not systematically tested)';
 SELECT '-- FixedString inputs';
