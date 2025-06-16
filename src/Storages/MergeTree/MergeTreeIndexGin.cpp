@@ -802,7 +802,7 @@ std::optional<Type> getOption(const std::unordered_map<String, Field> & options,
                 value.getTypeName());
         return value.safeGet<Type>();
     }
-    return std::nullopt;
+    return {};
 }
 
 template <typename... Args>
@@ -812,7 +812,6 @@ std::optional<std::vector<String>> getOptionAsStringArray(Args &&... args)
     if (array.has_value())
     {
         std::vector<String> values;
-        values.reserve(array.value().size());
         for (const auto & entry : array.value())
             values.emplace_back(entry.template safeGet<String>());
         return values;
@@ -879,8 +878,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
                 ErrorCodes::INCORRECT_QUERY,
                 "Text index '{}' argument must be between 2 and 8, but got {}", ARGUMENT_NGRAM_SIZE, ngram_size);
     }
-
-    if (tokenizer.value() == StringTokenExtractor::getExternalName())
+    else if (tokenizer.value() == StringTokenExtractor::getExternalName())
     {
         std::optional<DB::FieldVector> separators = getOption<Array>(options, ARGUMENT_SEPARATORS);
         if (separators.has_value())
@@ -889,7 +887,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
                 if (separator.getType() != Field::Types::String)
                     throw Exception(
                         ErrorCodes::INCORRECT_QUERY,
-                        "Text index argument '{}' element expected to be String, but got {}",
+                        "Element of text index argument {} expected to be String, but got {}",
                         ARGUMENT_SEPARATORS,
                         separator.getTypeName());
         }

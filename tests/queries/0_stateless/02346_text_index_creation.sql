@@ -114,7 +114,7 @@ SELECT '-- separators must be an array of strings.';
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'string', separators = ['\n', 1])
+    INDEX idx str TYPE text(tokenizer = 'string', separators = [1, 2])
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
