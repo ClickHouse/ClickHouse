@@ -38,19 +38,6 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 
     headers_started_sending = true;
 
-    if (!response.getChunkedTransferEncoding() && response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
-    {
-        /// In case there is no Content-Length we cannot use keep-alive,
-        /// since there is no way to know when the server send all the
-        /// data, so "Connection: close" should be sent.
-        response.setKeepAlive(false);
-    }
-
-    if (add_cors_header)
-        response.set("Access-Control-Allow-Origin", "*");
-
-    setResponseDefaultHeaders(response);
-
     std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
     response.writeStatus(header);
     auto header_str = header.str();
@@ -104,10 +91,16 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
     if (!headers_started_sending)
     {
-        if (compression_method != CompressionMethod::None)
-            response.set("Content-Encoding", toContentEncodingName(compression_method));
         startSendHeaders();
     }
+
+    setResponseDefaultHeaders(response);
+
+    if (compression_method != CompressionMethod::None)
+        response.set("Content-Encoding", toContentEncodingName(compression_method));
+
+    if (add_cors_header)
+        response.set("Access-Control-Allow-Origin", "*");
 
     writeHeaderSummary();
     writeExceptionCode();
@@ -129,15 +122,6 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
         /// Initialize as early as possible since if the code throws,
         /// next() should not be called anymore.
         initialized = true;
-
-        if (compression_method != CompressionMethod::None)
-        {
-            /// If we've already sent headers, just send the `Content-Encoding` down the socket directly
-            if (headers_started_sending)
-                socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
-            else
-                response.set("Content-Encoding", toContentEncodingName(compression_method));
-        }
 
         startSendHeaders();
         finishSendHeaders();
@@ -175,7 +159,8 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
         progress_watch.restart();
 
-        /// Send all common headers before our special progress headers.
+        /// Do not send headers before our special progress headers
+        /// For example, header "Connection: close|keep-alive" is defined only right before sending response
         startSendHeaders();
         writeHeaderProgress();
     }
