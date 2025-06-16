@@ -1,5 +1,7 @@
+    (ReadFromEmbeddedRocksDB (FullScan))
 1
 "rows_read":1,
+    (ReadFromEmbeddedRocksDB (GetKeys))
 2
 "rows_read":2,
 1

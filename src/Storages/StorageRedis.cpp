@@ -221,7 +221,12 @@ StorageRedis::StorageRedis(
 class ReadFromRedis : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromRedis"; }
+    std::string getName() const override
+    {
+        if (!keys || keys->empty())
+            return "ReadFromRedis (FullScan)";
+        return "ReadFromRedis (GetKeys)";
+    }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 

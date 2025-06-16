@@ -448,10 +448,14 @@ def test_get_keys(started_cluster):
                INSERT INTO test_get_keys VALUES (1), (2), (3);
                """)
 
-    def check_rows_read(query, expected_rows):
-        res = node.query(query)
-        assert json.loads(res)['statistics']['rows_read'] == expected_rows
+    def check_method_and_rows_read(query, expected_rows, method):
+        pipeline = node.query(f'EXPLAIN PIPELINE {query}')
+        assert 'ReadFromRedis' in pipeline
+        assert method in pipeline, pipeline
 
-    check_rows_read("SELECT * FROM test_get_keys FORMAT JSON", 3)
-    check_rows_read("SELECT * FROM test_get_keys WHERE k = 1 FORMAT JSON", 1)
-    check_rows_read("SELECT * FROM test_get_keys WHERE k in (3) FORMAT JSON", 1)
+        res = node.query(f'{query} FORMAT JSON')
+        assert json.loads(res)['statistics']['rows_read'] == expected_rows, res
+
+    check_method_and_rows_read("SELECT * FROM test_get_keys", 3, "FullScan")
+    check_method_and_rows_read("SELECT * FROM test_get_keys WHERE k = 1", 1, "GetKeys")
+    check_method_and_rows_read("SELECT * FROM test_get_keys WHERE k in (3)", 1, "GetKeys")

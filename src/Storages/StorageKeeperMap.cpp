@@ -599,7 +599,12 @@ StorageKeeperMap::StorageKeeperMap(
 class ReadFromKeeperMap : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromKeeperMap"; }
+    std::string getName() const override
+    {
+        if (!keys || keys->empty())
+            return "ReadFromKeeperMap (FullScan)";
+        return "ReadFromKeeperMap (GetKeys)";
+    }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
@@ -676,7 +681,7 @@ void ReadFromKeeperMap::initializePipeline(QueryPipelineBuilder & pipeline, cons
     if (all_scan)
         initializePipelineImpl(pipeline, std::make_shared<Strings>(getAllKeys()));
     else
-        initializePipelineImpl(pipeline, std::move(keys));
+        initializePipelineImpl(pipeline, keys);
 }
 
 void ReadFromKeeperMap::applyFilters(ActionDAGNodes added_filter_nodes)
