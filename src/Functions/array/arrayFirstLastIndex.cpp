@@ -21,7 +21,7 @@ enum class ArrayFirstLastIndexStrategy : uint8_t
 template <ArrayFirstLastIndexStrategy strategy>
 struct ArrayFirstLastIndexImpl
 {
-    static bool needBoolean() { return false; }
+    static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 

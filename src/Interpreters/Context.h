@@ -140,6 +140,7 @@ struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
 class S3SettingsByEndpoint;
+class AzureSettingsByEndpoint;
 class IDatabase;
 class DDLWorker;
 class ITableFunction;
@@ -238,6 +239,8 @@ using ReadTaskCallback = std::function<String()>;
 using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
+using BlockMarshallingCallback = std::function<Block(const Block & block)>;
+
 struct QueryPlanAndSets;
 using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
 
@@ -253,6 +256,12 @@ using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 class SessionTracker;
 
 struct ServerSettings;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -348,6 +357,8 @@ protected:
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
+
+    BlockMarshallingCallback block_marshalling_callback;
 
     bool is_under_restore = false;
 
@@ -540,6 +551,14 @@ protected:
     mutable SampleBlockCache sample_block_cache;
     mutable std::mutex sample_block_cache_mutex;
 
+    using StorageMetadataCache = std::unordered_map<const IStorage *, StorageMetadataPtr>;
+    mutable StorageMetadataCache storage_metadata_cache;
+    mutable std::mutex storage_metadata_cache_mutex;
+
+    using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
+    mutable StorageSnapshotCache storage_snapshot_cache;
+    mutable std::mutex storage_snapshot_cache_mutex;
+
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
 
@@ -655,7 +674,8 @@ public:
         SERVER_BUILT_WITH_COVERAGE,
         SETTING_ZERO_COPY_REPLICATION_ENABLED,
         SKIPPING_CONDITION_QUERY,
-        THREAD_FUZZER_IS_ENABLED
+        THREAD_FUZZER_IS_ENABLED,
+        MAYBE_BROKEN_TABLES,
     };
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
@@ -1333,6 +1353,7 @@ public:
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
     const DistributedSettings & getDistributedSettings() const;
     const S3SettingsByEndpoint & getStorageS3Settings() const;
+    const AzureSettingsByEndpoint & getStorageAzureSettings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
@@ -1417,6 +1438,8 @@ public:
     void setGoogleProtosPath(const String & path);
 
     std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
+    std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
+    std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
@@ -1482,6 +1505,9 @@ public:
 
     MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
     void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
+
+    BlockMarshallingCallback getBlockMarshallingCallback() const;
+    void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);
