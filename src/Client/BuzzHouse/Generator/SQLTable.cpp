@@ -126,14 +126,13 @@ void StatementGenerator::flatColumnPath(const uint32_t flags, const std::unorder
     }
 }
 
-void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
+SQLRelation
+StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
 {
     SQLRelation rel(rel_name);
 
     flatTableColumnPath(
-        flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated,
-        t.cols,
-        [](const SQLColumn & c) { return !c.dmod.has_value() || c.dmod.value() != DModifier::DEF_EPHEMERAL; });
+        flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, t.cols, [](const SQLColumn &) { return true; });
     for (const auto & entry : this->table_entries)
     {
         DB::Strings names;
@@ -193,6 +192,13 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sign"}));
         }
     }
+    return rel;
+}
+
+void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
+{
+    const SQLRelation rel = createTableRelation(rg, allow_internal_cols, rel_name, t);
+
     if (rel_name.empty())
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
@@ -200,7 +206,7 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
-void StatementGenerator::addViewRelation(const String & rel_name, const SQLView & v)
+SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const SQLView & v)
 {
     SQLRelation rel(rel_name);
 
@@ -208,6 +214,13 @@ void StatementGenerator::addViewRelation(const String & rel_name, const SQLView 
     {
         rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(entry)}));
     }
+    return rel;
+}
+
+void StatementGenerator::addViewRelation(const String & rel_name, const SQLView & v)
+{
+    const SQLRelation rel = createViewRelation(rel_name, v);
+
     if (rel_name.empty())
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
@@ -357,9 +370,9 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
         this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
         this->allow_subqueries = rg.nextMediumNumber() < 11;
         generateExpression(rg, ttl_expr);
-        this->levels.clear();
         this->allow_in_expression_alias = prev_allow_in_expression_alias;
         this->allow_subqueries = prev_allow_subqueries;
+        this->levels.clear();
     }
 }
 
@@ -393,13 +406,20 @@ void StatementGenerator::generateNextTTL(
 
                 if (rg.nextSmallNumber() < 4)
                 {
+                    const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+                    const bool prev_allow_subqueries = this->allow_subqueries;
+
                     if (t.has_value() && !t.value().cols.empty())
                     {
                         addTableRelation(rg, false, "", t.value());
                     }
                     this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
                     this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+                    this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
+                    this->allow_subqueries = rg.nextMediumNumber() < 11;
                     generateWherePredicate(rg, tdel->mutable_where()->mutable_expr()->mutable_expr());
+                    this->allow_in_expression_alias = prev_allow_in_expression_alias;
+                    this->allow_subqueries = prev_allow_subqueries;
                     this->levels.clear();
                 }
             }
@@ -414,8 +434,6 @@ void StatementGenerator::generateNextTTL(
             std::uniform_int_distribution<uint32_t> table_key_dist(1, tk.exprs_size());
             const uint32_t ttl_group_size = table_key_dist(rg.generator);
             const size_t nset = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(3))) + 1;
-            const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
-            const bool prev_allow_subqueries = this->allow_subqueries;
 
             for (uint32_t j = 0; j < ttl_group_size; j++)
             {
@@ -425,26 +443,27 @@ void StatementGenerator::generateNextTTL(
                 expr->CopyFrom(tke.expr());
             }
 
-            if (t.has_value() && !t.value().cols.empty())
-            {
-                addTableRelation(rg, false, "", t.value());
-            }
-            /// Use global aggregate most of the time
-            this->levels[this->current_level].global_aggregate = rg.nextSmallNumber() < 9;
-            this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
-            this->allow_subqueries = rg.nextMediumNumber() < 11;
             std::shuffle(entries.begin(), entries.end(), rg.generator);
-
             for (size_t j = 0; j < nset; j++)
             {
                 TTLSet * tset = j == 0 ? gb->mutable_ttl_set() : gb->add_other_ttl_set();
+                const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+                const bool prev_allow_subqueries = this->allow_subqueries;
 
                 columnPathRef(entries[j], tset->mutable_col());
+                if (t.has_value() && !t.value().cols.empty())
+                {
+                    addTableRelation(rg, false, "", t.value());
+                }
+                /// Use global aggregate most of the time
+                this->levels[this->current_level].global_aggregate = rg.nextSmallNumber() < 9;
+                this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
+                this->allow_subqueries = rg.nextMediumNumber() < 11;
                 generateExpression(rg, tset->mutable_expr());
+                this->allow_in_expression_alias = prev_allow_in_expression_alias;
+                this->allow_subqueries = prev_allow_subqueries;
+                this->levels.clear();
             }
-            this->levels.clear();
-            this->allow_in_expression_alias = prev_allow_in_expression_alias;
-            this->allow_subqueries = prev_allow_subqueries;
         }
     }
 }
@@ -564,7 +583,8 @@ String StatementGenerator::columnPathRef(const ColumnPathChain & entry) const
     return res;
 }
 
-void StatementGenerator::colRefOrExpression(RandomGenerator & rg, const TableEngineValues teng, const ColumnPathChain & entry, Expr * expr)
+void StatementGenerator::colRefOrExpression(
+    RandomGenerator & rg, const SQLRelation & rel, const TableEngineValues teng, const ColumnPathChain & entry, Expr * expr)
 {
     SQLType * tp = entry.getBottomType();
     const uint32_t datetime_func = 15
@@ -614,7 +634,18 @@ void StatementGenerator::colRefOrExpression(RandomGenerator & rg, const TableEng
     }
     else if (rand_expr && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + 1))
     {
+        const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+        const bool prev_allow_subqueries = this->allow_subqueries;
+
+        this->levels[this->current_level].rels.push_back(rel);
+        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+        this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
+        this->allow_subqueries = rg.nextMediumNumber() < 11;
         generateExpression(rg, expr);
+        this->allow_in_expression_alias = prev_allow_in_expression_alias;
+        this->allow_subqueries = prev_allow_subqueries;
+        this->levels.clear();
     }
     else if (col_ref && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + col_ref + 1))
     {
@@ -626,7 +657,8 @@ void StatementGenerator::colRefOrExpression(RandomGenerator & rg, const TableEng
     }
 }
 
-void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngineValues teng, const bool allow_asc_desc, TableKey * tkey)
+void StatementGenerator::generateTableKey(
+    RandomGenerator & rg, const SQLRelation & rel, const TableEngineValues teng, const bool allow_asc_desc, TableKey * tkey)
 {
     if (!entries.empty() && rg.nextSmallNumber() < 7)
     {
@@ -638,8 +670,18 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
             for (uint32_t i = 0; i < nkeys; i++)
             {
                 TableKeyExpr * tke = tkey->add_exprs();
+                const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+                const bool prev_allow_subqueries = this->allow_subqueries;
 
+                this->levels[this->current_level].rels.push_back(rel);
+                this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+                this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+                this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
+                this->allow_subqueries = rg.nextMediumNumber() < 11;
                 generateExpression(rg, tke->mutable_expr());
+                this->allow_in_expression_alias = prev_allow_in_expression_alias;
+                this->allow_subqueries = prev_allow_subqueries;
+                this->levels.clear();
                 if (allow_asc_desc && rg.nextSmallNumber() < 3)
                 {
                     tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -675,7 +717,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
                 {
                     TableKeyExpr * tke = tkey->add_exprs();
 
-                    colRefOrExpression(rg, teng, this->entries[i], tke->mutable_expr());
+                    colRefOrExpression(rg, rel, teng, this->entries[i], tke->mutable_expr());
                     if (allow_asc_desc && rg.nextSmallNumber() < 3)
                     {
                         tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -752,11 +794,12 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const St
     }
 }
 
-void StatementGenerator::generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLBase & b, const bool add_pkey, TableEngine * te)
+void StatementGenerator::generateMergeTreeEngineDetails(
+    RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, const bool add_pkey, TableEngine * te)
 {
     if (rg.nextSmallNumber() < 6)
     {
-        generateTableKey(rg, b.teng, b.peer_table != PeerTableDatabase::ClickHouse, te->mutable_order());
+        generateTableKey(rg, rel, b.teng, b.peer_table != PeerTableDatabase::ClickHouse, te->mutable_order());
     }
     if (te->has_order() && add_pkey && rg.nextSmallNumber() < 5)
     {
@@ -778,11 +821,11 @@ void StatementGenerator::generateMergeTreeEngineDetails(RandomGenerator & rg, co
     }
     else if (!te->has_order() && add_pkey)
     {
-        generateTableKey(rg, b.teng, false, te->mutable_primary_key());
+        generateTableKey(rg, rel, b.teng, false, te->mutable_primary_key());
     }
     if (rg.nextBool())
     {
-        generateTableKey(rg, b.teng, false, te->mutable_partition_by());
+        generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
     }
 
     const int npkey = te->primary_key().exprs_size();
@@ -867,7 +910,8 @@ void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
     }
 }
 
-void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te)
+void StatementGenerator::generateEngineDetails(
+    RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
@@ -890,7 +934,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             te->set_toption(b.toption.value());
             this->ids.clear();
         }
-        generateMergeTreeEngineDetails(rg, b, add_pkey, te);
+        generateMergeTreeEngineDetails(rg, rel, b, add_pkey, te);
     }
     else if (te->has_engine() && b.isFileEngine())
     {
@@ -1034,7 +1078,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         }
         connections.createExternalDatabaseTable(rg, next, b, entries, te);
     }
-    else if (te->has_engine() && (b.isAnyS3Engine() || b.isHudiEngine() || b.isDeltaLakeEngine() || b.isIcebergS3Engine()))
+    else if (te->has_engine() && (b.isAnyS3Engine() || b.isHudiEngine() || b.isDeltaLakeS3Engine() || b.isIcebergS3Engine()))
     {
         connections.createExternalDatabaseTable(rg, IntegrationCall::MinIO, b, entries, te);
         if (b.isAnyS3Engine() || b.isIcebergS3Engine())
@@ -1048,9 +1092,9 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                 b.file_comp = rg.pickRandomly(S3Compress);
                 te->add_params()->set_svalue(b.file_comp);
             }
-            if (b.isAnyS3Engine() && rg.nextSmallNumber() < 5)
+            if (b.isS3Engine() && rg.nextSmallNumber() < 5)
             {
-                generateTableKey(rg, b.teng, false, te->mutable_partition_by());
+                generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
             }
         }
     }
@@ -1118,7 +1162,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             /// Optional sharding key
             if (!this->remote_entries.empty())
             {
-                colRefOrExpression(rg, b.teng, rg.pickRandomly(this->remote_entries), te->add_params()->mutable_expr());
+                colRefOrExpression(rg, rel, b.teng, rg.pickRandomly(this->remote_entries), te->add_params()->mutable_expr());
             }
             else
             {
@@ -1163,9 +1207,9 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             b.file_comp = rg.pickRandomly(AzureCompress);
             te->add_params()->set_svalue(b.file_comp);
         }
-        if (rg.nextSmallNumber() < 5)
+        if (b.isAzureEngine() && rg.nextSmallNumber() < 5)
         {
-            generateTableKey(rg, b.teng, false, te->mutable_partition_by());
+            generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
         }
     }
     else if (te->has_engine() && b.isURLEngine())
@@ -1200,7 +1244,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine())
         && add_pkey && !entries.empty())
     {
-        colRefOrExpression(rg, b.teng, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
+        colRefOrExpression(rg, rel, b.teng, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
     }
     if (te->has_engine())
     {
@@ -1228,13 +1272,6 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
 
                 sv->set_property("input_format_with_names_use_header");
                 sv->set_value("0");
-                if (b.isS3QueueEngine())
-                {
-                    SetValue * sv2 = svs->add_other_values();
-
-                    sv2->set_property("mode");
-                    sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
-                }
             }
             else if (
                 b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
@@ -1450,10 +1487,11 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     const IndexType itpe = static_cast<IndexType>(idx_range(rg.generator));
     auto & to_add = staged ? t.staged_idxs : t.idxs;
 
+    chassert(!t.cols.empty());
     idx.iname = iname;
     idef->mutable_idx()->set_index("i" + std::to_string(iname));
     idef->set_type(itpe);
-    if (rg.nextSmallNumber() < 9)
+    if (itpe == IndexType::IDX_hypothesis && rg.nextSmallNumber() < 9)
     {
         flatTableColumnPath(
             flat_tuple | flat_nested | flat_json | skip_nested_node,
@@ -1464,12 +1502,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                     || (itpe == IndexType::IDX_vector_similarity && hasType<FloatType>(true, true, true, c.tp))
                     || (itpe > IndexType::IDX_vector_similarity && hasType<StringType>(true, true, true, c.tp));
             });
-    }
-    if (!entries.empty())
-    {
-        std::shuffle(entries.begin(), entries.end(), rg.generator);
-
-        if (itpe == IndexType::IDX_hypothesis && entries.size() > 1 && rg.nextSmallNumber() < 9)
+        if (entries.size() > 1)
         {
             BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
             Expr * expr1 = bexpr->mutable_lhs();
@@ -1481,32 +1514,17 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 rg.nextSmallNumber() < 8
                     ? BinaryOperator::BINOP_EQ
                     : static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEGR)) + 1));
+            std::shuffle(entries.begin(), entries.end(), rg.generator);
             columnPathRef(this->entries[0], estc1->mutable_col()->mutable_path());
             columnPathRef(this->entries[1], estc2->mutable_col()->mutable_path());
         }
-        else
-        {
-            colRefOrExpression(rg, Null, this->entries[0], expr);
-        }
-        entries.clear();
+        this->entries.clear();
     }
-    else
+    if (!expr->has_comp_expr())
     {
-        const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
-        const bool prev_allow_subqueries = this->allow_subqueries;
-
-        if (!t.cols.empty())
-        {
-            addTableRelation(rg, false, "", t);
-        }
-        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
-        this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
-        this->allow_subqueries = rg.nextMediumNumber() < 11;
-        generateExpression(rg, expr);
-        this->allow_in_expression_alias = prev_allow_in_expression_alias;
-        this->allow_subqueries = prev_allow_subqueries;
-        this->levels.clear();
+        flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
+        colRefOrExpression(rg, createTableRelation(rg, true, "", t), Null, rg.pickRandomly(this->entries), expr);
+        this->entries.clear();
     }
     switch (itpe)
     {
@@ -1634,8 +1652,8 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
     this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
     this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
     this->generateWherePredicate(rg, cdef->mutable_expr());
-    this->levels.clear();
     this->allow_in_expression_alias = prev_allow_in_expression_alias;
+    this->levels.clear();
     to_add.insert(crname);
 }
 
@@ -1757,10 +1775,12 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         if (connections.hasMinIOConnection())
         {
             this->ids.emplace_back(S3);
+            this->ids.emplace_back(S3Queue);
         }
         if (connections.hasAzuriteConnection())
         {
             this->ids.emplace_back(AzureBlobStorage);
+            this->ids.emplace_back(AzureQueue);
         }
         if (connections.hasHTTPConnection())
         {
@@ -1973,12 +1993,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
 
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
     chassert(!next.cols.empty());
-    addTableRelation(rg, false, "", next);
-    this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-    this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
-    generateEngineDetails(rg, next, !added_pkey, te);
+    generateEngineDetails(rg, createTableRelation(rg, true, "", next), next, !added_pkey, te);
     this->entries.clear();
-    this->levels.clear();
 
     if (next.cluster.has_value())
     {
@@ -2194,9 +2210,9 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         {
             generateExpression(rg, dc->mutable_expression());
         }
-        this->levels.clear();
         this->allow_in_expression_alias = prev_allow_in_expression_alias;
         this->allow_subqueries = prev_allow_subqueries;
+        this->levels.clear();
         if (rg.nextSmallNumber() < 9)
         {
             dc->set_hierarchical(rg.nextBool());
