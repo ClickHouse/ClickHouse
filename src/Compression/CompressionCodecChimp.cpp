@@ -1,5 +1,3 @@
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
