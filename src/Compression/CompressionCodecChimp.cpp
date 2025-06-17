@@ -146,13 +146,13 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     const UInt32 items_count = source_size / sizeof(T);
 
-    static const short NO_PREVIOUS_VALUES = sizeof(T) * 16;
+    static constexpr short NO_PREVIOUS_VALUES = sizeof(T) * 16;
     T stored_values[NO_PREVIOUS_VALUES];
     for (int i = 0; i < NO_PREVIOUS_VALUES; i++)
     {
         stored_values[i] = 0;
     }
-    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(NO_PREVIOUS_VALUES));
+    static constexpr short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(NO_PREVIOUS_VALUES));
     static constexpr short THRESHOLD = 6 + LOG_NO_PREVIOUS_VALUES;
     static constexpr int ARRAY_SIZE = 1 << (THRESHOLD + 1);
     int indices[ARRAY_SIZE];
