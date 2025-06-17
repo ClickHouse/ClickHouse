@@ -20,7 +20,7 @@ standalone. The main purpose of the function is to calculate the difference in y
 toRelativeYearNum(date)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"date", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
+        {"date", "Date or date with time. [`Date`](../data-types/date.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns the number of years from a fixed reference point in the past. [`UInt16`](../data-types/int-uint.md).";
     FunctionDocumentation::Examples examples = {
