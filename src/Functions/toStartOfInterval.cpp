@@ -466,7 +466,7 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
     )";
     FunctionDocumentation::Arguments arguments_toStartOfInterval = {
-        {"value", "Date or date with time value to round down. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
+        {"value", "Date or date with time value to round down. [`Date`](../data-types/date.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."},
         {"x", "Interval length number."},
         {"unit", "Interval unit: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND."},
         {"time_zone", "Optional. Time zone name as a string."},
