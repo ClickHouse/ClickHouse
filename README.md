@@ -47,15 +47,15 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Cyprus Meetup](https://www.meetup.com/clickhouse-cyprus-user-group/events/307819236) - June 10, 2025
-* [Washington DC Meetup](https://www.meetup.com/clickhouse-dc-user-group/events/307622954/) - June 12, 2025
 * [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/307820741/) - June 17, 2025
 * [Singapore Meetup](https://www.meetup.com/clickhouse-cyprus-user-group/events/307819236) - June 17, 2025
 * [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/308053030/) - June 19, 2025
 * [Sydney Meetup](https://www.meetup.com/clickhouse-australia-user-group/events/308248552/) - June 19, 2025
 * [Berlin Meetup](https://www.meetup.com/clickhouse-berlin-user-group/events/307866586/) - June 24, 2025
 * [Amsterdam Meetup](https://www.meetup.com/clickhouse-netherlands-user-group/events/308053051/) - June 25, 2025
+* [Denver Meetup](https://lu.ma/j7qm8o6i) - June 26, 2025
 * [Bangalore Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/308323519/) - June 27, 2025
+* [ClickHouse + Docker AI Night](https://lu.ma/g9nhgnlh) - July 1st 2025
 * [Perth Meetup](https://www.meetup.com/clickhouse-perth-user-group/events/308421971/) - July 2, 2025
 * [Atlanta Meetup](https://www.meetup.com/clickhouse-atlanta-meetup-group/events/307627590/) - July 8, 2025
 * [Philadelphia Meetup](https://www.meetup.com/clickhouse-philadelphia-user-group/events/308333554/) - July 10, 2025
@@ -63,6 +63,8 @@ Upcoming meetups
 
 
 Recent meetups
+* [Washington DC Meetup](https://www.meetup.com/clickhouse-dc-user-group/events/307622954/) - June 12, 2025
+* [Cyprus Meetup](https://www.meetup.com/clickhouse-cyprus-user-group/events/307819236) - June 10, 2025
 * [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/307689645/) - June 5, 2025
 * [Belgium Meetup](https://www.meetup.com/clickhouse-belgium-user-group/events/307818346/) - May 20, 2025
 * [Seattle Meetup](https://www.meetup.com/clickhouse-seattle-user-group/events/307622716/) - May 20, 2025

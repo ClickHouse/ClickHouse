@@ -85,7 +85,7 @@ public:
     static void clearThreadFramePointers();
 
     /// Callback for any exception
-    static std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> callback;
+    static std::function<void(std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)> callback;
 
 protected:
     static thread_local bool can_use_thread_frame_pointers;
