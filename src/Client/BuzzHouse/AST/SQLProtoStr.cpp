@@ -4845,6 +4845,15 @@ CONV_FN(BackupRestore, backup)
         }
         ret += ")";
     }
+    if (backup.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, backup.setting_values());
+    }
+    if (backup.async())
+    {
+        ret += " ASYNC";
+    }
     if (backup.has_informat())
     {
         ret += " FORMAT ";
@@ -4854,15 +4863,6 @@ CONV_FN(BackupRestore, backup)
     {
         ret += " FORMAT ";
         ret += OutFormat_Name(backup.outformat()).substr(4);
-    }
-    if (backup.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, backup.setting_values());
-    }
-    if (backup.async())
-    {
-        ret += " ASYNC";
     }
 }
 

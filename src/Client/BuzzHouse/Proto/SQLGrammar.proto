@@ -3872,12 +3872,12 @@ message BackupRestore {
     }
     required BackupOutput out = 5;
     repeated string out_params = 6;
+    optional SettingValues setting_values = 7;
+    optional bool async = 8;
     oneof backup_format_oneof {
-        InFormat informat = 7;
-        OutFormat outformat = 8;
+        InFormat informat = 9;
+        OutFormat outformat = 10;
     }
-    optional SettingValues setting_values = 9;
-    optional bool async = 10;
     /// Need to know backup number
     required uint32 backup_number = 11;
 }
