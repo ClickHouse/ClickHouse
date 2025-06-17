@@ -225,9 +225,6 @@ Various methods of storing dictionary data in memory are assosiated with CPU and
 - [complex_key_direct](#complex_key_direct)
 - [ip_trie](#ip_trie)
 
-
-
-
 ### flat {#flat}
 
 The dictionary is completely stored in memory in the form of flat arrays. How much memory does the dictionary use? The amount is proportional to the size of the largest key (in space used).
