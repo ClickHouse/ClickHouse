@@ -82,7 +82,6 @@ public:
                     auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
                     auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
 
-                    /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
                     for (size_t i = 0; i < input_rows_count; ++i)
                     {
                         boost::geometry::correct(first[i]);
@@ -110,6 +109,61 @@ const char * FunctionPolygonsIntersects<SphericalPoint>::name = "polygonsInterse
 
 REGISTER_FUNCTION(PolygonsIntersects)
 {
+    factory.registerFunction<FunctionPolygonsIntersects<CartesianPoint>>(FunctionDocumentation{
+        .description = R"(
+        Returns true if the two [`Polygon`](sql-reference/data-types/geo#polygon) or [`MultiPolygon`](sql-reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
+    )",
+        .syntax = "polygonsIntersectsCartesian(polygon1, polygon2)",
+        .arguments
+        = {{"polygon1",
+            "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."},
+           {"polygon2",
+            "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
+        .returned_value = "Returns true (1) if the two polygons intersect. [`Bool`](/sql-reference/data-types/boolean).",
+        .examples
+        = {{"Usage example",
+            R"(
+                SELECT polygonsIntersectsCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
+
+        )",
+            R"(
+                ┌─polygonsIntersectsCartesian()─┐
+                │ 1 │
+                └───────────────────┘
+        )"}},
+        .introduced_in = {25, 6},
+        .category = FunctionDocumentation::Category::DateAndTime});
+
+    factory.registerFunction<FunctionPolygonsIntersects<SphericalPoint>>(FunctionDocumentation{
+        .description = R"(
+        Returns true if the two [`Polygon`](sql-reference/data-types/geo#polygon) or [`MultiPolygon`](sql-reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
+    )",
+        .syntax = "polygonsIntersectsSpherical(polygon1, polygon2)",
+        .arguments
+        = {{"polygon1",
+            "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."},
+           {"polygon2",
+            "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
+        .returned_value = "Returns true (1) if the two polygons intersect (share any common area or boundary). "
+                          "[`Bool`](/sql-reference/data-types/boolean).",
+        .examples
+        = {{"Usage example",
+            R"(
+                SELECT polygonsIntersectsSpherical([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
+
+        )",
+            R"(
+                ┌─polygonsIntersectsSpherical()─┐
+                │ 1 │
+                └───────────────────┘
+        )"}},
+        .introduced_in = {25, 6},
+        .category = FunctionDocumentation::Category::DateAndTime});
+
     factory.registerFunction<FunctionPolygonsIntersects<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsIntersects<SphericalPoint>>();
 }
