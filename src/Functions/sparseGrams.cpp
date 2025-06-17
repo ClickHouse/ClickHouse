@@ -71,12 +71,16 @@ private:
         {
         }
 
-        void increment()
+        bool increment()
         {
+            if (isEnd())
+                return false;
+
             right_iterator = getNextPosition(right_iterator);
 
             if (++num_increments >= n)
                 left_iterator = getNextPosition(left_iterator);
+            return true;
         }
 
         bool isEnd() const
@@ -238,7 +242,8 @@ public:
 
         symbol_iterator = NGramSymbolIterator(pos, end, min_ngram_length - 1);
         for (size_t i = 0; i < min_ngram_length - 2; ++i)
-            symbol_iterator.increment();
+            if (!symbol_iterator.increment())
+                return;
     }
 
     /// Get the next token, if any, or return false.
