@@ -451,6 +451,11 @@ public:
             return;
         }
 
+        if (rhs.isEmpty())
+        {
+            return;
+        }
+
         auto total_indexes = getAllIndex();
         total_indexes->rb_or(*rhs.getAllIndex());
 
