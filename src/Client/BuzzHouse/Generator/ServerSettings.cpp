@@ -226,6 +226,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"analyzer_compatibility_join_using_top_level_identifier", trueOrFalseSetting},
     /// {"apply_deleted_mask", trueOrFalseSettingNoOracle}, gives issue with dump table oracle
     {"apply_mutations_on_fly", trueOrFalseSettingNoOracle},
+    {"apply_patch_parts", trueOrFalseSetting},
     {"any_join_distinct_right_table_keys", trueOrFalseSetting},
     {"asterisk_include_alias_columns", trueOrFalseSettingNoOracle},
     {"async_insert", trueOrFalseSettingNoOracle},
@@ -254,7 +255,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"check_referential_table_dependencies", trueOrFalseSettingNoOracle},
     {"check_table_dependencies", trueOrFalseSettingNoOracle},
     {"checksum_on_read", trueOrFalseSettingNoOracle},
-    {"cloud_mode", CHSetting(zeroOneTwo, {}, false)},
+    {"cloud_mode", trueOrFalseSettingNoOracle},
     {"cloud_mode_database_engine", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
     {"cloud_mode_engine", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); }, {}, false)},
     {"collect_hash_table_stats_during_aggregation", trueOrFalseSetting},
@@ -330,6 +331,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_memory_bound_merging_of_aggregation_results", trueOrFalseSetting},
     {"enable_multiple_prewhere_read_steps", trueOrFalseSetting},
     {"enable_named_columns_in_function_tuple", trueOrFalseSetting},
+    {"enable_parallel_blocks_marshalling", trueOrFalseSetting},
     {"enable_parsing_to_custom_serialization", trueOrFalseSetting},
     {"enable_reads_from_query_cache", trueOrFalseSetting},
     {"enable_s3_requests_logging", trueOrFalseSettingNoOracle},
@@ -791,6 +793,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"s3_disable_checksum", trueOrFalseSettingNoOracle},
     {"s3_ignore_file_doesnt_exist", trueOrFalseSettingNoOracle},
     {"s3_skip_empty_files", trueOrFalseSettingNoOracle},
+    {"s3_slow_all_threads_after_network_error", trueOrFalseSettingNoOracle},
     {"s3_throw_on_zero_files_match", trueOrFalseSettingNoOracle},
     {"s3_truncate_on_insert", trueOrFalseSettingNoOracle},
     {"s3_use_adaptive_timeouts", trueOrFalseSettingNoOracle},
@@ -847,6 +850,16 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"traverse_shadow_remote_data_paths", trueOrFalseSettingNoOracle},
     {"type_json_skip_duplicated_paths", trueOrFalseSettingNoOracle},
     {"update_insert_deduplication_token_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
+    {"update_parallel_mode",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {"'sync'", "'auto'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"update_sequential_consistency", trueOrFalseSetting},
     {"use_async_executor_for_materialized_views", trueOrFalseSetting},
     {"use_cache_for_count_from_files", trueOrFalseSetting},
     {"use_client_time_zone", trueOrFalseSettingNoOracle},
@@ -872,6 +885,20 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"validate_experimental_and_suspicious_types_inside_nested_types", trueOrFalseSettingNoOracle},
     {"validate_mutation_query", trueOrFalseSettingNoOracle},
     {"validate_polygons", trueOrFalseSettingNoOracle},
+    {"vector_search_filter_strategy",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {"'auto'", "'postfilter'", "'prefilter'"};
+             return rg.pickRandomly(choices);
+         },
+         {"'auto'", "'postfilter'", "'prefilter'"},
+         false)},
+    {"vector_search_postfilter_multiplier",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 4.0)); },
+         {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1", "1.5", "2", "2.5"},
+         false)},
     {"wait_changes_become_visible_after_commit_mode",
      CHSetting(
          [](RandomGenerator & rg)
