@@ -420,9 +420,13 @@ if [[ "$BUILD_JEMALLOC_REPORT" == "true" ]]; then
   ls /tmp/jemalloc_clickhouse*
   cp /tmp/jemalloc_clickhouse* /test_output
 
+  curl https://raw.githubusercontent.com/jemalloc/jemalloc/dev/bin/jeprof.in | sed s/@jemalloc_version@/5.0.1/ > jeprof
+  chmod +x jeprof
+
   curl -LO https://github.com/brendangregg/FlameGraph/archive/refs/heads/master.zip && unzip -q master.zip && mv FlameGraph-master FlameGraph && rm master.zip
   chmod +x ./FlameGraph/flamegraph.pl
-  jeprof "$(which clickhouse)" /tmp/jemalloc_clickhouse*.heap --collapsed  > output1.collapsed
+
+  ./jeprof "$(which clickhouse)" /tmp/jemalloc_clickhouse*.heap --collapsed  > output1.collapsed
   ./FlameGraph/flamegraph.pl output1.collapsed --color mem --width 2560 > /test_output/jemalloc_flamegraph.svg
 fi
 
