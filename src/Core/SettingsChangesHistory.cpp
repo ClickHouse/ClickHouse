@@ -69,7 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.7",
         {
-
+            {"optimize_rewrite_regexp_functions", "true", "true", "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
