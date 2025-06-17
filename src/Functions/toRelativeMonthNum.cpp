@@ -11,44 +11,44 @@ using FunctionToRelativeMonthNum = FunctionDateOrDateTimeToSomething<DataTypeUIn
 
 REGISTER_FUNCTION(ToRelativeMonthNum)
 {
-    FunctionDocumentation::Description description_toRelativeMonthNum = R"(
+    FunctionDocumentation::Description description = R"(
 Converts a date or date with time to the number of months elapsed since a certain fixed point in the past.
+The exact point in time is an implementation detail, and therefore this function is not intended to be used standalone.
+The main purpose of the function is to calculate the difference in months between two dates or dates with time, e.g., `toRelativeMonthNum(dt1) - toRelativeMonthNum(dt2)`.
     )";
-    FunctionDocumentation::Syntax syntax_toRelativeMonthNum = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toRelativeMonthNum(date)
     )";
-    FunctionDocumentation::Arguments arguments_toRelativeMonthNum =
+    FunctionDocumentation::Arguments arguments =
     {
         {"date", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toRelativeMonthNum = "Returns the number of months from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_toRelativeMonthNum =
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the number of months from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
+    FunctionDocumentation::Examples examples =
     {
         {"Get relative month numbers", R"(
-SELECT
-toRelativeMonthNum(toDate('2001-04-25')) AS m1,
-toRelativeMonthNum(toDate('2009-07-08')) AS m2
+SELECT toRelativeMonthNum(toDate('2023-04-01')) - toRelativeMonthNum(toDate('2023-01-01')) AS months_difference
         )",
         R"(
-┌────m1─┬────m2─┐
-│ 24016 │ 24115 │
-└───────┴───────┘
+┌─months_difference─┐
+│                 3 │
+└───────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toRelativeMonthNum = {1, 1};
-    FunctionDocumentation::Category category_toRelativeMonthNum = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toRelativeMonthNum =
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation =
     {
-        description_toRelativeMonthNum,
-        syntax_toRelativeMonthNum,
-        arguments_toRelativeMonthNum,
-        returned_value_toRelativeMonthNum,
-        examples_toRelativeMonthNum,
-        introduced_in_toRelativeMonthNum,
-        category_toRelativeMonthNum
+        description,
+        syntax,
+        arguments,
+        returned_value,
+        examples,
+        introduced_in,
+        category
     };
 
-    factory.registerFunction<FunctionToRelativeMonthNum>(documentation_toRelativeMonthNum);
+    factory.registerFunction<FunctionToRelativeMonthNum>(documentation);
 }
 
 }

@@ -11,44 +11,44 @@ using FunctionToRelativeSecondNum = FunctionDateOrDateTimeToSomething<DataTypeUI
 
 REGISTER_FUNCTION(ToRelativeSecondNum)
 {
-    FunctionDocumentation::Description description_toRelativeSecondNum = R"(
-Converts a date or date with time to the number of the seconds elapsed since a certain fixed point in the past.
+    FunctionDocumentation::Description description = R"(
+Converts a date or date with time to the number of seconds elapsed since a certain fixed point in the past.
+The exact point in time is an implementation detail, and therefore this function is not intended to be used standalone.
+The main purpose of the function is to calculate the difference in seconds between two dates or dates with time, e.g., `toRelativeSecondNum(dt1) - toRelativeSecondNum(dt2)`.
     )";
-    FunctionDocumentation::Syntax syntax_toRelativeSecondNum = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toRelativeSecondNum(date)
     )";
-    FunctionDocumentation::Arguments arguments_toRelativeSecondNum =
+    FunctionDocumentation::Arguments arguments =
     {
         {"date", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toRelativeSecondNum = "Returns the number of seconds from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_toRelativeSecondNum =
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the number of seconds from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
+    FunctionDocumentation::Examples examples =
     {
         {"Get relative second numbers", R"(
-SELECT
-toRelativeSecondNum(toDateTime('1993-10-05 05:20:36')) AS s1,
-toRelativeSecondNum(toDateTime('2000-09-20 14:11:29')) AS s2
+SELECT toRelativeSecondNum(toDateTime('2023-01-01 00:01:00')) - toRelativeSecondNum(toDateTime('2023-01-01 00:00:00')) AS seconds_difference
         )",
         R"(
-┌────────s1─┬────────s2─┐
-│ 749794836 │ 969451889 │
-└───────────┴───────────┘
+┌─seconds_difference─┐
+│                 60 │
+└────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toRelativeSecondNum = {1, 1};
-    FunctionDocumentation::Category category_toRelativeSecondNum = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toRelativeSecondNum =
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation =
     {
-        description_toRelativeSecondNum,
-        syntax_toRelativeSecondNum,
-        arguments_toRelativeSecondNum,
-        returned_value_toRelativeSecondNum,
-        examples_toRelativeSecondNum,
-        introduced_in_toRelativeSecondNum,
-        category_toRelativeSecondNum
+        description,
+        syntax,
+        arguments,
+        returned_value,
+        examples,
+        introduced_in,
+        category
     };
 
-    factory.registerFunction<FunctionToRelativeSecondNum>(documentation_toRelativeSecondNum);
+    factory.registerFunction<FunctionToRelativeSecondNum>(documentation);
 }
 
 }

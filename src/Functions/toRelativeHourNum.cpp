@@ -11,41 +11,41 @@ using FunctionToRelativeHourNum = FunctionDateOrDateTimeToSomething<DataTypeUInt
 
 REGISTER_FUNCTION(ToRelativeHourNum)
 {
-    FunctionDocumentation::Description description_toRelativeHourNum = R"(
+    FunctionDocumentation::Description description = R"(
 Converts a date or date with time to the number of hours elapsed since a certain fixed point in the past.
+The exact point in time is an implementation detail, and therefore this function is not intended to be used standalone.
+The main purpose of the function is to calculate the difference in hours between two dates or dates with time, e.g., `toRelativeHourNum(dt1) - toRelativeHourNum(dt2)`.
     )";
-    FunctionDocumentation::Syntax syntax_toRelativeHourNum = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toRelativeHourNum(date)
     )";
-    FunctionDocumentation::Arguments arguments_toRelativeHourNum = {
+    FunctionDocumentation::Arguments arguments = {
         {"date", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toRelativeHourNum = "Returns the number of hours from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_toRelativeHourNum = {
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the number of hours from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
+    FunctionDocumentation::Examples examples = {
         {"Get relative hour numbers", R"(
-SELECT
-toRelativeHourNum(toDateTime('1993-10-05 05:20:36')) AS h1,
-toRelativeHourNum(toDateTime('2000-09-20 14:11:29')) AS h2
+SELECT toRelativeHourNum(toDateTime('2023-01-01 12:00:00')) - toRelativeHourNum(toDateTime('2023-01-01 00:00:00')) AS hours_difference
         )",
         R"(
-┌─────h1─┬─────h2─┐
-│ 208276 │ 269292 │
-└────────┴────────┘
+┌─hours_difference─┐
+│               12 │
+└──────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toRelativeHourNum = {1, 1};
-    FunctionDocumentation::Category category_toRelativeHourNum = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toRelativeHourNum = {
-        description_toRelativeHourNum,
-        syntax_toRelativeHourNum,
-        arguments_toRelativeHourNum,
-        returned_value_toRelativeHourNum,
-        examples_toRelativeHourNum,
-        introduced_in_toRelativeHourNum,
-        category_toRelativeHourNum
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {
+        description,
+        syntax,
+        arguments,
+        returned_value,
+        examples,
+        introduced_in,
+        category
     };
 
-    factory.registerFunction<FunctionToRelativeHourNum>(documentation_toRelativeHourNum);
+    factory.registerFunction<FunctionToRelativeHourNum>(documentation);
 }
 
 }

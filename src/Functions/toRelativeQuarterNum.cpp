@@ -11,44 +11,44 @@ using FunctionToRelativeQuarterNum = FunctionDateOrDateTimeToSomething<DataTypeU
 
 REGISTER_FUNCTION(ToRelativeQuarterNum)
 {
-    FunctionDocumentation::Description description_toRelativeQuarterNum = R"(
+    FunctionDocumentation::Description description = R"(
 Converts a date or date with time to the number of quarters elapsed since a certain fixed point in the past.
+The exact point in time is an implementation detail, and therefore this function is not intended to be used standalone.
+The main purpose of the function is to calculate the difference in quarters between two dates or dates with time, e.g., `toRelativeQuarterNum(dt1) - toRelativeQuarterNum(dt2)`.
     )";
-    FunctionDocumentation::Syntax syntax_toRelativeQuarterNum = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toRelativeQuarterNum(date)
     )";
-    FunctionDocumentation::Arguments arguments_toRelativeQuarterNum =
+    FunctionDocumentation::Arguments arguments =
     {
         {"date", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toRelativeQuarterNum = "Returns the number of quarters from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_toRelativeQuarterNum =
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the number of quarters from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
+    FunctionDocumentation::Examples examples =
     {
         {"Get relative quarter numbers", R"(
-SELECT
-toRelativeQuarterNum(toDate('1993-11-25')) AS q1,
-toRelativeQuarterNum(toDate('2005-01-05')) AS q2
+SELECT toRelativeQuarterNum(toDate('2023-04-01')) - toRelativeQuarterNum(toDate('2023-01-01')) AS quarters_difference
         )",
         R"(
-┌───q1─┬───q2─┐
-│ 7975 │ 8020 │
-└──────┴──────┘
+┌─quarters_difference─┐
+│                   1 │
+└─────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toRelativeQuarterNum = {1, 1};
-    FunctionDocumentation::Category category_toRelativeQuarterNum = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toRelativeQuarterNum =
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation =
     {
-        description_toRelativeQuarterNum,
-        syntax_toRelativeQuarterNum,
-        arguments_toRelativeQuarterNum,
-        returned_value_toRelativeQuarterNum,
-        examples_toRelativeQuarterNum,
-        introduced_in_toRelativeQuarterNum,
-        category_toRelativeQuarterNum
+        description,
+        syntax,
+        arguments,
+        returned_value,
+        examples,
+        introduced_in,
+        category
     };
 
-    factory.registerFunction<FunctionToRelativeQuarterNum>(documentation_toRelativeQuarterNum);
+    factory.registerFunction<FunctionToRelativeQuarterNum>(documentation);
 }
 
 }

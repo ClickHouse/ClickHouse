@@ -455,7 +455,7 @@ The calculation is performed relative to specific points in time:
 | NANOSECOND  | 1970-01-01 00:00:00    |
 
 (*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
-    hour values between 1 and 23 are useful.
+hour values between 1 and 23 are useful.
 
 If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
 
@@ -468,9 +468,9 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
     )";
 
     FunctionDocumentation::Arguments arguments_toStartOfInterval = {
-        {"value", "Date or DateTime value to round down."},
+        {"value", "Date or date with time value to round down. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"x", "Interval length number."},
-        {"unit", "Interval unit (YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND)."},
+        {"unit", "Interval unit: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND."},
         {"time_zone", "Optional. Time zone name as a string."},
         {"origin", "Optional. Origin point for calculation (second overload only)."}
     };

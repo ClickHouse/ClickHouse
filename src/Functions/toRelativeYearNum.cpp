@@ -11,41 +11,41 @@ using FunctionToRelativeYearNum = FunctionDateOrDateTimeToSomething<DataTypeUInt
 
 REGISTER_FUNCTION(ToRelativeYearNum)
 {
-    FunctionDocumentation::Description description_toRelativeYearNum = R"(
+    FunctionDocumentation::Description description = R"(
 Converts a date or date with time to the number of years elapsed since a certain fixed point in the past.
+The exact point in time is an implementation detail, and therefore this function is not intended to be used
+standalone. The main purpose of the function is to calculate the difference in years between two dates or dates with time, e.g., `toRelativeYearNum(dt1) - toRelativeYearNum(dt2)`.
     )";
-    FunctionDocumentation::Syntax syntax_toRelativeYearNum = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toRelativeYearNum(date)
     )";
-    FunctionDocumentation::Arguments arguments_toRelativeYearNum = {
+    FunctionDocumentation::Arguments arguments = {
         {"date", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toRelativeYearNum = "Returns the number of years from a fixed reference point in the past. [`UInt16`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_toRelativeYearNum = {
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the number of years from a fixed reference point in the past. [`UInt16`](../data-types/int-uint.md).";
+    FunctionDocumentation::Examples examples = {
         {"Get relative year numbers", R"(
-SELECT
-    toRelativeYearNum(toDate('2002-12-08')) AS y1,
-    toRelativeYearNum(toDate('2010-10-26')) AS y2
+SELECT toRelativeYearNum('2010-10-01'::DateTime) - toRelativeYearNum('2000-01-01'::DateTime)
         )",
         R"(
-┌───y1─┬───y2─┐
-│ 2002 │ 2010 │
-└──────┴──────┘
+┌─minus(toRela⋯ateTime')))─┐
+│                       10 │
+└──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toRelativeYearNum = {1, 1};
-    FunctionDocumentation::Category category_toRelativeYearNum = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toRelativeYearNum = {
-        description_toRelativeYearNum,
-        syntax_toRelativeYearNum,
-        arguments_toRelativeYearNum,
-        returned_value_toRelativeYearNum,
-        examples_toRelativeYearNum,
-        introduced_in_toRelativeYearNum,
-        category_toRelativeYearNum
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {
+        description,
+        syntax,
+        arguments,
+        returned_value,
+        examples,
+        introduced_in,
+        category
     };
 
-    factory.registerFunction<FunctionToRelativeYearNum>(documentation_toRelativeYearNum);
+    factory.registerFunction<FunctionToRelativeYearNum>(documentation);
 }
 
 }

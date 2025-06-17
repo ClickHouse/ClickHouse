@@ -11,44 +11,44 @@ using FunctionToRelativeMinuteNum = FunctionDateOrDateTimeToSomething<DataTypeUI
 
 REGISTER_FUNCTION(ToRelativeMinuteNum)
 {
-    FunctionDocumentation::Description description_toRelativeMinuteNum = R"(
+    FunctionDocumentation::Description description = R"(
 Converts a date or date with time to the number of minutes elapsed since a certain fixed point in the past.
+The exact point in time is an implementation detail, and therefore this function is not intended to be used standalone.
+The main purpose of the function is to calculate the difference in minutes between two dates or dates with time, e.g., `toRelativeMinuteNum(dt1) - toRelativeMinuteNum(dt2)`.
     )";
-    FunctionDocumentation::Syntax syntax_toRelativeMinuteNum = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toRelativeMinuteNum(date)
     )";
-    FunctionDocumentation::Arguments arguments_toRelativeMinuteNum =
+    FunctionDocumentation::Arguments arguments =
     {
         {"date", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toRelativeMinuteNum = "Returns the number of minutes from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_toRelativeMinuteNum =
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the number of minutes from a fixed reference point in the past. [`UInt32`](../data-types/int-uint.md).";
+    FunctionDocumentation::Examples examples =
     {
         {"Get relative minute numbers", R"(
-SELECT
-toRelativeMinuteNum(toDateTime('1993-10-05 05:20:36')) AS m1,
-toRelativeMinuteNum(toDateTime('2000-09-20 14:11:29')) AS m2
+SELECT toRelativeMinuteNum(toDateTime('2023-01-01 00:30:00')) - toRelativeMinuteNum(toDateTime('2023-01-01 00:00:00')) AS minutes_difference
         )",
         R"(
-┌───────m1─┬───────m2─┐
-│ 12496580 │ 16157531 │
-└──────────┴──────────┘
+┌─minutes_difference─┐
+│                 30 │
+└────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toRelativeMinuteNum = {1, 1};
-    FunctionDocumentation::Category category_toRelativeMinuteNum = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toRelativeMinuteNum =
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation =
     {
-        description_toRelativeMinuteNum,
-        syntax_toRelativeMinuteNum,
-        arguments_toRelativeMinuteNum,
-        returned_value_toRelativeMinuteNum,
-        examples_toRelativeMinuteNum,
-        introduced_in_toRelativeMinuteNum,
-        category_toRelativeMinuteNum
+        description,
+        syntax,
+        arguments,
+        returned_value,
+        examples,
+        introduced_in,
+        category
     };
 
-    factory.registerFunction<FunctionToRelativeMinuteNum>(documentation_toRelativeMinuteNum);
+    factory.registerFunction<FunctionToRelativeMinuteNum>(documentation);
 }
 
 }

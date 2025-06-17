@@ -10,42 +10,45 @@ using FunctionToTime = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToTim
 
 REGISTER_FUNCTION(ToTime)
 {
-    FunctionDocumentation::Description description_toTime = R"(
-Converts a date with time to a certain fixed date, while preserving the time.
+    FunctionDocumentation::Description description = R"(
+Extracts the time component of a date or date with time.
+The returned result is an offset to a fixed point in time, currently `1970-01-02`,
+but the exact point in time is an implementation detail which may change in future.
 
-If the `date` input argument contained sub-second components, they will be dropped in the returned `DateTime` value with second-accuracy.
+`toTime` should therefore not be used standalone.
+The main purpose of the function is to calculate the time difference between two dates or dates with time, e.g., `toTime(dt1) - toTime(dt2)`.
     )";
-    FunctionDocumentation::Syntax syntax_toTime = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toTime(date[, timezone])
     )";
-    FunctionDocumentation::Arguments arguments_toTime = {
+    FunctionDocumentation::Arguments arguments = {
         {"date", "Date to convert to a time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"timezone", "Optional. Timezone for the returned value. [`String`](../data-types/string.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toTime = "Returns DateTime with date equated to `1970-01-02` while preserving the time. [`DateTime`](../data-types/datetime.md).";
-    FunctionDocumentation::Examples examples_toTime = {
-        {"Convert DateTime64 to time", R"(
-SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000',3)) AS result, toTypeName(result)
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the time component of a date or date with time in the form of an offset to a fixed point in time (selected as 1970-01-02, currently). [`DateTime`](../data-types/datetime.md).";
+    FunctionDocumentation::Examples examples = {
+        {"Calculate the time difference between two dates", R"(
+SELECT toTime('2025-06-15 12:00:00'::DateTime) - toTime('2024-05-10 11:00:00'::DateTime) AS result, toTypeName(result)
         )",
         R"(
-┌──────────────result─┬─toTypeName(result)─┐
-│ 1970-01-02 01:20:30 │ DateTime           │
-└─────────────────────┴────────────────────┘
+┌─result─┬─toTypeName(result)─┐
+│   3600 │ Int32              │
+└────────┴────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTime = {1, 1};
-    FunctionDocumentation::Category category_toTime = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toTime = {
-        description_toTime,
-        syntax_toTime,
-        arguments_toTime,
-        returned_value_toTime,
-        examples_toTime,
-        introduced_in_toTime,
-        category_toTime
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {
+        description,
+        syntax,
+        arguments,
+        returned_value,
+        examples,
+        introduced_in,
+        category
     };
 
-    factory.registerFunction<FunctionToTime>(documentation_toTime);
+    factory.registerFunction<FunctionToTime>(documentation);
 }
 
 }
