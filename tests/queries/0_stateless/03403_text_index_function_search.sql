@@ -35,6 +35,8 @@ SELECT id FROM tab WHERE searchAny('a', 'b'); -- { serverError BAD_ARGUMENTS }
 SELECT id FROM tab WHERE searchAny(col_str, 'b'); -- { serverError BAD_ARGUMENTS }
 SELECT id FROM tab WHERE searchAll('a', 'b'); -- { serverError BAD_ARGUMENTS }
 SELECT id FROM tab WHERE searchAll(col_str, 'b'); -- { serverError BAD_ARGUMENTS }
+-- search function supports a max of 64 needles
+SELECT id FROM tab WHERE searchAny(message, 'a b c d e f g h i j k l m n o p q r s t u v w x y z a b c d e f g h i j k l m n o p q r s t u v w x y z a b c d e f g h i j k l m'); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE tab;
 

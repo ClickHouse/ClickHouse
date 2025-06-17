@@ -9,7 +9,6 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <algorithm>
-#include <roaring.hh>
 
 namespace DB
 {
@@ -47,6 +46,7 @@ namespace
 {
 constexpr size_t arg_input = 0;
 constexpr size_t arg_needles = 1;
+constexpr size_t supported_number_of_needles = 64;
 
 template <typename StringColumnType>
 void executeSearchAny(
@@ -81,23 +81,25 @@ void executeSearchAll(
     const std::vector<String> & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    static const roaring::Roaring mask_zero;
+    const size_t ns = needles.size();
+    /// It is equivalent to ((2 ^ ns) - 1), but avoids overflow in case of ns = 64.
+    const UInt64 expected_mask = ((1ULL << (ns - 1)) + ((1ULL << (ns - 1)) - 1));
 
-    roaring::Roaring mask;
+    UInt64 mask;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         const auto value = col_input.getDataAt(i);
         col_result[i] = false;
 
-        mask &= mask_zero;
+        mask = 0;
         const auto & tokens = token_extractor->getTokens(value.data, value.size);
         for (const auto & token : tokens)
         {
             for (size_t pos = 0; pos < needles.size(); ++pos)
                 if (token == needles[pos])
-                    mask.add(pos);
+                    mask |= (1 << pos);
 
-            if (mask.cardinality() == needles.size())
+            if (mask == expected_mask)
             {
                 col_result[i] = true;
                 break;
@@ -169,6 +171,8 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
 
     const auto & col_needles_tokens = col_needles->getDataAt(0);
     std::vector<String> needles = DefaultTokenExtractor().getTokens(col_needles_tokens.data, col_needles_tokens.size);
+    if (needles.size() > supported_number_of_needles)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} needles", name, supported_number_of_needles);
 
     if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
         execute<SearchTraits>(std::move(token_extractor), *column_string, input_rows_count, needles, col_result->getData());
