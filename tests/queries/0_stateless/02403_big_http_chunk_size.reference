@@ -1,4 +1,3 @@
-client exception : [Errno 104] Connection reset by peer
 HTTP status string : HTTP/1.1 500 Internal Server Error
 Connection : Close
 Transfer-Encoding : chunked

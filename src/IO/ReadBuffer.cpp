@@ -70,7 +70,7 @@ std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr)
 
 void ReadBuffer::cancel()
 {
-    LOG_WARNING(getLogger("ReadBuffer"), "ReadBuffer is canceled at {}", StackTrace().toString());
+    LOG_DEBUG(getLogger("ReadBuffer"), "ReadBuffer is canceled at {}", StackTrace().toString());
     canceled = true;
 }
 }
