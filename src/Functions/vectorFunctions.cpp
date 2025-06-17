@@ -1611,15 +1611,7 @@ SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 MONTH, INTERVAL 1 Y
     };
     FunctionDocumentation::IntroducedIn introduced_in_addTupleOfIntervals = {22, 11};
     FunctionDocumentation::Category category_addTupleOfIntervals = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addTupleOfIntervals = {
-        description_addTupleOfIntervals,
-        syntax_addTupleOfIntervals,
-        arguments_addTupleOfIntervals,
-        returned_value_addTupleOfIntervals,
-        examples_addTupleOfIntervals,
-        introduced_in_addTupleOfIntervals,
-        category_addTupleOfIntervals
-    };
+    FunctionDocumentation documentation_addTupleOfIntervals = {description_addTupleOfIntervals, syntax_addTupleOfIntervals, arguments_addTupleOfIntervals, returned_value_addTupleOfIntervals, examples_addTupleOfIntervals, introduced_in_addTupleOfIntervals, category_addTupleOfIntervals};
 
     factory.registerFunction<FunctionAddTupleOfIntervals>(documentation_addTupleOfIntervals);
 
@@ -1647,15 +1639,7 @@ WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVA
     };
     FunctionDocumentation::IntroducedIn introduced_in_subtractTupleOfIntervals = {22, 11};
     FunctionDocumentation::Category category_subtractTupleOfIntervals = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_subtractTupleOfIntervals = {
-        description_subtractTupleOfIntervals,
-        syntax_subtractTupleOfIntervals,
-        arguments_subtractTupleOfIntervals,
-        returned_value_subtractTupleOfIntervals,
-        examples_subtractTupleOfIntervals,
-        introduced_in_subtractTupleOfIntervals,
-        category_subtractTupleOfIntervals
-    };
+    FunctionDocumentation documentation_subtractTupleOfIntervals = {description_subtractTupleOfIntervals, syntax_subtractTupleOfIntervals, arguments_subtractTupleOfIntervals, returned_value_subtractTupleOfIntervals, examples_subtractTupleOfIntervals, introduced_in_subtractTupleOfIntervals, category_subtractTupleOfIntervals};
 
     factory.registerFunction<FunctionSubtractTupleOfIntervals>(documentation_subtractTupleOfIntervals);
 
@@ -1693,15 +1677,7 @@ SELECT addInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)
     };
     FunctionDocumentation::IntroducedIn introduced_in_addInterval = {22, 11};
     FunctionDocumentation::Category category_addInterval = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addInterval = {
-        description_addInterval,
-        syntax_addInterval,
-        arguments_addInterval,
-        returned_value_addInterval,
-        examples_addInterval,
-        introduced_in_addInterval,
-        category_addInterval
-    };
+    FunctionDocumentation documentation_addInterval = {description_addInterval, syntax_addInterval, arguments_addInterval, returned_value_addInterval, examples_addInterval, introduced_in_addInterval, category_addInterval};
 
     factory.registerFunction<FunctionTupleAddInterval>(documentation_addInterval);
 
@@ -1740,15 +1716,7 @@ SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY);
     };
     FunctionDocumentation::IntroducedIn introduced_in_subtractInterval = {22, 11};
     FunctionDocumentation::Category category_subtractInterval = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_subtractInterval = {
-        description_subtractInterval,
-        syntax_subtractInterval,
-        arguments_subtractInterval,
-        returned_value_subtractInterval,
-        examples_subtractInterval,
-        introduced_in_subtractInterval,
-        category_subtractInterval
-    };
+    FunctionDocumentation documentation_subtractInterval = {description_subtractInterval, syntax_subtractInterval, arguments_subtractInterval, returned_value_subtractInterval, examples_subtractInterval, introduced_in_subtractInterval, category_subtractInterval};
 
     factory.registerFunction<FunctionTupleSubtractInterval>(documentation_subtractInterval);
 
@@ -1767,7 +1735,7 @@ Calculates the sum of absolute values of a vector.
     )";
     FunctionDocumentation::Syntax syntax_l1_norm = "L1Norm(vector)";
     FunctionDocumentation::Arguments arguments_l1_norm = {
-        {"vector", "[`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector", "Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_l1_norm = "Returns the L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance. [`UInt`](/sql-reference/data-types/int-uint), [`Float`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal).";
     FunctionDocumentation::Examples examples_l1_norm = {
@@ -1784,15 +1752,7 @@ SELECT L1Norm((1, 2))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l1_norm = {21, 11};
     FunctionDocumentation::Category category_l1_norm = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l1_norm = {
-        description_l1_norm,
-        syntax_l1_norm,
-        arguments_l1_norm,
-        returned_value_l1_norm,
-        examples_l1_norm,
-        introduced_in_l1_norm,
-        category_l1_norm
-    };
+    FunctionDocumentation documentation_l1_norm = {description_l1_norm, syntax_l1_norm, arguments_l1_norm, returned_value_l1_norm, examples_l1_norm, introduced_in_l1_norm, category_l1_norm};
 
     factory.registerFunction<TupleOrArrayFunctionL1Norm>(documentation_l1_norm);
 
@@ -1802,9 +1762,9 @@ Calculates the square root of the sum of the squares of the vector values.
     )";
     FunctionDocumentation::Syntax syntax_l2_norm = "L2Norm(vector)";
     FunctionDocumentation::Arguments arguments_l2_norm = {
-        {"vector", "[`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector", "Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_norm = "Returns the L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance). [`Float`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_l2_norm = "Returns the L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance). [`Float64`](/sql-reference/data-types/float).";
     FunctionDocumentation::Examples examples_l2_norm = {
         {
             "Basic usage",
@@ -1819,29 +1779,19 @@ SELECT L2Norm((1, 2))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_norm = {21, 11};
     FunctionDocumentation::Category category_l2_norm = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_norm = {
-        description_l2_norm,
-        syntax_l2_norm,
-        arguments_l2_norm,
-        returned_value_l2_norm,
-        examples_l2_norm,
-        introduced_in_l2_norm,
-        category_l2_norm
-    };
+    FunctionDocumentation documentation_l2_norm = {description_l2_norm, syntax_l2_norm, arguments_l2_norm, returned_value_l2_norm, examples_l2_norm, introduced_in_l2_norm, category_l2_norm};
 
     factory.registerFunction<TupleOrArrayFunctionL2Norm>(documentation_l2_norm);
 
     /// L2SquaredNorm documentation
     FunctionDocumentation::Description description_l2_squared_norm = R"(
 Calculates the square root of the sum of the squares of the vector values (the [`L2Norm`](#l2norm)) squared.
-
-Alias: `normL2Squared`.
     )";
     FunctionDocumentation::Syntax syntax_l2_squared_norm = "L2SquaredNorm(vector)";
     FunctionDocumentation::Arguments arguments_l2_squared_norm = {
-        {"vector", "[`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector", "Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_squared_norm = "Returns the L2-norm squared. [`UInt`](/sql-reference/data-types/int-uint), [`Float`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal).";
+    FunctionDocumentation::ReturnedValue returned_value_l2_squared_norm = "Returns the L2-norm squared. [`UInt`](/sql-reference/data-types/int-uint) or [`Float`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal).";
     FunctionDocumentation::Examples examples_l2_squared_norm = {
         {
             "Basic usage",
@@ -1856,15 +1806,7 @@ SELECT L2SquaredNorm((1, 2))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_squared_norm = {22, 7};
     FunctionDocumentation::Category category_l2_squared_norm = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_squared_norm = {
-        description_l2_squared_norm,
-        syntax_l2_squared_norm,
-        arguments_l2_squared_norm,
-        returned_value_l2_squared_norm,
-        examples_l2_squared_norm,
-        introduced_in_l2_squared_norm,
-        category_l2_squared_norm
-    };
+    FunctionDocumentation documentation_l2_squared_norm = {description_l2_squared_norm, syntax_l2_squared_norm, arguments_l2_squared_norm, returned_value_l2_squared_norm, examples_l2_squared_norm, introduced_in_l2_squared_norm, category_l2_squared_norm};
 
     factory.registerFunction<TupleOrArrayFunctionL2SquaredNorm>(documentation_l2_squared_norm);
 
@@ -1874,7 +1816,7 @@ Calculates the maximum of absolute values of a vector.
     )";
     FunctionDocumentation::Syntax syntax_linf_norm = "LinfNorm(vector)";
     FunctionDocumentation::Arguments arguments_linf_norm = {
-        {"vector", "[`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector", "Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_linf_norm = "Returns the Linf-norm or the maximum absolute value. [`Float64`](/sql-reference/data-types/float).";
     FunctionDocumentation::Examples examples_linf_norm = {
@@ -1891,15 +1833,7 @@ SELECT LinfNorm((1, -2))
     };
     FunctionDocumentation::IntroducedIn introduced_in_linf_norm = {21, 11};
     FunctionDocumentation::Category category_linf_norm = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_linf_norm = {
-        description_linf_norm,
-        syntax_linf_norm,
-        arguments_linf_norm,
-        returned_value_linf_norm,
-        examples_linf_norm,
-        introduced_in_linf_norm,
-        category_linf_norm
-    };
+    FunctionDocumentation documentation_linf_norm = {description_linf_norm, syntax_linf_norm, arguments_linf_norm, returned_value_linf_norm, examples_linf_norm, introduced_in_linf_norm, category_linf_norm};
 
     factory.registerFunction<TupleOrArrayFunctionLinfNorm>(documentation_linf_norm);
 
@@ -1914,7 +1848,7 @@ Special cases:
     )";
     FunctionDocumentation::Syntax syntax_lp_norm = "LpNorm(vector, p)";
     FunctionDocumentation::Arguments arguments_lp_norm = {
-        {"vector", "[`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
+        {"vector", "Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
         {"p", "The power. Possible values are real numbers in the range `[1; inf)`. [`UInt`](/sql-reference/data-types/int-uint) or [`Float`](/sql-reference/data-types/float)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_lp_norm = "Returns the [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm). [`Float64`](/sql-reference/data-types/float).";
@@ -1932,15 +1866,7 @@ SELECT LpNorm((1, -2), 2)
     };
     FunctionDocumentation::IntroducedIn introduced_in_lp_norm = {21, 11};
     FunctionDocumentation::Category category_lp_norm = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_lp_norm = {
-        description_lp_norm,
-        syntax_lp_norm,
-        arguments_lp_norm,
-        returned_value_lp_norm,
-        examples_lp_norm,
-        introduced_in_lp_norm,
-        category_lp_norm
-    };
+    FunctionDocumentation documentation_lp_norm = {description_lp_norm, syntax_lp_norm, arguments_lp_norm, returned_value_lp_norm, examples_lp_norm, introduced_in_lp_norm, category_lp_norm};
 
     factory.registerFunction<TupleOrArrayFunctionLpNorm>(documentation_lp_norm);
 
@@ -1960,7 +1886,7 @@ Calculates the distance between two points (the values of the vectors are the co
         {"vector1", "First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
         {"vector2", "Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l1_distance = "Returns the 1-norm distance. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_l1_distance = "Returns the 1-norm distance. [`UInt32`](/sql-reference/data-types/int-uint) or [`Float64`](/sql-reference/data-types/float).";
     FunctionDocumentation::Examples examples_l1_distance = {
         {
             "Basic usage",
@@ -1975,23 +1901,13 @@ SELECT L1Distance((1, 2), (2, 3))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l1_distance = {21, 11};
     FunctionDocumentation::Category category_l1_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l1_distance = {
-        description_l1_distance,
-        syntax_l1_distance,
-        arguments_l1_distance,
-        returned_value_l1_distance,
-        examples_l1_distance,
-        introduced_in_l1_distance,
-        category_l1_distance
-    };
+    FunctionDocumentation documentation_l1_distance = {description_l1_distance, syntax_l1_distance, arguments_l1_distance, returned_value_l1_distance, examples_l1_distance, introduced_in_l1_distance, category_l1_distance};
 
     factory.registerFunction<TupleOrArrayFunctionL1Distance>(documentation_l1_distance);
 
     /// L2Distance documentation
     FunctionDocumentation::Description description_l2_distance = R"(
 Calculates the distance between two points (the values of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
-
-Alias: `distanceL2`.
     )";
     FunctionDocumentation::Syntax syntax_l2_distance = "L2Distance(vector1, vector2)";
     FunctionDocumentation::Arguments arguments_l2_distance = {
@@ -2013,15 +1929,7 @@ SELECT L2Distance((1, 2), (2, 3))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_distance = {21, 11};
     FunctionDocumentation::Category category_l2_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_distance = {
-        description_l2_distance,
-        syntax_l2_distance,
-        arguments_l2_distance,
-        returned_value_l2_distance,
-        examples_l2_distance,
-        introduced_in_l2_distance,
-        category_l2_distance
-    };
+    FunctionDocumentation documentation_l2_distance = {description_l2_distance, syntax_l2_distance, arguments_l2_distance, returned_value_l2_distance, examples_l2_distance, introduced_in_l2_distance, category_l2_distance};
 
     factory.registerFunction<TupleOrArrayFunctionL2Distance>(documentation_l2_distance);
 
@@ -2049,15 +1957,7 @@ SELECT L2SquaredDistance([1, 2, 3], [0, 0, 0])
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_squared_distance = {22, 7};
     FunctionDocumentation::Category category_l2_squared_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_squared_distance = {
-        description_l2_squared_distance,
-        syntax_l2_squared_distance,
-        arguments_l2_squared_distance,
-        returned_value_l2_squared_distance,
-        examples_l2_squared_distance,
-        introduced_in_l2_squared_distance,
-        category_l2_squared_distance
-    };
+    FunctionDocumentation documentation_l2_squared_distance = {description_l2_squared_distance, syntax_l2_squared_distance, arguments_l2_squared_distance, returned_value_l2_squared_distance, examples_l2_squared_distance, introduced_in_l2_squared_distance, category_l2_squared_distance};
 
     factory.registerFunction<TupleOrArrayFunctionL2SquaredDistance>(documentation_l2_squared_distance);
 
@@ -2085,15 +1985,7 @@ SELECT LinfDistance((1, 2), (2, 3))
     };
     FunctionDocumentation::IntroducedIn introduced_in_linf_distance = {21, 11};
     FunctionDocumentation::Category category_linf_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_linf_distance = {
-        description_linf_distance,
-        syntax_linf_distance,
-        arguments_linf_distance,
-        returned_value_linf_distance,
-        examples_linf_distance,
-        introduced_in_linf_distance,
-        category_linf_distance
-    };
+    FunctionDocumentation documentation_linf_distance = {description_linf_distance, syntax_linf_distance, arguments_linf_distance, returned_value_linf_distance, examples_linf_distance, introduced_in_linf_distance, category_linf_distance};
 
     factory.registerFunction<TupleOrArrayFunctionLinfDistance>(documentation_linf_distance);
 
@@ -2122,15 +2014,7 @@ SELECT LpDistance((1, 2), (2, 3), 3)
     };
     FunctionDocumentation::IntroducedIn introduced_in_lp_distance = {21, 11};
     FunctionDocumentation::Category category_lp_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_lp_distance = {
-        description_lp_distance,
-        syntax_lp_distance,
-        arguments_lp_distance,
-        returned_value_lp_distance,
-        examples_lp_distance,
-        introduced_in_lp_distance,
-        category_lp_distance
-    };
+    FunctionDocumentation documentation_lp_distance = {description_lp_distance, syntax_lp_distance, arguments_lp_distance, returned_value_lp_distance, examples_lp_distance, introduced_in_lp_distance, category_lp_distance};
 
     factory.registerFunction<TupleOrArrayFunctionLpDistance>(documentation_lp_distance);
 
@@ -2165,15 +2049,7 @@ SELECT cosineDistance((1, 2), (2, 3));
     };
     FunctionDocumentation::IntroducedIn introduced_in_cosine_distance = {1, 1};
     FunctionDocumentation::Category category_cosine_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_cosine_distance = {
-        description_cosine_distance,
-        syntax_cosine_distance,
-        arguments_cosine_distance,
-        returned_value_cosine_distance,
-        examples_cosine_distance,
-        introduced_in_cosine_distance,
-        category_cosine_distance
-    };
+    FunctionDocumentation documentation_cosine_distance = {description_cosine_distance, syntax_cosine_distance, arguments_cosine_distance, returned_value_cosine_distance, examples_cosine_distance, introduced_in_cosine_distance, category_cosine_distance};
 
     factory.registerFunction<TupleOrArrayFunctionCosineDistance>(documentation_cosine_distance);
 
@@ -2200,15 +2076,7 @@ SELECT L1Normalize((1, 2))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l1_normalize = {21, 11};
     FunctionDocumentation::Category category_l1_normalize = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l1_normalize = {
-        description_l1_normalize,
-        syntax_l1_normalize,
-        arguments_l1_normalize,
-        returned_value_l1_normalize,
-        examples_l1_normalize,
-        introduced_in_l1_normalize,
-        category_l1_normalize
-    };
+    FunctionDocumentation documentation_l1_normalize = {description_l1_normalize, syntax_l1_normalize, arguments_l1_normalize, returned_value_l1_normalize, examples_l1_normalize, introduced_in_l1_normalize, category_l1_normalize};
 
     factory.registerFunction<FunctionL1Normalize>(documentation_l1_normalize);
     factory.registerAlias("normalizeL1", FunctionL1Normalize::name, FunctionFactory::Case::Insensitive);
@@ -2219,7 +2087,7 @@ Calculates the unit vector of a given vector (the values of the tuple are the co
     )";
     FunctionDocumentation::Syntax syntax_l2_normalize = "L2Normalize(tuple)";
     FunctionDocumentation::Arguments arguments_l2_normalize = {
-        {"tuple", "[`Tuple(T)`](/sql-reference/data-types/tuple) of numbers."}
+        {"tuple", "A tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_l2_normalize = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
     FunctionDocumentation::Examples examples_l2_normalize = {
@@ -2236,15 +2104,7 @@ SELECT L2Normalize((3, 4))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_normalize = {21, 11};
     FunctionDocumentation::Category category_l2_normalize = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_normalize = {
-        description_l2_normalize,
-        syntax_l2_normalize,
-        arguments_l2_normalize,
-        returned_value_l2_normalize,
-        examples_l2_normalize,
-        introduced_in_l2_normalize,
-        category_l2_normalize
-    };
+    FunctionDocumentation documentation_l2_normalize = {description_l2_normalize, syntax_l2_normalize, arguments_l2_normalize, returned_value_l2_normalize, examples_l2_normalize, introduced_in_l2_normalize, category_l2_normalize};
 
     factory.registerFunction<FunctionL2Normalize>(documentation_l2_normalize);
     factory.registerAlias("normalizeL2", FunctionL2Normalize::name, FunctionFactory::Case::Insensitive);
@@ -2255,7 +2115,7 @@ Calculates the unit vector of a given vector (the values of the tuple are the co
     )";
     FunctionDocumentation::Syntax syntax_linf_normalize = "LinfNormalize(tuple)";
     FunctionDocumentation::Arguments arguments_linf_normalize = {
-        {"tuple", "[`Tuple(T)`](/sql-reference/data-types/tuple) of numbers."}
+        {"tuple", "A tuple of numeric values.[`Tuple(T)`](/sql-reference/data-types/tuple)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_linf_normalize = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
     FunctionDocumentation::Examples examples_linf_normalize = {
@@ -2272,45 +2132,39 @@ SELECT LinfNormalize((3, 4))
     };
     FunctionDocumentation::IntroducedIn introduced_in_linf_normalize = {21, 11};
     FunctionDocumentation::Category category_linf_normalize = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_linf_normalize = {
-        description_linf_normalize,
-        syntax_linf_normalize,
-        arguments_linf_normalize,
-        returned_value_linf_normalize,
-        examples_linf_normalize,
-        introduced_in_linf_normalize,
-        category_linf_normalize
-    };
+    FunctionDocumentation documentation_linf_normalize = {description_linf_normalize, syntax_linf_normalize, arguments_linf_normalize, returned_value_linf_normalize, examples_linf_normalize, introduced_in_linf_normalize, category_linf_normalize};
 
     factory.registerFunction<FunctionLinfNormalize>(documentation_linf_normalize);
     factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::Case::Insensitive);
 
     /// LpNormalize documentation
-    FunctionDocumentation::Description description = R"(
+    {
+        FunctionDocumentation::Description description_lp_normalize = R"(
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
-    )";
-    FunctionDocumentation::Syntax syntax = "LpNormalize(tuple, p)";
-    FunctionDocumentation::Arguments arguments = {
-        {"tuple", "[`Tuple(T)`](/sql-reference/data-types/tuple) of numbers."},
-        {"p", "The power. Possible values are any number in the range range from `[1; inf)`. [`UInt`](/sql-reference/data-types/int-uint) or [`Float`](/sql-reference/data-types/float)."}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
-    FunctionDocumentation::Examples examples = {
-        {
-            "Basic usage",
-            R"(
+        )";
+        FunctionDocumentation::Syntax syntax_lp_normalize = "LpNormalize(tuple, p)";
+        FunctionDocumentation::Arguments arguments_lp_normalize = {
+            {"tuple", "A tuple of numeric values.[`Tuple(T)`](/sql-reference/data-types/tuple)."},
+            {"p", "The power. Possible values are any number in the range range from `[1; inf)`. [`UInt`](/sql-reference/data-types/int-uint) or [`Float`](/sql-reference/data-types/float)."}
+        };
+        FunctionDocumentation::ReturnedValue returned_value_lp_normalize = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
+        FunctionDocumentation::Examples examples_lp_normalize = {
+            {
+                "Basic usage",
+                R"(
 SELECT LpNormalize((3, 4), 5)
-            )",
-            R"(
+                )",
+                R"(
 ┌─LpNormalize((3, 4), 5)──────────────────┐
 │ (0.7187302630182624,0.9583070173576831) │
 └─────────────────────────────────────────┘
-            )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+                )"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in_lp_normalize = {21, 11};
+        FunctionDocumentation::Category category_lp_normalize = FunctionDocumentation::Category::Distance;
+        FunctionDocumentation documentation_lp_normalize = {description_lp_normalize, syntax_lp_normalize, arguments_lp_normalize, returned_value_lp_normalize, examples_lp_normalize, introduced_in_lp_normalize, category_lp_normalize};
 
-    factory.registerFunction<FunctionLpNormalize>(documentation);
+        factory.registerFunction<FunctionLpNormalize>(documentation_lp_normalize);
+    }
     factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::Case::Insensitive);
 }
