@@ -1719,7 +1719,7 @@ subtractInterval(interval_1, interval_2)
         {"interval_1", "First interval or interval of tuples. [`interval`](../data-types/special-data-types/interval.md)/[`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."},
         {"interval_2", "Second interval to be negated. [`interval`](../data-types/special-data-types/interval.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractInterval = "Returns a tuple of intervals. [`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md)).";
+    FunctionDocumentation::ReturnedValue returned_value_subtractInterval = "Returns a tuple of intervals. [`Tuple(T)`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md)).";
     FunctionDocumentation::Examples examples_subtractInterval = {
         {"Subtract intervals", R"(
 SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH);
@@ -1761,40 +1761,556 @@ SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY);
     factory.registerFunction<TupleOrArrayFunctionDotProduct>();
     factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::Case::Insensitive);
 
-    factory.registerFunction<TupleOrArrayFunctionL1Norm>();
-    factory.registerFunction<TupleOrArrayFunctionL2Norm>();
-    factory.registerFunction<TupleOrArrayFunctionL2SquaredNorm>();
-    factory.registerFunction<TupleOrArrayFunctionLinfNorm>();
-    factory.registerFunction<TupleOrArrayFunctionLpNorm>();
+    /// L1Norm documentation
+    FunctionDocumentation::Description description_l1_norm = R"(
+Calculates the sum of absolute values of a vector.
+    )";
+    FunctionDocumentation::Syntax syntax_l1_norm = "L1Norm(vector)";
+    FunctionDocumentation::Arguments arguments_l1_norm = {
+        {"vector", "[`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_l1_norm = "Returns the L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance. [`UInt`](/sql-reference/data-types/int-uint), [`Float`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal).";
+    FunctionDocumentation::Examples examples_l1_norm = {
+        {
+            "Basic usage", 
+            R"(
+SELECT L1Norm((1, 2))
+            )",
+            R"(
+┌─L1Norm((1, 2))─┐
+│              3 │
+└────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_l1_norm = {21, 11};
+    FunctionDocumentation::Category category_l1_norm = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_l1_norm = {
+        description_l1_norm,
+        syntax_l1_norm,
+        arguments_l1_norm,
+        returned_value_l1_norm,
+        examples_l1_norm,
+        introduced_in_l1_norm,
+        category_l1_norm
+    };
 
+    factory.registerFunction<TupleOrArrayFunctionL1Norm>(documentation_l1_norm);
+
+    /// L2Norm documentation
+    FunctionDocumentation::Description description_l2_norm = R"(
+Calculates the square root of the sum of the squares of the vector values.
+    )";
+    FunctionDocumentation::Syntax syntax_l2_norm = "L2Norm(vector)";
+    FunctionDocumentation::Arguments arguments_l2_norm = {
+        {"vector", "[`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_l2_norm = "Returns the L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance). [`Float`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_l2_norm = {
+        {
+            "Basic usage",
+            R"(
+SELECT L2Norm((1, 2))
+            )",
+            R"(
+┌───L2Norm((1, 2))─┐
+│ 2.23606797749979 │
+└──────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_l2_norm = {21, 11};
+    FunctionDocumentation::Category category_l2_norm = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_l2_norm = {
+        description_l2_norm,
+        syntax_l2_norm,
+        arguments_l2_norm,
+        returned_value_l2_norm,
+        examples_l2_norm,
+        introduced_in_l2_norm,
+        category_l2_norm
+    };
+
+    factory.registerFunction<TupleOrArrayFunctionL2Norm>(documentation_l2_norm);
+
+    /// L2SquaredNorm documentation
+    FunctionDocumentation::Description description_l2_squared_norm = R"(
+Calculates the square root of the sum of the squares of the vector values (the [`L2Norm`](#l2norm)) squared.
+
+Alias: `normL2Squared`.
+    )";
+    FunctionDocumentation::Syntax syntax_l2_squared_norm = "L2SquaredNorm(vector)";
+    FunctionDocumentation::Arguments arguments_l2_squared_norm = {
+        {"vector", "[`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_l2_squared_norm = "Returns the L2-norm squared. [`UInt`](/sql-reference/data-types/int-uint), [`Float`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal).";
+    FunctionDocumentation::Examples examples_l2_squared_norm = {
+        {
+            "Basic usage",
+            R"(
+SELECT L2SquaredNorm((1, 2))
+            )",
+            R"(
+┌─L2SquaredNorm((1, 2))─┐
+│                     5 │
+└───────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_l2_squared_norm = {22, 7};
+    FunctionDocumentation::Category category_l2_squared_norm = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_l2_squared_norm = {
+        description_l2_squared_norm,
+        syntax_l2_squared_norm,
+        arguments_l2_squared_norm,
+        returned_value_l2_squared_norm,
+        examples_l2_squared_norm,
+        introduced_in_l2_squared_norm,
+        category_l2_squared_norm
+    };
+
+    factory.registerFunction<TupleOrArrayFunctionL2SquaredNorm>(documentation_l2_squared_norm);
+
+    /// LinfNorm documentation
+    FunctionDocumentation::Description description_linf_norm = R"(
+Calculates the maximum of absolute values of a vector.
+    )";
+    FunctionDocumentation::Syntax syntax_linf_norm = "LinfNorm(vector)";
+    FunctionDocumentation::Arguments arguments_linf_norm = {
+        {"vector", "[`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_linf_norm = "Returns the Linf-norm or the maximum absolute value. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_linf_norm = {
+        {
+            "Basic usage",
+            R"(
+SELECT LinfNorm((1, -2))
+            )",
+            R"(
+┌─LinfNorm((1, -2))─┐
+│                 2 │
+└───────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_linf_norm = {21, 11};
+    FunctionDocumentation::Category category_linf_norm = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_linf_norm = {
+        description_linf_norm,
+        syntax_linf_norm,
+        arguments_linf_norm,
+        returned_value_linf_norm,
+        examples_linf_norm,
+        introduced_in_linf_norm,
+        category_linf_norm
+    };
+
+    factory.registerFunction<TupleOrArrayFunctionLinfNorm>(documentation_linf_norm);
+
+    /// LpNorm documentation
+    FunctionDocumentation::Description description_lp_norm = R"(
+Calculates the p-norm of a vector, which is the p-th root of the sum of the p-th powers of the absolute values of its elements.
+
+Special cases:
+- When p=1, it's equivalent to L1Norm (Manhattan distance).
+- When p=2, it's equivalent to L2Norm (Euclidean distance).
+- When p=∞, it's equivalent to LinfNorm (maximum norm).
+    )";
+    FunctionDocumentation::Syntax syntax_lp_norm = "LpNorm(vector, p)";
+    FunctionDocumentation::Arguments arguments_lp_norm = {
+        {"vector", "[`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
+        {"p", "The power. Possible values are real numbers in the range `[1; inf)`. [`UInt`](/sql-reference/data-types/int-uint) or [`Float`](/sql-reference/data-types/float)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_lp_norm = "Returns the [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm). [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_lp_norm = {
+        {
+            "Basic usage",
+            R"(
+SELECT LpNorm((1, -2), 2)
+            )",
+            R"(
+┌─LpNorm((1, -2), 2)─┐
+│   2.23606797749979 │
+└────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_lp_norm = {21, 11};
+    FunctionDocumentation::Category category_lp_norm = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_lp_norm = {
+        description_lp_norm,
+        syntax_lp_norm,
+        arguments_lp_norm,
+        returned_value_lp_norm,
+        examples_lp_norm,
+        introduced_in_lp_norm,
+        category_lp_norm
+    };
+
+    factory.registerFunction<TupleOrArrayFunctionLpNorm>(documentation_lp_norm);
+
+    // Register aliases for norm functions
     factory.registerAlias("normL1", TupleOrArrayFunctionL1Norm::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("normL2", TupleOrArrayFunctionL2Norm::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("normL2Squared", TupleOrArrayFunctionL2SquaredNorm::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("normLinf", TupleOrArrayFunctionLinfNorm::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("normLp", FunctionLpNorm::name, FunctionFactory::Case::Insensitive);
 
-    factory.registerFunction<TupleOrArrayFunctionL1Distance>();
-    factory.registerFunction<TupleOrArrayFunctionL2Distance>();
-    factory.registerFunction<TupleOrArrayFunctionL2SquaredDistance>();
-    factory.registerFunction<TupleOrArrayFunctionLinfDistance>();
-    factory.registerFunction<TupleOrArrayFunctionLpDistance>();
+    /// L1Distance documentation
+    FunctionDocumentation::Description description_l1_distance = R"(
+Calculates the distance between two points (the values of the vectors are the coordinates) in `L1` space (1-norm ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance)).
+    )";
+    FunctionDocumentation::Syntax syntax_l1_distance = "L1Distance(vector1, vector2)";
+    FunctionDocumentation::Arguments arguments_l1_distance = {
+        {"vector1", "First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
+        {"vector2", "Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_l1_distance = "Returns the 1-norm distance. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_l1_distance = {
+        {
+            "Basic usage",
+            R"(
+SELECT L1Distance((1, 2), (2, 3))
+            )",
+            R"(
+┌─L1Distance((1, 2), (2, 3))─┐
+│                          2 │
+└────────────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_l1_distance = {21, 11};
+    FunctionDocumentation::Category category_l1_distance = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_l1_distance = {
+        description_l1_distance,
+        syntax_l1_distance,
+        arguments_l1_distance,
+        returned_value_l1_distance,
+        examples_l1_distance,
+        introduced_in_l1_distance,
+        category_l1_distance
+    };
 
+    factory.registerFunction<TupleOrArrayFunctionL1Distance>(documentation_l1_distance);
+
+    /// L2Distance documentation
+    FunctionDocumentation::Description description_l2_distance = R"(
+Calculates the distance between two points (the values of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
+
+Alias: `distanceL2`.
+    )";
+    FunctionDocumentation::Syntax syntax_l2_distance = "L2Distance(vector1, vector2)";
+    FunctionDocumentation::Arguments arguments_l2_distance = {
+        {"vector1", "First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
+        {"vector2", "Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_l2_distance = "Returns the 2-norm distance. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_l2_distance = {
+        {
+            "Basic usage",
+            R"(
+SELECT L2Distance((1, 2), (2, 3))
+            )",
+            R"(
+┌─L2Distance((1, 2), (2, 3))─┐
+│         1.4142135623730951 │
+└────────────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_l2_distance = {21, 11};
+    FunctionDocumentation::Category category_l2_distance = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_l2_distance = {
+        description_l2_distance,
+        syntax_l2_distance,
+        arguments_l2_distance,
+        returned_value_l2_distance,
+        examples_l2_distance,
+        introduced_in_l2_distance,
+        category_l2_distance
+    };
+
+    factory.registerFunction<TupleOrArrayFunctionL2Distance>(documentation_l2_distance);
+
+    /// L2SquaredDistance documentation
+    FunctionDocumentation::Description description_l2_squared_distance = R"(
+Calculates the sum of the squares of the difference between the corresponding elements of two vectors.
+    )";
+    FunctionDocumentation::Syntax syntax_l2_squared_distance = "L2SquaredDistance(vector1, vector2)";
+    FunctionDocumentation::Arguments arguments_l2_squared_distance = {
+        {"vector1", "First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
+        {"vector2", "Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_l2_squared_distance = "Returns the sum of the squares of the difference between the corresponding elements of two vectors. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_l2_squared_distance = {
+        {
+            "Basic usage",
+            R"(
+SELECT L2SquaredDistance([1, 2, 3], [0, 0, 0])
+            )",
+            R"(
+┌─L2SquaredDis⋯ [0, 0, 0])─┐
+│                       14 │
+└──────────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_l2_squared_distance = {22, 7};
+    FunctionDocumentation::Category category_l2_squared_distance = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_l2_squared_distance = {
+        description_l2_squared_distance,
+        syntax_l2_squared_distance,
+        arguments_l2_squared_distance,
+        returned_value_l2_squared_distance,
+        examples_l2_squared_distance,
+        introduced_in_l2_squared_distance,
+        category_l2_squared_distance
+    };
+
+    factory.registerFunction<TupleOrArrayFunctionL2SquaredDistance>(documentation_l2_squared_distance);
+
+    /// LinfDistance documentation
+    FunctionDocumentation::Description description_linf_distance = R"(
+Calculates the distance between two points (the values of the vectors are the coordinates) in `L_{inf}` space ([maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
+    )";
+    FunctionDocumentation::Syntax syntax_linf_distance = "LinfDistance(vector1, vector2)";
+    FunctionDocumentation::Arguments arguments_linf_distance = {
+        {"vector1", "First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
+        {"vector2", "Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_linf_distance = "Returns the Infinity-norm distance. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_linf_distance = {
+        {
+            "Basic usage",
+            R"(
+SELECT LinfDistance((1, 2), (2, 3))
+            )",
+            R"(
+┌─LinfDistance((1, 2), (2, 3))─┐
+│                            1 │
+└──────────────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_linf_distance = {21, 11};
+    FunctionDocumentation::Category category_linf_distance = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_linf_distance = {
+        description_linf_distance,
+        syntax_linf_distance,
+        arguments_linf_distance,
+        returned_value_linf_distance,
+        examples_linf_distance,
+        introduced_in_linf_distance,
+        category_linf_distance
+    };
+
+    factory.registerFunction<TupleOrArrayFunctionLinfDistance>(documentation_linf_distance);
+
+    /// LpDistance documentation
+    FunctionDocumentation::Description description_lp_distance = R"(
+Calculates the distance between two points (the values of the vectors are the coordinates) in `Lp` space ([p-norm distance](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
+    )";
+    FunctionDocumentation::Syntax syntax_lp_distance = "LpDistance(vector1, vector2, p)";
+    FunctionDocumentation::Arguments arguments_lp_distance = {
+        {"vector1", "First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
+        {"vector2", "Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
+        {"p", "The power. Possible values: real number from `[1; inf)`. [`UInt`](/sql-reference/data-types/int-uint) or [`Float`](/sql-reference/data-types/float)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_lp_distance = "Returns the p-norm distance. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_lp_distance = {
+        {
+            "Basic usage",
+            R"(
+SELECT LpDistance((1, 2), (2, 3), 3)
+            )",
+            R"(
+┌─LpDistance((1, 2), (2, 3), 3)─┐
+│            1.2599210498948732 │
+└───────────────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_lp_distance = {21, 11};
+    FunctionDocumentation::Category category_lp_distance = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_lp_distance = {
+        description_lp_distance,
+        syntax_lp_distance,
+        arguments_lp_distance,
+        returned_value_lp_distance,
+        examples_lp_distance,
+        introduced_in_lp_distance,
+        category_lp_distance
+    };
+
+    factory.registerFunction<TupleOrArrayFunctionLpDistance>(documentation_lp_distance);
+
+    // Register aliases for distance functions
     factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
 
-    factory.registerFunction<FunctionL1Normalize>();
-    factory.registerFunction<FunctionL2Normalize>();
-    factory.registerFunction<FunctionLinfNormalize>();
-    factory.registerFunction<FunctionLpNormalize>();
+    /// cosineDistance documentation
+    FunctionDocumentation::Description description_cosine_distance = R"(
+Calculates the cosine distance between two vectors (the values of the tuples are the coordinates). The smaller the returned value is, the more similar are the vectors.
+    )";
+    FunctionDocumentation::Syntax syntax_cosine_distance = "cosineDistance(vector1, vector2)";
+    FunctionDocumentation::Arguments arguments_cosine_distance = {
+        {"vector1", "First tuple. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
+        {"vector2", "Second tuple. [Tuple(T)](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_cosine_distance = "Returns the cosine of the angle between two vectors subtracted from one. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_cosine_distance = {
+        {
+            "Basic usage",
+            R"(
+SELECT cosineDistance((1, 2), (2, 3));
+            )",
+            R"(
+┌─cosineDistance((1, 2), (2, 3))─┐
+│           0.007722123286332261 │
+└────────────────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_cosine_distance = {1, 1};
+    FunctionDocumentation::Category category_cosine_distance = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_cosine_distance = {
+        description_cosine_distance,
+        syntax_cosine_distance,
+        arguments_cosine_distance,
+        returned_value_cosine_distance,
+        examples_cosine_distance,
+        introduced_in_cosine_distance,
+        category_cosine_distance
+    };
 
+    factory.registerFunction<TupleOrArrayFunctionCosineDistance>(documentation_cosine_distance);
+
+    /// L1Normalize documentation
+    FunctionDocumentation::Description description_l1_normalize = R"(
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
+    )";
+    FunctionDocumentation::Syntax syntax_l1_normalize = "L1Normalize(tuple)";
+    FunctionDocumentation::Arguments arguments_l1_normalize = {
+        {"tuple", "[`Tuple(T)`](/sql-reference/data-types/tuple) of numbers."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_l1_normalize = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_l1_normalize = {
+        {
+            "Basic usage",
+            R"(
+SELECT L1Normalize((1, 2))
+            )",
+            R"(
+┌─L1Normalize((1, 2))─────────────────────┐
+│ (0.3333333333333333,0.6666666666666666) │
+└─────────────────────────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_l1_normalize = {21, 11};
+    FunctionDocumentation::Category category_l1_normalize = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_l1_normalize = {
+        description_l1_normalize,
+        syntax_l1_normalize,
+        arguments_l1_normalize,
+        returned_value_l1_normalize,
+        examples_l1_normalize,
+        introduced_in_l1_normalize,
+        category_l1_normalize
+    };
+
+    factory.registerFunction<FunctionL1Normalize>(documentation_l1_normalize);
     factory.registerAlias("normalizeL1", FunctionL1Normalize::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("normalizeL2", FunctionL2Normalize::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::Case::Insensitive);
 
-    factory.registerFunction<TupleOrArrayFunctionCosineDistance>();
-}
+    /// L2Normalize documentation
+    FunctionDocumentation::Description description_l2_normalize = R"(
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in Euclidean space (using [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
+    )";
+    FunctionDocumentation::Syntax syntax_l2_normalize = "L2Normalize(tuple)";
+    FunctionDocumentation::Arguments arguments_l2_normalize = {
+        {"tuple", "[`Tuple(T)`](/sql-reference/data-types/tuple) of numbers."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_l2_normalize = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_l2_normalize = {
+        {
+            "Basic usage",
+            R"(
+SELECT L2Normalize((3, 4))
+            )",
+            R"(
+┌─L2Normalize((3, 4))─┐
+│ (0.6,0.8)           │
+└─────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_l2_normalize = {21, 11};
+    FunctionDocumentation::Category category_l2_normalize = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_l2_normalize = {
+        description_l2_normalize,
+        syntax_l2_normalize,
+        arguments_l2_normalize,
+        returned_value_l2_normalize,
+        examples_l2_normalize,
+        introduced_in_l2_normalize,
+        category_l2_normalize
+    };
+
+    factory.registerFunction<FunctionL2Normalize>(documentation_l2_normalize);
+    factory.registerAlias("normalizeL2", FunctionL2Normalize::name, FunctionFactory::Case::Insensitive);
+
+    /// LinfNormalize documentation
+    FunctionDocumentation::Description description_linf_normalize = R"(
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L_{inf}` space (using [maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
+    )";
+    FunctionDocumentation::Syntax syntax_linf_normalize = "LinfNormalize(tuple)";
+    FunctionDocumentation::Arguments arguments_linf_normalize = {
+        {"tuple", "[`Tuple(T)`](/sql-reference/data-types/tuple) of numbers."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_linf_normalize = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples_linf_normalize = {
+        {
+            "Basic usage",
+            R"(
+SELECT LinfNormalize((3, 4))
+            )",
+            R"(
+┌─LinfNormalize((3, 4))─┐
+│ (0.75,1)              │
+└───────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_linf_normalize = {21, 11};
+    FunctionDocumentation::Category category_linf_normalize = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_linf_normalize = {
+        description_linf_normalize,
+        syntax_linf_normalize,
+        arguments_linf_normalize,
+        returned_value_linf_normalize,
+        examples_linf_normalize,
+        introduced_in_linf_normalize,
+        category_linf_normalize
+    };
+
+    factory.registerFunction<FunctionLinfNormalize>(documentation_linf_normalize);
+    factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::Case::Insensitive);
+
+    /// LpNormalize documentation
+    FunctionDocumentation::Description description = R"(
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
+    )";
+    FunctionDocumentation::Syntax syntax = "LpNormalize(tuple, p)";
+    FunctionDocumentation::Arguments arguments = {
+        {"tuple", "[`Tuple(T)`](/sql-reference/data-types/tuple) of numbers."},
+        {"p", "The power. Possible values are any number in the range range from `[1; inf)`. [`UInt`](/sql-reference/data-types/int-uint) or [`Float`](/sql-reference/data-types/float)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage",
+            R"(
+SELECT LpNormalize((3, 4), 5)
+            )",
+            R"(
+┌─LpNormalize((3, 4), 5)──────────────────┐
+│ (0.7187302630182624,0.9583070173576831) │
+└─────────────────────────────────────────┘
+            )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionLpNormalize>(documentation);
+    factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::Case::Insensitive);
 }
