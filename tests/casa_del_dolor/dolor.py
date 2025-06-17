@@ -186,32 +186,32 @@ parser.add_argument(
     help="In seconds. Two ordered integers separated by comma (e.g., 3,5)",
 )
 parser.add_argument(
-    "--with-postgresql", type=bool, default=False, help="With PostgreSQL integration"
+    "--with-postgresql", action="store_true", help="With PostgreSQL integration"
+)
+parser.add_argument("--with-mysql", action="store_true", help="With MySQL integration")
+parser.add_argument(
+    "--without-minio",
+    action="store_false",
+    dest="with_minio",
+    help="Without MinIO integration",
 )
 parser.add_argument(
-    "--with-mysql", type=bool, default=False, help="With MySQL integration"
+    "--without-zookeeper",
+    action="store_false",
+    dest="with_zookeeper",
+    help="Without Zookeeper server",
+)
+parser.add_argument("--with-nginx", action="store_true", help="With Nginx integration")
+parser.add_argument(
+    "--with-azurite", action="store_true", help="With Azure integration"
 )
 parser.add_argument(
-    "--with-minio", type=bool, default=True, help="With MinIO integration"
+    "--with-sqlite", action="store_true", help="With SQLite integration"
 )
 parser.add_argument(
-    "--with-zookeeper", type=bool, default=True, help="With Zookeeper server"
+    "--with-mongodb", action="store_true", help="With MongoDB integration"
 )
-parser.add_argument(
-    "--with-nginx", type=bool, default=False, help="With Nginx integration"
-)
-parser.add_argument(
-    "--with-azurite", type=bool, default=False, help="With Azure integration"
-)
-parser.add_argument(
-    "--with-sqlite", type=bool, default=False, help="With SQLite integration"
-)
-parser.add_argument(
-    "--with-mongodb", type=bool, default=False, help="With MongoDB integration"
-)
-parser.add_argument(
-    "--with-redis", type=bool, default=False, help="With Redis integration"
-)
+parser.add_argument("--with-redis", action="store_true", help="With Redis integration")
 parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
@@ -220,8 +220,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--add-keeper-map-prefix",
-    type=bool,
-    default=True,
+    action="store_true",
     help="Add 'keeper_map_path_prefix' server setting",
 )
 args = parser.parse_args()
