@@ -289,7 +289,6 @@ private:
     HTTPServerRequest * request = nullptr;
     ProfileEvents::Event write_event;
     std::shared_ptr<WriteBuffer> stream;
-    std::shared_ptr<WriteBuffer> header_stream;
     mutable bool send_started = false;
 };
 

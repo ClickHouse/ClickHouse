@@ -53,7 +53,7 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
     accumulated_progress.writeJSON(progress_string_writer);
     progress_string_writer.finalize();
 
-    LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "writeHeaderProgress {}", progress_string_writer.str());
+    LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "writeHeaderProgress {} at {}", progress_string_writer.str(), StackTrace().toString());
 
     socketSendBytes(header_name, strlen(header_name));
     socketSendBytes(progress_string_writer.str().data(), progress_string_writer.str().size());
@@ -98,7 +98,7 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
     setResponseDefaultHeaders(response);
 
-    if (compression_method != CompressionMethod::None)
+    if (count() && compression_method != CompressionMethod::None)
         response.set("Content-Encoding", toContentEncodingName(compression_method));
 
     if (add_cors_header)
@@ -151,7 +151,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         return;
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
-    if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
+    if (send_progress && (progress_watch.elapsed() >= send_progress_interval_ms * 1000000))
     {
         accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
         progress_watch.restart();
@@ -160,6 +160,13 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         /// For example, header "Connection: close|keep-alive" is defined only right before sending response
         startSendHeaders();
         writeHeaderProgress();
+    }
+    else
+    {
+        if (send_progress)
+        {
+            chassert(send_progress_interval_ms > 0);
+        }
     }
 }
 

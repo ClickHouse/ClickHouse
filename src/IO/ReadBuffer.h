@@ -85,10 +85,7 @@ public:
         return res;
     }
 
-    void cancel()
-    {
-        canceled = true;
-    }
+    void cancel();
 
     bool isCanceled() const
     {

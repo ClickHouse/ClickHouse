@@ -1,3 +1,6 @@
+#include "Common/Logger.h"
+#include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferWrapperBase.h>
@@ -65,4 +68,9 @@ std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr)
     return std::make_unique<ReadBufferWrapper<ReadBufferPtr>>(*ptr, ReadBufferPtr{ptr});
 }
 
+void ReadBuffer::cancel()
+{
+    LOG_WARNING(getLogger("ReadBuffer"), "ReadBuffer is canceled at {}", StackTrace().toString());
+    canceled = true;
+}
 }
