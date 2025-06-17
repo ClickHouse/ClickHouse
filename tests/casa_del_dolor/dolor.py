@@ -294,6 +294,13 @@ dolor_main_configs = [
 if server_settings is not None:
     dolor_main_configs.append(server_settings)
 
+keeper_features = []
+if is_private_binary or random.randint(1, 2) == 1:
+    keeper_features.append("multi_read")
+logger.info(
+    f"Using {", ".join(keeper_features) if len(keeper_features) > 0 else "none"} keeper flags"
+)
+
 servers = []
 for i in range(0, len(args.replica_values)):
     servers.append(
@@ -303,7 +310,7 @@ for i in range(0, len(args.replica_values)):
             stay_alive=True,
             copy_common_configs=False,
             with_zookeeper=args.with_zookeeper,
-            keeper_required_feature_flags=["multi_read"],
+            keeper_required_feature_flags=keeper_features,
             with_minio=args.with_minio,
             with_nginx=args.with_nginx,
             with_azurite=args.with_azurite,
@@ -366,7 +373,7 @@ time.sleep(3)
 
 integrations = []
 if args.with_zookeeper:
-    integrations.extend(["zookeeper", "zookeeper"])
+    integrations.extend(["zookeeper", "zookeeper"])  # Increased probability
 if args.with_minio:
     integrations.append("minio")
 if args.with_nginx:
@@ -411,8 +418,8 @@ while all_running:
 
     kill_server = random.randint(1, 100) <= args.kill_server_prob
     # Pick one of the servers to restart
-    # 50% chance to restart ClickHouse
-    if len(integrations) == 0 or random.randint(1, 100) <= args.restart_clickhouse_prob:
+    # Restart ClickHouse
+    if random.randint(1, 100) <= args.restart_clickhouse_prob:
         next_pick = random.choice(servers)
         logger.info(
             f"Restarting the server {next_pick.name} with {"kill" if kill_server else "manual shutdown"}"
@@ -442,8 +449,8 @@ while all_running:
             os.rename(new_temp_server_path, server_path)
         time.sleep(15)  # Let the zookeeper session expire
         next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
-    else:
-        # 50% chance to restart any other integration
+    elif len(integrations) > 0:
+        # Restart any other integration
         next_pick = random.choice(integrations)
         choosen_instances = []
         restart_choices = []
