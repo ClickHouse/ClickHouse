@@ -113,8 +113,9 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
             {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
             {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
+            {"Redis",                  static_cast<Int8>(Interface::REDIS)},
         });
-    static_assert(magic_enum::enum_count<Interface>() == 9, "Please update the array above to match the enum.");
+    static_assert(magic_enum::enum_count<Interface>() == 10, "Please update the array above to match the enum.");
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 

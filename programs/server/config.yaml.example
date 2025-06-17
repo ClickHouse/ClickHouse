@@ -70,6 +70,24 @@ mysql_port: 9004
 # ClickHouse will pretend to be PostgreSQL for applications connecting to this port.
 postgresql_port: 9005
 
+# Compatibility with Redis protocol.
+# ClickHouse will pretend to be Redis for applications connecting to this port.
+redis:
+    port: 9006
+    enable_ssl: false
+    db:
+        _0:
+            db_type: string
+            clickhouse_db: database_name
+            clickhouse_table: table_name
+            key_column: column_name
+            value_column: column_name
+        _1:
+            db_type: hash
+            clickhouse_db: database_name
+            clickhouse_table: table_name
+            key_column: column_name
+
 # HTTP API with TLS (HTTPS).
 # You have to configure certificate to enable this interface.
 # See the openSSL section below.

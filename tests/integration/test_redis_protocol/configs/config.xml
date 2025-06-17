@@ -1,0 +1,30 @@
+<clickhouse>
+        <profiles>
+                <default></default>
+	</profiles>
+        <listen_host>127.0.0.1</listen_host>
+        <tcp_port>9000</tcp_port>
+
+        <max_concurrent_queries>500</max_concurrent_queries>
+        <path>./clickhouse/</path>
+        <users_config>users.xml</users_config>
+
+	<redis>
+                <port>9006</port>
+                <enable_ssl>false</enable_ssl>
+                <db>
+                <_0>
+                        <db_type>hash</db_type>
+                        <clickhouse_db>default</clickhouse_db>
+                        <clickhouse_table>name_surname_map</clickhouse_table>
+                        <key_column>name</key_column>
+                </_0>
+                <_1>
+                        <db_type>string</db_type>
+                        <clickhouse_db>default</clickhouse_db>
+                        <clickhouse_table>name_surname_map</clickhouse_table>
+                        <key_column>name</key_column>
+                </_1>
+                </db>
+        </redis>
+</clickhouse>
