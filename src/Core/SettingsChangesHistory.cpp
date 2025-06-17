@@ -81,8 +81,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_shared_storage_snapshot_in_query", false, false, "A new setting to share storage snapshot in query"},
             {"merge_tree_storage_snapshot_sleep_ms", 0, 0, "A new setting to debug storage snapshot consistency in query"},
             {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
-            {"optimize_use_projection_filtering", true, true, "New setting"},
-            {"input_format_parquet_enable_json_parsing", true, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
+            {"optimize_use_projection_filtering", false, true, "New setting"},
+            {"input_format_parquet_enable_json_parsing", false, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
             {"use_skip_indexes_if_final", 0, 1, "Change in default value of setting"},
             {"use_skip_indexes_if_final_exact_mode", 0, 1, "Change in default value of setting"},
             {"allow_experimental_time_series_aggregate_functions", false, false, "New setting to enable experimental timeSeries* aggregate functions."},
@@ -786,7 +786,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             /// RELEASE CLOSED
             {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
-            {"allow_coalescing_columns_in_partition_or_order_key", true, false, "New setting to allow coalescing of partition or sorting key columns."},
+            {"allow_coalescing_columns_in_partition_or_order_key", false, false, "New setting to allow coalescing of partition or sorting key columns."},
             /// RELEASE CLOSED
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
