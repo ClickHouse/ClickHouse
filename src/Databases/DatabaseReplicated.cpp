@@ -109,11 +109,9 @@ namespace FailPoints
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
 static constexpr const char * DROPPED_MARK = "DROPPED";
-static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
-static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
 
-zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
+ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
     return getContext()->getZooKeeper();
 }
@@ -357,6 +355,9 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         String hostname = unescapeForFileName(host_port);
         shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
     }
+
+    if (shards.empty())
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No active replicas");
 
     UInt16 default_port;
     if (cluster_auth_info.cluster_secure_connection)
@@ -1500,11 +1501,17 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         for (UInt32 ptr = first_entry_to_mark_finished; ptr <= max_log_ptr; ++ptr)
         {
             auto entry_name = DDLTaskBase::getLogEntryName(ptr);
-            auto path = fs::path(zookeeper_path) / "log" / entry_name / "finished" / getFullReplicaName();
+
+            auto finished = fs::path(zookeeper_path) / "log" / entry_name / "finished" / getFullReplicaName();
+            auto synced = fs::path(zookeeper_path) / "log" / entry_name / "synced" / getFullReplicaName();
+
             auto status = ExecutionStatus(0).serializeText();
-            auto res = current_zookeeper->tryCreate(path, status, zkutil::CreateMode::Persistent);
-            if (res == Coordination::Error::ZOK)
+            auto res_finished = current_zookeeper->tryCreate(finished, status, zkutil::CreateMode::Persistent);
+            auto res_synced = current_zookeeper->tryCreate(synced, status, zkutil::CreateMode::Persistent);
+            if (res_finished == Coordination::Error::ZOK && res_synced == Coordination::Error::ZOK)
                 LOG_INFO(log, "Marked recovered {} as finished", entry_name);
+            else
+                LOG_INFO(log, "Failed to marked {} as finished (finished={}, synced={}). Ignoring.", entry_name, res_finished, res_synced);
         }
     }
 
@@ -1616,6 +1623,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataOnDisk(const String & table_nam
 {
     auto file_path = getObjectMetadataPath(table_name);
     String description = fmt::format("in metadata {}", file_path);
+    auto db_disk = getDisk();
     String query = DB::readMetadataFile(db_disk, file_path);
     return parseQueryFromMetadata(table_name, query, description);
 }
@@ -1963,6 +1971,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
+    auto db_disk = getDisk();
     auto file_path = getObjectMetadataPath(table_name);
     return DB::readMetadataFile(db_disk, file_path);
 }

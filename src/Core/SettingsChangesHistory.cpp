@@ -67,14 +67,33 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.6",
+        addSettingsChanges(settings_changes_history, "25.7",
         {
 
+        });
+        addSettingsChanges(settings_changes_history, "25.6",
+        {
+            /// RELEASE CLOSED
+            {"output_format_native_use_flattened_dynamic_and_json_serialization", false, false, "Add flattened Dynamic/JSON serializations to Native format"},
+            {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
+            {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
+            {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
+            {"enable_shared_storage_snapshot_in_query", false, false, "A new setting to share storage snapshot in query"},
+            {"merge_tree_storage_snapshot_sleep_ms", 0, 0, "A new setting to debug storage snapshot consistency in query"},
+            {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
+            {"optimize_use_projection_filtering", false, true, "New setting"},
+            {"input_format_parquet_enable_json_parsing", false, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
+            {"use_skip_indexes_if_final", 0, 1, "Change in default value of setting"},
+            {"use_skip_indexes_if_final_exact_mode", 0, 1, "Change in default value of setting"},
+            {"allow_experimental_time_series_aggregate_functions", false, false, "New setting to enable experimental timeSeries* aggregate functions."},
+            {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
+            {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
+            /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
             /// Release closed. Please use 25.6
-            {"geotoh3_lon_lat_input_order", true, false, "A new setting for legacy behaviour to set lon and lat order"},
+            {"geotoh3_argument_order", "lon_lat", "lat_lon", "A new setting for legacy behaviour to set lon and lat argument order"},
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
             {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
@@ -108,7 +127,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"vector_search_filter_strategy", "auto", "auto", "New setting"},
             {"vector_search_postfilter_multiplier", 1, 1, "New setting"},
             {"compile_expressions", false, true, "We believe that the LLVM infrastructure behind the JIT compiler is stable enough to enable this setting by default."},
-            {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"input_format_parquet_allow_geoparquet_parser", false, true, "A new setting to use geo columns in parquet file"},
             {"enable_url_encoding", true, false, "Changed existing setting's default value"},
@@ -179,6 +197,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
             {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
             {"s3_allow_multipart_copy", true, true, "New setting."},
+            /// Release closed. Please use 25.3
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -191,7 +210,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"query_plan_use_new_logical_join_step", false, false, "New join step, internal change"},
             {"distributed_cache_min_bytes_for_seek", 0, 0, "New private setting."},
-            {"use_iceberg_partition_pruning", false, false, "New setting"},
+            {"use_iceberg_partition_pruning", false, false, "New setting for Iceberg partition pruning."},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
@@ -249,7 +268,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "24.11",
         {
             {"validate_mutation_query", false, true, "New setting to validate mutation queries by default."},
-            {"enable_job_stack_trace", false, true, "Enable by default collecting stack traces from job's scheduling."},
+            {"enable_job_stack_trace", false, false, "Enables collecting stack traces from job's scheduling. Disabled by default to avoid performance overhead."},
             {"allow_suspicious_types_in_group_by", true, false, "Don't allow Variant/Dynamic types in GROUP BY by default"},
             {"allow_suspicious_types_in_order_by", true, false, "Don't allow Variant/Dynamic types in ORDER BY by default"},
             {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
@@ -758,9 +777,16 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.6",
+        addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
 
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "25.6",
+        {
+            /// RELEASE CLOSED
+            {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
+            {"allow_coalescing_columns_in_partition_or_order_key", false, false, "New setting to allow coalescing of partition or sorting key columns."},
+            /// RELEASE CLOSED
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
@@ -788,7 +814,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_postpone_time_for_failed_replicated_tasks_ms", 0, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},
             {"default_compression_codec", "", "", "New setting"},
             {"refresh_parts_interval", 0, 0, "A new setting"},
-            {"max_merge_delayed_streams_for_parallel_write", 1000, 40, "New setting"},
+            {"max_merge_delayed_streams_for_parallel_write", 40, 40, "New setting"},
             {"allow_summing_columns_in_partition_or_order_key", true, false, "New setting to allow summing of partition or sorting key columns"},
             /// Release closed. Please use 25.5
         });

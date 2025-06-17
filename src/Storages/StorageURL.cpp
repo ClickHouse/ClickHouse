@@ -5,6 +5,7 @@
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -482,7 +483,8 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
+            (!key_condition || key_condition->alwaysUnknownOrTrue()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         pipeline->reset();
@@ -622,7 +624,7 @@ void StorageURLSink::initBuffers()
     if (write_buf)
         return;
 
-    std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
+    std::string content_type = FormatFactory::instance().getContentType(format, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
     auto poco_uri = Poco::URI(uri);

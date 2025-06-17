@@ -4,7 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -30,7 +30,7 @@ namespace ErrorCodes
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \
-    LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
+    LIST_OF_DATA_LAKE_STORAGE_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)
