@@ -1,0 +1,6 @@
+-- TTL GROUP BY is applied
+2025-06-09 10:00:00	pepe	1
+2025-06-10 10:00:00	pepe	3
+-- TTL removes old elements
+2025-06-09 10:00:00	pepe	1
+2025-06-10 10:00:00	pepe	3
