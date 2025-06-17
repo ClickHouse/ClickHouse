@@ -3,8 +3,8 @@
 
 namespace DB
 {
-template <typename FieldType, typename TData, bool consecutive_keys_optimization, bool nullable>
-void AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization, nullable>::insertKeyIntoColumns(
+template <typename FieldType, typename TData, bool consecutive_keys_optimization, bool nullable, bool inline_aggregate_states>
+void AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization, nullable, inline_aggregate_states>::insertKeyIntoColumns(
     const AggregationMethodOneNumber::Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/)
 {
     ColumnFixedSizeHelper * column;
@@ -47,8 +47,9 @@ template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUIn
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt64KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel>;
 
-template <typename TData, bool nullable>
-void AggregationMethodStringNoCache<TData, nullable>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
+template <typename TData, bool nullable, bool inline_aggregate_states>
+void AggregationMethodStringNoCache<TData, nullable, inline_aggregate_states>::insertKeyIntoColumns(
+    StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
     if constexpr (nullable)
     {
@@ -66,8 +67,9 @@ template struct AggregationMethodStringNoCache<AggregatedDataWithShortStringKeyT
 template struct AggregationMethodStringNoCache<AggregatedDataWithNullableShortStringKey, true>;
 template struct AggregationMethodStringNoCache<AggregatedDataWithNullableShortStringKeyTwoLevel, true>;
 
-template <typename TData>
-void AggregationMethodFixedString<TData>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
+template <typename TData, bool inline_aggregate_states>
+void AggregationMethodFixedString<TData, inline_aggregate_states>::insertKeyIntoColumns(
+    StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
     assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data, key.size);
 }
@@ -76,8 +78,9 @@ template struct AggregationMethodFixedString<AggregatedDataWithNullableStringKey
 template struct AggregationMethodFixedString<AggregatedDataWithNullableStringKeyTwoLevel>;
 
 
-template <typename TData, bool nullable>
-void AggregationMethodFixedStringNoCache<TData, nullable>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
+template <typename TData, bool nullable, bool inline_aggregate_states>
+void AggregationMethodFixedStringNoCache<TData, nullable, inline_aggregate_states>::insertKeyIntoColumns(
+    StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
     if constexpr (nullable)
         assert_cast<ColumnNullable &>(*key_columns[0]).insertData(key.data, key.size);
@@ -113,8 +116,9 @@ template struct AggregationMethodSingleLowCardinalityColumn<AggregationMethodStr
 template struct AggregationMethodSingleLowCardinalityColumn<AggregationMethodFixedString<AggregatedDataWithNullableStringKeyTwoLevel>>;
 
 
-template <typename TData, bool has_nullable_keys, bool has_low_cardinality, bool consecutive_keys_optimization>
-void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality,consecutive_keys_optimization>::insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+template <typename TData, bool has_nullable_keys, bool has_low_cardinality, bool consecutive_keys_optimization, bool inline_aggregate_states>
+void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality, consecutive_keys_optimization, inline_aggregate_states>::insertKeyIntoColumns(
+    const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
 {
     size_t keys_size = key_columns.size();
 
@@ -187,8 +191,9 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, fa
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, false, true>;
 
 
-template <typename TData, bool nullable, bool prealloc>
-void AggregationMethodSerialized<TData, nullable, prealloc>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
+template <typename TData, bool nullable, bool prealloc, bool inline_aggregate_states>
+void AggregationMethodSerialized<TData, nullable, prealloc, inline_aggregate_states>::insertKeyIntoColumns(
+    StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
     const auto * pos = key.data;
     for (auto & column : key_columns)

@@ -1,20 +1,27 @@
 #pragma once
-#include <vector>
-#include <Common/ColumnsHashing.h>
 
+#include <vector>
+
+#include <Common/ColumnsHashing.h>
 #include <Columns/ColumnString.h>
+
+
 namespace DB
 {
 class IColumn;
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,
-        bool consecutive_keys_optimization = true, bool nullable = false>
+    bool consecutive_keys_optimization = true,
+    bool nullable = false,
+    bool inline_aggregate_states_ = false>
 struct AggregationMethodOneNumber
 {
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
+
+    static const bool inline_aggregate_states = inline_aggregate_states_;
 
     Data data;
 
@@ -52,12 +59,15 @@ struct AggregationMethodOneNumber
 };
 
 /// For the case where there is one string key.
-template <typename TData>
+template <typename TData,
+    bool inline_aggregate_states_ = false>
 struct AggregationMethodString
 {
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
+
+    static const bool inline_aggregate_states = inline_aggregate_states_;
 
     Data data;
 
@@ -88,12 +98,16 @@ struct AggregationMethodString
 };
 
 /// Same as above but without cache
-template <typename TData, bool nullable = false>
+template <typename TData,
+    bool nullable = false,
+    bool inline_aggregate_states_ = false>
 struct AggregationMethodStringNoCache
 {
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
+
+    static const bool inline_aggregate_states = inline_aggregate_states_;
 
     Data data;
 
@@ -121,12 +135,15 @@ struct AggregationMethodStringNoCache
 };
 
 /// For the case where there is one fixed-length string key.
-template <typename TData>
+template <typename TData,
+    bool inline_aggregate_states_ = false>
 struct AggregationMethodFixedString
 {
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
+
+    static const bool inline_aggregate_states = inline_aggregate_states_;
 
     Data data;
 
@@ -154,12 +171,16 @@ struct AggregationMethodFixedString
 };
 
 /// Same as above but without cache
-template <typename TData, bool nullable = false>
+template <typename TData,
+    bool nullable = false,
+    bool inline_aggregate_states_ = false>
 struct AggregationMethodFixedStringNoCache
 {
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
+
+    static const bool inline_aggregate_states = inline_aggregate_states_;
 
     Data data;
 
@@ -219,14 +240,20 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 };
 
 /// For the case where all keys are of fixed length, and they fit in N (for example, 128) bits.
-template <typename TData, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false, bool consecutive_keys_optimization = false>
+template <typename TData,
+    bool has_nullable_keys_ = false,
+    bool has_low_cardinality_ = false,
+    bool consecutive_keys_optimization = false,
+    bool inline_aggregate_states_ = false>
 struct AggregationMethodKeysFixed
 {
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
+
     static constexpr bool has_nullable_keys = has_nullable_keys_;
     static constexpr bool has_low_cardinality = has_low_cardinality_;
+    static const bool inline_aggregate_states = inline_aggregate_states_;
 
     Data data;
 
@@ -267,12 +294,17 @@ struct AggregationMethodKeysFixed
   * That is, for example, for strings, it contains first the serialized length of the string, and then the bytes.
   * Therefore, when aggregating by several strings, there is no ambiguity.
   */
-template <typename TData, bool nullable = false, bool prealloc = false>
+template <typename TData,
+    bool nullable = false,
+    bool prealloc = false,
+    bool inline_aggregate_states_ = false>
 struct AggregationMethodSerialized
 {
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
+
+    static const bool inline_aggregate_states = inline_aggregate_states_;
 
     Data data;
 

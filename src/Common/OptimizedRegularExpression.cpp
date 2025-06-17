@@ -480,7 +480,6 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     std::vector<std::string> alternatives_dummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
     analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternatives_dummy);
 
-
     /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
         throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: Unsupported option.");

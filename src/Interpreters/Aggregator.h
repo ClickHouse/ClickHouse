@@ -342,7 +342,7 @@ private:
     /** Create states of aggregate functions for one key.
       */
     template <bool skip_compiled_aggregate_functions = false>
-    void createAggregateStates(AggregateDataPtr & aggregate_data) const;
+    void createAggregateStates(AggregateDataPtr aggregate_data) const;
 
     /** Call `destroy` methods for states of aggregate functions.
       * Used in the exception handler for aggregation, since RAII in this case is not applicable.
@@ -404,7 +404,7 @@ private:
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        const std::unique_ptr<AggregateDataPtr[]> & places,
+        AggregateDataPtr * places,
         size_t key_start,
         bool has_only_one_value_since_last_reset,
         bool all_keys_are_const,
@@ -521,9 +521,10 @@ private:
     template <typename Method>
     BlocksList prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;
 
-    template <typename State, typename Table>
+    template <typename Method, typename State, typename Table>
     void mergeStreamsImplCase(
         Arena * aggregates_pool,
+        Method & method,
         State & state,
         Table & data,
         bool no_more_keys,
