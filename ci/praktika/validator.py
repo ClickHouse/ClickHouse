@@ -59,6 +59,13 @@ class Validator:
                     f"Invalid job type [{job}]: type [{type(job)}]",
                     workflow.name,
                 )
+                cls.evaluate_check(
+                    job.runs_on
+                    and isinstance(job.runs_on, list)
+                    or isinstance(job.runs_on, tuple),
+                    f"Invalid Job.Config.runs_on [{job.runs_on}] for [{job.name}]",
+                    workflow.name,
+                )
 
             cls.validate_file_paths_in_run_command(workflow)
             cls.validate_file_paths_in_digest_configs(workflow)
