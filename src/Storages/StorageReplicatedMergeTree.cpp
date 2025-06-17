@@ -6551,6 +6551,8 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
 
         if (mutation_affected_partition_ids.empty() || mutation_affected_partition_ids.contains(lock.partition_id))
             block_numbers[lock.partition_id] = lock.number;
+
+        LOG_TRACE(log, "Allocated block number {} in partition {}", lock.number, lock.partition_id);
     }
 
     return {std::move(block_numbers), std::move(lock_holder)};
@@ -7267,8 +7269,15 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
             zkutil::KeeperMultiException::check(code, ops, responses);
     }
 
-    return createEphemeralLockInZooKeeper(
+    LOG_TEST(log, "Allocating block number at {}", fs::path(partition_path) / "block-");
+
+    auto lock = createEphemeralLockInZooKeeper(
         fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", zookeeper, zookeeper_block_id_path, std::nullopt);
+
+    if (lock && lock->isLocked())
+        LOG_TRACE(log, "Allocated block number {} in partition {}", lock->getNumber(), partition_id);
+
+    return lock;
 }
 
 Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(

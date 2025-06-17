@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS t_lwd_index SYNC;
 CREATE TABLE t_lwd_index (id UInt64)
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwd_index/', '1')
 ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS index_granularity = 1, enable_block_number_column = 1, enable_block_offset_column = 1;
 
 INSERT INTO t_lwd_index SELECT * FROM numbers(1000);
 

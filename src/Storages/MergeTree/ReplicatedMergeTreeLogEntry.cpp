@@ -125,7 +125,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
             if (!patch_parts.empty())
             {
-                out << "\npatches: " << patch_parts.size();
+                out << "\napply_patches: " << patch_parts.size();
                 for (const auto & s : patch_parts)
                     out << "\n" << s;
             }
@@ -308,11 +308,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
                 {
                     in >> cleanup;
                 }
-                else if (checkString("patches:", in))
+                else if (checkString("apply_patches:", in))
                 {
                     size_t num_patches;
                     in >> " " >> num_patches >> "\n";
-                    LOG_DEBUG(getLogger("KEK"), "num_patches: {}", num_patches);
 
                     for (size_t i = 0; i < num_patches; ++i)
                     {

@@ -14,14 +14,19 @@ localhost_url = "http://localhost:8123"
 
 common_settings = "enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 1, min_bytes_for_full_part_storage = '128M', old_parts_lifetime = 1"
 
+storage_mt = "MergeTree ORDER BY id SETTINGS {}".format(common_settings)
+
 storage_smt = """
     SharedMergeTree('/zookeeper/{{database}}/updates_stress/', '1')
     ORDER BY id
     SETTINGS {}, storage_policy = 's3_with_keeper'
 """.format(common_settings)
 
-storage_mt = "MergeTree ORDER BY id SETTINGS {}".format(common_settings)
-storage_rmt = "ReplicatedMergeTree('/zookeeper/{{database}}/updates_stress/', '1') ORDER BY id SETTINGS {}".format(common_settings)
+storage_rmt = """
+    ReplicatedMergeTree('/zookeeper/{{database}}/updates_stress/', '1')
+    ORDER BY id
+    SETTINGS {}
+""".format(common_settings)
 
 engines = {
     "MergeTree": storage_mt,
@@ -396,6 +401,9 @@ print_full_stats()
 print()
 
 if not args.skip_check:
+    if args.engine == "ReplicatedMergeTree":
+        run_query("SYSTEM SYNC REPLICA {}".format(table_name))
+
     if args.engine == "MergeTree" and not cloud_mode:
         args_func = "argMin"
         block_num_func = "min"

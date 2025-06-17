@@ -35,9 +35,9 @@ $CLICKHOUSE_CLIENT --query "
     ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_on_fly/', '1')
     ORDER BY a
     SETTINGS
-        min_bytes_for_wide_part = 0
-        enable_block_number_column = 1
-        enable_block_offset_column = 1
+        min_bytes_for_wide_part = 0,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1;
 
     INSERT INTO t_lwu_renames SELECT number, number FROM numbers(10000);
 
