@@ -81,8 +81,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_shared_storage_snapshot_in_query", false, false, "A new setting to share storage snapshot in query"},
             {"merge_tree_storage_snapshot_sleep_ms", 0, 0, "A new setting to debug storage snapshot consistency in query"},
             {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
-            {"optimize_use_projection_filtering", true, true, "New setting"},
-            {"input_format_parquet_enable_json_parsing", true, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
             {"optimize_use_projection_filtering", false, true, "New setting"},
             {"input_format_parquet_enable_json_parsing", false, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
             {"use_skip_indexes_if_final", 0, 1, "Change in default value of setting"},
