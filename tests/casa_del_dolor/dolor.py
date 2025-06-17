@@ -295,18 +295,19 @@ if server_settings is not None:
     dolor_main_configs.append(server_settings)
 
 keeper_features = []
-if is_private_binary or random.randint(1, 2) == 1:
-    keeper_features.append("multi_read")
-if random.randint(1, 2) == 1:
-    other_keeper_features = [
-        "filtered_list",
-        "check_not_exists",
-        "create_if_not_exists",
-        "remove_recursive",
-    ]
-    random.shuffle(other_keeper_features)
-    for i in range(0, random.randint(1, len(other_keeper_features))):
-        keeper_features.append(other_keeper_features[i])
+if args.with_zookeeper:
+    if is_private_binary or random.randint(1, 2) == 1:
+        keeper_features.append("multi_read")
+    if random.randint(1, 2) == 1:
+        other_keeper_features = [
+            "filtered_list",
+            "check_not_exists",
+            "create_if_not_exists",
+            "remove_recursive",
+        ]
+        random.shuffle(other_keeper_features)
+        for i in range(0, random.randint(1, len(other_keeper_features))):
+            keeper_features.append(other_keeper_features[i])
 logger.info(
     f"Using {", ".join(keeper_features) if len(keeper_features) > 0 else "none"} keeper flags"
 )
