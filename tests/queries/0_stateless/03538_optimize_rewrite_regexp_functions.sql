@@ -94,6 +94,9 @@ EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123')
 -- Starts with .* but not ^.* (should NOT rewrite)
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123'), '.*(abc)');
 
+-- Starts with ^.*? (should NOT rewrite)
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123abc456'), '^.*?(abc.*)');
+
 -- Ends with .* but not .*$ (should NOT rewrite)
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123'), '(abc).*');
 

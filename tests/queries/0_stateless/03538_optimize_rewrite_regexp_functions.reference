@@ -123,6 +123,10 @@ FROM system.one AS __table1
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123'), '.*(abc)');
 SELECT extract(identity(\'abc123\'), \'.*(abc)\') AS `extract(identity(\'abc123\'), \'.*(abc)\')`
 FROM system.one AS __table1
+-- Starts with ^.*? (should NOT rewrite)
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123abc456'), '^.*?(abc.*)');
+SELECT extract(identity(\'abc123abc456\'), \'^.*?(abc.*)\') AS `extract(identity(\'abc123abc456\'), \'^.*?(abc.*)\')`
+FROM system.one AS __table1
 -- Ends with .* but not .*$ (should NOT rewrite)
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123'), '(abc).*');
 SELECT extract(identity(\'abc123\'), \'(abc).*\') AS `extract(identity(\'abc123\'), \'(abc).*\')`

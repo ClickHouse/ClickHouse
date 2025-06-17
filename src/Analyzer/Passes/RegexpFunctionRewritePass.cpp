@@ -193,7 +193,7 @@ public:
 
             /// For simplicity, this optimization ignores alternations and only considers anchoring at the start or end of the pattern.
 
-            bool starts_with_caret_dot_star = regexp.starts_with("^.*");
+            bool starts_with_caret_dot_star = regexp.starts_with("^.*") && !regexp.starts_with("^.*?");
             bool ends_with_unescaped_dot_star_dollar = false;
 
             /// Check if ends with unescaped .*$
