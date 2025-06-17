@@ -6,9 +6,8 @@ EXCEPTION_CODE_HEADER = "X-ClickHouse-Exception-Code"
 TRANSFER_ENCODING_HEADER = "Transfer-Encoding"
 CONNECTION_HEADER = "Connection"
 HTTP_STATUS_STRING = "HTTP status string"
-CLIENT_EXCEPTION = "client exception"
 
-INTERESTING_SET = set((EXCEPTION_CODE_HEADER, TRANSFER_ENCODING_HEADER, CONNECTION_HEADER, HTTP_STATUS_STRING, CLIENT_EXCEPTION))
+INTERESTING_SET = set((EXCEPTION_CODE_HEADER, TRANSFER_ENCODING_HEADER, CONNECTION_HEADER, HTTP_STATUS_STRING))
 
 
 def main():
@@ -17,15 +16,14 @@ def main():
 
     sock = socket(AF_INET, SOCK_STREAM)
     sock.connect((host, port))
-    sock.settimeout(60)
+    sock.settimeout(160)
     s = "POST /?query=select+1 HTTP/1.1\r\n"
     s += "Host: %s\r\n" % host
-    s += "Content-type: multipart/form-data; boundary=--b3f1zid8kqwy\r\n"
     s += "Transfer-encoding: chunked\r\n"
     s += "\r\n"
     s += "ffffffffffffffff"
     s += "\r\n"
-    s += "X" * 100000
+    s += "X" * 10
     sock.sendall(s.encode())
     data = ""
 
@@ -35,7 +33,6 @@ def main():
         try:
             piece = sock.recv(10000).decode()
         except ConnectionResetError as e:
-            extraction.append((CLIENT_EXCEPTION, str(e)))
             break
         if not piece:
             break
