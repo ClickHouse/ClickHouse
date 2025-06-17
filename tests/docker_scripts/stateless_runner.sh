@@ -379,6 +379,14 @@ export -f prepare_stateful_data
 
 prepare_stateful_data
 
+clickhouse-client --query "SELECT value FROM system.build_options WHERE name = 'USE_JEMALLOC'"
+if [[ "$(clickhouse-client --query "SELECT value FROM system.build_options WHERE name = 'USE_JEMALLOC'")" == "1" ]]; then
+    export BUILD_JEMALLOC_REPORT=true
+    clickhouse-client --query "SYSTEM jemalloc enable profile"
+else
+    export BUILD_JEMALLOC_REPORT=false
+fi
+
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
@@ -404,6 +412,19 @@ fi
 
 # stop logs replication to make it possible to dump logs tables via clickhouse-local
 stop_logs_replication
+
+# build jemalloc flamegraph if memory-related exceptions were returned from tests
+# todo add a step to grep the test output for memory related errors
+if [[ "$BUILD_JEMALLOC_REPORT" == "true" ]]; then
+  clickhouse-client --query "set send_logs_level='trace';system jemalloc flush profile;"
+  ls /tmp/jemalloc_clickhouse*
+  cp /tmp/jemalloc_clickhouse* /test_output
+
+  curl -LO https://github.com/brendangregg/FlameGraph/archive/refs/heads/master.zip && unzip -q master.zip && mv FlameGraph-master FlameGraph && rm master.zip
+  chmod +x ./FlameGraph/flamegraph.pl
+  jeprof "$(which clickhouse)" /tmp/jemalloc_clickhouse*.heap --collapsed  > output1.collapsed
+  ./FlameGraph/flamegraph.pl output1.collapsed --color mem --width 2560 > /test_output/jemalloc_flamegraph.svg
+fi
 
 # Remove all limits to avoid TOO_MANY_ROWS_OR_BYTES while gathering system.*_log tables
 rm /etc/clickhouse-server/users.d/limits.yaml
