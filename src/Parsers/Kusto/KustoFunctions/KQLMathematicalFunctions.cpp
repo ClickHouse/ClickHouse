@@ -4,7 +4,7 @@
 
 namespace DB
 {
-bool IsNan::convertImpl(String & out, IParser::Pos & pos)
+bool IsNan::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -16,7 +16,7 @@ bool IsNan::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Round::convertImpl(String & out, IParser::Pos & pos)
+bool Round::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "round");
 }

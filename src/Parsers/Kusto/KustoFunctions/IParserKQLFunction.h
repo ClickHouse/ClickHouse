@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/IKQLParserBase.h>
 
 #include <span>
 
@@ -35,9 +35,9 @@ public:
     };
 
     template <typename F>
-    ALWAYS_INLINE static bool wrapConvertImpl(IParser::Pos & pos, const F & func)
+    ALWAYS_INLINE static bool wrapConvertImpl(IKQLParser::KQLPos & pos, const F & func)
     {
-        IParser::Pos begin = pos;
+        IKQLParser::KQLPos begin = pos;
         bool res = func();
         if (!res)
             pos = begin;
@@ -49,9 +49,9 @@ public:
     };
 
     template <typename F>
-    ALWAYS_INLINE static bool wrapConvertImpl(IParser::Pos & pos, IncreaseDepthTag, const F & func)
+    ALWAYS_INLINE static bool wrapConvertImpl(IKQLParser::KQLPos & pos, IncreaseDepthTag, const F & func)
     {
-        IParser::Pos begin = pos;
+        IKQLParser::KQLPos begin = pos;
         pos.increaseDepth();
         bool res = func();
         pos.decreaseDepth();
@@ -60,32 +60,32 @@ public:
         return res;
     }
 
-    bool convert(String & out, IParser::Pos & pos);
+    bool convert(String & out, IKQLParser::KQLPos & pos);
     virtual const char * getName() const = 0;
     virtual ~IParserKQLFunction() = default;
 
     static String generateUniqueIdentifier();
-    static String getArgument(const String & function_name, DB::IParser::Pos & pos, ArgumentState argument_state = ArgumentState::Parsed);
+    static String getArgument(const String & function_name, DB::IKQLParser::KQLPos & pos, ArgumentState argument_state = ArgumentState::Parsed);
     static std::vector<std::string> getArguments(
         const String & function_name,
-        DB::IParser::Pos & pos,
+        DB::IKQLParser::KQLPos & pos,
         ArgumentState argument_state = ArgumentState::Parsed,
         const Interval & argument_count_interval = {0, Interval::max_bound});
-    static String getConvertedArgument(const String & fn_name, IParser::Pos & pos);
-    static String getExpression(IParser::Pos & pos);
-    static String getKQLFunctionName(IParser::Pos & pos);
+    static String getConvertedArgument(const String & fn_name, IKQLParser::KQLPos & pos);
+    static String getExpression(IKQLParser::KQLPos & pos);
+    static String getKQLFunctionName(IKQLParser::KQLPos & pos);
     static std::optional<String>
-    getOptionalArgument(const String & function_name, DB::IParser::Pos & pos, ArgumentState argument_state = ArgumentState::Parsed);
+    getOptionalArgument(const String & function_name, DB::IKQLParser::KQLPos & pos, ArgumentState argument_state = ArgumentState::Parsed);
     static String
     kqlCallToExpression(std::string_view function_name, std::initializer_list<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks);
     static String kqlCallToExpression(std::string_view function_name, std::span<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks);
     static String escapeSingleQuotes(const String & input);
 
 protected:
-    virtual bool convertImpl(String & out, IParser::Pos & pos) = 0;
+    virtual bool convertImpl(String & out, IKQLParser::KQLPos & pos) = 0;
 
     static bool directMapping(
-        String & out, IParser::Pos & pos, std::string_view ch_fn, const Interval & argument_count_interval = {0, Interval::max_bound});
-    static void validateEndOfFunction(const String & fn_name, IParser::Pos & pos);
+        String & out, IKQLParser::KQLPos & pos, std::string_view ch_fn, const Interval & argument_count_interval = {0, Interval::max_bound});
+    static void validateEndOfFunction(const String & fn_name, IKQLParser::KQLPos & pos);
 };
 }

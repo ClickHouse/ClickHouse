@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/IKQLParserBase.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 
 namespace DB
@@ -43,11 +43,11 @@ protected:
     };
 
     static bool makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks);
-    static bool parseAggregationColumns(AggregationColumns & aggregation_columns, Pos & pos);
-    static bool parseFromToStepClause(FromToStepClause & from_to_step, Pos & pos);
+    static bool parseAggregationColumns(AggregationColumns & aggregation_columns, KQLPos & pos);
+    static bool parseFromToStepClause(FromToStepClause & from_to_step, KQLPos & pos);
 
     const char * getName() const override { return "KQL make-series"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected) override;
 };
 
 }

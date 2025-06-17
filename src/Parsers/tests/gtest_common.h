@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IParser.h>
-
+#include <Parsers/Kusto/IKQLParser.h>
 #include <gtest/gtest.h>
 
 #include <string_view>
@@ -14,7 +14,7 @@ struct ParserTestCase
 
 class ParserTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<DB::IParser>, ParserTestCase>>
 {};
-class ParserKQLTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<DB::IParser>, ParserTestCase>>
+class ParserKQLTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<DB::IKQLParser>, ParserTestCase>>
 {};
-class ParserRegexTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<DB::IParser>, ParserTestCase>>
+class ParserRegexTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<DB::IKQLParser>, ParserTestCase>>
 {};

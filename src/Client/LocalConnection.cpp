@@ -24,6 +24,7 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 
+
 namespace DB
 {
 namespace Setting
@@ -197,18 +198,18 @@ void LocalConnection::sendQuery(
         const Dialect & dialect = settings[Setting::dialect];
 
         std::unique_ptr<IParserBase> parser;
+        std::unique_ptr<IKQLParserBase> parser_kql;
         if (dialect == Dialect::kusto)
-            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+            parser_kql = std::make_unique<ParserKQLStatement>(end);
         else if (dialect == Dialect::prql)
-            parser
-                = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
         ASTPtr parsed_query;
         if (dialect == Dialect::kusto)
             parsed_query = parseKQLQueryAndMovePosition(
-                *parser,
+                *parser_kql,
                 begin,
                 end,
                 "",

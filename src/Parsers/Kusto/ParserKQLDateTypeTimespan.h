@@ -25,7 +25,7 @@ public:
 
 protected:
     const char * getName() const override { return "KQLDateTypeTimespan"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected) override;
 
 private:
     double time_span;

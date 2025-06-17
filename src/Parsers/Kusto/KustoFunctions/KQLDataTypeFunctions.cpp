@@ -5,10 +5,7 @@
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 #include <Parsers/Kusto/KustoFunctions/KQLDataTypeFunctions.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/Utilities.h>
-#include <Parsers/ParserSetQuery.h>
 #include "Poco/String.h"
 
 #include <fmt/format.h>
@@ -21,12 +18,12 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-bool DatatypeBool::convertImpl(String & out, IParser::Pos & pos)
+bool DatatypeBool::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "toBool");
 }
 
-bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
+bool DatatypeDatetime::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -34,18 +31,18 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
     String datetime_str;
 
     ++pos;
-    if (pos->type == TokenType::QuotedIdentifier)
-        datetime_str = fmt::format("'{}'", String(pos->begin + 1, pos->end - 1));
-    else if (pos->type == TokenType::StringLiteral)
+    if (pos->type == KQLTokenType::QuotedIdentifier)
+        datetime_str = std::format("'{}'", String(pos->begin + 1, pos->end - 1));
+    else if (pos->type == KQLTokenType::StringLiteral)
         datetime_str = String(pos->begin, pos->end);
-    else if (pos->type == TokenType::BareWord)
+    else if (pos->type == KQLTokenType::BareWord)
     {
         datetime_str = getConvertedArgument(fn_name, pos);
         if (Poco::toUpper(datetime_str) == "NULL")
             out = "NULL";
         else
             out = fmt::format(
-                "if(toTypeName({0}) = 'Int64' OR toTypeName({0}) = 'Int32'OR toTypeName({0}) = 'Float64' OR  toTypeName({0}) = 'UInt32' OR "
+                "if(toTypeName({0}) = 'Int64' OR toTypeName({0}) = 'Int32' OR toTypeName({0}) = 'Float64' OR  toTypeName({0}) = 'UInt32' OR "
                 " toTypeName({0}) = 'UInt64', toDateTime64({0},9,'UTC'), parseDateTime64BestEffortOrNull({0}::String,9,'UTC'))",
                 datetime_str);
         return true;
@@ -53,10 +50,10 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
     else
     {
         auto start = pos;
-        while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+        while (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
         {
             ++pos;
-            if (pos->type == TokenType::ClosingRoundBracket)
+            if (pos->type == KQLTokenType::ClosingRoundBracket)
                 break;
         }
         --pos;
@@ -67,7 +64,7 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DatatypeDynamic::convertImpl(String & out, IParser::Pos & pos)
+bool DatatypeDynamic::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     static const std::unordered_set<std::string_view> ALLOWED_FUNCTIONS{"date", "datetime", "dynamic", "time", "timespan"};
 
@@ -76,19 +73,19 @@ bool DatatypeDynamic::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     ++pos;
-    if (pos->type == TokenType::OpeningCurlyBrace)
+    if (pos->type == KQLTokenType::OpeningCurlyBrace)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property bags are not supported for now in {}", function_name);
 
-    while (isValidKQLPos(pos) && pos->type != TokenType::ClosingRoundBracket)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::ClosingRoundBracket)
     {
-        if (const auto token_type = pos->type; token_type == TokenType::BareWord || token_type == TokenType::Number
-            || token_type == TokenType::QuotedIdentifier || token_type == TokenType::StringLiteral)
+        if (const auto token_type = pos->type; token_type == KQLTokenType::BareWord || token_type == KQLTokenType::Number
+            || token_type == KQLTokenType::QuotedIdentifier || token_type == KQLTokenType::StringLiteral)
         {
-            if (const std::string_view token(pos->begin, pos->end); token_type == TokenType::BareWord && !ALLOWED_FUNCTIONS.contains(token))
+            if (const std::string_view token(pos->begin, pos->end); token_type == KQLTokenType::BareWord && !ALLOWED_FUNCTIONS.contains(token))
             {
                 ++pos;
-                if (pos->type != TokenType::ClosingRoundBracket && pos->type != TokenType::ClosingSquareBracket
-                    && pos->type != TokenType::Comma)
+                if (pos->type != KQLTokenType::ClosingRoundBracket && pos->type != KQLTokenType::ClosingSquareBracket
+                    && pos->type != KQLTokenType::Comma)
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "Expression {} is not supported inside {}", token, function_name);
 
                 --pos;
@@ -106,7 +103,7 @@ bool DatatypeDynamic::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DatatypeGuid::convertImpl(String & out, IParser::Pos & pos)
+bool DatatypeGuid::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -114,15 +111,15 @@ bool DatatypeGuid::convertImpl(String & out, IParser::Pos & pos)
     String guid_str;
 
     ++pos;
-    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+    if (pos->type == KQLTokenType::QuotedIdentifier || pos->type == KQLTokenType::StringLiteral)
         guid_str = String(pos->begin + 1, pos->end - 1);
     else
     {
         auto start = pos;
-        while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+        while (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
         {
             ++pos;
-            if (pos->type == TokenType::ClosingRoundBracket)
+            if (pos->type == KQLTokenType::ClosingRoundBracket)
                 break;
         }
         --pos;
@@ -133,14 +130,14 @@ bool DatatypeGuid::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DatatypeInt::convertImpl(String & out, IParser::Pos & pos)
+bool DatatypeInt::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
     ++pos;
-    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+    if (pos->type == KQLTokenType::QuotedIdentifier || pos->type == KQLTokenType::StringLiteral)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "String is not parsed as int literal.");
 
     auto arg = getConvertedArgument(fn_name, pos);
@@ -148,19 +145,19 @@ bool DatatypeInt::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DatatypeLong::convertImpl(String & out, IParser::Pos & pos)
+bool DatatypeLong::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "toInt64");
 }
 
-bool DatatypeReal::convertImpl(String & out, IParser::Pos & pos)
+bool DatatypeReal::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
     ++pos;
-    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+    if (pos->type == KQLTokenType::QuotedIdentifier || pos->type == KQLTokenType::StringLiteral)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "String is not parsed as double literal.");
 
     auto arg = getConvertedArgument(fn_name, pos);
@@ -168,25 +165,25 @@ bool DatatypeReal::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DatatypeString::convertImpl(String & out, IParser::Pos & pos)
+bool DatatypeString::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool DatatypeTimespan::convertImpl(String & out, IParser::Pos & pos)
+bool DatatypeTimespan::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     ParserKQLDateTypeTimespan time_span;
     ASTPtr node;
-    Expected expected;
+    KQLExpected expected;
     bool sign = false;
 
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
     ++pos;
-    if (pos->type == TokenType::Minus)
+    if (pos->type == KQLTokenType::Minus)
     {
         sign = true;
         ++pos;
@@ -204,7 +201,7 @@ bool DatatypeTimespan::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
+bool DatatypeDecimal::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -215,7 +212,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
     int scale = 0;
     int precision = 34;
 
-    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+    if (pos->type == KQLTokenType::QuotedIdentifier || pos->type == KQLTokenType::StringLiteral)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse String as decimal Literal: {}", fn_name);
 
     --pos;
