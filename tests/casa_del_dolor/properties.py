@@ -560,7 +560,8 @@ def modify_server_settings(
             )
             default_cluster.text = ""
 
-        number_clusters = random.randint(args.min_servers, args.max_servers)
+        lower_bound, upper_bound = args.number_servers
+        number_clusters = random.randint(lower_bound, upper_bound)
         for i in range(0, number_clusters):
             add_single_cluster(
                 i,
@@ -578,7 +579,8 @@ def modify_server_settings(
         storage_config = ET.SubElement(root, "storage_configuration")
         disk_element = ET.SubElement(storage_config, "disks")
         backups_element = ET.SubElement(root, "backups")
-        number_disks = random.randint(args.min_disks, args.max_disks)
+        lower_bound, upper_bound = args.number_disks
+        number_disks = random.randint(lower_bound, upper_bound)
 
         allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
         allowed_disk_xml.text = "default"
@@ -611,7 +613,8 @@ def modify_server_settings(
                 j += 1
             number_bottom_disks = len(bottom_disks)
             policies_element = ET.SubElement(storage_config, "policies")
-            number_policies = random.randint(args.min_disks, args.max_disks)
+            lower_bound, upper_bound = args.number_disks
+            number_policies = random.randint(lower_bound, upper_bound)
 
             for i in range(0, number_policies):
                 next_policy_xml = ET.SubElement(policies_element, f"policy{i}")
@@ -652,7 +655,8 @@ def modify_server_settings(
         modified = True
         filesystem_caches_config = ET.SubElement(root, "filesystem_caches")
 
-        number_caches = random.randint(args.min_caches, args.max_caches)
+        lower_bound, upper_bound = args.number_caches
+        number_caches = random.randint(lower_bound, upper_bound)
         for i in range(0, number_caches):
             add_single_cache(i, ET.SubElement(filesystem_caches_config, f"fcache{i}"))
 

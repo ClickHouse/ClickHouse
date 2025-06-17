@@ -68,16 +68,10 @@ parser.add_argument(
     help="Probability to set random disks",
 )
 parser.add_argument(
-    "--min-disks",
-    type=int,
-    default=1,
-    help="Minimum number of disks to generate",
-)
-parser.add_argument(
-    "--max-disks",
-    type=int,
-    default=5,
-    help="Maximum number of disks to generate",
+    "--number-disks",
+    type=ordered_pair,
+    default=(1, 5),
+    help="Number of disks to generate. Two ordered integers separated by comma (e.g., 1,3)",
 )
 parser.add_argument(
     "--add-policy-settings-prob",
@@ -94,16 +88,10 @@ parser.add_argument(
     help="Probability to set random servers",
 )
 parser.add_argument(
-    "--min-servers",
-    type=int,
-    default=1,
-    help="Minimum number of remote servers to generate",
-)
-parser.add_argument(
-    "--max-servers",
-    type=int,
-    default=3,
-    help="Maximum number of remote servers to generate",
+    "--number-servers",
+    type=ordered_pair,
+    default=(1, 3),
+    help="Number of servers to generate. Two ordered integers separated by comma (e.g., 1,3)",
 )
 parser.add_argument(
     "--add-filesystem-caches-prob",
@@ -113,16 +101,10 @@ parser.add_argument(
     help="Probability to add filesystem caches",
 )
 parser.add_argument(
-    "--min-caches",
-    type=int,
-    default=1,
-    help="Minimum number of filesystem caches to generate",
-)
-parser.add_argument(
-    "--max-caches",
-    type=int,
-    default=3,
-    help="Maximum number of filesystem caches to generate",
+    "--number-caches",
+    type=ordered_pair,
+    default=(1, 3),
+    help="Number of filesystem caches to generate. Two ordered integers separated by comma (e.g., 1,3)",
 )
 parser.add_argument(
     "--change-server-version-prob",
@@ -185,10 +167,23 @@ parser.add_argument(
     help="Probability to kill the server instead of shutting it down",
 )
 parser.add_argument(
+    "--restart-clickhouse-prob",
+    type=int,
+    default=50,
+    choices=range(0, 101),
+    help="Probability to restart ClickHouse instead of integration servers",
+)
+parser.add_argument(
     "--time-between-shutdowns",
     type=ordered_pair,
     default=(20, 30),
     help="In seconds. Two ordered integers separated by comma (e.g., 30,60)",
+)
+parser.add_argument(
+    "--time-between-integration-shutdowns",
+    type=ordered_pair,
+    default=(3, 5),
+    help="In seconds. Two ordered integers separated by comma (e.g., 3,5)",
 )
 parser.add_argument(
     "--with-postgresql", type=bool, default=False, help="With PostgreSQL integration"
@@ -198,6 +193,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--with-minio", type=bool, default=True, help="With MinIO integration"
+)
+parser.add_argument(
+    "--with-zookeeper", type=bool, default=True, help="With Zookeeper server"
 )
 parser.add_argument(
     "--with-nginx", type=bool, default=False, help="With Nginx integration"
@@ -230,12 +228,6 @@ args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
     raise f"The length of replica values {len(args.replica_values)} is not the same as shard values {len(args.shard_values)}"
-if args.min_disks > args.max_disks:
-    raise f"The min disks value {args.min_disks} is greater than max disks value {args.max_disks}"
-if args.min_servers > args.max_servers:
-    raise f"The min servers value {args.min_servers} is greater than max servers value {args.max_servers}"
-if args.min_caches > args.max_caches:
-    raise f"The min caches value {args.min_caches} is greater than max caches value {args.max_caches}"
 
 logging.basicConfig(
     filename=args.log_path,
@@ -308,9 +300,9 @@ for i in range(0, len(args.replica_values)):
         cluster.add_instance(
             f"node{i}",
             with_dolor=True,
-            with_zookeeper=True,
             stay_alive=True,
             copy_common_configs=False,
+            with_zookeeper=args.with_zookeeper,
             keeper_required_feature_flags=["multi_read"],
             with_minio=args.with_minio,
             with_nginx=args.with_nginx,
@@ -372,7 +364,9 @@ def dolor_cleanup():
 atexit.register(dolor_cleanup)
 time.sleep(3)
 
-integrations = ["zookeeper", "zookeeper"]
+integrations = []
+if args.with_zookeeper:
+    integrations.extend(["zookeeper", "zookeeper"])
 if args.with_minio:
     integrations.append("minio")
 if args.with_nginx:
@@ -391,6 +385,9 @@ if args.with_redis:
 # This is the main loop, run while client and server are running
 all_running = True
 lower_bound, upper_bound = args.time_between_shutdowns
+integration_lower_bound, integration_upper_bound = (
+    args.time_between_integration_shutdowns
+)
 while all_running:
     start = time.time()
     finish = start + random.randint(lower_bound, upper_bound)
@@ -415,7 +412,7 @@ while all_running:
     kill_server = random.randint(1, 100) <= args.kill_server_prob
     # Pick one of the servers to restart
     # 50% chance to restart ClickHouse
-    if len(integrations) == 0 or random.randint(1, 2) == 1:
+    if len(integrations) == 0 or random.randint(1, 100) <= args.restart_clickhouse_prob:
         next_pick = random.choice(servers)
         logger.info(
             f"Restarting the server {next_pick.name} with {"kill" if kill_server else "manual shutdown"}"
@@ -478,6 +475,7 @@ while all_running:
         cluster.process_integration_nodes(
             next_pick, choosen_instances, "kill" if kill_server else "stop"
         )
+        time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
 
 cluster.shutdown()
