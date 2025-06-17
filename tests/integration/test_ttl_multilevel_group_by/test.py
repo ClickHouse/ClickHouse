@@ -47,7 +47,7 @@ def test_two_stage_ttl_group_by(started_cluster):
     node.query("""
         INSERT INTO test_ttl_group_by
         SELECT
-            now() AS event_date,  -- Указываем фиксированное время
+            now() AS event_date,
             number % 2 AS user_id,
             user_id * 10 + (number % 3) AS item_id,
             1 AS val,
@@ -60,11 +60,11 @@ def test_two_stage_ttl_group_by(started_cluster):
     node.query_with_retry("SELECT count() FROM test_ttl_group_by", check_callback=lambda res: int(res.strip()) == 10,
                           sleep_time=1, retry_count=10)
 
-    # Step 2: Wait for the first TTL (2 seconds) to apply — should reduce to 6 rows (one per item_id)
+    # Step 2: Wait for the first TTL (13 seconds) to apply — should reduce to 6 rows (one per item_id)
     node.query_with_retry("SELECT count() FROM test_ttl_group_by", check_callback=lambda res: int(res.strip()) == 6,
                           sleep_time=1, retry_count=20)
 
-    # Step 3: Wait for second TTL (7 seconds since insert) to apply — should reduce to 2 rows (one per user_id)
+    # Step 3: Wait for second TTL (18 seconds since insert) to apply — should reduce to 2 rows (one per user_id)
     node.query_with_retry("SELECT count() FROM test_ttl_group_by", check_callback=lambda res: int(res.strip()) == 2,
                           sleep_time=1, retry_count=10)
 
