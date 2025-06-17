@@ -461,12 +461,10 @@ If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Mo
 
 The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function.
     )";
-
     FunctionDocumentation::Syntax syntax_toStartOfInterval = R"(
 toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
     )";
-
     FunctionDocumentation::Arguments arguments_toStartOfInterval = {
         {"value", "Date or DateTime value to round down."},
         {"x", "Interval length number."},
@@ -474,9 +472,7 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
         {"time_zone", "Optional. Time zone name as a string."},
         {"origin", "Optional. Origin point for calculation (second overload only)."}
     };
-
     FunctionDocumentation::ReturnedValue returned_value_toStartOfInterval = "Returns the start of the interval containing the input value. [`Date`](../data-types/date.md).";
-
     FunctionDocumentation::Examples examples_toStartOfInterval = {
         {"Basic interval rounding", R"(
 SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
