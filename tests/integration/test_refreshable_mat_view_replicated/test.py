@@ -247,8 +247,6 @@ def test_append(
     empty,
 ):
     opposite_minutes = math.floor((time.time() + 1800) % 3600 / 60)
-    if opposite_minutes == 0:
-        opposite_minutes = 1
 
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
