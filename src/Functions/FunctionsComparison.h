@@ -69,8 +69,6 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
     {
         case TypeIndex::DateTime64:
             return callOnBasicType<DateTime64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-        case TypeIndex::Time64:
-            return callOnBasicType<Time64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal32:
             return callOnBasicType<Decimal32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal64:
@@ -87,8 +85,6 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
     {
         case TypeIndex::DateTime64:
             return callOnBasicTypeSecondArg<DateTime64, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
-        case TypeIndex::Time64:
-            return callOnBasicTypeSecondArg<Time64, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal32:
             return callOnBasicTypeSecondArg<Decimal32, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal64:
@@ -1244,7 +1240,7 @@ public:
                                                    {nullptr, right_tuple->getElements()[i], ""}};
                     element_type = func->build(args)->getResultType();
                 }
-                has_nullable = has_nullable || element_type->isNullable();
+                has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
                 has_null = has_null || element_type->onlyNull();
             }
 

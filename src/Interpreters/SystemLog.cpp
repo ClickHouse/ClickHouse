@@ -1,4 +1,5 @@
 #include <Interpreters/SystemLog.h>
+#include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
 #include <Common/Logger.h>
@@ -14,6 +15,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ErrorLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -33,7 +35,6 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
-#include <Interpreters/ErrorLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
@@ -279,7 +280,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     log_settings.queue_settings.notify_flush_on_crash = config.getBool(config_prefix + ".flush_on_crash",
                                                                        TSystemLog::shouldNotifyFlushOnCrash());
 
-    if constexpr (std::is_same_v<TSystemLog, TraceLog> || std::is_same_v<TSystemLog, ErrorLog>)
+    if constexpr (std::is_same_v<TSystemLog, TraceLog>)
         log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", false);
 
     log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
@@ -447,6 +448,9 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
 
     if (names.empty())
     {
+        if (text_log)
+            BaseDaemon::instance().flushTextLogs();
+
         for (auto * log : getAllLogs())
         {
             auto last_log_index = log->getLastLogIndex();
@@ -477,6 +481,9 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
             if (it->second == nullptr)
                 /// The log exists but it's not initialized. Nothing to do
                 continue;
+
+            if (it->second == text_log.get())
+                BaseDaemon::instance().flushTextLogs();
 
             auto last_log_index = it->second->getLastLogIndex();
             logs_to_wait.push_back({it->second, it->second->getLastLogIndex()});

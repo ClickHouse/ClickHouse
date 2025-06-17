@@ -1,7 +1,7 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <Common/Exception.h>
-
+#include <boost/algorithm/string/trim.hpp>
 #include <unordered_map>
 
 namespace DB
@@ -14,6 +14,14 @@ namespace ErrorCodes
 
 VersionNumber VERSION_UNKNOWN = {0};
 
+/// Documentation is often defined with raw strings, therefore need to trim leading and trailing whitespace + newlines.
+/// Example:
+///
+///     FunctionDocumentation::ReturnedValue returned_value = R"(
+/// Returns the difference between `x` and the nearest integer not greater than
+/// `x` divisible by `y`.
+/// )";
+
 std::string FunctionDocumentation::argumentsAsString() const
 {
     std::string res;
@@ -22,19 +30,29 @@ std::string FunctionDocumentation::argumentsAsString() const
     return res;
 }
 
+std::string FunctionDocumentation::syntaxAsString() const
+{
+    return boost::algorithm::trim_copy(syntax);
+}
+
+std::string FunctionDocumentation::returnedValueAsString() const
+{
+    return boost::algorithm::trim_copy(returned_value);
+}
+
 std::string FunctionDocumentation::examplesAsString() const
 {
     std::string res;
     for (const auto & [name, query, result] : examples)
     {
-        res += name + ":\n\n";
-        res += "```sql\n";
-        res += query + "\n";
+        res += "**" + name + "**" + "\n\n";
+        res += "```sql title=""Query""\n";
+        res += boost::algorithm::trim_copy(query) + "\n";
         res += "```\n\n";
-        res += "Result:\n\n";
-        res += "```text\n";
-        res += result + "\n";
-        res += "```\n";
+        res += "```response title=""Response""\n";
+        res += boost::algorithm::trim_copy(result) + "\n";
+        res += "```";
+        res += "\n\n";
     }
     return res;
 }

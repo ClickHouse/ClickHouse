@@ -27,6 +27,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Context.h>
 
 #include <fmt/ranges.h>
 
@@ -157,11 +158,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         if (hasExactlyOneBracketsExpansion(path))
         {
             auto paths = expandSelectionGlob(configuration->getPath());
-
-            ConfigurationPtr copy_configuration = configuration->clone();
-            copy_configuration->setPaths(paths);
             iterator = std::make_unique<KeysIterator>(
-                object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
+                paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
                 query_settings.ignore_non_existent_file, skip_object_metadata, file_progress_callback);
         }
         else
@@ -176,16 +174,17 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         return configuration->iterate(
             filter_actions_dag.has_value() ? &filter_actions_dag.value() : nullptr,
             file_progress_callback,
-            query_settings.list_object_keys_size);
+            query_settings.list_object_keys_size,
+            local_context);
     }
     else
     {
-        ConfigurationPtr copy_configuration = configuration->clone();
+        Strings paths;
+
         auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
         if (filter_dag)
         {
             auto keys = configuration->getPaths();
-            std::vector<String> paths;
             paths.reserve(keys.size());
             for (const auto & key : keys)
                 paths.push_back(fs::path(configuration->getNamespace()) / key);
@@ -193,11 +192,15 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
             VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, local_context);
-            copy_configuration->setPaths(keys);
+            paths = keys;
+        }
+        else
+        {
+            paths = configuration->getPaths();
         }
 
         iterator = std::make_unique<KeysIterator>(
-            object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
+            paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, file_progress_callback);
     }
 
@@ -595,12 +598,16 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_prefetch;
 
-    /// FIXME: Use async buffer if use_cache,
-    /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
-    const bool use_async_buffer = use_prefetch || use_cache;
+    bool use_async_buffer = false;
+    ReadSettings nested_buffer_read_settings;
+    if (use_prefetch || use_cache)
+    {
+        nested_buffer_read_settings.remote_read_buffer_use_external_buffer = true;
 
-    if (use_async_buffer)
-        modified_read_settings.remote_read_buffer_use_external_buffer = true;
+        /// FIXME: Use async buffer if use_cache,
+        /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
+        use_async_buffer = true;
+    }
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
     if (use_cache)
@@ -619,9 +626,9 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
             const auto cache_key = FileCacheKey::fromKey(hash.get128());
             auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
 
-            auto read_buffer_creator = [path = object_info.getPath(), object_size, modified_read_settings, object_storage]()
+            auto read_buffer_creator = [path = object_info.getPath(), object_size, nested_buffer_read_settings, object_storage]()
             {
-                return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings);
+                return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings);
             };
 
             modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
@@ -632,11 +639,11 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 cache,
                 FileCache::getCommonUser(),
                 read_buffer_creator,
-                modified_read_settings,
+                use_async_buffer ? nested_buffer_read_settings : read_settings,
                 std::string(CurrentThread::getQueryId()),
                 object_size,
                 /* allow_seeks */true,
-                /* use_external_buffer */true,
+                /* use_external_buffer */use_async_buffer,
                 /* read_until_position */std::nullopt,
                 context_->getFilesystemCacheLog());
 
@@ -651,7 +658,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     }
 
     if (!impl)
-        impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), modified_read_settings);
+        impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), nested_buffer_read_settings);
 
     if (!use_async_buffer)
         return impl;
@@ -833,18 +840,17 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
 }
 
 StorageObjectStorageSource::KeysIterator::KeysIterator(
+    const Strings & keys_,
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
     const NamesAndTypesList & virtual_columns_,
     ObjectInfos * read_keys_,
     bool ignore_non_existent_files_,
     bool skip_object_metadata_,
     std::function<void(FileProgress)> file_progress_callback_)
     : object_storage(object_storage_)
-    , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
-    , keys(configuration->getPaths())
+    , keys(keys_)
     , ignore_non_existent_files(ignore_non_existent_files_)
     , skip_object_metadata(skip_object_metadata_)
 {

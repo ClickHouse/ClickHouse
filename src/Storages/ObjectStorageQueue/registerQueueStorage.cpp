@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
+#include <Interpreters/Context.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -33,7 +34,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getContext(), false, nullptr);
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getContext(), false);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

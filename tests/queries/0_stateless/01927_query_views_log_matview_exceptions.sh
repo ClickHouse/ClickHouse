@@ -19,7 +19,7 @@ function setup()
 {
     ${CLICKHOUSE_CLIENT} -q "
         CREATE TABLE table_exception_a (a String, b Int64) ENGINE = MergeTree ORDER BY b;
-        CREATE TABLE table_exception_b (a Float64,  b Int64) ENGINE = MergeTree ORDER BY tuple();
+        CREATE TABLE table_exception_b (a Float64, b Int64) ENGINE = MergeTree ORDER BY tuple();
         CREATE TABLE table_exception_c (a Float64) ENGINE = MergeTree ORDER BY a;
 
         CREATE MATERIALIZED VIEW matview_exception_a_to_b TO table_exception_b AS SELECT toFloat64(a) AS a, b FROM table_exception_a;
@@ -30,9 +30,10 @@ function setup()
 function test()
 {
     echo "$@";
+    query_id="$(random_str 10)"
     # We are going to insert an invalid number into table_exception_a. This will fail when inserting into
     # table_exception_b via matview_exception_a_to_b, and will work ok when inserting into table_exception_c
-    ${CLICKHOUSE_CLIENT} "$@" --log_queries=1 --log_query_views=1 -q "INSERT INTO table_exception_a VALUES ('0.Aa234', 22)" > /dev/null 2>&1 || true;
+    ${CLICKHOUSE_CLIENT} "$@" --log_queries=1 --log_query_views=1  --query_id="$query_id" -q "INSERT INTO table_exception_a VALUES ('0.Aa234', 22)" > /dev/null 2>&1 || true;
     ${CLICKHOUSE_CLIENT} -q "
         SELECT * FROM
         (
@@ -47,13 +48,11 @@ function test()
 
     ${CLICKHOUSE_CLIENT} -q "
         SELECT
-            replaceOne(CAST(type AS String), 'ExceptionWhileProcessing', 'Excep****WhileProcessing')
+            replaceOne(CAST(type AS String), 'ExceptionWhileProcessing', 'Excep****WhileProcessing'),
             exception_code
         FROM system.query_log
         WHERE
-              query LIKE 'INSERT INTO table_exception_a%' AND
-              type > 0 AND
-              event_date >= yesterday() AND
+              query_id='$query_id' AND
               current_database = currentDatabase()
         ORDER BY event_time_microseconds DESC
         LIMIT 1
@@ -67,19 +66,7 @@ function test()
             view_target,
             view_query
         FROM system.query_views_log
-        WHERE initial_query_id =
-            (
-                SELECT query_id
-                FROM system.query_log
-                WHERE
-                      current_database = '${CLICKHOUSE_DATABASE}' AND
-                      query LIKE 'INSERT INTO table_exception_a%' AND
-                      type > 0 AND
-                      event_date >= yesterday() AND
-                      current_database = currentDatabase()
-                ORDER BY event_time_microseconds DESC
-                LIMIT 1
-            )
+        WHERE initial_query_id = '$query_id'
         ORDER BY view_name ASC
         ";
 }
@@ -88,7 +75,7 @@ trap cleanup EXIT;
 cleanup;
 setup;
 
-test --parallel_view_processing 0;
-test --parallel_view_processing 1;
+test --materialized_views_ignore_errors=1 --parallel_view_processing 0;
+test --materialized_views_ignore_errors=1 --parallel_view_processing 1;
 
 exit 0

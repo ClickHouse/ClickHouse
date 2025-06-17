@@ -143,7 +143,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.date_time_input_format = settings[Setting::date_time_input_format];
     format_settings.date_time_output_format = settings[Setting::date_time_output_format];
     format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
-    format_settings.interval.output_format = settings[Setting::interval_output_format];
+    format_settings.interval_output_format = settings[Setting::interval_output_format];
     format_settings.input_format_ipv4_default_on_conversion_error = settings[Setting::input_format_ipv4_default_on_conversion_error];
     format_settings.input_format_ipv6_default_on_conversion_error = settings[Setting::input_format_ipv6_default_on_conversion_error];
     format_settings.bool_true_representation = settings[Setting::bool_true_representation];
@@ -194,6 +194,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.filter_push_down = settings[Setting::input_format_parquet_filter_push_down];
     format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
     format_settings.parquet.use_native_reader = settings[Setting::input_format_parquet_use_native_reader];
+    format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
     format_settings.parquet.allow_missing_columns = settings[Setting::input_format_parquet_allow_missing_columns];
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference];
     format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];
@@ -333,6 +334,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.native.encode_types_in_binary_format = settings[Setting::output_format_native_encode_types_in_binary_format];
     format_settings.native.decode_types_in_binary_format = settings[Setting::input_format_native_decode_types_in_binary_format];
     format_settings.native.write_json_as_string = settings[Setting::output_format_native_write_json_as_string];
+    format_settings.native.use_flattened_dynamic_and_json_serialization = settings[Setting::output_format_native_use_flattened_dynamic_and_json_serialization];
     format_settings.max_parser_depth = settings[Setting::max_parser_depth];
     format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
@@ -615,22 +617,9 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     return format;
 }
 
-String FormatFactory::getContentType(
-    const String & name,
-    const ContextPtr & context,
-    const std::optional<FormatSettings> & _format_settings) const
+String FormatFactory::getContentType(const String & name, const std::optional<FormatSettings> & settings) const
 {
-    const auto & output_getter = getCreators(name).output_creator;
-    if (!output_getter)
-        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
-
-    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-
-    Block empty_block;
-    WriteBufferFromOwnString empty_buffer;
-    auto format = output_getter(empty_buffer, empty_block, format_settings);
-
-    return format->getContentType();
+    return getCreators(name).content_type(settings);
 }
 
 SchemaReaderPtr FormatFactory::getSchemaReader(
@@ -857,6 +846,16 @@ void FormatFactory::markOutputFormatNotTTYFriendly(const String & name)
     if (!target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as non-TTY-friendly", name);
     target = false;
+}
+
+void FormatFactory::setContentType(const String & name, const String & content_type)
+{
+    getOrCreateCreators(name).content_type = [=](const std::optional<FormatSettings> &){ return content_type; };
+}
+
+void FormatFactory::setContentType(const String & name, ContentTypeGetter content_type)
+{
+    getOrCreateCreators(name).content_type = content_type;
 }
 
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const

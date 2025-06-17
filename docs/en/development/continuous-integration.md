@@ -143,7 +143,7 @@ mkdir build_tidy
 Runs [stateless functional tests](tests.md#functional-tests) for ClickHouse binaries built in various configurations -- release, debug, with sanitizers, etc.
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#functional-tests).
 Note that you have to use the correct build configuration to reproduce -- a test might fail under AddressSanitizer but pass in Debug.
-Download the binary from [CI build checks page](/install#install-a-ci-generated-binary), or build it locally.
+Download the binary from [CI build checks page](/install/advanced), or build it locally.
 
 ## Functional Stateful Tests {#functional-stateful-tests}
 
