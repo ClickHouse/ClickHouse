@@ -129,24 +129,41 @@ void AddedColumns<true>::buildOutputFromBlocks()
 }
 
 template<>
-void AddedColumns<false>::applyLazyDefaults()
+size_t AddedColumns<false>::applyLazyDefaults()
 {
+    size_t added_bytes = 0;
     if (lazy_defaults_count)
     {
         for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+        {
+            size_t bytes_before = max_joined_block_bytes ? columns[j]->allocatedBytes() : 0;
             JoinCommon::addDefaultValues(*columns[j], type_name[j].type, lazy_defaults_count);
+            size_t bytes_after = max_joined_block_bytes ? columns[j]->allocatedBytes() : 0;
+            added_bytes += bytes_after - bytes_before;
+        }
         lazy_defaults_count = 0;
     }
+
+    return added_bytes;
 }
 
 template<>
-void AddedColumns<true>::applyLazyDefaults() {}
+size_t AddedColumns<true>::applyLazyDefaults() { return 0; }
 
 template <>
-void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has_defaults)
+size_t AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has_defaults)
 {
+    size_t added_bytes = 0;
     if (has_defaults)
-        applyLazyDefaults();
+        added_bytes += applyLazyDefaults();
+
+    auto insert = [&](auto & src, const IColumn & dst, auto inserter, size_t row)
+    {
+        size_t bytes_before = max_joined_block_bytes ? src.allocatedBytes() : 0;
+        (src.*inserter)(dst, row);
+        size_t bytes_after = max_joined_block_bytes ? src.allocatedBytes() : 0;
+        added_bytes += bytes_after - bytes_before;
+    };
 
 #ifndef NDEBUG
     checkBlock(*row_ref->block);
@@ -158,9 +175,11 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
         {
             const auto & column_from_block = row_ref->block->getByPosition(right_indexes[j]);
             if (auto * nullable_col = nullable_column_ptrs[j])
-                nullable_col->insertFromNotNullable(*column_from_block.column, row_ref->row_num);
+                insert(*nullable_col, *column_from_block.column, &ColumnNullable::insertFromNotNullable, row_ref->row_num);
+                //nullable_col->insertFromNotNullable(*column_from_block.column, row_ref->row_num);
             else
-                columns[j]->insertFrom(*column_from_block.column, row_ref->row_num);
+                insert(*columns[j], *column_from_block.column, &IColumn::insertFrom, row_ref->row_num);
+                // columns[j]->insertFrom(*column_from_block.column, row_ref->row_num);
         }
     }
     else
@@ -169,20 +188,23 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
             const auto & column_from_block = row_ref->block->getByPosition(right_indexes[j]);
-            columns[j]->insertFrom(*column_from_block.column, row_ref->row_num);
+            insert(*columns[j], *column_from_block.column, &IColumn::insertFrom, row_ref->row_num);
+            // columns[j]->insertFrom(*column_from_block.column, row_ref->row_num);
         }
     }
+
+    return added_bytes;
 }
 
 template <>
-__attribute__((noreturn)) void AddedColumns<false>::appendFromBlock(const RowRefList *, bool)
+__attribute__((noreturn)) size_t AddedColumns<false>::appendFromBlock(const RowRefList *, bool)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
 }
 
 
 template <>
-void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
+size_t AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
 {
 #ifndef NDEBUG
     checkBlock(*row_ref->block);
@@ -191,10 +213,11 @@ void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
     {
         lazy_output.addRowRef(row_ref);
     }
+    return 0;
 }
 
 template <>
-void AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool)
+size_t AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool)
 {
 #ifndef NDEBUG
     checkBlock(*row_ref_list->block);
@@ -203,6 +226,7 @@ void AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool)
     {
         lazy_output.addRowRefList(row_ref_list);
     }
+    return 0;
 }
 
 

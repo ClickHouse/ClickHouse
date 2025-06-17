@@ -164,12 +164,12 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
-    void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
-    void appendFromBlock(const RowRef * row_ref, bool has_default);
+    [[nodiscard]] size_t appendFromBlock(const RowRefList * row_ref_list, bool has_default);
+    [[nodiscard]] size_t appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow();
 
-    void applyLazyDefaults();
+    [[nodiscard]] size_t applyLazyDefaults();
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
@@ -181,6 +181,7 @@ public:
     ExpressionActionsPtr additional_filter_expression;
 
     size_t max_joined_block_rows = 0;
+    size_t max_joined_block_bytes = 0;
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
@@ -274,7 +275,7 @@ private:
 class PreSelectedRows : public std::vector<const RowRef *>
 {
 public:
-    void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
+    size_t appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); return 0; }
     static constexpr bool isLazy() { return false; }
 };
 

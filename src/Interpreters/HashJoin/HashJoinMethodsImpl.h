@@ -104,12 +104,17 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     bool has_required_right_keys = (join.required_right_keys.columns() != 0);
     added_columns.need_filter = join_features.need_filter || has_required_right_keys;
     added_columns.max_joined_block_rows = join.max_joined_block_rows;
+    added_columns.max_joined_block_bytes = join.max_joined_block_bytes;
+
+    std::cerr << added_columns.max_joined_block_rows << ' ' << added_columns.max_joined_block_bytes << std::endl;
+
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
     else
         added_columns.reserve(join_features.need_replication);
 
     const size_t num_joined = switchJoinRightColumns(maps_, added_columns, join.data->type, *join.used_flags);
+    std::cerr << ":::: num_joined " << num_joined << std::endl;
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
     auto remaining_block = block.cut(num_joined);
@@ -424,6 +429,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
     IColumn::Offset current_offset = 0;
     size_t max_joined_block_rows = added_columns.max_joined_block_rows;
+    size_t max_joined_block_bytes = added_columns.max_joined_block_bytes;
+    size_t added_bytes = 0;
     size_t i = 0;
     for (; i < rows; ++i)
     {
@@ -435,7 +442,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
         if constexpr (join_features.need_replication)
         {
-            if (unlikely(current_offset >= max_joined_block_rows))
+            if (unlikely(current_offset >= max_joined_block_rows || (max_joined_block_bytes && added_bytes >= max_joined_block_bytes)))
             {
                 added_columns.offsets_to_replicate->resize(i);
                 added_columns.filter.resize(i);
@@ -472,7 +479,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                         else
                             used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
 
-                        added_columns.appendFromBlock(row_ref, join_features.add_missing);
+                        added_bytes += added_columns.appendFromBlock(row_ref, join_features.add_missing);
                     }
                     else
                         addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
@@ -482,7 +489,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                     setUsed<need_filter>(added_columns.filter, i);
                     used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
                     auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
-                    addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+                    addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, added_bytes, known_rows, used_flags_opt);
                 }
                 else if constexpr ((join_features.is_any_join || join_features.is_semi_join) && join_features.right)
                 {
@@ -492,7 +499,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                     {
                         auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
                         setUsed<need_filter>(added_columns.filter, i);
-                        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+                        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, added_bytes, known_rows, used_flags_opt);
                     }
                 }
                 else if constexpr (join_features.is_any_join && join_features.inner)
@@ -503,7 +510,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                     if (used_once)
                     {
                         setUsed<need_filter>(added_columns.filter, i);
-                        added_columns.appendFromBlock(&mapped, join_features.add_missing);
+                        added_bytes += added_columns.appendFromBlock(&mapped, join_features.add_missing);
                     }
 
                     break;
@@ -521,7 +528,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                 {
                     setUsed<need_filter>(added_columns.filter, i);
                     used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-                    added_columns.appendFromBlock(&mapped, join_features.add_missing);
+                    added_bytes += added_columns.appendFromBlock(&mapped, join_features.add_missing);
 
                     if (join_features.is_any_or_semi_join)
                     {
@@ -544,7 +551,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         }
     }
 
-    added_columns.applyLazyDefaults();
+    added_bytes += added_columns.applyLazyDefaults();
     return i;
 }
 
@@ -699,14 +706,15 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
 
     using FindResult = typename KeyGetter::FindResult;
     size_t max_joined_block_rows = added_columns.max_joined_block_rows;
+    size_t max_joined_block_bytes = added_columns.max_joined_block_bytes;
     size_t it = 0;
     PreSelectedRows selected_rows;
     selected_rows.reserve(left_block_rows);
     std::vector<FindResult> find_results;
     find_results.reserve(left_block_rows);
-    bool exceeded_max_block_rows = false;
     IColumn::Offset total_added_rows = 0;
     IColumn::Offset current_added_rows = 0;
+    size_t added_bytes = 0;
 
     auto collect_keys_matched_rows_refs = [&]()
     {
@@ -722,7 +730,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
 
             if constexpr (join_features.need_replication)
             {
-                if (unlikely(total_added_rows + current_added_rows >= max_joined_block_rows))
+                if (unlikely(total_added_rows + current_added_rows >= max_joined_block_rows || (max_joined_block_bytes && added_bytes >= max_joined_block_bytes)))
                 {
                     break;
                 }
@@ -746,9 +754,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                     /// We don't add missing in addFoundRowAll here. we will add it after filter is applied.
                     /// it's different from `joinRightColumns`.
                     if (flag_per_row)
-                        addFoundRowAll<Map, false, true>(mapped, selected_rows, current_added_rows, all_flag_known_rows, nullptr);
+                        addFoundRowAll<Map, false, true>(mapped, selected_rows, current_added_rows, added_bytes, all_flag_known_rows, nullptr);
                     else
-                        addFoundRowAll<Map, false, false>(mapped, selected_rows, current_added_rows, single_flag_know_rows, nullptr);
+                        addFoundRowAll<Map, false, false>(mapped, selected_rows, current_added_rows, added_bytes, single_flag_know_rows, nullptr);
                 }
             }
             row_replicate_offset.push_back(current_added_rows);
@@ -786,7 +794,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                                     {
                                         any_matched = true;
                                         total_added_rows += 1;
-                                        added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
+                                        added_bytes += added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
                                     }
                                 }
                             }
@@ -798,7 +806,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                                 {
                                     any_matched = true;
                                     total_added_rows += 1;
-                                    added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
+                                    added_bytes += added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
                                 }
                             }
                         }
@@ -812,7 +820,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                         {
                             any_matched = true;
                             total_added_rows += 1;
-                            added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
+                            added_bytes += added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
                             used_flags.template setUsed<join_features.need_flags, true>((*selected_right_row_it)->block, (*selected_right_row_it)->row_num, 0);
                         }
                     }
@@ -833,7 +841,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                         if (filter_flags[replicated_row])
                         {
                             any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
+                            added_bytes += added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
                             total_added_rows += 1;
                         }
                         ++selected_right_row_it;
@@ -843,7 +851,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                         if (filter_flags[replicated_row])
                         {
                             any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
+                            added_bytes += added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
                             total_added_rows += 1;
                             selected_right_row_it = selected_right_row_it + row_replicate_offset[i] - replicated_row;
                             break;
@@ -877,7 +885,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                     if (need_filter)
                         setUsed<true>(added_columns.filter, left_start_row + i - 1);
                     if constexpr (join_features.add_missing)
-                        added_columns.applyLazyDefaults();
+                        added_bytes += added_columns.applyLazyDefaults();
                 }
             }
             find_result_index += (prev_replicated_row != row_replicate_offset[i]);
@@ -890,7 +898,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
         }
     };
 
-    while (it < left_block_rows && !exceeded_max_block_rows)
+    bool exceeded_max_block_rows = false;
+    bool exceeded_max_block_bytes = false;
+    while (it < left_block_rows && !exceeded_max_block_rows && !exceeded_max_block_bytes)
     {
         auto left_start_row = it;
         collect_keys_matched_rows_refs();
@@ -914,7 +924,11 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
             // Add a check for current_added_rows to avoid run the filter expression on too small size batch.
             if (total_added_rows >= max_joined_block_rows || current_added_rows < 1024)
                 exceeded_max_block_rows = true;
+
+            if (max_joined_block_bytes && added_bytes >= max_joined_block_bytes)
+                exceeded_max_block_rows = true;
         }
+
     }
 
     if constexpr (join_features.need_replication)
@@ -922,7 +936,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
         added_columns.offsets_to_replicate->resize_assume_reserved(it);
         added_columns.filter.resize_assume_reserved(it);
     }
-    added_columns.applyLazyDefaults();
+
+    added_bytes += added_columns.applyLazyDefaults();
     return it;
 }
 

@@ -89,11 +89,12 @@ void addFoundRowAll(
     const typename Map::mapped_type & mapped,
     AddedColumns & added,
     IColumn::Offset & current_offset,
+    size_t & added_bytes,
     KnownRowsHolder<flag_per_row> & known_rows [[maybe_unused]],
     JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]])
 {
     if constexpr (add_missing)
-        added.applyLazyDefaults();
+        added_bytes += added.applyLazyDefaults();
 
     if constexpr (flag_per_row)
     {
@@ -103,7 +104,7 @@ void addFoundRowAll(
         {
             if (!known_rows.isKnown(std::make_pair(it->block, it->row_num)))
             {
-                added.appendFromBlock(*it, false);
+                added_bytes += added.appendFromBlock(*it, false);
                 ++current_offset;
                 if (!new_known_rows_ptr)
                 {
@@ -125,14 +126,14 @@ void addFoundRowAll(
     }
     else if constexpr (AddedColumns::isLazy())
     {
-        added.appendFromBlock(&mapped, false);
+        added_bytes += added.appendFromBlock(&mapped, false);
         current_offset += mapped.rows;
     }
     else
     {
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            added.appendFromBlock(*it, false);
+            added_bytes += added.appendFromBlock(*it, false);
             ++current_offset;
         }
     }
