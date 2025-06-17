@@ -37,7 +37,6 @@
 
 #include <algorithm>
 #include <numeric>
-#include <unordered_set>
 
 using namespace DB;
 
@@ -73,28 +72,24 @@ extern const Metric ConcurrentHashJoinPoolThreadsScheduled;
 namespace
 {
 
-using BlockHashes = std::vector<UInt8>;
+using BlockHashes = std::vector<UInt64>;
 
 void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams & params)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
 
-    /// Don't verify identical sizes as each HashJoin instance has its own hash table, just use the max size
-    size_t max_ht_size = 0;
-    for (const auto & hash_join : hash_joins)
-    {
-        size_t size = hash_join->data->getTotalRowCount();
-        max_ht_size = std::max(size, max_ht_size);
-    }
+    const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
+    if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes");
 
     const auto source_rows = std::accumulate(
         hash_joins.begin(),
         hash_joins.end(),
         0ull,
         [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
-    if (max_ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = max_ht_size, .source_rows = source_rows}, params);
+    if (ht_size)
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -134,13 +129,13 @@ void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollect
 
         const auto & right_data = hash_join.getJoinedData();
         std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, ind); }, right_data->maps.at(0));
-        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size);
+        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size / slots);
     }
 }
 
 template <typename HashTable>
 concept HasGetBucketFromHashMemberFunc = requires {
-    { std::declval<HashTable>().getBucketFromHash(static_cast<size_t>(0)) } -> std::same_as<size_t>;
+    { std::declval<HashTable>().getBucketFromHash(static_cast<size_t>(0)) };
 };
 }
 
@@ -328,12 +323,14 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     }
     else
     {
-        /// materialize once and scatter the block across all slots
         hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
-        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
+        if (hash_joins[0]->data->twoLevelMapIsUsed())
+            dispatched_blocks.emplace_back(std::move(block));
+        else
+            dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
     }
 
-    chassert(dispatched_blocks.size() == slots);
+    chassert(dispatched_blocks.size() == (hash_joins[0]->data->twoLevelMapIsUsed() ? 1 : slots));
 
     block = {};
 

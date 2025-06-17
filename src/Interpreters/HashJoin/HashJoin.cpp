@@ -1204,7 +1204,7 @@ void HashJoin::updateNonJoinedRowsStatus() const
         return;
 
     bool found_non_joined = false;
-
+    
     /// if we have no data, we exit
     if (!empty() && used_flags)
     {
@@ -1434,9 +1434,9 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            for (size_t row = 0; row < block->rows(); ++row)
+            for (size_t row = 0; row < block->rows() && rows_added < max_block_size; ++row)
             {
-                if (nullmap && (*nullmap)[row])
+                if (nullmap && row < nullmap->size() && (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                         columns_keys_and_right[col]->insertFrom(*block->getByPosition(col).column, row);
