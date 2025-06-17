@@ -43,7 +43,7 @@ function alter_thread()
     while true; do
         [[ $INSERT_DONE -ne 0 ]] && break
         $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTERS[$RANDOM % 2]}"
-        sleep 0.$RANDOM
+        sleep 2.$RANDOM
     done
 
     # Insert done, DROP the tables
