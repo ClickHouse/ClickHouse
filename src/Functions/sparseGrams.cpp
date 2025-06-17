@@ -80,6 +80,7 @@ private:
 
             if (++num_increments >= n)
                 left_iterator = getNextPosition(left_iterator);
+
             return true;
         }
 
