@@ -161,14 +161,14 @@ REGISTER_FUNCTION(FlipCoordinates)
     FunctionDocumentation::ReturnedValue returned_value = "The geometry with flipped coordinates. The type is the same as the input.";
     FunctionDocumentation::Examples examples = {
         {"basic_point",
-         "SELECT flipCoordinates((1.0, 2.0));",
-         "(2.0, 1.0)"},
+            "SELECT flipCoordinates((1.0, 2.0));",
+            "(2.0, 1.0)"},
         {"ring",
-         "SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);",
-         "[(2.0, 1.0), (4.0, 3.0)]"},
+            "SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);",
+            "[(2.0, 1.0), (4.0, 3.0)]"},
         {"polygon",
-         "SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);",
-         "[[(2.0, 1.0), (4.0, 3.0)], [(6.0, 5.0), (8.0, 7.0)]]"}
+            "SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);",
+            "[[(2.0, 1.0), (4.0, 3.0)], [(6.0, 5.0), (8.0, 7.0)]]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
@@ -178,8 +178,8 @@ REGISTER_FUNCTION(FlipCoordinates)
         .syntax = syntax,
         .arguments = arguments,
         .returned_value = returned_value,
-        .introduced_in = introduced_in,
         .examples = examples,
+        .introduced_in = introduced_in,
         .category = category
     };
 
