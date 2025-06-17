@@ -59,7 +59,13 @@ def started_cluster():
 def test_psql_client(started_cluster):
     node = cluster.instances["node"]
 
-    for query_file in ["query1.sql", "query2.sql", "query3.sql", "query4.sql"]:
+    for query_file in [
+        "query1.sql",
+        "query2.sql",
+        "query3.sql",
+        "query4.sql",
+        "query5.sql",
+    ]:
         started_cluster.copy_file_to_container(
             started_cluster.postgres_id,
             os.path.join(SCRIPT_DIR, "queries", query_file),
