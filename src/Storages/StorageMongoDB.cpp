@@ -107,7 +107,7 @@ Pipe StorageMongoDB::read(
         std::move(options), sample_block, max_block_size));
 }
 
-static MongoDBConfiguration getConfigurationImpl(const StorageID & table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
+static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
 {
     MongoDBConfiguration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
@@ -185,8 +185,9 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID & table_id, AST
                     PreformattedMessage::create(
                         "The first argument in '{}' table definition with MongoDB engine contains a path which was ignored. "
                         "To fix this, either use a complete MongoDB connection string with schema and database name as the first argument, "
-                        "or use only host:port format and specify database name and other parameters separately in the table engine definition.",
-                        table_id ? table_id.getNameForLogs() : ""));
+                        "or use only host:port format and specify database name and other parameters separately in the table engine definition. "
+                        "In future versions, this will be an error when loading the table.",
+                        table_id ? table_id->getNameForLogs() : ""));
             }
 
             if (engine_args.size() == 7)
@@ -214,7 +215,7 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID & table_id, AST
 
 MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    return getConfigurationImpl(StorageID("", ""), std::move(engine_args), context, false);
+    return getConfigurationImpl(nullptr, std::move(engine_args), context, false);
 }
 
 static std::string mongoFuncName(const std::string & func)
@@ -593,10 +594,13 @@ void registerStorageMongoDB(StorageFactory & factory)
 {
     factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args)
     {
+        /// Allow loading tables with excessive path in host parameter created on older ClickHouse versions
+        /// (that used the previous Poco-based MongoDB implementation which allowed it).
+        /// TODO: we can remove it after ClickHouse 27.5, it should be enough time for users to migrate.
         bool allow_excessive_path_in_host = args.mode > LoadingStrictnessLevel::CREATE;
         return std::make_shared<StorageMongoDB>(
             args.table_id,
-            getConfigurationImpl(args.table_id, args.engine_args, args.getLocalContext(), allow_excessive_path_in_host),
+            getConfigurationImpl(&args.table_id, args.engine_args, args.getLocalContext(), allow_excessive_path_in_host),
             args.columns,
             args.constraints,
             args.comment);
