@@ -1873,10 +1873,10 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         uint32_t added_version = 0;
         const uint32_t to_addcols = (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1);
         const uint32_t to_addidxs
-            = (rg.nextMediumNumber() % 4) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
+            = ((rg.nextMediumNumber() % 4) + UINT32_C(1)) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
         const uint32_t to_addprojs
-            = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
-        const uint32_t to_addconsts = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
+            = ((rg.nextMediumNumber() % 3) + UINT32_C(1)) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
+        const uint32_t to_addconsts = ((rg.nextMediumNumber() % 3) + UINT32_C(1)) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
         const uint32_t to_add_sign = static_cast<uint32_t>(next.hasSignColumn());
         const uint32_t to_add_version = static_cast<uint32_t>(next.hasVersionColumn() || add_version_to_replacing);
         const uint32_t to_add_is_deleted = static_cast<uint32_t>(add_version_to_replacing && rg.nextSmallNumber() < 4);
