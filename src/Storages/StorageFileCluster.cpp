@@ -13,6 +13,8 @@
 #include <TableFunctions/TableFunctionFileCluster.h>
 
 #include <memory>
+#include <Storages/HivePartitioningUtils.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -21,6 +23,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_hive_partitioning;
 }
 
 StorageFileCluster::StorageFileCluster(
@@ -58,8 +66,33 @@ StorageFileCluster::StorageFileCluster(
         storage_metadata.setColumns(columns_);
     }
 
+    auto & storage_columns = storage_metadata.columns;
+
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        const std::string sample_path = paths.empty() ? "" : paths.front();
+        const auto hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, sample_path, std::nullopt, context);
+
+        if (columns_.empty())
+        {
+            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
+            {
+                if (!storage_columns.has(name))
+                {
+                    storage_columns.add({name, type});
+                }
+            }
+        }
+
+        if (hive_partition_columns_to_read_from_file_path.size() == storage_columns.size())
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
+        }
+    }
+
     storage_metadata.setConstraints(constraints_);
-    // todo arthur why is it needed?
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 }
