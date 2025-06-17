@@ -113,7 +113,7 @@ REGISTER_FUNCTION(FromDaysSinceYearZero)
     FunctionDocumentation::Description description_fromDaysSinceYearZero = R"(
 For a given number of days elapsed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero), returns the corresponding date in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar).
 
-The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is undefined if it cannot be represented within the bounds of the Date type.
+The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is undefined if it cannot be represented within the bounds of the [Date](../data-types/date.md) type.
     )";
     FunctionDocumentation::Syntax syntax_fromDaysSinceYearZero = R"(
 fromDaysSinceYearZero(days)
@@ -138,21 +138,12 @@ fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08'))) AS date2
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromDaysSinceYearZero = {23, 11};
     FunctionDocumentation::Category category_fromDaysSinceYearZero = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_fromDaysSinceYearZero =
-    {
-        description_fromDaysSinceYearZero,
-        syntax_fromDaysSinceYearZero,
-        arguments_fromDaysSinceYearZero,
-        returned_value_fromDaysSinceYearZero,
-        examples_fromDaysSinceYearZero,
-        introduced_in_fromDaysSinceYearZero,
-        category_fromDaysSinceYearZero,
-    };
+    FunctionDocumentation documentation_fromDaysSinceYearZero = {description_fromDaysSinceYearZero, syntax_fromDaysSinceYearZero, arguments_fromDaysSinceYearZero, returned_value_fromDaysSinceYearZero, examples_fromDaysSinceYearZero, introduced_in_fromDaysSinceYearZero, category_fromDaysSinceYearZero};
     factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits>>(documentation_fromDaysSinceYearZero);
 
     FunctionDocumentation::Description description_fromDaysSinceYearZero32 = R"(
 For a given number of days elapsed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero), returns the corresponding date in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar).
-The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is undefined if it cannot be represented within the bounds of the Date32 type.
+The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is undefined if it cannot be represented within the bounds of the [`Date32`](../data-types/date32.md) type.
     )";
     FunctionDocumentation::Syntax syntax_fromDaysSinceYearZero32 = R"(
 fromDaysSinceYearZero32(days)
@@ -177,16 +168,7 @@ fromDaysSinceYearZero32(toDaysSinceYearZero(toDate('2023-09-08'))) AS date2
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromDaysSinceYearZero32 = {23, 11};
     FunctionDocumentation::Category category_fromDaysSinceYearZero32 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_fromDaysSinceYearZero32 =
-    {
-        description_fromDaysSinceYearZero32,
-        syntax_fromDaysSinceYearZero32,
-        arguments_fromDaysSinceYearZero32,
-        returned_value_fromDaysSinceYearZero32,
-        examples_fromDaysSinceYearZero32,
-        introduced_in_fromDaysSinceYearZero32,
-        category_fromDaysSinceYearZero32,
-    };
+    FunctionDocumentation documentation_fromDaysSinceYearZero32 = {description_fromDaysSinceYearZero32, syntax_fromDaysSinceYearZero32, arguments_fromDaysSinceYearZero32, returned_value_fromDaysSinceYearZero32, examples_fromDaysSinceYearZero32, introduced_in_fromDaysSinceYearZero32, category_fromDaysSinceYearZero32};
     factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits32>>();
 
     factory.registerAlias("FROM_DAYS", FunctionFromDaysSinceYearZero<DateTraits>::name, FunctionFactory::Case::Insensitive);

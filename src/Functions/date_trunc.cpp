@@ -216,14 +216,12 @@ dateTrunc(unit, datetime[, timezone])
     FunctionDocumentation::ReturnedValue returned_value = R"(
 Returns the truncated date and time value.
 
-| Unit Argument               | `datetime` Argument     | Return Type                                      |
-|-----------------------------|-------------------------|--------------------------------------------------|
-| Year, Quarter, Month, Week  | Date32 or DateTime64    | [`Date32`](../data-types/date32.md)              |
-| Year, Quarter, Month, Week  | Date or DateTime        | [`Date`](../data-types/date.md)                  |
-| Day, Hour, Minute, Second   | Date32 or DateTime64    | [`DateTime64`](../data-types/datetime64.md)      |
-| Day, Hour, Minute, Second   | Date or DateTime        | [`DateTime`](../data-types/datetime.md)          |
-| Millisecond, Microsecond,   | Any                     | [`DateTime64`](../data-types/datetime64.md)      |
-| Nanosecond                  |                         | with scale 3, 6, or 9                            |
+| Unit Argument               | `datetime` Argument                   | Return Type                                                                            |
+|-----------------------------|---------------------------------------|----------------------------------------------------------------------------------------|
+| Year, Quarter, Month, Week  | Date32, DateTime64, Date, or DateTime | [`Date32`](../data-types/date32.md) or [`Date`](../data-types/date.md)                 |
+| Day, Hour, Minute, Second   | Date32, DateTime64, Date, or DateTime | [`DateTime64`](../data-types/datetime64.md) or [`DateTime`](../data-types/datetime.md) |
+| Millisecond, Microsecond,   | Any                                   | [`DateTime64`](../data-types/datetime64.md)                                            |
+| Nanosecond                  |                                       | with scale 3, 6, or 9                                                                  |
 )";
     FunctionDocumentation::Examples examples = {
         {"Truncate without timezone", R"(
@@ -245,15 +243,7 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {
-        description,
-        syntax,
-        arguments,
-        returned_value,
-        examples,
-        introduced_in,
-        category
-    };
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDateTrunc>(documentation);
 

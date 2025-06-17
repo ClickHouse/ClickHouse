@@ -491,19 +491,19 @@ date_diff(unit, startdate, enddate, [timezone])
     {
         {"unit", R"(The type of interval for result.
 
-| Unit | Possible values |
-|------|----------------|
-| nanosecond | `nanosecond`, `nanoseconds`, `ns` |
-| microsecond | `microsecond`, `microseconds`, `us`, `u` |
-| millisecond | `millisecond`, `milliseconds`, `ms` |
-| second | `second`, `seconds`, `ss`, `s` |
-| minute | `minute`, `minutes`, `mi`, `n` |
-| hour | `hour`, `hours`, `hh`, `h` |
-| day | `day`, `days`, `dd`, `d` |
-| week | `week`, `weeks`, `wk`, `ww` |
-| month | `month`, `months`, `mm`, `m` |
-| quarter | `quarter`, `quarters`, `qq`, `q` |
-| year | `year`, `years`, `yyyy`, `yy` |
+| Unit        | Possible values                           |
+|-------------|-------------------------------------------|
+| nanosecond  | `nanosecond`, `nanoseconds`, `ns`         |
+| microsecond | `microsecond`, `microseconds`, `us`, `u`  |
+| millisecond | `millisecond`, `milliseconds`, `ms`       |
+| second      | `second`, `seconds`, `ss`, `s`            |
+| minute      | `minute`, `minutes`, `mi`, `n`            |
+| hour        | `hour`, `hours`, `hh`, `h`                |
+| day         | `day`, `days`, `dd`, `d`                  |
+| week        | `week`, `weeks`, `wk`, `ww`               |
+| month       | `month`, `months`, `mm`, `m`              |
+| quarter     | `quarter`, `quarters`, `qq`, `q`          |
+| year        | `year`, `years`, `yyyy`, `yy`             |
 )"},
         {"startdate", "The first time value to subtract (the subtrahend). [`Date`](../data-types/date.md) or [`Date32`](../data-types/date32.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."},
         {"enddate", "The second time value to subtract from (the minuend). [`Date`](../data-types/date.md) or [`Date32`](../data-types/date32.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."},
@@ -536,16 +536,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_date_diff = {23, 4};
     FunctionDocumentation::Category category_date_diff = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_date_diff =
-    {
-        description_date_diff,
-        syntax_date_diff,
-        arguments_date_diff,
-        returned_value_date_diff,
-        examples_date_diff,
-        introduced_in_date_diff,
-        category_date_diff
-    };
+    FunctionDocumentation documentation_date_diff = {description_date_diff, syntax_date_diff, arguments_date_diff, returned_value_date_diff, examples_date_diff, introduced_in_date_diff, category_date_diff};
 
     factory.registerFunction<FunctionTimeDiff>(documentation_date_diff, FunctionFactory::Case::Insensitive);
 }
@@ -568,19 +559,19 @@ age('unit', startdate, enddate, [timezone])
     {
         {"unit", R"(The type of interval for result.
 
-| Unit | Possible values |
-|------|----------------|
-| nanosecond | `nanosecond`, `nanoseconds`, `ns` |
+| Unit        | Possible values                          |
+|-------------|------------------------------------------|
+| nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
 | microsecond | `microsecond`, `microseconds`, `us`, `u` |
-| millisecond | `millisecond`, `milliseconds`, `ms` |
-| second | `second`, `seconds`, `ss`, `s` |
-| minute | `minute`, `minutes`, `mi`, `n` |
-| hour | `hour`, `hours`, `hh`, `h` |
-| day | `day`, `days`, `dd`, `d` |
-| week | `week`, `weeks`, `wk`, `ww` |
-| month | `month`, `months`, `mm`, `m` |
-| quarter | `quarter`, `quarters`, `qq`, `q` |
-| year | `year`, `years`, `yyyy`, `yy` |
+| millisecond | `millisecond`, `milliseconds`, `ms`      |
+| second      | `second`, `seconds`, `ss`, `s`           |
+| minute      | `minute`, `minutes`, `mi`, `n`           |
+| hour        | `hour`, `hours`, `hh`, `h`               |
+| day         | `day`, `days`, `dd`, `d`                 |
+| week        | `week`, `weeks`, `wk`, `ww`              |
+| month       | `month`, `months`, `mm`, `m`             |
+| quarter     | `quarter`, `quarters`, `qq`, `q`         |
+| year        | `year`, `years`, `yyyy`, `yy`            |
 )"},
         {"startdate", "The first time value to subtract (the subtrahend). [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"enddate", "The second time value to subtract from (the minuend). [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
@@ -613,16 +604,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_age = {23, 1};
     FunctionDocumentation::Category category_age = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_age =
-    {
-        description_age,
-        syntax_age,
-        arguments_age,
-        returned_value_age,
-        examples_age,
-        introduced_in_age,
-        category_age,
-    };
+    FunctionDocumentation documentation_age = {description_age, syntax_age, arguments_age, returned_value_age, examples_age, introduced_in_age, category_age};
 
     factory.registerFunction<FunctionDateDiff<false>>(documentation_age, FunctionFactory::Case::Insensitive);
 }
