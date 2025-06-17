@@ -1158,7 +1158,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 emplace_result.setMapped(nullptr);
 
                 if constexpr (Method::inline_aggregate_states)
-                    aggregate_data = reinterpret_cast<char *>(&emplace_result.getMapped());
+                    aggregate_data = reinterpret_cast<AggregateDataPtr>(&emplace_result.getMapped());
                 else
                     aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
 
@@ -1185,7 +1185,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             else
             {
                 if constexpr (Method::inline_aggregate_states)
-                    aggregate_data = reinterpret_cast<char *>(&emplace_result.getMapped());
+                    aggregate_data = reinterpret_cast<AggregateDataPtr>(&emplace_result.getMapped());
                 else
                     aggregate_data = emplace_result.getMapped();
             }
@@ -1204,7 +1204,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             if (find_result.isFound())
             {
                 if constexpr (Method::inline_aggregate_states)
-                    aggregate_data = reinterpret_cast<char *>(&find_result.getMapped());
+                    aggregate_data = reinterpret_cast<AggregateDataPtr>(&find_result.getMapped());
                 else
                     aggregate_data = find_result.getMapped();
             }
@@ -1898,7 +1898,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
 }
 
 
-template <typename Mapped>
+template <bool inline_aggregate_states, typename Mapped>
 inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColumns & final_aggregate_columns, Arena * arena) const
 {
     /** Final values of aggregate functions are inserted to columns.
@@ -1931,10 +1931,18 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
     {
         /// Insert final values of aggregate functions into columns.
         for (; insert_i < params.aggregates_size; ++insert_i)
-            aggregate_functions[insert_i]->insertResultInto(
-                mapped + offsets_of_aggregate_states[insert_i],
-                *final_aggregate_columns[insert_i],
-                arena);
+        {
+            if constexpr (inline_aggregate_states)
+                aggregate_functions[insert_i]->insertResultInto(
+                    reinterpret_cast<AggregateDataPtr>(&mapped) + offsets_of_aggregate_states[insert_i],
+                    *final_aggregate_columns[insert_i],
+                    arena);
+            else
+                aggregate_functions[insert_i]->insertResultInto(
+                    mapped + offsets_of_aggregate_states[insert_i],
+                    *final_aggregate_columns[insert_i],
+                    arena);
+        }
     }
     catch (...)
     {
@@ -2087,7 +2095,7 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
             {
                 has_null_key_data = true;
                 out_cols->key_columns[0]->insertDefault();
-                insertAggregatesIntoColumns(data.getNullKeyData(), out_cols->final_aggregate_columns, arena);
+                insertAggregatesIntoColumns<Method::inline_aggregate_states>(data.getNullKeyData(), out_cols->final_aggregate_columns, arena);
                 data.hasNullKeyData() = false;
             }
         }
@@ -2108,7 +2116,11 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
             method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
-            places.emplace_back(mapped);
+
+            if constexpr (Method::inline_aggregate_states)
+                places.emplace_back(reinterpret_cast<AggregateDataPtr>(&mapped));
+            else
+                places.emplace_back(mapped);
 
             /// Mark the cell as destroyed so it will not be destroyed in destructor.
             mapped = nullptr;
@@ -2287,7 +2299,7 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
         else
         {
             /// Always single-thread. It's safe to pass current arena from 'aggregates_pool'.
-            insertAggregatesIntoColumns(data, final_aggregate_columns, data_variants.aggregates_pool);
+            insertAggregatesIntoColumns<false>(data, final_aggregate_columns, data_variants.aggregates_pool);
         }
 
         if (params.overflow_row)
@@ -2835,7 +2847,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             if (find_result.isFound())
             {
                 if constexpr (Method::inline_aggregate_states)
-                    places[i] = reinterpret_cast<char *>(&find_result.getMapped());
+                    places[i] = reinterpret_cast<AggregateDataPtr>(&find_result.getMapped());
                 else
                     places[i] = find_result.getMapped();
             }
@@ -2855,7 +2867,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             if (!emplace_result.isInserted())
             {
                 if constexpr (Method::inline_aggregate_states)
-                    places[i] = reinterpret_cast<char *>(&emplace_result.getMapped());
+                    places[i] = reinterpret_cast<AggregateDataPtr>(&emplace_result.getMapped());
                 else
                     places[i] = emplace_result.getMapped();
             }
@@ -2867,7 +2879,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
                 if constexpr (Method::inline_aggregate_states)
                 {
-                    aggregate_data = reinterpret_cast<char *>(&emplace_result.getMapped());
+                    aggregate_data = reinterpret_cast<AggregateDataPtr>(&emplace_result.getMapped());
                     createAggregateStates(aggregate_data);
                 }
                 else

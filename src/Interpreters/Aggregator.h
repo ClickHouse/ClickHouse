@@ -469,7 +469,7 @@ private:
     ConvertToBlockResVariant
     convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
 
-    template <typename Mapped>
+    template <bool inline_aggregate_states, typename Mapped>
     void insertAggregatesIntoColumns(
         Mapped & mapped,
         MutableColumns & final_aggregate_columns,
