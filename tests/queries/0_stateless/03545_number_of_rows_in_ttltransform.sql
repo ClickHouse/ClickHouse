@@ -16,9 +16,9 @@ INSERT INTO t VALUES (parseDateTimeBestEffort('2025-06-10 11:00'), 'pepe', 3);
 
 OPTIMIZE TABLE t FINAL;
 SELECT '-- TTL GROUP BY is applied';
-SELECT * FROM t;
+SELECT * FROM t ORDER BY ALL;
 
 INSERT INTO t VALUES (parseDateTimeBestEffort('2025-05-10 11:00'), 'pepe', 4);
 OPTIMIZE TABLE t FINAL;
 SELECT '-- TTL removes old elements';
-SELECT * FROM t;
+SELECT * FROM t ORDER BY ALL;
