@@ -5,10 +5,10 @@ SELECT c0 FROM remote('localhost', currentDatabase(), 't0') AS tx INNER JOIN t0_
 DROP TABLE t0;
 
 CREATE TABLE t0 (c0 Int ALIAS 1, c1 Int) ENGINE = Memory;
-SELECT 1 FROM (SELECT 1 AS c0 FROM t0, remote('localhost:9000', 'default', 't0') ty) tx JOIN t0 ON tx.c0 = t0.c0;
+SELECT 1 FROM (SELECT 1 AS c0 FROM t0, remote('localhost:9000', currentDatabase(), 't0') ty) tx JOIN t0 ON tx.c0 = t0.c0;
 
 (
-    SELECT 1 x, x y FROM remote('localhost', default.t0) tx
+    SELECT 1 x, x y FROM remote('localhost', currentDatabase(), t0) tx
 )
 UNION ALL
 (
