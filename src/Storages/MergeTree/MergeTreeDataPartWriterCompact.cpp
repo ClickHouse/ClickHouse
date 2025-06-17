@@ -274,7 +274,8 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                             continue;
                         }
                         dimensions.push_back(sample_field.safeGet<Array>().size());
-                        sample_field = sample_field.safeGet<Array>().front();
+                        Field child_field = sample_field.safeGet<Array>()[0];
+                        sample_field = std::move(child_field);
                     }
                     compression_codec->setDimensions(dimensions);
                 }
