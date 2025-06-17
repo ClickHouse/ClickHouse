@@ -3100,9 +3100,6 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                 if (bucket > max_bucket)
                     break;
 
-                if (!bucket_to_blocks.contains(bucket))
-                    continue;
-
                 if (is_cancelled.load())
                     return;
 
@@ -3137,13 +3134,14 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                     Arena * aggregates_pool = result.aggregates_pools.back().get();
                     runner([&merge_bucket, aggregates_pool]() { merge_bucket(aggregates_pool); });
                 }
+
+                runner.waitForAllToFinishAndRethrowFirstError();
             }
             catch (...)
             {
                 is_cancelled.store(true);
-                throw;
+                runner.waitForAllToFinishAndRethrowFirstError();
             }
-            runner.waitForAllToFinishAndRethrowFirstError();
         }
         else
         {
