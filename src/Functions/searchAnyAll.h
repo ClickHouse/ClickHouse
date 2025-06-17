@@ -38,7 +38,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    void setGinFilterParameters(const GinFilterParameters& params);
+    void setGinFilterParameters(const GinFilterParameters & params);
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 

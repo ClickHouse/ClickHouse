@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;
 

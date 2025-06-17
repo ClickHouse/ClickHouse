@@ -1,4 +1,4 @@
-#include <Functions/search.h>
+#include <Functions/searchAnyAll.h>
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::setGinFilterParameters(const GinFilterParameters& params)
+void FunctionSearchImpl<SearchTraits>::setGinFilterParameters(const GinFilterParameters & params)
 {
     /// Index parameters can be set multiple times.
     /// This happens exactly in a case that same searchAny/searchAll query is used again.

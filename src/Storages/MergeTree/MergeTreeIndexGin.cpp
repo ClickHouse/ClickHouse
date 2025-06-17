@@ -3,7 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/Defines.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -17,10 +17,9 @@
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <Common/OptimizedRegularExpression.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/search.h>
+#include <Functions/searchAnyAll.h>
 #include <Core/Field.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <base/types.h>
