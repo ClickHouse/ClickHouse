@@ -639,9 +639,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         auto & value = const_value.safeGet<String>();
         String required_substring;
         bool dummy_is_trivial;
+        bool dummy_has_capture;
         bool dummy_required_substring_is_prefix;
         std::vector<String> alternatives;
-        OptimizedRegularExpression::analyze(value, required_substring, dummy_is_trivial, dummy_required_substring_is_prefix, alternatives);
+        OptimizedRegularExpression::analyze(
+            value, required_substring, dummy_is_trivial, dummy_has_capture, dummy_required_substring_is_prefix, alternatives);
 
         if (required_substring.empty() && alternatives.empty())
             return false;

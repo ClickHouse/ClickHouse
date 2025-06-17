@@ -113,9 +113,11 @@ struct ReplaceRegexpImpl
 
         String required_substring;
         bool is_trivial;
+        bool dummy_has_capture;
         bool required_substring_is_prefix;
         std::vector<String> alternatives;
-        OptimizedRegularExpression::analyze(needle, required_substring, is_trivial, required_substring_is_prefix, alternatives);
+        OptimizedRegularExpression::analyze(
+            needle, required_substring, is_trivial, dummy_has_capture, required_substring_is_prefix, alternatives);
         return is_trivial && required_substring_is_prefix && required_substring == needle;
     }
 

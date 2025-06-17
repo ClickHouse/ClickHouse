@@ -6,11 +6,11 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypeString.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -22,31 +22,6 @@ namespace Setting
 
 namespace
 {
-
-bool mayHaveCaptureGroup(const String & regexp)
-{
-    for (size_t i = 0; i < regexp.size(); ++i)
-    {
-        if (regexp[i] == '(')
-        {
-            /// Count backslashes before the (
-            size_t backslash_count = 0;
-            for (ssize_t j = static_cast<ssize_t>(i) - 1; j >= 0 && regexp[j] == '\\'; --j)
-                ++backslash_count;
-
-            if (backslash_count % 2 == 0)
-            {
-                /// It's an unescaped (
-                /// Check if it's a non-capturing group like (?: and skip if so.
-                if (i + 2 < regexp.size() && regexp[i + 1] == '?' && regexp[i + 2] == ':')
-                    continue;
-
-                return true;
-            }
-        }
-    }
-    return false;
-}
 
 class RegexpFunctionRewriteVisitor : public InDepthQueryTreeVisitorWithContext<RegexpFunctionRewriteVisitor>
 {
@@ -65,8 +40,8 @@ public:
 
         auto function_name = function_node->getFunctionName();
 
-        /// If a regular expression starts with ^ or ends with an unescaped $, rewrite replaceRegexpAll with
-        /// replaceRegexpOne.
+        /// If a regular expression without alternatives starts with ^ or ends with an unescaped $, rewrite
+        /// replaceRegexpAll with replaceRegexpOne.
         if (function_name == "replaceRegexpAll" || Poco::toLower(function_name) == "regexp_replace")
         {
             auto & function_node_arguments_nodes = function_node->getArguments().getNodes();
@@ -81,9 +56,23 @@ public:
                 return;
 
             String regexp = constant_node->getValue().safeGet<String>();
-            bool starts_with_caret = !regexp.empty() && regexp.front() == '^';
+            if (regexp.empty())
+                return;
+
+            String dummy_required_substring;
+            bool dummy_is_trivial;
+            bool dummy_has_capture;
+            bool dummy_required_substring_is_prefix;
+            std::vector<String> alternatives;
+            OptimizedRegularExpression::analyze(
+                regexp, dummy_required_substring, dummy_is_trivial, dummy_has_capture, dummy_required_substring_is_prefix, alternatives);
+
+            if (!alternatives.empty())
+                return;
+
+            bool starts_with_caret = regexp.front() == '^';
             bool ends_with_unescaped_dollar = false;
-            if (regexp.size() >= 1 && regexp.back() == '$')
+            if (regexp.back() == '$')
             {
                 // Count number of consecutive backslashes before the $
                 size_t backslash_count = 0;
@@ -131,8 +120,16 @@ public:
                 return;
 
             String regexp = regexp_node->getValue().safeGet<String>();
-            bool may_have_capture_group = mayHaveCaptureGroup(regexp);
-            if ((replacement_one && may_have_capture_group) || (replacement_zero && !may_have_capture_group))
+
+            String dummy_required_substring;
+            bool dummy_is_trivial;
+            bool has_capture;
+            bool dummy_required_substring_is_prefix;
+            std::vector<String> alternatives;
+            OptimizedRegularExpression::analyze(
+                regexp, dummy_required_substring, dummy_is_trivial, has_capture, dummy_required_substring_is_prefix, alternatives);
+
+            if ((replacement_one && has_capture) || (replacement_zero && !has_capture))
             {
                 function_name = "extract";
                 function_node_arguments_nodes.resize(2);
@@ -160,8 +157,18 @@ public:
                 return;
 
             String regexp = constant_node->getValue().safeGet<String>();
-            if (!mayHaveCaptureGroup(regexp))
+            String dummy_required_substring;
+            bool dummy_is_trivial;
+            bool has_capture;
+            bool dummy_required_substring_is_prefix;
+            std::vector<String> alternatives;
+            OptimizedRegularExpression::analyze(
+                regexp, dummy_required_substring, dummy_is_trivial, has_capture, dummy_required_substring_is_prefix, alternatives);
+
+            if (!has_capture)
                 return;
+
+            /// For simplicity, this optimization ignores alternations and only considers anchoring at the start or end of the pattern.
 
             bool starts_with_caret_dot_star = regexp.starts_with("^.*");
             bool ends_with_unescaped_dot_star_dollar = false;

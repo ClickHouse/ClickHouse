@@ -5,8 +5,8 @@
 namespace DB
 {
 
-/// 1. If a regular expression starts with ^ or ends with an unescaped $, rewrite replaceRegexpAll with
-/// replaceRegexpOne.
+/// 1. If a regular expression without alternatives starts with ^ or ends with an unescaped $, rewrite replaceRegexpAll
+/// with replaceRegexpOne.
 ///
 /// 2. If a replaceRegexpOne function has a replacement of nothing other than \1 and some subpatterns in the regexp, or
 /// \0 and no subpatterns in the regexp, rewrite it with extract.

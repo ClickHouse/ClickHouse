@@ -2,7 +2,7 @@
 
 SET optimize_rewrite_regexp_functions = 1;
 
--- Rule 1: replaceRegexpAll / regexp_replace -> replaceRegexpOne if pattern starts with ^ or ends with unescaped $
+-- Rule 1: replaceRegexpAll / regexp_replace -> replaceRegexpOne if pattern without alternatives starts with ^ or ends with unescaped $
 
 -- Starts with ^ (should rewrite)
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT regexp_replace(identity('abc123'), '^abc', '');
@@ -23,6 +23,9 @@ EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity(
 
 -- Pattern with $ not at end (should NOT rewrite)
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('abc123'), '123$abc', '');
+
+-- Pattern with alternatives (should NOT rewrite)
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('abc123'), '^123|456$', '');
 
 -- Rule 2: If a replaceRegexpOne function has a replacement of nothing other than \1 and some subpatterns in the regexp, or \0 and no subpatterns in the regexp, rewrite it with extract.
 
