@@ -634,7 +634,6 @@ toTime64OrZero
 toTimeOrNull
 toTimeOrZero
 toTimeWithFixedDate
-toTimezone
 toTypeName
 toUInt128
 toUInt128OrNull
