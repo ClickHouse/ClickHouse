@@ -67,7 +67,7 @@ private:
         ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles);
         ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, weight_loss);
 
-        auto marks_in_compressed_file = std::static_pointer_cast<MarksInCompressedFile>(mapped_ptr);
+        const auto * marks_in_compressed_file = static_cast<const MarksInCompressedFile *>(mapped_ptr.get());
         ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks, marks_in_compressed_file->getNumberOfMarks());
     }
 
