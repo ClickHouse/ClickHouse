@@ -8,7 +8,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -102,7 +101,7 @@ public:
     }
 
     template <typename LoadFunc>
-    const String & getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
+    String getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
     {
         auto load_fn_wrapper = [&]()
         {

@@ -536,7 +536,7 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
                 continue;
             }
             ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
-            ArrowGeometricObject result_object;
+            GeometricObject result_object;
             switch (geo_metadata.encoding)
             {
                 case GeoEncoding::WKB:

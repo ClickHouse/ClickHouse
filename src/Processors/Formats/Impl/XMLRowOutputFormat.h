@@ -54,8 +54,6 @@ private:
     }
     void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
 
-    String getContentType() const override { return "application/xml; charset=UTF-8"; }
-
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
     void writeRowsBeforeLimitAtLeast();
     void writeRowsBeforeAggregationAtLeast();
