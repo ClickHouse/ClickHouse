@@ -28,6 +28,7 @@ title: 'Backup and Restore'
   [ON CLUSTER 'cluster_name']
   TO|FROM File('<path>/<filename>') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')
   [SETTINGS base_backup = File('<path>/<filename>') | Disk(...) | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')]
+  [SYNC|ASYNC]
 
 ```
 
