@@ -225,6 +225,9 @@ sed --follow-symlinks -i "s|<commit_logs_cache_size_threshold>[[:digit:]]\+</com
 value=$(($RANDOM % 2))
 sed --follow-symlinks -i "s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
+value=$(($RANDOM % 2))
+sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$value</inject_auth>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
 fi
@@ -293,6 +296,9 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
     rm $DEST_SERVER_PATH/config.d/zookeeper.xml
     rm $DEST_SERVER_PATH/config.d/keeper_port.xml
+
+    value=$(($RANDOM % 2))
+    sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$value</inject_auth>|" $DEST_SERVER_PATH/config.d/database_replicated.xml
 
     # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
     # And we have to copy configs...
