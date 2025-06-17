@@ -209,7 +209,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    // todo arthur
     const auto raw_path = configuration->getRawPath();
     if (raw_path.path.empty())
     {
