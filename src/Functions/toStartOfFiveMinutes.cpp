@@ -21,7 +21,7 @@ The return type can be configured by setting [`enable_extended_results_for_datet
 toStartOfFiveMinutes(datetime)
     )";
     FunctionDocumentation::Arguments arguments_to_start_of_five_minutes = {
-        {"datetime", "A date with time to round. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
+        {"datetime", "A date with time to round.", {"DateTime", "DateTime64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_to_start_of_five_minutes = "Returns the date with time rounded to the start of the nearest five-minute interval. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
     FunctionDocumentation::Examples examples_to_start_of_five_minutes = {

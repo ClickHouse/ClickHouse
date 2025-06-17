@@ -24,10 +24,57 @@ VersionNumber VERSION_UNKNOWN = {0};
 
 std::string FunctionDocumentation::argumentsAsString() const
 {
-    std::string res;
-    for (const auto & [name, desc] : arguments)
-        res += "- `" + name + "` — " + desc + "\n";
-    return res;
+    std::string result;
+    for (const auto & [name, description_, types] : arguments)
+    {
+        /// Generate formatted name and description (boring)
+        result += "- `" + name + "` — " + description_;
+
+        /// Generate the argument type. To save writing, append links to the documentation on-the-fly
+        ///
+        /// We assume that if 'type' is empty(), 'description' already ends with the elegible type. This check can be removed after all
+        /// existing FunctionDocumentation definitions were changed to provide proper values for the 'type' vector.
+        ///
+        /// Thinking about it, there may be special cases where the exact argument type depends on something else or needs explanation
+        /// otherwise. This cannot be represented using the 'types' vector. Perhaps it is a good idea to leave the check just for that
+        /// reason.
+        if (!types.empty())
+        {
+            /// Vector 'types' is expected to look like: {"(U)Int*", "Float*"}
+            /// The output is expected to look like: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
+            bool is_first = true;
+            for (const auto & type : types)
+            {
+                if (is_first)
+                    is_first = false;
+                else
+                    result += " or "; /// or whatever other separator we want here :-)
+
+                result += "['" + type;
+
+                else if (type.starts_with("String"))
+                    result += "'](/sql-reference/data-types/string)";
+                else if (type.starts_with("FixedString"))
+                    result += "'](/sql-reference/data-types/fixedstring)";
+                if (type.starts_with("Int") || type.starts_with("UInt") || type == "(U)Int*") /// matches 'Int8', 'Int16' etc. and 'UInt8', 'UInt16' etc. and 'Int*' and '(U)Int*'
+                    result += "'](/sql-reference/data-types/int-uint)";
+                else if (type == "Date")
+                    result += "'](/sql-reference/data-types/date)";
+                else if (type == "Date32")
+                    result += "'](/sql-reference/data-types/date32)";
+                else if (type == "DateTime")
+                    result += "'](/sql-reference/data-types/datetime)";
+                else if (type == "DateTime64")
+                    result += "'](/sql-reference/data-types/datetime64)";
+                /// TODO: ... and so on
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type: {}", type);
+
+            }
+        }
+        result += "\n";
+    }
+    return result;
 }
 
 std::string FunctionDocumentation::syntaxAsString() const

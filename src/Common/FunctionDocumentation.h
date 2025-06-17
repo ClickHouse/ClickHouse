@@ -48,11 +48,14 @@ struct FunctionDocumentation
 
     struct Argument
     {
-        std::string name;
-        std::string description;
+        std::string name;                     /// E.g. "y"
+        std::string description;              /// E.g. "The divisor."
+        std::vector<std::string> types = {};  /// E.g. {"(U)Int*", "Float*"}
+                                              /// Default initialized only during a transition period, see 'argumentsAsString'.
     };
     using Arguments = std::vector<Argument>;
 
+    /// TODO Provide the type explicitly like in Arguments above^^.
     using ReturnedValue = std::string;
 
     struct Example
