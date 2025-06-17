@@ -30,8 +30,10 @@ void AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization,
 template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key, false>;
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithUInt16Key, false>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key, true, false, true>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel, true, false, true>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>;
 template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false, true>;
