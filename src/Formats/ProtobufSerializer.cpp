@@ -3462,7 +3462,7 @@ namespace
                 for (int i : collections::range(message_descriptor.field_count()))
                 {
                     const auto & field_descriptor = *message_descriptor.field(i);
-                    if (field_descriptor.is_required() && field_descriptors_in_use.contains(&field_descriptor))
+                    if (field_descriptor.is_required() && !field_descriptors_in_use.contains(&field_descriptor))
                         throw Exception(
                             ErrorCodes::NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD,
                             "Field {} is required to be set",
