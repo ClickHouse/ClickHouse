@@ -740,9 +740,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         if (size_of_field == 1)
             return AggregatedDataVariants::Type::key8;
         if (size_of_field == 2)
-            return AggregatedDataVariants::Type::key16;
+            return AggregatedDataVariants::Type::key16_inline;
         if (size_of_field == 4)
-            return AggregatedDataVariants::Type::key32_inline;
+            return AggregatedDataVariants::Type::key32;
         if (size_of_field == 8)
             return AggregatedDataVariants::Type::key64;
         if (size_of_field == 16)
@@ -2118,12 +2118,15 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
             method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
 
             if constexpr (Method::inline_aggregate_states)
+            {
                 places.emplace_back(reinterpret_cast<AggregateDataPtr>(&mapped));
+            }
             else
+            {
                 places.emplace_back(mapped);
-
-            /// Mark the cell as destroyed so it will not be destroyed in destructor.
-            mapped = nullptr;
+                /// Mark the cell as destroyed so it will not be destroyed in destructor.
+                mapped = nullptr;
+            }
 
             if (!return_single_block && places.size() >= max_block_size)
             {

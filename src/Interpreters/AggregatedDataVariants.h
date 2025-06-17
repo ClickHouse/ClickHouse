@@ -59,6 +59,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     // and the lookup there is almost free, so we don't need to cache the last lookup result
     std::unique_ptr<AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key, false>>           key8;
     std::unique_ptr<AggregationMethodOneNumber<UInt16, AggregatedDataWithUInt16Key, false>>         key16;
+    std::unique_ptr<AggregationMethodOneNumber<UInt16, AggregatedDataWithUInt16Key, false, false, true>> key16_inline;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>>         key32;
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key, true, false, true>> key32_inline;
@@ -139,6 +140,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     #define APPLY_FOR_AGGREGATED_VARIANTS(M) \
         M(key8,                       false) \
         M(key16,                      false) \
+        M(key16_inline,               false) \
         M(key32,                      false) \
         M(key32_inline,               false) \
         M(key64,                      false) \
@@ -235,6 +237,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     #define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
         M(key8)             \
         M(key16)            \
+        M(key16_inline)     \
         M(nullable_key8) \
         M(nullable_key16) \
         M(keys16)           \
