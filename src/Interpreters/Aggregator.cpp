@@ -742,7 +742,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         if (size_of_field == 2)
             return AggregatedDataVariants::Type::key16;
         if (size_of_field == 4)
-            return AggregatedDataVariants::Type::key32;
+            return AggregatedDataVariants::Type::key32_inline;
         if (size_of_field == 8)
             return AggregatedDataVariants::Type::key64;
         if (size_of_field == 16)
@@ -1158,7 +1158,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 emplace_result.setMapped(nullptr);
 
                 if constexpr (Method::inline_aggregate_states)
-                    aggregate_data = &emplace_result.getMapped();
+                    aggregate_data = reinterpret_cast<char *>(&emplace_result.getMapped());
                 else
                     aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
 
@@ -1185,7 +1185,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             else
             {
                 if constexpr (Method::inline_aggregate_states)
-                    aggregate_data = &emplace_result.getMapped();
+                    aggregate_data = reinterpret_cast<char *>(&emplace_result.getMapped());
                 else
                     aggregate_data = emplace_result.getMapped();
             }
@@ -1204,7 +1204,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             if (find_result.isFound())
             {
                 if constexpr (Method::inline_aggregate_states)
-                    aggregate_data = &find_result.getMapped();
+                    aggregate_data = reinterpret_cast<char *>(&find_result.getMapped());
                 else
                     aggregate_data = find_result.getMapped();
             }
@@ -2835,7 +2835,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             if (find_result.isFound())
             {
                 if constexpr (Method::inline_aggregate_states)
-                    places[i] = &find_result.getMapped();
+                    places[i] = reinterpret_cast<char *>(&find_result.getMapped());
                 else
                     places[i] = find_result.getMapped();
             }
@@ -2855,7 +2855,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             if (!emplace_result.isInserted())
             {
                 if constexpr (Method::inline_aggregate_states)
-                    places[i] = &emplace_result.getMapped();
+                    places[i] = reinterpret_cast<char *>(&emplace_result.getMapped());
                 else
                     places[i] = emplace_result.getMapped();
             }
@@ -2867,7 +2867,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
                 if constexpr (Method::inline_aggregate_states)
                 {
-                    aggregate_data = &emplace_result.getMapped();
+                    aggregate_data = reinterpret_cast<char *>(&emplace_result.getMapped());
                     createAggregateStates(aggregate_data);
                 }
                 else
