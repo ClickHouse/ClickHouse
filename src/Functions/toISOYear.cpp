@@ -11,17 +11,17 @@ using FunctionToISOYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToIS
 
 REGISTER_FUNCTION(ToISOYear)
 {
-    FunctionDocumentation::Description description_toISOYear = R"(
-Converts a date or date with time to the ISO year as a `UInt16` number.
+    FunctionDocumentation::Description description = R"(
+Converts a date or date with time to the ISO year number.
     )";
-    FunctionDocumentation::Syntax syntax_toISOYear = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toISOYear(datetime)
     )";
-    FunctionDocumentation::Arguments arguments_toISOYear = {
-        {"datetime", "The value with date or date with time. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)"}
+    FunctionDocumentation::Arguments arguments = {
+        {"datetime", "The value with date or date with time. [`Date`](../data-types/date.md) or [`Date32`](../data-types/date32.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toISOYear = "Returns the input value converted to an ISO year number. [`UInt16`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_toISOYear = {
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the input value converted to an ISO year number. [`UInt16`](../data-types/int-uint.md).";
+    FunctionDocumentation::Examples examples = {
         {"Get ISO year from date values", R"(
 SELECT
 toISOYear(toDate('2024/10/02')) as year1,
@@ -33,19 +33,19 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 └───────┴───────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toISOYear = {18, 4};
-    FunctionDocumentation::Category category_toISOYear = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toISOYear = {
-        description_toISOYear,
-        syntax_toISOYear,
-        arguments_toISOYear,
-        returned_value_toISOYear,
-        examples_toISOYear,
-        introduced_in_toISOYear,
-        category_toISOYear
+    FunctionDocumentation::IntroducedIn introduced_in = {18, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {
+        description,
+        syntax,
+        arguments,
+        returned_value,
+        examples,
+        introduced_in,
+        category
     };
 
-    factory.registerFunction<FunctionToISOYear>(documentation_toISOYear);
+    factory.registerFunction<FunctionToISOYear>(documentation);
 }
 
 }

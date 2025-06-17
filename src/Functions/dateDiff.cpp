@@ -505,8 +505,8 @@ date_diff(unit, startdate, enddate, [timezone])
 | quarter | `quarter`, `quarters`, `qq`, `q` |
 | year | `year`, `years`, `yyyy`, `yy` |
 )"},
-        {"startdate", "The first time value to subtract (the subtrahend). [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
-        {"enddate", "The second time value to subtract from (the minuend). [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
+        {"startdate", "The first time value to subtract (the subtrahend). [`Date`](../data-types/date.md) or [`Date32`](../data-types/date32.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."},
+        {"enddate", "The second time value to subtract from (the minuend). [`Date`](../data-types/date.md) or [`Date32`](../data-types/date32.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."},
         {"timezone", "Optional. Timezone name. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [`String`](../data-types/string.md)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_date_diff = "Returns the difference between `enddate` and `startdate` expressed in `unit`. [`Int64`](../data-types/int-uint.md).";

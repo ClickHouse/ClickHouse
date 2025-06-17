@@ -187,44 +187,45 @@ private:
 
 REGISTER_FUNCTION(DateTrunc)
 {
-    FunctionDocumentation::Description description_date_trunc = R"(
+    FunctionDocumentation::Description description = R"(
 Truncates a date and time value to the specified part of the date.
     )";
-    FunctionDocumentation::Syntax syntax_date_trunc = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 dateTrunc(unit, datetime[, timezone])
     )";
-    FunctionDocumentation::Arguments arguments_date_trunc = {
+    FunctionDocumentation::Arguments arguments = {
         {"unit", R"(The type of interval to truncate the result. `unit` argument is case-insensitive. [`String`](/sql-reference/syntax#string).
 
-| Unit | Compatibility |
-|------|---------------|
+| Unit         | Compatibility                   |
+|--------------|---------------------------------|
 | `nanosecond` | Compatible only with DateTime64 |
-| `microsecond` | Compatible only with DateTime64 |
-| `millisecond` | Compatible only with DateTime64 |
-| `second` | |
-| `minute` | |
-| `hour` | |
-| `day` | |
-| `week` | |
-| `month` | |
-| `quarter` | |
-| `year` | |
+| `microsecond`| Compatible only with DateTime64 |
+| `millisecond`| Compatible only with DateTime64 |
+| `second`     |                                 |
+| `minute`     |                                 |
+| `hour`       |                                 |
+| `day`        |                                 |
+| `week`       |                                 |
+| `month`      |                                 |
+| `quarter`    |                                 |
+| `year`       |                                 |
 )"},
-        {"datetime", "Date and time. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
+        {"datetime", "Date and time. [`Date`](../data-types/date.md) or [`Date32`](../data-types/date32.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."},
         {"timezone", "Optional. Timezone name for the returned datetime. If not specified, the function uses the timezone of the `datetime` parameter. [`String`](../data-types/string.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_date_trunc = R"(
+    FunctionDocumentation::ReturnedValue returned_value = R"(
 Returns the truncated date and time value.
 
-| Unit Argument | `datetime` Argument | Return Type |
-|---------------|----------------|-------------|
-| Year, Quarter, Month, Week | Date32 or DateTime64 | [`Date32`](../data-types/date32.md) |
-| Year, Quarter, Month, Week | Date or DateTime | [`Date`](../data-types/date.md) |
-| Day, Hour, Minute, Second | Date32 or DateTime64 | [`DateTime64`](../data-types/datetime64.md) |
-| Day, Hour, Minute, Second | Date or DateTime | [`DateTime`](../data-types/datetime.md) |
-| Millisecond, Microsecond, Nanosecond | Any | [`DateTime64`](../data-types/datetime64.md) with scale 3, 6, or 9 |
+| Unit Argument               | `datetime` Argument     | Return Type                                      |
+|-----------------------------|-------------------------|--------------------------------------------------|
+| Year, Quarter, Month, Week  | Date32 or DateTime64    | [`Date32`](../data-types/date32.md)              |
+| Year, Quarter, Month, Week  | Date or DateTime        | [`Date`](../data-types/date.md)                  |
+| Day, Hour, Minute, Second   | Date32 or DateTime64    | [`DateTime64`](../data-types/datetime64.md)      |
+| Day, Hour, Minute, Second   | Date or DateTime        | [`DateTime`](../data-types/datetime.md)          |
+| Millisecond, Microsecond,   | Any                     | [`DateTime64`](../data-types/datetime64.md)      |
+| Nanosecond                  |                         | with scale 3, 6, or 9                            |
 )";
-    FunctionDocumentation::Examples examples_date_trunc = {
+    FunctionDocumentation::Examples examples = {
         {"Truncate without timezone", R"(
 SELECT now(), dateTrunc('hour', now());
         )",
@@ -242,19 +243,19 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
 └─────────────────────┴────────────────────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_date_trunc = {20, 8};
-    FunctionDocumentation::Category category_date_trunc = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_date_trunc = {
-        description_date_trunc,
-        syntax_date_trunc,
-        arguments_date_trunc,
-        returned_value_date_trunc,
-        examples_date_trunc,
-        introduced_in_date_trunc,
-        category_date_trunc
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {
+        description,
+        syntax,
+        arguments,
+        returned_value,
+        examples,
+        introduced_in,
+        category
     };
 
-    factory.registerFunction<FunctionDateTrunc>(documentation_date_trunc);
+    factory.registerFunction<FunctionDateTrunc>(documentation);
 
     /// Compatibility alias.
     factory.registerAlias("DATE_TRUNC", "dateTrunc", FunctionFactory::Case::Insensitive);

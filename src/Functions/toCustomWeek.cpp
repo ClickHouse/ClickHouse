@@ -19,22 +19,22 @@ REGISTER_FUNCTION(ToCustomWeek)
 This function returns the week number for date or datetime. The two-argument form of `toWeek()` enables you to specify whether the week starts
 on Sunday or Monday and whether the return value should be in the range from `0` to `53` or from `1` to `53`.
 
-`toISOWeek()` is a compatibility function that is equivalent to `toWeek(date,3)`.
+[`toISOWeek()`](/sql-reference/functions/date-time-functions#toISOWeek) is a compatibility function that is equivalent to `toWeek(date,3)`.
 
 The following table describes how the mode argument works.
 
 | Mode | First day of week | Range | Week 1 is the first week ...    |
-|------|-------------------|-------|-------------------------------|
-| 0    | Sunday            | 0-53  | with a Sunday in this year    |
-| 1    | Monday            | 0-53  | with 4 or more days this year |
-| 2    | Sunday            | 1-53  | with a Sunday in this year    |
-| 3    | Monday            | 1-53  | with 4 or more days this year |
-| 4    | Sunday            | 0-53  | with 4 or more days this year |
-| 5    | Monday            | 0-53  | with a Monday in this year    |
-| 6    | Sunday            | 1-53  | with 4 or more days this year |
-| 7    | Monday            | 1-53  | with a Monday in this year    |
-| 8    | Sunday            | 1-53  | contains January 1            |
-| 9    | Monday            | 1-53  | contains January 1            |
+|------|-------------------|-------|---------------------------------|
+| 0    | Sunday            | 0-53  | with a Sunday in this year      |
+| 1    | Monday            | 0-53  | with 4 or more days this year   |
+| 2    | Sunday            | 1-53  | with a Sunday in this year      |
+| 3    | Monday            | 1-53  | with 4 or more days this year   |
+| 4    | Sunday            | 0-53  | with 4 or more days this year   |
+| 5    | Monday            | 0-53  | with a Monday in this year      |
+| 6    | Sunday            | 1-53  | with 4 or more days this year   |
+| 7    | Monday            | 1-53  | with a Monday in this year      |
+| 8    | Sunday            | 1-53  | contains January 1              |
+| 9    | Monday            | 1-53  | contains January 1              |
 
 For mode values with a meaning of "with 4 or more days this year," weeks are numbered according to ISO 8601:1988:
 
@@ -85,8 +85,6 @@ Returns the year and week for a date. The year in the result may be different fr
 
 The mode argument works like the mode argument of [`toWeek()`](/sql-reference/functions/date-time-functions#toWeek).
 
-`toISOYear()` is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
-
 Warning: The week number returned by `toYearWeek()` can be different from what the `toWeek()` returns. `toWeek()` always returns week number in the context of the given year, and in case `toWeek()` returns `0`, `toYearWeek()` returns the value corresponding to the last week of previous year. See `prev_yearWeek` in example below.
 
 The first argument can also be specified as [`String`](../data-types/string.md) in a format supported by [`parseDateTime64BestEffort()`](type-conversion-functions.md#parsedatetime64besteffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
@@ -95,7 +93,7 @@ The first argument can also be specified as [`String`](../data-types/string.md) 
 toYearWeek(datetime[, mode[, timezone]])
     )";
     FunctionDocumentation::Arguments arguments_toYearWeek = {
-        {"datetime", "Date or date with time to get the year and week of. [`Date`](/sql-reference/data-types/date)/[`DateTime`](/sql-reference/data-types/datetime)."},
+        {"datetime", "Date or date with time to get the year and week of. [`Date`](/sql-reference/data-types/date) or [`DateTime`](/sql-reference/data-types/datetime)."},
         {"mode", "Optional. A mode 0 to 9 determines the first day of the week and the range of the week number. Default `0`."},
         {"timezone", "Optional. Time zone. [`String`](/sql-reference/data-types/string)."}
     };
