@@ -127,3 +127,20 @@ Text index should choose none
 Description: text GRANULARITY 1
 Parts: 0/4
 Granules: 0/4096
+Chooses mixed granules inside part
+Text index should choose 50% of granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 512/1024
+Text index should choose all granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 1024/1024
+Text index should choose 25% of granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 256/1024
+Text index should choose 25% of granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 256/1024

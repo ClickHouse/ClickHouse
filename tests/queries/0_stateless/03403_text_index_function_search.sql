@@ -348,3 +348,59 @@ WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '
 LIMIT 2, 3;
 
 DROP TABLE tab;
+
+SELECT 'Chooses mixed granules inside part';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(`message`) TYPE text(tokenizer = 'default') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab
+SELECT
+    number,
+    CASE
+        WHEN modulo(number, 4) = 0 THEN 'Hello, ClickHouse'
+        WHEN modulo(number, 4) = 1 THEN 'Hello, World'
+        WHEN modulo(number, 4) = 2 THEN 'Hallo, ClickHouse'
+        WHEN modulo(number, 4) = 3 THEN 'ClickHouse is the fast, really fast!'
+    END
+FROM numbers(1024);
+
+SELECT 'Text index should choose 50% of granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAny(message, 'Hello World')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose all granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAny(message, 'Hello ClickHouse')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose 25% of granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAll(message, 'Hello World')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose 25% of granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAll(message, 'Hello ClickHouse')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
