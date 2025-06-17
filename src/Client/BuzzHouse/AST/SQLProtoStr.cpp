@@ -3463,7 +3463,7 @@ CONV_FN(Delete, del)
 {
     if (del.has_single_partition())
     {
-        ret += "IN ";
+        ret += " IN ";
         SinglePartitionExprToString(ret, del.single_partition());
         ret += " ";
     }
