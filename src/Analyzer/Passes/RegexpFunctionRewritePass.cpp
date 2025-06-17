@@ -90,8 +90,8 @@ public:
             }
         }
 
-        /// If a replaceRegexpOne function has a replacement of nothing other than \1 and some subpatterns in the
-        /// regexp, or \0 and no subpatterns in the regexp, rewrite it with extract.
+        /// If a replaceRegexpOne function has a regexp that matches entire haystack, and a replacement of nothing other
+        /// than \1 and some subpatterns in the regexp, or \0 and no subpatterns in the regexp, rewrite it with extract.
         if (function_name == "replaceRegexpOne")
         {
             auto & function_node_arguments_nodes = function_node->getArguments().getNodes();
@@ -107,7 +107,7 @@ public:
 
             String replacement = constant_node->getValue().safeGet<String>();
 
-            bool replacement_zero = replacement == String("\0", 1);
+            bool replacement_zero = replacement == "\\0";
             bool replacement_one = replacement == "\\1";
             if (!replacement_zero && !replacement_one)
                 return;
@@ -121,6 +121,26 @@ public:
 
             String regexp = regexp_node->getValue().safeGet<String>();
 
+            /// Currently only look for ^...$ patterns without alternatives.
+            bool starts_with_caret = regexp.front() == '^';
+            if (!starts_with_caret)
+                return;
+
+            bool ends_with_unescaped_dollar = false;
+            if (regexp.back() == '$')
+            {
+                // Count number of consecutive backslashes before the $
+                size_t backslash_count = 0;
+                for (ssize_t i = static_cast<ssize_t>(regexp.size()) - 2; i >= 0 && regexp[i] == '\\'; --i)
+                    ++backslash_count;
+
+                // If even number of backslashes, then $ is unescaped
+                ends_with_unescaped_dollar = (backslash_count % 2 == 0);
+            }
+
+            if (!ends_with_unescaped_dollar)
+                return;
+
             String dummy_required_substring;
             bool dummy_is_trivial;
             bool has_capture;
@@ -128,6 +148,9 @@ public:
             std::vector<String> alternatives;
             OptimizedRegularExpression::analyze(
                 regexp, dummy_required_substring, dummy_is_trivial, has_capture, dummy_required_substring_is_prefix, alternatives);
+
+            if (!alternatives.empty())
+                return;
 
             if ((replacement_one && has_capture) || (replacement_zero && !has_capture))
             {

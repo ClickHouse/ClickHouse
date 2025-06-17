@@ -29,29 +29,46 @@ EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity(
 
 -- Rule 2: If a replaceRegexpOne function has a replacement of nothing other than \1 and some subpatterns in the regexp, or \0 and no subpatterns in the regexp, rewrite it with extract.
 
+-- NOTE: \0 is specially treated as NUL instead of capture group reference. Need to use \\0 instead.
+
 -- Only \0, no capture group (should rewrite)
-EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), 'abc123', '\0');
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '^abc123$', '\\0');
 
 -- Only \1, with one capture group (should rewrite)
-EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '(abc)', '\1');
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '^(abc)$', '\1');
 
 -- Only \1, no capture group (should NOT rewrite)
-EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), 'abc', '\1');
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '^abc$', '\1');
+
+-- Pattern not full (should NOT rewrite)
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '^abc', '\\0');
+
+-- Pattern not full (should NOT rewrite)
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), 'abc$', '\\0');
+
+-- Pattern not full (should NOT rewrite)
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), 'abc', '\\0');
+
+-- Pattern not full (should NOT rewrite)
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '^abc\\$', '\\0');
+
+-- Pattern not full (should NOT rewrite)
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '^ab|c$', '\\0');
 
 -- \0 with extra characters (should NOT rewrite)
-EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), 'abc123', 'pre\0post');
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '^abc123$', 'pre\\0post');
 
 -- \1 with two capture groups (should rewrite — only \1 used)
-EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '(a)(b)', '\1');
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '^(a)(b)$', '\1');
 
--- \2 used (should NOT rewrite — needs two capture groups)
-EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '(a)(b)', '\2');
+-- \2 used (should NOT rewrite)
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '^(a)(b)$', '\2');
 
 -- Mixed content in replacement (should NOT rewrite)
-EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '(abc)', 'X\1Y');
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '^(abc)$', 'X\1Y');
 
 -- Escaped backslash in replacement (should NOT rewrite)
-EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '(abc)', '\\\\1');
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpOne(identity('abc123'), '^(abc)$', '\\\\1');
 
 
 -- Rule 3: If an extract function has a regexp with some subpatterns and the regexp starts with ^.* or ending with an unescaped .*$, remove this prefix and/or suffix.
