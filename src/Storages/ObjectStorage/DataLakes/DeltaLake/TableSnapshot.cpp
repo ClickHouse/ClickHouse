@@ -285,11 +285,6 @@ public:
         if (transform && !context->partition_columns.empty())
             expression = visitExpression(transform, context->expression_schema);
 
-        LOG_TEST(
-            context->log,
-            "Scanned file: {}, size: {}, num records: {}",
-            full_path, size, stats ? DB::toString(stats->num_records) : "Unknown");
-
         auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
         if (expression)
         {
@@ -297,6 +292,12 @@ public:
             object->data_lake_metadata->transform = expression->getTransform();
             object->data_lake_metadata->partition_values = expression->getConstValues(context->partition_columns);
         }
+
+        LOG_TEST(
+            context->log,
+            "Scanned file: {}, size: {}, num records: {}, transform: {}",
+            full_path, size, stats ? DB::toString(stats->num_records) : "Unknown",
+            expression ? expression->getTransform()->dumpNames() : "None");
 
         {
             std::lock_guard lock(context->next_mutex);

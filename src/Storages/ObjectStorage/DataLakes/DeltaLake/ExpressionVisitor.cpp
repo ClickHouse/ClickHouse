@@ -165,7 +165,7 @@ public:
                     current_node->column = DB::makeNullable(current_node->column->convertToFullColumnIfConst());
                 }
                 else
-                    current_node->column = current_node->column->convertToFullColumnIfConst();
+                    current_node->column = current_node->column;
             }
 
             /// Form the outputs.
