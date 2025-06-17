@@ -239,6 +239,8 @@ using ReadTaskCallback = std::function<String()>;
 using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
+using BlockMarshallingCallback = std::function<Block(const Block & block)>;
+
 struct QueryPlanAndSets;
 using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
 
@@ -355,6 +357,8 @@ protected:
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
+
+    BlockMarshallingCallback block_marshalling_callback;
 
     bool is_under_restore = false;
 
@@ -670,7 +674,8 @@ public:
         SERVER_BUILT_WITH_COVERAGE,
         SETTING_ZERO_COPY_REPLICATION_ENABLED,
         SKIPPING_CONDITION_QUERY,
-        THREAD_FUZZER_IS_ENABLED
+        THREAD_FUZZER_IS_ENABLED,
+        MAYBE_BROKEN_TABLES,
     };
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
@@ -1500,6 +1505,9 @@ public:
 
     MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
     void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
+
+    BlockMarshallingCallback getBlockMarshallingCallback() const;
+    void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);
