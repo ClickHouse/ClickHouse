@@ -481,6 +481,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         WriteBufferFromVectorImpl out_buf_select_query(result_select);
         ReadBufferFromString read_buf_select_query(select_query);
         executeQuery(read_buf_select_query, out_buf_select_query, false, query_context, {});
+        out_buf_select_query.finalize();
         while (!result_select.empty() && result_select.back() == 0)
             result_select.pop_back();
 
