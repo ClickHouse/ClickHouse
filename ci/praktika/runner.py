@@ -525,6 +525,7 @@ class Runner:
                     ).to_markdown()
                     if not GH.post_updateable_comment(
                         comment_tags_and_bodies={"summary": summary_body},
+                        only_update=True
                     ):
                         print(f"ERROR: failed to post CI summary")
                 except Exception as e:
