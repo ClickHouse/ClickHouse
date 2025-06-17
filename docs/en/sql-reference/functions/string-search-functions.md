@@ -768,7 +768,7 @@ searchAny(input, 'needle1 needle2 ... needleN')
 **Parameters**
 
 - `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [const String](../data-types/string.md). 
+- `needles` — tokens to be searched and supports a max of 64 tokens. [const String](../data-types/string.md).
 
 :::note
 This function must be used only with a [full-text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
@@ -778,7 +778,7 @@ The input data is tokenized by the tokenizer from the index definition.
 :::note
 The `'needle1 needle2 ... needleN'` are tokenized by the `default` tokenized as `tokens('needle1 needle2 ... needleN', 'default')`.
 This means both `word1;word2` and `word1,word2` would be tokenized as `['word1','word2']`.
-Refer [tokens](string-functions.md#tokens) for more information about the supported separators.
+Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
 :::
 
 **Returned value**
@@ -823,7 +823,7 @@ searchAll(input, 'needle1 needle2 ... needleN')
 **Parameters**
 
 - `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [const String](../data-types/string.md). 
+- `needles` — tokens to be searched and supports a max of 64 tokens. [const String](../data-types/string.md).
 
 :::note
 This function must be used only with a [full-text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
@@ -833,7 +833,7 @@ The input data is tokenized by the tokenizer from the index definition.
 :::note
 The `'needle1 needle2 ... needleN'` are tokenized by the `default` tokenized as `tokens('needle1 needle2 ... needleN', 'default')`.
 This means both `word1;word2` and `word1,word2` would be tokenized as `['word1','word2']`.
-Refer [tokens](string-functions.md#tokens) for more information about the supported separators.
+Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
 :::
 
 **Returned value**
