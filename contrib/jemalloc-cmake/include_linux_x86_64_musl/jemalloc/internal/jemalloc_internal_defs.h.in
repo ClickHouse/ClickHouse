@@ -200,7 +200,7 @@
 /* #undef LG_QUANTUM */
 
 /* One page is 2^LG_PAGE bytes. */
-#define LG_PAGE 14
+#define LG_PAGE 12
 
 /* Maximum number of regions in a slab. */
 /* #undef CONFIG_LG_SLAB_MAXREGS */
@@ -256,7 +256,7 @@
  * If defined, explicitly attempt to more uniformly distribute large allocation
  * pointer alignments across all cache indices.
  */
-#undef JEMALLOC_CACHE_OBLIVIOUS
+#define JEMALLOC_CACHE_OBLIVIOUS
 
 /*
  * If defined, enable logging facilities.  We make this a configure option to
