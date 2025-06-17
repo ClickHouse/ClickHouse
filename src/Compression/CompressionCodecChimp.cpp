@@ -154,7 +154,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
     }
     static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(NO_PREVIOUS_VALUES));
     static const short THRESHOLD = 6 + LOG_NO_PREVIOUS_VALUES;
-    static const int ARRAY_SIZE = static_cast<int>(std::pow(2, THRESHOLD + 1));
+    static const int ARRAY_SIZE = 1 << (THRESHOLD + 1);
     int indices[ARRAY_SIZE];
     for (int i = 0; i < ARRAY_SIZE; i++)
     {
