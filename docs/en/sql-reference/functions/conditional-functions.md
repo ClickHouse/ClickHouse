@@ -1,16 +1,16 @@
 ---
-description: 'Documentation for conditional functions'
+description: 'Documentation for Conditional Functions'
 sidebar_label: 'Conditional'
 sidebar_position: 40
 slug: /sql-reference/functions/conditional-functions
-title: 'Conditional functions'
+title: 'Conditional Functions'
 ---
 
-# Conditional functions
+# Conditional Functions
 
 ## Overview {#overview}
 
-### Using Conditional results directly {#using-conditional-results-directly}
+### Using Conditional Results Directly {#using-conditional-results-directly}
 
 Conditionals always result to `0`, `1` or `NULL`. So you can use conditional results directly like this:
 
@@ -27,7 +27,7 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-### NULL values in conditionals {#null-values-in-conditionals}
+### NULL Values in Conditionals {#null-values-in-conditionals}
 
 When `NULL` values are involved in conditionals, the result will also be `NULL`.
 
