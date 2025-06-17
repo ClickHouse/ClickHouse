@@ -19,6 +19,7 @@ public:
         const StorageID & table_id_,
         const ColumnsDescription & columns_in_table_or_function_definition,
         const ConstraintsDescription & constraints_,
+        const ASTPtr & partition_by,
         ContextPtr context_);
 
     std::string getName() const override;

@@ -62,12 +62,14 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     const StorageID & table_id_,
     const ColumnsDescription & columns_in_table_or_function_definition,
     const ConstraintsDescription & constraints_,
+    const ASTPtr & partition_by,
     ContextPtr context_)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
+    configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
     /// so no lazy initialization is allowed.
@@ -82,14 +84,26 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration())
+    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration() && !configuration->partition_strategy)
         sample_path = getPathSample(context_);
 
-    if (columns_in_table_or_function_definition.empty())
+    /*
+     * If `partition_strategy=hive`, the partition columns shall be extracted from the `PARTITION BY` expression.
+     * There is no need to read from the filepath.
+     *
+     * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
+     * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
+     */
+    if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
     {
-        if (context_->getSettingsRef()[Setting::use_hive_partitioning])
+        hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+    }
+    else if (context_->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, {}, context_);
+
+        if (columns_in_table_or_function_definition.empty())
         {
-            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, {}, context_);
             for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
             {
                 if (!columns.has(name))
@@ -99,23 +113,13 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
             }
         }
     }
-    else
-    {
-        if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
-        {
-            hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
-        }
-        else if (context_->getSettingsRef()[Setting::use_hive_partitioning])
-        {
-            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, {}, context_);
-        }
-    }
+
+    /// Hive: Not building the file_columns like `StorageObjectStorage` does because it is not necessary to do it here.
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    // todo arthur do we need to do anything at all? I mean..
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
 }

@@ -190,6 +190,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
+            partition_by,
             context);
 
         storage->startup();

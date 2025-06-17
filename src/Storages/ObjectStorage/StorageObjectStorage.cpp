@@ -106,9 +106,11 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
+    configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->getRawPath().withPartitionWildcard()
+        && !configuration->partition_strategy
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
@@ -136,8 +138,6 @@ StorageObjectStorage::StorageObjectStorage(
         }
         tryLogCurrentException(log);
     }
-
-    configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
 
     /// We always update configuration on read for table engine,
     /// but this is not needed for table function,
