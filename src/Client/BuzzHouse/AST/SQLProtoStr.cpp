@@ -3465,7 +3465,6 @@ CONV_FN(Delete, del)
     {
         ret += " IN ";
         SinglePartitionExprToString(ret, del.single_partition());
-        ret += " ";
     }
     ret += " WHERE ";
     WhereStatementToString(ret, del.where());
