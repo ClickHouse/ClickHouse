@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+
+import time
+import http.client
+import os
+from socket import AF_INET, SOCK_STREAM, socket
+
+
+PROGRESS_HEADER = "X-ClickHouse-Progress"
+
+
+def produce_post_data():
+    yield "insert into function null('_ Int') format TSV".encode('utf-8')
+    yield "\n".encode('utf-8')
+    yield "1\n".encode('utf-8')
+    time.sleep(0.05)
+    yield "2\n".encode('utf-8')
+
+
+def main():
+    host = os.environ["CLICKHOUSE_HOST"]
+    port = int(os.environ["CLICKHOUSE_PORT_HTTP"])
+
+    conn = http.client.HTTPConnection(host, port)
+
+    conn.request(
+        'POST',
+        '/?send_progress_in_http_headers=1&http_headers_progress_interval_ms=1&max_threads=1&max_insert_threads=1&max_block_size=1&max_insert_block_size=1',
+        body=produce_post_data(),
+        headers={'Transfer-Encoding': 'chunked', 'Connection': 'keep-alive'},
+        encode_chunked=True)
+
+    resp = conn.getresponse()
+    print(f"POST response headers: {resp.headers}")
+
+
+def getHTTPStatusString(data):
+    strings = data.splitlines()
+    http_status_str = strings.pop()
+    if http_status_str.startswith("HTTP/1.1"):
+        return http_status_str
+    return None
+
+def getHeaders(data):
+    strings = data.splitlines()
+    strings.pop()
+    headers = []
+    while strings:
+        h_line = strings.pop().strip()
+        if not h_line: break
+        p = h_line.split(": ", 1)
+        if len(p) < 2: break
+        k, v = h_line.split(": ", 1)
+        headers.append((k,v))
+    return headers
+
+
+def grepHeader(headers, name):
+    result = []
+    for k, v in headers:
+        if k == name:
+            result.append((k, v))
+    return result
+
+
+def readSomeData(sock):
+    data = ""
+    while 1:
+        try:
+            piece = ""
+            piece = sock.recv(1024).decode()
+        except TimeoutError as e:
+            print(e)
+            break
+        if not piece:
+            break
+        data += piece
+        status = getHTTPStatusString(data)
+        headers = getHeaders(data)
+        if status and len(grepHeader(headers, PROGRESS_HEADER)) > 0:
+            break
+    return data
+
+def readRestData(sock):
+    data = ""
+    while 1:
+        try:
+            piece = ""
+            piece = sock.recv(1024).decode()
+        except TimeoutError as e:
+            print(e)
+            break
+        if not piece:
+            break
+        data += piece
+    return data
+
+def main1():
+    host = os.environ["CLICKHOUSE_HOST"]
+    port = int(os.environ["CLICKHOUSE_PORT_HTTP"])
+
+    sock = socket(AF_INET, SOCK_STREAM)
+    sock.connect((host, port))
+    sock.settimeout(5)
+
+    s =  b"POST /?send_progress_in_http_headers=1&http_headers_progress_interval_ms=0&max_threads=1&max_insert_threads=1&max_block_size=1&max_insert_block_size=1 HTTP/1.1\r\n"
+    s += f"Host: {host}\r\n".encode('ascii')
+    s += b"Transfer-encoding: chunked\r\n"
+    s += b"\r\n"
+
+    chunk = "insert into function null('_ Int') format TSV\n".encode('ascii')
+    s += f'{len(chunk):X}\r\n'.encode('ascii') + chunk \
+                        + b'\r\n'
+
+    chunk = "\n".encode('ascii')
+    s += f'{len(chunk):X}\r\n'.encode('ascii') + chunk \
+                        + b'\r\n'
+
+    chunk = "1\n".encode('ascii')
+    s += f'{len(chunk):X}\r\n'.encode('ascii') + chunk \
+                        + b'\r\n'
+
+    chunk = "2\n".encode('ascii')
+    s += f'{len(chunk):X}\r\n'.encode('ascii') + chunk \
+                        + b'\r\n'
+
+    print(f"message size {len(s)}")
+    sock.sendall(s)
+
+    data = readSomeData(sock)
+    print(data)
+
+
+    s = b'0\r\n\r\n'
+
+    print(f"message size {len(s)}")
+    sock.send(s)
+
+    data = readSomeData(sock)
+    print(data)
+
+    sock.close()
+
+
+
+
+if __name__ == "__main__":
+    main1()

@@ -53,6 +53,8 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
     accumulated_progress.writeJSON(progress_string_writer);
     progress_string_writer.finalize();
 
+    LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "writeHeaderProgress {}", progress_string_writer.str());
+
     socketSendBytes(header_name, strlen(header_name));
     socketSendBytes(progress_string_writer.str().data(), progress_string_writer.str().size());
     socketSendBytes("\r\n", 2);
@@ -116,13 +118,8 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
 void WriteBufferFromHTTPServerResponse::nextImpl()
 {
-    if (!initialized)
     {
         std::lock_guard lock(mutex);
-        /// Initialize as early as possible since if the code throws,
-        /// next() should not be called anymore.
-        initialized = true;
-
         startSendHeaders();
         finishSendHeaders();
     }
@@ -183,19 +180,9 @@ void WriteBufferFromHTTPServerResponse::setExceptionCode(int code)
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()
 {
-    if (!headers_finished_sending)
     {
         std::lock_guard lock(mutex);
-        /// If no body data just send header
         startSendHeaders();
-
-        /// `finalizeImpl` must be idempotent, so set `initialized` here to not send stuff twice
-        if (!initialized && offset() && compression_method != CompressionMethod::None)
-        {
-            initialized = true;
-            socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
-        }
-
         finishSendHeaders();
     }
 
