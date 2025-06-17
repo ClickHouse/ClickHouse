@@ -4004,6 +4004,9 @@ Rewrite aggregate functions that semantically equals to count() as count().
     DECLARE(Bool, optimize_injective_functions_inside_uniq, true, R"(
 Delete injective functions of one argument inside uniq*() functions.
 )", 0) \
+    DECLARE(Bool, count_matches_stop_at_empty_match, false, R"(
+Stop counting once a pattern matches zero-length in the `countMatches` function.
+)", 0) \
     DECLARE(Bool, rewrite_count_distinct_if_with_count_distinct_implementation, false, R"(
 Allows you to rewrite `countDistcintIf` with [count_distinct_implementation](#count_distinct_implementation) setting.
 
