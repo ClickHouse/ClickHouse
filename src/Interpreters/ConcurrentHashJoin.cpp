@@ -44,9 +44,9 @@ using namespace DB;
     case HashJoin::Type::TYPE:         \
         return f(*(maps).TYPE);
 
-// #define INVOKE_WITH_MAPS(TYPE, lhs_maps, rhs_maps, f) \
-//     case HashJoin::Type::TYPE:                        \
-//         return f(*(lhs_maps).TYPE, *(rhs_maps).TYPE);
+#define INVOKE_WITH_MAPS(TYPE, lhs_maps, rhs_maps, f) \
+    case HashJoin::Type::TYPE:                        \
+        return f(*(lhs_maps).TYPE, *(rhs_maps).TYPE);
 
 #define APPLY_TO_MAP(M, type, ...)                        \
     switch (type)                                         \
@@ -498,7 +498,7 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         for (const auto & hash_join : hash_joins)
         {
             std::lock_guard lock(hash_join->mutex);
-            
+
             if (hash_join->data->hasNonJoinedRows() || 
                 hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
             {
@@ -693,25 +693,59 @@ UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode
     return hash.get64();
 }
 
-void ConcurrentHashJoin::finalizeSlots()
-{
-    for (auto & hj : hash_joins)
-    {
-        pool->scheduleOrThrow([hj]()
-        {
-            ThreadGroupSwitcher switcher(CurrentThread::getGroup(), "ConcurrentJoin");
-            std::lock_guard lock(hj->mutex);
-            hj->data->onBuildPhaseFinish();
-        });
-    }
-    pool->wait();
-}
-
 void ConcurrentHashJoin::onBuildPhaseFinish()
 {
-    /// Finalize each slot after build
-    finalizeSlots();
-    build_phase_finished.store(true, std::memory_order_release);
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
+    {
+        // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.
+        // It is done in two steps:
+        //     1. Merge hash maps into a single one. For that, we iterate over all sub-maps and move buckets from the current `HashJoin` instance to the common map.
+        for (size_t i = 1; i < slots; ++i)
+        {
+            auto move_buckets = [&](auto & lhs_maps, HashJoin::Type type, auto & rhs_maps, size_t idx)
+            {
+                APPLY_TO_MAP(
+                    INVOKE_WITH_MAPS,
+                    type,
+                    lhs_maps,
+                    rhs_maps,
+                    [&](auto & lhs_map, auto & rhs_map)
+                    {
+                        for (size_t j = idx; j < lhs_map.NUM_BUCKETS; j += slots)
+                        {
+                            if (!lhs_map.impls[j].empty())
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected non-empty map");
+                            lhs_map.impls[j] = std::move(rhs_map.impls[j]);
+                        }
+                    })
+            };
+
+            std::visit(
+                [&](auto & lhs_map)
+                {
+                    using T = std::decay_t<decltype(lhs_map)>;
+                    move_buckets(lhs_map, getData(hash_joins[0])->type, std::get<T>(getData(hash_joins[i])->maps.at(0)), i);
+                },
+                getData(hash_joins[0])->maps.at(0));
+        }
+    }
+
+    // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
+    // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.
+    for (const auto & hash_join : hash_joins)
+        hash_join->data->onBuildPhaseFinish();
+
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
+    {
+        //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
+        for (size_t i = 1; i < slots; ++i)
+        {
+            getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
+            hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
+        }
+    }
+
+    build_phase_finished = true;
 }
 }
 

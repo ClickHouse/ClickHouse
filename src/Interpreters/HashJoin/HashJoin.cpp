@@ -1204,12 +1204,9 @@ void HashJoin::updateNonJoinedRowsStatus() const
         return;
 
     bool found_non_joined = false;
-    
-    /// if we have no data, we exit
+
     if (!empty() && used_flags)
     {
-        /// Check if there are non-joined rows
-        /// this is a fast check that avoids scanning the entire hash table
         found_non_joined = true;
     }
 
@@ -1422,27 +1419,28 @@ private:
 
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
     {
-        if (!nulls_position.has_value())
-            nulls_position = parent.data->blocks_nullmaps.begin();
-
-        auto end = parent.data->blocks_nullmaps.end();
-
-        for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
+        // Stateless scan of null-maps with safe bounds checking
+        for (const auto & holder : parent.data->blocks_nullmaps)
         {
-            const auto * block = it->block;
-            ConstNullMapPtr nullmap = nullptr;
-            if (it->column)
-                nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
-
-            for (size_t row = 0; row < block->rows() && rows_added < max_block_size; ++row)
+            const auto * block = holder.block;
+            const ColumnUInt8 * col_ptr = holder.column
+                ? &assert_cast<const ColumnUInt8 &>(*holder.column)
+                : nullptr;
+            const auto * nullmap = col_ptr ? &col_ptr->getData() : nullptr;
+            size_t nrows = block->rows();
+            size_t limit = nullmap ? std::min(nrows, nullmap->size()) : nrows;
+            for (size_t row = 0; row < limit && rows_added < max_block_size; ++row)
             {
-                if (nullmap && row < nullmap->size() && (*nullmap)[row])
+                // treat missing nullmap as non-joined
+                if (!nullmap || (*nullmap)[row])
                 {
-                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                        columns_keys_and_right[col]->insertFrom(*block->getByPosition(col).column, row);
+                    for (size_t c = 0; c < columns_keys_and_right.size(); ++c)
+                        columns_keys_and_right[c]->insertFrom(*block->getByPosition(c).column, row);
                     ++rows_added;
                 }
             }
+            if (rows_added >= max_block_size)
+                break;
         }
     }
 };
