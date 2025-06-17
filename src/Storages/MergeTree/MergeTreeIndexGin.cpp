@@ -880,18 +880,18 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
     std::optional<std::vector<String>> separators;
     if (tokenizer == DefaultTokenExtractor::getExternalName())
         token_extractor = std::make_unique<DefaultTokenExtractor>();
-    else if (tokenizer == NoOpTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<NoOpTokenExtractor>();
-    else if (tokenizer == SplitTokenExtractor::getExternalName())
-    {
-        separators = getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "});
-        token_extractor = std::make_unique<SplitTokenExtractor>(separators.value());
-    }
     else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
         ngram_size = getOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
         token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size.value_or(DEFAULT_NGRAM_SIZE));
     }
+    else if (tokenizer == SplitTokenExtractor::getExternalName())
+    {
+        separators = getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "});
+        token_extractor = std::make_unique<SplitTokenExtractor>(separators.value());
+    }
+    else if (tokenizer == NoOpTokenExtractor::getExternalName())
+        token_extractor = std::make_unique<NoOpTokenExtractor>();
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
 

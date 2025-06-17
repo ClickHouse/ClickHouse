@@ -21,14 +21,14 @@ namespace ErrorCodes
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::setGinFilterParameters(GinFilterParameters params)
+void FunctionSearchImpl<SearchTraits>::setGinFilterParameters(const GinFilterParameters& params)
 {
     /// Index parameters can be set multiple times.
     /// This happens exactly in a case that same searchAny/searchAll query is used again.
     /// This is fine because the parameters would be same.
     if (parameters.has_value() && params != parameters.value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}': Different index parameters are set.", getName());
-    parameters = std::move(params);
+    parameters = params;
 }
 
 template <class SearchTraits>
@@ -52,15 +52,17 @@ template <typename StringColumnType>
 void executeSearchAny(
     std::unique_ptr<ITokenExtractor> token_extractor,
     StringColumnType & col_input,
-    size_t rows_count_input,
+    size_t input_rows_count,
     const std::vector<String> & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    for (size_t i = 0; i < rows_count_input; ++i)
+    for (size_t i = 0; i < input_rows_count; ++i)
     {
         const auto value = col_input.getDataAt(i);
         col_result[i] = false;
-        for (const auto & token : token_extractor->getTokens(value.data, value.size))
+
+        const auto & tokens = token_extractor->getTokens(value.data, value.size);
+        for (const auto & token : tokens)
         {
             if (std::ranges::any_of(needles, [&token](const auto & needle) { return needle == token; }))
             {
@@ -75,20 +77,21 @@ template <typename StringColumnType>
 void executeSearchAll(
     std::unique_ptr<ITokenExtractor> token_extractor,
     StringColumnType & col_input,
-    size_t rows_count_input,
+    size_t input_rows_count,
     const std::vector<String> & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    static roaring::Roaring mask_zero;
+    static const roaring::Roaring mask_zero;
 
     roaring::Roaring mask;
-    for (size_t i = 0; i < rows_count_input; ++i)
+    for (size_t i = 0; i < input_rows_count; ++i)
     {
         const auto value = col_input.getDataAt(i);
         col_result[i] = false;
 
         mask &= mask_zero;
-        for (const auto & token : token_extractor->getTokens(value.data, value.size))
+        const auto & tokens = token_extractor->getTokens(value.data, value.size);
+        for (const auto & token : tokens)
         {
             for (size_t pos = 0; pos < needles.size(); ++pos)
                 if (token == needles[pos])
@@ -107,16 +110,21 @@ template <class SearchTraits, typename StringColumnType>
 void execute(
     std::unique_ptr<ITokenExtractor> token_extractor,
     StringColumnType & col_input,
-    size_t rows_count_input,
+    size_t input_rows_count,
     const std::vector<String> & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    col_result.resize(rows_count_input);
+    col_result.resize(input_rows_count);
 
-    if constexpr (std::is_same_v<SearchTraits, traits::SearchAnyTraits>)
-        executeSearchAny(std::move(token_extractor), col_input, rows_count_input, needles, col_result);
-    else if constexpr (std::is_same_v<SearchTraits, traits::SearchAllTraits>)
-        executeSearchAll(std::move(token_extractor), col_input, rows_count_input, needles, col_result);
+    switch (SearchTraits::search_mode)
+    {
+        case GinSearchMode::Any:
+            executeSearchAny(std::move(token_extractor), col_input, input_rows_count, needles, col_result);
+            break;
+        case GinSearchMode::All:
+            executeSearchAll(std::move(token_extractor), col_input, input_rows_count, needles, col_result);
+            break;
+    }
 }
 }
 
@@ -141,13 +149,6 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     std::unique_ptr<ITokenExtractor> token_extractor;
     if (parameters->tokenizer == DefaultTokenExtractor::getExternalName())
         token_extractor = std::make_unique<DefaultTokenExtractor>();
-    else if (parameters->tokenizer == NoOpTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<NoOpTokenExtractor>();
-    else if (parameters->tokenizer == SplitTokenExtractor::getExternalName())
-    {
-        const auto& separators = parameters->separators.value_or(std::vector<String>{" "});
-        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
-    }
     else if (parameters->tokenizer == NgramTokenExtractor::getExternalName())
     {
         auto ngrams = parameters->ngram_size.value_or(DEFAULT_NGRAM_SIZE);
@@ -156,6 +157,13 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
                 ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function '{}' should be between 2 and 8, got: {}", name, ngrams);
         token_extractor = std::make_unique<NgramTokenExtractor>(ngrams);
     }
+    else if (parameters->tokenizer == SplitTokenExtractor::getExternalName())
+    {
+        const auto & separators = parameters->separators.value_or(std::vector<String>{" "});
+        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
+    }
+    else if (parameters->tokenizer == NoOpTokenExtractor::getExternalName())
+        token_extractor = std::make_unique<NoOpTokenExtractor>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
 
@@ -173,7 +181,7 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
 template class FunctionSearchImpl<traits::SearchAnyTraits>;
 template class FunctionSearchImpl<traits::SearchAllTraits>;
 
-FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
 FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
 
 REGISTER_FUNCTION(SearchAny)

@@ -35,7 +35,9 @@ struct GinFilterParameters
 
     String tokenizer;
     UInt64 max_rows_per_postings_list;
+    /// for ngram tokenizer
     std::optional<UInt64> ngram_size;
+    /// for split tokenizer
     std::optional<std::vector<String>> separators;
 
     bool operator<=>(const GinFilterParameters& other) const = default;

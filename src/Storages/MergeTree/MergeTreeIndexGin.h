@@ -94,9 +94,9 @@ private:
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
             FUNCTION_MATCH,
-            FUNCTION_UNKNOWN, /// Can take any value.
             FUNCTION_SEARCH_ANY,
             FUNCTION_SEARCH_ALL,
+            FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
             FUNCTION_AND,
