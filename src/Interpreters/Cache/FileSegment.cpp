@@ -8,6 +8,7 @@
 #include <base/EnumReflection.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
+#include <sys/stat.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -160,7 +161,7 @@ size_t FileSegment::getReservedSize() const
 
 size_t FileSegment::getSize(FileSegment::SizeAlignment alignment) const
 {
-    size_t size = getReservedSize();
+    size_t size = reserved_size.load();
     switch (alignment)
     {
         case FileSegment::SizeAlignment::ALIGNED:
@@ -965,6 +966,15 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
     const auto file_path = getPath();
 
+    struct stat file_stat;
+    stat(file_path.c_str(), &file_stat);
+    size_t sz = getSize(FileSegment::SizeAlignment::ALIGNED);
+    size_t real_size = static_cast<size_t>(file_stat.st_blocks * 512); // st_block -- Number of 512B blocks allocated
+    if (sz != real_size)
+    {
+        throw_logical("Aligned file size != statvfs: " + std::to_string(sz) + " != " + std::to_string(real_size));
+    }
+
     {
         std::lock_guard lk(write_mutex);
         if (downloaded_size == 0)
@@ -1003,9 +1013,6 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
             chassert(file_size == range().size());
             chassert(downloaded_size == range().size());
-
-            // const auto stat = getStatVFS(getPath());
-            // chassert(stat.f_bsize * stat.f_blocks == getSize(SizeAlignment::ALIGNED));
 
             chassert(queue_iterator || on_delayed_removal);
             check_iterator(queue_iterator);
