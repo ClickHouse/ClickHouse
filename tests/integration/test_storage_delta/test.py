@@ -2007,3 +2007,59 @@ deltaLakeCluster(cluster,
             f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
         )
     )
+
+
+def test_partition_columns_3(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_partition_columns_3")
+    result_file = f"{TABLE_NAME}"
+    partition_columns = ["year"]
+
+    schema = StructType([
+        StructField("id", IntegerType(), nullable=False),
+        StructField("name", StringType(), nullable=False),
+        StructField("age", IntegerType(), nullable=False),
+        StructField("country", StringType(), nullable=False),
+        StructField("year", StringType(), nullable=False),
+    ])
+
+    num_rows=10
+    now = datetime.now()
+    data = [
+        (i, f"name_{i}", 32, "US", "2025")
+        for i in range(num_rows)
+    ]
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.printSchema()
+    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+        f"/{TABLE_NAME}"
+    )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
+
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    result = int(instance.query(f"SELECT count() FROM {table_function}"))
+    assert result == num_rows
+
+    assert (
+        "0\tname_0\t32\tUS\t2025\n"
+        "1\tname_1\t32\tUS\t2025\n"
+        "2\tname_2\t32\tUS\t2025\n"
+        "3\tname_3\t32\tUS\t2025\n"
+        "4\tname_4\t32\tUS\t2025\n"
+        "5\tname_5\t32\tUS\t2025\n"
+        "6\tname_6\t32\tUS\t2025\n"
+        "7\tname_7\t32\tUS\t2025\n"
+        "8\tname_8\t32\tUS\t2025\n"
+        "9\tname_9\t32\tUS\t2025"
+        == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
+    )
