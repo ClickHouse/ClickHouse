@@ -608,8 +608,8 @@ The number of elements for the array and its weights should match.
     FunctionDocumentation::Arguments arguments_arrayLevDisW = {
         {"from", "first array. [`Array(T)`](/sql-reference/data-types/array)."},
         {"to", "second array. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"from_weights", "weights for the first array. [`Array(UInt|Int|Float)`](/sql-reference/data-types/array)."},
-        {"to_weights", "weights for the second array. [`Array(UInt|Int|Float)`](/sql-reference/data-types/array)."},
+        {"from_weights", "weights for the first array. [`Array((U)Int*|Float*)`](/sql-reference/data-types/array)."},
+        {"to_weights", "weights for the second array. [`Array((U)Int*|Float*)`](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value_arrayLevDisW = "Levenshtein distance between the first and the second arrays with custom weights for each element. [`Float64`](/sql-reference/data-types/float).";
     FunctionDocumentation::IntroducedIn introduced_in_arrayLevDisW = {25, 4};
@@ -640,8 +640,8 @@ Calculates the similarity of two arrays from `0` to `1` based on weighted Levens
     FunctionDocumentation::Arguments arguments_arraySim = {
         {"from", "first array"},
         {"to", "second array"},
-        {"from_weights", "weights for the first array. [`Array(UInt|Int|Float)`](/sql-reference/data-types/array)."},
-        {"to_weights", "weights for the second array. [`Array(UInt|Int|Float)`](/sql-reference/data-types/array)."},
+        {"from_weights", "weights for the first array. [`Array((U)Int*|Float*)`](/sql-reference/data-types/array)."},
+        {"to_weights", "weights for the second array. [`Array((U)Int*|Float*)`](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value_arraySim = "Returns the similarity between `0` and `1` of the two arrays based on the weighted Levenshtein distance. [`Float64`](/sql-reference/data-types/float).";
     FunctionDocumentation::Examples examples_arraySim = {
