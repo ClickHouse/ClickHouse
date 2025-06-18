@@ -152,7 +152,9 @@ class Info:
     def dump(self):
         self.env.dump()
 
-    def get_specific_report_url(self, pr_number, branch, sha, job_name=""):
+    def get_specific_report_url(
+        self, pr_number, branch, sha, job_name="", workflow_name=""
+    ):
         from .settings import Settings
 
         if pr_number:
@@ -165,7 +167,8 @@ class Info:
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
-        res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?{ref_param}&sha={sha}&name_0={urllib.parse.quote(self.env.WORKFLOW_NAME, safe='')}"
+        workflow_name = workflow_name or self.env.WORKFLOW_NAME
+        res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?{ref_param}&sha={sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
         if job_name:
             res += f"&name_1={urllib.parse.quote(job_name, safe='')}"
         return res

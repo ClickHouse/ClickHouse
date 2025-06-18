@@ -211,6 +211,7 @@ def main():
 
     res = True
     results = []
+    debug_files = []
 
     Utils.add_to_PATH(f"{ch_path}:tests")
     CH = ClickHouseProc(
@@ -287,10 +288,11 @@ def main():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
             time.sleep(7)
             Shell.check("ps -ef | grep minio", verbose=True)
-            res = res and Shell.check(
-                "aws s3 ls s3://test --endpoint-url http://localhost:11111/",
-                verbose=True,
-            )
+            # TODO: sometimes fails with AWS errors, e.g.: Access denied, no such bucket; looks like a conflict with aws infra
+            # res = res and Shell.check(
+            #     "aws s3 ls s3://test --endpoint-url http://localhost:11111/",
+            #     verbose=True,
+            # )
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:
@@ -350,7 +352,9 @@ def main():
 
         if not info.is_local_run:
             CH.stop_log_exports()
-        results.append(FTResultsProcessor(wd=temp_dir).run())
+        ft_res_processor = FTResultsProcessor(wd=temp_dir)
+        results.append(ft_res_processor.run())
+        debug_files += ft_res_processor.debug_files
         test_result = results[-1]
 
         # invert result status for bugfix validation
@@ -408,7 +412,10 @@ def main():
         results[-1].results = CH.extra_tests_results
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=CH.logs, info=job_info
+        results=results,
+        stopwatch=stop_watch,
+        files=CH.logs + debug_files,
+        info=job_info,
     ).complete_job()
 
 

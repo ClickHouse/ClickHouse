@@ -97,7 +97,11 @@ class GH:
 
     @classmethod
     def post_updateable_comment(
-        cls, comment_tags_and_bodies: Dict[str, str], pr=None, repo=None
+        cls,
+        comment_tags_and_bodies: Dict[str, str],
+        pr=None,
+        repo=None,
+        only_update=False,
     ):
         if not repo:
             repo = _Environment.get().REPOSITORY
@@ -164,9 +168,14 @@ class GH:
             print(f"Update existing comments [{id_to_update}]")
             res = cls.do_command_with_retries(cmd)
         else:
-            cmd = f'gh pr comment {pr} --body "{body}"'
-            print(f"Create new comment")
-            res = cls.do_command_with_retries(cmd)
+            if not only_update:
+                cmd = f'gh pr comment {pr} --body "{body}"'
+                print(f"Create new comment")
+                res = cls.do_command_with_retries(cmd)
+            else:
+                print(
+                    f"WARNING: comment to update not found, tags [{[k for k in comment_tags_and_bodies.keys()]}]"
+                )
 
         return res
 
@@ -372,7 +381,9 @@ class GH:
 
             if self.failed_results:
                 if len(self.failed_results) > 15:
-                    body += f"    *15 failures out of {len(self.failed_results)} shown*:\n"
+                    body += (
+                        f"    *15 failures out of {len(self.failed_results)} shown*:\n"
+                    )
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"

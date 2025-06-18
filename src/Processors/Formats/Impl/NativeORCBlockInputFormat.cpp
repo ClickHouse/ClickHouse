@@ -43,6 +43,7 @@
 #    include <Common/Allocator.h>
 #    include <Common/logger_useful.h>
 #    include <Common/quoteString.h>
+#    include <Common/memory.h>
 
 #    include "ArrowBufferedStreams.h"
 
@@ -57,13 +58,26 @@ class MemoryPool : public orc::MemoryPool
 public:
     char * malloc(uint64_t size) override
     {
-        auto * ptr = ::malloc(size);
+        void * ptr = ::malloc(size);
+        if (ptr)
+        {
+            AllocationTrace trace;
+            size_t actual_size = Memory::trackMemory(size, trace);
+            trace.onAlloc(ptr, actual_size);
+        }
+
         /// For nullable columns some of the values will not be initialized.
         __msan_unpoison(ptr, size);
         return static_cast<char *>(ptr);
     }
 
-    void free(char * p) override { ::free(p); }
+    void free(char * ptr) override
+    {
+        AllocationTrace trace;
+        size_t actual_size = Memory::untrackMemory(ptr, trace);
+        trace.onFree(ptr, actual_size);
+        ::free(ptr);
+    }
 };
 
 }
