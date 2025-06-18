@@ -298,7 +298,7 @@ Chunk StorageObjectStorageSource::generate()
                     }
                 }
             }
-
+#if USE_PARQUET && USE_AWS_S3
             if (chunk_size && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
