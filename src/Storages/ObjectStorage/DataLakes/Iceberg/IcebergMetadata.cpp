@@ -293,7 +293,7 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
     /// NOTE you will be surprised, but some metadata files store compression not in the end of the file name,
     /// but somewhere in the middle of the file name, before metadata.json suffix.
     /// Maybe history of Iceberg metadata files is not so long, but it is already full of surprises.
-    /// Example of weird engineering descisions: 00000-85befd5a-69c7-46d4-bca6-cfbd67f0f7e6.gz.metadata.json
+    /// Example of weird engineering decisions: 00000-85befd5a-69c7-46d4-bca6-cfbd67f0f7e6.gz.metadata.json
     if (compression_method == CompressionMethod::None && path.ends_with(metadata_suffix))
         compression_method = chooseCompressionMethod(path.substr(0, path.size() - metadata_suffix.size()), "auto");
 
