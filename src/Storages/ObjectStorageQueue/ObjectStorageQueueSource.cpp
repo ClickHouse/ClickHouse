@@ -197,8 +197,10 @@ ObjectStorageQueueSource::FileIterator::next()
                 for (const auto & object_info : new_batch)
                     paths.push_back(Source::getUniqueStoragePathIdentifier(*configuration, *object_info, false));
 
+                /// Hive partition columns were not being used in ObjectStorageQueue before the refactoring from (virtual -> physical).
+                /// So we are keeping it the way it is for now
                 VirtualColumnUtils::filterByPathOrFile(
-                    new_batch, paths, filter_expr, virtual_columns, /* todo arthur */{}, getContext());
+                    new_batch, paths, filter_expr, virtual_columns, /* hive partition columns */{}, getContext());
 
                 LOG_TEST(log, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
             }
