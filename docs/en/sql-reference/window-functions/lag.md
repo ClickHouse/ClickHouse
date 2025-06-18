@@ -67,9 +67,7 @@ FROM stock_prices
 ORDER BY date DESC
 ```
 
-Result:
-
-```response
+```response title="Response"
    ┌───────date─┬──close─┬─previous_day_close─┬─delta─┬─percent_change─┐
 1. │ 2024-06-07 │ 120.89 │                121 │ -0.11 │          -0.09 │
 2. │ 2024-06-06 │    121 │             122.44 │ -1.44 │          -1.18 │
