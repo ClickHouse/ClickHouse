@@ -29,6 +29,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 #include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -1032,11 +1033,10 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 }
 
 
-void Connection::sendReadTaskResponse(const String & response)
+void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
-    writeStringBinary(response, *out);
+    response.serialize(*out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
     out->finishChunk();
     out->next();
 }

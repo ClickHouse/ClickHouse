@@ -14,6 +14,7 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
+
 class IDataLakeMetadata : boost::noncopyable
 {
 public:

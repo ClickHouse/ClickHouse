@@ -56,6 +56,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
+#include "Core/ProtocolDefines.h"
+#include "QueryPipeline/RemoteQueryExecutor.h"
 
 #include <Columns/ColumnSparse.h>
 
@@ -658,7 +660,7 @@ void TCPHandler::runImpl()
             customizeContext(query_state->query_context);
 
             /// This callback is needed for requesting read tasks inside pipeline for distributed processing
-            query_state->query_context->setReadTaskCallback([this, &query_state]() -> String
+            query_state->query_context->setClusterFunctionReadTaskCallback([this, &query_state]() -> ClusterFunctionReadTaskResponsePtr
             {
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
@@ -670,7 +672,9 @@ void TCPHandler::runImpl()
                 sendReadTaskRequest();
 
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
-                auto res = receiveReadTaskResponse(query_state.value());
+
+                auto res = receiveClusterFunctionReadTaskResponse(query_state.value());
+
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
                 return res;
@@ -1965,7 +1969,7 @@ void TCPHandler::processUnexpectedIgnoredPartUUIDs()
 }
 
 
-String TCPHandler::receiveReadTaskResponse(QueryState & state)
+ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskResponse(QueryState & state)
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1978,13 +1982,9 @@ String TCPHandler::receiveReadTaskResponse(QueryState & state)
 
         case Protocol::Client::ReadTaskResponse:
         {
-            UInt64 version = 0;
-            readVarUInt(version, *in);
-            if (version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
-                throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol version for distributed processing mismatched");
-            String response;
-            readStringBinary(response, *in);
-            return response;
+            auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
+            task->deserialize(*in);
+            return task;
         }
 
         default:

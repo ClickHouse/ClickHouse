@@ -1,6 +1,7 @@
 #pragma once
 #include <Common/re2.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -13,8 +14,6 @@ namespace DB
 {
 
 class SchemaCache;
-
-using ReadTaskCallback = std::function<String()>;
 
 class StorageObjectStorageSource : public SourceWithKeyCondition
 {
@@ -56,7 +55,7 @@ public:
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
-        const std::optional<ActionsDAG> & filter_actions_dag,
+        const ActionsDAG * filter_actions_dag,
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {},
@@ -73,6 +72,7 @@ public:
         const ObjectStoragePtr & object_storage,
         const ContextPtr & context_,
         const LoggerPtr & log);
+
 protected:
     const String name;
     ObjectStoragePtr object_storage;
@@ -151,15 +151,16 @@ protected:
 class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator
 {
 public:
-    ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
+    ReadTaskIterator(
+        const ClusterFunctionReadTaskCallback & callback_,
+        size_t max_threads_count);
 
     ObjectInfoPtr next(size_t) override;
 
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
-
-    ReadTaskCallback callback;
+    ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
     std::atomic_size_t index = 0;
 };

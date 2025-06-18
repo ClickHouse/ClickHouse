@@ -31,6 +31,7 @@ public:
 private:
     std::optional<DB::KeyCondition> key_condition;
     DB::KeyDescription partition_key;
+    const DB::Names partition_columns;
 };
 
 }
