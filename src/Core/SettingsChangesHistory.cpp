@@ -69,7 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.7",
         {
-
+            {"format_protobuf_schema_registry_url", "", "", "URL to read schema from confluent protobuf schema registry."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
