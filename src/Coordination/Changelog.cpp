@@ -1,7 +1,11 @@
+#include <chrono>
 #include <exception>
 #include <filesystem>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <ranges>
+#include <thread>
 #include <Coordination/Changelog.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperContext.h>
@@ -24,6 +28,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
+#include <IO/copyData.h>
 #include <libnuraft/log_val_type.hxx>
 #include <libnuraft/log_entry.hxx>
 #include <libnuraft/raft_server.hxx>
@@ -127,15 +132,9 @@ Checksum computeRecordChecksum(const ChangelogRecord & record)
 
 }
 
-/// Appendable log writer
-/// New file on disk will be created when:
-/// - we have already "rotation_interval" amount of logs in a single file
-/// - maximum log file size is reached
-/// At least 1 log record should be contained in each log
-class ChangelogWriter
-{
+class IChangelogWriter {
 public:
-    ChangelogWriter(
+    IChangelogWriter(
         std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
         LogEntryStorage & entry_storage_,
         KeeperContextPtr keeper_context_,
@@ -145,10 +144,420 @@ public:
         , log_file_settings(log_file_settings_)
         , keeper_context(std::move(keeper_context_))
         , log(getLogger("Changelog"))
+    {}
+
+    virtual void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode) = 0;
+    virtual bool isFileSet() const = 0;
+
+    virtual bool appendRecord(ChangelogRecord && record) = 0;
+    virtual void flush() = 0;
+    virtual void rotate(uint64_t new_start_log_index) = 0;
+
+    virtual uint64_t getStartIndex() const = 0;
+
+    virtual void finalize() = 0;
+
+    virtual ~IChangelogWriter() = default;
+
+protected:
+    std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs;
+    LogEntryStorage & entry_storage;
+
+    LogFileSettings log_file_settings;
+    KeeperContextPtr keeper_context;
+    LoggerPtr const log;
+
+    std::vector<std::pair<uint64_t, LogLocation>> unflushed_indices_with_log_location;
+    ChangelogFileDescriptionPtr current_file_description{nullptr};
+    std::optional<uint64_t> last_index_written;
+};
+
+class S3ChangelogWriter : public IChangelogWriter {
+public:
+    S3ChangelogWriter(
+        std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
+        LogEntryStorage & entry_storage_,
+        KeeperContextPtr keeper_context_,
+        LogFileSettings log_file_settings_,
+        std::mutex & writer_mutex_)
+        : IChangelogWriter(
+            existing_changelogs_,
+            entry_storage_,
+            keeper_context_,
+            log_file_settings_)
+        , s3_compaction_shutdown(false)
+        , s3_compaction_queue(std::numeric_limits<size_t>::max())
+        , writer_mutex(writer_mutex_)
+        , last_merged_index(0)
+    {
+        s3_compaction_thread = std::make_unique<ThreadFromGlobalPool>([this] { s3CompactionThread(); });
+    }
+
+    void setFile(ChangelogFileDescriptionPtr file_description, WriteMode) override {
+        if (current_file_description && last_index_written) {
+            flushImpl(*last_index_written + 1);
+        }
+
+        /* Initialize S3 write process */
+        current_file_description = std::make_shared<ChangelogFileDescription>();
+        current_file_description->prefix = file_description->prefix;
+        current_file_description->from_log_index = file_description->from_log_index;
+        current_file_description->to_log_index = file_description->to_log_index;
+        current_file_description->extension = file_description->extension;
+        current_file_description->disk = getDisk();
+        
+        auto s3_cur_path = formatChangelogPath(
+            current_file_description->prefix,
+            current_file_description->from_log_index,
+            current_file_description->to_log_index,
+            current_file_description->extension
+        );
+        current_file_description->path = s3_cur_path;
+        
+        write_buffer = getDisk()->writeFile(s3_cur_path);
+        last_index_written.reset();
+
+        LOG_TRACE(log, "Initialize S3 changelog file: {}", s3_cur_path);
+    }
+
+    bool isFileSet() const override {
+        return write_buffer != nullptr;
+    }
+
+    bool appendRecord(ChangelogRecord && record) override {
+        LOG_TRACE(log, "Writing to s3 buffer before {}", write_buffer->count());
+
+        auto current_position{write_buffer->count()};
+
+        auto & cur_write_buffer = *write_buffer;
+        writeIntBinary(computeRecordChecksum(record), cur_write_buffer);
+        writeIntBinary(record.header.version, cur_write_buffer);
+        writeIntBinary(record.header.index, cur_write_buffer);
+        writeIntBinary(record.header.term, cur_write_buffer);
+        writeIntBinary(record.header.value_type, cur_write_buffer);
+        writeIntBinary(record.header.blob_size, cur_write_buffer);
+
+        if (record.header.blob_size != 0) {
+            cur_write_buffer.write(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
+        }
+
+        unflushed_indices_with_log_location.emplace_back(
+            record.header.index,
+            LogLocation{
+                .file_description = current_file_description,
+                .position = current_position,
+                .entry_size = record.header.blob_size,
+                .size_in_file = write_buffer->count() - current_position
+        });
+
+        LOG_TRACE(log, "Writing to s3 buffer after {}", write_buffer->count());
+
+        last_index_written = record.header.index;
+
+        return true;
+    }
+
+    void flush() override {
+        /* Flushing from NuRaft */
+        chassert(last_index_written);
+        flushImpl(*last_index_written + 1);
+    }
+
+    void rotate(uint64_t new_start_log_index) override {
+        flushImpl(new_start_log_index);
+    }
+
+    uint64_t getStartIndex() const override {
+        assert(current_file_description);
+        return current_file_description->from_log_index;
+    }
+
+    void finalize() override {
+        LOG_TRACE(log, "Finalize S3 buffer");
+
+        flush();
+
+        if (write_buffer) {
+            write_buffer->cancel();
+            write_buffer.reset();
+        }
+    }
+
+    ~S3ChangelogWriter() override
+    {
+        if (s3_compaction_thread && s3_compaction_thread->joinable())
+        {
+            s3_compaction_shutdown = true;
+            if (!s3_compaction_queue.push(true))
+                LOG_WARNING(log, "Failed to push shutdown signal to S3 compaction queue");
+            s3_compaction_thread->join();
+        }
+
+        LOG_TRACE(log, "S3 changelogs map contents:");
+        for (const auto & [index, description] : existing_changelogs)
+        {
+            LOG_TRACE(log, "S3 changelog: index={}, path={}, from={}, to={}", 
+                index, description->path, description->from_log_index, description->to_log_index);
+        }
+    }
+
+private:
+    std::unique_ptr<WriteBufferFromFileBase> write_buffer;
+
+    std::unique_ptr<ThreadFromGlobalPool> s3_compaction_thread;
+    std::atomic<bool> s3_compaction_shutdown;
+    ConcurrentBoundedQueue<bool> s3_compaction_queue;
+    std::mutex & writer_mutex; /* Reference to the writer_mutex from Changelog */
+    uint64_t last_merged_index;
+
+    void s3CompactionThread()
+    {
+        LOG_INFO(log, "S3 compaction thread started");
+
+        bool dummy;
+        while (!s3_compaction_shutdown && s3_compaction_queue.pop(dummy))
+        {
+            std::vector<ChangelogFileDescriptionPtr> to_merge;
+            std::vector<ChangelogFileDescriptionPtr> to_remove;
+            ChangelogFileDescriptionPtr merged_changelog;
+
+            std::lock_guard<std::mutex> lock(writer_mutex);
+            {
+
+                if (existing_changelogs.empty())
+                    continue;
+                
+                // Find the first changelog after last_merged_index
+                auto it = existing_changelogs.upper_bound(last_merged_index);
+                if (it == existing_changelogs.end())
+                    continue;
+
+                uint64_t current_from_index = it->second->from_log_index;
+                uint64_t current_to_index = it->second->to_log_index;
+                
+                // Check if current file already has enough entries
+                if (current_to_index - current_from_index + 1 >= log_file_settings.rotate_interval)
+                {
+                    last_merged_index = current_to_index;
+                    continue;
+                }
+                
+                to_merge.push_back(it->second);
+
+                ++it;
+                while (it != existing_changelogs.end())
+                {
+                    auto next_changelog = it->second;
+                    
+                    if (next_changelog->from_log_index == current_to_index + 1)
+                    {
+                        // Sequential, can merge
+                        to_merge.push_back(next_changelog);
+                        current_to_index = next_changelog->to_log_index;
+                        
+                        // If we have enough entries, stop
+                        if (current_to_index - current_from_index >= log_file_settings.rotate_interval)
+                            break;
+                    }
+                    else
+                    {
+                        // Not sequential, stop merging
+                        break;
+                    }
+                    
+                    ++it;
+                }
+
+                // Only proceed if we found multiple changelogs to merge
+                if (to_merge.size() <= 1)
+                    continue;
+
+                // Create a new changelog description for the merged file
+                merged_changelog = std::make_shared<ChangelogFileDescription>();
+                merged_changelog->prefix = to_merge.front()->prefix;
+                merged_changelog->from_log_index = to_merge.front()->from_log_index;
+                merged_changelog->to_log_index = to_merge.back()->to_log_index;
+                merged_changelog->extension = to_merge.front()->extension;
+                merged_changelog->disk = getDisk();
+
+                merged_changelog->path = formatChangelogPath(
+                    merged_changelog->prefix,
+                    merged_changelog->from_log_index,
+                    merged_changelog->to_log_index,
+                    merged_changelog->extension);
+
+                LOG_INFO(log, "Merging {} S3 changelogs into range [{}, {}]", 
+                    to_merge.size(), merged_changelog->from_log_index, merged_changelog->to_log_index);
+
+                to_remove = to_merge;
+            }
+
+            if (!merged_changelog)
+                continue;
+
+            try 
+            {
+                // Create the merged file
+                auto new_file = getDisk()->writeFile(merged_changelog->path);
+
+                // Copy all data from the source files to the new file
+                for (const auto & changelog : to_merge)
+                {
+                    auto reader = changelog->disk->readFile(changelog->path, getReadSettings());
+                    copyData(*reader, *new_file);
+                }
+
+                new_file->sync();
+                new_file->finalize();
+
+                // Remove the old changelogs
+                for (const auto & changelog : to_remove)
+                {
+                    LOG_INFO(log, "Removing merged S3 changelog: {}", changelog->path);
+                    existing_changelogs.erase(changelog->from_log_index);
+                    
+                    try
+                    {
+                        changelog->disk->removeFile(changelog->path);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format("Failed to remove merged S3 changelog: {}", changelog->path));
+                    }
+                }
+
+                existing_changelogs[merged_changelog->from_log_index] = merged_changelog;
+
+                last_merged_index = merged_changelog->to_log_index;
+                LOG_INFO(log, "Successfully merged {} S3 changelogs", to_merge.size());
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Error while merging S3 changelogs");
+            }
+        }
+
+        LOG_INFO(log, "S3 compaction thread stopped");
+    }
+
+    void triggerS3Compaction()
+    {
+        if (!s3_compaction_queue.push(true))
+            LOG_WARNING(log, "Failed to push to S3 compaction queue, queue might be full or shutdown");
+    }
+
+    DiskPtr getDisk() const {
+        return keeper_context->getDisk("some_s3_plain");
+    }
+
+    void flushImpl(uint64_t new_start_log_index) {
+        /* Check if nothing was appended */
+        if (current_file_description && last_index_written) {
+            if (current_file_description->from_log_index > *last_index_written) {
+                LOG_TRACE(log, "Close s3 writing buffer");
+
+                existing_changelogs.erase(current_file_description->from_log_index);
+                return;
+            }
+
+            /* Flushing buffer, moving file */
+            LOG_TRACE(log, "Flushing s3 buffer {}", write_buffer->count());
+    
+            auto new_path = formatChangelogPath(
+                current_file_description->prefix,
+                current_file_description->from_log_index,
+                *last_index_written,
+                current_file_description->extension);
+
+            LOG_TRACE(log, "Writing s3 buffer old path: {} new path: {}", current_file_description->path, new_path);
+
+            if (current_file_description->path != new_path)
+            {
+                try
+                {
+                    auto prev_reader{ReadBufferFromMemory(write_buffer->buffer().begin(), write_buffer->count())};
+                    auto prev_writer = getDisk()->writeFile(new_path);
+                    copyData(prev_reader, *prev_writer);
+
+                    prev_writer->sync();
+                    prev_writer->finalize();
+    
+                    write_buffer->cancel();
+
+                    current_file_description->path = new_path;
+                    current_file_description->to_log_index = *last_index_written;
+
+                    existing_changelogs[current_file_description->from_log_index] = current_file_description;
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("File rename failed on disk {}", getDisk()->getName()));
+                }
+            }
+            else
+            {
+                write_buffer->sync();
+                write_buffer->finalize();
+
+                existing_changelogs[current_file_description->from_log_index] = current_file_description;
+            }
+
+            /* Add logs locations to log storage */
+            entry_storage.addLogLocations(std::move(unflushed_indices_with_log_location));
+            unflushed_indices_with_log_location.clear();
+        } else {
+            LOG_WARNING(log, "Try to flush with empty state");
+        }
+
+        auto new_s3_description = std::make_shared<ChangelogFileDescription>();
+        new_s3_description->prefix = DEFAULT_PREFIX;
+        new_s3_description->from_log_index = new_start_log_index;
+        new_s3_description->to_log_index = new_s3_description->from_log_index + log_file_settings.rotate_interval - 1;
+        new_s3_description->extension = "bin";
+        new_s3_description->disk = getDisk();
+
+        auto s3_cur_path = formatChangelogPath(
+            new_s3_description->prefix,
+            new_s3_description->from_log_index,
+            new_s3_description->to_log_index,
+            new_s3_description->extension);
+
+        new_s3_description->path = s3_cur_path;
+        current_file_description = new_s3_description;
+
+        LOG_TRACE(log, "Open new s3 buffer with path {}", s3_cur_path);
+        write_buffer = getDisk()->writeFile(s3_cur_path);
+
+        /* Trigger S3 compaction after creating a new file */
+        if (!(existing_changelogs.size() % log_file_settings.rotate_interval)) {
+            triggerS3Compaction();
+        }
+    }
+};
+
+/// Appendable log writer
+/// New file on disk will be created when:
+/// - we have already "rotation_interval" amount of logs in a single file
+/// - maximum log file size is reached
+/// At least 1 log record should be contained in each log
+class ChangelogWriter : public IChangelogWriter
+{
+public:
+    ChangelogWriter(
+        std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
+        LogEntryStorage & entry_storage_,
+        KeeperContextPtr keeper_context_,
+        LogFileSettings log_file_settings_)
+        : IChangelogWriter(
+            existing_changelogs_,
+            entry_storage_,
+            keeper_context_,
+            log_file_settings_
+        )
     {
     }
 
-    void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode)
+    void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode) override
     {
         auto disk = getDisk();
 
@@ -240,9 +649,9 @@ public:
     }
 
     /// There is bug when compressed_buffer has value, file_buf's ownership transfer to compressed_buffer
-    bool isFileSet() const { return compressed_buffer != nullptr || file_buf != nullptr; }
+    bool isFileSet() const override { return compressed_buffer != nullptr || file_buf != nullptr; }
 
-    bool appendRecord(ChangelogRecord && record)
+    bool appendRecord(ChangelogRecord && record) override
     {
         const auto * file_buffer = tryGetFileBaseBuffer();
         chassert(file_buffer && current_file_description);
@@ -310,7 +719,7 @@ public:
         return true;
     }
 
-    void flush()
+    void flush() override
     {
         auto * file_buffer = tryGetFileBaseBuffer();
         if (file_buffer)
@@ -325,13 +734,13 @@ public:
         unflushed_indices_with_log_location.clear();
     }
 
-    uint64_t getStartIndex() const
+    uint64_t getStartIndex() const override
     {
         chassert(current_file_description);
         return current_file_description->from_log_index;
     }
 
-    void rotate(uint64_t new_start_log_index)
+    void rotate(uint64_t new_start_log_index) override
     {
         /// Start new one
         auto new_description = std::make_shared<ChangelogFileDescription>();
@@ -356,7 +765,7 @@ public:
         setFile(it->second, WriteMode::Rewrite);
     }
 
-    void finalize()
+    void finalize() override
     {
         if (isFileSet() && prealloc_done)
             finalizeCurrentFile();
@@ -496,26 +905,12 @@ private:
 
     bool isLocalDisk() const { return dynamic_cast<DiskLocal *>(getDisk().get()) != nullptr; }
 
-    std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs;
-
-    LogEntryStorage & entry_storage;
-
-    std::vector<std::pair<uint64_t, LogLocation>> unflushed_indices_with_log_location;
-
-    ChangelogFileDescriptionPtr current_file_description{nullptr};
     std::unique_ptr<WriteBufferFromFileBase> file_buf;
-    std::optional<uint64_t> last_index_written;
     size_t initial_file_size{0};
 
     std::unique_ptr<ZstdDeflatingAppendableWriteBuffer> compressed_buffer;
 
     bool prealloc_done{false};
-
-    LogFileSettings log_file_settings;
-
-    KeeperContextPtr keeper_context;
-
-    LoggerPtr const log;
 };
 
 namespace
@@ -1684,10 +2079,11 @@ Changelog::Changelog(
         for (const auto & disk : keeper_context->getOldLogDisks())
             load_from_disk(disk);
 
-        auto disk = getDisk();
+        auto disk = (keeper_context->isS3ExperimentalChangelog()) ? getS3LogDisk() : getDisk();
+
         load_from_disk(disk);
 
-        auto latest_log_disk = getLatestLogDisk();
+        auto latest_log_disk = (keeper_context->isS3ExperimentalChangelog()) ? getS3LogDisk() : getLatestLogDisk();
         if (disk != latest_log_disk)
             load_from_disk(latest_log_disk);
 
@@ -1700,7 +2096,11 @@ Changelog::Changelog(
 
         append_completion_thread = std::make_unique<ThreadFromGlobalPool>([this] { appendCompletionThread(); });
 
-        current_writer = std::make_unique<ChangelogWriter>(existing_changelogs, entry_storage, keeper_context, log_file_settings);
+        if (keeper_context->isS3ExperimentalChangelog()) {
+            current_writer = std::make_unique<S3ChangelogWriter>(existing_changelogs, entry_storage, keeper_context, log_file_settings, writer_mutex);
+        } else {
+            current_writer = std::make_unique<ChangelogWriter>(existing_changelogs, entry_storage, keeper_context, log_file_settings);
+        }
     }
     catch (...)
     {
@@ -1808,7 +2208,7 @@ try
         auto latest_log_disk = getLatestLogDisk();
         auto disk = getDisk();
 
-        if (latest_log_disk != disk && latest_log_disk == description->disk)
+        if (latest_log_disk != disk && latest_log_disk == description->disk && !keeper_context->isS3ExperimentalChangelog())
             moveChangelogBetweenDisks(latest_log_disk, description, disk, description->path, keeper_context);
     };
 
@@ -1951,6 +2351,10 @@ DiskPtr Changelog::getLatestLogDisk() const
     return keeper_context->getLatestLogDisk();
 }
 
+DiskPtr Changelog::getS3LogDisk() const {
+    return keeper_context->getDisk("some_s3_plain");
+}
+
 void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
 {
     auto disk = getDisk();
@@ -2046,12 +2450,38 @@ void Changelog::appendCompletionThread()
     }
 }
 
+namespace {
+    class Timer {
+    public:
+        void start() {
+            start_time = std::chrono::high_resolution_clock::now();
+        }
+
+        void reload() {
+            start();
+        }
+
+        int64_t elapsedMs() const {
+            auto current = std::chrono::high_resolution_clock::now();
+            return std::chrono::duration_cast<std::chrono::milliseconds>(
+                current - start_time).count();
+        }
+
+    private:
+        std::chrono::time_point<
+            std::chrono::high_resolution_clock
+        > start_time;
+    };
+}
+
 void Changelog::writeThread()
 {
     WriteOperation write_operation;
     bool batch_append_ok = true;
     size_t pending_appends = 0;
     bool try_batch_flush = false;
+    Timer timer;
+    timer.start();
 
     const auto flush_logs = [&](const auto & flush)
     {
@@ -2068,6 +2498,7 @@ void Changelog::writeThread()
         }
 
         pending_appends = 0;
+        timer.reload();
     };
 
     const auto notify_append_completion = [&]
@@ -2091,19 +2522,26 @@ void Changelog::writeThread()
         {
             if (try_batch_flush)
             {
-                try_batch_flush = false;
+                // try_batch_flush = false;
+
                 /// we have Flush request stored in write operation
                 /// but we try to get new append operations
                 /// if there are none, we apply the currently set Flush
                 chassert(std::holds_alternative<Flush>(write_operation));
                 if (!write_operations.tryPop(write_operation))
                 {
+                    if (timer.elapsedMs() < keeper_context->getS3FlushInterval()) {
+                        continue;
+                    }
                     chassert(batch_append_ok);
                     const auto & flush = std::get<Flush>(write_operation);
                     flush_logs(flush);
                     notify_append_completion();
+                    try_batch_flush = false;
                     if (!write_operations.pop(write_operation))
                         break;
+                } else {
+                    try_batch_flush = false;
                 }
             }
             else if (!write_operations.pop(write_operation))
@@ -2115,6 +2553,8 @@ void Changelog::writeThread()
 
             if (auto * append_log = std::get_if<AppendLog>(&write_operation))
             {
+                LOG_TEST(log, "Current append {}", append_log->index);
+
                 if (!batch_append_ok)
                     continue;
 
@@ -2128,11 +2568,16 @@ void Changelog::writeThread()
             {
                 const auto & flush = std::get<Flush>(write_operation);
 
+                LOG_TEST(log, "Current flush {}", flush.index);
+
+                LOG_DEBUG(log, "Get flush: {}", flush.index);
+
                 if (batch_append_ok)
                 {
                     /// we can try batching more logs for flush
                     if (pending_appends < flush_settings.max_flush_batch_size)
                     {
+                        LOG_DEBUG(log, "Try to continue batching");
                         try_batch_flush = true;
                         continue;
                     }
@@ -2395,6 +2840,9 @@ uint64_t Changelog::termAt(uint64_t index) const
 
 bool Changelog::flush()
 {
+    LOG_DEBUG(log, "Try to flush: {}", std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    std::cerr << "Try to flush " << std::this_thread::get_id() << std::endl;
+
     if (auto failed_ptr = flushAsync())
     {
         std::unique_lock lock{durable_idx_mutex};
@@ -2403,7 +2851,7 @@ bool Changelog::flush()
         return !*failed_ptr;
     }
 
-    // if we are shutting down let's return true to avoid abort inside NuRaft
+    // if we are shutting down let's return true toFlushing 4 logs avoid abort inside NuRaft
     // this can only happen when the config change is appended so no data loss should happen
     return true;
 }

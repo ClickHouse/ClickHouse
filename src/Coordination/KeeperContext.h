@@ -1,6 +1,7 @@
 #pragma once
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include "base/types.h"
 #include <IO/WriteBufferFromString.h>
 #include <base/defines.h>
 
@@ -111,6 +112,9 @@ public:
     }
 
     bool isOperationSupported(Coordination::OpNum operation) const;
+    bool isS3ExperimentalChangelog() const;
+    Int64 getS3FlushInterval() const;
+
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -123,7 +127,9 @@ private:
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
 
+public:
     DiskPtr getDisk(const Storage & storage) const;
+private:
 
     std::mutex local_logs_preprocessed_cv_mutex;
     std::condition_variable local_logs_preprocessed_cv;
@@ -138,6 +144,8 @@ private:
     bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
+    bool s3_experimental_changelog{false};
+    Int64 s3_flush_interval;
 
     std::shared_ptr<DiskSelector> disk_selector;
 
