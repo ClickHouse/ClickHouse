@@ -2032,7 +2032,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                 break;
             }
         }
-        if (has_date_cols || rg.nextMediumNumber() < 6)
+        if (has_date_cols || rg.nextSmallNumber() < 7)
         {
             generateNextTTL(rg, next, te, te->mutable_ttl_expr());
         }
