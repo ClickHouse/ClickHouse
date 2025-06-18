@@ -208,6 +208,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
+        filter_node->step->setStepDescription(filter_step->getStepDescription());
     }
     else
     {
