@@ -1048,6 +1048,9 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
         }
         prev_table_dropped_locally = false;
 
+        /// Without this, clang-tidy-19 says "Value stored to 'prev_table_dropped_locally' is never read" about the line above.
+        volatile bool clang_tidy_workaround = prev_table_dropped_locally;
+
         if (coordination.coordinated)
         {
             std::lock_guard lock(replica_sync_mutex);
@@ -1090,7 +1093,7 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
     if (prev_table_dropped_locally)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", storage_id.getFullNameNotQuoted());
     else
-        std::rethrow_exception(std::move(exception));
+        std::rethrow_exception(exception);
 }
 
 std::chrono::system_clock::time_point RefreshTask::currentTime() const
