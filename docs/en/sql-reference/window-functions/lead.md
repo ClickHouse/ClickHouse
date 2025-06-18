@@ -42,7 +42,7 @@ AS SELECT *
 FROM file('nobel_laureates_data.csv');
 ```
 
-```sql
+```sql title="Query"
 SELECT
     fullName,
     lead(year, 1, year) OVER (PARTITION BY category ORDER BY year ASC
