@@ -1,3 +1,5 @@
+set allow_experimental_analyzer = 1;
+
 CREATE TABLE t0 (c0 Int, c1 Int ALIAS 1) ENGINE = Memory;
 CREATE TABLE t0__fuzz_42 (`c0` Array(Nullable(UInt32)), `c1` IPv4 ALIAS 1) ENGINE = Memory;
 SELECT c0 FROM remote('localhost', currentDatabase(), 't0') AS tx INNER JOIN t0__fuzz_42 USING (c1); -- { serverError NOT_IMPLEMENTED }
