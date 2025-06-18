@@ -614,7 +614,7 @@ void HTTPHandler::processQuery(
         context,
         set_query_result,
         QueryFlags{},
-        {},
+        /*output_format_settings*/ {},
         handle_exception_in_output_format,
         query_finish_callback);
 }
