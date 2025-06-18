@@ -19,7 +19,7 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/searchAnyAll.h>
+#include <Functions/text/searchAnyAll.h>
 #include <Core/Field.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <base/types.h>
