@@ -2256,7 +2256,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     for (auto & detached_part_info : detached_parts)
     {
         chassert(rename_parts.old_and_new_names.empty());
-        rename_parts.addPart(detached_part_info.dir_name, "attaching_" + detached_part_info.dir_name, detached_part_info.disk);
+        rename_parts.addPart(detached_part_info.getPartNameV1(), detached_part_info.dir_name, "attaching_" + detached_part_info.dir_name, detached_part_info.disk);
 
         try
         {
@@ -2270,7 +2270,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
         }
 
         const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
-        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_name, getReadSettings())
+        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_dir, getReadSettings())
             .withPartFormatFromDisk()
             .build();
 
@@ -2292,7 +2292,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
                 try
                 {
                     part->renameToDetached("broken", /* ignore_error*/ false);
-                    rename_parts.old_and_new_names.front().old_name.clear();
+                    rename_parts.old_and_new_names.front().old_dir.clear();
                 }
                 catch (...)
                 {
@@ -2379,7 +2379,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
 
             chassert(renamed_parts.renamed && renamed_parts.old_and_new_names.size() == 1);
-            renamed_parts.old_and_new_names.front().old_name.clear();
+            renamed_parts.old_and_new_names.front().old_dir.clear();
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
