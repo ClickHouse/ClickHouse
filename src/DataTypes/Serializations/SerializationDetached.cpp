@@ -8,32 +8,6 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
-namespace
-{
-
-struct DisableCompressionInScope
-{
-    explicit DisableCompressionInScope(DB::WriteBuffer & buffer_)
-        : buffer(buffer_)
-    {
-        if (auto * compressed_buf = typeid_cast<DB::CompressedWriteBuffer *>(&buffer))
-        {
-            original_codec = compressed_buf->getCodec();
-            compressed_buf->setCodec(DB::CompressionCodecFactory::instance().get("NONE"));
-        }
-    }
-
-    ~DisableCompressionInScope()
-    {
-        if (auto * compressed_buf = typeid_cast<DB::CompressedWriteBuffer *>(&buffer))
-            compressed_buf->setCodec(original_codec);
-    }
-
-    DB::WriteBuffer & buffer;
-    DB::CompressionCodecPtr original_codec;
-};
-}
-
 namespace DB
 {
 namespace ErrorCodes
@@ -48,11 +22,19 @@ SerializationDetached::SerializationDetached(const SerializationPtr & nested_) :
 void SerializationDetached::serializeBinaryBulk(
     const IColumn & column, WriteBuffer & ostr, [[maybe_unused]] size_t offset, [[maybe_unused]] size_t limit) const
 {
-    DisableCompressionInScope codec_switcher(ostr);
+    DB::CompressionCodecPtr original_codec;
+    if (auto * compressed_buf = typeid_cast<DB::CompressedWriteBuffer *>(&ostr))
+    {
+        original_codec = compressed_buf->getCodec();
+        compressed_buf->setCodec(DB::CompressionCodecFactory::instance().get("NONE"));
+    }
 
     const auto & blob = typeid_cast<const ColumnBLOB &>(column).getBLOB();
     writeVarUInt(blob.size(), ostr);
     ostr.write(blob.data(), blob.size());
+
+    if (auto * compressed_buf = typeid_cast<DB::CompressedWriteBuffer *>(&ostr))
+        compressed_buf->setCodec(original_codec);
 }
 
 void SerializationDetached::deserializeBinaryBulk(
