@@ -4085,7 +4085,7 @@ CONV_FN(AlterItem, alter)
     switch (alter.alter_oneof_case())
     {
         case AlterType::kDel:
-            ret += "DELETE ";
+            ret += "DELETE";
             DeleteToString(ret, alter.del());
             break;
         case AlterType::kUpdate:
