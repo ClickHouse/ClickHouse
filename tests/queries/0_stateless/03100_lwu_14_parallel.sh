@@ -23,6 +23,13 @@ function wait_for_block_allocated()
     done
 }
 
+failpoint_name="rmt_lightweight_update_sleep_after_block_allocation"
+storage_policy="SELECT value FROM system.merge_tree_settings WHERE name = 'storage_policy'"
+
+if [[ "$storage_policy" == "s3_with_keeper" ]]; then
+    failpoint_name="smt_lightweight_update_sleep_after_block_allocation"
+fi
+
 function run()
 {
     mode=$1
@@ -43,7 +50,7 @@ function run()
 
     $CLICKHOUSE_CLIENT --query "
         SET allow_experimental_lightweight_update = 1;
-        SYSTEM ENABLE FAILPOINT smt_lightweight_update_sleep_after_block_allocation;
+        SYSTEM ENABLE FAILPOINT $failpoint_name;
         UPDATE t_lwu_parallel SET s = 'xx' WHERE id = 2 SETTINGS update_parallel_mode = '$mode';
     " &
 

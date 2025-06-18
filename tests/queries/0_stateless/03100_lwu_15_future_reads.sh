@@ -6,6 +6,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+failpoint_name="rmt_lightweight_update_sleep_after_block_allocation"
+storage_policy="SELECT value FROM system.merge_tree_settings WHERE name = 'storage_policy'"
+
+if [[ "$storage_policy" == "s3_with_keeper" ]]; then
+    failpoint_name="smt_lightweight_update_sleep_after_block_allocation"
+fi
+
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_lwu_future_reads SYNC;
 
@@ -17,7 +24,7 @@ $CLICKHOUSE_CLIENT --query "
         enable_block_offset_column = 1;
 
     INSERT INTO t_lwu_future_reads SELECT number, number FROM numbers(1000);
-    SYSTEM ENABLE FAILPOINT smt_lightweight_update_sleep_after_block_allocation;
+    SYSTEM ENABLE FAILPOINT $failpoint_name;
 "
 
 $CLICKHOUSE_CLIENT --query "

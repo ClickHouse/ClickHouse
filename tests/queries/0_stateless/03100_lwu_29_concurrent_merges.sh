@@ -39,9 +39,16 @@ $CLICKHOUSE_CLIENT --query "
     UPDATE t_lwu_block_number SET s = 'foo' WHERE id = 1;
 "
 
+failpoint_name="rmt_merge_task_sleep_in_prepare"
+storage_policy="SELECT value FROM system.merge_tree_settings WHERE name = 'storage_policy'"
+
+if [[ "$storage_policy" == "s3_with_keeper" ]]; then
+    failpoint_name="smt_merge_task_sleep_in_prepare"
+fi
+
 $CLICKHOUSE_CLIENT --query "
     SET optimize_throw_if_noop = 1;
-    SYSTEM ENABLE FAILPOINT smt_merge_task_sleep_in_prepare;
+    SYSTEM ENABLE FAILPOINT $failpoint_name;
     OPTIMIZE TABLE t_lwu_block_number PARTITION ID 'all' FINAL;
 " &
 

@@ -23,6 +23,13 @@ function wait_for_block_allocated()
     done
 }
 
+failpoint_name="rmt_lightweight_update_sleep_after_block_allocation"
+storage_policy="SELECT value FROM system.merge_tree_settings WHERE name = 'storage_policy'"
+
+if [[ "$storage_policy" == "s3_with_keeper" ]]; then
+    failpoint_name="smt_lightweight_update_sleep_after_block_allocation"
+fi
+
 $CLICKHOUSE_CLIENT --query "
     SET insert_keeper_fault_injection_probability = 0.0;
     SET allow_experimental_lightweight_update = 1;
@@ -34,7 +41,7 @@ $CLICKHOUSE_CLIENT --query "
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 
     INSERT INTO t_lwu_on_fly SELECT number, number FROM numbers(1000);
-    SYSTEM ENABLE FAILPOINT smt_lightweight_update_sleep_after_block_allocation;
+    SYSTEM ENABLE FAILPOINT $failpoint_name;
 "
 
 $CLICKHOUSE_CLIENT --query "
