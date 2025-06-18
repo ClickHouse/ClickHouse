@@ -119,19 +119,25 @@ using Row = std::vector<Field>;
 
 /// Returns true if merge result is not empty
 static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
-                     std::vector<ColumnPtr> & row, const ColumnRawPtrs & raw_columns, size_t row_number)
+                     Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_number)
 {
     /// Strongly non-optimal.
-    Row left(row.size());
-    for (size_t i = 0; i != row.size(); ++i)
-        left[i] = (*row[i])[0];
+    Row & left = row;
     Row right(left.size());
 
     for (size_t col_num : desc.key_col_nums)
+    {
+        if (row_columns[col_num])
+            left[col_num] = (*row_columns[col_num])[0];
         right[col_num] = (*raw_columns[col_num])[row_number].template safeGet<Array>();
+    }
 
     for (size_t col_num : desc.val_col_nums)
+    {
+        if (row_columns[col_num])
+            left[col_num] = (*row_columns[col_num])[0];
         right[col_num] = (*raw_columns[col_num])[row_number].template safeGet<Array>();
+    }
 
     auto at_ith_column_jth_row = [&](const Row & matrix, size_t i, size_t j) -> const Field &
     {
@@ -183,31 +189,34 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
     merge(right);
 
     for (size_t col_num : desc.key_col_nums)
-        left[col_num] = Array(merged.size());
+        row[col_num] = Array(merged.size());
     for (size_t col_num : desc.val_col_nums)
-        left[col_num] = Array(merged.size());
+        row[col_num] = Array(merged.size());
 
     size_t row_num = 0;
     for (const auto & key_value : merged)
     {
         for (size_t col_num_index = 0, size = desc.key_col_nums.size(); col_num_index < size; ++col_num_index)
-            left[desc.key_col_nums[col_num_index]].safeGet<Array>()[row_num] = key_value.first[col_num_index];
+            row[desc.key_col_nums[col_num_index]].safeGet<Array>()[row_num] = key_value.first[col_num_index];
 
         for (size_t col_num_index = 0, size = desc.val_col_nums.size(); col_num_index < size; ++col_num_index)
-            left[desc.val_col_nums[col_num_index]].safeGet<Array>()[row_num] = key_value.second[col_num_index];
+            row[desc.val_col_nums[col_num_index]].safeGet<Array>()[row_num] = key_value.second[col_num_index];
 
         ++row_num;
     }
 
-    /// Update values for key and value columns.
+    /// Update values for key and value columns that should be stored as IColumn instead of Field.
     /// We are using IColumn instead of Field to keep values of non-aggregated columns correct
     /// for types that doesn't work well with getting/inserting Fields (like Variant/Dynamic/JSON).
     auto update_column_value_in_row = [&](size_t col_num, Field value)
     {
-        auto new_column = row[col_num]->cloneEmpty();
-        new_column->reserve(1);
-        new_column->insert(value);
-        row[col_num] = std::move(new_column);
+        if (row_columns[col_num])
+        {
+            auto new_column = row_columns[col_num]->cloneEmpty();
+            new_column->reserve(1);
+            new_column->insert(value);
+            row_columns[col_num] = std::move(new_column);
+        }
     };
 
     for (size_t col_num : desc.key_col_nums)
@@ -459,17 +468,26 @@ static void postprocessChunk(
     chunk.setColumns(std::move(res_columns), num_rows);
 }
 
-static void setRow(std::vector<ColumnPtr> & row, const ColumnRawPtrs & raw_columns, size_t row_num, const Names & column_names)
+static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num, const Names & column_names)
 {
     size_t num_columns = row.size();
     for (size_t i = 0; i < num_columns; ++i)
     {
         try
         {
-            auto column = raw_columns[i]->cloneEmpty();
-            column->reserve(1);
-            column->insertFrom(*raw_columns[i], row_num);
-            row[i] = std::move(column);
+            /// For some types like Dynamic/JSON doesn't work with Field well.
+            /// For them we store values inside the IColumn.
+            if (raw_columns[i]->hasDynamicStructure())
+            {
+                auto column = raw_columns[i]->cloneEmpty();
+                column->reserve(1);
+                column->insertFrom(*raw_columns[i], row_num);
+                row_columns[i] = std::move(column);
+            }
+            else
+            {
+                raw_columns[i]->get(row_num, row[i]);
+            }
         }
         catch (...)
         {
@@ -527,6 +545,7 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
     columns = std::move(new_columns);
 
     current_row.resize(def.column_names.size());
+    current_row_columns.resize(def.column_names.size());
     initAggregateDescription();
 
     /// Just to make startGroup() simpler.
@@ -541,7 +560,7 @@ void SummingSortedAlgorithm::SummingMergedData::startGroup(ColumnRawPtrs & raw_c
 {
     is_group_started = true;
 
-    setRow(current_row, raw_columns, row, def.column_names);
+    setRow(current_row, current_row_columns, raw_columns, row, def.column_names);
 
     /// Reset aggregation states for next row
     for (auto & desc : def.columns_to_aggregate)
@@ -633,7 +652,10 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
     size_t next_column = columns.size() - def.column_numbers_not_to_aggregate.size();
     for (auto column_number : def.column_numbers_not_to_aggregate)
     {
-        columns[next_column]->insertFrom(*current_row[column_number], 0);
+        if (current_row_columns[column_number])
+            columns[next_column]->insertFrom(*current_row_columns[column_number], 0);
+        else
+            columns[next_column]->insert(current_row[column_number]);
         ++next_column;
     }
 
@@ -646,7 +668,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRow(ColumnRawPtrs & raw_colum
 {
     // Merge maps only for same rows
     for (const auto & desc : def.maps_to_sum)
-        if (mergeMap(desc, current_row, raw_columns, row))
+        if (mergeMap(desc, current_row, current_row_columns, raw_columns, row))
             current_row_is_zero = false;
 
     addRowImpl(raw_columns, row);
