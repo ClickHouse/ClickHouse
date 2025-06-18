@@ -1,4 +1,3 @@
-#include "Common/logger_useful.h"
 #include <Common/ZooKeeper/Types.h>
 #include "Access/IAccessEntity.h"
 

@@ -342,6 +342,7 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
     {
         for (size_t patch_row = patch_begin; patch_row < patch_end; ++patch_row)
         {
+            chassert(patch_offset_data[patch_row] >= first_result_offset);
             size_t result_row = patch_offset_data[patch_row] - first_result_offset;
 
             patch_to_apply->patch_indices.push_back(patch_row);

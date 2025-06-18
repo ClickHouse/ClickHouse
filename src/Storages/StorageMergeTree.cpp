@@ -2185,7 +2185,6 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             auto operation_data_parts_lock = lockOperationsWithParts();
 
             DataPartsVector parts;
-            auto all_partitions = getAllPartitionIds();
 
             if (partition_ast && partition_ast->all)
             {

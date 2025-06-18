@@ -675,7 +675,6 @@ static ColumnPtr updateFrom(const Derived & dst, const IColumn::Patch & patch)
 
     res_typed.insertRangeFrom(dst, current_row, dst.size() - current_row);
     return res;
-
 }
 
 template <bool one_source, typename Derived>

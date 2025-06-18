@@ -40,7 +40,6 @@ static String getColumnsHash(Names column_names)
 
 StorageMetadataPtr getPatchPartMetadata(Block sample_block, ContextPtr local_context)
 {
-
     ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
     return getPatchPartMetadata(std::move(columns_desc), local_context);
 }
@@ -106,7 +105,6 @@ bool isPatchPartSystemColumn(const String & column_name)
     static const NameSet system_columns_set = getPatchPartSystemColumns().getNameSet();
     return system_columns_set.contains(column_name);
 }
-
 
 std::pair<UInt64, UInt64> getPartNameRange(const ColumnLowCardinality & part_name_column, const String & part_name)
 {

@@ -154,8 +154,6 @@ namespace ProfileEvents
     extern const Event LoadedDataPartsMicroseconds;
     extern const Event RestorePartsSkippedFiles;
     extern const Event RestorePartsSkippedBytes;
-    extern const Event IgnoredColdParts;
-    extern const Event PreferredWarmedUnmergedParts;
 }
 
 namespace CurrentMetrics
@@ -9236,6 +9234,7 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     MutationsInterpreter::Settings mutation_settings(true);
     mutation_settings.return_mutated_rows = true;
     mutation_settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
+    mutation_settings.recalculate_dependencies_of_updated_columns = false;
 
     MutationsInterpreter interpreter(
         shared_from_this(), getInMemoryMetadataPtr(),

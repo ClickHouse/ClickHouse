@@ -237,6 +237,7 @@ namespace FailPoints
     extern const char zero_copy_lock_zk_fail_after_op[];
     extern const char zero_copy_unlock_zk_fail_before_op[];
     extern const char zero_copy_unlock_zk_fail_after_op[];
+    extern const char rmt_lightweight_update_sleep_after_block_allocation[];
 }
 
 namespace ErrorCodes
@@ -8183,6 +8184,11 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     update_holder.lock = getLockForLightweightUpdateInKeeper(commands, query_context, zookeeper, zookeeper_path);
     update_holder.partition_block_numbers = allocateBlockNumbersInAffectedPartitions(commands, query_context, zookeeper);
 
+    fiu_do_on(FailPoints::rmt_lightweight_update_sleep_after_block_allocation,
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    });
+
     const auto & block_numbers = update_holder.partition_block_numbers.getBlockNumbers();
     auto partitions = std::make_shared<PartitionIdToMaxBlock>(block_numbers.begin(), block_numbers.end());
     context_copy->setPartitionIdToMaxBlock(std::move(partitions));
@@ -9559,8 +9565,11 @@ bool StorageReplicatedMergeTree::dropPartImpl(
 }
 
 bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
-    zkutil::ZooKeeper & zookeeper, const String & partition_id, bool detach,
-    Coordination::Requests & ops, std::vector<LogEntryPtr> & entries,
+    zkutil::ZooKeeper & zookeeper,
+    const String & partition_id,
+    bool detach,
+    Coordination::Requests & ops,
+    std::vector<LogEntryPtr> & entries,
     std::vector<EphemeralLockInZooKeeper> & delimiting_block_locks,
     std::vector<size_t> & log_entry_ops_idx)
 {
@@ -9620,6 +9629,7 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
         ops.reserve(partition_ids.size() * 2);
         delimiting_block_locks.reserve(partition_ids.size());
         log_entry_ops_idx.reserve(partition_ids.size());
+
         for (const auto & partition_id : partition_ids)
             addOpsToDropAllPartsInPartition(zookeeper, partition_id, detach, ops, entries, delimiting_block_locks, log_entry_ops_idx);
 

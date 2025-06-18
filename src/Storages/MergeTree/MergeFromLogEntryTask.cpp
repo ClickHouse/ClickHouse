@@ -9,6 +9,7 @@
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/FailPoint.h>
 
 #include <Common/DateLUTImpl.h>
 
@@ -32,6 +33,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 prefer_fetch_merged_part_size_threshold;
     extern const MergeTreeSettingsSeconds prefer_fetch_merged_part_time_threshold;
     extern const MergeTreeSettingsSeconds try_fetch_recompressed_part_timeout;
+}
+
+namespace FailPoints
+{
+    extern const char rmt_merge_task_sleep_in_prepare[];
 }
 
 namespace ErrorCodes
@@ -58,6 +64,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 {
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
+
+    fiu_do_on(FailPoints::rmt_merge_task_sleep_in_prepare,
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    });
 
     StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
     int32_t metadata_version = metadata_snapshot->getMetadataVersion();
