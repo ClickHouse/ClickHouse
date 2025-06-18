@@ -23,8 +23,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/PartitionStrategy.h>
 
-#include "Formats/NumpyDataTypes.h"
-
 namespace DB
 {
 namespace Setting

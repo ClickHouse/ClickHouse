@@ -52,9 +52,7 @@ void PartitionedSink::consume(Chunk & source_chunk)
 {
     const ColumnPtr partition_by_result_column = partition_strategy->computePartitionKey(source_chunk);
 
-    /*
-     * `partition_columns_in_data_file`
-     */
+    /// Not all columns are serialized using the format writer (e.g, hive partitioning stores partition columns in the file path)
     const auto format_chunk = partition_strategy->getFormatChunk(source_chunk);
     const auto & columns_to_consume = format_chunk.getColumns();
 

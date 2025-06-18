@@ -624,8 +624,6 @@ void StorageObjectStorage::truncate(
     ContextPtr /* context */,
     TableExclusiveLockHolder & /* table_holder */)
 {
-    // this method assumes all data was written using clickhouse and clickhouse was not restarted if I am reading this correctly.
-    // this is bad imo.
     const auto path = configuration->getRawPath();
 
     if (configuration->isArchive())
