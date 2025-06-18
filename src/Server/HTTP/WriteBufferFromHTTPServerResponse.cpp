@@ -118,6 +118,9 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
 void WriteBufferFromHTTPServerResponse::nextImpl()
 {
+    if (!offset())
+        return;
+
     {
         std::lock_guard lock(mutex);
         startSendHeaders();

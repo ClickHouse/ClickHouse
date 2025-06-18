@@ -55,7 +55,7 @@ public:
     {
         chassert(!hasPendingData());
         chassert(position() <= working_buffer.end());
-        chassert(!isCanceled(), "ReadBuffer is canceled");
+        chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");
 
         bytes += offset();
         bool res = false;
