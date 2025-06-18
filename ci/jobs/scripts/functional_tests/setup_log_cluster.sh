@@ -130,13 +130,14 @@ function setup_logs_replication
             EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
         fi
 
-        # Calculate hash of its structure. Note: 4 is the version of extra columns - increment it if extra columns are changed:
+        # Calculate hash of its structure according to the columns and their types, including the extra columns
         hash=$(clickhouse-client --query "
-            SELECT sipHash64(9, groupArray((name, type)))
+            SELECT sipHash64(groupArray((SELECT columns FROM external)), groupArray((name, type)))
             FROM (SELECT name, type FROM system.columns
                 WHERE database = 'system' AND table = '$table'
                 ORDER BY position)
-            ")
+            " --external --name=external --file=- --structure='columns String' <<< "$EXTRA_COLUMNS_FOR_TABLE"
+        )
 
         # Create the destination table with adapted name and structure:
         statement=$(clickhouse-client --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
