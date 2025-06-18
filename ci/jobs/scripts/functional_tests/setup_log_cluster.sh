@@ -9,7 +9,7 @@ set -e
 # Config file contains KEY=VALUE pairs with any necessary parameters like:
 # CLICKHOUSE_CI_LOGS_HOST - remote host
 # CLICKHOUSE_CI_LOGS_USER - password for user
-# CLICKHOUSE_CI_LOGS_PACreate all configured system logsSSWORD - password for user
+# CLICKHOUSE_CI_LOGS_PASSWORD - password for user
 
 # Pre-configured destination cluster, where to export the data
 CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
@@ -130,7 +130,7 @@ function setup_logs_replication
             EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
         fi
 
-        # Calculate hash of its structure according to the columns and their types, including the extra columns
+        # Calculate hash of its structure according to the columns and their types, including extra columns
         hash=$(clickhouse-client --query "
             SELECT sipHash64(groupArray((SELECT columns FROM external)), groupArray((name, type)))
             FROM (SELECT name, type FROM system.columns
@@ -178,9 +178,11 @@ function setup_logs_replication
         echo "Creating materialized view system.${table}_watcher" >&2
 
         clickhouse-client --query "
-            CREATE MATERIALIZED VIEW system.${table}_watcher TO system.${table}_sender AS
-            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
-            FROM system.${table}
+            CREATE MATERIALIZED VIEW system.${table}_watcher
+            TO system.${table}_sender
+            DEFINER = ci_logs_sender
+            AS
+            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, * FROM system.${table}
         " || continue
     done
 )
