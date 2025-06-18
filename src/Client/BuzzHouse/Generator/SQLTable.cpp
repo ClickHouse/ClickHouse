@@ -2263,8 +2263,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
         sv->set_property("SIZE_IN_CELLS");
         sv->set_value(
-            std::to_string(
-                rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
+            std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
     }
 
     /// Add Primary Key

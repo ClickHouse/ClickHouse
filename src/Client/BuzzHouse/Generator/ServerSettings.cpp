@@ -177,7 +177,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"read_in_order_use_virtual_row", trueOrFalseSetting},
        {"remerge_sort_lowered_memory_bytes_ratio",
         CHSetting(
-            [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.7, 0.0, 4.0)); },
+            [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 4.0)); },
             {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1", "1.5", "2", "2.5"},
             false)},
        {"rewrite_count_distinct_if_with_count_distinct_implementation", trueOrFalseSetting},
@@ -330,7 +330,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_job_stack_trace", trueOrFalseSettingNoOracle},
     {"enable_memory_bound_merging_of_aggregation_results", trueOrFalseSetting},
     {"enable_multiple_prewhere_read_steps", trueOrFalseSetting},
-    {"enable_named_columns_in_function_tuple", trueOrFalseSetting},
+    {"enable_named_columns_in_function_tuple", trueOrFalseSettingNoOracle},
     {"enable_parallel_blocks_marshalling", trueOrFalseSetting},
     {"enable_parsing_to_custom_serialization", trueOrFalseSetting},
     {"enable_reads_from_query_cache", trueOrFalseSetting},
@@ -584,11 +584,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     /// {"max_memory_usage", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},
     /// {"max_memory_usage_for_user", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},
     {"max_parallel_replicas",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, 5)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.2, 0, 5)); }, {}, false)},
     {"max_parsing_threads", threadSetting},
     {"max_parts_to_move",
      CHSetting(
-         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.5, 0, UINT32_C(4096))); },
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(4096))); },
          {"0", "1", "100", "1000"},
          false)},
     /// {"max_result_bytes", CHSetting(bytesRange, {}, false)},
@@ -656,7 +656,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_avro_sync_interval",
      CHSetting(
          [](RandomGenerator & rg)
-         { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.5, 32, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); },
+         { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 32, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); },
          {"32", "1024", "4096", "16384", "'10M'"},
          false)},
     {"output_format_binary_write_json_as_string", trueOrFalseSettingNoOracle},
@@ -689,11 +689,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_orc_string_as_string", trueOrFalseSettingNoOracle},
     {"output_format_parallel_formatting", trueOrFalseSetting},
     {"output_format_parquet_bloom_filter_bits_per_value",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.7, 0.0, 100.0)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 100.0)); }, {}, false)},
     {"output_format_parquet_bloom_filter_flush_threshold_bytes",
      CHSetting(
          [](RandomGenerator & rg)
-         { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
+         { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
          {},
          false)},
     {"output_format_parquet_compliant_nested_types", trueOrFalseSettingNoOracle},
