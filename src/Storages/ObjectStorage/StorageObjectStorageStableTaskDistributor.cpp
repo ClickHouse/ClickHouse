@@ -1,10 +1,15 @@
-#include "StorageObjectStorageStableTaskDistributor.h"
+#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 #include <Common/SipHash.h>
 #include <consistent_hashing.h>
 #include <optional>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
