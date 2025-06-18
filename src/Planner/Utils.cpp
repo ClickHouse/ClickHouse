@@ -447,7 +447,7 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
             auto storage_dummy = std::make_shared<StorageDummy>(
                 storage.getStorageID(),
                 /// To preserve information about alias columns, column description must be extracted directly from storage metadata.
-                storage.getInMemoryMetadata().getColumns(),
+                storage_snapshot->metadata->getColumns(),
                 storage_snapshot,
                 storage.supportsReplication());
 
