@@ -165,6 +165,7 @@ Block::Block(ColumnsWithTypeAndName && data_) : data{std::move(data_)}
 
 void Block::initializeIndexByName()
 {
+    index_by_name.reserve(data.size());
     for (size_t i = 0, size = data.size(); i < size; ++i)
         index_by_name.emplace(data[i].name, i);
 }
@@ -609,8 +610,6 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
 
 Block Block::cloneWithColumns(const Columns & columns) const
 {
-    Block res;
-
     size_t num_columns = data.size();
 
     if (num_columns != columns.size())
@@ -623,12 +622,12 @@ Block Block::cloneWithColumns(const Columns & columns) const
             columns.size(), fmt::join(columns | dump_columns, ", "));
     }
 
-    res.reserve(num_columns);
+    ColumnsWithTypeAndName cols;
+    cols.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; i++)
+        cols.emplace_back(columns[i], data[i].type, data[i].name);
 
-    for (size_t i = 0; i < num_columns; ++i)
-        res.insert({ columns[i], data[i].type, data[i].name });
-
-    return res;
+    return Block(std::move(cols));
 }
 
 
