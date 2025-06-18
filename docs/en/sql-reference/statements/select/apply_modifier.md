@@ -1,7 +1,7 @@
 ---
 description: 'Documentation describing the APPLY modifier which allows you to invoke some function for each row returned by an outer table expression of a query.'
 sidebar_label: 'APPLY'
-slug: /sql-reference/statements/select/apply
+slug: /sql-reference/statements/select/apply-modifier
 title: 'APPLY modifier'
 keywords: ['APPLY', 'modifier']
 ---
