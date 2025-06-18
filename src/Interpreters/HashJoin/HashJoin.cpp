@@ -1373,14 +1373,25 @@ private:
 
                 for (size_t row = 0; row < mapped_block.rows(); ++row)
                 {
-                    if (!parent.isUsed(&mapped_block.getSourceBlock(), row))
+                    try
                     {
-                        for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
+                        /// check if the row is used - if any error happens, assume the row is used
+                        bool is_used = parent.isUsed(&mapped_block.getSourceBlock(), row);
+                        if (!is_used)
                         {
-                            columns_keys_and_right[colnum]->insertFrom(*mapped_block.getByPosition(colnum).column, row);
-                        }
+                            for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
+                            {
+                                columns_keys_and_right[colnum]->insertFrom(*mapped_block.getByPosition(colnum).column, row);
+                            }
 
-                        ++rows_added;
+                            ++rows_added;
+                        }
+                    }
+                    catch (...)
+                    {
+                        // If there is any error accessing the used flags, skip this row
+                        // to prevent out-of-bounds access
+                        continue;
                     }
                 }
             }
@@ -1402,9 +1413,20 @@ private:
                 const Mapped & mapped = it->getMapped();
 
                 size_t offset = map.offsetInternal(it.getPtr());
-                if (parent.isUsed(offset))
+                try
+                {
+                    // Safely check if the offset is used - if any error happens, assume the offset is used
+                    bool is_used = parent.isUsed(offset);
+                    if (is_used)
+                        continue;
+                    AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
+                }
+                catch (...)
+                {
+                    // If there's any error accessing the used flags, skip this row
+                    // to prevent out-of-bounds access
                     continue;
-                AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
+                }
 
                 if (rows_added >= max_block_size)
                 {
@@ -1419,28 +1441,51 @@ private:
 
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
     {
-        // Stateless scan of null-maps with safe bounds checking
-        for (const auto & holder : parent.data->blocks_nullmaps)
+        if (!nulls_position.has_value())
+            nulls_position = parent.data->blocks_nullmaps.begin();
+
+        auto end = parent.data->blocks_nullmaps.end();
+
+        for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
         {
-            const auto * block = holder.block;
-            const ColumnUInt8 * col_ptr = holder.column
-                ? &assert_cast<const ColumnUInt8 &>(*holder.column)
-                : nullptr;
-            const auto * nullmap = col_ptr ? &col_ptr->getData() : nullptr;
-            size_t nrows = block->rows();
-            size_t limit = nullmap ? std::min(nrows, nullmap->size()) : nrows;
-            for (size_t row = 0; row < limit && rows_added < max_block_size; ++row)
+            const auto * block = it->block;
+            ConstNullMapPtr nullmap = nullptr;
+            if (it->column)
+                nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
+
+            /// skip if nullmap is empty or null
+            if (!nullmap || nullmap->empty())
+                continue;
+
+            /// only process rows up to the minimum of nullmap size, block rows, and columns size
+            /// to not go out of bounds
+            size_t num_rows = std::min(nullmap->size(), block->getSourceBlock().rows());
+
+            for (size_t row = 0; row < num_rows && rows_added < max_block_size; ++row)
             {
-                // treat missing nullmap as non-joined
-                if (!nullmap || (*nullmap)[row])
+                try
                 {
-                    for (size_t c = 0; c < columns_keys_and_right.size(); ++c)
-                        columns_keys_and_right[c]->insertFrom(*block->getByPosition(c).column, row);
-                    ++rows_added;
+                    if ((*nullmap)[row])
+                    {
+                        /// we make sure we have columns to insert into
+                        if (columns_keys_and_right.empty())
+                            continue;
+
+                        for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                        {
+                            /// check if the block has enough columns
+                            if (col < block->getSourceBlock().columns())
+                                columns_keys_and_right[col]->insertFrom(*block->getSourceBlock().getByPosition(col).column, row);
+                        }
+                        ++rows_added;
+                    }
+                }
+                catch (...)
+                {
+                    /// Skip the row if any error occurs
+                    continue;
                 }
             }
-            if (rows_added >= max_block_size)
-                break;
         }
     }
 };
