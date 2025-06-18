@@ -90,7 +90,8 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr short log2(unsigned int n) {
+constexpr short log2(unsigned int n)
+{
     return (n < 2) ? 0 : 1 + log2(n / 2);
 }
 
