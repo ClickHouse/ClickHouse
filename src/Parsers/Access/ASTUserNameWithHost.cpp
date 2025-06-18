@@ -65,7 +65,7 @@ String ASTUserNameWithHost::getHostPattern() const
 {
     if (children.size() < 2)
         return "";
-
+    chassert(children.size() == 2);
     return getStringFromAST(children[1]);
 }
 
@@ -119,9 +119,9 @@ bool ASTUserNamesWithHost::getHostPatternIfCommon(String & out_common_host_patte
 
 String ASTUserNameWithHost::getStringFromAST(const ASTPtr & ast) const
 {
-    if (const auto * l = ast->as<ASTLiteral>(); l)
+    if (const auto * l = ast->as<ASTLiteral>())
         return l->value.safeGet<String>();
-    else if (const auto * ind = ast->as<ASTIdentifier>(); ind)
+    else if (const auto * ind = ast->as<ASTIdentifier>())
     {
         if (!ind->isParam())
             return getIdentifierName(ind);
