@@ -33,6 +33,8 @@ class Workflow:
         enable_job_filtering_by_changes: bool = False
         enable_cache: bool = False
         enable_report: bool = False
+        # do a best effort to merge the PR if all jobs are successful
+        enable_automerge: bool = False
         enable_merge_ready_status: bool = False
         enable_commit_status_on_failure: bool = False
         enable_cidb: bool = False

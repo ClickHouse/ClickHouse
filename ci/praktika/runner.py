@@ -23,6 +23,23 @@ from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
 
+_GH_authenticated = False
+
+
+def _GH_Auth(workflow):
+    global _GH_authenticated
+    if _GH_authenticated:
+        return
+    if not Settings.USE_CUSTOM_GH_AUTH:
+        return
+    from .gh_auth import GHAuth
+
+    pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+    app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+    GHAuth.auth(app_id=app_id, app_key=pem)
+    _GH_authenticated = True
+
+
 class Runner:
     @staticmethod
     def generate_local_run_environment(workflow, job, pr=None, sha=None, branch=None):
@@ -504,15 +521,11 @@ class Runner:
                 ci_db.insert_compute_usage(workflow_compute_usage)
 
         report_url = Info().get_job_report_url(latest=False)
+
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
-            if Settings.USE_CUSTOM_GH_AUTH:
-                from .gh_auth import GHAuth
-
-                pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-                app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_id=app_id, app_key=pem)
+            _GH_Auth(workflow)
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
@@ -525,6 +538,25 @@ class Runner:
         if workflow.enable_report:
             # to make it visible in GH Actions annotations
             print(f"::notice ::Job report: {report_url}")
+
+        if (
+            workflow.enable_automerge
+            and job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+            and workflow.is_event_pull_request()
+        ):
+            try:
+                _GH_Auth(workflow)
+                workflow_result = Result.from_fs(workflow.name)
+                if workflow_result.is_ok():
+                    if not GH.merge_pr():
+                        print("ERROR: Failed to merge the PR")
+                else:
+                    print(
+                        f"NOTE: Workflow status [{workflow_result.status}] - do not merge"
+                    )
+            except Exception as e:
+                print(f"ERROR: Failed to merge the PR: [{e}]")
+                traceback.print_exc()
 
         return is_ok
 
