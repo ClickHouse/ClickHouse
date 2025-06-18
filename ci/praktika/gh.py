@@ -199,6 +199,8 @@ class GH:
             extra_args += " --delete-branch"
         if squash:
             extra_args += " --squash"
+        else:
+            extra_args += " --merge"
 
         cmd = f"gh pr merge {pr} --repo {repo} {extra_args}"
         return cls.do_command_with_retries(cmd)
