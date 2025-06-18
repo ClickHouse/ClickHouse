@@ -70,6 +70,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ForkWriteBuffer.h>
+#include <IO/SharedThreadPools.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
@@ -1967,6 +1968,12 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     if (!client_context->getSettingsRef()[Setting::max_insert_block_size].changed &&
         insert_format_max_block_size_from_config.has_value())
         insert_format_max_block_size = insert_format_max_block_size_from_config.value();
+
+    if (!getFormatParsingThreadPool().isInitialized())
+    {
+        size_t max_parsing_threads = getNumberOfCPUCoresToUse();
+        getFormatParsingThreadPool().initialize(max_parsing_threads, /*max_free_threads*/ 0, /*queue_size*/ 10000);
+    }
 
     auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);
