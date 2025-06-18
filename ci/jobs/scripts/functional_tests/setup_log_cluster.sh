@@ -20,7 +20,6 @@ echo "EXTRA_COLUMNS_EXPRESSION=$EXTRA_COLUMNS_EXPRESSION"
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
 
 # trace_log needs more columns for symbolization
-EXTRA_COLUMNS_TRACE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), lines Array(LowCardinality(String)), "
 EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), trace)::Array(LowCardinality(String)) AS symbols, arrayMap(x -> addressToLine(x), trace)::Array(LowCardinality(String)) AS lines"
 
 # coverage_log needs more columns for symbolization, but only symbol names (the line numbers are too heavy to calculate)
@@ -113,7 +112,6 @@ function setup_logs_replication
     do
         if [[ "$table" = "trace_log" ]]
         then
-            EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_TRACE_LOG}"
             # Do not try to resolve stack traces in case of debug/sanitizers
             # build, since it is too slow (flushing of trace_log can take ~1min
             # with such MV attached)
