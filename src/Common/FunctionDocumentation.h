@@ -55,8 +55,12 @@ struct FunctionDocumentation
     };
     using Arguments = std::vector<Argument>;
 
-    /// TODO Provide the type explicitly like in Arguments above^^.
-    using ReturnedValue = std::string;
+    struct ReturnedValue
+    {
+        std::string description;              /// E.g. "Returns the remainder of the division."
+        std::vector<std::string> types = {};  /// E.g. {"Float32"}
+                                              /// Default initialized only during a transition period
+    };
 
     struct Example
     {
@@ -139,6 +143,8 @@ struct FunctionDocumentation
     std::string examplesAsString() const;
     std::string introducedInAsString() const;
     std::string categoryAsString() const;
+
+
 };
 
 }
