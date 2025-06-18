@@ -187,7 +187,65 @@ private:
 
 REGISTER_FUNCTION(DateTrunc)
 {
-    factory.registerFunction<FunctionDateTrunc>();
+    FunctionDocumentation::Description description = R"(
+Truncates a date and time value to the specified part of the date.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+dateTrunc(unit, datetime[, timezone])
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"unit", R"(The type of interval to truncate the result. `unit` argument is case-insensitive. [`String`](/sql-reference/syntax#string).
+
+| Unit         | Compatibility                   |
+|--------------|---------------------------------|
+| `nanosecond` | Compatible only with DateTime64 |
+| `microsecond`| Compatible only with DateTime64 |
+| `millisecond`| Compatible only with DateTime64 |
+| `second`     |                                 |
+| `minute`     |                                 |
+| `hour`       |                                 |
+| `day`        |                                 |
+| `week`       |                                 |
+| `month`      |                                 |
+| `quarter`    |                                 |
+| `year`       |                                 |
+)"},
+        {"datetime", "Date and time. [`Date`](../data-types/date.md) or [`Date32`](../data-types/date32.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."},
+        {"timezone", "Optional. Timezone name for the returned datetime. If not specified, the function uses the timezone of the `datetime` parameter. [`String`](../data-types/string.md)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = R"(
+Returns the truncated date and time value.
+
+| Unit Argument               | `datetime` Argument                   | Return Type                                                                            |
+|-----------------------------|---------------------------------------|----------------------------------------------------------------------------------------|
+| Year, Quarter, Month, Week  | Date32, DateTime64, Date, or DateTime | [`Date32`](../data-types/date32.md) or [`Date`](../data-types/date.md)                 |
+| Day, Hour, Minute, Second   | Date32, DateTime64, Date, or DateTime | [`DateTime64`](../data-types/datetime64.md) or [`DateTime`](../data-types/datetime.md) |
+| Millisecond, Microsecond,   | Any                                   | [`DateTime64`](../data-types/datetime64.md)                                            |
+| Nanosecond                  |                                       | with scale 3, 6, or 9                                                                  |
+)";
+    FunctionDocumentation::Examples examples = {
+        {"Truncate without timezone", R"(
+SELECT now(), dateTrunc('hour', now());
+        )",
+        R"(
+┌───────────────now()─┬─dateTrunc('hour', now())──┐
+│ 2020-09-28 10:40:45 │       2020-09-28 10:00:00 │
+└─────────────────────┴───────────────────────────┘
+        )"},
+        {"Truncate with specified timezone", R"(
+SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
+        )",
+        R"(
+┌───────────────now()─┬─dateTrunc('hour', now(), 'Asia/Istanbul')──┐
+│ 2020-09-28 10:46:26 │                        2020-09-28 13:00:00 │
+└─────────────────────┴────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDateTrunc>(documentation);
 
     /// Compatibility alias.
     factory.registerAlias("DATE_TRUNC", "dateTrunc", FunctionFactory::Case::Insensitive);
