@@ -17,11 +17,14 @@ StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistrib
 
 std::optional<String> StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica)
 {
-    LOG_TRACE(
-        log,
-        "Received a new connection from replica {} looking for a file",
-        number_of_current_replica
-    );
+    LOG_TRACE(log, "Received request from replica {} looking for a file", number_of_current_replica);
+
+    if (connection_to_files.size() <= number_of_current_replica)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Received request with invalid replica number {}, max possible replica number {}",
+            number_of_current_replica,
+            connection_to_files.size() - 1);
 
     // 1. Check pre-queued files first
     if (auto file = getPreQueuedFile(number_of_current_replica))
