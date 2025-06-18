@@ -206,7 +206,7 @@ Configuration example of a composite key (key has one element with [String](../.
 
 ## Ways to Store Dictionaries in Memory {#ways-to-store-dictionaries-in-memory}
 
-Various methods of storing dictionary data in memory are associated with CPU and RAM-usage tradeoffs. Decission tree published in [Choosing a Layout](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse#choosing-a-layout) paragraph of dictionary-related [blog post](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) is a good starting point for deciding which layout to use.
+Various methods of storing dictionary data in memory are associated with CPU and RAM-usage trade-offs. Decision tree published in [Choosing a Layout](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse#choosing-a-layout) paragraph of dictionary-related [blog post](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) is a good starting point for deciding which layout to use.
 
 - [flat](#flat)
 - [hashed](#hashed)
