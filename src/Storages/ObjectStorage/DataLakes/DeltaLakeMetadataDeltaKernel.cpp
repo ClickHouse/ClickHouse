@@ -64,7 +64,10 @@ DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     bool supports_subset_of_columns)
 {
     auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
+
     info.format_header.clear();
+    for (const auto & [column_name, column_type] : table_snapshot->getReadSchema())
+        info.format_header.insert({column_type->createColumn(), column_type, column_name});
 
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
@@ -92,9 +95,6 @@ DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         }
         return it->second;
     };
-
-    for (const auto & [column_name, column_type] : table_snapshot->getTableSchema())
-        info.format_header.insert({column_type->createColumn(), column_type, get_physical_name(column_name)});
 
     /// Update requested columns to reference actual physical column names.
     if (!physical_names_map.empty())

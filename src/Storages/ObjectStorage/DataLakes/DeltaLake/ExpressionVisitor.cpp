@@ -162,7 +162,7 @@ public:
                 if (schema_it->type->isNullable())
                 {
                     current_node->result_type = DB::makeNullable(node->result_type);
-                    current_node->column = DB::makeNullable(current_node->column->convertToFullColumnIfConst());
+                    current_node->column = DB::makeNullable(current_node->column);
                 }
                 else
                     current_node->column = current_node->column;
