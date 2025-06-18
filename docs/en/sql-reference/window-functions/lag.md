@@ -56,7 +56,7 @@ INSERT INTO stock_prices FORMAT Values
     ('2024-06-07', 119.77, 121.69, 118.02, 120.89, 412386000);
 ```
 
-```sql
+```sql title="Query"
 SELECT
     date,
     close,
