@@ -3364,7 +3364,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (!frame.is_default)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window function '{}' does not expect window frame to be explicitely specificated. In expression {}",
+                    "Window function '{}' does not expect window frame to be explicitly specified. In expression {}",
                     function_name,
                     function_node.formatASTForErrorMessage());
             }

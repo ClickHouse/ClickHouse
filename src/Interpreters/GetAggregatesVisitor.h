@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_AGGREGATION;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class GetAggregatesMatcher
