@@ -69,7 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.7",
         {
-
+            {"enable_add_distinct_to_in_subqueries", false, true, "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."}
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -87,7 +87,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_skip_indexes_if_final_exact_mode", 0, 1, "Change in default value of setting"},
             {"allow_experimental_time_series_aggregate_functions", false, false, "New setting to enable experimental timeSeries* aggregate functions."},
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
-            {"enable_add_distinct_to_in_subqueries", false, true, "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."},
+            {"count_matches_stop_at_empty_match", true, false, "New setting."},
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
             /// RELEASE CLOSED
         });
