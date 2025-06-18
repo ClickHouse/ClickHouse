@@ -297,6 +297,22 @@ class GH:
         return cls.do_command_with_retries(command)
 
     @classmethod
+    def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        extra_args = ""
+        if not keep_branch:
+            extra_args += " --delete-branch"
+        if squash:
+            extra_args += " --squash"
+
+        cmd = f"gh pr merge {pr} --repo {repo} {extra_args}"
+        return cls.do_command_with_retries(cmd)
+
+    @classmethod
     def convert_to_gh_status(cls, status):
         if status in (
             Result.Status.PENDING,
