@@ -78,6 +78,10 @@ def test_simple_select(started_cluster):
 
     system_warnings_query = "SELECT count() >= 1 FROM system.warnings WHERE message LIKE '%MongoDB%path%ignored%'"
 
+    # Need to restart to clear system.warning from previous run in flaky check
+    # FIXME: we can do `TRUNCATE` after https://github.com/ClickHouse/ClickHouse/pull/82087
+    node.restart_clickhouse()
+
     assert node.query(system_warnings_query) == "0\n"
     node.stop_clickhouse()
     replace_definition_cmd = f"sed --follow-symlinks -i 's|mongo1|mongo1/ignored/path|' /var/lib/clickhouse/metadata/default/simple_mongo_table.sql"
