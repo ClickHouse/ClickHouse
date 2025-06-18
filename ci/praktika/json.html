@@ -88,6 +88,8 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         #toggle-status-bar {
@@ -1086,11 +1088,6 @@
             const line = document.createElement('div');
             line.textContent = value;
 
-            // Truncate long names
-            line.style.whiteSpace = "nowrap";
-            line.style.overflow = "hidden";
-            line.style.textOverflow = "ellipsis";
-
             if (className) line.classList.add(className);
             widget.appendChild(line);
         }
@@ -1098,8 +1095,18 @@
         // Make widget re-usable by external updates
         widget.update = function (name, status, start_time, duration) {
             widget.innerHTML = '';
-
-            addLine(name);
+            
+            // Create name line with fixed height for two lines
+            const nameLine = document.createElement('div');
+            nameLine.textContent = name;
+            nameLine.style.whiteSpace = "normal";
+            nameLine.style.overflow = "hidden";
+            nameLine.style.maxWidth = "100%";
+            nameLine.style.height = "2.6em"; // Reserve space for 2 lines
+            nameLine.style.lineHeight = "1.3em";
+            nameLine.style.textAlign = "left";
+            widget.appendChild(nameLine);
+            
             addLine(status, getStatusClass(status));
             addLine(start_time ? formatTimestamp(start_time) : "0:00:00");
             if (duration != null) {
@@ -1264,8 +1271,12 @@
         // Check if the next row is already an "info" row
         if (nextRow && nextRow.classList.contains('info-row')) {
             nextRow.remove(); // If it's there, remove it
+            closedInfoCnt++;
+            console.log(`Info row closed. Count: ${openedInfoCnt - closedInfoCnt}. Auto-refresh ${openedInfoCnt - closedInfoCnt > 0 ? 'disabled' : 'enabled'}.`);
         } else {
             // Otherwise, create a new row for the info text
+            openedInfoCnt++;
+            console.log(`Info row opened. Count: ${openedInfoCnt - closedInfoCnt}. Auto-refresh ${openedInfoCnt - closedInfoCnt > 0 ? 'disabled' : 'enabled'}.`);
             const infoRow = document.createElement('tr');
             infoRow.classList.add('info-row');
 
@@ -1650,14 +1661,29 @@
         return hasNewData;
     }
 
-    function startAutoRefresh(PR, REF, sha, nameParams) {
+    // Track for autorefresh toggle
+    let openedInfoCnt = 0;
+    let closedInfoCnt = 0;
+    
+    function renderResultsAuto(PR, REF, sha, nameParams) {
+
         function clearPage() {
             // Clear the main content areas
             // document.getElementById('content').innerHTML = '';
             document.getElementById('result-container').innerHTML = '';
             document.getElementById('status-container').innerHTML = '';
         }
-        async function checkForUpdates() {
+
+        async function checkForUpdatesAndRender(force = false) {
+            if (
+                !(nameParams?.length === 1 && ["running", "pending"].includes(runtimeCache?.json0?.status))
+                && !(nameParams?.length === 2 && ["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null)
+                && !force
+                || openedInfoCnt - closedInfoCnt > 0
+            ) {
+                return
+            }
+
             const statusContainer = document.getElementById('status-container');
             const scrollTop = statusContainer.scrollTop;
 
@@ -1668,7 +1694,10 @@
                 statusContainer.scrollTop = scrollTop;
             }
         }
-        setInterval(checkForUpdates, 30000);
+
+        checkForUpdatesAndRender(true)
+        console.log("Auto-reload started");
+        setInterval(checkForUpdatesAndRender, 30000);
     }
 
     function updatePageTitle(PR, REF, sha, nameParams) {
@@ -1702,19 +1731,10 @@
         });
 
         await fetchData(PR, REF, sha, nameParams);
-        await renderResults(PR, sha, nameParams);
+        renderResultsAuto(PR, REF, sha, nameParams);
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
         fetchStatistics(nameParams[0])
-        if (
-            (nameParams?.length === 1 &&
-                ["running", "pending"].includes(runtimeCache?.json0?.status)) ||
-            (nameParams?.length === 2 &&
-                (["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null))
-        ) {
-            console.log("Auto-reload started");
-            startAutoRefresh(PR, REF, sha, nameParams);
-        }
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
