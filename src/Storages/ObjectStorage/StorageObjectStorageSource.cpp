@@ -464,7 +464,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         Block initial_header = read_from_format_info.format_header;
 
-        if (auto initial_schema = configuration->getInitialSchemaByPath(object_info->getPath()))
+        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info->getPath()))
         {
             Block sample_header;
             for (const auto & [name, type] : *initial_schema)
@@ -502,7 +502,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (object_info->data_lake_metadata)
             transformer = object_info->data_lake_metadata->transform;
         else
-            transformer = configuration->getSchemaTransformer(object_info->getPath());
+            transformer = configuration->getSchemaTransformer(context_, object_info->getPath());
 
         if (transformer)
         {
