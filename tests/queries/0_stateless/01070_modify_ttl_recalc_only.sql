@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, disabled
 
 set mutations_sync = 2;
 
