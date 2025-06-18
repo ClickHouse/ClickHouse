@@ -31,7 +31,7 @@ os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_port
 from integration.helpers.cluster import ClickHouseCluster
 from integration.helpers.postgres_utility import get_postgres_conn
 from generators import BuzzHouseGenerator
-from properties import modify_server_settings
+from properties import modify_server_settings, modify_user_settings
 
 
 def ordered_pair(value):
@@ -68,11 +68,61 @@ parser.add_argument(
     help="Probability to set random disks",
 )
 parser.add_argument(
+    "--min-disks",
+    type=int,
+    default=1,
+    help="Minimum number of disks to generate",
+)
+parser.add_argument(
     "--max-disks",
     type=int,
     default=5,
-    choices=range(0, 51),
     help="Maximum number of disks to generate",
+)
+parser.add_argument(
+    "--add-policy-settings-prob",
+    type=int,
+    default=70,
+    choices=range(0, 101),
+    help="Probability to set random storage policies",
+)
+parser.add_argument(
+    "--add-remote-server-settings-prob",
+    type=int,
+    default=80,
+    choices=range(0, 101),
+    help="Probability to set random servers",
+)
+parser.add_argument(
+    "--min-servers",
+    type=int,
+    default=1,
+    help="Minimum number of remote servers to generate",
+)
+parser.add_argument(
+    "--max-servers",
+    type=int,
+    default=3,
+    help="Maximum number of remote servers to generate",
+)
+parser.add_argument(
+    "--add-filesystem-caches-prob",
+    type=int,
+    default=80,
+    choices=range(0, 101),
+    help="Probability to add filesystem caches",
+)
+parser.add_argument(
+    "--min-caches",
+    type=int,
+    default=1,
+    help="Minimum number of filesystem caches to generate",
+)
+parser.add_argument(
+    "--max-caches",
+    type=int,
+    default=3,
+    help="Maximum number of filesystem caches to generate",
 )
 parser.add_argument(
     "--change-server-version-prob",
@@ -170,10 +220,22 @@ parser.add_argument(
 parser.add_argument(
     "--storage-limit", type=str, default="", help="Set a storage limit, e.g. '1g'"
 )
+parser.add_argument(
+    "--add-keeper-map-prefix",
+    type=bool,
+    default=True,
+    help="Add 'keeper_map_path_prefix' server setting",
+)
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
     raise f"The length of replica values {len(args.replica_values)} is not the same as shard values {len(args.shard_values)}"
+if args.min_disks > args.max_disks:
+    raise f"The min disks value {args.min_disks} is greater than max disks value {args.max_disks}"
+if args.min_servers > args.max_servers:
+    raise f"The min servers value {args.min_servers} is greater than max servers value {args.max_servers}"
+if args.min_caches > args.max_caches:
+    raise f"The min caches value {args.min_caches} is greater than max caches value {args.max_caches}"
 
 logging.basicConfig(
     filename=args.log_path,
@@ -207,7 +269,7 @@ os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 is_private_binary = False
 with open(current_server, "r+") as f:
     mm = mmap.mmap(f.fileno(), 0)
-    is_private_binary = mm.find(b"s3_with_keeper")
+    is_private_binary = mm.find(b"s3_with_keeper") > -1
     mm.close()
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
@@ -215,12 +277,30 @@ cluster = ClickHouseCluster(__file__)
 
 # Use random server settings sometimes
 server_settings = args.server_config
-modified_server_settings = False
+user_settings = args.user_config
+modified_server_settings = modified_user_settings = False
+generated_clusters = 0
 if server_settings is not None:
-    modified_server_settings, server_settings = modify_server_settings(
-        args, cluster, is_private_binary, server_settings
+    modified_server_settings, server_settings, generated_clusters = (
+        modify_server_settings(
+            args, cluster, len(args.replica_values), is_private_binary, server_settings
+        )
     )
+    if generated_clusters > 0:
+        modified_user_settings, user_settings = modify_user_settings(
+            user_settings, generated_clusters
+        )
 
+dolor_main_configs = [
+    "../config/server.crt",
+    "../config/server.key",
+    "../config/server-cert.pem",
+    "../config/server-key.pem",
+    "../config/ca-cert.pem",
+    "../config/dhparam.pem",
+]
+if server_settings is not None:
+    dolor_main_configs.append(server_settings)
 
 servers = []
 for i in range(0, len(args.replica_values)):
@@ -230,6 +310,7 @@ for i in range(0, len(args.replica_values)):
             with_dolor=True,
             with_zookeeper=True,
             stay_alive=True,
+            copy_common_configs=False,
             keeper_required_feature_flags=["multi_read"],
             with_minio=args.with_minio,
             with_nginx=args.with_nginx,
@@ -240,8 +321,8 @@ for i in range(0, len(args.replica_values)):
             with_redis=args.with_redis,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             storage_opt=None if args.storage_limit == "" else args.storage_limit,
-            main_configs=[server_settings] if server_settings is not None else [],
-            user_configs=[args.user_config] if args.user_config is not None else [],
+            main_configs=dolor_main_configs,
+            user_configs=[user_settings] if user_settings is not None else [],
             macros={"replica": args.replica_values[i], "shard": args.shard_values[i]},
         )
     )

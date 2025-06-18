@@ -334,7 +334,7 @@ ManifestFileContent::ManifestFileContent(
                     status,
                     added_sequence_number,
                     partition_key_value,
-                    &common_partition_specification,
+                    common_partition_specification,
                     columns_infos,
                     DataFileSpecificInfo{});
                 break;
@@ -356,7 +356,7 @@ ManifestFileContent::ManifestFileContent(
                     status,
                     added_sequence_number,
                     partition_key_value,
-                    &common_partition_specification,
+                    common_partition_specification,
                     columns_infos,
                     PositionalDeleteFileSpecificInfo{.reference_file_path = reference_file_path});
                 break;
@@ -474,8 +474,8 @@ bool operator<(const DB::Row & lhs, const DB::Row & rhs)
 
 std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs)
 {
-    return std::tie(*lhs.common_partition_specification, lhs.partition_key_value, lhs.added_sequence_number)
-        <=> std::tie(*rhs.common_partition_specification, rhs.partition_key_value, rhs.added_sequence_number);
+    return std::tie(lhs.common_partition_specification, lhs.partition_key_value, lhs.added_sequence_number)
+        <=> std::tie(rhs.common_partition_specification, rhs.partition_key_value, rhs.added_sequence_number);
 }
 }
 

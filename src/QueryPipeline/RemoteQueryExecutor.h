@@ -173,9 +173,9 @@ public:
             return fd;
         }
 
-        Type type;
+        const Type type;
         Block block;
-        int fd{-1};
+        const int fd{-1};
     };
 
     /// Read next block of data. Returns empty block if query is finished.

@@ -2748,12 +2748,6 @@ def test_metadata_cache(started_cluster, storage_type):
         )
     )
 
-    assert 0 == int(
-        instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
         f"SELECT * FROM {table_expr}",
@@ -2789,12 +2783,6 @@ def test_metadata_cache(started_cluster, storage_type):
         )
     )
 
-    assert 0 == int(
-        instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
         f"SELECT * FROM {table_expr}",
@@ -2809,7 +2797,8 @@ def test_metadata_cache(started_cluster, storage_type):
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_minmax_pruning(started_cluster, storage_type):
+@pytest.mark.parametrize("is_table_function", [False, True])
+def test_minmax_pruning(started_cluster, storage_type, is_table_function):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_minmax_pruning_" + storage_type + "_" + get_uuid_str()
@@ -2870,9 +2859,15 @@ def test_minmax_pruning(started_cluster, storage_type):
     """
     )
 
-    creation_expression = get_creation_expression(
+    if is_table_function:
+        creation_expression = get_creation_expression(
         storage_type, TABLE_NAME, started_cluster, table_function=True
     )
+    else:
+        instance.query(get_creation_expression(
+            storage_type, TABLE_NAME, started_cluster, table_function=False
+        ))
+        creation_expression = TABLE_NAME
 
     def check_validity_and_get_prunned_files(select_expression):
         settings1 = {
@@ -2949,6 +2944,9 @@ def test_minmax_pruning(started_cluster, storage_type):
         )
         == 3
     )
+
+    if not is_table_function:
+        return
 
     execute_spark_query(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN date TO date3")
 

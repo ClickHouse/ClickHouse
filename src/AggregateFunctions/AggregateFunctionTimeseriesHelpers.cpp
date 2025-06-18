@@ -24,8 +24,10 @@ namespace ErrorCodes
 
 
 /// Extracts integer or decimal parameter value and converts it to decimal with the target scale (scale of the timestamp column)
-Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, Int64 target_scale_multiplier)
+Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
 {
+    auto target_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(target_scale);
+
     if (parameter_field.getType() == Field::Types::Decimal64)
     {
         auto value = parameter_field.safeGet<DecimalField<Decimal64>>();
@@ -49,10 +51,10 @@ Decimal64 normalizeParameter(const std::string & function_name, const std::strin
     else if (String string_value; parameter_field.tryGet(string_value))
     {
         Decimal64 value{};
-        UInt32 scale{};
+        UInt32 scale = target_scale;
         ReadBufferFromString buf(string_value);
         if (tryReadDecimalText(buf, value, 20, scale))
-            return value * target_scale_multiplier;
+            return value * DecimalUtils::scaleMultiplier<Decimal64>(scale);
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot parse {} parameter for aggregate function {}", parameter_name, function_name);
@@ -70,6 +72,16 @@ UInt64 extractIntParamater(const std::string & function_name, const std::string 
     if (UInt64 int_value = 0; parameter_field.tryGet(int_value))
     {
         return int_value;
+    }
+    else if (String string_value; parameter_field.tryGet(string_value))
+    {
+        UInt64 value{};
+        ReadBufferFromString buf(string_value);
+        if (tryReadIntText(value, buf))
+            return value;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot parse {} parameter for aggregate function {}", parameter_name, function_name);
     }
     else
     {
@@ -113,15 +125,15 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
     {
         /// Convert start, end, step and staleness parameters to the scale of the timestamp column
         auto timestamp_decimal = std::dynamic_pointer_cast<const DataTypeDateTime64>(timestamp_type);
-        auto target_scale_multiplier = timestamp_decimal->getScaleMultiplier();
+        auto target_scale = timestamp_decimal->getScale();
 
-        DateTime64 start_timestamp = normalizeParameter(name, "start", start_timestamp_param, target_scale_multiplier);
-        DateTime64 end_timestamp = normalizeParameter(name, "end", end_timestamp_param, target_scale_multiplier);
-        DateTime64 step = normalizeParameter(name, "step", step_param, target_scale_multiplier);
-        DateTime64 window = normalizeParameter(name, "window", window_param, target_scale_multiplier);
+        DateTime64 start_timestamp = normalizeParameter(name, "start", start_timestamp_param, target_scale);
+        DateTime64 end_timestamp = normalizeParameter(name, "end", end_timestamp_param, target_scale);
+        DateTime64 step = normalizeParameter(name, "step", step_param, target_scale);
+        DateTime64 window = normalizeParameter(name, "window", window_param, target_scale);
 
         res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate>>>
-            (argument_types, start_timestamp, end_timestamp, step, window, target_scale_multiplier);
+            (argument_types, start_timestamp, end_timestamp, step, window, target_scale);
     }
     else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
     {
@@ -131,7 +143,7 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         Int64 window = extractIntParamater(name, "window", window_param);
 
         res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, 1);
+                (argument_types, start_timestamp, end_timestamp, step, window, 0);
     }
 
     if (!res)

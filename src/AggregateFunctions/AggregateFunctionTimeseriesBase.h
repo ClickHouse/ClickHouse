@@ -62,14 +62,23 @@ public:
     };
 
     explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,
-        TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, TimestampType timestamp_scale_multiplier_)
-        : Base(argument_types_, {start_timestamp_, end_timestamp_, step_, window_}, createResultType())
+        TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_)
+        : Base(
+            argument_types_,
+            {
+                /// Normalize all parameters to decimals with the same scale as the scale of timestamp argument
+                DecimalField<Decimal64>(start_timestamp_, timestamp_scale_),
+                DecimalField<Decimal64>(end_timestamp_, timestamp_scale_),
+                DecimalField<Decimal64>(step_, timestamp_scale_),
+                DecimalField<Decimal64>(window_, timestamp_scale_)
+            },
+            createResultType())
         , bucket_count(bucketCount(start_timestamp_, end_timestamp_, step_))
         , start_timestamp(start_timestamp_)
         , end_timestamp(static_cast<TimestampType>(start_timestamp_ + (bucket_count - 1) * step_))  /// Align end timestamp down by step
         , step(step_)
         , window(window_)
-        , timestamp_scale_multiplier(timestamp_scale_multiplier_)
+        , timestamp_scale_multiplier(DecimalUtils::scaleMultiplier<Int64>(timestamp_scale_))
     {
         if (window < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window should be non-negative");

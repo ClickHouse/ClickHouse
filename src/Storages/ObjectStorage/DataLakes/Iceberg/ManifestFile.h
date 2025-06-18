@@ -16,8 +16,6 @@
 namespace Iceberg
 {
 
-struct ManifestFileContentImpl;
-
 enum class ManifestEntryStatus : uint8_t
 {
     EXISTING = 0,
@@ -73,7 +71,7 @@ struct ManifestFileEntry
     Int64 added_sequence_number;
 
     DB::Row partition_key_value;
-    PartitionSpecification * common_partition_specification;
+    PartitionSpecification common_partition_specification;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
     IcebergFileSpecificInfo specific_info;
@@ -155,7 +153,6 @@ private:
 
 };
 
-/// Once manifest file is constructed. It's unchangeable.
 using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
 
 bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
