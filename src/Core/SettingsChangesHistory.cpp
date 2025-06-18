@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
+            {"optimize_rewrite_regexp_functions", "true", "true", "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
