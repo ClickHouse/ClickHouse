@@ -11,18 +11,30 @@ result=""
 lines_expected=5
 counter=0
 while [ $counter -lt $RETRIES ] && [ "$(echo "$result" | wc -l)" != "$lines_expected" ]; do
-    result=$(${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&max_block_size=5&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0" -d 'SELECT max(number) FROM numbers(10)' 2>&1 | grep -E 'Content-Encoding|X-ClickHouse-Progress|X-ClickHouse-Summary|^[0-9]' | sed 's/,\"elapsed_ns[^}]*//')
+    result=$(${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&output_format_parallel_formatting=0&max_block_size=5&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0" -d 'SELECT max(number) FROM numbers(10)' 2>&1 | grep -E 'Content-Encoding|X-ClickHouse-Progress|X-ClickHouse-Summary|^[0-9]' | sed 's/,\"elapsed_ns[^}]*//')
     let counter=counter+1
 done
+echo "&output_format_parallel_formatting=0&max_block_size=5&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0"
+echo "$result"
+
+result=""
+lines_expected=5
+counter=0
+while [ $counter -lt $RETRIES ] && [ "$(echo "$result" | wc -l)" != "$lines_expected" ]; do
+    result=$(${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&output_format_parallel_formatting=1&max_block_size=5&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0" -d 'SELECT max(number) FROM numbers(10)' 2>&1 | grep -E 'Content-Encoding|X-ClickHouse-Progress|X-ClickHouse-Summary|^[0-9]' | sed 's/,\"elapsed_ns[^}]*//')
+    let counter=counter+1
+done
+echo "&output_format_parallel_formatting=1&max_block_size=5&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0"
 echo "$result"
 
 result=""
 lines_expected=22
 counter=0
 while [ $counter -lt $RETRIES ] && [ "$(echo "$result" | wc -l)" != "$lines_expected" ]; do
-    result=$(${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&max_block_size=1&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0&output_format_parallel_formatting=0&max_threads=1" -d 'SELECT number FROM numbers(10)' 2>&1 | grep -E 'Content-Encoding|X-ClickHouse-Progress|X-ClickHouse-Summary|^[0-9]'| sed 's/,\"elapsed_ns[^}]*//')
+    result=$(${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&max_block_size=1&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0" -d 'SELECT number FROM numbers(10)' 2>&1 | grep -E 'Content-Encoding|X-ClickHouse-Progress|X-ClickHouse-Summary|^[0-9]'| sed 's/,\"elapsed_ns[^}]*//')
     let counter=counter+1
 done
+echo "&max_block_size=1&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0"
 echo "$result"
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_block_size=1&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0&enable_http_compression=1" -H 'Accept-Encoding: gzip' -d 'SELECT number FROM system.numbers LIMIT 10' | gzip -d

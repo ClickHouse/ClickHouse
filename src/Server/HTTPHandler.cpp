@@ -450,10 +450,14 @@ void HTTPHandler::processQuery(
         {
             /// Other than query parameters are treated as settings.
             if (!customizeQueryParam(context, key, value))
+            {
+                if (key == "output_format_parallel_formatting")
+                    LOG_DEBUG(getLogger("HTTPHandler"), "Params: {} = {} Added", key, value);
+                //settings_changes.push_back({key, value});
                 settings_changes.setSetting(key, value);
+            }
         }
     }
-
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
     const auto & settings = context->getSettingsRef();

@@ -2663,8 +2663,13 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
 
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
 {
+    LOG_DEBUG(getLogger("Settings"), "setting change size: {}", changes.size());
     for (const SettingChange & change : changes)
+    {
+        if (change.name == "output_format_parallel_formatting")
+            LOG_DEBUG(getLogger("Settings"), "Applying setting change: {} = {}", change.name, change.value);
         applySettingChangeWithLock(change, lock);
+    }
     applySettingsQuirks(*settings);
 }
 

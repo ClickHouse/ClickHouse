@@ -567,6 +567,12 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
 
+    LOG_DEBUG(
+        getLogger("FormatFactory"),
+        "output format settings for {}: "
+        "output_format_parallel_formatting {}, supports_parallel_formatting {}, output_format_json_array_of_rows {}",
+        name, bool(settings[Setting::output_format_parallel_formatting]), getCreators(name).supports_parallel_formatting, bool(settings[Setting::output_format_json_array_of_rows]));
+
     if (settings[Setting::output_format_parallel_formatting] && getCreators(name).supports_parallel_formatting
         && !settings[Setting::output_format_json_array_of_rows])
     {

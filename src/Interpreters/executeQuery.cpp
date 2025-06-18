@@ -1823,6 +1823,9 @@ void executeQuery(
                     : context->getDefaultFormat();
 
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
+
+                output_format->getDescription();
+
                 if (output_format && output_format->supportsWritingException())
                 {
                     /// Force an update of the headers before we start writing
@@ -1903,7 +1906,7 @@ void executeQuery(
     }
 
     auto & pipeline = streams.pipeline;
-    bool pulling_pipeline = pipeline.pulling();
+    const bool pulling_pipeline = pipeline.pulling();
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
     try
@@ -1949,6 +1952,7 @@ void executeQuery(
                 context,
                 output_format_settings);
 
+            LOG_DEBUG(getLogger("executeQuery"), "output format : {}", output_format->getName());
             output_format->setAutoFlush();
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
