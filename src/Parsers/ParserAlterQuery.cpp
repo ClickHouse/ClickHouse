@@ -645,7 +645,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (!parser_string_literal.parse(pos, ast_from, expected))
                         return false;
 
-                    command->from = ast_from->as<ASTLiteral &>().value.safeGet<const String &>();
+                    command->from = ast_from->as<ASTLiteral &>().value.safeGet<String>();
                 }
 
                 command->part = true;
