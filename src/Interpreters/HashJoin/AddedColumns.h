@@ -167,7 +167,7 @@ public:
     [[nodiscard]] size_t appendFromBlock(const RowRefList * row_ref_list, bool has_default);
     [[nodiscard]] size_t appendFromBlock(const RowRef * row_ref, bool has_default);
 
-    void appendDefaultRow();
+    [[nodiscard]] size_t appendDefaultRow();
 
     [[nodiscard]] size_t applyLazyDefaults();
 
@@ -182,6 +182,7 @@ public:
 
     size_t max_joined_block_rows = 0;
     size_t max_joined_block_bytes = 0;
+    size_t avg_left_block_bytes_per_row = 0;
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;

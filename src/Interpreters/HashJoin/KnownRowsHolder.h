@@ -140,14 +140,16 @@ void addFoundRowAll(
 }
 
 template <bool add_missing, bool need_offset, typename AddedColumns>
-void addNotFoundRow(AddedColumns & added [[maybe_unused]], IColumn::Offset & current_offset [[maybe_unused]])
+[[nodiscard]] size_t addNotFoundRow(AddedColumns & added [[maybe_unused]], IColumn::Offset & current_offset [[maybe_unused]])
 {
+    size_t added_bytes = 0;
     if constexpr (add_missing)
     {
-        added.appendDefaultRow();
+        added_bytes += added.appendDefaultRow();
         if constexpr (need_offset)
             ++current_offset;
     }
+    return added_bytes;
 }
 
 }

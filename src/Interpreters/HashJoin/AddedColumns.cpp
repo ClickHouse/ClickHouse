@@ -193,7 +193,7 @@ size_t AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool h
         }
     }
 
-    return added_bytes;
+    return added_bytes + avg_left_block_bytes_per_row;
 }
 
 template <>
@@ -209,11 +209,13 @@ size_t AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
 #ifndef NDEBUG
     checkBlock(*row_ref->block);
 #endif
+    //size_t added_bytes = 0;
     if (has_columns_to_add)
     {
+        //added_bytes += avg_left_block_bytes_per_row;
         lazy_output.addRowRef(row_ref);
     }
-    return 0;
+    return avg_left_block_bytes_per_row; //added_bytes;
 }
 
 template <>
@@ -222,26 +224,32 @@ size_t AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool
 #ifndef NDEBUG
     checkBlock(*row_ref_list->block);
 #endif
+    //size_t added_bytes = 0;
     if (has_columns_to_add)
     {
+        //added_bytes += avg_left_block_bytes_per_row * row_ref_list->rows;
         lazy_output.addRowRefList(row_ref_list);
     }
-    return 0;
+    return avg_left_block_bytes_per_row * row_ref_list->rows; //added_bytes;
 }
 
 
 template<>
-void AddedColumns<false>::appendDefaultRow()
+size_t AddedColumns<false>::appendDefaultRow()
 {
     ++lazy_defaults_count;
+    return avg_left_block_bytes_per_row;
 }
 
 template<>
-void AddedColumns<true>::appendDefaultRow()
+size_t AddedColumns<true>::appendDefaultRow()
 {
+    size_t added_bytes = 0;
     if (has_columns_to_add)
     {
+        added_bytes += avg_left_block_bytes_per_row;
         lazy_output.addDefault();
     }
+    return added_bytes;
 }
 }
