@@ -11,7 +11,6 @@
 
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
-#include <Storages/ColumnsDescription.h>
 
 
 namespace DB::ErrorCodes
@@ -80,19 +79,15 @@ PartitionPruner::PartitionPruner(
     }
 }
 
-bool PartitionPruner::canBePruned(const DB::ObjectInfo & object_info) const
+bool PartitionPruner::canBePruned(const DB::ObjectInfoWithPartitionColumns & object_info) const
 {
     if (!key_condition.has_value())
         return false;
 
-    if (!object_info.data_lake_metadata)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not set");
-
     DB::Row partition_key_values;
-    const auto partition_values = object_info.data_lake_metadata->partition_values;
-    partition_key_values.reserve(partition_values.size());
+    partition_key_values.reserve(object_info.partitions_info.size());
 
-    for (const auto & value : partition_values)
+    for (const auto & [name_and_type, value] : object_info.partitions_info)
     {
         if (value.isNull())
             partition_key_values.push_back(DB::POSITIVE_INFINITY); /// NULL_LAST

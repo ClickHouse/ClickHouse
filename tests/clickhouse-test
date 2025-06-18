@@ -41,7 +41,7 @@ import urllib.parse
 import zlib
 from argparse import ArgumentParser, Namespace
 from ast import literal_eval as make_tuple
-from contextlib import redirect_stdout, contextmanager
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta
 from errno import ESRCH
 from subprocess import PIPE, Popen
@@ -2062,38 +2062,28 @@ class TestCase:
                 # to avoid breaking CSV parser
                 result.description = result.description.replace("\0", "")
             else:
-                @contextmanager
-                def switch_to_smt():
-                    with (
-                        SharedEngineReplacer(
-                            args,
-                            self.case_file,
-                            args.replace_replicated_with_shared,
-                            args.replace_non_replicated_with_shared,
-                            False,
-                            args.cloud,
-                        ) as test_replacer,
-                        SharedEngineReplacer(
-                            args,
-                            self.reference_file,
-                            # cloud_mode_engine=2 in cloud, expect all engines to be Shared*
-                            args.replace_replicated_with_shared or args.cloud,
-                            args.replace_non_replicated_with_shared or args.cloud,
-                            True,
-                            args.cloud,
-                        ) as reference_replacer,
-                    ):
-                        old_case_file = self.case_file
-                        old_reference_file = self.reference_file
-                        self.case_file = test_replacer.get_path()
-                        self.reference_file = reference_replacer.get_path()
-                        try:
-                            yield
-                        finally:
-                            self.case_file = old_case_file
-                            self.reference_file = old_reference_file
+                with (
+                    SharedEngineReplacer(
+                        args,
+                        self.case_file,
+                        args.replace_replicated_with_shared,
+                        args.replace_non_replicated_with_shared,
+                        False,
+                        args.cloud,
+                    ) as test_replacer,
+                    SharedEngineReplacer(
+                        args,
+                        self.reference_file,
+                        # cloud_mode_engine=2 in cloud, expect all engines to be Shared*
+                        args.replace_replicated_with_shared or args.cloud,
+                        args.replace_non_replicated_with_shared or args.cloud,
+                        True,
+                        args.cloud,
+                    ) as reference_replacer,
+                ):
+                    self.case_file = test_replacer.get_path()
+                    self.reference_file = reference_replacer.get_path()
 
-                with switch_to_smt():
                     (
                         proc,
                         total_time,

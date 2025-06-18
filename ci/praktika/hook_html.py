@@ -167,9 +167,9 @@ class HtmlRunnerHooks:
             app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
             GHAuth.auth(app_id=app_id, app_key=pem)
 
-        body = f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]"
-        res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
-            comment_tags_and_bodies={"report": body, "summary": ""},
+        res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
+            comment_body=f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]",
+            or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
         )
         res1 = GH.post_commit_status(
             name=_workflow.name,

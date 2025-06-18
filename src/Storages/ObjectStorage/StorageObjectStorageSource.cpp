@@ -19,6 +19,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
@@ -138,8 +139,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (distributed_processing)
     {
-        auto distributed_iterator = std::make_unique<ReadTaskIterator>(
-            local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
+        auto distributed_iterator = std::make_unique<ReadTaskIterator>(local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
 
         if (is_archive)
             return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(distributed_iterator), local_context, nullptr);
@@ -268,14 +268,35 @@ Chunk StorageObjectStorageSource::generate()
                  .etag = &(object_info->metadata->etag)},
                 read_context);
 
-#if USE_PARQUET && USE_AWS_S3
             if (chunk_size && chunk.hasColumns())
             {
-                /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
-                if (dynamic_cast<const DeltaLakeMetadata *>(configuration.get()))
+                const auto * object_with_partition_columns_info = dynamic_cast<const ObjectInfoWithPartitionColumns *>(object_info.get());
+                if (object_with_partition_columns_info)
                 {
+                    for (const auto & [name_and_type, value] : object_with_partition_columns_info->partitions_info)
+                    {
+                        if (!read_from_format_info.source_header.has(name_and_type.name))
+                            continue;
+
+                        const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
+                        auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+
+                        /// This column is filled with default value now, remove it.
+                        chunk.erase(column_pos);
+
+                        /// Add correct values.
+                        if (column_pos < chunk.getNumColumns())
+                            chunk.addColumn(column_pos, std::move(partition_column));
+                        else
+                            chunk.addColumn(std::move(partition_column));
+                    }
+                }
+                else
+                {
+#if USE_PARQUET && USE_AWS_S3
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
+                    /// By release 25.3.
                     /// (Because it does not make sense to support it in a nice way
                     /// because the code will be removed ASAP anyway)
                     if (configuration->isDataLakeConfiguration())
@@ -314,9 +335,9 @@ Chunk StorageObjectStorageSource::generate()
                         }
 
                     }
+#endif
                 }
             }
-#endif
 
             return chunk;
         }
@@ -498,13 +519,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        std::shared_ptr<const ActionsDAG> transformer;
-        if (object_info->data_lake_metadata)
-            transformer = object_info->data_lake_metadata->transform;
-        else
-            transformer = configuration->getSchemaTransformer(object_info->getPath());
-
-        if (transformer)
+        if (auto transformer = configuration->getSchemaTransformer(object_info->getPath()))
         {
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
             builder.addSimpleTransform([&](const Block & header)
@@ -512,6 +527,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
             });
         }
+
 
         if (read_from_format_info.columns_description.hasDefaults())
         {

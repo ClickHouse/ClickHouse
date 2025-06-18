@@ -716,8 +716,6 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
-NumericIndexedVector
-NumericIndexedVectors
 ODBCDriver
 OFNS
 OLAP
@@ -904,7 +902,6 @@ RabbitMQ
 Rabl
 RangeHashed
 RawBLOB
-RawSum
 RawWithNames
 RawWithNamesAndTypes
 ReDoS
@@ -1950,7 +1947,6 @@ groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
 groupConcat
-groupNumericIndexedVector
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1968,7 +1964,6 @@ groupbitmapxor
 groupbitor
 groupbitxor
 groupconcat
-groupnumericindexedvector
 groupuniqarray
 grpc
 grpcio
@@ -2419,23 +2414,6 @@ nullable
 nullables
 nullptr
 num
-numericIndexedVector
-numericIndexedVectorAllValueSum
-numericIndexedVectorBuild
-numericIndexedVectorCardinality
-numericIndexedVectorGetValue
-numericIndexedVectorPointwiseAdd
-numericIndexedVectorPointwiseDivide
-numericIndexedVectorPointwiseEqual
-numericIndexedVectorPointwiseGreater
-numericIndexedVectorPointwiseGreaterEqual
-numericIndexedVectorPointwiseLess
-numericIndexedVectorPointwiseLessEqual
-numericIndexedVectorPointwiseMultiply
-numericIndexedVectorPointwiseNotEqual
-numericIndexedVectorPointwiseSubtract
-numericIndexedVectorShortDebugString
-numericIndexedVectorToMap
 numerics
 nypd
 obfuscator
@@ -2503,7 +2481,6 @@ plantuml
 poco
 pointInEllipses
 pointInPolygon
-pointwise
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian

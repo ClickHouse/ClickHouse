@@ -105,20 +105,16 @@ class QueryPool:
         self.stop_event: threading.Event = threading.Event()
         self.threads: list[threading.Thread] = []
         self.stopped: bool = True
-        self.last_error: str = None
 
     def start(self) -> None:
         assert self.stopped, "Pool is already running"
 
         def query_thread() -> None:
             while not self.stop_event.is_set():
-                try:
-                    node.query(
-                        f"select count(*) from numbers_mt(100000000) settings "
-                        f"workload='{self.workload}', max_threads=2"
-                    )
-                except Exception as ex:
-                    self.last_error = str(ex)
+                node.query(
+                    f"select count(*) from numbers_mt(100000000) settings "
+                    f"workload='{self.workload}', max_threads=2"
+                )
 
         for _ in range(self.num_queries):
             self.threads.append(threading.Thread(target=query_thread, args=()))
@@ -134,39 +130,6 @@ class QueryPool:
         self.stopped = True
 
 
-def concurrent_queries() -> int:
-    return int(
-        node.query(
-            f"select value from system.metrics where name='ConcurrentQueryAcquired'"
-        ).strip()
-    )
-
-
-def ensure_total_concurrency(limit: int) -> None:
-    for _ in range(10):
-        assert concurrent_queries() <= limit
-        time.sleep(0.1)
-    while concurrent_queries() < limit:
-        time.sleep(0.1)
-
-
-def inflight_queries(workload) -> int:
-    return int(
-        node.query(
-            f"select inflight_requests from system.scheduler where "
-            f"path like '%/{workload}/semaphore' and resource='query'"
-        ).strip()
-    )
-
-
-def ensure_workload_concurrency(workload, limit: int) -> None:
-    for _ in range(10):
-        assert inflight_queries(workload) <= limit
-        time.sleep(0.1)
-    while inflight_queries(workload) < limit:
-        time.sleep(0.1)
-
-
 def test_max_concurrent_queries() -> None:
     node.query(
         f"""
@@ -178,6 +141,35 @@ def test_max_concurrent_queries() -> None:
         create workload development in main settings weight=1, max_concurrent_queries=2;
     """
     )
+
+    def concurrent_queries() -> int:
+        return int(
+            node.query(
+                f"select value from system.metrics where name='ConcurrentQueryAcquired'"
+            ).strip()
+        )
+
+    def ensure_total_concurrency(limit: int) -> None:
+        for _ in range(10):
+            assert concurrent_queries() <= limit
+            time.sleep(0.1)
+        while concurrent_queries() < limit:
+            time.sleep(0.1)
+
+    def inflight_queries(workload) -> int:
+        return int(
+            node.query(
+                f"select inflight_requests from system.scheduler where "
+                f"path like '%/{workload}/semaphore' and resource='query'"
+            ).strip()
+        )
+
+    def ensure_workload_concurrency(workload, limit: int) -> None:
+        for _ in range(10):
+            assert inflight_queries(workload) <= limit
+            time.sleep(0.1)
+        while inflight_queries(workload) < limit:
+            time.sleep(0.1)
 
     admin = QueryPool(6, "admin")
     production = QueryPool(6, "production")
@@ -202,37 +194,3 @@ def test_max_concurrent_queries() -> None:
     production.stop()
     development.stop()
     admin.stop()
-
-
-def test_max_waiting_queries_reached() -> None:
-    node.query(
-        f"""
-        create resource query (query);
-        create workload all settings max_concurrent_queries=1, max_waiting_queries=1;
-        """
-    )
-
-    pool_all = QueryPool(6, "all")
-
-    pool_all.start()
-    ensure_total_concurrency(1)
-    ensure_workload_concurrency("all", 1)
-    pool_all.stop()
-    assert "Workload limit `max_waiting_queries` has been reached: 1 of 1" in pool_all.last_error
-
-
-def test_under_max_waiting_queries_limit() -> None:
-    node.query(
-        f"""
-        create resource query (query);
-        create workload all settings max_concurrent_queries=1, max_waiting_queries=6;
-        """
-    )
-
-    pool_all = QueryPool(7, "all")
-
-    pool_all.start()
-    ensure_total_concurrency(1)
-    ensure_workload_concurrency("all", 1)
-    pool_all.stop()
-    assert pool_all.last_error is None
