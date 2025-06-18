@@ -1836,6 +1836,8 @@ static void buildIndexes(
             if (!filter_dag.predicate)
                 continue;
 
+            std::cerr << "Filter Dag Pred\n" << filter_dag.dag->dumpDAG() << std::endl;
+
             condition = index_helper->createIndexCondition(filter_dag.predicate, context);
         }
 
