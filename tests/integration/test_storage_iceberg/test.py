@@ -653,6 +653,7 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
     # write 3 times
     assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}")) == 100 * 3
 
+
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_delete_files(started_cluster, format_version, storage_type):
@@ -2035,8 +2036,11 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
     )
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_partition_pruning(started_cluster, storage_type):
+@pytest.mark.parametrize(
+    "storage_type, run_on_cluster",
+    [("s3", False), ("s3", True), ("azure", False), ("local", False)],
+)
+def test_partition_pruning(started_cluster, storage_type, run_on_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_partition_pruning_" + storage_type + "_" + get_uuid_str()
@@ -2085,7 +2089,7 @@ def test_partition_pruning(started_cluster, storage_type):
     )
 
     creation_expression = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+        storage_type, TABLE_NAME, started_cluster, table_function=True, run_on_cluster=run_on_cluster
     )
 
     def check_validity_and_get_prunned_files(select_expression):
