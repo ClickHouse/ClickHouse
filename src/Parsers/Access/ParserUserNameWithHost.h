@@ -12,7 +12,7 @@ namespace DB
 class ParserUserNameWithHost : public IParserBase
 {
 public:
-    explicit ParserUserNameWithHost(bool allow_query_parameter = false);
+    explicit ParserUserNameWithHost(bool allow_query_parameter);
 
 protected:
     const char * getName() const override { return "UserNameWithHost"; }
@@ -26,7 +26,7 @@ private:
 class ParserUserNamesWithHost : public IParserBase
 {
 public:
-    explicit ParserUserNamesWithHost(bool allow_query_parameter = false);
+    explicit ParserUserNamesWithHost(bool allow_query_parameter);
 
 protected:
     const char * getName() const override { return "UserNamesWithHost"; }
