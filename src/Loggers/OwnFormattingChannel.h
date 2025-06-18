@@ -11,7 +11,7 @@
 namespace DB
 {
 // Like Poco::FormattingChannel but supports the extended logging interface and log level filter
-class OwnFormattingChannel final : public Poco::Channel, public ExtendedLogChannel
+class OwnFormattingChannel : public Poco::Channel, public ExtendedLogChannel
 {
 public:
     explicit OwnFormattingChannel(

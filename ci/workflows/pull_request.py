@@ -80,6 +80,7 @@ workflow = Workflow.Config(
     enable_report=True,
     enable_cidb=True,
     enable_merge_ready_status=True,
+    enable_gh_summary_comment=True,
     enable_commit_status_on_failure=True,
     pre_hooks=[
         can_be_trusted,
@@ -88,6 +89,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[
