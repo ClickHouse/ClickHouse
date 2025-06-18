@@ -73,6 +73,8 @@ StorageFileCluster::StorageFileCluster(
         const std::string sample_path = paths.empty() ? "" : paths.front();
         hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, sample_path, std::nullopt, context);
 
+        /// If the structure was inferred (not present in `columns_`), then we might need to enrich the schema with partition columns
+        /// Because they might not be present in the data and exist only in the path
         if (columns_.empty())
         {
             for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)

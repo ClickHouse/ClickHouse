@@ -22,6 +22,7 @@
 #include <Storages/StorageURLCluster.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
+#include <Storages/HivePartitioningUtils.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
 
@@ -34,11 +35,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 StorageURLCluster::StorageURLCluster(
@@ -80,7 +83,33 @@ StorageURLCluster::StorageURLCluster(
         storage_metadata.setColumns(columns_);
     }
 
-    // todo arthur why is it needed?
+    auto & storage_columns = storage_metadata.columns;
+
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, getSampleURI(uri, context), std::nullopt, context);
+
+        /// If the structure was inferred (not present in `columns_`), then we might need to enrich the schema with partition columns
+        /// Because they might not be present in the data and exist only in the path
+        if (columns_.empty())
+        {
+            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
+            {
+                if (!storage_columns.has(name))
+                {
+                    storage_columns.add({name, type});
+                }
+            }
+        }
+
+        if (hive_partition_columns_to_read_from_file_path.size() == storage_columns.size())
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
+        }
+    }
+
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
     if (!storage_metadata.getColumns().has("_headers"))
     {
@@ -118,7 +147,7 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
 RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context, size_t) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
-        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), NamesAndTypesList{}, context);
+        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), hive_partition_columns_to_read_from_file_path, context);
     auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)](size_t) mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }

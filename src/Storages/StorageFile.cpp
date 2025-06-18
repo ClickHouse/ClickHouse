@@ -1156,6 +1156,8 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, sample_path, format_settings, args.getContext());
         // todo arthur perhaps an assertion that `input_columns` contain all columns found in `hive_partition_columns_to_read_from_file_path`?
 
+        /// If the structure was inferred (not present in `args.columns`), then we might need to enrich the schema with partition columns
+        /// Because they might not be present in the data and exist only in the path
         if (args.columns.empty())
         {
             for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)

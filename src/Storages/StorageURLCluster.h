@@ -37,6 +37,7 @@ private:
 
     String uri;
     String format_name;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
 
